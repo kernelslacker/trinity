@@ -47,6 +47,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "sanitiser-fd.h"
 #include "tmpdir.h"
 #include "utils.h"
 
@@ -89,7 +90,11 @@ static void sanitise_fchroot(struct syscallrecord *rec)
 	 *                      ns_capable().  O_PATH specifically: the
 	 *                      commit message claims fchroot works with
 	 *                      O_PATH fds, and fd_raw is what lets it, so
-	 *                      that is the claim worth exercising.
+	 *                      that is the claim worth exercising.  This
+	 *                      sanitiser runs in the child, before
+	 *                      do_extrafork() forks, so the descriptor is
+	 *                      the child's: .cleanup closes it once the
+	 *                      call is done, not before the kernel reads it.
 	 *   untouched       -- whatever ARG_FD produced, keeping the
 	 *                      -EBADF / -ENOTDIR reject arms alive.
 	 */
@@ -101,12 +106,7 @@ static void sanitise_fchroot(struct syscallrecord *rec)
 		int fd = open(trinity_tmpdir_abs(), O_PATH | O_DIRECTORY | O_CLOEXEC);
 
 		if (fd >= 0) {
-			/*
-			 * Leaked deliberately: this runs in the EXTRA_FORK
-			 * grandchild, which _exit()s straight after the
-			 * call, so the descriptor dies with it.  Closing it
-			 * here would close it before the kernel reads it.
-			 */
+			sanitiser_own_fd(rec, fd);
 			rec->a1 = (unsigned long)fd;
 		}
 		break;
@@ -130,4 +130,5 @@ struct syscallentry syscall_fchroot = {
 	.flags = EXTRA_FORK | AVOID_REEXEC,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchroot,
+	.cleanup = cleanup_sanitiser_fd,
 };

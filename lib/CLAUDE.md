@@ -5,7 +5,7 @@ extracted to kill copy-pasted logic that had drifted across several call sites
 (cmsg builders, id-map writers, ring buffers). No shared header, no shared
 state — this is a directory of convenience, not a subsystem.
 
-## Files (7 files, ~1,674 LOC)
+## Files (8 files, ~1,720 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -16,6 +16,7 @@ state — this is a directory of convenience, not a subsystem.
 | numa.c | 84 | Parses `/sys/devices/system/node/online` cpulist syntax into a NUMA node pool; `init_numa_nodes()` / `random_numa_node()` for `ARG_NUMA_NODE` generation |
 | fd.c | 55 | `write_all()` / `read_all()`: EINTR-retrying full-buffer read/write loops shared by every on-disk persistence format |
 | jsonl.c | 65 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
+| sanitiser-fd.c | 46 | `sanitiser_own_fd()` / `cleanup_sanitiser_fd()`: a sanitiser records the fd it opened for its call in a `post_state` snapshot, and the entry's `.cleanup` closes exactly that fd on every dispatch path |
 
 (cmsg_build.c and userns-bootstrap.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
 
@@ -31,6 +32,7 @@ state — this is a directory of convenience, not a subsystem.
 8. **numa.c — cpulist parser, not a NUMA topology library.** Hand-parses `/sys/devices/system/node/online`'s `"0-1,3,5-7"` syntax with `strtol`; any parse failure (malformed range, negative, `hi < lo`) or missing file falls back to a single node {0} rather than failing the fuzzer.
 9. **jsonl.c is deliberately dependency-free** — direct `open`/`write`/`close` only, because it is the first telemetry pipe brought up during a fuzz run and cannot assume trinity's shm/logging/output() are initialized yet.
 10. **fd.c treats a 0-byte `write()` as an error** (not a legal short write) but treats a 0-byte `read()` as EOF, returning the partial count — matches POSIX semantics for each syscall rather than symmetric handling.
+11. **sanitiser-fd.c closes the recorded fd, never an arg slot.** The sanitiser runs in the long-lived child, so nothing else closes the fd it opens. The record is a `post_state` snapshot under the ownership table, one per dispatch; `.cleanup` is the hook because it runs once per dispatch on every path (`.post` is skipped when the dispatcher rejects the return value or the call never reached AFTER). A call that recorded nothing closes nothing, which is what keeps a pool fd in a1, or one a chain splice wrote there, open.
 
 ## Integration points
 
@@ -42,6 +44,7 @@ state — this is a directory of convenience, not a subsystem.
 - **fd.c**: `write_all`/`read_all` shared by every on-disk persistence format — `random_syscall/chain-persist.c`, `persist/minicorpus-file.c`,
   `cmp_hints/persist.c`, `kcov/persist.c`.
 - **jsonl.c**: declared in `include/jsonl.h`; its only caller is `stats/rotation_event.c`, which opens the sink before fork() and lets every child inherit it.
+- **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.
 
 ## Areas of attention
 
@@ -51,4 +54,4 @@ state — this is a directory of convenience, not a subsystem.
 
 ## Summary
 
-Seven independent utility modules, each solving one narrow problem that had (or would have) been duplicated across multiple call sites: cmsg construction for socket fuzzing, namespace-scoped privilege sandboxing for childops, typed object-pool publishing, a lock-free ring-buffer primitive, NUMA node enumeration, robust fd I/O loops, and a minimal JSON-lines writer. No file depends on another in this directory; grouping is purely "small and reusable," not architectural.
+Eight independent utility modules, each solving one narrow problem that had (or would have) been duplicated across multiple call sites: cmsg construction for socket fuzzing, namespace-scoped privilege sandboxing for childops, typed object-pool publishing, a lock-free ring-buffer primitive, NUMA node enumeration, robust fd I/O loops, a minimal JSON-lines writer, and per-dispatch ownership of an fd a sanitiser opened. No file depends on another in this directory; grouping is purely "small and reusable," not architectural.

@@ -56,7 +56,7 @@ every translation unit lives under one of the directories below.
 | [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,383 LOC) |
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (16 files, ~8,484 LOC) |
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,613 LOC) |
-| [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,674 LOC) |
+| [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (8 files, ~1,720 LOC) |
 | [utils/](utils/CLAUDE.md) | General-purpose runtime support (34 files, ~10,861 LOC) |
 
 ## Core runtime, grouped by concern

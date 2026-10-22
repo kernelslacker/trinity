@@ -35,6 +35,7 @@
 #include "kernel/fcntl.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "sanitiser-fd.h"
 #include "tmpdir.h"
 
 static void sanitise_fchdir(struct syscallrecord *rec)
@@ -47,10 +48,10 @@ static void sanitise_fchdir(struct syscallrecord *rec)
 	 *   a real dirfd    -- opens the trinity tmpdir O_PATH|O_DIRECTORY|
 	 *                      O_CLOEXEC so d_can_lookup succeeds and the
 	 *                      call reaches file_permission() instead of
-	 *                      dying at the fd lookup.  Leaked deliberately:
-	 *                      this runs in the EXTRA_FORK grandchild, which
-	 *                      _exit()s straight after the call, so the
-	 *                      descriptor dies with the process.
+	 *                      dying at the fd lookup.  This sanitiser runs
+	 *                      in the child, before do_extrafork() forks, so
+	 *                      the descriptor is the child's: .cleanup
+	 *                      closes it.
 	 *   untouched       -- whatever ARG_FD drew, keeping the -EBADF and
 	 *                      -ENOTDIR reject arms live.
 	 */
@@ -61,8 +62,10 @@ static void sanitise_fchdir(struct syscallrecord *rec)
 	case 1: {
 		int fd = open(trinity_tmpdir_abs(), O_PATH | O_DIRECTORY | O_CLOEXEC);
 
-		if (fd >= 0)
+		if (fd >= 0) {
+			sanitiser_own_fd(rec, fd);
 			rec->a1 = (unsigned long)fd;
+		}
 		break;
 	}
 	default:
@@ -83,4 +86,5 @@ struct syscallentry syscall_fchdir = {
 	.flags = NEED_ALARM | EXTRA_FORK | AVOID_REEXEC,
 	.group = GROUP_VFS_PATH,
 	.sanitise = sanitise_fchdir,
+	.cleanup = cleanup_sanitiser_fd,
 };

@@ -1,16 +1,19 @@
 /*
- * Self-check for how do_syscall() (dispatch/syscall.c) accounts an
- * EXTRA_FORK entry.  A live call reports back from its throwaway
- * grandchild through the shared record.  A --dry-run call has nothing to
- * contain, so its synthesized outcome has to land in the caller's own
- * record; routed through do_extrafork() it is lost wherever that is
- * compiled out (ASAN).
+ * Self-check for EXTRA_FORK dispatch (dispatch/syscall.c).  A live call
+ * reports back from its throwaway grandchild through the shared record.  A
+ * --dry-run call has nothing to contain, so its synthesized outcome has to
+ * land in the caller's own record; routed through do_extrafork() it is lost
+ * wherever that is compiled out (ASAN).  The fchdir and fchroot sanitisers
+ * run in the child, so the dirfd they open has to be closed there.
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
@@ -23,8 +26,10 @@
 #include "kcov.h"
 #include "params.h"		/* dry_run, frontier_noise_sample */
 #include "syscall.h"
+#include "syscalls/syscalls.h"	/* syscall_fchdir, syscall_fchroot */
 #include "tables.h"		/* deactivate_syscall_nolock */
-#include "utils.h"
+#include "tmpdir.h"		/* change_tmp_dir */
+#include "utils.h"		/* get_num_fds */
 
 /* Owned by main/params/, which the test binary does not link. */
 bool dry_run;
@@ -133,9 +138,97 @@ static void selftest_live(void)
 #endif
 }
 
+#define NR_DIRFD_CALLS	100
+
+/*
+ * Take @entry through sanitise, dispatch and cleanup the way dispatch_step()
+ * does.  A /dev/null fd stands in for the pool fd the generator leaves in a1
+ * when the sanitiser keeps its draw: it must come through every call open.
+ */
+static void dirfd_closed_after_call(struct syscallentry *entry)
+{
+	struct childdata *child = map_child();
+	struct syscallrecord *rec = &child->syscall;
+	int pool_fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	int before, opened = 0;
+	unsigned int i;
+
+	if (pool_fd < 0)
+		BUG("dispatch_extrafork: cannot open /dev/null");
+	before = get_num_fds();
+
+	dry_run = true;
+	for (i = 0; i < NR_DIRFD_CALLS; i++) {
+		int fd;
+
+		rec->post_state = 0;
+		rec->a1 = (unsigned long) pool_fd;
+		entry->sanitise(rec);
+
+		/* A dirfd the sanitiser opened is neither the pool fd nor the sentinel. */
+		fd = (int) rec->a1;
+		if (fd < 0 || fd == pool_fd) {
+			fd = -1;
+		} else {
+			opened++;
+			/*
+			 * A chain splice can overwrite the slot after the
+			 * sanitiser ran: what gets closed has to be the dirfd
+			 * it opened, not whatever a1 holds now.
+			 */
+			if (opened % 2 == 0)
+				rec->a1 = (unsigned long) pool_fd;
+		}
+
+		do_syscall(rec, entry, &child->kcov, child);
+		if (fd >= 0 && fcntl(fd, F_GETFD) < 0)
+			BUG("dispatch_extrafork: the dirfd was closed before the call returned");
+
+		if (entry->cleanup != NULL)
+			entry->cleanup(rec);
+		if (fd >= 0 && fcntl(fd, F_GETFD) >= 0)
+			BUG("dispatch_extrafork: the dirfd is still open after the call");
+	}
+	dry_run = false;
+
+	if (fcntl(pool_fd, F_GETFD) < 0)
+		BUG("dispatch_extrafork: closed a descriptor the sanitiser did not open");
+	if (opened == 0)
+		BUG("dispatch_extrafork: the sanitiser never opened a dirfd, so nothing was checked");
+	if (get_num_fds() != before)
+		BUG("dispatch_extrafork: the calls left descriptors open");
+
+	close(pool_fd);
+	munmap(child, sizeof(*child));
+}
+
+/* The sanitisers open trinity_tmpdir_abs(); tmpdir_test.c leaves it at a tmp/ it removed. */
+static void selftest_dirfd_cleanup(void)
+{
+	char base[] = "/tmp/trinity-extrafork-test.XXXXXX";
+	char tmp[sizeof(base) + sizeof("/tmp")];
+	int cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+	if (cwd < 0 || mkdtemp(base) == NULL || chdir(base) != 0 ||
+	    mkdir("tmp", 0700) != 0)
+		BUG("dispatch_extrafork: cannot set up a tmp/");
+	change_tmp_dir();
+
+	dirfd_closed_after_call(&syscall_fchdir);
+	dirfd_closed_after_call(&syscall_fchroot);
+
+	if (fchdir(cwd) != 0)
+		BUG("dispatch_extrafork: cannot return to the starting directory");
+	close(cwd);
+	snprintf(tmp, sizeof(tmp), "%s/tmp", base);
+	if (rmdir(tmp) != 0 || rmdir(base) != 0)
+		BUG("dispatch_extrafork: cannot remove the test tree");
+}
+
 void dispatch_extrafork_self_check(void);
 void dispatch_extrafork_self_check(void)
 {
 	selftest_dry_run();
 	selftest_live();
+	selftest_dirfd_cleanup();
 }

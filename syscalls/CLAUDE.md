@@ -114,7 +114,11 @@ top of each header as private to that pair of TUs).
    (`#define X_POST_STATE_MAGIC ...` + a small struct with `magic` as first
    field) recurs across `execve.c`, `ptrace.c`, and others to defend
    `rec->post_state` derefs against sibling-syscall stomps between dispatch
-   and post/cleanup.
+   and post/cleanup.  A descriptor a sanitiser opens for the call is owned
+   the same way: `sanitiser_own_fd()` records it in the snapshot and
+   `cleanup_sanitiser_fd()` closes it from `.cleanup` (`fs/path/fchdir.c`,
+   `fchroot.c`), never read back from the arg slot, which may hold a pool
+   fd or a chain splice.
 4. **Object pools cross-pollinate related syscalls.** `keyctl.c` registers a
    `key_serial_destructor` via `REG_GLOBAL_OBJ` and exposes
    `get_random_key_serial()`/`register_key_serial()` consumed by
