@@ -88,7 +88,7 @@ unsigned int childop_kcov_sample_n = 4U;
 
 /* Default is OFF: the childop CMP harvest path is dormant and the
  * childop dispatch surface is byte-identical to a build without the
- * --childop-cmp-harvest knob.  Flipping to ON opens the §3.2 bracket
+ * --childop-cmp-harvest knob.  Flipping to ON opens the CMP bracket
  * on every CMP-mode child whose dispatch reaches the existing
  * op_uses_outer_bracket gate (see child.c) so childop syscalls routed
  * through trinity_cmp_syscall harvest their CMP operands into the

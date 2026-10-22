@@ -515,8 +515,8 @@ unsigned long kcov_bracket_end(struct kcov_child *kc,
 }
 
 /*
- * Per-bracket record / insert tallies for the §3.2 anti-domination
- * caps.  File-scope statics, single-writer per child process
+ * Per-bracket record / insert tallies for the anti-domination caps.
+ * File-scope statics, single-writer per child process
  * (trinity children are separate processes; each has its own copy),
  * reset to zero at every kcov_cmp_bracket_begin() and consulted by
  * childop_cmp_collect().  Not stashed on struct kcov_child to keep
@@ -651,7 +651,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 		unsigned long type, arg1, ip;
 		unsigned int size;
 
-		/* §3.2 anti-domination cap: drop further records on this
+		/* Anti-domination cap: drop further records on this
 		 * bracket once the cap is hit so one chatty childop cannot
 		 * dominate the lane (or burn cycles in this loop). */
 		if (childop_cmp_bracket_records_this >=
