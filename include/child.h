@@ -937,5 +937,3 @@ struct childdata {
 	unsigned int _b = (unsigned int)(base);				\
 	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\
 })
-
-#include "arm-tracking.h"
