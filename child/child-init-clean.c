@@ -290,12 +290,10 @@ void clean_childdata(struct childdata *child)
 	child->last_group = GROUP_NONE;
 	child->in_chain_mid_step = false;
 	child->op_type = CHILD_OP_SYSCALL;
-	/* SHADOW-ONLY topology-pair latch.
-	 * NR_CHILD_OP_TYPES is the "no setup observed yet" sentinel so the
-	 * first productive event on a freshly-spawned child bumps the
-	 * no_setup denominator rather than crediting a stale setup that
-	 * belonged to the previous occupant of this slot.  Paired stamp
-	 * in child_process() at the start of every is_alt_op dispatch. */
+	/* NR_CHILD_OP_TYPES means "no setup observed yet": the first
+	 * productive event bumps the no_setup denominator instead of
+	 * crediting the previous occupant's setup.  Paired with the stamp
+	 * in child_process() at every is_alt_op dispatch. */
 	child->last_setup_op = NR_CHILD_OP_TYPES;
 	child->last_setup_op_nr = 0;
 	child->stall_count = 0;
@@ -303,65 +301,43 @@ void clean_childdata(struct childdata *child)
 	child->fd_created = 0;
 	child->fd_closed = 0;
 	memset(child->fd_created_by_group, 0, sizeof(child->fd_created_by_group));
-	/* F-RSEQ group-pin damper state -- per-pin streak + watermark + fd-
-	 * warm counter.  Zeroed on every fresh occupant of this slot so the
-	 * predicate starts with no streak history; the dispatch_step
-	 * bookkeeping (gated on frontier_group_antilock_mode != OFF AND
-	 * group_bias) advances them per pick.  Under default mode=OFF
-	 * these fields are never read or written -- the clear here is the
-	 * one-shot init pattern the sibling fd_created* fields above use,
-	 * not a per-call cost. */
+	/* F-RSEQ group-pin damper state: a fresh occupant starts with no
+	 * streak history. */
 	child->group_streak_len = 0;
 	child->last_cov_at_streak = 0;
 	child->group_fd_created_in_streak = 0;
 	clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
-	/* -1 sentinel = "no syscall picked yet on this child".  Reward
-	 * attribution gates on (strat >= 0 && strat < NR_STRATEGIES), so an
-	 * unstamped slot naturally skips attribution.  Explorer children
-	 * never write this field (they bypass the strategy switch entirely
-	 * in set_syscall_nr), so the sentinel persists for their lifetime;
-	 * the PC and CMP reward sites also gate on !is_explorer ahead of the
-	 * stamp read for clarity. */
+	/* -1 = no syscall picked yet; reward attribution gates on
+	 * 0 <= strat < NR_STRATEGIES, so an unstamped slot skips it.
+	 * Explorer children bypass the strategy switch and never stamp it,
+	 * so it stays -1 for their lifetime. */
 	child->strategy_at_pick = -1;
 
-	/* Baseline runs pick under the init-user context on every call;
-	 * the axis exists as infrastructure for a follow-up that keys
-	 * per-arm state on (context_id, strategy_at_pick).  No hot-path
-	 * site reads this field yet, so the stamp is a pure-add. */
+	/* Baseline runs pick under the init-user context on every call. */
 	child->context_id = PICKER_CTX_INIT;
 
-	/* Pair with the per-call top-of-set_syscall_nr() reset that gates
-	 * non-frontier strategy picks out of the post-call attribution.  A
-	 * fresh slot occupant must start from NONE so the first post-call
-	 * read after fork does not credit the previous occupant's stale
-	 * regime to its own attribution. */
+	/* Pairs with the per-call reset at the top of set_syscall_nr(): the
+	 * first post-call read after fork must not credit the previous
+	 * occupant's regime. */
 	child->frontier_pick_regime = FRONTIER_PICK_NONE;
 
-	/* Reset per-child storm-containment counters and reseed the
-	 * sliding-window snapshot to "right now, all zeros" so the first
-	 * check after fork has a clean baseline rather than measuring a
-	 * rate against the previous occupant of this slot. */
+	/* Storm-containment counters, with the sliding-window snapshot
+	 * reseeded to "now, all zeros" so the first check after fork does
+	 * not measure a rate against the previous occupant. */
 	child->local_post_handler_corrupt_ptr = 0;
 	child->maps_local_refill_credit = 0;
-	/* Reset the per-child writable-pool bump cursor so a recycled
-	 * slot restarts allocation at pool offset 0 rather than
-	 * continuing from wherever the previous occupant left off. */
+	/* Bump cursors restart at offset 0 in a recycled slot.  Inheriting
+	 * the objpool arena's high-water mark would exhaust it early and
+	 * force the zmalloc_tracked fallback path sooner. */
 	child->writable_pool_cursor = 0;
-	/* Same reset for the OBJ_LOCAL objpool arena's bump cursor: a
-	 * recycled slot must re-enter alloc_object() / add_object_grow_
-	 * capacity()'s arena path from arena offset 0, not from the
-	 * previous occupant's high-water mark (which would exhaust the
-	 * arena earlier and force the fallback zmalloc_tracked path
-	 * sooner than necessary). */
 	child->objpool_arena_cursor = 0;
 	child->mmap_pool_nonempty_mask = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;
 
-	/* Reset per-child corruption-attribution shards so a fresh
-	 * occupant's first dump-window samples are not contaminated by
-	 * the previous occupant's accumulated counts. */
+	/* Corruption-attribution shards: a fresh occupant's first dump
+	 * window must not carry the previous occupant's counts. */
 	memset(child->local_corrupt_ptr_attr, 0,
 	       sizeof(child->local_corrupt_ptr_attr));
 	memset(child->local_corrupt_ptr_pc, 0,
@@ -369,31 +345,27 @@ void clean_childdata(struct childdata *child)
 	memset(child->local_deferred_free_reject_pc, 0,
 	       sizeof(child->local_deferred_free_reject_pc));
 
-	/* Reset breadcrumb ring; .valid=false in zeroed slots keeps the
-	 * parent dumper from picking up a previous occupant's leftover
-	 * payload as if it belonged to the fresh child. */
+	/* Zeroed slots are .valid == false, so the parent dumper cannot
+	 * mistake the previous occupant's payload for the fresh child's. */
 	memset(&child->breadcrumb_ring, 0, sizeof(child->breadcrumb_ring));
 
-	/* Reset live fd ring: -1 marks all slots as empty. */
+	/* -1 marks a live-fd slot empty. */
 	for (int i = 0; i < CHILD_FD_RING_SIZE; i++)
 		child->live_fds.fds[i] = -1;
 	child->live_fds.head = 0;
 
-	/* Reset propagation ring; slot.valid=false in zeroed entries
-	 * keeps prop_ring_try_get from picking ungenerated history if
-	 * the consumer probe ever happens before any capture. */
+	/* Zeroed entries are slot.valid == false, so prop_ring_try_get
+	 * cannot pick history this occupant never captured. */
 	memset(&child->prop_ring, 0, sizeof(child->prop_ring));
 
-	/* Reset syscall ring; UNKNOWN state in zeroed slots is filtered
-	 * by the post-mortem reader so a freshly-spawned child contributes
-	 * nothing until it has actually completed a syscall. */
+	/* UNKNOWN (zeroed) slots are filtered by the post-mortem reader,
+	 * so a fresh child contributes nothing until it completes a
+	 * syscall. */
 	memset(child->syscall_ring.recent, 0, sizeof(child->syscall_ring.recent));
 	__atomic_store_n(&child->syscall_ring.head, 0, __ATOMIC_RELAXED);
 
-	/* Reset pre-crash rolling-history ring; the post-mortem dumper
-	 * walks back at most head slots, so zeroing the struct means the
-	 * fresh occupant contributes no entries from the previous slot's
-	 * child until it publishes its first event. */
+	/* The post-mortem dumper walks back at most head slots, so a zero
+	 * head leaves the previous occupant's events unreachable. */
 	memset(&child->pre_crash, 0, sizeof(child->pre_crash));
 	__atomic_store_n(&child->pre_crash.base.head, 0, __ATOMIC_RELAXED);
 
@@ -402,20 +374,18 @@ void clean_childdata(struct childdata *child)
 	child->last_tainted = 0;
 	child->current_recipe_name = NULL;
 
-	/* Drop any sentinel reading from the previous occupant of this slot
-	 * so the first periodic_work tick re-populates without comparing
-	 * against state captured under a different child's environment.
-	 * Reset the staggered-capture tick index too so the first post-
-	 * populate tick starts at parity 0 (uname) deterministically. */
+	/* Drop the previous occupant's sentinel reading so the first
+	 * periodic_work tick re-populates instead of comparing against
+	 * state captured in a different child's environment.  The
+	 * staggered-capture tick index restarts too, so the first
+	 * post-populate tick is at parity 0 (uname). */
 	child->sentinel_prev.valid = false;
 	child->sentinel_tick_ix = 0;
 
-	/* Reset the per-child cmp_hints seen-bloom so a fresh occupant of
-	 * the slot does not inherit dedup-refresh skips that belong to the
-	 * previous child's tuple-emission history.  Both arch slots reset
-	 * in lockstep -- a single iteration of the [2] array keeps the
-	 * uniarch case branch-free and matches the per-arch indexing used
-	 * by cmp_hints_collect(). */
+	/* Clear the cmp_hints seen-bloom so a fresh occupant does not
+	 * inherit the previous child's dedup-refresh skips.  Both arch
+	 * slots reset together, matching cmp_hints_collect()'s per-arch
+	 * indexing. */
 	{
 		unsigned int a;
 
@@ -426,71 +396,36 @@ void clean_childdata(struct childdata *child)
 		}
 	}
 
-	/* Reset the CMP RedQueen attribution scratch and the recursion guard
-	 * for the fresh slot occupant.  redqueen_enabled is the CMP RedQueen A/B-comparison stamp
-	 * and is (re)decided per-child in init_child_runtime_config after
-	 * kcov_init_child has picked the per-child KCOV mode -- zero here so
-	 * the fresh occupant defaults to "re-exec off" until the stamp lands. */
 	memset(child->reexec_pending, 0, sizeof(child->reexec_pending));
 	child->reexec_pending_count = 0;
 	child->in_reexec = false;
 	child->fuzz_shm_count = 0;	/* fresh occupant: no tracked shm segments yet */
 	child->fuzz_msg_count = 0;	/* fresh occupant: no tracked msg queues yet */
 	child->fuzz_sem_count = 0;	/* fresh occupant: no tracked sem sets yet */
+	/* The A/B stamps below (redqueen_enabled and the *_arm_b flags) are
+	 * (re)decided per child in init_child_ab_stamps() once
+	 * kcov_init_child() has picked the KCOV mode.  Until then a fresh
+	 * occupant is on Arm A, the baseline behaviour. */
 	child->redqueen_enabled = false;
 	child->boring_filter_arm_b = false;
 	child->frontier_blend_arm_b = false;
-	/* Errno-plateau decay A/B stamp -- (re)decided per-child in
-	 * init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (shadow-only, no live reject) until the stamp
-	 * lands.  Matches the frontier_blend_arm_b clear above. */
 	child->frontier_errno_decay_arm_b = false;
-	/* Silent-streak decay A/B stamp -- (re)decided per-child in
-	 * init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (shadow-only, no live reject) until the stamp
-	 * lands.  Matches the frontier_errno_decay_arm_b clear above. */
 	child->frontier_silent_decay_arm_b = false;
-	/* Adaptive remote-KCOV mode A/B stamp -- (re)decided per-child in
-	 * init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (static remote-mode policy, byte-identical to
-	 * the pre-row baseline) until the stamp lands.  Matches the
-	 * frontier_errno_decay_arm_b clear above. */
 	child->remote_adaptive_arm_b = false;
 	child->reexec_count_window = 0;
 	child->reexec_window_start_op = 0;
 	child->cmp_hint_injected_this_call = false;
-	/* --blob-ab-mode per-call stamp: a fresh slot occupant starts
-	 * with no prior blob_fill mode recorded so the dispatch-site
-	 * credit block cannot attribute the previous occupant's stale
-	 * pick.  Set from blob_fill()'s ab-mode branch on subsequent
-	 * calls, drained at the credit block in
-	 * random_syscall/dispatch.c, and re-cleared at the top of
-	 * generate_syscall_args() every call. */
+	/* --blob-ab-mode per-call stamp: the dispatch-site credit block
+	 * must not attribute the previous occupant's pick.  Re-cleared at
+	 * the top of generate_syscall_args() every call. */
 	child->blob_ab_mode_last = BLOB_AB_MODE_NONE;
-	/* Cmp-hint baseline inject denom A/B stamp -- (re)decided per-child
-	 * in init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (current 1-in-16 baseline) until the stamp lands. */
 	child->cmp_hint_inject_arm_b = false;
-	/* handle_arg_op prop_ring A/B stamp -- (re)decided per-child in
-	 * init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (no prop_ring pull at the ARG_OP callsite) until
-	 * the stamp lands. */
 	child->prop_ring_argop_arm_b = false;
-	/* mutate_arg SHADOW structure-aware picker A/B stamp -- (re)decided
-	 * per-child in init_child_runtime_config below; zero here so the fresh
-	 * occupant defaults to Arm A (no shadow draw, mutate_arg RNG byte-
-	 * identical to pre-shadow control) until the stamp lands. */
 	child->mut_structured_arm_b = false;
-	/* Typed prop_ring consumer A/B stamp -- (re)decided per-child in
-	 * init_child_runtime_config below; zero here so the fresh occupant
-	 * defaults to Arm A (no typed pull at the gen_arg_* callsites, RNG
-	 * byte-identical to pre-typing baseline) until the stamp lands. */
 	child->prop_ring_typed_arm_b = false;
-	/* SHADOW cmp-hint feedback scoring stash starts empty for a fresh
-	 * child occupant ([11-feedback-loop]); generate_syscall_args also
-	 * resets at every call boundary, but a fresh-fork clear here means
-	 * the child's very first call sees a clean buffer regardless of
-	 * what bytes the slot held under the prior occupant. */
+	/* generate_syscall_args() also resets the cmp-hint feedback stash
+	 * at every call; clearing it here keeps the first call after fork
+	 * from seeing the previous occupant's entries. */
 	memset(child->cmp_hints_consumed_stash, 0,
 	       sizeof(child->cmp_hints_consumed_stash));
 	child->cmp_hints_consumed_count = 0;
