@@ -58,17 +58,10 @@
 #include <sys/mman.h>
 
 #include "deferred-free.h"	/* public deferred-free API */
+#include "deferred-free-internal.h"	/* ALLOC_TRACK_SIZE &c. */
 #include "params.h"		/* extern bool deferred_free_batch */
 #include "shm.h"		/* extern struct shm_s *shm */
 #include "stats_ring.h"		/* extern struct stats_aggregate parent_stats */
-
-/*
- * Mirror of file-scope constants from persist/deferred-free.c.
- * Update here if the production constants change.
- */
-#define ALLOC_TRACK_SIZE	4096
-#define DEFERRED_RING_SIZE	64
-#define DEFERRED_TICK_BATCH	16
 
 /* ------------------------------------------------------------------ */
 /* mprotect failure-injection wrapper (fixtures 7 and 8)              */
@@ -203,7 +196,7 @@ static void fixture_duplicate_address(void)
 /*                                                                     */
 /*   1. Track ptr_A -> array slot S1, hash[H_A] = ptr_A               */
 /*   2. Track ptr_A again -> array slot S2, hash unchanged (idempotent)*/
-/*   3. Track (ALLOC_TRACK_SIZE-2) fillers -> head wraps, slot S1      */
+/*   3. Track (ALLOC_TRACK_SIZE-1) fillers -> head wraps, slot S1      */
 /*      is displaced; alloc_track_hash_remove(ptr_A) removes the       */
 /*      hash entry while S2 still holds ptr_A.                         */
 /*                                                                     */
@@ -239,7 +232,7 @@ static void fixture_hash_desync_array_authority(void)
 	 * After two ptr_A registrations head is at H0+2.  The N-th filler
 	 * writes slot (H0+1+N) & mask.  We need (H0+1+N) & mask == S1 ==
 	 * H0 & mask, i.e. N+1 ≡ 0 (mod ALLOC_TRACK_SIZE), so N =
-	 * ALLOC_TRACK_SIZE-1 = 4095.  The (ALLOC_TRACK_SIZE-1)-th filler
+	 * ALLOC_TRACK_SIZE-1.  The (ALLOC_TRACK_SIZE-1)-th filler
 	 * writes slot S1 and triggers alloc_track_hash_remove(ptr_A).
 	 * Array slot S2 still holds ptr_A (would need one more full
 	 * rotation to overwrite it).
@@ -335,8 +328,10 @@ static void fixture_ring_ownership(void)
 /*   - Before flush: alloc_track has all DEFERRED_RING_SIZE+1 ptrs.   */
 /*   - deferred_free_flush() runs gen_arena_flush() FIRST, retiring    */
 /*     the evicted ptr (tracked_free_checked -> alloc_track_consume -> */
-/*     free).  Then the ring drain frees the remaining 64 ptrs.        */
-/*   - After flush: alloc_track_lookup for all 65 ptrs returns false.  */
+/*     free).  Then the ring drain frees the remaining                 */
+/*     DEFERRED_RING_SIZE ptrs.                                        */
+/*   - After flush: alloc_track_lookup for all DEFERRED_RING_SIZE+1    */
+/*     ptrs returns false.                                             */
 /* ------------------------------------------------------------------ */
 
 static void fixture_generation_retirement(void)
@@ -354,7 +349,7 @@ static void fixture_generation_retirement(void)
 	base_admitted = shm->stats.deferred_free.gen_arena_admitted;
 	base_retired  = shm->stats.deferred_free.gen_arena_retired_ok;
 
-	/* Fill the ring (64 ptrs). */
+	/* Fill the ring (DEFERRED_RING_SIZE ptrs). */
 	for (i = 0; i < DEFERRED_RING_SIZE; i++)
 		deferred_free_enqueue(ptrs[i]);
 
@@ -369,9 +364,10 @@ static void fixture_generation_retirement(void)
 		shm->stats.deferred_free.gen_arena_admitted - base_admitted;
 
 	/*
-	 * All 65 pointers are still alloc_track-resident before flush:
-	 * the gen arena holds the evicted pointer without consuming its
-	 * alloc_track entry (consume is deferred to retirement).
+	 * All DEFERRED_RING_SIZE + 1 pointers are still alloc_track-
+	 * resident before flush: the gen arena holds the evicted pointer
+	 * without consuming its alloc_track entry (consume is deferred to
+	 * retirement).
 	 */
 	if (admitted_delta > 0) {
 		/* We can only verify the non-evicted ptrs are tracked
@@ -384,7 +380,8 @@ static void fixture_generation_retirement(void)
 	/*
 	 * Flush: gen_arena_flush() runs first and retires every arena
 	 * entry via tracked_free_checked() -> alloc_track_consume() ->
-	 * free().  Then the ring drain frees the remaining 64 ptrs.
+	 * free().  Then the ring drain frees the remaining
+	 * DEFERRED_RING_SIZE ptrs.
 	 *
 	 * After flush every alloc_track entry for ptrs[] has been consumed:
 	 * retired entries are unreachable and cannot be resurrected by
@@ -400,8 +397,8 @@ static void fixture_generation_retirement(void)
 	}
 
 	/*
-	 * After flush all 65 alloc_track entries are consumed:
-	 * no ptr is alloc_track-resident any more.
+	 * After flush all DEFERRED_RING_SIZE + 1 alloc_track entries are
+	 * consumed: no ptr is alloc_track-resident any more.
 	 */
 	for (i = 0; i < DEFERRED_RING_SIZE + 1; i++)
 		DF_ASSERT(!alloc_track_lookup(ptrs[i]));
@@ -411,7 +408,7 @@ static void fixture_generation_retirement(void)
 /* Fixture 5: ENOMEM on disposal (consume-fail => leak-on-uncertainty)*/
 /*                                                                     */
 /* Simulate the disposal-path uncertainty case: enqueue ptr_A, then   */
-/* rotate its alloc_track entry out by tracking ALLOC_TRACK_SIZE-1    */
+/* rotate its alloc_track entry out by tracking ALLOC_TRACK_SIZE      */
 /* fake pointers.  When deferred_free_flush() drains the ring,        */
 /* free_ring_entry(ptr_A) -> tracked_free_checked -> alloc_track_     */
 /* consume fails (ptr_A no longer in alloc_track) -> leak-on-         */
@@ -452,7 +449,7 @@ static void fixture_enomem_disposal(void)
 	 * ring once, overwriting ptr_A's slot.  After tracking ptr_A at
 	 * head H5, head is at H5+1.  The N-th filler writes slot (H5+N) &
 	 * mask.  We need (H5+N) & mask == H5 & mask == slot_A, i.e.
-	 * N = ALLOC_TRACK_SIZE = 4096.  After this:
+	 * N = ALLOC_TRACK_SIZE.  After this:
 	 *   alloc_track_hash_remove(ptr_A) was called (the displaced slot
 	 *   triggered it), and alloc_track[] no longer contains ptr_A.
 	 */

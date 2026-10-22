@@ -19,6 +19,7 @@
 
 #include "child.h"
 #include "deferred-free.h"
+#include "deferred-free-internal.h"
 #include "params.h"
 #include "pc_format.h"
 #include "random.h"
@@ -32,7 +33,6 @@
 #endif
 
 #include "kernel/fcntl.h"
-#define DEFERRED_RING_SIZE	64
 #define DEFERRED_TTL_MIN	5
 #define DEFERRED_TTL_MAX	50
 
@@ -54,14 +54,6 @@ enum argtype deferred_free_get_cleanup_argtype(void)
 	return current_cleanup_argtype;
 }
 
-/*
- * Decrement-and-free runs 1-in-N ticks (N power-of-two -> bitmask);
- * the other N-1 bail before the mprotect bracket.  Effective TTL is
- * thus ~N x the 5-50 nominal (80-800 syscalls) -- intentional
- * headroom for UAF overlap.
- */
-#define DEFERRED_TICK_BATCH	16
-
 struct deferred_entry {
 	void *ptr;
 	unsigned int ttl;
@@ -82,13 +74,6 @@ struct deferred_entry {
  * Process-local: zero-init BSS, COW at fork, single-threaded by the
  * owning child, no locking.
  */
-/* 4096 slots.  Long-lived MMAP_ANON pool entries must stay tracked
- * until their child cycle completes, or get_map_handle's
- * alloc_track_lookup gate false-rejects legitimate slots and burns
- * retry budget.  4096 holds those pool entries plus recent
- * zmalloc_tracked churn without rotating live entries out from under
- * the lookup. */
-#define ALLOC_TRACK_SIZE	4096
 
 /*
  * alloc_track[] and alloc_track_hash[] share a single mmap'd backing
