@@ -344,37 +344,6 @@ struct shm_s {
 	 * Avoids repeated failed probes from every child. */
 	bool iouring_enosys;
 
-	/*
-	 * Per-childop feature-absent latches for childops that build
-	 * their kernel objects inside a transient userns_run_in_ns()
-	 * grandchild.  The rejection (RTM_NEWLINK / socket() / setsockopt()
-	 * / open() etc.) is observed after _exit(), so a process-local
-	 * static would die with the grandchild and every subsequent
-	 * invocation would re-attempt the same unsupported kind forever
-	 * (latch-in-grandchild bug).  RELAXED atomic load/store from
-	 * multiple grandchildren is safe -- only false -> true, and the
-	 * write is idempotent.  No auto-clear.  See
-	 * Documentation/shm-state.md (Per-childop feature-absent latches)
-	 * for per-latch trigger errnos and CONFIG dependencies.
-	 *
-	 * vxlan_encap_kind_unsupported[] and veth_xdp_kind_unsupported[]
-	 * are indexed by file-local enums whose indices are PINNED by a
-	 * _Static_assert in vxlan-encap.c and veth-asymmetric-xdp.c.
-	 */
-#define VXLAN_ENCAP_NR_KINDS 3
-	bool vxlan_encap_kind_unsupported[VXLAN_ENCAP_NR_KINDS];
-	bool ip_gre_kind_unsupported;
-	bool sctp_chunk_rx_kind_unsupported;
-	bool esp_crafted_rx_kind_unsupported;
-	bool fou_gue_mcast_rx_kind_unsupported;
-	bool geneve_rx_kind_unsupported;
-	bool bareudp_rx_kind_unsupported;
-	bool mpls_label_stack_rx_kind_unsupported;
-	bool espintcp_coalesce_kind_unsupported;
-#define VETH_XDP_NR_KINDS 4
-	bool veth_xdp_kind_unsupported[VETH_XDP_NR_KINDS];
-	bool veth_xdp_xdp_unsupported;
-
 	/* nftables_churn per-subsystem latches (childops/net/netfilter/
 	 * nftables/churn.c).  Grandchild observes NETLINK_NETFILTER socket
 	 * EPROTONOSUPPORT (CONFIG_NF_NETLINK=n), NEWTABLE
