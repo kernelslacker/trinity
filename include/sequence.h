@@ -17,11 +17,7 @@
  * add resource-type dependency tracking so that chains can be generated
  * with structural awareness of which calls produce and consume which
  * kinds of resource.
- *
- * Set ENABLE_SEQUENCE_CHAIN to 0 to fall back to the legacy one-call-per
- * iteration dispatch for A/B coverage comparison.
  */
-#define ENABLE_SEQUENCE_CHAIN 1
 
 /*
  * Hard cap on chain length.  pick_chain_length() draws from {2,3,4} via

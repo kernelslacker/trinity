@@ -327,8 +327,8 @@ void child_process(struct childdata *child, int childno)
 			 * holds the prior iter's pick -- i.e. the op whose
 			 * `alarm(1)` is firing.  CHILD_OP_SYSCALL is skipped:
 			 * NEED_ALARM syscalls arm their alarm inside
-			 * random_syscall(), not at the alt-op site, so they
-			 * have no per-op childop_outcome bucket.  Bounds-
+			 * random_syscall_step(), not at the alt-op site, so
+			 * they have no per-op childop_outcome bucket.  Bounds-
 			 * checked because op_type lives in shm and a
 			 * scribbled-arena writer could land out of range. */
 			enum child_op_type armed = child->op_type;
@@ -486,7 +486,8 @@ void child_process(struct childdata *child, int childno)
 		/*
 		 * Non-syscall ops don't arm their own alarm; set one here so
 		 * SIGALRM-based stall detection can fire if the op hangs.
-		 * random_syscall() arms alarm internally for NEED_ALARM syscalls.
+		 * random_syscall_step() arms alarm internally for NEED_ALARM
+		 * syscalls.
 		 */
 		if (is_alt_op) {
 			/*
@@ -527,8 +528,8 @@ void child_process(struct childdata *child, int childno)
 		 * to the specific childop that triggered it even when the
 		 * kernel doesn't escalate to an oops.  Skipped for
 		 * CHILD_OP_SYSCALL — the hot 95% path can't afford an extra
-		 * pair of read syscalls per iteration, and random_syscall has
-		 * its own taint-tracking via the existing pre_crash_ring
+		 * pair of read syscalls per iteration, and random_syscall_step
+		 * has its own taint-tracking via the existing pre_crash_ring
 		 * record on syscall return. */
 		const bool watch_taint = (is_alt_op && child->tainted_fd >= 0);
 		unsigned long tainted_before = 0;
@@ -674,14 +675,15 @@ void child_process(struct childdata *child, int childno)
 		/* childop_split telemetry: bracket op_fn with a monotonic
 		 * sample pair so the elapsed dispatch time can be split into
 		 * childop vs random-syscall buckets.  Also set child->in_childop
-		 * across the dispatch so a random_syscall() called from inside
-		 * an alt-op recipe (e.g. sched_cycler) bumps syscalls_in_childops
-		 * at the call-complete enqueue, not syscalls_random.  The flag
-		 * is the per-child source of truth for the syscall-count
-		 * attribution; the wall-time accumulation below is independent
-		 * of it (driven off the is_alt_op snapshot taken at the top of
-		 * the iter so a corrupted op_type can't reroute the bucket
-		 * after we've already paid the op_fn). */
+		 * across the dispatch so a random_syscall_step() called from
+		 * inside an alt-op recipe (e.g. sched_cycler) bumps
+		 * syscalls_in_childops at the call-complete enqueue, not
+		 * syscalls_random.  The flag is the per-child source of truth
+		 * for the syscall-count attribution; the wall-time
+		 * accumulation below is independent of it (driven off the
+		 * is_alt_op snapshot taken at the top of the iter so a
+		 * corrupted op_type can't reroute the bucket after we've
+		 * already paid the op_fn). */
 		struct timespec split_t0, split_t1;
 		/* Per-op CPU-time bracket.  Paired with the wall bracket
 		 * below and populated with the same is_alt_op gate so on-CPU
@@ -702,14 +704,14 @@ void child_process(struct childdata *child, int childno)
 		 * (opens fds and forgets to close some on an error path)
 		 * lands a positive delta.  Scoped to is_alt_op — the
 		 * CHILD_OP_SYSCALL hot 95% path can't afford two extra
-		 * syscalls per iter, and random_syscall's own fd bookkeeping
-		 * covers pool-managed fds separately (see check_fd_leaks).
-		 * A non-EMFILE probe failure returns -1 and the delta
-		 * computation below treats that as "no observation" so
-		 * a transient open(/dev/null) error doesn't scribble
-		 * negative-cast values into the sum.  EMFILE returns
-		 * the RLIMIT_NOFILE ceiling as a sentinel so the leak
-		 * IS accounted for at fd-exhaustion time -- see
+		 * syscalls per iter, and random_syscall_step's own fd
+		 * bookkeeping covers pool-managed fds separately (see
+		 * check_fd_leaks).  A non-EMFILE probe failure returns -1
+		 * and the delta computation below treats that as "no
+		 * observation" so a transient open(/dev/null) error doesn't
+		 * scribble negative-cast values into the sum.  EMFILE
+		 * returns the RLIMIT_NOFILE ceiling as a sentinel so the
+		 * leak IS accounted for at fd-exhaustion time -- see
 		 * probe_lowest_free_fd(). */
 		bool fd_probe_at_ceiling = false;
 		/* Timing temporaries for the fd-probe cost counters.

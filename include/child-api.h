@@ -510,7 +510,6 @@ void set_dontkillme(struct childdata *child, bool state);
 void reap_child(struct childdata *child, int childno, bool child_dead);
 
 /* Childops */
-bool random_syscall(struct childdata *child);
 bool random_syscall_step(struct childdata *child,
 			 bool have_substitute,
 			 unsigned long substitute_retval,

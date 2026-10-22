@@ -45,7 +45,7 @@ struct kcov_child {
 	bool bracket_owned;	/* true between kcov_bracket_begin() and
 				 * kcov_bracket_end().  Keeps the bracket
 				 * helpers idempotent under nesting: a childop
-				 * that recurses into random_syscall() must
+				 * that recurses into random_syscall_step() must
 				 * not have its inner enable_trace clobbered
 				 * by the outer bracket. */
 	/* Logically enum kcov_child_mode; stored as uint8_t so the field

@@ -3,7 +3,7 @@
 /*
  * Honor -x at raw syscall(__NR_X, ...) sites in childops / fds that
  * bypass the syscall-table picker.  The syscall-table gate that -x
- * relies on only covers picks driven through random_syscall(); any
+ * relies on only covers picks driven through random_syscall_step(); any
  * childop or fd-provider that issues syscall(__NR_X, ...) directly
  * for setup or teardown reaches the kernel unaltered, so an excluded
  * syscall stays observable in the test set unless every direct

@@ -246,7 +246,7 @@ struct childop_stats {
 	 *
 	 * syscalls_in_childops counts only random_syscall-mediated calls
 	 * issued from inside an alt-op bracket (e.g. sched_cycler's tight
-	 * random_syscall() loop).  Childops that call libc / raw syscall()
+	 * random_syscall_step() loop).  Childops that call libc / raw syscall()
 	 * directly do not flow through the call-complete enqueue site and
 	 * so are not counted here -- the wall-time and iteration metrics
 	 * cover them. */
@@ -269,7 +269,7 @@ struct childop_stats {
 
 	/* Per-childop direct syscall count -- syscalls the alt-op op_fn
 	 * issues DIRECTLY (via libc / raw syscall()) rather than through
-	 * random_syscall().  Opt-in: producers call childop_direct_
+	 * random_syscall_step().  Opt-in: producers call childop_direct_
 	 * syscalls_add() from inside their own inner loops so the exact
 	 * count is authoritative for that childop's structure.  Ops that
 	 * do not opt in leave their slot at 0 -- the dump path treats
@@ -278,7 +278,7 @@ struct childop_stats {
 	 *
 	 * The existing shm->stats.syscall_dispatch.in_childops counter
 	 * only sees random_syscall-mediated calls made from an alt-op
-	 * body (e.g. sched_cycler's inner random_syscall() loop); the
+	 * body (e.g. sched_cycler's inner random_syscall_step() loop); the
 	 * dominant childop workloads (pipe_thrash, slab_cache_thrash,
 	 * flock_thrash, futex_storm, ...) issue direct libc calls and
 	 * are therefore invisible to that counter.  Without this array

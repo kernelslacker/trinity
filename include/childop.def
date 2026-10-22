@@ -21,7 +21,7 @@
  *                          publishes childop_edges_clean[op].  false
  *                          for CHILD_OP_SYSCALL (per-syscall internal
  *                          bracket) and CHILD_OP_SCHED_CYCLER (tight
- *                          loop over random_syscall would double-call
+ *                          loop over random_syscall_step would double-call
  *                          ioctl(KCOV_ENABLE)).
  *   dormant_default     -- initial value stored in the picker's
  *                          dormant_op_disabled[] slot for this op:

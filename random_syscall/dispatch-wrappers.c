@@ -1,17 +1,15 @@
 /*
  * dispatch-wrappers.c -- public entry points into the dispatch cluster.
  *
- * The four public entry points declared in include/child.h:
+ * The three public entry points declared in include/child.h:
  *
  *   random_syscall_step()       -- pick NR + generate args + dispatch
- *   random_syscall()            -- trivial wrapper: random_syscall_step
- *                                  with no substitute and NULL out-params
  *   random_syscall_step_biased()-- dispatch a chain-executor-supplied NR
  *                                  with fresh args (skips set_syscall_nr)
  *   replay_syscall_step()       -- replay a saved chain step through the
  *                                  mutator engine, then dispatch
  *
- * All four converge on dispatch_step() (dispatch-step.c), which runs
+ * All three converge on dispatch_step() (dispatch-step.c), which runs
  * do_syscall() and all post-call bookkeeping.  The wrappers differ only
  * in how rec->nr / rec->do32bit / rec->a1..a6 are populated before the
  * call.  Bias and replay paths both set child->strategy_at_pick = -1
@@ -90,11 +88,6 @@ bool random_syscall_step(struct childdata *child,
 			1, __ATOMIC_RELAXED);
 
 	return ok;
-}
-
-bool random_syscall(struct childdata *child)
-{
-	return random_syscall_step(child, false, 0, NULL, NULL, NULL);
 }
 
 /*

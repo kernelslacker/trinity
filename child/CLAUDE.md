@@ -2,7 +2,7 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (24 files, ~8,067 LOC)
+## Files (24 files, ~8,069 LOC)
 
 | File | Role |
 |---|---|

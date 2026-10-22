@@ -225,7 +225,7 @@ struct childdata {
 	/* Set across the duration of an alt-op op_fn dispatch by
 	 * child_process()'s per-op bracket; cleared immediately after.
 	 * Read at the call-complete enqueue site in random_syscall_step()
-	 * so a random_syscall() invocation made from inside a childop
+	 * so a random_syscall_step() invocation made from inside a childop
 	 * recipe (e.g. sched_cycler) lands in the syscalls_in_childops
 	 * bucket of the childop_split telemetry instead of being
 	 * mis-attributed to syscalls_random.  Owner-only field (the

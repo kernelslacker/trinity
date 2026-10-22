@@ -6,7 +6,7 @@
  * random_syscall/ (pick-common.c, pickers.c, chain-subst.c,
  * strategy-accounting.c, dispatch.c).
  *
- * Public entry points (random_syscall, random_syscall_step,
+ * Public entry points (random_syscall_step,
  * random_syscall_step_biased, replay_syscall_step,
  * set_syscall_nr_random, compute_numeric_substitute_mask,
  * choose_syscall_table) live in include/child.h and include/syscall.h.

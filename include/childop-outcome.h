@@ -137,7 +137,7 @@ void childop_outcome_snapshot(enum child_op_type op,
 
 /* Opt-in producer for shm->stats.childop.direct_syscalls[op].
  * Childops whose inner loop issues syscalls DIRECTLY (via libc or raw
- * syscall(), not through random_syscall()) call this with the number
+ * syscall(), not through random_syscall_step()) call this with the number
  * of kernel calls they just issued so the operator can compare their
  * saturation cost against the random-syscall path's completed-call
  * denominator.  No-op for out-of-range op values so callers can pass

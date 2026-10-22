@@ -32,7 +32,7 @@
  * field; today only CHILD_OP_SYSCALL and CHILD_OP_SCHED_CYCLER are
  * false.  CHILD_OP_SYSCALL falls through to run_sequence_chain which
  * brackets per-syscall internally.  CHILD_OP_SCHED_CYCLER
- * (childops/misc/sched-cycler.c) calls random_syscall(child) in a
+ * (childops/misc/sched-cycler.c) calls random_syscall_step() in a
  * tight loop; an outer bracket would double-call ioctl(KCOV_ENABLE)
  * and the kernel returns -EBUSY which kcov_enable_trace currently
  * treats as fatal.
@@ -96,7 +96,7 @@ enum child_op_type alt_op_lookup_by_name(const char *name)
  * enum child_op_type; a NULL slot means "fall through to the
  * sequence-chain path" (CHILD_OP_SYSCALL is handled by the 95% fast
  * path in pick_op_type and reaches the dispatcher only when it ends
- * up running random_syscall via run_sequence_chain).
+ * up running random_syscall_step via run_sequence_chain).
  *
  * A dense table replaces what was a 38-case switch in the dispatch
  * site: a single indirect call out of a cache-friendly array,

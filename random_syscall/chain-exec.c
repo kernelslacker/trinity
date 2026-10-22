@@ -65,8 +65,6 @@
  */
 #define CHAIN_REPLAY_NONPC_DOWNSAMPLE 2
 
-#if ENABLE_SEQUENCE_CHAIN
-
 static unsigned int pick_chain_length(void)
 {
 	unsigned int r = rnd_modulo_u32(10);
@@ -365,9 +363,9 @@ static bool execute_chain_steps(struct childdata *child,
 		}
 
 		/* Clear the flag immediately after dispatch so any non-chain
-		 * picker invocation (e.g. random_syscall called from outside
-		 * the chain executor on the next iteration of the main loop)
-		 * cannot see a stale true value. */
+		 * picker invocation (e.g. random_syscall_step called from
+		 * outside the chain executor on the next iteration of the main
+		 * loop) cannot see a stale true value. */
 		child->in_chain_mid_step = false;
 
 		if (step_ret == FAIL)
@@ -622,12 +620,3 @@ bool run_sequence_chain(struct childdata *child)
 
 	return true;
 }
-
-#else /* !ENABLE_SEQUENCE_CHAIN */
-
-bool run_sequence_chain(struct childdata *child)
-{
-	return random_syscall(child);
-}
-
-#endif

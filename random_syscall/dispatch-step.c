@@ -3,9 +3,9 @@
  *
  * dispatch_step() is the dense correctness boundary where srec
  * publication, fd accounting, kcov / CMP collection, minicorpus save,
- * and the greedy CMP RedQueen re-exec cap all meet.  The four public
+ * and the greedy CMP RedQueen re-exec cap all meet.  The three public
  * entry points that populate the record and call into it
- * (random_syscall, random_syscall_step, random_syscall_step_biased,
+ * (random_syscall_step, random_syscall_step_biased,
  * replay_syscall_step) live in the sibling dispatch-wrappers.c.
  *
  * CMP RedQueen helpers (redqueen_reexec_step, redqueen_pin_slot,
@@ -16,7 +16,7 @@
  * TU avoids cross-file forward-declaration churn for what is a
  * deliberately self-contained recursion.
  *
- * All public entry points (random_syscall, random_syscall_step,
+ * All public entry points (random_syscall_step,
  * random_syscall_step_biased, replay_syscall_step) are declared in
  * include/child.h; dispatch_step is declared cluster-internal in
  * include/random-syscall-internal.h.  Everything upstream of the raw
@@ -592,7 +592,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		/* childop_split telemetry: attribute this syscall to the
 		 * in-childop or random-syscall bucket based on the per-child
 		 * flag set by child_process()'s per-op bracket.  Set when
-		 * random_syscall() was reached from inside an alt-op op_fn
+		 * random_syscall_step() ran from inside an alt-op op_fn
 		 * (e.g. sched_cycler's inner loop), clear otherwise (direct
 		 * CHILD_OP_SYSCALL fallthrough via run_sequence_chain).
 		 * RELAXED add-fetch: cumulative diagnostic, lost-update races

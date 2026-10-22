@@ -2,7 +2,7 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~7,938 LOC)
+## Files (18 files + 2 internal headers, ~7,920 LOC)
 
 The picker (`pickers.c`), the dispatch tail (`dispatch.c`) and the post-dispatch
 attribution helpers (`strategy-accounting.c`) have each been split one concern
@@ -25,7 +25,7 @@ Dispatch and chain substitution:
 | File | Lines | Role |
 |---|---|---|
 | dispatch-step.c | 1285 | `dispatch_step()`: the actual `do_syscall()` call plus all post-call bookkeeping (kcov/cmp collection, minicorpus save, cmp_hints credit, strategy attribution), and the CMP RedQueen greedy re-exec tail (`redqueen_pin_slot`, `redqueen_pin_field`, `redqueen_reexec_step`) |
-| dispatch-wrappers.c | 278 | The four public entry points that converge on `dispatch_step()`: `random_syscall`, `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
+| dispatch-wrappers.c | 271 | The three public entry points that converge on `dispatch_step()`: `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
 | chain-subst.c | 269 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and protected-fd/pid checks |
 
 Post-dispatch attribution, carved out of `strategy-accounting.c` and sharing
@@ -45,7 +45,7 @@ Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
 | File | Lines | Role |
 |---|---|---|
 | chain-persist.c | 648 | Chain-corpus on-disk persistence and mid-run snapshot cadence: versioned, arch- and release-tagged save/load with an atomic rename; the loader re-runs the replay filter and zeroes stale fd and pointer slots |
-| chain-exec.c | 633 | `run_sequence_chain()`: draws a chain source (fresh vs corpus replay), dispatches each step, records the outcome (corpus admission + per-resource-kind pair credit) |
+| chain-exec.c | 622 | `run_sequence_chain()`: draws a chain source (fresh vs corpus replay), dispatches each step, records the outcome (corpus admission + per-resource-kind pair credit) |
 | chain-restype.c | 342 | Resource-type dependency table for `--chain-resource-typing`: one row per fd-family with a producer/consumer split, measured via `chain_restype_replay_win[]` |
 | chain-corpus.c | 359 | The in-memory ring of admitted chains plus init / save / pick; a single fleet-wide ring of inline `chain_entry` slots, lockless on the pick path; `chain_is_replay_safe()` refuses the minicorpus's argtype list (`corpus_argtype_refused()`) and `chain_zero_stale_args()` zeroes a saved step's stale fd and pointer slots (`corpus_argtype_stale_on_replay()`) by the step's own ABI |
 | chain-internal.h | 50 | Cross-file declarations private to the `chain-*.c` cluster |
@@ -91,9 +91,8 @@ Called identically from the fresh-args path (`random_syscall_step`), the bias pa
 11. **CMP RedQueen greedy re-exec tail**: if the parent call is CMP-mode, redqueen-enabled, not already mid-reexec/mid-chain-step, produced new CMP novelty, and has staged `reexec_pending` attribution entries, drain *all* of them (bounded by `MAX_REEXEC_PENDING`) through `redqueen_reexec_step()` — each one regenerates fresh args, pins a single learned-constant slot or struct field (a field pin writes only through a pointer wholly inside the writable pool, per `range_in_writable_pool()`), and recursively calls `dispatch_step()` again (guarded by `child->in_reexec` against runaway recursion). Gate disposition is tracked with a mutually-exclusive per-gate skip counter for measurement.
 12. `maybe_rotate_strategy()` — cheap end-of-call check for the bandit/round-robin window boundary.
 
-The four public wrappers differ only in how `rec` gets populated before calling `dispatch_step()`:
+The three public wrappers differ only in how `rec` gets populated before calling `dispatch_step()`:
 - `random_syscall_step` — calls `set_syscall_nr()`, `generate_syscall_args()`, then `apply_chain_substitution()`.
-- `random_syscall` — trivial wrapper: `random_syscall_step(child, false, 0, NULL, NULL, NULL)`.
 - `random_syscall_step_biased` — skips `set_syscall_nr()` for a chain-executor-supplied NR (resource-typed consumer pick), still generates fresh args.
 - `replay_syscall_step` — replays a saved `(nr, do32bit, args)` chain step through `minicorpus_mutate_args()` (shared mutator engine) instead of fresh generation.
 
@@ -117,7 +116,6 @@ Nearly everything in the accounting cluster is dual-mode: a SHADOW/observability
 
 Callers into this cluster's public entry points:
 - `child/child.c` — per-child main loop; its default `CHILD_OP_SYSCALL` path falls through to `run_sequence_chain()` (child.c:782), which is what reaches the dispatch wrappers
-- `childops/misc/sched-cycler.c` — an alt-op childop that calls `random_syscall(child)` from inside its own inner loop (flagged via `child->in_childop` so dispatch-step.c's `syscalls_in_childops` vs `syscalls_random` split attributes correctly)
 - `chain-exec.c` — the chain executor (in this directory since the root `sequence.c` was folded in); calls `random_syscall_step()` for fresh chain steps, `random_syscall_step_biased()` for resource-typed consumer picks (`--chain-resource-typing=live`), and `replay_syscall_step()` for corpus-replay chain steps
 
 Calls out from dispatch-step.c to the rest of the tree:
