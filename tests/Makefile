@@ -162,7 +162,7 @@ REAL_SRCS	:= \
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
 # ioctls/loop.c brings the loop group's sanitiser, which registers itself
-# at load time; loop_status_test.c fakes the ioctl registry it reaches.
+# at load time; fake_ioctls.c fakes the ioctl registry it reaches.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c and
 # syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler
 # and the recv family, whose post handlers post_oracle_test.c drives
@@ -309,6 +309,7 @@ FAKE_SRCS	:= \
 	chain_corpus_test.c \
 	redqueen_pin_test.c \
 	asb_relocate_test.c \
+	fake_ioctls.c \
 	loop_status_test.c \
 	genl_ops_test.c \
 	kcov_persist_test.c \

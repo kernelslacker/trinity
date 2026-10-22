@@ -12,6 +12,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
 #include "sanitise.h"		/* writable pool */
 #include "scratch_block.h"	/* struct scratch_block_entry */
@@ -19,26 +20,9 @@
 #include "syscall.h"		/* struct syscallrecord */
 
 #define ROUNDS		256
-#define JUNK_ARG	0xdeadbeefUL
+#define JUNK_ARG	FAKE_IOCTL_JUNK_ARG
 
 static const struct ioctl_group *loop_grp;
-static unsigned long next_request;
-
-/* ioctls/loop.c registers its groups at load time. */
-void register_ioctl_group(const struct ioctl_group *grp)
-{
-	if (grp->name != NULL && strcmp(grp->name, "loop") == 0)
-		loop_grp = grp;
-}
-
-/* The request is the test's to choose.  The arg is one the sanitiser has
- * to replace, so a left-over one means it built no struct. */
-void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
-{
-	(void)grp;
-	rec->a2 = next_request;
-	rec->a3 = JUNK_ARG;
-}
 
 struct outcome {
 	unsigned int autoclear;	/* struct built, flag set */
@@ -56,7 +40,7 @@ static struct outcome run(int fd, unsigned long request)
 	for (i = 0; i < ROUNDS; i++) {
 		memset(&rec, 0, sizeof(rec));
 		rec.a1 = (unsigned long) fd;
-		next_request = request;
+		fake_ioctl_request = request;
 
 		loop_grp->sanitise(loop_grp, &rec);
 
@@ -144,6 +128,7 @@ void loop_status_self_check(void)
 	int node, dup_of_node, reopened, other;
 	unsigned int slot;
 
+	loop_grp = fake_ioctl_group("loop");
 	if (loop_grp == NULL)
 		BUG("loop sanitiser: the loop group did not register");
 
