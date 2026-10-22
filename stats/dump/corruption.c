@@ -237,8 +237,6 @@ static void dump_stats_render_ring_health(void)
 
 static void dump_stats_render_ring_corruption(void)
 {
-	if (shm->stats.fd.event_ring_corrupted)
-		stat_row("corruption", "fd_event_ring_noncanon", shm->stats.fd.event_ring_corrupted);
 	if (shm->stats.fd.event_ring_overwritten)
 		stat_row("corruption", "fd_event_ring_canary",   shm->stats.fd.event_ring_overwritten);
 	if (shm->stats.diag.stats_ring_corrupted)

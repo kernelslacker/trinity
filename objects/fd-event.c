@@ -308,7 +308,8 @@ void fd_event_drain_all(void)
 
 	for_each_child(i) {
 		struct childdata *child;
-		struct fd_event_ring *ring;
+		struct fd_event_ring *ring = expected_fd_event_rings[i];
+		struct fd_event_ring *live;
 
 		/*
 		 * Snapshot the child pointer with an acquire load.
@@ -320,58 +321,20 @@ void fd_event_drain_all(void)
 		if (child == NULL)
 			continue;
 
-		ring = __atomic_load_n(&child->fd_event_ring, __ATOMIC_ACQUIRE);
-		if (ring == NULL)
-			continue;
-
 		/*
-		 * Sanity-check the ring pointer before dereferencing it.
-		 * A D-state zombie waking after its slot was recycled can
-		 * write a wild pointer here.  We saw 0x9c000000890000 in
-		 * the wild: bit 47 set but bits 48-63 clear, which is
-		 * non-canonical on x86-64.  Catch that pattern and any
-		 * obviously low address rather than taking a SIGSEGV.
+		 * Drain the ring the parent allocated (the canary), never the
+		 * pointer in childdata: that field is child-writable, and a
+		 * D-state zombie waking after its slot was recycled can leave
+		 * anything in it.  The canary is parent-private, so a live
+		 * pointer that differs from it was overwritten after init;
+		 * count and report that, then drain the real ring as usual.
 		 */
-		{
-			uintptr_t raddr = (uintptr_t)ring;
-			uintptr_t top = raddr >> 47;
-
-			if (raddr < 0x10000 ||
-			    (top != 0 && top != 0x1ffff)) {
-				output(0, "fd_event: child[%u] ring pointer %p is non-canonical, skipping\n",
-				       i, ring);
-				__atomic_add_fetch(&shm->stats.fd.event_ring_corrupted, 1,
-						   __ATOMIC_RELAXED);
-				continue;
-			}
-		}
-
-		/*
-		 * Canary check: compare the live pointer against the
-		 * known-good value captured at init time.  A mismatch
-		 * means the pointer field was overwritten after init
-		 * (e.g. a stray write from a recycled child slot).
-		 * Use the expected pointer for the drain so fuzzing can
-		 * continue, but only after it passes the same sanity
-		 * check we applied to the live pointer above.
-		 */
-		if (ring != expected_fd_event_rings[i]) {
-			struct fd_event_ring *expected = expected_fd_event_rings[i];
-			uintptr_t eaddr = (uintptr_t)expected;
-			uintptr_t etop = eaddr >> 47;
-
+		live = __atomic_load_n(&child->fd_event_ring, __ATOMIC_ACQUIRE);
+		if (live != ring) {
 			output(0, "fd_event: child[%u] ring pointer %p overwritten (expected %p)\n",
-			       i, ring, expected);
+			       i, live, ring);
 			__atomic_add_fetch(&shm->stats.fd.event_ring_overwritten, 1,
 					   __ATOMIC_RELAXED);
-
-			if (eaddr < 0x10000 ||
-			    (etop != 0 && etop != 0x1ffff)) {
-				output(0, "fd_event: child[%u] expected ring %p also non-canonical, skipping\n",
-				       i, expected);
-				continue;
-			}
-			ring = expected;
 		}
 
 		total += fd_event_drain(ring);

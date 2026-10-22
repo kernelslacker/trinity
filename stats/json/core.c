@@ -287,7 +287,7 @@ void dump_stats_json_iouring_and_zombies(void)
 void dump_stats_json_corruption_and_audit(void)
 {
 	json_stats_sep();
-	printf("\"corruption\":{\"fd_event_ring_noncanon\":%lu,"
+	printf("\"corruption\":{"
 			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
 			"\"stats_ring_noncanon\":%lu,\"stats_ring_canary\":%lu,"
 			"\"deferred_free_corrupt_ptr\":%lu,"
@@ -365,7 +365,6 @@ void dump_stats_json_corruption_and_audit(void)
 		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
 			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
 			"\"mm_gate_post_slip\":%lu}",
-		shm->stats.fd.event_ring_corrupted,
 		shm->stats.fd.event_ring_overwritten,
 		shm->stats.fd.event_payload_corrupt,
 		shm->stats.diag.stats_ring_corrupted,

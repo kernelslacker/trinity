@@ -4,7 +4,7 @@
 #include "object-types.h"	/* MAX_OBJECT_TYPES */
 
 /*
- * fd-pool RAW observability -- ring-pointer canary rejections, event
+ * fd-pool RAW observability -- ring-pointer canary mismatches, event
  * ring-full drop attribution split by producer path, per-provider
  * outstanding gauge, live-remove scan histogram, and close-range
  * enqueue accounting.
@@ -19,14 +19,11 @@
  * "fd" member.
  */
 struct fd_stats {
-	/* fd_event_drain_all() found a child->fd_event_ring pointer that
-	 * failed the canonical-address / minimum-address sanity check.
-	 * Defense-in-depth against D-state zombie write-after-reap. */
-	unsigned long event_ring_corrupted;
-
 	/* fd_event_drain_all() found a live child->fd_event_ring that
-	 * differed from the mprotected canary copy taken at init time.
-	 * Indicates the pointer was overwritten after init. */
+	 * differed from the parent-private canary taken at init time,
+	 * whatever the value.  Indicates the pointer was overwritten after
+	 * init; the drain still reads the canary's ring.  Defense-in-depth
+	 * against D-state zombie write-after-reap. */
 	unsigned long event_ring_overwritten;
 
 	/* fd_event_drain() rejected a child-supplied event whose payload
