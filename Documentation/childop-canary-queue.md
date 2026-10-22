@@ -37,39 +37,31 @@ shared region: already-forked random children would need an
 shm-resident gate (plus persistence) to observe them, and that cost is
 not paid here.
 
-## Priority seed list
+## First-pass order
 
-Consumed in this order before the FIFO walk over remaining dormant ops:
-
-1. `genetlink_fuzzer`
-2. `bpf_lifecycle`
-3. `iouring_recipes`
-4. `nftables_churn`
-5. `perf_chains`
-6. `tracefs_fuzzer`
-7. `tls_rotate`
-8. `af_unix_scm_rights_gc_churn`
-9. `userns_fuzzer`
-10. `sock_diag_walker`
+`canary_queue_init()` builds a per-epoch random shuffle of every eligible
+dormant op, and the picker consumes it in that order before the FIFO walk
+over the remaining dormant ops (enum order, wrapping).  There is no static
+priority list, so nothing here goes stale as ops are added or removed.
+`--canary-seed` replaces the shuffle with an operator-chosen order.
 
 ## --alt-op-children
 
 Reserve `N` children to run dedicated alt ops
-(`mmap_lifecycle`, `mprotect_split`, ...) round-robin instead of
-mixing them at 1% in every child.  Alt ops that need a stable per-op
-address space (mmap/mprotect churn) get concentrated dispatch on
-their reserved children; the rest of the fleet stays free to focus
-on the random syscall picker.
+(`inode_spewer`, `xattr_thrash`, `epoll_volatility`, `procfs_writer`)
+round-robin instead of mixing them at ~5% in every child.  The reserved
+children get concentrated dispatch of the alt ops; the rest of the fleet
+stays free to focus on the random syscall picker.
 
 Default: `max(2, --children/8)`.
 
 ## --canary-seed
 
-Override the built-in priority seed list.  Accepts a comma-separated
-list of childop names; names match `alt_op_name`
-(e.g. `genetlink_fuzzer,bpf_lifecycle`).  Unknown names abort
-startup.  Use this when a targeted run needs a specific dormant op
-promoted first.
+Replace the per-epoch random first-pass order with an explicit priority
+list.  Accepts a comma-separated list of childop names; names match
+`alt_op_name` (e.g. `xattr_thrash,epoll_volatility`).  Unknown names
+abort startup.  Use this when a targeted run needs a specific dormant
+op promoted first.
 
 ## --canary-slots
 
@@ -103,9 +95,11 @@ diagnostic `edges_discovered` global-delta comparator.
 - `off`: no bracketing; `childop_edges_clean` stays zero.  Budget
   multipliers stay at unity and canary windows always demote on
   `zero_edges`.
-- `dual` (default): bracket every eligible alt-op and publish the
-  per-call edge delta to `childop_edges_clean` -- `adapt_budget` and
-  the canary queue consume this clean signal; the global-delta path
+- `dual` (default): bracket the eligible alt-op dispatches the
+  `--childop-kcov-sample` sampler picks (one in four by default, N=1
+  brackets every dispatch) and publish the per-call edge delta to
+  `childop_edges_clean` -- `adapt_budget` and the canary queue consume
+  this clean signal; the global-delta path
   keeps writing `childop_edges_discovered` as a diagnostic
   comparator.
 - `on`: reserved; identical to `dual` until the discovered counter

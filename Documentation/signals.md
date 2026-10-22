@@ -1,10 +1,10 @@
-# health/signals.c design notes
+# health/signals-*.c design notes
 
-Long-form design rationale extracted from `health/signals.c`.  The `.c`
-file keeps concise per-site summaries plus load-bearing invariants (async-
-signal-safety notes, "don't revert this" guards, per-declaration one-
-liners); this document holds the multi-paragraph narratives explaining
-*why* each piece is shaped the way it is.
+Long-form design rationale extracted from the `health/signals-*.c`
+files.  The `.c` files keep concise per-site summaries plus load-bearing
+invariants (async-signal-safety notes, "don't revert this" guards,
+per-declaration one-liners); this document holds the multi-paragraph
+narratives explaining *why* each piece is shaped the way it is.
 
 ## Capturing glibc's `__abort_msg` per child
 
@@ -94,7 +94,7 @@ the handler reads it back from the same fd.
 Don't use `psiginfo()` -- it calls `fmemopen()`, which calls `calloc()`,
 which deadlocks if this signal was raised by glibc's own `abort()`
 while malloc's arena lock is still held by us.  Same family as the
-`libgcc_s`/backtrace deadlock fixed in 81143aaeaba6, just one frame up.
+`libgcc_s`/backtrace deadlock fixed in ea96305aee21, just one frame up.
 
 Hand-roll a signal-safe equivalent: a lookup table covering every
 signal either fault handler is installed for, formatting via the
@@ -250,12 +250,12 @@ blocked SEGV after recovery).
 
 The identical shape repeats for the `cmp_hints_collect()` field-scoped
 ARG_TIMESPEC deref (`cmp_field_read_active`), the `vma_split_storm`
-`touch_random_page()` one-byte store (`vma_split_storm_touch_active`),
-and (under `CONFIG_GUARD_SHARED`) the `kcov_enable_trace()`
-`trace_buf[0] = 0` reset (`kcov_protect_active`): the same three-way
-gate on signo / `si_code` / active-flag, each flag set only across the
-specific probe, so any unrelated fatal signal still falls through to
-the normal crash path.
+recovery slot (`vma_split_storm_touch_active`; nothing arms it now that
+the childop is gone), and (under `CONFIG_GUARD_SHARED`) the
+`kcov_enable_trace()` `trace_buf[0] = 0` reset (`kcov_protect_active`):
+the same three-way gate on signo / `si_code` / active-flag, each flag
+set only across the specific probe, so any unrelated fatal signal still
+falls through to the normal crash path.
 
 ## Draining pre-crash stderr into the per-pid bug log
 
