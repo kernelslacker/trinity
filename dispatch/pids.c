@@ -53,17 +53,17 @@ bool pid_alive(pid_t pid)
 	int fd;
 
 	if (pid < -1) {
-		syslogf("kill_pid tried to kill %d!\n", pid);
+		syslogf("pid_alive called with pid %d!\n", pid);
 		show_backtrace();
 		return true;
 	}
 	if (pid == -1) {
-		syslogf("kill_pid tried to kill -1!\n");
+		syslogf("pid_alive called with pid -1!\n");
 		show_backtrace();
 		return true;
 	}
 	if (pid == 0) {
-		syslogf("tried to kill_pid 0!\n");
+		syslogf("pid_alive called with pid 0!\n");
 		show_backtrace();
 		return true;
 	}
