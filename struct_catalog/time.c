@@ -96,7 +96,7 @@ const struct struct_field timespec_fields[TIMESPEC_FIELDS_N] = {
 /*
  * setitimer(int which, const struct itimerval __user *value,
  *           struct itimerval __user *ovalue) passes the input itimerval
- * at a2.  The bespoke sanitise_setitimer() in syscalls/setitimer.c
+ * at a2.  The bespoke sanitise_setitimer() in syscalls/itimer/setitimer.c
  * continues to own the live fill: it get_writable_address()es a struct
  * itimerval, walks both embedded timevals through fill_timeval() (zero
  * / sub-second / small-positive / random tv_sec buckets paired with a

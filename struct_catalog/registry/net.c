@@ -154,8 +154,9 @@ const struct syscall_struct_arg struct_catalog_registry_net[] = {
 	/*
 	 * setsockopt a4 (optval): two-key (level, optname) rows resolved
 	 * via struct_arg_lookup_two_key() from apply_sockopt_entry().
-	 * Attribution-only; bespoke build_*() in syscalls/setsockopt.c
-	 * owns selection / optlen / BPF replacement.
+	 * Attribution-only; bespoke code in syscalls/socket/setsockopt.c
+	 * and setsockopt-optval-builders.c owns selection / optlen / BPF
+	 * replacement.
 	 * See Documentation/struct_catalog.md.
 	 */
 	{

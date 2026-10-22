@@ -23,7 +23,7 @@
  * timer_create(clockid_t, struct sigevent *, timer_t *) passes the
  * sigevent at a2 with argtype ARG_ADDRESS (not ARG_STRUCT_PTR_*), so
  * the schema-aware fill path never runs against it -- the bespoke
- * timer_create_sanitise() in syscalls/timer_create.c continues to own
+ * timer_create_sanitise() in syscalls/timer/timer_create.c continues to own
  * the live (sigev_value, sigev_signo, sigev_notify, _sigev_un._tid)
  * layout, including the SIGEV_NONE / SIGEV_SIGNAL / SIGEV_THREAD_ID /
  * (SIGEV_SIGNAL | SIGEV_THREAD_ID) notify-mode distribution and the

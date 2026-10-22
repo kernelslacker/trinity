@@ -113,10 +113,10 @@ const struct syscall_struct_arg struct_catalog_registry_misc[] = {
 	 *            unsigned long flags)
 	 * a3 is the segments array; argtype[2] is ARG_ADDRESS (not
 	 * ARG_STRUCT_PTR_*), so sanitise_kexec_load() in
-	 * syscalls/kexec_load.c keeps owning the live fill.  Attribution-
-	 * only registration lets struct_field_for_cmp() steer CMP-learned
-	 * constants at the named buf / bufsz / mem / memsz slots rather
-	 * than at coincidentally-same-width neighbours.  See
+	 * syscalls/kexec/kexec_load.c keeps owning the live fill.
+	 * Attribution-only registration lets struct_field_for_cmp() steer
+	 * CMP-learned constants at the named buf / bufsz / mem / memsz
+	 * slots rather than at coincidentally-same-width neighbours.  See
 	 * SC_KEXEC_SEGMENT above.
 	 */
 	{ "kexec_load",		3, &struct_catalog[SC_KEXEC_SEGMENT] },

@@ -6,7 +6,7 @@
  * register struct at ptrace(2) arg4, and PTRACE_GETREGSET /
  * PTRACE_SETREGSET carry the same shape wrapped in a struct iovec whose
  * iov_base points at the regset payload (NT_PRSTATUS on the common
- * arches).  syscalls/ptrace.c's sanitiser arm for the four ops leaves
+ * arches).  syscalls/process/ptrace.c's sanitiser arm for the four ops leaves
  * arg4's argtype as ARG_UNDEFINED and hand-rolls the iovec / raw pointer
  * itself, so these descriptors are attribution-only: they exist so the
  * schema-aware CMP path can name the specific register slot a

@@ -7,9 +7,10 @@
  *
  * setsockopt optval shapes -- proof batch for the two-key
  * (level, optname) discriminator.  Five shapes already owned by
- * bespoke build_*() functions in syscalls/setsockopt.c, registered
- * here so apply_sockopt_entry()'s explicit-key lookup resolves them
- * and struct_field_fill_schema_aware() takes over the fill.  Bespoke
+ * bespoke build_*() functions in
+ * syscalls/socket/setsockopt-optval-builders.c, registered here so
+ * apply_sockopt_entry()'s explicit-key lookup resolves them and
+ * struct_field_fill_schema_aware() takes over the fill.  Bespoke
  * builders stay in code as the miss-fallback for the int / bool /
  * string scalar entries (no struct shape to catalog) and for the
  * higher-leverage shapes that have not been migrated yet (sctp /

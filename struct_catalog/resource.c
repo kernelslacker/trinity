@@ -9,7 +9,7 @@
  *
  * The cachestat_range registration is attribution-only: cachestat's
  * argtype slot is not ARG_STRUCT_PTR_*, so the schema-aware fill path
- * never fires and the bespoke pick_range() in syscalls/cachestat.c
+ * never fires and the bespoke pick_range() in syscalls/fs/stat/cachestat.c
  * continues to own the live (off, len) values.  The FT_RANGE
  * annotations stay so KCOV CMP constants are attributed to off or len
  * rather than a coincidentally-same-width slot.  Bounds mirror the

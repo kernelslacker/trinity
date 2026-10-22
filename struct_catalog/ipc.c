@@ -28,10 +28,11 @@
  * sem{,timed}op pass an ARRAY of sembuf at a2 (nsops in a3), not a
  * single struct, and the arg slot is ARG_ADDRESS rather than
  * ARG_STRUCT_PTR_*.  The bespoke fill_sembuf_array() helpers in
- * syscalls/semop.c and syscalls/semtimedop.c allocate the buffer,
- * pick a per-element (sem_num, sem_op, sem_flg) triple respecting
- * the kernel's nsems / IPC_NOWAIT / SEM_UNDO semantics, and overwrite
- * rec->a2 -- the schema-aware fill path never runs for this slot.
+ * syscalls/ipc/sysv/semop.c and syscalls/ipc/sysv/semtimedop.c
+ * allocate the buffer, pick a per-element (sem_num, sem_op, sem_flg)
+ * triple respecting the kernel's nsems / IPC_NOWAIT / SEM_UNDO
+ * semantics, and overwrite rec->a2 -- the schema-aware fill path
+ * never runs for this slot.
  *
  * Registration is attribution-only, mirroring cachestat_range /
  * mount_attr above: struct_field_for_cmp() uses the FT_RANGE /
@@ -40,7 +41,7 @@
  * stays FT_RAW: its kernel semantics are arithmetic
  * (sma->sem_base[].semval + sem_op) rather than a vocab CMP, so no
  * gate-tag lift would help attribution.  sem_num's range upper bound
- * mirrors syscalls/semop.c's pick_sem_num() worst-case
+ * mirrors syscalls/ipc/sysv/semop.c's pick_sem_num() worst-case
  * (SEMOP_FALLBACK_NSEMS + 63 = 95) so future schema consumers stay
  * inside the same in-range / out-of-range envelope the bespoke
  * sanitiser already explores.

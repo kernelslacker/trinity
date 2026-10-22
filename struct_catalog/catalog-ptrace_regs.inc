@@ -1,14 +1,15 @@
 	/*
 	 * ptrace register-set descriptors -- per-arch shapes for the
 	 * PTRACE_{GET,SET}REGS and PTRACE_{GET,SET}REGSET arms in
-	 * syscalls/ptrace.c.  Attribution-only: arg4 stays ARG_UNDEFINED
-	 * so the schema-aware fill never allocates against these sizes;
-	 * consumers reach the descriptors via struct_catalog_lookup() on
-	 * the struct name and struct_field_for_cmp() steers KCOV-CMP
-	 * learned constants at the named register slot.  aarch64 exposes
-	 * struct user_pt_regs (kernel-side struct pt_regs is not uapi on
-	 * arm64) so the SC_PT_REGS slot's .name diverges by arch; the
-	 * enum slot stays the same shape either way.
+	 * syscalls/process/ptrace.c.  Attribution-only: arg4 stays
+	 * ARG_UNDEFINED so the schema-aware fill never allocates against
+	 * these sizes; consumers reach the descriptors via
+	 * struct_catalog_lookup() on the struct name and
+	 * struct_field_for_cmp() steers KCOV-CMP learned constants at the
+	 * named register slot.  aarch64 exposes struct user_pt_regs
+	 * (kernel-side struct pt_regs is not uapi on arm64) so the
+	 * SC_PT_REGS slot's .name diverges by arch; the enum slot stays
+	 * the same shape either way.
 	 */
 #if defined(__x86_64__)
 	[SC_PT_REGS] = {

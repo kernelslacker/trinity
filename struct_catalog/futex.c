@@ -26,7 +26,7 @@
  * passes the head pointer at a1 with argtype ARG_ADDRESS (not
  * ARG_STRUCT_PTR_*), so the schema-aware fill path never runs against
  * it -- the bespoke sanitise_set_robust_list() in
- * syscalls/set_robust_list.c continues to own the live (list.next,
+ * syscalls/concurrency/set_robust_list.c continues to own the live (list.next,
  * futex_offset, list_op_pending) layout: it zmalloc_tracked()s a head,
  * self-points list.next, zeros futex_offset, and NULLs list_op_pending
  * before each call.
@@ -61,7 +61,7 @@ const struct struct_field robust_list_head_fields[ROBUST_LIST_HEAD_FIELDS_N] = {
 /*
  * rseq(struct rseq __user *rseq, u32 rseq_len, int flags, u32 sig)
  * passes the rseq pointer at a1.  The bespoke sanitise_rseq() in
- * syscalls/rseq.c continues to own the live fill: it allocates a
+ * syscalls/concurrency/rseq.c continues to own the live fill: it allocates a
  * 32-byte-aligned struct rseq via get_writable_address(),
  * memset()s it to zero, routes a1 through avoid_shared_buffer_inout(),
  * cycles a2 through the rseq_len validation buckets (zero / undersized

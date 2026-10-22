@@ -26,7 +26,7 @@
 /*
  * perf_event_attr is the rare cataloged struct whose live fill path
  * the schema does NOT drive.  sanitise_perf_event_open() in
- * syscalls/perf_event_open.c hand-rolls a coherent (type, config)
+ * syscalls/perf/perf_event_open.c hand-rolls a coherent (type, config)
  * tuple via pick_perf_tuple() and fills rec->a1 with its own buffer;
  * a1 is in the entry's sanitiser_owned_mask, so generic_sanitise()
  * never runs the schema-aware fill for it.  The catalog therefore
@@ -70,7 +70,7 @@ static const unsigned long perf_type_values[] = {
  * size (offset 4): ABI version stamp.  The kernel accepts any prior
  * PERF_ATTR_SIZE_VER* and zero-pads to its own sizeof; non-version
  * values bounce on -E2BIG / -EINVAL.  Mirrors perf_event_attr_known_
- * sizes[] in syscalls/perf_event_open.c so the hand-rolled csfu and
+ * sizes[] in syscalls/perf/perf_event_open.c so the hand-rolled csfu and
  * the schema-aware CMP attribution share the same vocabulary.
  */
 static const unsigned long perf_attr_known_sizes[] = {
@@ -391,15 +391,15 @@ static const struct struct_field perf_event_attr_software_variant_fields[] = {
  * design doc), so the variant uses a curated FT_ENUM over the 42
  * pre-packed legal triples: 7 caches * 3 ops * 2 results.
  *
- * This mirrors random_cache_config() in syscalls/perf_event_open.c
- * (the same {L1D, L1I, LL, DTLB, ITLB, BPU, NODE} *
- * {READ, WRITE, PREFETCH} * {ACCESS, MISS} cross-product) so the
- * hand-rolled csfu path and the schema-aware CMP attribution share
- * the same packed-config vocabulary.  Out-of-range sub-field probes
- * (cache_id=7, op_id=3, ...) are intentionally not in the curated
- * set; the hand-rolled path covers them already via its RAND_BYTE()
- * arms, and adding them here would defeat the validator-passing
- * intent of an FT_ENUM draw.
+ * This mirrors random_cache_config() in
+ * syscalls/perf/perf_event_open-config-picker.c (the same {L1D, L1I,
+ * LL, DTLB, ITLB, BPU, NODE} * {READ, WRITE, PREFETCH} * {ACCESS,
+ * MISS} cross-product) so the hand-rolled csfu path and the
+ * schema-aware CMP attribution share the same packed-config
+ * vocabulary.  Out-of-range sub-field probes (cache_id=7, op_id=3,
+ * ...) are intentionally not in the curated set; the hand-rolled path
+ * covers them already via its RAND_BYTE() arms, and adding them here
+ * would defeat the validator-passing intent of an FT_ENUM draw.
  */
 #define HW_CACHE_PACKED(cache, op, result) \
 	((unsigned long) (cache) | \
@@ -440,8 +440,8 @@ static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
 /*
  * PERF_TYPE_BREAKPOINT: config is ignored; bp_type / bp_addr / bp_len
  * carry the breakpoint shape.  Mirrors setup_breakpoints() in
- * syscalls/perf_event_open.c so the hand-rolled csfu path and the
- * schema-aware CMP attribution agree on the vocabulary:
+ * syscalls/perf/perf_event_open-config-picker.c so the hand-rolled csfu
+ * path and the schema-aware CMP attribution agree on the vocabulary:
  *
  *   bp_type -> HW_BREAKPOINT_{EMPTY, R, W, RW, X, INVALID}
  *   bp_addr -> watchable address (FT_ADDRESS plants get_address())

@@ -31,7 +31,7 @@
 /*
  * struct xattr_args from include/uapi/linux/xattr.h.  Gated on
  * USE_XATTR_ARGS because the build host's uapi headers may predate
- * the addition; mirror the syscalls/{set,get}xattrat.c guard so the
+ * the addition; mirror the syscalls/xattr/{set,get}xattrat.c guard so the
  * translation unit still builds on older headers.  The bespoke
  * sanitisers in those syscall files own the live fill --
  * build_csfu_struct(&desc_{set,get}xattrat) stamps the size word

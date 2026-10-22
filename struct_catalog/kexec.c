@@ -23,7 +23,7 @@
  *            struct kexec_segment __user *segments, unsigned long flags)
  * a3 is an array of kexec_segment descriptors.  argtype[2] is
  * ARG_ADDRESS (not ARG_STRUCT_PTR_*), so the bespoke
- * sanitise_kexec_load() in syscalls/kexec_load.c keeps owning the live
+ * sanitise_kexec_load() in syscalls/kexec/kexec_load.c keeps owning the live
  * fill: nr drawn from [1, 4], per-entry buf from get_writable_address()
  * at a 4K-16K bucket paired with bufsz, and mem stamped at a fixed
  * physical-address-shaped offset the kernel validates.

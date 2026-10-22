@@ -81,7 +81,7 @@ const struct struct_field landlock_ruleset_attr_fields[LANDLOCK_RULESET_ATTR_FIE
  * landlock_add_rule(ruleset_fd, rule_type, rule_attr, flags) passes
  * the rule_attr struct at a3.  Under LANDLOCK_RULE_PATH_BENEATH the
  * struct is landlock_path_beneath_attr; the bespoke
- * sanitise_landlock_add_rule() in syscalls/landlock_add_rule.c keeps
+ * sanitise_landlock_add_rule() in syscalls/landlock/landlock_add_rule.c keeps
  * owning the live fill (get_writable_address() allocation, the
  * allowed_access bitmask masked to the low 16 bits, parent_fd drawn
  * from get_random_fd()).  argtype[2] is not declared (the sanitiser

@@ -25,7 +25,7 @@
  * poll and ppoll pass an ARRAY of pollfd at a1 (nfds in a2), not a
  * single struct, and the arg slot is ARG_ADDRESS rather than
  * ARG_STRUCT_PTR_*.  The bespoke alloc_pollfds() helper in
- * syscalls/poll.c allocates the buffer, picks each entry's
+ * syscalls/poll/poll.c allocates the buffer, picks each entry's
  * (fd, events) tuple from the pollable-fd pool plus a curated event
  * vocabulary, and overwrites rec->a1 -- the schema-aware fill path
  * never runs for this slot.

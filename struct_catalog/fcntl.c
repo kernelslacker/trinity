@@ -114,7 +114,7 @@ const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N] = {
 /*
  * struct open_how / RESOLVE_* may not be present in every host's
  * <linux/openat2.h>; mirror the trinity-local fallback already used
- * by syscalls/open.c so this TU compiles on toolchains that pre-date
+ * by syscalls/fs/open.c so this TU compiles on toolchains that pre-date
  * the openat2 uapi.  The ifndef guard hands off to the host header
  * (or to whichever earlier-included TU has already pulled the symbols
  * in) when it is present.
@@ -149,7 +149,7 @@ _Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
  * openat2 passes struct open_how at a3 with a usize at a4
  * (copy_struct_from_user semantics).  The slot is ARG_ADDRESS rather
  * than ARG_STRUCT_PTR_*, so the schema-aware fill path never runs
- * against it -- the bespoke sanitise_openat2() in syscalls/open.c
+ * against it -- the bespoke sanitise_openat2() in syscalls/fs/open.c
  * continues to own the live (flags, mode, resolve) layout, including
  * the O_CREAT / __O_TMPFILE-gated mode write and the curated
  * openat2_resolve_combos[] table that walks the namei RESOLVE_*

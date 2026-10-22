@@ -143,10 +143,10 @@ const struct syscall_struct_arg struct_catalog_registry_fs[] = {
 	/*
 	 * ppoll(struct pollfd *, nfds_t, struct timespec *tsp, const sigset_t *, size_t)
 	 * a3 is the INPUT timeout timespec.  Attribution-only: the bespoke
-	 * sanitise_ppoll / ppoll_post_state in syscalls/poll.c continues to
-	 * own the live fill; this row only lets schema-aware CMP attribution
-	 * name the tv_sec / tv_nsec fields.  ppoll's a1 (pollfd array) is
-	 * mapped to SC_POLLFD below and is unaffected.
+	 * sanitise_ppoll / ppoll_post_state in syscalls/poll/poll.c
+	 * continues to own the live fill; this row only lets schema-aware
+	 * CMP attribution name the tv_sec / tv_nsec fields.  ppoll's a1
+	 * (pollfd array) is mapped to SC_POLLFD below and is unaffected.
 	 */
 	{ "ppoll",		3, &struct_catalog[SC_TIMESPEC] },
 	/*
