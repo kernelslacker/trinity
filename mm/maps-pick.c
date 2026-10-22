@@ -218,17 +218,15 @@ static bool obj_ptr_in_user_va_band(struct object *obj,
  * addr_in_local_runtime_map / invalidate_mmap_pool_range walks that
  * gate on the same objpool_check() before touching &obj->map.
  *
- * Replaces an older alloc_track_lookup() gate that was OBJ_LOCAL-only
- * and false-rejected long-lived pool entries whenever they rotated
- * out of the 4096-entry alloc-track ring under arg-buffer churn: a
- * single child accumulated 12k+ rejects on live slots.  alloc_track
- * is an allocation-provenance ring, not a live-object registry, and
- * overloading it as the latter is what produced the flood.
+ * Do not gate on alloc_track_lookup() instead: alloc_track is an
+ * allocation-provenance ring, not a live-object registry, so a
+ * long-lived pool entry that has rotated out of the ring under
+ * arg-buffer churn is still live and would be falsely rejected.
  *
  * The stats.maps.reject_alloc_track_miss[_anon|_file|_testfile]
- * counters retain their historical names for dashboard continuity;
- * they now count objpool_check() rejects (bogus obj_type / VA-band
- * mismatch that survived the earlier obj_ptr_in_user_va_band guard).
+ * counters keep their names for dashboard continuity but count
+ * objpool_check() rejects (bogus obj_type / VA-band mismatch that
+ * survived the earlier obj_ptr_in_user_va_band guard).
  * The reject log is rate-limited to one line per second per child
  * -- counters carry the exact aggregate; the log line names the
  * attributed culprit syscall via log_self_corrupt_culprit(), matching
