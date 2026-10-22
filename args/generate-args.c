@@ -326,8 +326,8 @@ void generate_syscall_args(struct syscallrecord *rec)
 	rec->gen_orig[0] = rec->gen_orig[1] = rec->gen_orig[2] =
 		rec->gen_orig[3] = rec->gen_orig[4] = rec->gen_orig[5] = 0;
 	/* Drop any pending blob-corpus stash left over from a previous
-	 * dispatch that never reached the minicorpus_save promotion path
-	 * (no novelty signal fired).  Same rationale as the post_state /
+	 * dispatch that never reached minicorpus_save_with_reason (no
+	 * novelty signal fired).  Same rationale as the post_state /
 	 * owned_count hoists above: without this clear a stale pending
 	 * from the prior call could be promoted by this call's save. */
 	blob_corpus_clear_pending();

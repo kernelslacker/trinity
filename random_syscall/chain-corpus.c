@@ -117,11 +117,11 @@ void chain_corpus_init(void)
  *
  * Returns true if every step in @steps could be replayed without
  * feeding stale heap pointers, stale pids, or sanitise-stashed
- * pointers to the kernel.  Same exclusions as minicorpus_save (which
- * treats these arg types as poison, see corpus_argtype_refused()) plus
- * the entry->sanitise gate that random_syscall/dispatch.c applies
- * before it calls minicorpus_save.  The minicorpus's no-arguments rule
- * is not taken: a step with no arguments still shapes the chain.
+ * pointers to the kernel.  Same exclusions as minicorpus_save_with_reason
+ * (which treats these arg types as poison, see corpus_argtype_refused())
+ * plus the entry->sanitise gate that random_syscall/dispatch.c applies
+ * before it saves.  The minicorpus's no-arguments rule is not taken: a
+ * step with no arguments still shapes the chain.
  *
  * The check happens at save time so the corpus only ever contains
  * chains that are themselves replay-safe.  Saving an unsafe chain and

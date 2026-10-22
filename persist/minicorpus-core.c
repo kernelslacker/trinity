@@ -155,7 +155,8 @@ bool corpus_argtype_refused(enum argtype type)
  *
  * Three call sites must agree on this list:
  *
- *   minicorpus_save()       — refuse to capture in the first place.
+ *   minicorpus_save_with_reason()
+ *                           — refuse to capture in the first place.
  *   minicorpus_replay()     — refuse to play back from the in-memory
  *                             ring (catches cross-config corpus swap
  *                             where the ring contains entries built

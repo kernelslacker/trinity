@@ -1,8 +1,7 @@
 /*
  * Mini-corpus save path: capture per-syscall argument snapshots into
- * the ring after a productive coverage signal.  Two entry points --
- * minicorpus_save() for legacy PC-source callers and
- * minicorpus_save_with_reason() for the reason-tagged path.
+ * the ring after a productive coverage signal.  The one entry point,
+ * minicorpus_save_with_reason(), tags the save with what triggered it.
  */
 
 #include <string.h>
@@ -17,14 +16,6 @@
 #include "trinity.h"
 
 #include "minicorpus-internal.h"
-
-void minicorpus_save(struct syscallrecord *rec)
-{
-	/* Legacy entry point: callers that haven't been updated to thread
-	 * an enum corpus_save_reason through still want PC-source
-	 * accounting, matching the pre-CMP-save-gate behaviour. */
-	minicorpus_save_with_reason(rec, CORPUS_SAVE_REASON_PC);
-}
 
 void minicorpus_save_with_reason(struct syscallrecord *rec,
 				 enum corpus_save_reason reason)

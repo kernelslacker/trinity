@@ -484,9 +484,9 @@ void cmp_hints_feedback_credit_transition(void)
  * Typed-hyp CORPUS_SAVE credit drain.  Same shape as the transition
  * drain above -- walks the stash without resetting it, fires once
  * per hyp_injected entry.  Called from random_syscall/dispatch.c when the
- * dispatch produced a novelty signal that minicorpus_save accepted,
- * so the credited hypothesis is one whose typed-arm value actually
- * earned its way into the persisted corpus.
+ * dispatch produced a novelty signal that minicorpus_save_with_reason
+ * accepted, so the credited hypothesis is one whose typed-arm value
+ * actually earned its way into the persisted corpus.
  */
 void cmp_hints_feedback_credit_corpus_save(void)
 {

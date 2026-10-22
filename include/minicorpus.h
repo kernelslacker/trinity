@@ -339,13 +339,14 @@ struct minicorpus_shared {
 	unsigned int  mut_structured_arm_b_children;
 
 	/* Monotonic mutation counter.  Bumped via __atomic_fetch_add on every
-	 * ring-entry insert (minicorpus_save) and every entry admitted from the
-	 * warm-start loader (minicorpus_load_file).  minicorpus_save_file
-	 * compares this against a parent-private baseline; when equal, the
-	 * on-disk image is bit-for-bit identical to what we already wrote and
-	 * the save is skipped.  RELAXED order is sufficient -- the counter only
-	 * gates whether to write, not what to write (the per-ring lock taken by
-	 * the serialiser provides the ordering for the entries[] contents). */
+	 * ring-entry insert (minicorpus_save_with_reason) and every entry
+	 * admitted from the warm-start loader (minicorpus_load_file).
+	 * minicorpus_save_file compares this against a parent-private
+	 * baseline; when equal, the on-disk image is bit-for-bit identical to
+	 * what we already wrote and the save is skipped.  RELAXED order is
+	 * sufficient -- the counter only gates whether to write, not what to
+	 * write (the per-ring lock taken by the serialiser provides the
+	 * ordering for the entries[] contents). */
 	unsigned long mutations;
 
 	/* Parent-tick scan accelerator; incremented before ring->lock acquire,
@@ -387,20 +388,12 @@ void minicorpus_init(void);
  * hands an address to Stage 2. */
 bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val);
 
-/* Save a syscall's args into the corpus ring for its syscall number.
- * Only call when entry->sanitise == NULL.  Thin wrapper that records
- * the save against the PC-source bucket -- equivalent to
- * minicorpus_save_with_reason(rec, CORPUS_SAVE_REASON_PC) and kept as
- * the legacy entry point so existing call sites (the PC-edge gate in
- * random_syscall/dispatch.c) don't have to change. */
-void minicorpus_save(struct syscallrecord *rec);
-
-/* Save a syscall's args into the corpus ring with the @reason that
- * triggered the save.  Same admission filter as minicorpus_save() --
- * sanitise-callback syscalls and pointer-heavy argtypes are still
- * rejected, so CMP-source saves carry the same replay-safety
- * guarantees as PC-source saves.  Bumps saves_by_reason[reason] on
- * successful insert. */
+/* Save a syscall's args into the corpus ring for its syscall number,
+ * with the @reason that triggered the save.  Only call when
+ * entry->sanitise == NULL.  The admission filter does not depend on the
+ * reason: pointer-heavy argtypes are rejected either way, so CMP-source
+ * saves carry the same replay-safety guarantees as PC-source saves.
+ * Bumps saves_by_reason[reason] on successful insert. */
 void minicorpus_save_with_reason(struct syscallrecord *rec,
 				 enum corpus_save_reason reason);
 

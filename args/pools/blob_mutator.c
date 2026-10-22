@@ -449,10 +449,10 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	}
 
 	/* Stash the just-authored bytes as a pending candidate for the
-	 * next minicorpus_save promotion.  Deferred to the caller's
-	 * post-syscall novelty gate so only PRODUCTIVE blobs enter the
-	 * shared corpus -- an unpromoted pending is cleared at the top of
-	 * the next generate_syscall_args() without ever hitting shared
+	 * next minicorpus_save_with_reason promotion.  Deferred to the
+	 * caller's post-syscall novelty gate so only PRODUCTIVE blobs enter
+	 * the shared corpus -- an unpromoted pending is cleared at the top
+	 * of the next generate_syscall_args() without ever hitting shared
 	 * memory. */
 	blob_corpus_stash_pending(nr, do32, buf, (size_t) n);
 

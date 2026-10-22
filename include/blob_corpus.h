@@ -75,10 +75,10 @@ bool blob_corpus_try_get_base(unsigned int nr, bool do32,
 			      unsigned char *buf, size_t len);
 
 /* Stash the just-authored buffer as a pending candidate for the next
- * minicorpus_save promotion.  Truncates to BLOB_CORPUS_MAX_LEN.  A
- * repeat stash for the same (nr, do32) key within a single pending
- * window overwrites; a stash beyond BLOB_CORPUS_PENDING_MAX is
- * dropped silently.
+ * minicorpus_save_with_reason promotion.  Truncates to
+ * BLOB_CORPUS_MAX_LEN.  A repeat stash for the same (nr, do32) key
+ * within a single pending window overwrites; a stash beyond
+ * BLOB_CORPUS_PENDING_MAX is dropped silently.
  *
  * Process-local.  No lock, no shared write.  Cleared per-dispatch
  * from generate_syscall_args() via blob_corpus_clear_pending(). */
