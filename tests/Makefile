@@ -112,12 +112,14 @@ REAL_SRCS	:= \
 # for generic_sanitise() and arg_meta_init(), and health/signals-policy.c
 # for mask_signals_child() and setup_main_signals(), with the fault
 # handlers they install (signals-fault-handler.c, signals-async-safe.c).
-# They also pull in functions the tests never call (main_loop() reaches
-# most of the parent), so each function gets its own section and
-# --gc-sections drops the unreached ones.  -fdata-sections gives each
-# function its own jump-table section too: in a shared .rodata, one
-# reached switch keeps every other function's case targets, and their
-# references, alive.  fake_parent.c covers the rest;
+# rand/random-address.c and random_syscall/dispatch-step.c bring the
+# writable pool and redqueen_pin_field().  They also pull in functions
+# the tests never call (main_loop() reaches most of the parent,
+# dispatch_step() most of the child), so each function gets its own
+# section and --gc-sections drops the unreached ones.  -fdata-sections
+# gives each function its own jump-table section too: in a shared
+# .rodata, one reached switch keeps every other function's case targets,
+# and their references, alive.  fake_parent.c covers the rest;
 # sanitiser_owned_mask_test.c fakes fill_arg().
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
@@ -129,7 +131,9 @@ PARENT_SRCS	:= \
 	$(TOP)/args/generate-args.c \
 	$(TOP)/health/signals-policy.c \
 	$(TOP)/health/signals-fault-handler.c \
-	$(TOP)/health/signals-async-safe.c
+	$(TOP)/health/signals-async-safe.c \
+	$(TOP)/rand/random-address.c \
+	$(TOP)/random_syscall/dispatch-step.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
@@ -186,6 +190,7 @@ FAKE_SRCS	:= \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
+	redqueen_pin_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

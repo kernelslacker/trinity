@@ -931,15 +931,19 @@ static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
  * field is satisfied without clobbering the whole arg.  Slot is 1-based.
  *
  * The buffer pointer is read AFTER generate_syscall_args() has run, so
- * it is whatever the generator just produced -- which for ARG_TIMESPEC
- * is either a valid pool pointer or the generator's ~10% NULL arm.  A
- * NULL / implausibly small pointer is left unpinned (the re-exec still
- * runs with fresh args, just without the field pin); the per-window cap
+ * it is whatever the generator or the entry's sanitiser left in the
+ * slot.  gen_arg_timespec() leaves its ~10% NULL arm or a
+ * get_writable_struct() buffer, but a replayed arg set or a sanitiser
+ * that stores a pointer of its own could leave anything, and the write
+ * lands wherever that points.  Only a well-formed pointer to a buffer
+ * wholly inside the writable pool, scratch trinity owns and can write,
+ * is pinned.  Any other slot is left unpinned (the re-exec still runs
+ * with fresh args, just without the field pin); the per-window cap
  * bounds the wasted budget.  Only the ARG_TIMESPEC tv_sec/tv_nsec pair
  * is wired today.
  */
-static void redqueen_pin_field(struct syscallrecord *rec,
-			       const struct reexec_pending *p)
+void redqueen_pin_field(struct syscallrecord *rec,
+			const struct reexec_pending *p)
 {
 	unsigned long ptr;
 	struct timespec *ts;
@@ -954,7 +958,8 @@ static void redqueen_pin_field(struct syscallrecord *rec,
 	default: return;
 	}
 
-	if (ptr < 4096)
+	if (is_corrupt_ptr_shape((const void *) ptr) ||
+	    !range_in_writable_pool(ptr, sizeof(*ts)))
 		return;
 
 	switch (p->field_kind) {

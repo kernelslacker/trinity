@@ -22,6 +22,8 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum);
 
 void *get_address(void);
 void *get_non_null_address(void);
+/* Size of the pool get_writable_address() and its siblings vend from. */
+#define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
 void *get_writable_address(unsigned long size);
 /*
  * As get_writable_address(), but returns a page-aligned start with a
@@ -33,6 +35,14 @@ void *get_writable_address(unsigned long size);
  */
 void *get_writable_page_aligned(unsigned long size);
 void *get_writable_struct(size_t size);
+/*
+ * True iff len is non-zero and [addr, addr + len) lies wholly inside the
+ * writable pool, so a pointer that passes is mapped, writable scratch.
+ * Always false before writable_pool_init().  range_in_tracked_shared()
+ * is no substitute: it also admits trinity's own shared state and the
+ * sibling childdata mappings frozen read-only.
+ */
+bool range_in_writable_pool(unsigned long addr, unsigned long len);
 /*
  * Output-only redirect: relocate *addr away from shared/heap if it
  * overlaps, without copying the original bytes. Use for buffers the

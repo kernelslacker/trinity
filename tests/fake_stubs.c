@@ -38,6 +38,13 @@
  *                         are reachable when the bounds guard fires first
  *                         (after the fix) or when the process crashes
  *                         before reaching them (before the fix).
+ *
+ *   mapping_sizes      -- storage for the table get_non_null_address()
+ *                         indexes.  rand/random-address.c is linked for
+ *                         the writable pool, and the real get_address()
+ *                         that comes with it reaches the table through
+ *                         struct_fill.c's FT_ADDRESS fill, which no test
+ *                         runs, so it stays zeroed.
  */
 
 #include <stdarg.h>
@@ -51,6 +58,7 @@
 
 #include "args-internal.h"
 #include "debug.h"
+#include "maps.h"
 #include "minicorpus.h"
 #include "struct_catalog.h"
 
@@ -139,8 +147,8 @@ void minicorpus_struct_field_attrib(enum field_tag tag)
  * path-coverage gap turns into an obvious failure rather than silent
  * misbehaviour.
  *
- * rand32, get_address: only reachable via fill_field_raw / FT_ADDRESS;
- *   neither tag is used in the bounds test.
+ * rand32:              only reachable via fill_field_raw; the bounds
+ *   test does not use that tag.
  * get_random_fd:       only reachable via FT_FD.
  * ebpf_gen_program_into: only reachable via FT_BPF_PROGRAM (USE_BPF).
  * struct_field_fill_schema_aware: only reachable via FT_EMBEDDED_STRUCT.
@@ -149,12 +157,6 @@ void minicorpus_struct_field_attrib(enum field_tag tag)
 unsigned int rand32(void)
 {
 	fprintf(stderr, "fake rand32 called unexpectedly\n");
-	abort();
-}
-
-void *get_address(void)
-{
-	fprintf(stderr, "fake get_address called unexpectedly\n");
 	abort();
 }
 
@@ -194,3 +196,5 @@ void * __zmalloc_tracked(size_t size, const char *func)
 	}
 	return p;
 }
+
+unsigned long mapping_sizes[NR_MAPPING_SIZES];

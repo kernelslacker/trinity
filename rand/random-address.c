@@ -59,7 +59,6 @@
  * wrap is harmless: the prior syscall's buffer is no longer in
  * use.
  */
-#define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
 #define WRITABLE_POOL_ALIGN   16UL          /* covers __alignof__(max_align_t) */
 
 static unsigned char *writable_pool;
@@ -163,6 +162,17 @@ void * get_non_null_address(void)
 void * get_writable_struct(size_t size)
 {
 	return get_writable_address(size);
+}
+
+bool range_in_writable_pool(unsigned long addr, unsigned long len)
+{
+	unsigned long base = (unsigned long) writable_pool;
+
+	if (writable_pool == NULL || len == 0 || len > WRITABLE_POOL_BYTES)
+		return false;
+
+	/* Subtract rather than add len so a wild addr cannot wrap the sum. */
+	return addr >= base && addr - base <= WRITABLE_POOL_BYTES - len;
 }
 
 /*

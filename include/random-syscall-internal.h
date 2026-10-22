@@ -12,7 +12,8 @@
  * choose_syscall_table) live in include/child.h and include/syscall.h.
  * Everything declared here is cross-cluster private glue that the
  * follow-up cluster carves add as they move code out.  Not a public
- * header: only files under random_syscall/ are expected to include it.
+ * header: only files under random_syscall/ and the tests that drive
+ * them are expected to include it.
  */
 
 #include <stdbool.h>
@@ -21,6 +22,7 @@ struct childdata;
 struct syscallrecord;
 struct syscallentry;
 struct kcov_pc_result;
+struct reexec_pending;
 
 /* pick-common.c -- table selection and validation helpers, shared by
  * the three picker arms in pickers.c.  choose_syscall_table is public
@@ -137,5 +139,13 @@ void apply_chain_substitution(struct syscallrecord *rec,
 bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		   bool *found_new, unsigned long *new_cmp_out,
 		   unsigned long *new_transition_out);
+
+/*
+ * The field-scoped RedQueen pin.  redqueen_reexec_step() is its only
+ * caller; it is declared here so tests/redqueen_pin_test.c can reach
+ * its pointer guard without driving the whole of dispatch_step().
+ */
+void redqueen_pin_field(struct syscallrecord *rec,
+			const struct reexec_pending *p);
 
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */
