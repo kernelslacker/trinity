@@ -23,7 +23,6 @@ enum kmsg_event_kind {
 	KMSG_WARN_RCU_SUSPICIOUS, /* lockdep "suspicious RCU usage" warning */
 	KMSG_WARN_BAD_UNLOCK,	/* lockdep bad-unlock-balance */
 	KMSG_WARN_HELD_LOCK_FREED, /* lockdep held-lock-freed */
-	NR_KMSG_KINDS,		/* sentinel — array-size constant; not a real event kind */
 };
 
 void kmsg_monitor_start(void);
