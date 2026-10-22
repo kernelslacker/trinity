@@ -300,9 +300,7 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 
 		/* Per-provider outstanding-fd gauge: bump on successful
 		 * registration into the parent's global fd_hash.  Paired
-		 * with the decrement in fd_event_drain()'s CLOSE arm,
-		 * which looks the type back up via fd_hash_lookup() on
-		 * the consumer side. */
+		 * with the decrement in __destroy_object(). */
 		__atomic_fetch_add(&shm->stats.fd.provider_outstanding[type],
 				   1, __ATOMIC_RELAXED);
 	}
@@ -474,10 +472,9 @@ void __destroy_object(struct object *obj, enum obj_scope scope,
 		 * Balance the add_object() increment at the GLOBAL+fd_type
 		 * registration site.  Done here -- the common destruction
 		 * path -- so every fd-provider destruction pays the
-		 * decrement exactly once: child FD_EVENT_CLOSE drain,
-		 * parent-side stuck-fd eviction, close/close_range post-
-		 * handlers, perf peer pre-closes, and bulk shutdown
-		 * drain all flow through __destroy_object().
+		 * decrement exactly once: parent-side stuck-fd eviction,
+		 * perf peer pre-closes, and the bulk shutdown drain all
+		 * flow through __destroy_object().
 		 */
 		__atomic_fetch_sub(&shm->stats.fd.provider_outstanding[type],
 				   1, __ATOMIC_RELAXED);

@@ -2,8 +2,8 @@
  * fd event ring buffer — lock-free SPSC queue for child-to-parent
  * fd state change reporting.
  *
- * Each child produces close events into its own ring.
- * The parent drains events and updates the global object pool.
+ * Each child produces close events into its own ring.  The parent drains
+ * them: closes are only counted, and EVICT alone retires a pooled object.
  */
 
 #include <inttypes.h>

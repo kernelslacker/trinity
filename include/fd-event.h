@@ -31,18 +31,17 @@ enum fd_event_type {
 };
 
 /*
- * CLOSE and EVICT carry a single fd in fd1 (fd2 unused) and differ only
- * in semantics: CLOSE means a child genuinely closed the fd, EVICT means
- * the parent watchdog is expiring a stale pool slot whose fd may still
- * be live in a sibling.  The drain handler treats them identically for
- * pool bookkeeping but bumps separate counters so we can measure how
- * often each path fires.
+ * CLOSE and EVICT carry a single fd in fd1 (fd2 unused).  CLOSE means a
+ * child closed the fd; the child has its own fd table, so the parent's
+ * copy stays the inheritance source for later children and the drain
+ * only counts the event.  EVICT means the parent watchdog is expiring a
+ * stale pool slot whose fd may still be live in a sibling, and is the
+ * only event that retires the pooled object (remove_object_by_fd()).
  *
  * CLOSE_RANGE carries a contiguous closed range in [fd1, fd2] so a
  * single close_range() bulk close enqueues one event instead of N --
  * a child closing a wide span no longer overflows FD_EVENT_RING_SIZE.
- * The drain loops the range and calls remove_object_by_fd() per fd
- * (cheap if the fd is not tracked).
+ * Like CLOSE, the drain only counts it.
  */
 struct fd_event {
 	enum fd_event_type type;
@@ -90,8 +89,9 @@ void fd_event_drain_all(void);
  * the three steps every child-side close path must perform so the
  * order and the set stay enforced at the call site:
  *
- *   1. enqueue FD_EVENT_CLOSE so the parent eventually retires the
- *      pooled object,
+ *   1. enqueue FD_EVENT_CLOSE so the parent counts the close (it does
+ *      not retire the pooled object: its own copy of the fd is still
+ *      the inheritance source for later children),
  *   2. evict the fd from this child's fd_hash[] snapshot so
  *      get_random_fd() / get_typed_fd() stop handing the dead fd
  *      back out before the parent drains the event,

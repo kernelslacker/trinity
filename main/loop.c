@@ -76,8 +76,8 @@ static unsigned int drain_child_surfaces(void)
 	unsigned int reaped = handle_children();
 
 	/* Drain fd events from all children's ring buffers.
-	 * This processes dup/close events that children couldn't
-	 * apply directly (COW heap prevents global pool mutation). */
+	 * This applies the evictions children couldn't make directly
+	 * (COW heap prevents global pool mutation); closes are counted. */
 	fd_event_drain_all();
 
 	/* Drain stats deltas from all children's rings into the

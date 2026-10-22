@@ -100,13 +100,14 @@ static int get_rand_pidfd(void)
 	 * recycled chunk.
 	 *
 	 * Adapted shape: pidfd already had a post-deref fcntl(F_GETFD)
-	 * sanity probe to catch already-closed pidfds, with an
-	 * fd_event_enqueue(FD_EVENT_CLOSE) to evict the stale entry.  Keep
-	 * that probe inside the loop so a fcntl(EBADF) drops the candidate
-	 * and re-picks from the pool instead of returning -1 to the caller
-	 * after a single try — the version-validate covers the recycled-obj
-	 * race, fcntl covers the closed-but-still-published-fd race, and
-	 * both want the same retry budget.
+	 * sanity probe to catch already-closed pidfds, with a
+	 * notify_child_fd_closed() to drop the stale entry from this
+	 * child's snapshots.  Keep that probe inside the loop so a
+	 * fcntl(EBADF) drops the candidate and re-picks from the pool
+	 * instead of returning -1 to the caller after a single try — the
+	 * version-validate covers the recycled-obj race, fcntl covers the
+	 * closed-but-still-published-fd race, and both want the same retry
+	 * budget.
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
@@ -130,8 +131,7 @@ static int get_rand_pidfd(void)
 			 * this_child() resolves the producing child here.
 			 * The live_fds ring eviction inside the helper
 			 * keeps the same fd from being re-picked through
-			 * the live-fd cache on the next syscall before the
-			 * parent drains the FD_EVENT_CLOSE. */
+			 * the live-fd cache on the next syscall. */
 			if (child != NULL)
 				notify_child_fd_closed(child, fd);
 			continue;

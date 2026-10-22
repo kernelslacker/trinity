@@ -68,13 +68,13 @@ static void dump_fd_lifecycle(void)
  * Per-provider outstanding-fd gauge.  Only providers whose live
  * count is non-zero get a row -- a clean run with no leaks emits
  * nothing; a non-empty block at shutdown surfaces a per-provider
- * fd leak (CLOSE events lost in the fd_event ring, an OBJ_GLOBAL
- * registration whose subsequent close() bypassed remove_object_by_fd,
- * etc.).  The label comes from the registered fd_provider name so
- * the row matches --enable-fds/--disable-fds syntax; an entry whose
- * objtype has no matching provider is skipped (defensive: should
- * not happen, since the bump site fires only on a successful
- * fd_hash_insert for an is_fd_type() objtype).
+ * fd leak (an OBJ_GLOBAL registration whose subsequent close()
+ * bypassed remove_object_by_fd, etc.).  The label comes from the
+ * registered fd_provider name so the row matches
+ * --enable-fds/--disable-fds syntax; an entry whose objtype has no
+ * matching provider is skipped (defensive: should not happen, since
+ * the bump site fires only on a successful fd_hash_insert for an
+ * is_fd_type() objtype).
  */
 static void dump_fd_provider_outstanding(void)
 {

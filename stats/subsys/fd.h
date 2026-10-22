@@ -27,25 +27,22 @@ struct fd_stats {
 	unsigned long event_ring_overwritten;
 
 	/* fd_event_drain() rejected a child-supplied event whose payload
-	 * (type tag, objtype, fd, family, ...) was outside the dispatch
-	 * code's safe range.  Children write their own ring under hostile
-	 * fuzzed workloads, so the parent treats every payload field as
-	 * untrusted; without this guard a bad objtype OOB-writes
-	 * shm->fd_regen_pending and a bad family OOB-reads net_protocols
-	 * inside add_socket(). */
+	 * (type tag, fd1/fd2) was outside what apply_slot() accepts.
+	 * Children write their own ring under hostile fuzzed workloads,
+	 * so the parent treats every payload field as untrusted and
+	 * checks it on a parent-local copy of the slot. */
 	unsigned long event_payload_corrupt;
 
 	/*
 	 * Per-provider outstanding-fd gauge, indexed by enum objecttype.
 	 * Bumped from add_object() after a successful fd_hash_insert() for
-	 * an OBJ_GLOBAL fd-typed pool; dropped from fd_event_drain()'s
-	 * apply_slot() CLOSE arm using the type recorded in the parent's
-	 * fd_hash entry.  Per-index value is the number of fds currently
-	 * tracked by the parent for that provider -- a gauge, not a
-	 * cumulative counter.  dump_stats() walks the array and prints
+	 * an OBJ_GLOBAL fd-typed pool; dropped from __destroy_object(), the
+	 * common destruction path.  Per-index value is the number of fds
+	 * currently tracked by the parent for that provider -- a gauge, not
+	 * a cumulative counter.  dump_stats() walks the array and prints
 	 * only providers whose outstanding > 0, so a non-empty block at
-	 * shutdown surfaces per-provider leaks (CLOSE events lost, fds
-	 * orphaned in the global hash) without a flood of all-zero rows.
+	 * shutdown surfaces per-provider leaks (fds orphaned in the global
+	 * hash) without a flood of all-zero rows.
 	 * Indexed by the enum so the slot ids stay stable across runs and
 	 * MAX_OBJECT_TYPES sizing makes the access bounds-safe by
 	 * construction.

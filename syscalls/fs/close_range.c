@@ -43,9 +43,8 @@ static unsigned long close_range_flags[] = {
  * lets two distinct stomps slip past:
  *
  *   1. A sibling raises rec->a2 (max_fd) far above the original close
- *      range, causing the FD_EVENT_CLOSE loop to enqueue spurious close
- *      events for fds the kernel never touched -- the parent's object
- *      pool then loses live fds.
+ *      range, so the post handler reports a close of fds the kernel
+ *      never touched -- this child's fd snapshots then lose live fds.
  *   2. A sibling makes max_fd < fd between syscall return and post
  *      entry.  The unsigned `max_fd - fd > 1024` comparison underflows
  *      to a huge value, the clamp kicks in setting max_fd = fd + 1024,
@@ -277,8 +276,9 @@ static void sanitise_close_range(struct syscallrecord *rec)
 
 /*
  * If close_range succeeded without CLOEXEC flag, the fds in the range
- * are actually closed.  Enqueue CLOSE events for each fd so the parent
- * can update the object pool.
+ * are actually closed.  Enqueue one CLOSE_RANGE event for the span so
+ * the parent can count it, and drop the span from this child's local
+ * snapshots.
  *
  * The fd/max_fd/flags values are read from the post_state snapshot so
  * a sibling scribbling rec->aN between syscall return and post entry
@@ -317,11 +317,11 @@ static void post_close_range(struct syscallrecord *rec)
 	 * snap->fd stores the unsigned bit pattern of the original a1,
 	 * so a well-formed range of negatives (max_fd just above fd as
 	 * signed ints) glides through the 1024-fd clamp below and ends
-	 * up enqueueing FD_EVENT_CLOSE events that cast back to negative
-	 * fds.  The parent ring rejects them via payload_valid(), but
-	 * each rejection is logged, so a single fuzz call can spam ~1k
-	 * corrupt-event messages.  Bail -- the parent has nothing to do
-	 * with negative fds anyway.
+	 * up enqueueing a CLOSE_RANGE whose lower end casts back to a
+	 * negative fd.  The parent ring rejects it via
+	 * fd_event_payload_valid(), but each rejection is logged, so a
+	 * stream of such calls spams corrupt-event messages.  Bail --
+	 * the parent has nothing to do with negative fds anyway.
 	 */
 	if ((int) fd < 0)
 		goto out_free;
@@ -344,7 +344,7 @@ static void post_close_range(struct syscallrecord *rec)
 
 	child = this_child();
 
-	/* Publish per-fd close events and drop this child's local
+	/* Publish one CLOSE_RANGE event and drop this child's local
 	 * snapshots for the whole range in one shot.  Single pass over
 	 * fd_hash[] and the 16-slot live-fd ring instead of per-fd
 	 * walks inside the loop below. */

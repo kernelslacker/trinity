@@ -678,10 +678,10 @@ void fd_hash_remove(int fd);
 /*
  * Remove an entry from THIS child's snapshot of fd_hash[].  Safe to
  * call from child context only; in the parent or before
- * this_child() is initialised it is a no-op.  Use alongside
- * fd_event_enqueue(FD_EVENT_CLOSE) so the closing child stops
- * handing out the just-closed fd from get_random_fd() /
- * get_typed_fd() before the parent drains the event.  Most
+ * this_child() is initialised it is a no-op.  This is what stops the
+ * closing child handing out the just-closed fd from get_random_fd() /
+ * get_typed_fd(): the parent's drain only counts the matching CLOSE
+ * event and never touches a child's snapshot.  Most
  * child-side close paths should call notify_child_fd_closed()
  * instead, which bundles this with the matching event-enqueue and
  * live-fd-ring eviction so all three steps stay in lockstep.
