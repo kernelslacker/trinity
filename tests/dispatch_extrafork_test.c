@@ -3,8 +3,9 @@
  * reports back from its throwaway grandchild through the shared record.  A
  * --dry-run call has nothing to contain, so its synthesized outcome has to
  * land in the caller's own record; routed through do_extrafork() it is lost
- * wherever that is compiled out (ASAN).  The fchdir and fchroot sanitisers
- * run in the child, so the dirfd they open has to be closed there.
+ * wherever that is compiled out (ASAN).  The fchdir, fchroot and setns
+ * sanitisers run in the child, so the fd they open has to be closed there,
+ * and only that one.
  */
 
 #include <errno.h>
@@ -138,14 +139,16 @@ static void selftest_live(void)
 #endif
 }
 
-#define NR_DIRFD_CALLS	100
+#define NR_FD_CALLS	100
 
 /*
  * Take @entry through sanitise, dispatch and cleanup the way dispatch_step()
- * does.  A /dev/null fd stands in for the pool fd the generator leaves in a1
- * when the sanitiser keeps its draw: it must come through every call open.
+ * does.  The dispatcher runs .post only for a call that reached AFTER with an
+ * accepted return value, so @post_runs says whether it does here; .cleanup
+ * always runs.  A /dev/null fd stands in for the pool fd the generator leaves
+ * in a1 when the sanitiser keeps its draw: it must come through open.
  */
-static void dirfd_closed_after_call(struct syscallentry *entry)
+static void owned_fd_closed_after_call(struct syscallentry *entry, bool post_runs)
 {
 	struct childdata *child = map_child();
 	struct syscallrecord *rec = &child->syscall;
@@ -158,14 +161,14 @@ static void dirfd_closed_after_call(struct syscallentry *entry)
 	before = get_num_fds();
 
 	dry_run = true;
-	for (i = 0; i < NR_DIRFD_CALLS; i++) {
+	for (i = 0; i < NR_FD_CALLS; i++) {
 		int fd;
 
 		rec->post_state = 0;
 		rec->a1 = (unsigned long) pool_fd;
 		entry->sanitise(rec);
 
-		/* A dirfd the sanitiser opened is neither the pool fd nor the sentinel. */
+		/* An fd the sanitiser opened is neither the pool fd nor a sentinel. */
 		fd = (int) rec->a1;
 		if (fd < 0 || fd == pool_fd) {
 			fd = -1;
@@ -173,8 +176,8 @@ static void dirfd_closed_after_call(struct syscallentry *entry)
 			opened++;
 			/*
 			 * A chain splice can overwrite the slot after the
-			 * sanitiser ran: what gets closed has to be the dirfd
-			 * it opened, not whatever a1 holds now.
+			 * sanitiser ran: what gets closed has to be the fd it
+			 * opened, not whatever a1 holds now.
 			 */
 			if (opened % 2 == 0)
 				rec->a1 = (unsigned long) pool_fd;
@@ -182,19 +185,29 @@ static void dirfd_closed_after_call(struct syscallentry *entry)
 
 		do_syscall(rec, entry, &child->kcov, child);
 		if (fd >= 0 && fcntl(fd, F_GETFD) < 0)
-			BUG("dispatch_extrafork: the dirfd was closed before the call returned");
+			BUG("dispatch_extrafork: the fd was closed before the call returned");
 
+		if (post_runs && entry->post != NULL)
+			entry->post(rec);
 		if (entry->cleanup != NULL)
 			entry->cleanup(rec);
 		if (fd >= 0 && fcntl(fd, F_GETFD) >= 0)
-			BUG("dispatch_extrafork: the dirfd is still open after the call");
+			BUG("dispatch_extrafork: the sanitiser's fd is still open after the call");
 	}
 	dry_run = false;
+
+	/* A call whose open failed has opened nothing and left the pool fd in a1. */
+	rec->post_state = 0;
+	rec->a1 = (unsigned long) pool_fd;
+	if (post_runs && entry->post != NULL)
+		entry->post(rec);
+	if (entry->cleanup != NULL)
+		entry->cleanup(rec);
 
 	if (fcntl(pool_fd, F_GETFD) < 0)
 		BUG("dispatch_extrafork: closed a descriptor the sanitiser did not open");
 	if (opened == 0)
-		BUG("dispatch_extrafork: the sanitiser never opened a dirfd, so nothing was checked");
+		BUG("dispatch_extrafork: the sanitiser never opened an fd, so nothing was checked");
 	if (get_num_fds() != before)
 		BUG("dispatch_extrafork: the calls left descriptors open");
 
@@ -202,20 +215,29 @@ static void dirfd_closed_after_call(struct syscallentry *entry)
 	munmap(child, sizeof(*child));
 }
 
-/* The sanitisers open trinity_tmpdir_abs(); tmpdir_test.c leaves it at a tmp/ it removed. */
-static void selftest_dirfd_cleanup(void)
+/*
+ * fchdir and fchroot open trinity_tmpdir_abs(); tmpdir_test.c leaves it at a
+ * tmp/ it removed.  setns needs none of this.
+ */
+static void selftest_owned_fds(void)
 {
 	char base[] = "/tmp/trinity-extrafork-test.XXXXXX";
 	char tmp[sizeof(base) + sizeof("/tmp")];
 	int cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	struct syscallentry *entries[] = {
+		&syscall_fchdir, &syscall_fchroot, &syscall_setns,
+	};
+	unsigned int i;
 
 	if (cwd < 0 || mkdtemp(base) == NULL || chdir(base) != 0 ||
 	    mkdir("tmp", 0700) != 0)
 		BUG("dispatch_extrafork: cannot set up a tmp/");
 	change_tmp_dir();
 
-	dirfd_closed_after_call(&syscall_fchdir);
-	dirfd_closed_after_call(&syscall_fchroot);
+	for (i = 0; i < ARRAY_SIZE(entries); i++) {
+		owned_fd_closed_after_call(entries[i], true);
+		owned_fd_closed_after_call(entries[i], false);
+	}
 
 	if (fchdir(cwd) != 0)
 		BUG("dispatch_extrafork: cannot return to the starting directory");
@@ -230,5 +252,5 @@ void dispatch_extrafork_self_check(void)
 {
 	selftest_dry_run();
 	selftest_live();
-	selftest_dirfd_cleanup();
+	selftest_owned_fds();
 }

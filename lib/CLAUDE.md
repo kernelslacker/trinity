@@ -44,7 +44,7 @@ state — this is a directory of convenience, not a subsystem.
 - **fd.c**: `write_all`/`read_all` shared by every on-disk persistence format — `random_syscall/chain-persist.c`, `persist/minicorpus-file.c`,
   `cmp_hints/persist.c`, `kcov/persist.c`.
 - **jsonl.c**: declared in `include/jsonl.h`; its only caller is `stats/rotation_event.c`, which opens the sink before fork() and lets every child inherit it.
-- **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.
+- **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/process/setns.c`, `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.
 
 ## Areas of attention
 

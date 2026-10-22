@@ -3,9 +3,9 @@
  */
 #include <fcntl.h>
 #include <sched.h>
-#include <unistd.h>
 #include "random.h"
 #include "sanitise.h"
+#include "sanitiser-fd.h"
 
 #include "kernel/sched.h"
 static const char *ns_entries[] = {
@@ -26,9 +26,13 @@ static unsigned long setns_types[] = {
 };
 
 /*
- * setns requires a namespace fd obtained from /proc/self/ns/.
- * Generic fds always return EINVAL because the kernel checks for
- * ns_operations on the file's inode.
+ * setns takes a namespace fd, such as the /proc/self/ns/ ones opened below,
+ * or a pidfd.  Any other fd returns EINVAL: the kernel finds neither a
+ * namespace file nor a pid behind it.
+ *
+ * The fd we open is ours, not the pool's: .cleanup closes it, and only it.
+ * When the open fails a1 keeps the pool fd the generator drew, which must
+ * stay open.
  */
 static void sanitise_setns(struct syscallrecord *rec)
 {
@@ -37,22 +41,11 @@ static void sanitise_setns(struct syscallrecord *rec)
 
 	path = RAND_ARRAY(ns_entries);
 	fd = open(path, O_RDONLY);
-	if (fd >= 0)
-		rec->a1 = fd;
-}
+	if (fd < 0)
+		return;
 
-static void post_setns(struct syscallrecord *rec)
-{
-	int fd = rec->a1;
-
-	/*
-	 * Close the namespace fd we opened in sanitise.
-	 * We can't easily distinguish our fd from the generic one,
-	 * but closing an already-closed or random fd is harmless here
-	 * compared to leaking namespace fds.
-	 */
-	if (fd >= 0)
-		close(fd);
+	sanitiser_own_fd(rec, fd);
+	rec->a1 = fd;
 }
 
 struct syscallentry syscall_setns= {
@@ -62,9 +55,9 @@ struct syscallentry syscall_setns= {
 	.argtype = { [0] = ARG_FD, [1] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "nstype" },
 	.arg_params[1].list = ARGLIST(setns_types),
-	/* Not REEXEC_SANITISE_OK: sanitise_setns opens a /proc fd; leaks on re-exec. */
+	/* Not REEXEC_SANITISE_OK: setns rewrites the child's namespace state (cwd, root); re-exec repeats it. */
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY,
 	.sanitise = sanitise_setns,
-	.post = post_setns,
+	.cleanup = cleanup_sanitiser_fd,
 	.rettype = RET_ZERO_SUCCESS,
 };

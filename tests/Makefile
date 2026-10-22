@@ -175,10 +175,10 @@ REAL_SRCS	:= \
 # __do_syscall() and do_extrafork() it routes to, which
 # dispatch_extrafork_test.c drives with the kcov bracket, the coupling
 # validator and the other calls the live path reaches faked.
-# syscalls/fs/path/fchdir.c and fchroot.c and lib/sanitiser-fd.c bring the
-# two EXTRA_FORK entries whose sanitisers open a dirfd and the helper that
-# closes it, which the same test runs through sanitise, dispatch and
-# cleanup with the post_state table faked as post_oracle_test.c has it.
+# syscalls/fs/path/fchdir.c and fchroot.c, syscalls/process/setns.c and
+# lib/sanitiser-fd.c bring the entries whose sanitisers open an fd and the
+# helper that closes it, which the same test runs through sanitise, dispatch
+# and cleanup with the post_state table faked as post_oracle_test.c has it.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -211,6 +211,7 @@ PARENT_SRCS	:= \
 	$(TOP)/dispatch/syscall-exec.c \
 	$(TOP)/syscalls/fs/path/fchdir.c \
 	$(TOP)/syscalls/fs/path/fchroot.c \
+	$(TOP)/syscalls/process/setns.c \
 	$(TOP)/lib/sanitiser-fd.c
 LDFLAGS		+= -Wl,--gc-sections
 
