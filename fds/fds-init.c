@@ -97,14 +97,15 @@ bool open_fds(void)
 
 	/*
 	 * Per-provider initial pool size.  Pools populate once here at
-	 * init and only drain afterwards -- no provider has a runtime
-	 * replenish hook -- so this is the entire lifetime budget for
+	 * init and only drain afterwards -- the ->try_replenish hooks
+	 * push fresh fds into a child's live_fds ring, never into the
+	 * OBJ_GLOBAL pool -- so this is the entire lifetime budget for
 	 * each pool.  Logging it once at startup makes runtime depletion
 	 * (sustained -1 returns from get_new_random_fd, fd_random_exhausted
 	 * bumps) interpretable: a provider that started with 8 entries
-	 * was always going to bottom out fast under fd-stress / close /
-	 * dup2-replace churn, where a provider that started with 50+
-	 * survives much longer.
+	 * was always going to bottom out fast under close / dup2-replace
+	 * churn, where a provider that started with 50+ survives much
+	 * longer.
 	 */
 	{
 		unsigned int j;
