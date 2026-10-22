@@ -2,7 +2,7 @@
  * struct_field_bounds_test.c -- unsigned-overflow guard for the
  * struct-field sanitiser bounds predicate.
  *
- * Defect (review C2): every bounds check in scrub_field_array() and
+ * Defect: every bounds check in scrub_field_array() and
  * struct_fill_passes() used the form:
  *
  *     if (f->offset + f->size > size) continue;
