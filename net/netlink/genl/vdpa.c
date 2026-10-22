@@ -4,20 +4,21 @@
  * The vdpa subsystem exposes its userspace control plane through a
  * single generic-netlink family ("vdpa") whose commands provision,
  * enumerate, query, and tear down vDPA management and child devices:
- * MGMTDEV_NEW / MGMTDEV_GET enumerate management parents; DEV_NEW /
- * DEV_DEL create and destroy child vdpa devices; DEV_GET /
- * DEV_CONFIG_GET / DEV_VSTATS_GET read back device state, config, and
- * per-queue vendor stats; DEV_ATTR_SET pushes a single attribute
- * (currently MAC address) into the live device.
+ * MGMTDEV_GET enumerates management parents (MGMTDEV_NEW only labels
+ * its reply messages and is not an op, so the genl core rejects it on
+ * input and the grammar omits it); DEV_NEW / DEV_DEL create and
+ * destroy child vdpa devices; DEV_GET / DEV_CONFIG_GET /
+ * DEV_VSTATS_GET read back device state, config, and per-queue vendor
+ * stats; DEV_ATTR_SET pushes a single attribute (currently MAC
+ * address) into the live device.
  *
  * Random nlmsg_type IDs essentially never matched the runtime-assigned
  * family_id for "vdpa", so the per-cmd nla_policy walker in
- * drivers/vhost/vdpa.c / drivers/vhost/vdpa_netlink.c plus the
- * MGMTDEV_NEW / DEV_NEW provisioning code paths have been routinely
- * cold under generic netlink fuzzing; resolving the family at first
- * NETLINK_GENERIC use lets the message generator address real vdpa
- * messages whose attribute shapes plausibly survive the per-cmd
- * policy.
+ * drivers/vdpa/vdpa.c plus the DEV_NEW provisioning code path have
+ * been routinely cold under generic netlink fuzzing; resolving the
+ * family at first NETLINK_GENERIC use lets the message generator
+ * address real vdpa messages whose attribute shapes plausibly survive
+ * the per-cmd policy.
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou model, a single
  * flat nla_attr_spec table lists every id used by this family's
@@ -47,7 +48,6 @@
 #include "utils.h"
 
 static const struct genl_cmd_grammar vdpa_cmds[] = {
-	{ VDPA_CMD_MGMTDEV_NEW,		"VDPA_CMD_MGMTDEV_NEW" },
 	{ VDPA_CMD_MGMTDEV_GET,		"VDPA_CMD_MGMTDEV_GET" },
 	{ VDPA_CMD_DEV_NEW,		"VDPA_CMD_DEV_NEW" },
 	{ VDPA_CMD_DEV_DEL,		"VDPA_CMD_DEV_DEL" },
