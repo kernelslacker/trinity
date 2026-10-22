@@ -306,20 +306,29 @@ pointer intact for the post handler's downstream `deferred_freeptr()`.
 
 ## Per-childop feature-absent latches
 
-Several `childops/net/*` childops build a kernel object inside a
-transient `userns_run_in_ns()` grandchild, so the create/attach syscall
-that would surface a missing `CONFIG_*` returns inside a `_exit()`ing
+A childop that builds a kernel object inside a transient
+`userns_run_in_ns()` grandchild sees the create/attach syscall that
+would surface a missing `CONFIG_*` return inside a `_exit()`ing
 process.  A per-process static latch would die with the grandchild and
 every subsequent invocation would re-attempt the same unsupported
-kind forever (the "latch in grandchild" bug).  The fix is a fleet-wide
-latch in `shm` per childop / per kind: first grandchild to observe the
-absent-feature errno set flips the latch; siblings then skip the entry
-so the unsupported attempt is paid once per fleet, not once per
-grandchild.
+setup forever (the "latch in grandchild" bug).  The fix is a
+fleet-wide latch in `shm`: the first grandchild to observe the
+absent-feature errno flips it; siblings then skip the childop, so the
+unsupported attempt is paid once per fleet, not once per grandchild.
 
 RELAXED atomic load/store from multiple grandchildren is safe -- the
 only transition is `false -> true` and the write is idempotent.  No
 auto-clear; an absent kernel `CONFIG` does not appear mid-run.
+
+### `vsock_transport_churn_ns_unsupported`
+
+Gate for `vsock_transport_churn`
+(`childops/net/vsock-transport-churn.c`).  Set when `socket(AF_VSOCK)`
+rejects with `EAFNOSUPPORT` / `EPERM` / `ENOPROTOOPT` / `ENOENT`, when
+the `bind()` to `VMADDR_CID_LOCAL` rejects with `EADDRNOTAVAIL`
+(`CONFIG_VSOCKETS_LOOPBACK` absent) / `EAFNOSUPPORT` / `EPERM`, or when
+the fresh-netns variant's `userns_run_in_ns()` returns `-EPERM`
+(hardened userns policy).
 
 ## Multi-strategy syscall picker
 

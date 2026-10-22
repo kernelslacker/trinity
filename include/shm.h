@@ -66,7 +66,8 @@ struct shm_s {
 	 * inherited from the parent.  valid == false means the startup stat
 	 * failed (very unlikely; /proc not mounted or similar) and the guard
 	 * short-circuits to "no protection" -- degraded behaviour matches the
-	 * pre-guard baseline.  See sanitise_execve() in syscalls/execve.c.
+	 * pre-guard baseline.  See sanitise_execve() in
+	 * syscalls/process/execve.c.
 	 */
 	struct {
 		dev_t dev;
@@ -347,16 +348,15 @@ struct shm_s {
 	 * userns_run_in_ns() grandchild's iter_one_in_fresh_netns path,
 	 * plus the outer wrapper -EPERM branch; a process-local static
 	 * would die with the grandchild and every subsequent invocation
-	 * would re-attempt the same unsupported AF_VSOCK setup. */
+	 * would re-attempt the same unsupported AF_VSOCK setup.  See
+	 * Documentation/shm-state.md (Per-childop feature-absent latches). */
 	bool vsock_transport_churn_ns_unsupported;
 
-	/* cgroup-churn fleet-wide unsupported latch (childops/misc/
-	 * cgroup-churn.c).  Set on the first mkdir(2) under /sys/fs/cgroup
-	 * that returns EACCES, EPERM, EROFS, or ENOENT, indicating the
-	 * runner lacks privilege or has no cgroupfs mount.  Once set,
-	 * cgroup_churn() returns false (unsupported) immediately rather
-	 * than burning a dispatch slot incrementing .failed on every call.
-	 * Stored in shm so the latch survives child respawns. */
+	/* Gate read by procfs-writer target discovery: while set, the
+	 * /sys/fs/cgroup walk is skipped because mkdir under cgroupfs is
+	 * denied (EACCES, EPERM, EROFS or ENOENT: no privilege or no
+	 * cgroupfs mount).  Nothing in tree currently sets it, so the walk
+	 * always runs. */
 	bool cgroup_mkdir_unsupported;
 
 	/*
