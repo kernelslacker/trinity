@@ -55,9 +55,7 @@ static void sanitise_removexattr(struct syscallrecord *rec)
 	 * namespace-reject / ENODATA arms stay exercised.
 	 *
 	 * Slow-path note: setxattr() inside sanitise is one real
-	 * syscall.  syscalls/removexattr.c is outside the
-	 * sanitiser-slow-path check's FILES scope, so this is within
-	 * budget for the precondition payoff.
+	 * syscall, within budget for the precondition payoff.
 	 */
 	if (rnd_modulo_u32(2) != 0)
 		return;

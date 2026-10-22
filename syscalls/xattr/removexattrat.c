@@ -66,10 +66,8 @@ static void sanitise_removexattrat(struct syscallrecord *rec)
 	 * generic draw left them so the namespace-reject / ENODATA arms
 	 * stay exercised.
 	 *
-	 * Slow-path note: the setxattr() in sanitise is one real syscall.
-	 * syscalls/removexattrat.c is outside the sanitiser-slow-path
-	 * check's FILES scope, so this is within budget for the
-	 * precondition payoff.
+	 * Slow-path note: the setxattr() in sanitise is one real syscall,
+	 * within budget for the precondition payoff.
 	 */
 	if (rnd_modulo_u32(2) == 0) {
 		char *name = (char *) rec->a4;

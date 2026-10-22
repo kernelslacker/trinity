@@ -1,9 +1,9 @@
 /*
  * io_uring_register-internal.h
  *
- * Shared declarations split out of syscalls/io_uring_register.c so the
- * per-opcode ioring_reg_*_payload builder family can live in its own
- * translation unit and compile in parallel with the picker tables,
+ * Shared declarations split out of syscalls/io_uring/io_uring_register.c
+ * so the per-opcode ioring_reg_*_payload builder family can live in its
+ * own translation unit and compile in parallel with the picker tables,
  * dispatch switch, sanitise/post hooks and syscallentry that stay in
  * io_uring_register.c.  This header is private to the two TUs that
  * make up io_uring_register -- do not include it from anywhere else.

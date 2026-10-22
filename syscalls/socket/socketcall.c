@@ -196,13 +196,13 @@ static void post_socketcall(struct syscallrecord *rec)
 
 	/*
 	 * The args buffer is a multiplexer trampoline: each sub-call has its
-	 * own per-syscall post handler in syscalls/socket.c, accept.c, etc.,
-	 * but the multiplexer bypasses them.  Without this dispatch every fd
-	 * created by socketcall(SYS_SOCKET/SOCKETPAIR/ACCEPT/ACCEPT4) leaks
-	 * out of trinity's OBJ_FD_SOCKET pool, sits in the kernel fd table
-	 * burning RLIMIT_NOFILE until child exit, and is invisible to sibling
-	 * syscalls (no one can pick it).  Mirrors the IPC RMID handler added
-	 * for the ipc() multiplexer.
+	 * own per-syscall post handler in syscalls/socket/socket.c,
+	 * accept.c, etc., but the multiplexer bypasses them.  Without this
+	 * dispatch every fd created by socketcall(SYS_SOCKET/SOCKETPAIR/
+	 * ACCEPT/ACCEPT4) leaks out of trinity's OBJ_FD_SOCKET pool, sits in
+	 * the kernel fd table burning RLIMIT_NOFILE until child exit, and is
+	 * invisible to sibling syscalls (no one can pick it).  Mirrors the
+	 * IPC RMID handler added for the ipc() multiplexer.
 	 */
 	switch (call) {
 	case SYS_SOCKET:

@@ -98,9 +98,7 @@ static const char lgetxattr_planted_name[] = "user.trinity_plant";
  * still land on the real read path.
  *
  * Slow-path note: the setxattr() in sanitise is one real
- * syscall.  syscalls/lgetxattr.c is outside the
- * sanitiser-slow-path check's FILES scope, so this is within
- * budget for the precondition payoff.
+ * syscall, within budget for the precondition payoff.
  */
 static void sanitise_lgetxattr_plant_pathname(struct syscallrecord *rec)
 {

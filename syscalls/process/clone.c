@@ -16,7 +16,7 @@
 
 #include "kernel/sched.h"
 /*
- * Mirrors the convention in syscalls/unshare.c: when sanitise admits
+ * Mirrors the convention in syscalls/process/unshare.c: when sanitise admits
  * a CLONE_NEWNET clone() it stamps post_state with NEWNET_INFLIGHT_TICKET
  * so post_clone() knows to drop shm->newnet_in_flight.  We do not
  * derive the bookkeeping from rec->a1 at post time -- the wholesale-

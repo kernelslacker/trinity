@@ -100,9 +100,7 @@ struct listxattrat_post_state {
  * so listxattrat below may still see a non-empty list.
  *
  * Slow-path note: the setxattr() in sanitise is one real
- * syscall.  syscalls/listxattrat.c is outside the
- * sanitiser-slow-path check's FILES scope, so this is within
- * budget for the precondition payoff.
+ * syscall, within budget for the precondition payoff.
  */
 static void sanitise_listxattrat_plant_pathname(struct syscallrecord *rec)
 {

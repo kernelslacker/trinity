@@ -40,9 +40,9 @@ static size_t pick_msgsnd_like_msgsz(void)
 
 /*
  * msgsz buckets.  msgsnd seeds the queue with mostly small or
- * page-sized payloads (see syscalls/msgsnd.c); a flat rnd_modulo_u32
- * draw rarely matches any of them, so the queue churns through
- * fuzz-discard paths and never exercises a successful receive.
+ * page-sized payloads (see syscalls/ipc/sysv/msgsnd.c); a flat
+ * rnd_modulo_u32 draw rarely matches any of them, so the queue churns
+ * through fuzz-discard paths and never exercises a successful receive.
  *
  *  30% exact-sent-size  256..4096 (matches msgsnd's typical bucket)
  *  25% undersized       1..64 with MSG_NOERROR cleared (E2BIG path)

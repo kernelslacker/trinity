@@ -1,7 +1,7 @@
 /*
  * perf_event_open-internal.h
  *
- * Shared declarations split out of syscalls/perf_event_open.c so the
+ * Shared declarations split out of syscalls/perf/perf_event_open.c so the
  * sysfs PMU enumerator and the tracefs tracepoint-id pool builder
  * (scan_pmu_*, iter_pmu_dir, init_pmus, scan_tracepoint_*,
  * init_tracepoint_ids) can live in their own translation unit and

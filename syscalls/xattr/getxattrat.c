@@ -123,9 +123,7 @@ struct getxattrat_post_state {
  * path.
  *
  * Slow-path note: the setxattr() in sanitise is one real
- * syscall.  syscalls/getxattrat.c is outside the sanitiser-
- * slow-path check's FILES scope, so this is within budget for
- * the precondition payoff.
+ * syscall, within budget for the precondition payoff.
  */
 static void sanitise_getxattrat_plant_pathname(struct syscallrecord *rec)
 {

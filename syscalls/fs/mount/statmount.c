@@ -68,8 +68,7 @@ static unsigned long statmount_params[] = {
  * so freeing the relocated address would trip the allocator's
  * heap-bounds gate; original_buf captures the zmalloc ptr for
  * the post handler to release via deferred_free_enqueue().
- * Mirrors the PIPE_POST_STATE_MAGIC pattern at
- * syscalls/pipe.c:57.
+ * Mirrors the PIPE_POST_STATE_MAGIC pattern in syscalls/fs/pipe.c.
  */
 #define STATMOUNT_POST_STATE_MAGIC	0x53544D4E545F4D47UL	/* "STMNT_MG" */
 struct statmount_post_state {

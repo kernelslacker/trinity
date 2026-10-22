@@ -25,7 +25,7 @@ static unsigned long semctl_cmds[] = {
 /*
  * Fallback nsems cap used for semnum picks when the producer-side pool
  * entry doesn't carry the set's real nsems.  Today the OBJ_SYSV_SEM
- * pool stashes only the semid (see syscalls/semget.c sysvsemobj), so
+ * pool stashes only the semid (see syscalls/ipc/sysv/semget.c sysvsemobj), so
  * every lookup goes through the fallback.  Matches the bound the
  * pre-existing semnum ARG_RANGE was using (0..250), tightened down so
  * 70%+ of picks land inside the set's valid index range.

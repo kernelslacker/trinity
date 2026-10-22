@@ -156,10 +156,9 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
 	 * Plant runs BEFORE the post_state snapshot below so the oracle
 	 * re-walks the planted (fd, name) tuple, not the pre-plant one.
 	 *
-	 * Slow-path note: fsetxattr() inside sanitise is a real syscall.
-	 * syscalls/fgetxattr.c is outside the sanitiser-slow-path check's
-	 * FILES scope, so this is within budget for the precondition
-	 * payoff (zero per-inode-get edges -> real get edges).
+	 * Slow-path note: fsetxattr() inside sanitise is a real syscall,
+	 * within budget for the precondition payoff (zero per-inode-get
+	 * edges -> real get edges).
 	 */
 	if (rnd_modulo_u32(2) == 0) {
 		int fd = get_rand_testfile_fd();

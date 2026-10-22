@@ -1,7 +1,7 @@
 /*
  * setsockopt-internal.h
  *
- * Shared declarations split out of syscalls/setsockopt.c so the
+ * Shared declarations split out of syscalls/socket/setsockopt.c so the
  * per-(level, optname) optval builders (build_int_*, build_linger,
  * build_timeval, build_ip_mreqn, build_ipv6_mreq, build_packet_mreq,
  * the build_sctp_* family, build_string_ifname) can live in their

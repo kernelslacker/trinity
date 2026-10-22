@@ -40,7 +40,7 @@ static unsigned long pkey_alloc_initvals[] = {
  * via get_random_pkey_id() so the fourth argument lands on a key the
  * kernel actually has allocated for this mm instead of a random 4-bit
  * integer that the kernel's unknown-key reject path EINVALs ~94% of
- * the time.  Mirrors the OBJ_KEY_SERIAL pool shape (syscalls/keyctl.c)
+ * the time.  Mirrors the OBJ_KEY_SERIAL pool shape (syscalls/keyctl/keyctl.c)
  * — the destructor calls pkey_free() on teardown so produced keys
  * don't leak past child lifetime.
  */

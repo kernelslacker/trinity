@@ -157,10 +157,11 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		/*
 		 * SECCOMP_FILTER_FLAG_NEW_LISTENER swaps the return contract from
 		 * zero-success to a fresh notification fd -- publish RET_FD so
-		 * dispatch/fd-group.c registers the returned fd via the generic
-		 * RET_FD path.  effective_rettype falls through to rec->rettype
-		 * because the entry's static rettype is RET_NONE (op-multiplexed,
-		 * mirroring fcntl / futex / bpf).
+		 * the generic RET_FD path (register_returned_fd() in
+		 * dispatch/syscall-retfd.c) registers the returned fd.
+		 * effective_rettype falls through to rec->rettype because the
+		 * entry's static rettype is RET_NONE (op-multiplexed, mirroring
+		 * fcntl / futex / bpf).
 		 */
 		if (rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER)
 			rec->rettype = RET_FD;

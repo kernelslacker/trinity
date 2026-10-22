@@ -41,11 +41,9 @@ static void sanitise_fremovexattr(struct syscallrecord *rec)
 	 * other half preserves the slot exactly as the generic draw left
 	 * it, so the namespace-reject / ENODATA arms stay exercised.
 	 *
-	 * Slow-path note: fsetxattr() inside sanitise is a real syscall.
-	 * syscalls/fremovexattr.c is outside the sanitiser-slow-path
-	 * check's FILES scope, so this is within budget for the
-	 * precondition payoff (zero per-inode-remove edges -> real
-	 * remove edges).
+	 * Slow-path note: fsetxattr() inside sanitise is a real syscall,
+	 * within budget for the precondition payoff (zero per-inode-remove
+	 * edges -> real remove edges).
 	 */
 	if (rnd_modulo_u32(2) != 0)
 		return;

@@ -399,10 +399,9 @@ static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
 
 	/*
 	 * Same OBJ_GLOBAL lockless-reader UAF class that the
-	 * fds/sockets.c get_rand_socketinfo() wireup defends against
-	 * (sanitise-hook-audit-2026-05-05 row 9): the parent can
-	 * destroy and recycle the OBJ_FD_WATCH_QUEUE slot between the
-	 * lockless pick and our deref of obj->watch_queueobj.fd,
+	 * fds/sockets.c get_rand_socketinfo() wireup defends against:
+	 * the parent can destroy and recycle the OBJ_FD_WATCH_QUEUE slot
+	 * between the lockless pick and our deref of obj->watch_queueobj.fd,
 	 * leaving a stale or recycled obj pointer that would feed
 	 * garbage into rec->a3 as the watch_queue fd argument to
 	 * KEYCTL_WATCH_KEY.  Mirror the wireup shape used by
