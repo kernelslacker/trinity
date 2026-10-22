@@ -96,20 +96,13 @@ static bool check_lock(lock_t *lk)
 		 * truly dead).  Same fingerprint rule used by
 		 * try_release_dead_holder() and force_bust_lock().
 		 *
-		 * Non-ESRCH failures (EPERM/EACCES/transient /proc errors) get
-		 * the same fingerprint check: a changed start_time is real
-		 * evidence the original holder is gone, even if we couldn't
-		 * confirm it via kill().  Without this, a non-ESRCH errno
-		 * returned true unconditionally without clearing the word,
-		 * which made the caller reap+re-enter check_all_locks with the
-		 * lock still held — an unrepaired true-return loop. */
+		 * pid_alive() counts a refused probe (EPERM, EACCES) as alive,
+		 * so a false return always leaves errno at ESRCH. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 		if (!is_dead_holder(pid, stored_start)) {
-			/* Same fingerprint: cannot safely release.  On confirmed
-			 * dead (ESRCH) this is the rare same-fingerprint recycle
-			 * race documented above; defer to the next tick.  On
-			 * transient errors, the holder may genuinely still be
-			 * live, so don't claim progress we didn't make. */
+			/* Same fingerprint: cannot safely release.  This is the
+			 * rare same-fingerprint recycle race documented above;
+			 * defer to the next tick. */
 			return false;
 		}
 
@@ -118,9 +111,7 @@ static bool check_lock(lock_t *lk)
 						__ATOMIC_RELEASE, __ATOMIC_RELAXED))
 			return true;
 		/* CAS lost: someone else updated the word -- that is real
-		 * progress on confirmed-dead, but on a transient failure with
-		 * an unchanged-since-our-load word we have no evidence the
-		 * lock was repaired. */
+		 * progress while the holder's death is confirmed (ESRCH). */
 		return dead_confirmed;
 	}
 	return false;
