@@ -52,7 +52,6 @@
 #include "random.h"
 #include "rnd.h"
 #include "rotation_event.h"
-#include "self_cgroup.h"
 #include "shm.h"
 #include "signals.h"
 #include "stats.h"
