@@ -139,10 +139,10 @@ void dump_syscall_tables(void)
 /*
  * Subgroup inheritance for `-g <group>`: a syscall is selected under
  * group G if its .group is G, OR if its .group's parent is G.  The
- * lookup is selection-only -- xattr syscalls keep .group = GROUP_XATTR
- * so per-group stats/bias keep attributing to the leaf group.  Only
- * GROUP_XATTR currently has a parent (GROUP_VFS); every other slot
- * defaults to GROUP_NONE.
+ * lookup is selection-only: each syscall keeps its leaf .group so
+ * per-group stats/bias still attribute to it.  Eight groups have a
+ * parent -- GROUP_XATTR and the GROUP_VFS_* leaves under GROUP_VFS,
+ * GROUP_CRED and GROUP_NS under GROUP_PROCESS; the rest GROUP_NONE.
  */
 const unsigned int group_parent[NR_GROUPS] = {
 	[GROUP_XATTR]     = GROUP_VFS,
