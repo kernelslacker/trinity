@@ -4,7 +4,7 @@
  * See include/blob_corpus.h for the per-mode contract.  This TU is
  * the storage backend; the parse / wire-up sites are
  *   - blob_fill()                      (args/pools/blob_mutator.c)
- *   - minicorpus_save_with_reason()    (persist/minicorpus.c)
+ *   - minicorpus_save_with_reason()    (persist/minicorpus-save.c)
  *   - generate_syscall_args()          (args/generate-args.c)
  *   - init_shm_publish_and_subsystems()(utils/shm.c)
  *

@@ -17,9 +17,7 @@
 
 /*
  * Probe the highest NUMA node number from sysfs.  Returns 0 on a single-
- * node system (or when /sys is not available); cached after the first
- * call.  File-local until the bespoke duplicates in syscalls/migrate_pages.c
- * and syscalls/set_mempolicy.c are folded away by their conversion rows.
+ * node system (or when /sys is not available); cached after the first call.
  */
 static unsigned int nodemask_get_max_node(void)
 {

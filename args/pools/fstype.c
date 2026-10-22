@@ -9,7 +9,7 @@
 
 /*
  * Loaded-into-kernel filesystem types.  Populated by the
- * read_filesystem_types() constructor in syscalls/mount.c from
+ * read_filesystem_types() constructor in syscalls/fs/mount/mount.c from
  * /proc/filesystems at startup, with a hard-coded fallback inside
  * that constructor for the /proc-unreadable case -- so the pointer is
  * always non-NULL and nr_filesystem_types > 0 by the time any
@@ -36,9 +36,9 @@ static const char *fstype_builtin_pool[] = {
  * at boot.  Naming one of these drives get_fs_type() into
  * request_module("fs-<name>") and exercises the module-load + fresh
  * fs_context setup path -- distinct from the already-resident
- * file_systems-list walk a loaded type hits.  Folded from the
- * per-syscall pool in syscalls/fsopen.c so any ARG_FSTYPE_NAME slot
- * gets the autoload draw by declaration.
+ * file_systems-list walk a loaded type hits.  Kept here rather than
+ * in a per-syscall table so any ARG_FSTYPE_NAME slot gets the autoload
+ * draw by declaration.
  */
 static const char *fstype_unloaded_pool[] = {
 	"9p", "ceph", "ocfs2", "gfs2", "reiserfs", "jfs", "ubifs",

@@ -399,7 +399,7 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	/* Per-group shadow of blob_fills.  Looked up via the (nr, do32)
 	 * pair the caller passed in so the attribution stays correct
 	 * regardless of any dispatch-side state.  entry / group defensive
-	 * gate mirrors account_fd_and_group() in strategy-accounting.c. */
+	 * gate mirrors account_fd_and_group() in random_syscall/fd-group.c. */
 	{
 		struct syscallentry *entry = get_syscall_entry(nr, do32);
 
