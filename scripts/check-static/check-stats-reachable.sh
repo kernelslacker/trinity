@@ -736,11 +736,9 @@ echo "PASS: $NAME: self-test: all write spellings correctly excluded from read s
 # __atomic_*( / &shm->... pattern and that the joined line is matched as
 # a write by the atomic-write filter.
 #
-# Fixture lines are copied verbatim from the top-offending source files:
-#   childops/mm/uffd-fault-move.c               lines 468-470
-#   childops/net/packet-qdisc-bypass-unanchored-l2.c  lines 871-873
-#   childops/net/igmp-mld-source-churn.c        lines 205-207
-# All three share the two-line form:
+# Fixture lines mirror call sites such as childops/net/vsock-transport-churn.c
+# and net/netlink/rtnl-ack-oracle.c, where a long stats field name pushes
+# the arguments onto their own lines.  All of them share the two-line form:
 #   line N:   __atomic_add_fetch(
 #   line N+1: \t\t\t&shm->stats.<sub>.<field>, 1, __ATOMIC_RELAXED);
 # Without join_continuations the N+1 line lacks __atomic_*( and passes
@@ -748,17 +746,14 @@ echo "PASS: $NAME: self-test: all write spellings correctly excluded from read s
 # one line and the filter correctly excludes it.
 _fix_ml_file="$TMP/fix_multiline_fixture"
 {
-	# childops/mm/uffd-fault-move.c 468-470
 	printf '\t\t__atomic_add_fetch(\n'
-	printf '\t\t\t&shm->stats.uffd_fault_move.v1_dontwake_woke_early,\n'
+	printf '\t\t\t&shm->stats.vsock_transport_churn.buffer_size_ok,\n'
 	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
-	# childops/net/packet-qdisc-bypass-unanchored-l2.c 871-873
 	printf '\t\t__atomic_add_fetch(\n'
-	printf '\t\t\t&shm->stats.packet_qdisc_bypass_unanchored_l2.lane_a_sends,\n'
+	printf '\t\t\t&shm->stats.rtnl_ack_oracle.recv_enobufs,\n'
 	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
-	# childops/net/igmp-mld-source-churn.c 205-207
 	printf '\t\t__atomic_add_fetch(\n'
-	printf '\t\t\t&shm->stats.igmp_mld_source_churn.igmp_max_msf_raise_fail,\n'
+	printf '\t\t\t&shm->stats.vsock_transport_churn.timeout_ok,\n'
 	printf '\t\t\t1, __ATOMIC_RELAXED);\n'
 } > "$_fix_ml_file"
 # Raw fixture: no line should match atomic_write_pattern AND &shm-> together
