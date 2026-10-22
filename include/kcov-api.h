@@ -436,8 +436,7 @@ uint64_t kcov_kaslr_base_value(void);
  * address before it enters the cmp-hints bloom + per-syscall pool +
  * persisted state file.  Companion to kcov_canon_pc (the PC-coverage
  * canonicaliser) -- same arithmetic, separate named entry point so the
- * cmp-hint canonicalisation invariant can be enforced in isolation by
- * scripts/check-static/cmp-hints-canonicalise-cmp-ip.sh.  Returns the
+ * cmp-hint canonicalisation invariant lives in one place.  Returns the
  * argument unchanged on systems where kcov_kaslr_base stayed zero. */
 unsigned long kcov_canon_cmp_ip(unsigned long ip);
 

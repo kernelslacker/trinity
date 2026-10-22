@@ -5,11 +5,9 @@
  * kcov_canon_cmp_ip() is the single ingress point that CMP-hint
  * consumers use to strip the runtime KASLR base from a comparison-
  * instruction PC before it is stored in the per-syscall pool or the
- * persisted cmp-hints file.  Kept in its own TU so the static-gate
- * script (scripts/check-static/cmp-hints-canonicalise-cmp-ip.sh) has
- * a single file to audit for the "callers must go through
- * kcov_canon_cmp_ip" rule, mirroring the analogous PC-coverage
- * canonicalisation gate on kcov_canon_pc in collect-internal.h.
+ * persisted cmp-hints file.  Kept in its own TU, apart from the
+ * PC-coverage kcov_canon_pc in collect-internal.h, so every cmp-hint
+ * caller goes through one named ingress.
  */
 
 #include "kcov-internal.h"	/* kcov_kaslr_base extern, kcov types */
@@ -19,9 +17,8 @@
  * the cmp-hints bloom + per-syscall pool + persisted state file.  Same
  * transform as kcov_canon_pc -- both subtract the runtime _text base
  * resolved by kcov_get_kaslr_base -- but kept as a distinct entry point
- * for the cmp-hint side so cmp_hints.c has a single named ingress that
- * scripts/check-static/cmp-hints-canonicalise-cmp-ip.sh can enforce in
- * isolation from the PC-coverage canonicalisation rule.
+ * for the cmp-hint side so the cmp-hints code has a single named
+ * ingress, separate from the PC-coverage canonicalisation rule.
  *
  * Without this, the cmp-hints pool indexed entries by the raw runtime
  * PC of the kernel comparison site; a KASLR reroll between save and

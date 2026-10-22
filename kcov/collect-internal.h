@@ -35,12 +35,11 @@
  *
  * Single point of canonicalisation.  Callers route every PC that lands
  * in bucket_seen[] or the transition map through here exactly once at
- * the head of the kcov_collect() PC walk, then feed the canonical
- * value into pc_canon_to_edge() and pair_to_transition() without
- * re-canonicalising.  scripts/check-static/kcov-canonicalise-pcs.sh
- * enforces both halves of the rule: pc_canon_to_edge() must not call
- * kcov_canon_pc (would double-subtract the base), and any function in
- * kcov.c that calls pc_canon_to_edge() must also call kcov_canon_pc.
+ * the head of the kcov_collect() PC walk in collect.c, then feed the
+ * canonical value into pc_canon_to_edge() and pair_to_transition()
+ * without re-canonicalising: pc_canon_to_edge() must not call
+ * kcov_canon_pc (it would double-subtract the base), and a caller of
+ * pc_canon_to_edge() must have called kcov_canon_pc on the PC first.
  */
 static inline unsigned long kcov_canon_pc(unsigned long pc)
 {
