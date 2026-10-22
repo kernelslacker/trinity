@@ -143,8 +143,6 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 
 VERSION_H	:= include/version.h
 
-HEADERS		:= $(wildcard *.h) $(wildcard syscalls/*.h) $(wildcard syscalls/clock/*.h) $(wildcard ioctls/*.h)
-
 SRCS		:= $(wildcard *.c) \
 		   $(wildcard args/*.c) \
 		   $(wildcard args/pools/*.c) \
@@ -322,7 +320,7 @@ DEPDIR= .deps
 $(VERSION_H): scripts/gen-versionh.sh Makefile $(wildcard .git)
 	@scripts/gen-versionh.sh
 
-trinity: $(OBJS) $(HEADERS)
+trinity: $(OBJS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
