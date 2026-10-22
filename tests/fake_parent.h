@@ -18,6 +18,10 @@ struct fake_slot_log {
 	pid_t classified_pid;		/* classify_child_buglog() */
 	unsigned int sysv_drained;	/* reap_child_sysv_{shm,msg,sem}() */
 	unsigned int replaced;		/* replace_child() */
+	unsigned int canary_crashes;	/* canary_queue_on_crash() */
+	int canary_signo;		/* the signo of the last such call */
+	unsigned int reaps;		/* record_reap() */
+	int reap_status;		/* the wait status of the last such call */
 };
 
 extern struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];

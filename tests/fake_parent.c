@@ -271,12 +271,14 @@ void kill_pid(pid_t pid)
 
 void canary_queue_on_crash(int childno, int signo)
 {
-	(void)childno; (void)signo;
+	fake_slot_log[childno].canary_crashes++;
+	fake_slot_log[childno].canary_signo = signo;
 }
 
 void record_reap(int childno, int childstatus)
 {
-	(void)childno; (void)childstatus;
+	fake_slot_log[childno].reaps++;
+	fake_slot_log[childno].reap_status = childstatus;
 }
 
 void dump_child_fault_beacon(struct childdata *child)

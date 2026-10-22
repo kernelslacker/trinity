@@ -257,6 +257,7 @@ FAKE_SRCS	:= \
 	genl_ops_test.c \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \
+	reap_fault_beacon_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
