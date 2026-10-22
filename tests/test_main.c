@@ -62,6 +62,7 @@ void get_num_fds_self_check(void);
 void spawn_self_check(void);
 void post_oracle_self_check(void);
 void dup_pool_self_check(void);
+void sanitiser_owned_mask_pool_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -295,6 +296,11 @@ int main(int argc, char **argv)
 	printf("  dup_pool_self_check ... ");
 	fflush(stdout);
 	dup_pool_self_check();
+	printf("OK\n");
+
+	printf("  sanitiser_owned_mask_pool_self_check ... ");
+	fflush(stdout);
+	sanitiser_owned_mask_pool_self_check();
 	printf("OK\n");
 
 	return 0;

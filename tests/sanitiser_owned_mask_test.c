@@ -21,7 +21,7 @@
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* generic_sanitise */
 #include "syscall.h"		/* arg_meta_init */
-#include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl, syscall_socket */
+#include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl, ... */
 #include "tables.h"		/* syscalls, max_nr_syscalls, sanity_check_tables */
 #include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -152,9 +152,9 @@ static void bad_mask_refused(void)
  * the sanitiser runs below and must write every one.  An entry can be
  * listed once its TU is linked into the test binary. */
 static struct syscallentry *const owner_entry[] = {
-	&syscall_prctl, &syscall_keyctl, &syscall_socket,
+	&syscall_prctl, &syscall_keyctl, &syscall_socket, &syscall_socketpair,
 };
-static const uint8_t owner_slots[] = { 1u << 0, 1u << 0, 0x07 };
+static const uint8_t owner_slots[] = { 1u << 0, 1u << 0, 0x07, 0x0f };
 
 #define OWNER_RUNS	2048
 #define OWNER_MARK(k)	(0x5a5a00UL + (k))
@@ -203,5 +203,17 @@ void sanitiser_owned_mask_self_check(void)
 	owned_slot_not_generated();
 	owned_slot_labelled();
 	bad_mask_refused();
+	real_entries_own_what_they_write();
+}
+
+/* The pass above runs before any suite has made the writable pool, so a
+ * sanitiser that fills a slot from it takes its empty-pool arm.  Run
+ * again once a later suite has made it, taking it as that suite left
+ * it, so the pool arm is covered too. */
+void sanitiser_owned_mask_pool_self_check(void);
+void sanitiser_owned_mask_pool_self_check(void)
+{
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
 	real_entries_own_what_they_write();
 }

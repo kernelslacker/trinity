@@ -303,5 +303,9 @@ struct syscallentry syscall_socketpair = {
 	 * get_arg_snapshot() and the handlers still see the address the
 	 * kernel actually wrote, not the stomped value. */
 	.arg_snapshot_mask = (1u << 3),
+	/* sanitise_socketpair() writes the triplet and a4 on every path
+	 * (a4 is 0 when no buffer is to be had) without reading any of
+	 * them, so none is generated. */
+	.sanitiser_owned_mask = (1u << 0) | (1u << 1) | (1u << 2) | (1u << 3),
 	.flags = REEXEC_SANITISE_OK,
 };

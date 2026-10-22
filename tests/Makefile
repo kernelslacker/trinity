@@ -188,10 +188,12 @@ REAL_SRCS	:= \
 # and cleanup with the post_state table faked as post_oracle_test.c has it.
 # syscalls/fs/dup.c brings syscall_dup, syscall_dup2 and syscall_dup3,
 # whose post handlers dup_pool_test.c drives against a fake object pool.
-# syscalls/keyctl/keyctl.c and syscalls/socket/socket.c bring
-# syscall_keyctl and syscall_socket, whose sanitisers
-# sanitiser_owned_mask_test.c runs against the empty pools in
-# fake_objects.c and the domain tables in fake_net.c.
+# syscalls/keyctl/keyctl.c, syscalls/socket/socket.c and
+# syscalls/socket/socketpair.c bring syscall_keyctl, syscall_socket and
+# syscall_socketpair, whose sanitisers sanitiser_owned_mask_test.c runs
+# against the empty pools in fake_objects.c and the domain tables in
+# fake_net.c; args/output-poison.c is the poison stamp socketpair's
+# sanitiser makes.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -234,7 +236,9 @@ PARENT_SRCS	:= \
 	$(TOP)/lib/sanitiser-fd.c \
 	$(TOP)/syscalls/fs/dup.c \
 	$(TOP)/syscalls/keyctl/keyctl.c \
-	$(TOP)/syscalls/socket/socket.c
+	$(TOP)/syscalls/socket/socket.c \
+	$(TOP)/syscalls/socket/socketpair.c \
+	$(TOP)/args/output-poison.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the

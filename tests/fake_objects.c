@@ -25,6 +25,13 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	abort();
 }
 
+struct object *find_local_object_by_fd(enum objecttype type, int fd)
+{
+	(void)type; (void)fd;
+	fprintf(stderr, "fake find_local_object_by_fd called unexpectedly\n");
+	abort();
+}
+
 /* REG_GLOBAL_OBJ() runs this from a constructor in each TU that uses it. */
 void register_global_obj_init(struct global_obj_entry *entry)
 {
