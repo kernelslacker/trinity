@@ -1,8 +1,9 @@
 /*
  * Self-check for the genl op shapes.  The op list in the controller's
  * GETFAMILY reply lands in each registered family's cmd_caps, and
- * netlink_gen_msg() sets NLM_F_DUMP to suit the cmd it picks.  The reply
- * is canned and arrives over a unix socketpair standing in for the
+ * netlink_gen_msg() sets NLM_F_DUMP to suit the cmd it picks and keeps
+ * most requests inside the genl core's header check.  The reply is
+ * canned and arrives over a unix socketpair standing in for the
  * NETLINK_GENERIC socket; no netlink socket is opened.
  */
 
@@ -47,6 +48,16 @@ extern struct genl_family_grammar fam_binder;
 #define ID_UNREGISTERED	900
 
 #define ROUNDS		30000
+
+/* The flag bits the generator's own draws can set.  A random word lies
+ * within them one time in 512. */
+#define DRAWN_FLAGS	(NLM_F_REQUEST | NLM_F_ACK | NLM_F_ECHO | NLM_F_DUMP | \
+			 NLM_F_CREATE | NLM_F_APPEND)
+
+/* The draws that are not the dump pair.  NLM_F_ATOMIC is NLM_F_CREATE's
+ * bit; REPLACE, EXCL, NONREC and BULK are the dump pair's bits, so a word
+ * with one of them cannot be told from a dump. */
+#define MODIFIER_FLAGS	(NLM_F_CREATE | NLM_F_APPEND)
 
 /* A run of netlink bytes under construction, zeroed so padding is. */
 struct reply {
@@ -407,7 +418,48 @@ struct tally {
 	double lo, hi;		/* fraction of messages with both dump bits */
 	unsigned int msgs;
 	unsigned int dump;
+	unsigned int pass;	/* flags and reserved word clear the header check */
+	unsigned int drawn;	/* flags within DRAWN_FLAGS */
+	unsigned int modifiers;	/* ... that carry MODIFIER_FLAGS */
+	unsigned int reserved;	/* reserved word not 0 */
+	unsigned int drawn_reserved;	/* ... on a message with drawn flags */
 };
+
+/*
+ * genl_header_check() in net/netlink/genetlink.c as it runs for a cmd at or
+ * past its family's resv_start_op: the reserved word, then the flags
+ * outside REQUEST, ACK, ECHO and the dump pair.
+ */
+static bool header_check_passes(const struct nlmsghdr *nlh,
+				const struct genlmsghdr *genl)
+{
+	unsigned short flags = nlh->nlmsg_flags;
+
+	if (genl->reserved)
+		return false;
+	if ((flags & NLM_F_DUMP) == NLM_F_DUMP)	/* DUMP is 2 bits */
+		flags &= ~NLM_F_DUMP;
+	return !(flags & ~(NLM_F_REQUEST | NLM_F_ACK | NLM_F_ECHO));
+}
+
+static void tally_msg(struct tally *t, const struct nlmsghdr *nlh,
+		      const struct genlmsghdr *genl)
+{
+	t->msgs++;
+	if ((nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP)
+		t->dump++;
+	if (header_check_passes(nlh, genl))
+		t->pass++;
+	if (genl->reserved)
+		t->reserved++;
+	if (nlh->nlmsg_flags & ~DRAWN_FLAGS)
+		return;
+	t->drawn++;
+	if (genl->reserved)
+		t->drawn_reserved++;
+	if (nlh->nlmsg_flags & MODIFIER_FLAGS)
+		t->modifiers++;
+}
 
 static void tally_flags(struct tally *tallies, unsigned int nr_tallies)
 {
@@ -420,19 +472,75 @@ static void tally_flags(struct tally *tallies, unsigned int nr_tallies)
 
 	for (round = 0; round < ROUNDS; round++) {
 		const struct nlmsghdr *nlh;
+		struct genlmsghdr genl;
 		void *buf;
 		size_t len;
 
 		netlink_gen_msg(&triplet, &buf, &len);
 		nlh = buf;
-		for (i = 0; i < nr_tallies; i++) {
-			if (len < NLMSG_HDRLEN || nlh->nlmsg_type != tallies[i].id)
-				continue;
-			tallies[i].msgs++;
-			if ((nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP)
-				tallies[i].dump++;
+		if (len >= NLMSG_HDRLEN + GENL_HDRLEN) {
+			memcpy(&genl, NLMSG_DATA(nlh), sizeof(genl));
+			for (i = 0; i < nr_tallies; i++) {
+				if (nlh->nlmsg_type == tallies[i].id)
+					tally_msg(&tallies[i], nlh, &genl);
+			}
 		}
 		free(buf);
+	}
+}
+
+/*
+ * A request clears the genl core's header check unless a flag lies outside
+ * REQUEST, ACK, ECHO and the dump pair, or the reserved word is not 0.  A
+ * random chaos word (one message in ten) clears it about one time in 4000
+ * and the modifiers, drawn for one genl message in 8, leave about 0.91 of
+ * the rest clear, so 0.82 of a family's messages do.  When every message
+ * drew them and one in four carried a reserved word it was 0.16 to 0.21;
+ * either fault alone leaves at most 0.62, so the floor of 0.75, nine
+ * sigma under 0.82, turns away both.
+ *
+ * The modifiers must stay, and rare: ATOMIC/CREATE or APPEND show in 0.077
+ * of the messages, counted among those whose flags are all the
+ * generator's own bits (a chaos word is one time in 512), and the bounds
+ * 0.02 and 0.12 turn away dropping them and drawing them one time in 4.
+ * The reserved word is 0 on all of those but the few chaos words among
+ * them, and nonzero on 0.025 of all messages (chaos, one time in four);
+ * the limit is 0.5% either way.
+ */
+static void check_header_check(const struct tally *t, unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		double pass, mods, drawn_reserved, reserved;
+
+		if (t[i].msgs < 1000 || t[i].drawn < 1000)
+			BUG("genl ops: too few messages to judge the header check");
+		pass = (double) t[i].pass / t[i].msgs;
+		mods = (double) t[i].modifiers / t[i].msgs;
+		drawn_reserved = (double) t[i].drawn_reserved / t[i].drawn;
+		reserved = (double) t[i].reserved / t[i].msgs;
+
+		if (pass < 0.75) {
+			fprintf(stderr, "%s: %u of %u messages clear the genl header check, want at least 0.75\n",
+				t[i].what, t[i].pass, t[i].msgs);
+			BUG("genl ops: genl requests mostly bounce in the header check");
+		}
+		if (mods < 0.02 || mods > 0.12) {
+			fprintf(stderr, "%s: %u of %u messages carry NLM_F_ATOMIC, CREATE or APPEND, want a fraction in [0.020, 0.120]\n",
+				t[i].what, t[i].modifiers, t[i].msgs);
+			BUG("genl ops: the modifier flags are not rare but present");
+		}
+		if (drawn_reserved > 0.005) {
+			fprintf(stderr, "%s: %u of %u messages with drawn flags carry a reserved word\n",
+				t[i].what, t[i].drawn_reserved, t[i].drawn);
+			BUG("genl ops: a message that is not chaos carries a reserved word");
+		}
+		if (reserved < 0.005) {
+			fprintf(stderr, "%s: %u of %u messages carry a reserved word\n",
+				t[i].what, t[i].reserved, t[i].msgs);
+			BUG("genl ops: no message carries a reserved word");
+		}
 	}
 }
 
@@ -440,27 +548,20 @@ static void tally_flags(struct tally *tallies, unsigned int nr_tallies)
  * One message in ten carries flags drawn at random, which the cmd's
  * shape leaves alone: both dump bits show in one such word in four.  In
  * the rest, a coin flip sets NLM_F_DUMP, and when it does not the NEW and
- * DELETE modifiers still set both bits between them 13 times in 32, so a
- * cmd with no pin shows both bits in 0.70 of them.  Fractions expected
- * over the 3000 or so messages each family gets:
+ * DELETE modifiers still set both bits between them 13 times in 32 for
+ * the one genl message in 8 that draws them, so a cmd with no pin shows
+ * both bits in 0.52 of them.  Fractions expected over the 3000 or so
+ * messages each family gets:
  *
  *	dumpit only	0.925	(0.9 pinned + 0.1 * 0.25)
  *	doit only	0.025	(0.1 * 0.25)
- *	both, unknown	0.66	(0.9 * 0.70 + 0.1 * 0.25)
+ *	both, unknown	0.50	(0.9 * 0.52 + 0.1 * 0.25)
  */
-static void check_flags_pinned(void)
+static void check_dump_pinned(const struct tally *t, unsigned int nr)
 {
-	struct tally t[] = {
-		{ "doit only", ID_DO_ONLY, 0.005, 0.06 },
-		{ "dumpit only", ID_DUMP_ONLY, 0.88, 0.98 },
-		{ "doit and dumpit", ID_BOTH, 0.58, 0.74 },
-		{ "no op list", ID_NO_OPS, 0.58, 0.74 },
-	};
 	unsigned int i;
 
-	tally_flags(t, ARRAY_SIZE(t));
-
-	for (i = 0; i < ARRAY_SIZE(t); i++) {
+	for (i = 0; i < nr; i++) {
 		double frac = t[i].msgs ? (double) t[i].dump / t[i].msgs : -1.0;
 
 		if (t[i].msgs < 1000 || frac < t[i].lo || frac > t[i].hi) {
@@ -469,6 +570,64 @@ static void check_flags_pinned(void)
 			BUG("genl ops: the dump flag does not follow the cmd's handlers");
 		}
 	}
+}
+
+/*
+ * Another protocol still draws the modifiers on every message, as it did.
+ * Over xfrm messages ATOMIC/CREATE or APPEND show in 0.62 of them (0.9 *
+ * 0.69), and both dump bits in 0.66.  A genl-style gate would give 0.08
+ * and 0.50.
+ */
+static void check_other_protocol_flags(void)
+{
+	struct socket_triplet triplet = {
+		.family = PF_NETLINK,
+		.type = SOCK_RAW,
+		.protocol = NETLINK_XFRM,
+	};
+	unsigned int round, msgs = 0, dump = 0, mods = 0;
+	double dump_frac, mods_frac;
+
+	for (round = 0; round < ROUNDS; round++) {
+		const struct nlmsghdr *nlh;
+		void *buf;
+		size_t len;
+
+		netlink_gen_msg(&triplet, &buf, &len);
+		nlh = buf;
+		if (len >= NLMSG_HDRLEN) {
+			msgs++;
+			if ((nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP)
+				dump++;
+			if (!(nlh->nlmsg_flags & ~DRAWN_FLAGS) &&
+			    (nlh->nlmsg_flags & MODIFIER_FLAGS))
+				mods++;
+		}
+		free(buf);
+	}
+
+	dump_frac = (double) dump / msgs;
+	mods_frac = (double) mods / msgs;
+	if (dump_frac < 0.58 || dump_frac > 0.74 || mods_frac < 0.5 || mods_frac > 0.7) {
+		fprintf(stderr, "xfrm: %u of %u messages carry both dump bits and %u the modifier flags, want fractions in [0.58, 0.74] and [0.50, 0.70]\n",
+			dump, msgs, mods);
+		BUG("genl ops: a protocol other than genl draws its flags differently");
+	}
+}
+
+static void check_flags(void)
+{
+	struct tally t[] = {
+		{ "doit only", ID_DO_ONLY, 0.005, 0.045 },
+		{ "dumpit only", ID_DUMP_ONLY, 0.88, 0.98 },
+		{ "doit and dumpit", ID_BOTH, 0.42, 0.58 },
+		{ "no op list", ID_NO_OPS, 0.42, 0.58 },
+	};
+
+	tally_flags(t, ARRAY_SIZE(t));
+	check_header_check(t, ARRAY_SIZE(t));
+	check_dump_pinned(t, ARRAY_SIZE(t));
+	check_other_protocol_flags();
 }
 
 void genl_ops_self_check(void);
@@ -481,6 +640,6 @@ void genl_ops_self_check(void)
 		BUG("genl ops: the resolver never opened its socket");
 
 	check_reply_parsed();
-	check_flags_pinned();
+	check_flags();
 	close(peer_fd);
 }

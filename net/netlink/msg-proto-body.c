@@ -44,9 +44,10 @@
  * *cmd_caps gets the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the
  * controller reported for the picked cmd, 0 when they are not known, so
  * the caller can send the request kind that has a handler.
+ * Only a chaos message may carry a nonzero reserved word.
  */
 size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen, unsigned char *cmd_caps)
+		     size_t buflen, bool chaos, unsigned char *cmd_caps)
 {
 	const struct genl_family_grammar *fam = NULL;
 	struct genlmsghdr genl;
@@ -78,8 +79,11 @@ size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
 			genl.cmd = rnd_modulo_u32(256);
 		genl.version = RAND_BOOL() ? 1 : rnd_modulo_u32(4);
 	}
-	/* reserved: usually 0, but fuzz it sometimes to test validation */
-	genl.reserved = ONE_IN(4) ? rand16() : 0;
+	/* reserved: a chaos message fuzzes it sometimes to test validation;
+	 * the genl core refuses a nonzero one before it looks at the op, for
+	 * every cmd at or past the family's resv_start_op, so the rest keep
+	 * it 0. */
+	genl.reserved = (chaos && ONE_IN(4)) ? rand16() : 0;
 
 	memcpy(body, &genl, sizeof(genl));
 	len = sizeof(genl);

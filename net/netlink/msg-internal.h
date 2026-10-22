@@ -26,6 +26,7 @@
 #ifndef NET_NETLINK_MSG_INTERNAL_H
 #define NET_NETLINK_MSG_INTERNAL_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -195,10 +196,10 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
  * rtnetlink builders.  The genl builder also reports, in *cmd_caps,
  * the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the controller gave the
  * cmd it picked (0 when unknown); build_one_nlmsg sets the dump flags
- * from them.
+ * from them.  It leaves the reserved word 0 unless chaos is set.
  */
 size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen, unsigned char *cmd_caps);
+		     size_t buflen, bool chaos, unsigned char *cmd_caps);
 size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
 		     size_t buflen);
 size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type,

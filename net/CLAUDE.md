@@ -5,7 +5,7 @@ message bodies, and BPF/eBPF programs for every address family and
 netlink subsystem Trinity knows about. This is the largest subsystem
 in the tree by file count.
 
-## Files (133 .c files + 6 headers, ~30,524 LOC)
+## Files (133 .c files + 6 headers, ~30,561 LOC)
 
 Grouped by theme rather than enumerated — the long tail is highly
 repetitive (one file per protocol/family/subsystem, following a

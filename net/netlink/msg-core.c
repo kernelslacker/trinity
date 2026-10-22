@@ -46,32 +46,12 @@
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
 /*
- * Generate a random set of nlmsg flags biased toward valid combos.
- * genl_caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the genl
- * command the message carries, 0 when unknown or not genl.  The genl core
- * routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and turns away a request
- * whose routed handler is missing, so a cmd with only a dumpit gets both
- * dump bits and one with only a doit gets neither.  The NEW and DELETE
- * modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so the pin
- * comes after them.  The pure-chaos return stays unpinned so the
- * kernel's flag rejects keep seeing traffic.
+ * The flags that change what a request does rather than which handler it
+ * reaches: NLM_F_ATOMIC and the NEW- and DELETE-style modifiers.
  */
-static unsigned short gen_nlmsg_flags(unsigned char genl_caps)
+static unsigned short gen_nlmsg_modifiers(void)
 {
-	unsigned short flags = NLM_F_REQUEST; /* almost always set */
-
-	if (ONE_IN(10))
-		return rand16(); /* pure chaos */
-
-	if (RAND_BOOL())
-		flags |= NLM_F_ACK;
-
-	if (RAND_BOOL())
-		flags |= NLM_F_ECHO;
-
-	/* GET-style: dump flags */
-	if (RAND_BOOL())
-		flags |= NLM_F_DUMP;
+	unsigned short flags = 0;
 
 	if (RAND_BOOL())
 		flags |= NLM_F_ATOMIC;
@@ -93,6 +73,51 @@ static unsigned short gen_nlmsg_flags(unsigned char genl_caps)
 		flags |= NLM_F_NONREC;
 	if (RAND_BOOL())
 		flags |= NLM_F_BULK;
+
+	return flags;
+}
+
+/*
+ * Generate a random set of nlmsg flags biased toward valid combos.
+ * chaos is the message in ten whose flags are a random word, returned
+ * unpinned so the kernel's flag rejects keep seeing traffic.
+ *
+ * For every cmd at or past its family's resv_start_op, the genl core
+ * turns away any flag outside REQUEST, ACK, ECHO and the dump pair, and
+ * does so before it looks the op up.  A genl message therefore draws the
+ * modifiers one time in 8 rather than every time.  That leaves about
+ * nine in ten of the rest clear of the check, while the older families,
+ * which skip it, and the handlers that read the modifiers (gtp tests EXCL
+ * and REPLACE) still get them.
+ *
+ * genl_caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the genl
+ * command the message carries, 0 when unknown or not genl.  The genl core
+ * routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and turns away a request
+ * whose routed handler is missing, so a cmd with only a dumpit gets both
+ * dump bits and one with only a doit gets neither.  The NEW and DELETE
+ * modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so the pin
+ * comes after them.
+ */
+static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
+				      unsigned char genl_caps)
+{
+	unsigned short flags = NLM_F_REQUEST; /* almost always set */
+
+	if (chaos)
+		return rand16(); /* pure chaos */
+
+	if (RAND_BOOL())
+		flags |= NLM_F_ACK;
+
+	if (RAND_BOOL())
+		flags |= NLM_F_ECHO;
+
+	/* GET-style: dump flags */
+	if (RAND_BOOL())
+		flags |= NLM_F_DUMP;
+
+	if (protocol != NETLINK_GENERIC || ONE_IN(8))
+		flags |= gen_nlmsg_modifiers();
 
 	if (genl_caps == GENL_CMD_CAP_DUMP)
 		flags |= NLM_F_DUMP;
@@ -281,6 +306,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
 	unsigned char genl_caps = 0;
+	bool chaos;
 	int rtnl_group = -1;
 	int num_attrs;
 
@@ -290,6 +316,12 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		return offset;
 
 	nlmsg_type = pick_nlmsg_type(triplet->protocol);
+
+	/* One message in ten is chaos: its flags are a random word and, for
+	 * genl, its reserved field may be too.  A genl message that is not
+	 * chaos keeps to the flags and the zero reserved word that the genl
+	 * core's header check lets through. */
+	chaos = ONE_IN(10);
 
 	nlh = (struct nlmsghdr *) (msg + offset);
 	nlh->nlmsg_type = nlmsg_type;
@@ -306,7 +338,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type,
-					 buflen - offset, &genl_caps);
+					 buflen - offset, chaos, &genl_caps);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		body_len = gen_nfnl_body(msg + offset, nlmsg_type,
 					 buflen - offset);
@@ -328,7 +360,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	offset += body_len;
 
 	/* After the body: a genl cmd's handlers decide the dump bits. */
-	nlh->nlmsg_flags = gen_nlmsg_flags(genl_caps);
+	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, triplet->protocol, genl_caps);
 
 	/* Append nlattr TLVs with protocol-appropriate types.
 	 * Audit messages don't use nlattr — skip for that protocol. */
