@@ -35,8 +35,12 @@
 /*
  * Warm-start persistence for kcov_shm->bucket_seen[] + edges_found.
  *
- * Layout: a fixed header followed by KCOV_NUM_EDGES bytes of bucket_seen
- * payload.  Atomic .tmp + rename on save mirrors minicorpus.  No
+ * Layout, after the persist envelope: the fixed header, KCOV_NUM_EDGES
+ * bytes of bucket_seen, the per-syscall priors (per_syscall_edges[] then
+ * per_syscall_calls[], MAX_NR_SYSCALL u64 each), the per-syscall diag
+ * block and the per-strategy strat block.  The header carries a CRC for
+ * each; a bad priors, diag or strat block is skipped without discarding
+ * the bitmap.  Atomic .tmp + rename on save mirrors minicorpus.  No
  * __attribute__((packed)) -- the field sequence below is already
  * naturally aligned on the LP64 ABIs trinity targets.
  *
@@ -59,77 +63,6 @@
  *      build.
  */
 #define KCOV_BITMAP_FILE_MAGIC		0x4B434256U	/* "KCBV" */
-/* Version 2 adds distinct_edges to the header.  Files written by
- * version 1 are rejected on load: distinct_edges cannot be reliably
- * reconstructed from bucket_seen[] (a non-zero byte could be the
- * result of a single first-bit transition or of multiple bucket
- * transitions on the same edge across prior sessions), so a
- * legacy-format file is treated as "no warm start available" and
- * the run begins cold.
- *
- * Version 3 appends per-syscall priors (per_syscall_edges and
- * per_syscall_calls of the writing session) after the bucket_seen
- * payload, with a separate priors_crc32 over the concatenated
- * arrays.  Version 2 files reject cleanly on the existing
- * version-mismatch path and the run begins cold; that is fine --
- * the priors are a soft signal and a single cold restart on the
- * format bump costs nothing the bitmap warm-start was already
- * providing.
- *
- * Version 4 added a boot_id guard from /proc/sys/kernel/random/boot_id
- * to reject cross-boot reloads.  Rationale at the time: the kallsyms
- * fingerprint is deliberately KASLR-invariant (right for identity --
- * same kernel image -> same fingerprint regardless of KASLR or
- * kptr_restrict) but bucket_seen[] was hashed from raw runtime PCs,
- * so a KASLR reroll across a reboot left the fingerprint matching yet
- * silently aliased every cached bucket to a different instruction.
- * boot_id papered over that without canonicalising PCs, at the cost
- * of forcing one cold start per reboot even when the kernel hadn't
- * changed.
- *
- * Version 5 fixes that properly: PCs are stripped of the runtime
- * KASLR base (see kcov_canon_pc / kcov_get_kaslr_base) before they
- * hit the bucket_seen[] hash, so the bucket index for an instruction
- * stays put across reboots of the same build.  The boot_id field and
- * its associated machinery are gone; in its place the header carries
- * kaslr_base purely as a load-time consistency gate -- if the file
- * was written with PCs canonicalised but this run can't canonicalise
- * (kallsyms unreadable, _text absent), or vice versa, the bucket
- * indices would silently disagree and the load is refused.  Files
- * written under v4 reject cleanly on the version mismatch, costing
- * one cold start at the format bump.
- *
- * Version 6 appends a per-syscall diag block after the v3 priors
- * blob: per_syscall_diag[MAX_NR_SYSCALL][2] serialised as packed
- * 16-byte records {u64 bucket_bits_real; u64 distinct_pcs;} with
- * the syscall slot as the outer index and the do32 arch dimension
- * as the inner index.  The previously-unused header pad slot is
- * repurposed as diag_crc32 over that block; in v5 files the same
- * slot is always written as zero by the save path and ignored by
- * the load path, so the on-disk header size is unchanged at 88 B
- * and v5 files load on a v6 binary as before -- they just lack
- * the appended diag block.  The block records true per-syscall
- * edge totals (the bucket_bits_real / distinct_pcs counters the
- * hot path already maintains) so offline tooling can rank
- * syscalls by actual edges discovered rather than only by the
- * v3 productive-call counts.
- *
- * Version 7 appends a per-strategy edge-counter block after the v6
- * diag block: pc_edge_calls_by_strategy[NR_STRATEGIES] followed by
- * pc_edge_count_by_strategy[NR_STRATEGIES], each as plain u64
- * little-endian, naturally aligned.  With NR_STRATEGIES == 3 today
- * (HEURISTIC, RANDOM, COVERAGE_FRONTIER -- see include/strategy.h)
- * the block is 6 x 8 = 48 bytes total.  Two new u32s are appended
- * to the header: strat_crc32 (CRC over the strat block) and a
- * reserved pad slot, growing the on-disk header from 88 B to 96 B.
- * v5/v6 files have only 88 B of header on disk; the load path
- * reads the v6-sized header prefix first, validates the version,
- * and reads the extra 8 B of trailer only when hdr.version >= 7,
- * so v5/v6 files continue to warm-load unchanged on a v7 binary.
- * The block records which selection strategy is producing fresh
- * edges across runs, so offline tooling can spot when (for
- * example) STRATEGY_COVERAGE_FRONTIER stops contributing new
- * edges as the bitmap saturates. */
 #define KCOV_BITMAP_FILE_VERSION	7U
 /* Oldest file-format version this binary will warm-load.  v4 stays
  * rejected (different header size, different PC basis); v5 loads

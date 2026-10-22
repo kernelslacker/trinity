@@ -53,7 +53,7 @@ every translation unit lives under one of the directories below.
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (11 files, ~3,224 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/race/storm/recipe) (7 files, ~4,328 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,273 LOC) |
-| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,450 LOC) |
+| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,383 LOC) |
 | [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (16 files, ~8,484 LOC) |
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (74 files, ~22,613 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (7 files, ~1,677 LOC) |
