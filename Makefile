@@ -91,8 +91,12 @@ asan: trinity
 
 debug: trinity
 
-test:
-	@if [ ! -f config.h ]; then  echo "[1;31mRun ./configure first.[0m" ; exit; fi
+# Every compile includes config.h, which only ./configure creates.  The
+# compile rule lists this order-only: a phony prerequisite that counted
+# would make every object out of date on every make.
+.PHONY: check-config
+check-config:
+	@if [ ! -f config.h ]; then  echo "[1;31mRun ./configure first.[0m" >&2; exit 1; fi
 
 # PURE-module test binary integration paths (arch-program #10).
 #
@@ -116,15 +120,15 @@ test:
 # to tests/Makefile REAL_SRCS, not by wiring anything here.
 .PHONY: test-bin test-asan test-ndebug
 
-test-bin: test
+test-bin: check-config
 	@$(MAKE) --no-print-directory -C tests
 
-test-asan: test
+test-asan: check-config
 	@$(MAKE) --no-print-directory -C tests ASAN=1
 	@echo "  RUN  tests/test-bin-asan (ASAN, seed=default)"
 	@./tests/test-bin-asan
 
-test-ndebug: test
+test-ndebug: check-config
 	@$(MAKE) --no-print-directory -C tests NDEBUG=1
 	@echo "  RUN  tests/test-bin-ndebug (NDEBUG, seed=default)"
 	@./tests/test-bin-ndebug
@@ -320,11 +324,11 @@ DEPDIR= .deps
 $(VERSION_H): scripts/gen-versionh.sh Makefile $(wildcard .git)
 	@scripts/gen-versionh.sh
 
-trinity: test $(OBJS) $(HEADERS)
+trinity: $(OBJS) $(HEADERS)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
-%.o : %.c | $(VERSION_H)
+%.o : %.c | check-config $(VERSION_H)
 	@mkdir -p $(DEPDIR)/$(*D)
 	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MF $(DEPDIR)/$*.d -o $@ -c $<
 
