@@ -469,8 +469,18 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	}
 #endif
 
-	if (orig_uid == 0)
+	if (orig_uid == 0) {
 		drop_privs();
+
+		/* commit_creds() zeroes pdeath_signal when the euid or egid
+		 * changes (kernel/cred.c), so a root run lost the arm that
+		 * child_process() made.  Arm it again, and look for the parent
+		 * again: one that exited since that check will not signal us
+		 * now. */
+		(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (getppid() != mainpid)
+			_exit(EXIT_MAIN_DISAPPEARED);
+	}
 
 	/*
 	 * Drop every capability before the fuzz loop.  The trinity binary

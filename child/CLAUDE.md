@@ -30,7 +30,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 
 ## Key invariants
 - **`alarm()` backstop** — every child arms an alarm so an indefinite-blocking syscall can't wedge it (paired with the per-syscall `NEED_ALARM` flag).
-- **PDEATHSIG + getppid recheck** — arm `PR_SET_PDEATHSIG`, then re-check `getppid()` to close the parent-died-before-prctl race (gated by `pdeathsig-getppid-recheck.sh`).
+- **PDEATHSIG + getppid recheck** — arm `PR_SET_PDEATHSIG`, then re-check `getppid()` to close the parent-died-before-prctl race (gated by `pdeathsig-getppid-recheck.sh`). A root run arms again, and re-checks, right after `drop_privs()` in `init_child_setup_sandbox()`: `commit_creds()` zeroes `pdeath_signal` when the euid or egid changes.
 - **Cap-drop verified, not assumed** — `child-capdrop-oracle.c` asserts the empty cap set; a child that failed to drop is a bug, not a fuzz finding.
 - **child-context-output** — child-side `output()`/`outputerr()` writes are `/dev/null`-redirected and baselined (`child-context-output.baseline`); new child-side output callsites shift that baseline.
 
