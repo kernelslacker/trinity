@@ -539,17 +539,34 @@ void replace_child(int childno)
 {
 	unsigned int retries = 0;
 
-	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
-		return;
+	for (;;) {
+		/* Checked before every attempt, the ones after a backoff
+		 * sleep included: a child's BUG or exit reason can land
+		 * while we sleep, and a child forked into a stopping run is
+		 * one more task for the shutdown to kill and reap. */
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
+			return;
 
-	/* Don't replace if the fleet has been halted (e.g. a __BUG fired
-	 * in some child and we're now keeping the survivors quiescent so
-	 * an operator can gdb-attach for inspection).  The slot stays
-	 * empty rather than respawning into a known-corrupt environment. */
-	if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
-		return;
+		/* Don't replace if the fleet has been halted (e.g. a __BUG
+		 * fired in some child and we're now keeping the survivors
+		 * quiescent so an operator can gdb-attach for inspection).
+		 * The slot stays empty rather than respawning into a
+		 * known-corrupt environment. */
+		if (__atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
+			return;
 
-	while (spawn_child(childno) == false) {
+		if (spawn_child(childno))
+			return;
+
+		/* A failed spawn can be the run stopping rather than a fork
+		 * failure: spawn_child() panics when the parent is too close
+		 * to its fd limit.  Another attempt would only repeat the
+		 * /proc/self/fd walk and the sleep, then report a fork
+		 * failure that never happened. */
+		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING ||
+		    __atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
+			return;
+
 		if (++retries >= 10) {
 			outputerr("Failed to replace child %d after %u fork attempts, giving up.\n",
 				childno, retries);
@@ -719,6 +736,13 @@ void fork_children(void)
 			unsigned int retries = 0;
 
 			while (spawn_child(childno) == false) {
+				/* A spawn that failed because the run is
+				 * stopping is not retried and not counted as
+				 * a fork failure; see replace_child(). */
+				if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING ||
+				    __atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
+					return;
+
 				consecutive_fork_failures++;
 				fork_pressure_failures++;
 				/* Drain mode: at the first crossing of
@@ -765,7 +789,11 @@ void fork_children(void)
 					unsigned int sleep_us = min(retries * 10000u, 20000u);
 					usleep(sleep_us);
 					total_backoff_us += sleep_us;
-					if (total_backoff_us >= max_total_backoff_us)
+					/* Out of backoff budget, or a stop landed
+					 * while we slept: see replace_child(). */
+					if (total_backoff_us >= max_total_backoff_us ||
+					    __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING ||
+					    __atomic_load_n(&shm->spawn_no_more, __ATOMIC_ACQUIRE))
 						return;
 				}
 			}
