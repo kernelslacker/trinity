@@ -150,9 +150,9 @@ static void init_child_ab_stamps(struct childdata *child)
 	 * child that lost the redqueen dice never actually bursts.  Stamped
 	 * unconditionally: the flag is moot for children who won't ever reach
 	 * a CMP_RISING_PC_FLAT plateau (short-lived children, PC-mode kcov),
-	 * but the ONE_IN(2) draw stays uniform across the population so the
-	 * arm split is directly readable from any subsequent burst-drain
-	 * observability slice. */
+	 * but the ONE_IN(2) draw stays uniform across the population so
+	 * the arm split is directly readable from the reexec
+	 * burst-drain cohort lines in the periodic stats. */
 	child->burst_drain_arm_b = ONE_IN(2);
 
 	/* Cmp-hint baseline inject denom A/B-comparison stamp.  Half the
