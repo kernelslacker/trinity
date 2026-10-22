@@ -7,8 +7,9 @@
  *
  * A size-classed slab carved out of MAP_SHARED memory so that string
  * payloads reachable from parent-published objects survive fork().  See
- * the block comment at the top of utils/shared_str_heap.c for the full
- * lifecycle and rationale; this header exposes only the caller surface.
+ * utils/shared_str_heap.c for the lifecycle, and slot_state in its
+ * struct shared_str_state for why free_shared_str() trusts only that
+ * record; this header exposes only the caller surface.
  *
  * alloc_shared_str / alloc_shared_strdup / free_shared_str live in
  * include/utils-mem.h next to the sibling shared-region allocator; the

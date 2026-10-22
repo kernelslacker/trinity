@@ -6,14 +6,14 @@ limits, namespace/cgroup isolation, crash/debug diagnostics, and small
 pointer-sanity/range helpers consumed from syscalls/, mm/, kcov/, and
 cmp_hints/.
 
-## Files (32 files + 2 internal headers, ~10,491 LOC)
+## Files (34 files + 2 internal headers, ~10,861 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | range_overlap.c | 802 | `range_overlaps_shared()`/`range_in_tracked_shared()` — mm-syscall sanitiser oracle: bitmap prefilter + exact linear-scan confirm; `CONFIG_GUARD_SHARED` audit path (`range_overlaps_shared_audited`) cross-checks fast vs. slow verdicts |
 | heap_bounds.c | 787 | glibc brk-arena bounds tracking from `/proc/self/maps`; `is_in_glibc_heap()`, `range_overlaps_libc_heap()` guard mm-syscalls against clobbering the malloc arena |
 | shared_mem.c | 509 | Core shared-memory allocator: `alloc_shared()`/`alloc_shared_pool()`/`free_shared()`, `alloc_shared_page_aligned()`, region tracking (`shared_regions[]` + overflow tail), `track_shared_region[_tagged]`/`untrack_shared_region` |
-| shared_str_heap.c | 396 | Shared string sub-heap: `alloc_shared_str`/`alloc_shared_strdup`/`free_shared_str`, so object names live in shared memory rather than the per-process heap |
+| shared_str_heap.c | 341 | Shared string sub-heap: `alloc_shared_str`/`alloc_shared_strdup`/`free_shared_str`, so object names live in shared memory rather than the per-process heap |
 | shared_mem_bitmap.c | 325 | 2 MiB-granularity region bitmap plus the size-bucket bitmap: `shared_bitmap_mark`/`unmark`, `tracked_size_mark`/`unmark`, `shared_bitmap_self_check` |
 | shared_mem_guard.c | 320 | Per-object `CONFIG_GUARD_SHARED` guard-page mode: `guard_pages_alloc`, span derivation, scope classification and naming, guarded-object census |
 | shared_freelist.c | 283 | Size-bucket freelist: `shared_freelist_pop`/`push` with token bounds-checking and CAS slot claim/release |

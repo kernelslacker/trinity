@@ -1,73 +1,10 @@
 /*
- * Shared-string heap allocator.
- *
- * A size-classed slab that carves variable-length string payloads out
- * of a single MAP_SHARED region so that any string pointer reachable
- * from an OBJ_GLOBAL object stays walkable in every forked child.  The
- * owning obj struct is on the private per-process heap; only the
- * variable-length payload it points at lives in this slab.
- *
- * Layout:
- *
- *   +-------------------------- shared_str_heap (1 MiB, MAP_SHARED)
- *   | slot | slot | slot | ... | bump cursor -> ...
- *
- *   Each carved slot belongs to exactly one size bucket
- *   (shared_freelist_bucket_sizes[]: 8..1024, powers of two).  Slots
- *   up to 1024 bytes are recycled through per-bucket freelists on
- *   free; slots above bucket-1024 are bump-and-leak.
- *
- * Free-bucket authority (the reason the metadata table exists):
- *
- *   Payload bytes -- including the terminating NUL of a strdup-style
- *   allocation -- live in a MAP_SHARED region that can be handed to
- *   fuzzed syscalls as a user pointer.  A syscall that scribbles the
- *   NUL turns any strlen()-derived size into an attacker-controlled
- *   quantity.  If free_shared_str picked its target bucket by
- *   re-strlen()'ing the payload, a NUL stomp would push the slot
- *   into a LARGER bucket than alloc carved -- the next pop from that
- *   larger bucket then hands the caller a too-small chunk that
- *   the push's memset(slot, 0, bucket_size) already scribbled past
- *   the slot end.
- *
- *   Fix: record the slot's state at alloc time in an out-of-band table
- *   (slot_state, indexed by slot_offset / SHARED_FREELIST_SLOT_STRIDE;
- *   all bucket sizes and slot offsets are multiples of the stride) and
- *   take free_shared_str's bucket from that record instead of from any
- *   quantity a fuzz scribble can influence.  free_shared_str therefore
- *   takes no size: every bucketed slot has a record, and above-bucket
- *   bump-and-leak slots have none and are leaked without touching the
- *   slab.
- *
- * Slot-provenance authority (the reason the state is not just a bucket
- * tag):
- *
- *   A bounds-check on the freelist token only proves the address is
- *   IN-SLAB; it does NOT prove the address names a live, non-interior,
- *   same-bucket slot.  A forged in-bounds token can still name a live
- *   slot (aliased allocation), a slot from another bucket (cross-
- *   bucket handout), or an aligned interior address inside a live slot
- *   (silent payload corruption); a double-free re-links the same
- *   address into two chains.
- *
- *   Fix: slot_state encodes FREE(bucket)/LIVE(bucket)/UNCARVED, and
- *   shared_freelist_pop/push perform the atomic FREE<->LIVE transition
- *   as the sole gate for handing out or reclaiming a slot.  Every
- *   provenance failure -- link-to-live, cross-bucket, interior-offset,
- *   double-free -- collapses to a failing state CAS; the primitive
- *   leaks the slot without touching slab memory.  The state array
- *   lives in its own alloc_shared_pool region -- NOT inside
- *   shared_str_heap and NOT registered as a fuzz target -- so a fuzzed
- *   syscall cannot rewrite the authoritative state the primitives
- *   read.
- *
- * Freelist primitives:
- *
- *   The per-bucket lock-free freelist heads (ABA-safe, bounds-checked,
- *   provenance-checked) live in utils/shared_freelist.c.  This TU owns
- *   the heap base, the per-bucket head words, and the per-slot state
- *   record; it calls shared_freelist_pop / shared_freelist_push to
- *   move slots on and off each head.
+ * Shared-string heap allocator: a size-classed slab in one MAP_SHARED
+ * region, so a string pointer reachable from an OBJ_GLOBAL object stays
+ * walkable in every forked child (the obj struct is private; only its
+ * payload lives here).  Freed slots up to 1024 B recycle through the
+ * freelists in shared_freelist.c, larger ones bump-and-leak, and
+ * free_shared_str() trusts only the out-of-band slot_state record.
  */
 
 #include <stdbool.h>
@@ -127,15 +64,32 @@ struct shared_str_state {
 	uint64_t freelist[SHARED_FREELIST_NUM_BUCKETS];
 
 	/*
-	 * Per-slot state.  Indexed by slot_offset /
-	 * SHARED_FREELIST_SLOT_STRIDE (all bucket sizes and slot
-	 * offsets are multiples of the stride).  See shared_freelist.h
-	 * for the encoding: 0 == UNCARVED / interior, 1..N ==
-	 * FREE(bucket_idx = v - 1), N+1..2N == LIVE(bucket_idx =
-	 * v - 1 - N).  free_shared_str reads this to pick the target
-	 * bucket instead of recomputing size from the slot's own
-	 * (fuzzable) payload bytes, AND the freelist primitives use it
-	 * as the atomic gate for slot ownership.
+	 * Per-slot state, indexed by slot_offset / SHARED_FREELIST_SLOT_STRIDE
+	 * (all bucket sizes and slot offsets are multiples of the stride).
+	 * See shared_freelist.h for the encoding: 0 == UNCARVED / interior,
+	 * 1..N == FREE(bucket_idx = v - 1), N+1..2N == LIVE(bucket_idx =
+	 * v - 1 - N).  free_shared_str() and the freelist primitives trust
+	 * nothing but this record, for two reasons.
+	 *
+	 * Bucket: payload bytes, a strdup's NUL included, live in MAP_SHARED
+	 * memory that fuzzed syscalls can be handed as a user pointer.  A
+	 * bucket re-derived with strlen() would let a scribbled NUL put the
+	 * slot in a LARGER bucket than alloc carved: the push's memset(slot,
+	 * 0, bucket_size) then runs past the slot end and the next pop hands
+	 * out a too-small chunk.  So the bucket is recorded at alloc time and
+	 * free_shared_str() takes no size.
+	 *
+	 * Provenance: a bounds check on a freelist token only proves the
+	 * address is in the slab, not that it names a live, non-interior,
+	 * same-bucket slot.  A forged in-bounds token can alias a live slot,
+	 * cross buckets or land inside a slot (silent payload corruption),
+	 * and a double free links one address into two chains.  So
+	 * shared_freelist_pop/push make the atomic FREE<->LIVE transition the
+	 * sole gate for handing out or reclaiming a slot: every provenance
+	 * failure is a failed state CAS, and the slot is leaked without
+	 * touching slab memory.  The array sits in its own alloc_shared_pool
+	 * region, not inside shared_str_heap and not registered as a fuzz
+	 * target, so a fuzzed syscall cannot rewrite it.
 	 */
 	uint8_t slot_state[SHARED_STR_HEAP_SIZE /
 			   SHARED_FREELIST_SLOT_STRIDE];
@@ -324,8 +278,8 @@ void free_shared_str(void *p)
 
 	/* Authoritative state lookup: recorded at alloc time in memory
 	 * the fuzzer cannot reach.  A LIVE(bucket) record is the only
-	 * input that picks the bucket to push to.  See the block comment
-	 * at the top of this file. */
+	 * input that picks the bucket to push to; see slot_state in
+	 * struct shared_str_state. */
 	recorded = __atomic_load_n(&sss->slot_state[off /
 						    SHARED_FREELIST_SLOT_STRIDE],
 				   __ATOMIC_ACQUIRE);
