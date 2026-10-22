@@ -505,8 +505,7 @@ static void init_shm_publish_and_subsystems(void)
 	 * the mm:runtime-map:objpool self-corruption window that a fuzzed
 	 * value-result pointer opens when it lands in a post-fork glibc mmap
 	 * arena the range_overlaps_libc_heap snapshot did not capture.
-	 * Bounded first slice of the payload-arena direction -- see
-	 * objects/objpool-arena.c for the full rationale.
+	 * See objects/objpool-arena.c for the full rationale.
 	 */
 	objpool_local_arena_init();
 }

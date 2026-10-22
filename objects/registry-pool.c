@@ -151,19 +151,21 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		 * the obj-struct deferred-free path: freeing a live
 		 * container underneath a cached reader is a use-after-free.
 		 *
-		 * First-slice payload-arena wiring: the new array prefers
-		 * objpool_local_arena_alloc() so the container inherits the
-		 * arena's track_shared_region_tagged() protection against
-		 * fuzzed value-result writes.  Falls back to zmalloc_tracked
-		 * on arena exhaustion (bump-only allocator; late-lifetime
-		 * grows may miss the arena and rely on the range_overlaps_
-		 * libc_heap safety net instead).  The old container's release
-		 * routes back to deferred_free_enqueue only when it was libc-
-		 * heap: an arena-allocated old container has no free()able
-		 * chunk header and no tracker entry to consume, so it stays
-		 * where the arena bump-cursor left it -- a bounded per-child
-		 * leak of past-grown array footprint that the arena's ~13x
-		 * headroom over steady-state OBJ_LOCAL storage accounts for.
+		 * The new array prefers objpool_local_arena_alloc() so
+		 * the container inherits the arena's
+		 * track_shared_region_tagged() protection against
+		 * fuzzed value-result writes.  Falls back to
+		 * zmalloc_tracked on arena exhaustion (bump-only
+		 * allocator; late-lifetime grows may miss the arena and
+		 * rely on the range_overlaps_libc_heap safety net
+		 * instead).  The old container's release routes back to
+		 * deferred_free_enqueue only when it was libc-heap: an
+		 * arena-allocated old container has no free()able chunk
+		 * header and no tracker entry to consume, so it stays
+		 * where the arena bump-cursor left it -- a bounded
+		 * per-child leak of past-grown array footprint that the
+		 * arena's ~13x headroom over steady-state OBJ_LOCAL
+		 * storage accounts for.
 		 */
 		struct object **newarray;
 		struct object **oldarray;

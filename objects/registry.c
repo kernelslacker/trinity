@@ -31,7 +31,6 @@
  *     the syscall issues, closing the mm:runtime-map:objpool scribble
  *     window the range_overlaps_libc_heap gate misses when a post-fork
  *     glibc mmap arena falls outside the pre-fork snapshot's bbox.
- *     Bounded first slice of the payload-arena direction.
  *
  *  2. Fallback -- parent context (pre-fork OBJ_GLOBAL setup), or arena
  *     exhausted / init failure: plain zmalloc_tracked() into the

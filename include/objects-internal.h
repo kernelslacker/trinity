@@ -53,9 +53,8 @@ void destroy_objects(enum objecttype type, enum obj_scope scope);
 
 /*
  * Per-child OBJ_LOCAL objpool arena API.  See objects/objpool-arena.c
- * for the rationale (bounded first slice of the payload-arena
- * direction; closes the shared-region hole in the mm:runtime-map:
- * objpool self-corruption class).
+ * for the rationale (closes the shared-region hole in the
+ * mm:runtime-map:objpool self-corruption class).
  *
  *   objpool_local_arena_alloc  -- bump allocation from the tracked arena;
  *                                 returns NULL on unavailable / oversize

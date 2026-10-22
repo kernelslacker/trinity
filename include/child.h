@@ -304,12 +304,11 @@ struct childdata {
 	 * arena backing is a parent-side MAP_PRIVATE|MAP_ANON region
 	 * registered once with track_shared_region_tagged() so avoid_shared_
 	 * buffer_out()'s range_overlaps_shared() gate refuses fuzzed value-
-	 * result pointers inside it -- the bounded first slice of the
-	 * payload-arena direction, targeted at the mm:runtime-map:objpool
-	 * self-corruption class in maps-pick.c.  Bump-only, no wrap: on
-	 * exhaustion the caller falls back to zmalloc_tracked and the slot
-	 * loses shared-regions protection for the rest of this child's
-	 * lifetime.  Owner-only writes.
+	 * result pointers inside it -- which targets the
+	 * mm:runtime-map:objpool self-corruption class in maps-pick.c.
+	 * Bump-only, no wrap: on exhaustion the caller falls back to
+	 * zmalloc_tracked and the slot loses shared-regions protection
+	 * for the rest of this child's lifetime.  Owner-only writes.
 	 */
 	unsigned long objpool_arena_cursor;
 
