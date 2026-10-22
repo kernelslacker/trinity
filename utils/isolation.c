@@ -11,7 +11,6 @@
 #include <linux/if_addr.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
-#include <fcntl.h>
 #include <string.h>
 
 #include "debug.h"
@@ -21,7 +20,6 @@
 #include "trinity.h"
 #include "uid.h"
 
-#include "kernel/fcntl.h"
 #include "kernel/socket.h"
 /*
  * One-shot NETLINK_ROUTE socket helpers for the parent's lo
@@ -269,7 +267,7 @@ static int setup_private_net(void)
  * do_uid0_check() and before any fork; the parent is still root here
  * by construction (auto-drop is per-child, in init_child_setup_sandbox).
  *
- * Three latches publish to children via shm:
+ * Two latches publish to children via shm:
  *
  *   isolation.net_ready -- unshare(CLONE_NEWNET) succeeded AND the
  *     follow-on setup_private_net() brought lo UP and assigned
@@ -280,13 +278,6 @@ static int setup_private_net(void)
  *     MS_PRIVATE remount of '/' both succeeded.  Children skip the
  *     per-child unshare(CLONE_NEWNS) + private-remount dance and
  *     inherit the parent's private mount ns.
- *
- *   isolation.netns_fd -- /proc/self/ns/net opened once net_ready
- *     latches.  Best-effort freebie for childops driving the BPF link
- *     API attach types whose target_fd is a netns handle (sk_lookup,
- *     flow_dissector, sk_reuseport).  Stays -1 if net_ready latched
- *     false or the open failed; consumers MUST gate on net_ready
- *     before reading.
  *
  * net_ready and mnt_ready are INDEPENDENT: MS_PRIVATE failing leaves
  * mnt_ready=false but does not block net provisioning, and lo bring-up
@@ -310,8 +301,6 @@ static int setup_private_net(void)
  */
 void setup_startup_isolation(void)
 {
-	int netns_fd;
-
 	/*
 	 * Non-root: never even attempt the syscalls.  The whole point of
 	 * the gate is that every dev / claw build runs unprivileged and
@@ -375,24 +364,6 @@ void setup_startup_isolation(void)
 		output(0, "startup isolation: setup_private_net failed (errno=%d) -- net_ready stays false, children fall back to per-child unshare\n",
 			errno);
 		return;
-	}
-
-	/*
-	 * BPF-link attach types whose target_fd is a netns handle
-	 * (sk_lookup, flow_dissector, sk_reuseport) need a /proc/self/ns/
-	 * net fd at link_create time.  Open it once here and stash in shm
-	 * so every child draws from one shared fd instead of opening the
-	 * same procfs path per call.  Best-effort: a failure here doesn't
-	 * unprovision the netns, so net_ready still latches and consumers
-	 * that find netns_fd == -1 just skip the attach type.
-	 */
-	netns_fd = TEMP_FAILURE_RETRY(open("/proc/self/ns/net", O_RDONLY | O_CLOEXEC));
-	if (netns_fd < 0) {
-		output(0, "startup isolation: open(/proc/self/ns/net) failed (errno=%d) -- net_ready latched without BPF-link netns_fd freebie\n",
-			errno);
-		/* shm->isolation.netns_fd already -1 from create_shm(). */
-	} else {
-		shm->isolation.netns_fd = netns_fd;
 	}
 
 	/*

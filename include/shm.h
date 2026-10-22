@@ -280,22 +280,15 @@ struct shm_s {
 	 * parent's provisioned ns.  Either latch false degrades to the
 	 * per-child unshare path with zero behaviour change.  Design
 	 * rationale (independent latching, degrade ladder, memory
-	 * ordering, why netns_fd is stashed here):
-	 * Documentation/shm-state.md
+	 * ordering): Documentation/shm-state.md
 	 *
 	 *   net_ready:   parent's private-netns provisioning succeeded.
 	 *   mnt_ready:   parent's private-mount-ns unshare AND
 	 *                MS_REC|MS_PRIVATE remount of '/' both succeeded.
-	 *   netns_fd:    dup'd /proc/self/ns/net handle to the provisioned
-	 *                netns; -1 sentinel means "not published".
-	 *                Initialised to -1 by create_shm() over the
-	 *                memset-zero so the sentinel is honest even before
-	 *                setup runs.
 	 */
 	struct {
 		bool net_ready;
 		bool mnt_ready;
-		int netns_fd;
 
 		/*
 		 * Scratch block-device pool, populated by fds/scratch_block.c

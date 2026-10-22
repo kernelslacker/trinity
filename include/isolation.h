@@ -11,13 +11,6 @@
  * mnt_ready latch independently -- a failure on one half does not
  * block the other.
  *
- * netns_fd in shm->isolation is published as a freebie once net_ready
- * latches: BPF link API attach types whose target_fd is a netns
- * handle (sk_lookup, flow_dissector, sk_reuseport) draw from it
- * instead of re-opening /proc/self/ns/net per call.  Sentinel -1 means
- * "not published" -- either net_ready is false, or net_ready latched
- * but the procfs open failed.
- *
  * Any failure (non-root, EPERM, ENOSYS, --no-startup-isolation) leaves
  * the affected latch false and the children take the existing per-
  * child unshare path -- behaviour is byte-for-byte unchanged from a

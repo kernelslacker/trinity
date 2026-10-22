@@ -52,21 +52,6 @@ convention -- the writes happen before `fork_children()`, and the
 `fork()` itself supplies the cross-process happens-before edge to every
 child reader.
 
-### Why `netns_fd` lives here
-
-`netns_fd` is a dup'd `/proc/self/ns/net` handle to the provisioned
-netns, opened by `setup_startup_isolation()` once `net_ready` latches.
-Stashed here so childops driving the BPF link API attach types whose
-`target_fd` is a netns handle (`sk_lookup`, `flow_dissector`,
-`sk_reuseport`) can pull a ready-made fd instead of re-opening
-`/proc/self/ns/net` per call.  Sentinel `-1` means "not published" --
-either `net_ready` is false (so reading this field is meaningless
-anyway) or `net_ready` latched but the open failed (best-effort: net
-provisioning is still done, only the BPF-link freebie is absent).
-Initialised to `-1` by `create_shm()` over the top of the memset-zero
-so the sentinel is honest even before the parent has run its setup
-pass.
-
 ## Per-arm syscall-level exposure counters
 
 The existing per-arm series (`bandit_pulls[]`,
