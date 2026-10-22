@@ -361,12 +361,12 @@ static const struct sockopt_pair *lookup_sockopt_pair(int prev_level, int prev_o
  * so->optval with no nested pointer chains, no INOUT / output
  * buffers, no shared-buffer relocation, and no bespoke ownership.
  * Consumed by the curated-table pick paths in do_setsockopt() to
- * light so->reexec_scalar_safe -- the whole point of the flag is to
- * opt scalar-only dispatches into the CMP RedQueen re-exec gate
- * (see include/syscall.h REEXEC_OK) so an entry with any non-scalar
- * arms (SO_LINGER, IP_ADD_MEMBERSHIP, SO_ATTACH_FILTER, ...) can
- * still get re-exec coverage on its scalar arms.  Deliberately
- * conservative: struct-shaped builders (build_linger,
+ * light so->reexec_scalar_safe, which sanitise_setsockopt() publishes
+ * as REEXEC_OK (see include/syscall.h).  The entry's static
+ * REEXEC_SANITISE_OK already opts every arm, SO_LINGER,
+ * IP_ADD_MEMBERSHIP and SO_ATTACH_FILTER included, into the CMP
+ * RedQueen re-exec step, so the bit decides nothing today.
+ * Deliberately conservative: struct-shaped builders (build_linger,
  * build_ip_mreqn, build_timeval, build_packet_mreq, build_sctp_*,
  * build_ipv6_mreq) are excluded even when their payload happens to
  * be small and fixed, because a subsequent audit could reveal a
@@ -424,7 +424,7 @@ static bool try_paired_setsockopt(struct sockopt *so, int fd)
 	 * the follow-up, so REEXEC_OK eligibility must reflect the pair's
 	 * builder rather than the primary's -- a scalar primary paired
 	 * into build_timeval / build_ip_mreqn / build_ipv6_mreq must
-	 * NOT ride the primary's true through the re-exec gate. */
+	 * NOT ride the primary's true into REEXEC_OK. */
 	so->reexec_scalar_safe = is_scalar_optval_builder(pair->build);
 
 	__atomic_add_fetch(&shm->stats.setsockopt_pairing.paired_emitted, 1,
@@ -841,17 +841,14 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	 * Publish per-invocation REEXEC_OK when this specific dispatch's
 	 * chosen (level, optname, build) is scalar-safe AND the caller-
 	 * facing optval survived the RAND_BOOL disable branch in
-	 * do_setsockopt().  Requiring so.optval != 0 keeps the re-exec
-	 * gate honest: an optval-zeroed dispatch means the child is
-	 * signalling "disable this option" via NULL pointer, and while
-	 * re-exec of that shape is still technically safe (no owned
-	 * buffer to worry about), the CMP RedQueen pinning it targets
-	 * necessarily addresses bytes inside the optval buffer, which is
-	 * now absent -- gate it out here rather than have the pin fall
-	 * off the end of a nullptr slot inside redqueen_pin_field().
-	 * See include/syscall.h REEXEC_OK for the safety contract and
-	 * random_syscall/dispatch.c:redqueen_reexec_step() for the gate
-	 * that consumes this bit.
+	 * do_setsockopt().  An optval-zeroed dispatch means the child is
+	 * signalling "disable this option" via NULL pointer, so there is
+	 * no optval buffer for a CMP RedQueen pin to address.  See
+	 * include/syscall.h REEXEC_OK for the safety contract.  The gate
+	 * in random_syscall/dispatch-step.c:redqueen_reexec_step() reads
+	 * this bit only for an entry without the static
+	 * REEXEC_SANITISE_OK; setsockopt carries it, so the bit decides
+	 * nothing today.
 	 */
 	if (so.reexec_scalar_safe && so.optval != 0)
 		rec->flags |= REEXEC_OK;
