@@ -352,13 +352,6 @@ struct shm_s {
 	 * Documentation/shm-state.md (Per-childop feature-absent latches). */
 	bool vsock_transport_churn_ns_unsupported;
 
-	/* Gate read by procfs-writer target discovery: while set, the
-	 * /sys/fs/cgroup walk is skipped because mkdir under cgroupfs is
-	 * denied (EACCES, EPERM, EROFS or ENOENT: no privilege or no
-	 * cgroupfs mount).  Nothing in tree currently sets it, so the walk
-	 * always runs. */
-	bool cgroup_mkdir_unsupported;
-
 	/*
 	 * Multi-strategy syscall picker + UCB1 bandit -- fleet-wide state
 	 * for the rotation cadence, the per-window edge-count bookkeeping,
