@@ -4,8 +4,8 @@
  * Fires from the per-record loop in cmp_hints_collect().  For every KCOV
  * CMP record that carries KCOV_CMP_CONST -- i.e. arg1 holds a compile-
  * time constant and arg2 holds the runtime operand the kernel compared
- * it against (per the KCOV convention documented at cmp_hints/collect.c
- * :477) -- walk the dispatching syscall's cataloged INPUT struct args
+ * it against (per the KCOV convention documented in cmp_hints_collect())
+ * -- walk the dispatching syscall's cataloged INPUT struct args
  * looking for an FT_LEN_BYTES / FT_LEN_COUNT field whose value in the
  * dispatched buffer equals arg2.  The value in an FT_LEN_* slot IS the
  * length struct_fill_passes chose during its length pass (chosen_len[]
@@ -23,11 +23,12 @@
  * ladder_kinds[]) and never feeds struct_fill, so this path does not
  * consume RNG and does not perturb the fuzzing byte stream.
  *
- * Gate discipline mirrors cmp_hints_field_scan_record() (field.c:320):
- * NARROW MVP -- fixed-size cataloged INPUT structs only; tagged-union
- * and buffer-discriminated descs are skipped, corrupt/short-alloc/
- * unreadable pointers bail cleanly with cmp_hyp_len_correlated_bad_desc
- * bumped so the deflect rate is legible from the default run.
+ * Slots come from cmp_hints_field_scan_resolve() (field.c), shared with
+ * the field-attribution scan: NARROW MVP -- fixed-size cataloged INPUT
+ * structs only; tagged-union and buffer-discriminated descs are skipped,
+ * corrupt/short-alloc/unreadable pointers bail cleanly there with
+ * cmp_hyp_len_correlated_bad_desc bumped once per collect call so the
+ * deflect rate is legible from the default run.
  */
 
 #include <stdint.h>
@@ -37,7 +38,6 @@
 #include "cmp_hints.h"
 #include "cmp_hints-internal.h"
 #include "cmp_hints/hyp-internal.h"
-#include "deferred-free.h"
 #include "kcov.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -142,12 +142,12 @@ static void cmp_hyp_len_correlated_record_one(unsigned int nr, bool do32,
  * Per-record LEN_CORRELATED shadow scan.  Called from
  * cmp_hints_collect() with (arg1 = KCOV constant, arg2 = runtime
  * operand) already extracted from the trace-buffer record, and the
- * same (srec, entry) dispatch-time snapshot the field-scan path uses.
+ * same per-call resolved struct args the field-scan path walks.
  *
  * NOTE ON arg1/arg2 CONVENTION: the design doc (design-len-correlated-
  * cmp-lane-2026-07-29.md) wrote "arg1 == a length-field value we just
  * filled AND arg2 == constant C, ... expected=arg2".  KCOV's actual
- * convention (documented in cmp_hints/collect.c around line 477) is
+ * convention (documented in cmp_hints_collect()) is
  * the opposite: __sanitizer_cov_trace_const_cmpN puts the constant in
  * arg1 and the runtime operand in arg2.  This implementation follows
  * the codebase reality (arg1 = constant, arg2 = runtime) which the
@@ -166,80 +166,26 @@ static void cmp_hyp_len_correlated_record_one(unsigned int nr, bool do32,
  * so by the time this function runs arg1 is guaranteed to be a
  * compile-time constant.  No CONST bit check needed here.
  */
-void cmp_hyp_len_correlated_scan_record(struct syscallrecord *srec,
-					struct syscallentry *entry,
+void cmp_hyp_len_correlated_scan_record(const struct cmp_field_scan_slot *slots,
+					unsigned int nr_slots,
 					unsigned int nr, bool do32,
 					unsigned long arg1, unsigned long arg2,
 					unsigned int size, unsigned long cmp_ip)
 {
-	unsigned int slot;
-	unsigned int slot_max;
+	unsigned int s;
 
 	(void)cmp_ip;	/* keyed by field identity, not cmp_ip; sink here */
 
-	if (cmp_hints_shm == NULL || srec == NULL || entry == NULL)
+	if (cmp_hints_shm == NULL)
 		return;
 	if (size != 1 && size != 2 && size != 4 && size != 8)
 		return;
 
-	slot_max = entry->num_args;
-	if (slot_max > 6)
-		slot_max = 6;
-
-	for (slot = 0; slot < slot_max; slot++) {
-		enum argtype t = entry->argtype[slot];
-		const struct struct_desc *desc;
-		const unsigned char *buf;
-		unsigned long limit;
-		size_t actual_len;
+	for (s = 0; s < nr_slots; s++) {
+		const struct struct_desc *desc = slots[s].desc;
+		const unsigned char *buf = slots[s].buf;
+		unsigned long limit = slots[s].limit;
 		unsigned int i;
-
-		if (t != ARG_STRUCT_PTR_IN && t != ARG_STRUCT_PTR_INOUT)
-			continue;
-
-		desc = struct_arg_lookup(nr, slot + 1, do32, srec);
-		if (desc == NULL || desc->struct_size == 0 ||
-		    desc->fields == NULL || desc->num_fields == 0)
-			continue;
-
-		/* NARROW MVP: skip tagged-union / buffer-discriminated descs
-		 * for the same reason cmp_hints_field_scan_record does --
-		 * variant-scoped attribution needs the live variant choice
-		 * which is post-fill state the CMP-time scan can't resolve
-		 * safely from the snapshot alone. */
-		if (desc->variants != NULL || desc->num_variants != 0 ||
-		    desc->buffer_discrim_size != 0)
-			continue;
-
-		buf = (const unsigned char *)(uintptr_t)
-			srec->dispatch_args[slot];
-		if (is_corrupt_ptr_shape(buf)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc,
-					1UL, __ATOMIC_RELAXED);
-			continue;
-		}
-
-		actual_len = alloc_track_lookup_size((void *)(uintptr_t)buf);
-		if (actual_len == 0) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc,
-					1UL, __ATOMIC_RELAXED);
-			continue;
-		}
-		limit = desc->struct_size;
-		if ((unsigned long)actual_len < limit)
-			limit = (unsigned long)actual_len;
-
-		if (!range_readable_user(buf, limit)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc,
-					1UL, __ATOMIC_RELAXED);
-			continue;
-		}
 
 		for (i = 0; i < desc->num_fields; i++) {
 			const struct struct_field *f = &desc->fields[i];
@@ -307,7 +253,8 @@ void cmp_hyp_len_correlated_scan_record(struct syscallrecord *srec,
 						1UL, __ATOMIC_RELAXED);
 			}
 
-			cmp_hyp_len_correlated_record_one(nr, do32, slot + 1,
+			cmp_hyp_len_correlated_record_one(nr, do32,
+							  slots[s].arg_idx,
 							  desc, i, size, arg1);
 		}
 	}

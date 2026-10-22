@@ -301,33 +301,50 @@ void cmp_hints_field_record_self_check(void)
 }
 
 /*
- * Field-attribution scan for one CMP record.  For each cataloged INPUT
- * struct arg, walk its fields and -- on a runtime field value matching
- * arg2 -- record the kernel constant arg1 into the field-keyed pool
- * via cmp_hints_field_record().  Independent of the scalar RedQueen
- * attribution path above; runs as a recording-side accumulator so a
- * future consumer can re-inject the constant at the named field.
+ * Charge one deflected slot to the skip counters of both struct-field
+ * scans (field attribution and LEN_CORRELATED), which share the
+ * resolution in cmp_hints_field_scan_resolve() below.
+ */
+static void cmp_field_scan_skip(bool short_alloc)
+{
+	if (kcov_shm == NULL)
+		return;
+	if (short_alloc)
+		__atomic_fetch_add(
+			&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_short_alloc,
+			1UL, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(
+			&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
+			1UL, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc,
+		1UL, __ATOMIC_RELAXED);
+}
+
+/*
+ * Resolve the cataloged INPUT struct args the per-record field scans
+ * walk.  Called once per cmp_hints_collect() call: the desc, the
+ * buffer and its extent are the same for every CMP record of the call,
+ * and the alloc_track extent lookup walks every alloc_track slot for a
+ * buffer zmalloc_tracked() did not hand out.  A deflected slot is
+ * counted once per call, not once per record.
  *
  * NARROW MVP scope: fixed-size cataloged structs only.  Tagged-union
  * descs (variants != NULL) and buffer-discriminated descs
  * (buffer_discrim_size != 0) are skipped -- the live variant isn't
  * carried in the dispatch_args[] snapshot and re-reading the post-fill
- * buffer to resolve it would race a sibling stomp.  Array / pointer /
- * length-pair tags are skipped because their sibling-coupled reads
- * need the array-aware attribution path, which lands later.  Only flat
- * scalar tags with size in {1,2,4,8} contribute records here.
+ * buffer to resolve it would race a sibling stomp.
  */
-void cmp_hints_field_scan_record(struct syscallrecord *srec,
-				 struct syscallentry *entry,
-				 unsigned int nr, bool do32,
-				 unsigned long arg1, unsigned long arg2,
-				 unsigned int size, unsigned long cmp_ip)
+unsigned int cmp_hints_field_scan_resolve(struct syscallrecord *srec,
+					  struct syscallentry *entry,
+					  unsigned int nr, bool do32,
+					  struct cmp_field_scan_slot slots[6])
 {
 	unsigned int slot;
 	unsigned int slot_max;
+	unsigned int nr_slots = 0;
 
-	if (size != 1 && size != 2 && size != 4 && size != 8)
-		return;
 	slot_max = entry->num_args;
 	if (slot_max > 6)
 		slot_max = 6;
@@ -338,7 +355,6 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		const unsigned char *buf;
 		unsigned long limit;
 		size_t actual_len;
-		unsigned int i;
 
 		if (t != ARG_STRUCT_PTR_IN && t != ARG_STRUCT_PTR_INOUT)
 			continue;
@@ -367,10 +383,7 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		buf = (const unsigned char *)(uintptr_t)
 			srec->dispatch_args[slot];
 		if (is_corrupt_ptr_shape(buf)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
-					1UL, __ATOMIC_RELAXED);
+			cmp_field_scan_skip(false);
 			continue;
 		}
 
@@ -388,10 +401,7 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		 * still cannot push us off the chunk. */
 		actual_len = alloc_track_lookup_size((void *)(uintptr_t)buf);
 		if (actual_len == 0) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_short_alloc,
-					1UL, __ATOMIC_RELAXED);
+			cmp_field_scan_skip(true);
 			continue;
 		}
 		limit = desc->struct_size;
@@ -422,12 +432,49 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 		 * point of view -- both mean "skip this slot".
 		 */
 		if (!range_readable_user(buf, limit)) {
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
-					1UL, __ATOMIC_RELAXED);
+			cmp_field_scan_skip(false);
 			continue;
 		}
+
+		slots[nr_slots].desc = desc;
+		slots[nr_slots].buf = buf;
+		slots[nr_slots].limit = limit;
+		slots[nr_slots].arg_idx = slot + 1;
+		nr_slots++;
+	}
+	return nr_slots;
+}
+
+/*
+ * Field-attribution scan for one CMP record.  For each struct arg
+ * cmp_hints_field_scan_resolve() returned, walk its fields and -- on a
+ * runtime field value matching arg2 -- record the kernel constant arg1
+ * into the field-keyed pool via cmp_hints_field_record().  Independent
+ * of the scalar RedQueen attribution path; runs as a recording-side
+ * accumulator so a future consumer can re-inject the constant at the
+ * named field.
+ *
+ * Array / pointer / length-pair tags are skipped because their
+ * sibling-coupled reads need the array-aware attribution path, which
+ * lands later.  Only flat scalar tags with size in {1,2,4,8}
+ * contribute records here.
+ */
+void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
+				 unsigned int nr_slots,
+				 unsigned int nr, bool do32,
+				 unsigned long arg1, unsigned long arg2,
+				 unsigned int size, unsigned long cmp_ip)
+{
+	unsigned int s;
+
+	if (size != 1 && size != 2 && size != 4 && size != 8)
+		return;
+
+	for (s = 0; s < nr_slots; s++) {
+		const struct struct_desc *desc = slots[s].desc;
+		const unsigned char *buf = slots[s].buf;
+		unsigned long limit = slots[s].limit;
+		unsigned int i;
 
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(
@@ -496,7 +543,8 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
 			}
 
 			if (fv == arg2)
-				cmp_hints_field_record(nr, do32, slot + 1, desc,
+				cmp_hints_field_record(nr, do32,
+						       slots[s].arg_idx, desc,
 						       i, size, arg1, cmp_ip);
 		}
 	}

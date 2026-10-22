@@ -48,6 +48,12 @@ CFLAGS		+= -Wno-missing-field-initializers
 # g_mprotect_fail_countdown == 0 (the default).
 LDFLAGS		+= -Wl,--wrap=mprotect
 
+# alloc_track lookup counting: cmp_field_scan_test.c wraps
+# alloc_track_lookup_size so it can count the struct-field scans'
+# extent lookups and answer them itself.  The wrapper forwards to the
+# real lookup outside that test.
+LDFLAGS		+= -Wl,--wrap=alloc_track_lookup_size
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -112,6 +118,16 @@ PARENT_SRCS	:= \
 	$(TOP)/utils/uid.c
 LDFLAGS		+= -Wl,--gc-sections
 
+# The CMP-hint collect path, linked for cmp_hints_collect() and the
+# struct-field scans it drives.  Same section-per-function treatment
+# as the parent TUs; cmp_field_scan_test.c fakes the rest of the
+# cmp_hints core it reaches.
+CMP_SRCS	:= \
+	$(TOP)/cmp_hints/collect.c \
+	$(TOP)/cmp_hints/field.c \
+	$(TOP)/cmp_hints/hyp-len-correlated.c \
+	$(TOP)/cmp_hints/hyp-pool.c
+
 FAKE_SRCS	:= \
 	fake_rng.c \
 	fake_shm.c \
@@ -138,6 +154,7 @@ FAKE_SRCS	:= \
 	epoch_reset_test.c \
 	reap_stop_test.c \
 	extrafork_reap_test.c \
+	cmp_field_scan_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
@@ -145,6 +162,7 @@ FAKE_SRCS	:= \
 # keeps this build orthogonal to the top-level Makefile's cache.
 REAL_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(REAL_SRCS))
 PARENT_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(PARENT_SRCS))
+CMP_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(CMP_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 
 .PHONY: all test test-asan test-ndebug clean
@@ -161,10 +179,10 @@ test-asan:
 test-ndebug:
 	$(MAKE) NDEBUG=1
 
-$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(FAKE_OBJS)
-	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(FAKE_OBJS)
+$(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
+	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
 
-$(PARENT_OBJS): CFLAGS += -ffunction-sections
+$(PARENT_OBJS) $(CMP_OBJS): CFLAGS += -ffunction-sections
 
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)

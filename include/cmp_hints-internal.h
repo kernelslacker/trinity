@@ -95,17 +95,41 @@ uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
 			     unsigned int size);
 
 /*
- * Per-CMP-record field attribution scan.  Definition in
- * cmp_hints/field.c; called from cmp_hints_collect (collect.c) on
- * every KCOV_CMP record whose arg1 matched a scalar slot.  Walks the
- * dispatching syscall's ARG_STRUCT_PTR_IN/INOUT slots, dereferences
- * the pointed-at struct against the cataloged field layout, and
- * invokes cmp_hints_field_record() on every matching field.
+ * One dispatched struct arg the per-record struct-field scans can walk:
+ * the cataloged desc, the dispatch-time buffer, and how many bytes of
+ * it a field read may touch (the smaller of the catalog extent and the
+ * tracked allocation).
+ */
+struct cmp_field_scan_slot {
+	const struct struct_desc *desc;
+	const unsigned char *buf;
+	unsigned long limit;
+	unsigned int arg_idx;	/* 1-based syscall arg index */
+};
+
+/*
+ * Resolve the dispatching syscall's walkable ARG_STRUCT_PTR_IN/INOUT
+ * args into @slots, once per cmp_hints_collect() call: neither the desc
+ * nor the allocation extent depends on the CMP record.  Returns the
+ * number of slots filled.  Definition in cmp_hints/field.c.
  */
 struct syscallrecord;
 struct syscallentry;
-void cmp_hints_field_scan_record(struct syscallrecord *srec,
-				 struct syscallentry *entry,
+unsigned int cmp_hints_field_scan_resolve(struct syscallrecord *srec,
+					  struct syscallentry *entry,
+					  unsigned int nr, bool do32,
+					  struct cmp_field_scan_slot slots[6]);
+
+/*
+ * Per-CMP-record field attribution scan.  Definition in
+ * cmp_hints/field.c; called from cmp_hints_collect (collect.c) on
+ * every KCOV_CMP record whose arg1 matched a scalar slot.  Walks the
+ * slots cmp_hints_field_scan_resolve() returned against the cataloged
+ * field layout and invokes cmp_hints_field_record() on every matching
+ * field.
+ */
+void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
+				 unsigned int nr_slots,
 				 unsigned int nr, bool do32,
 				 unsigned long arg1, unsigned long arg2,
 				 unsigned int size, unsigned long cmp_ip);
@@ -114,16 +138,15 @@ void cmp_hints_field_scan_record(struct syscallrecord *srec,
  * Per-CMP-record SHADOW length-correlation scan.  Definition in
  * cmp_hints/hyp-len-correlated.c; called from cmp_hints_collect
  * (collect.c) on every KCOV_CMP_CONST record alongside the
- * cmp_hints_field_scan_record() field-attribution scan.  Walks the
- * dispatching syscall's cataloged INPUT struct args looking for an
- * FT_LEN_BYTES / FT_LEN_COUNT field whose slot value equals arg2
- * (runtime operand) and records a SHADOW CMP_HYP_LEN_CORRELATED
- * hypothesis with expected == arg1 (compile-time constant).  Never
- * feeds the picker / inject arm -- Slice A is observation-only,
- * byte-identical fuzzing.
+ * cmp_hints_field_scan_record() field-attribution scan, over the same
+ * resolved slots.  Looks for an FT_LEN_BYTES / FT_LEN_COUNT field
+ * whose slot value equals arg2 (runtime operand) and records a SHADOW
+ * CMP_HYP_LEN_CORRELATED hypothesis with expected == arg1 (compile-
+ * time constant).  Never feeds the picker / inject arm -- Slice A is
+ * observation-only, byte-identical fuzzing.
  */
-void cmp_hyp_len_correlated_scan_record(struct syscallrecord *srec,
-					struct syscallentry *entry,
+void cmp_hyp_len_correlated_scan_record(const struct cmp_field_scan_slot *slots,
+					unsigned int nr_slots,
 					unsigned int nr, bool do32,
 					unsigned long arg1, unsigned long arg2,
 					unsigned int size, unsigned long cmp_ip);

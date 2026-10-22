@@ -101,11 +101,12 @@ unsigned long cmp_hyp_sign_switch_would_win;
  *      Pure observability; no code path gates on this.
  *
  * cmp_hyp_len_correlated_bad_desc
- *      Bumped when the observe path is handed a slot whose dispatched
- *      struct pointer is shape-corrupt / short-alloc / unreadable at
- *      scan time (mirrors the cmp_field_attribution_arg_skipped_*
- *      family from the field-scan path).  Non-zero means the strict
- *      gate deflected records that would otherwise mis-attribute.
+ *      Bumped once per collect call for each struct-arg slot whose
+ *      dispatched struct pointer is shape-corrupt / short-alloc /
+ *      unreadable; the per-call slot resolution shared with the field-
+ *      scan path bumps the cmp_field_attribution_arg_skipped_* family
+ *      at the same time.  Non-zero means the strict gate deflected
+ *      slots that would otherwise mis-attribute.
  *
  * All counters are RELAXED-bumped and SHADOW-only.  Nothing on the
  * live pick / inject / credit path reads them.  Append-only at the

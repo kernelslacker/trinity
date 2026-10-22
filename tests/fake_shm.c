@@ -64,9 +64,14 @@ bool deferred_free_batch = false;
 unsigned int page_size = 4096;
 
 /* Parent-context statistics aggregate.  deferred-free writes into
- * parent_stats.* when this_child() returns NULL (i.e. always, in the
- * test binary).  The write target must be a valid, writable symbol. */
+ * parent_stats.* when this_child() returns NULL (i.e. outside a test
+ * that installs fake_this_child).  The write target must be a valid,
+ * writable symbol. */
 struct stats_aggregate parent_stats;
+
+/* this_child()'s answer: NULL (parent context) unless a test installs
+ * a child for the duration of the call it drives. */
+struct childdata *fake_this_child;
 
 /* ---------- Function stubs ----------------------------------------------- */
 
@@ -100,7 +105,7 @@ void heap_bounds_init(void)
 
 struct childdata *this_child(void)
 {
-	return NULL;
+	return fake_this_child;
 }
 
 bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,

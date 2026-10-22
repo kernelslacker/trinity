@@ -228,11 +228,13 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 * attribute_enabled above: field attribution is a recording-side
 	 * accumulator that does NOT require the RedQueen cohort, only a
 	 * live dispatched syscall (entry != NULL, dispatch_args_valid).
-	 * srec_field / entry_field stay NULL when the call is parent-
-	 * context or pre-dispatch and the per-record helper short-circuits.
+	 * Its struct args are resolved once, ahead of the record loop
+	 * (cmp_hints_field_scan_resolve() says why).  nr_field_slots
+	 * stays 0 when the call is parent-context, pre-dispatch or has
+	 * no walkable struct arg, and the per-record scans are skipped.
 	 */
-	struct syscallrecord *srec_field = NULL;
-	struct syscallentry *entry_field = NULL;
+	struct cmp_field_scan_slot field_slots[6];
+	unsigned int nr_field_slots = 0;
 	/*
 	 * Per-slot argtype snapshot + a cheap gate for the field-scoped
 	 * RedQueen scan over the field-scoped pool.  field_scan_enabled
@@ -399,10 +401,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			struct syscallentry *entry = rec->entry;
 
 			if (entry != NULL && entry->num_args > 0 &&
-			    rec->dispatch_args_valid) {
-				srec_field = rec;
-				entry_field = entry;
-			}
+			    rec->dispatch_args_valid)
+				nr_field_slots = cmp_hints_field_scan_resolve(
+					rec, entry, nr, do32, field_slots);
 		}
 	}
 
@@ -937,30 +938,30 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * lift accounting unpolluted -- field attribution is
 		 * recording-side only in this MVP; the consumer side that
 		 * re-injects from these pools is a follow-up.  Runs only
-		 * when the syscall actually has a dispatched-arg snapshot
-		 * to read, so non-struct / parent-context calls cost a
-		 * single NULL-test per record. */
-		if (srec_field != NULL && entry_field != NULL)
-			cmp_hints_field_scan_record(srec_field, entry_field,
+		 * when the call resolved a walkable struct arg, so non-
+		 * struct / parent-context calls cost a single zero-test per
+		 * record. */
+		if (nr_field_slots != 0)
+			cmp_hints_field_scan_record(field_slots,
+						    nr_field_slots,
 						    nr, do32, arg1, arg2,
 						    size, ip);
 
 		/*
-		 * SHADOW length-correlation scan.  Same dispatch-args snapshot
-		 * gate as the field-attribution scan above: any dispatched
-		 * syscall with a valid arg snapshot is a candidate.  Walks the
-		 * cataloged INPUT struct args looking for an FT_LEN_* field
-		 * whose slot value equals arg2 (runtime operand), records
-		 * arg1 (compile-time constant) as the expected length in a
-		 * CMP_HYP_LEN_CORRELATED hyp-pool entry keyed by
-		 * cmp_field_pool_hash.  Observation-only in Slice A -- neither
-		 * the picker nor struct_fill consumes LEN_CORRELATED entries,
-		 * so the fuzzing byte stream stays byte-identical.  Runs only
-		 * against KCOV_CMP_CONST records (guaranteed by the
-		 * !KCOV_CMP_CONST drop earlier in this loop). */
-		if (srec_field != NULL && entry_field != NULL)
-			cmp_hyp_len_correlated_scan_record(srec_field,
-							   entry_field,
+		 * SHADOW length-correlation scan.  Walks the same per-call
+		 * resolved struct args as the field-attribution scan above
+		 * looking for an FT_LEN_* field whose slot value equals arg2
+		 * (runtime operand), records arg1 (compile-time constant) as
+		 * the expected length in a CMP_HYP_LEN_CORRELATED hyp-pool
+		 * entry keyed by cmp_field_pool_hash.  Observation-only in
+		 * Slice A -- neither the picker nor struct_fill consumes
+		 * LEN_CORRELATED entries, so the fuzzing byte stream stays
+		 * byte-identical.  Runs only against KCOV_CMP_CONST records
+		 * (guaranteed by the !KCOV_CMP_CONST drop earlier in this
+		 * loop). */
+		if (nr_field_slots != 0)
+			cmp_hyp_len_correlated_scan_record(field_slots,
+							   nr_field_slots,
 							   nr, do32,
 							   arg1, arg2,
 							   size, ip);
