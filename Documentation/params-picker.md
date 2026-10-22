@@ -72,12 +72,16 @@ aggregate.  NO shadow pick is drawn -- the observer consumes ZERO
 `rnd_u32()` calls so the pick stream stays identical to `off` for a
 given seed.
 
-The parallel
-`cost_pool_selector_live_cheap_picks` / `cost_pool_selector_live_expensive_picks`
-accepted-pick counters bump only while the observer is on, so under
-`off` they stay zero with the rest of the family; under `shadow-only`
-the analytical (shadow) fraction can be validated empirically against
-the live draw-then-reject fraction.
+Two parallel pairs of picked-syscall counters bump only while the
+observer is on, so under `off` they stay zero with the rest of the
+family.  `cost_pool_selector_predraw_cheap_picks` /
+`cost_pool_selector_predraw_expensive_picks` count draws that survived
+`expensive_accept()` before any downstream picker gate -- the exact
+population the closed form models.
+`cost_pool_selector_live_cheap_picks` /
+`cost_pool_selector_live_expensive_picks` count finalised picks after
+every gate, so they diverge from the closed form when anti-prior
+enriches rare syscalls.
 
 - `off`: skip the observer entirely; no per-pool counter loads, no
   divide, no `cost_pool_selector_shadow_*` counter bump.
@@ -89,7 +93,7 @@ Validate:
 
 matches:
 
-    (live_expensive_picks / (live_expensive_picks + live_cheap_picks))
+    (predraw_expensive_picks / (predraw_expensive_picks + predraw_cheap_picks))
 
 under `shadow-only` before wiring `combined`.
 
@@ -110,8 +114,10 @@ syscall earns a faster accept and a stale one decays back to the
   `(per_syscall_edges + warm-loaded _prior) / per_syscall_calls` with
   a `total_calls - last_edge_at` gap decay back toward the floor; the
   LIVE accept still draws `ONE_IN(1000)` so the pick stream stays
-  identical to `off`.  Placeholder for the follow-up row that wires
-  shadow A/B counters.
+  identical to `off`.  Bumps the `expensive_adaptive` `samples` /
+  `extra_accepts` / `demotes` counters; under `shadow-only`
+  `extra_accepts` counts sub-floor opportunities, not accepts that
+  actually fired.
 - `combined`: the adaptive denominator drives the live accept -- a
   productive EXPENSIVE syscall earns up to a 1/50 rate, a
   once-productive-now-stale slot decays back to the 1/1000 floor over
@@ -143,6 +149,7 @@ this run, admit its args to the per-syscall ring so a future replay
 can chase the newly-visited failure branch.
 
 Flag off keeps the corpus admission distribution byte-identical to a
-build without this trigger; the `errno_grad_save_would_save` shadow
-counter is bumped regardless of this flag so the would-be-save volume
-is measurable before flipping live.  Default off.
+build without this trigger; the `stats.errno_gradient.save_would_save`
+shadow counter (the `would=` figure on the dump's `Errno-gradient save:`
+line) is bumped regardless of this flag so the would-be-save volume is
+measurable before flipping live.  Default off.

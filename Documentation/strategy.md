@@ -9,7 +9,7 @@ order in the header.
 
 ## Multi-strategy syscall-selection rotation
 
-Each strategy implements a distinct `pick_syscall` policy.  Different
+Each strategy implements a distinct syscall-pick policy.  Different
 strategies have different blind spots; rotating through them surfaces
 bug classes that any single policy systematically suppresses.
 
@@ -32,27 +32,28 @@ Today's arms are heuristic, uniform random, and coverage-frontier (see
 `enum strategy_t`); each becomes an arm the bandit picker scores against
 the others.  Future arms under consideration (group-saturation,
 newly-discovered, genetic) slot into the same dispatch -- adding one is
-an enum entry plus a `pick_syscall` hook.
+an enum entry plus a `set_syscall_nr_*()` picker wired into the
+`set_syscall_nr()` switch in `random_syscall/pickers.c`.
 
 ## Silent-streak shadow decay (FRONTIER_SHADOW_DECAY_STREAK)
 
 Threshold for the per-syscall silent-streak accounting in the
 coverage-frontier picker.  The picker bumps a per-syscall counter
-(`stats.frontier_silent_streak_per_syscall[]`) on every accepted pick
-that lands in the silent-ring regime (`max_weight <= 2`, the defining
-state of a coverage plateau), and resets that counter to zero from
-`frontier_record_new_edge()` on the per-syscall new-edge productive path
-in `kcov_collect`.  Crossing the threshold bumps the global
-`stats.frontier_shadow_decay_candidates` exactly once per crossing --
-the headline observability stat that estimates how many syscalls a
-future LIVE decay variant of the picker would treat as decay
+(`stats.frontier.per_syscall.silent_streak_per_syscall[]`) on every
+accepted pick that lands in the silent-ring regime (`max_weight <= 2`,
+the defining state of a coverage plateau), and resets that counter to
+zero from `frontier_record_new_edge()` on the per-syscall new-edge
+productive path in `kcov_collect`.  Crossing the threshold bumps the
+global `stats.frontier.core.shadow_decay_candidates` exactly once per
+crossing -- the headline observability stat that estimates how many
+syscalls a future LIVE decay variant of the picker would treat as decay
 candidates, computed WITHOUT changing any selection today.
 
 Read by:
-- `random_syscall/pick-frontier.c` -- silent-regime bump site, compares post-increment
-  streak against this threshold.
-- `stats.c` -- periodic dump emits the threshold value alongside the
-  candidate count so the operator can interpret the count.
+- `random_syscall/pick-frontier.c` -- silent-regime bump site, compares
+  post-increment streak against this threshold.
+- `stats/dump/strategy.c` -- the stats dump emits the threshold value
+  alongside the candidate count so the operator can interpret the count.
 
 NOT read by any picker accept/retry / scoring / weight math.  Adjusting
 the value cannot perturb the live frontier distribution.  Conservative
@@ -255,10 +256,11 @@ Mode ramp:
 - **COMBINED** -- not implemented.  The enum has no COMBINED value and
   the parser rejects `combined`.  The live divergence it would add
   (rotation-loop halving at
-  `strategy-frontier.c::frontier_window_advance` and the per-syscall
-  miss-attribution reject) is a follow-up that adds the value when it
-  wires them.  Mirrors the OFF / SHADOW_ONLY / COMBINED ramp
-  discipline the sibling `frontier_saturation_cooldown_mode` uses.
+  `strategy/strategy-frontier-window.c::frontier_window_advance` and
+  the per-syscall miss-attribution reject) is a follow-up that adds
+  the value when it wires them.  Mirrors the OFF / SHADOW_ONLY /
+  COMBINED ramp discipline the sibling
+  `frontier_saturation_cooldown_mode` uses.
 
 Param-settable from
 `--frontier-live-cooldown-mode=off|shadow-only`; independent
@@ -283,9 +285,9 @@ productive group clustering (`NET`
 `socket->bind->sendto`, `VFS` `open->read->close`) precisely because
 productive pins advance the coverage watermark on every yielding
 member and so never go stale within the window.  See the windowed-pin
-predicate body in `random_syscall/pick-heuristic.c` and the per-group / per-syscall
-would-skip counters in `include/stats.h` for the shape this evaluates
-and counts in shadow.
+predicate body in `random_syscall/pick-heuristic.c` and the per-group /
+per-syscall would-skip counters in `stats/subsys/frontier.h` for the
+shape this evaluates and counts in shadow.
 
 ### Discriminator
 
@@ -311,11 +313,11 @@ NET/VFS clusters untouched.
 Predicate state is PER-CHILD and PER-NR for the per-syscall shadow
 counter (`last_group` is already per-child, and the per-syscall
 would-skip array key is `nr` alone).  No `(nr, context_id)` re-keying
-in this row -- pools P2.5 introduces `context_id` later and the
-per-syscall would-skip key participates in that sweep along with
-cold-skip / cred-throttle / satcool.  Until then, `context_id ==
-regular` for every child so the per-nr key is counter-identical to a
-`(nr, regular)` key.
+in this row -- the picker-context axis (`enum picker_context`) already
+widens the kcov evidence arrays and the context-pool counters, but this
+would-skip array stays per-nr.  Every child is stamped
+`PICKER_CTX_INIT` today, so the per-nr key is counter-identical to a
+`(nr, PICKER_CTX_INIT)` key.
 
 ### Bookkeeping order
 
@@ -400,10 +402,10 @@ cost-pool-oneshot-selector spec section 4.1 for the algebra.  On each
 pick this row observes `n_cheap` / `n_exp` under the same arch table
 the live picker chose, computes the per-pool expected fractions, and
 accumulates them into `cost_pool_selector_shadow_*` counters (see
-`include/stats.h`).  It does NOT draw a shadow pick -- only the
-closed-form expected values are summed, so the shadow accounting
-consumes ZERO `rnd_u32()` calls and cannot perturb the live pick
-stream even when SHADOW_ONLY is engaged.  The live pick itself STAYS
+`stats/subsys/cost_pool_selector.h`).  It does NOT draw a shadow pick
+-- only the closed-form expected values are summed, so the shadow
+accounting consumes ZERO `rnd_u32()` calls and cannot perturb the live
+pick stream even when SHADOW_ONLY is engaged.  The live pick itself STAYS
 the flat draw-then-reject shape (flat `active_syscalls[]` uniform draw
 + `expensive_accept` early-out); the pools are watched, not driven,
 until COMBINED lands the coin-then-draw wire-up in a follow-up commit.
@@ -428,9 +430,12 @@ until COMBINED lands the coin-then-draw wire-up in a follow-up commit.
   any accept, never consumes RNG.  Read the
   `(shadow_expensive_ppm_sum / (shadow_picks * 1e6))` analytical
   fraction against the
-  `(live_expensive_picks / (live_expensive_picks + live_cheap_picks))`
-  actual-accept fraction to confirm the section 4.1 identity holds
-  empirically on a real run before promoting COMBINED.
+  `(predraw_expensive_picks / (predraw_expensive_picks + predraw_cheap_picks))`
+  fraction of draws that survived `expensive_accept()` to confirm the
+  section 4.1 identity holds empirically on a real run before promoting
+  COMBINED.  The `live_*` pair counts finalised picks after every
+  downstream gate, so it diverges from the closed form when
+  anti-prior enriches rare syscalls and is not the comparator.
 - **COMBINED** -- not implemented.  The enum has no COMBINED value and
   the parser rejects `combined`.  The coin-then-draw wire-up it would
   add (dispatch by the shadow `p_exp` coin, then a uniform draw from
@@ -548,8 +553,10 @@ catch-all.
 - `RRC_WRONG_TYPE_FD` -- placeholder; typed-fd substitution gave a
   wrong-class fd that worked.  Today never selected.
 - `RRC_CMP_DERIVED` -- this syscall has a non-empty `cmp_hints` pool,
-  so `generate-args.c`'s 1-in-16 `cmp_hints_try_get_ex` path may have
-  injected a learned constant that carried the call past a kernel
+  so the baseline `cmp_hints_try_get_ex` roll in `args/handle_arg.c`
+  (1-in-16, or 1-in-12 on the A/B arm, via
+  `cmp_hint_baseline_should_inject()`) may have injected a learned
+  constant that carried the call past a kernel
   validation check the structured pickers were not pushing through.
 - `RRC_PERSONA_GATED` -- placeholder for namespace/cgroup/childop
   persona attribution; persona infrastructure does not exist yet,
@@ -578,9 +585,13 @@ baseline acceptance.  The inversion is capped so a syscall stuck at
 `calls=0` (genuinely broken in this kernel, or simply never picked
 before the plateau started) cannot 100x dominate the intervention.
 
-`PIM_COVERAGE_FRONTIER` unconditionally selects
-`STRATEGY_COVERAGE_FRONTIER` for the window so the frontier-weighted
-picker runs regardless of what the bandit would have selected.  The
+`PIM_COVERAGE_FRONTIER` selects `STRATEGY_COVERAGE_FRONTIER` for the
+window so the frontier-weighted picker runs regardless of what the
+bandit would have selected.  When the per-syscall frontier rings have
+aged out everywhere (`frontier_max_weight_cached == 0`) the slot is
+rotated to `PIM_UNIFORM_RANDOM` instead and counted in
+`stats.frontier.core.intervention_cold_skipped`, because a frontier
+picker over fully cold rings is a near no-op.  The
 bandit cannot pull the frontier arm during a plateau (the intervention
 layer short-circuits the bandit entirely while `plateau_active` is
 set), so without this mode the frontier picker is structurally
@@ -608,9 +619,10 @@ UNIFORM_RANDOM baseline that makes the A/B shape interpretable.
   `amplified_intervention_arm()` -- HEURISTIC or COVERAGE_FRONTIER
   replay biased by the random-rescue classifier's dominant class, or
   plain RANDOM when no class dominates.
-- `PIM_COVERAGE_FRONTIER` -- `STRATEGY_COVERAGE_FRONTIER`
-  unconditionally, so the frontier-weighted picker is reachable during
-  plateaus the bandit would otherwise keep off the arm.
+- `PIM_COVERAGE_FRONTIER` -- `STRATEGY_COVERAGE_FRONTIER` (replaced by
+  `PIM_UNIFORM_RANDOM` while the frontier rings are fully cold), so the
+  frontier-weighted picker is reachable during plateaus the bandit
+  would otherwise keep off the arm.
 
 ## Bandit reward shape -- edge-count blend
 
@@ -683,18 +695,38 @@ so per-call consumer gates can read it.
 
 Per-call gates -- the strategy-selection rotation in
 `select_next_strategy` is a flat round-robin and does NOT pin a mode
-based on the hypothesis.
+based on the hypothesis.  Every gate is a derived predicate over the
+published value (no latched flag), so each reverts on its own when the
+tick driver writes NONE or a different hypothesis.
 
-- `PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT` --
-  `minicorpus.c minicorpus_maybe_replay()` doubles the corpus replay
-  rate (25% -> 50%) and narrows the slot picker to the `K_RECENT`
-  newest entries to favour freshly-admitted CMP-source material.
-- `PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT` -- `child.c pick_op_type()`
-  raises the non-dedicated-child alt-op burst threshold from 5% to
-  25% so the alt-op channel that's out-discovering generic syscalls
-  gets a proportionate share.
-- `PLATEAU_HYPOTHESIS_REMOTE_DOMINANT`,
-  `PLATEAU_HYPOTHESIS_FRONTIER_COLD`,
+- `PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT` -- the widest consumer set:
+  - `persist/minicorpus-select.c minicorpus_replay()` doubles the
+    corpus replay rate (25% -> 50%) and narrows the slot picker to the
+    `K_RECENT` newest entries to favour freshly-admitted CMP-source
+    material.
+  - `args/cmp_hint_inject.c cmp_hint_inject_denom()` raises the CMP
+    hint injection rate to 1-in-4, `cmp_hints/get.c` samples the
+    recent-constant ring before the durable pool, and
+    `cmp_hints/hyp-live.c` opens the plateau channel of the live
+    hypothesis-injection gate.
+  - `random_syscall/dispatch-step.c` makes the RedQueen re-exec rate
+    gate always-on and drains the staged pending entries (a per-child
+    A/B arm caps the drain).
+  - `random_syscall/pick-frontier.c` counts `would_route` under
+    `--cmp-frontier=shadow-only` and swaps in the CMP-derived frontier
+    weight under `combined` (see `cmp-frontier.md`).
+  - `random_syscall/warm-reserve.c` only bumps shadow demand counters.
+- `PLATEAU_HYPOTHESIS_CHILDOP_DOMINANT` --
+  `child/child-altop-pick.c pick_op_type()` raises the
+  non-dedicated-child alt-op burst threshold from 5% to 25% so the
+  alt-op channel that's out-discovering generic syscalls gets a
+  proportionate share.
+- `PLATEAU_HYPOTHESIS_REMOTE_DOMINANT` --
+  `random_syscall/remote-adaptive.c remote_adaptive_decide()` adds a
+  FORCE disposition that keeps a proven remote yielder in the remote
+  KCOV pool while the plateau lasts; only children on the adaptive A/B
+  arm run it live, the control arm discards it.
+- `PLATEAU_HYPOTHESIS_FRONTIER_COLD`,
   `PLATEAU_HYPOTHESIS_SINGLE_GROUP_DOMINANT` -- no consumer today,
   diagnostics only.  Their fire counters surface in the periodic stats
   line and the end-of-run dump so the operator can see the cumulative
@@ -712,37 +744,39 @@ path.
 
 All sourced from existing counters; no new wiring.
 
-- `pc_edges` (edges) -- `kcov_shm->coverage.edges_found`.  Headline coverage
-  signal, the same counter the plateau detector itself watches the
-  rate of.
+- `pc_edges` (edges) -- `kcov_shm->coverage.distinct_edges`.  Headline
+  coverage signal, the same counter the plateau detector itself
+  watches the rate of (`edges_found` also grows on bucket churn over
+  known edges, so its delta never reaches zero).
 - `cmp_unique` (records) -- `kcov_shm->hints_flat.cmp_hints_unique_inserts`.
   Counts CMP records that survived bloom + pool dedup and changed pool
   state -- the right denominator for "how much unique CMP signal is
   the kernel still emitting" while `pc_edges` has flattened.
 - `bandit_edges`, `explorer_edges` (calls) --
-  `shm->stats.{bandit,explorer}_pool_edges_discovered`.  Despite the
-  `_edges_` name these are CALL counts: bumped by 1 per syscall pick
-  that surfaced one or more new edges (`random_syscall/strategy-accounting.c`), not by
-  the number of edges that call surfaced.  Excludes alt-op childops.
+  `shm->stats.picker_bandit.{bandit,explorer}_pool_edges_discovered`.
+  Despite the `_edges_` name these are CALL counts: bumped by 1 per
+  syscall pick that surfaced one or more new edges
+  (`random_syscall/per-syscall-edges.c`), not by the number of edges
+  that call surfaced.  Excludes alt-op childops.
 - `childop_edges_total` (edges) -- sum of
-  `shm->stats.childop_edges_discovered[]` across `enum child_op_type`.
+  `shm->stats.childop.edges_discovered[]` across `enum child_op_type`.
   EDGE count -- bumped by `(edges_after - edges_before)` per alt-op
   invocation in the post-call `have_kcov` block.  Kept for the stats
   panels; do NOT compare directly against `bandit/explorer_edges`,
   those are call counts (see `childop_calls_total` below).
 - `childop_calls_total` (calls) -- sum of
-  `shm->stats.childop_calls_with_edges[]` across
+  `shm->stats.childop.calls_with_edges[]` across
   `enum child_op_type`.  CALL count -- bumped by 1 per alt-op
   invocation that surfaced at least one new edge.  This is the
   apples-to-apples comparator for `bandit_edges` / `explorer_edges`
   in the plateau classifier's Rule 2 ratio.
-- `remote_calls`, `total_calls` --
-  `kcov_shm->coverage.{remote,total}_calls`.  `KCOV_REMOTE_ENABLE` share of
-  the dispatch mix; inline = total - remote.
-- `frontier_picks` -- `shm->stats.frontier_strategy_picks`.  Calls
+- `remote_calls`, `total_calls` -- `parent_stats.{remote,total}_calls`,
+  drained from the per-child stats rings.  `KCOV_REMOTE_ENABLE` share
+  of the dispatch mix; inline = total - remote.
+- `frontier_picks` -- `shm->stats.frontier.core.strategy_picks`.  Calls
   that went through the coverage-frontier roulette wheel.
 - `frontier_pulls` -- `shm->bandit_pulls[STRATEGY_COVERAGE_FRONTIER] +
-  shm->stats.frontier_intervention_pulls`.  Windows in which the
+  shm->stats.frontier.core.intervention_pulls`.  Windows in which the
   bandit (or the cold-start / round-robin path) selected the CFV arm,
   PLUS plateau-intervention rotations that resolved to the CFV arm
   via `PIM_COVERAGE_FRONTIER` or the `RRC_CMP_DERIVED` dispatch
@@ -759,14 +793,15 @@ All sourced from existing counters; no new wiring.
   every candidate was rejected" (frontier really is cold).
 - `frontier_live_picks`, `frontier_silent_picks` -- accept-regime
   split of `frontier_picks`.  Sourced from
-  `shm->stats.frontier_{live,silent}_picks`; sum equals
+  `shm->stats.frontier.core.{live,silent}_picks`; sum equals
   `frontier_picks`.  Surfaced as deltas via
   `plateau_snapshot_delta` so the per-tick plateau hypothesis line
   can show which regime owned the window's picks -- "silent
   dominates" inside a plateau means the cold-weight fallback is doing
   the steering rather than the K-window ring.
 - `group_edges[NR_GROUPS]` -- per-syscall-group sum of
-  `kcov_shm->per_syscall.per_syscall_edges[]`, grouped by
+  `per_syscall_edges_total()` (`kcov_shm->per_syscall.per_syscall_edges[]`
+  over every context and arch), grouped by
   `syscalls[nr].entry->group`.  Maps the call-count new-edge signal
   onto the `GROUP_*` axis the classifier needs for the
   single-group-dominant rule.
@@ -782,16 +817,15 @@ Each `enum plateau_hypothesis` value names ONE hypothesis about why
 discovery has stalled.  The orchestrator publishes the matched value
 to `shm->plateau_current_hypothesis` on every tick and bumps a
 per-hypothesis fire counter on every transition into a non-NONE class.
-Per-call consumer gates in `child.c` and `minicorpus.c` read the
-published value and apply targeted biases for the two hypotheses that
-have consumers today (see the consumer contract above); unconsumed
-hypotheses surface only via the fire-count distribution and remain
-diagnostics-only.
+Per-call consumer gates (listed in the consumer contract above) read
+the published value and apply targeted biases for the three hypotheses
+that have consumers today; unconsumed hypotheses surface only via the
+fire-count distribution and remain diagnostics-only.
 
 Conservative thresholds throughout: each rule needs evidence that
 would not show up in a healthy or short-lived plateau window.  See
-`strategy_plateau_hypothesis_check()` in `strategy.c` for the exact
-comparisons.
+`strategy_plateau_hypothesis_check()` in `strategy/strategy-plateau.c`
+for the exact comparisons.
 
 Rules are checked in enum order and the FIRST match wins, so the
 ordering encodes precedence -- `CMP_RISING_PC_FLAT` is the most
@@ -823,9 +857,11 @@ guarantees a floor on random-arm coverage so an arm-selection policy
 that starves `STRATEGY_RANDOM` cannot flatten the picker's
 exploratory tail.
 
-Default: `max_children/4` under `--strategy=bandit`, `0` otherwise.
-Maximum: `max_children/2`.  Works in any picker mode; non-bandit
-modes get no explorer pool unless this is set.
+Default: a quarter of the children left after the dedicated alt-op
+slots (`(max_children - alt_op_children)/4`) under `--strategy=bandit`,
+`0` otherwise.  Maximum: half of the same remainder; a larger value is
+clamped with a warning.  Works in any picker mode; non-bandit modes get
+no explorer pool unless this is set.
 
 ## --bandit-reward-edge-count
 

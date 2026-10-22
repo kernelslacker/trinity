@@ -39,9 +39,10 @@ mode-load itself consumes no RNG.
 
 `SHADOW_ONLY` computes the band classification and the would-demote /
 would-boost decision, but the live returned weight stays at the
-pre-hook value.  Picks are identical to `OFF` for a given seed.
-Placeholder for a follow-up that adds per-band shadow counters in
-stats.c.
+pre-hook value.  Picks are identical to `OFF` for a given seed.  It
+bumps the `reach_band_picks_{low,mid,high}` counters plus
+`reach_band_would_demote_mid` and `reach_band_would_boost_high`, which
+the stats dump renders (`stats/dump/strategy.c`).
 
 `COMBINED` applies the band adjustment to the weight the silent-
 regime accept gate draws against.  Only mode that diverges from

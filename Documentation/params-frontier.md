@@ -39,9 +39,9 @@ Validate the per-syscall would-skip distribution against
 `gettid` / `sched_get_priority_max` (expected high) and
 `bpf` / `io_uring_setup` / `openat` / `io_setup` / `futex` /
 `setxattrat` (expected ~0) under `shadow-only` before tuning C_min or
-wiring the `combined` divergence.  Independent of the existing
-boolean `--frontier-live-cooldown` (which gates the rotation-loop
-halving alone).
+wiring the `combined` divergence.  Independent of the LIVE-regime
+rotation-loop halving in `frontier_window_advance()`, which is always
+on.
 
 ## --frontier-barren-demote
 
@@ -118,7 +118,7 @@ Validate the per-syscall would-skip distribution against
 `rseq_slice_yield` / `getpgrp` / `sched_yield` (expected high) and
 `socket` / `sendto` / `openat` (expected ~0), and the per-group
 distribution against `GROUP_PROCESS` (=5, expected high) vs
-`GROUP_NET` / `GROUP_VFS` (expected ~0) under `shadow-only` before
-tuning `MIN_STREAK` / `COV_WINDOW` or wiring the `combined` release.
-No-op unless `--group-bias` is also set; the F-RSEQ-5 caveat in the
-design note applies.
+`GROUP_NET` / the `GROUP_VFS_*` groups (expected ~0) under
+`shadow-only` before tuning `MIN_STREAK` / `COV_WINDOW` or wiring the
+`combined` release.  No-op unless `--group-bias` is also set; the
+F-RSEQ-5 caveat in the design note applies.

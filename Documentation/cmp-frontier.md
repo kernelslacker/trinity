@@ -12,7 +12,7 @@ is a PC-coverage-led inverse-productivity signal -- a syscall that
 has produced no `per_syscall_edges` relative to its
 `per_syscall_calls` ranks high.  Under the coverage-wall plateau
 classified as `PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT` (CMP-pool
-inserts continuing to rise while `edges_found` is flat) the PC-led
+inserts continuing to rise while `distinct_edges` is flat) the PC-led
 ranking has nothing new to chase even though CMP activity says a
 productive frontier still exists.
 

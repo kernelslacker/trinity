@@ -62,26 +62,31 @@ the bumps via the standard `nr < MAX_NR_SYSCALL` gate.
 ## plateau
 
 Sliding-window edge-rate plateau detector state.  Sampled at the 600s
-parent stats tick: each tick, `delta = edges_found - plateau_prev_edges`
-is the count of new edges discovered in the most recent
-`KCOV_PLATEAU_WINDOW_SEC` window.  When the delta drops below
-`KCOV_PLATEAU_ENTER_THRESHOLD` (rate < 1 edge per 60s sustained over
-the 10-minute window) the parent enters PLATEAU state and emits a
-one-line warning to `stats.log`; a matching CLEARED line fires when
-the rate climbs back above threshold.
+parent stats tick: each tick,
+`delta = distinct_edges - plateau_prev_edges` is the count of new
+distinct edges discovered in the most recent `KCOV_PLATEAU_WINDOW_SEC`
+window (`edges_found` is not used: it also grows on bucket churn over
+known edges, so its delta never reaches zero).  When the delta drops
+below `KCOV_PLATEAU_ENTER_THRESHOLD` (rate < 1 edge per 60s sustained
+over the 10-minute window) the parent enters PLATEAU state and emits a
+one-line warning to `stats.log`; a matching CLEARED line fires once the
+delta reaches `KCOV_PLATEAU_EXIT_THRESHOLD`, and deltas between the two
+thresholds hold the current state.
 
 Entry into PLATEAU also fires `strategy_plateau_response()`, which
 forces an immediate strategy rotation into the plateau-intervention
 layer.  That layer is a flat round-robin among RRC-biased replay,
-anti-prior accept gating, and uniform random; the rotation does not
-pin a mode based on the hypothesis classifier.
+anti-prior accept gating, the coverage-frontier picker and uniform
+random (a frontier slot whose rings have fully aged out is swapped for
+uniform random); the rotation does not pin a mode based on the
+hypothesis classifier.
 
-The published hypothesis is consumed separately at per-call gates in
-`child/child.c` (`CHILDOP_DOMINANT` raises the alt-op burst threshold)
-and in `minicorpus.c` (`CMP_RISING_PC_FLAT` doubles the replay rate
-and narrows the slot picker) -- see the strategy header for the full
-consumer contract.  Interventions unwind automatically on the matching
-CLEARED edge.
+The published hypothesis is consumed separately at per-call gates, for
+example `child/child-altop-pick.c` (`CHILDOP_DOMINANT` raises the
+alt-op burst threshold) and `persist/minicorpus-select.c`
+(`CMP_RISING_PC_FLAT` doubles the replay rate and narrows the slot
+picker) -- see `strategy.md` for the full consumer contract.
+Interventions unwind automatically on the matching CLEARED edge.
 
 ## reexec_flat
 
@@ -201,18 +206,19 @@ The go/no-go metric for the `burst_drain_arm_b` measure lives in the
 distinct-PC-edge wall is what the plateau intensification is meant to
 break, but `reexec_new_cmps_total` counts bloom-novel CMP records and
 a fresh CMP that opens no new distinct edge is invisible to that
-wall.  `reexec_new_edges_total` wires the 6th `dispatch_step()`
-out-param (`pcres.transition_edges_real_local` at
-`random_syscall/dispatch.c:709`) into `redqueen_reexec_step()`'s
-`inner_new_cmp > 0` success block and accumulates it in lock-step
-with `reexec_new_cmps_total`, so a run can be scored on
-transition-distinct-edge lift instead of CMP-record lift.
+wall.  `reexec_new_edges_total` accumulates the `new_transition_out`
+out-param of `dispatch_step()` (`pcres.transition_edges_real_local`
+in `random_syscall/dispatch-step.c`) after every re-exec dispatch in
+`redqueen_reexec_step()`, whether or not the inner call found a novel
+CMP record, so a run can be scored on transition-distinct-edge lift
+instead of CMP-record lift.
 
 The `_by_arm[2]` triplet partitions each numerator by the child's
 `burst_drain_arm_b` stamp (arm A = index 0, arm B = index 1), bumped
-from `redqueen_reexec_step()` inside the same critical sections that
-bump the flat counters.  `reexec_attempts_by_arm` supplies the
-per-arm denominator; a per-arm distinct-edge ratio is then
+from `redqueen_reexec_step()` right after the inner `dispatch_step()`
+returns: attempts and edge lift on every attempt, CMP lift only when
+the inner call found a novel record.  `reexec_attempts_by_arm`
+supplies the per-arm denominator; a per-arm distinct-edge ratio is then
 
     reexec_new_edges_by_arm[B] / reexec_attempts_by_arm[B]
 
