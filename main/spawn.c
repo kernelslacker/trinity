@@ -489,16 +489,17 @@ static void dump_fork_failure_snapshot(void)
 
 /*
  * Force a save of every cross-run cache (minicorpus, kcov bitmap,
- * cmp-hints pool) at a bail point so the on-disk snapshot reflects the
- * in-memory high-water at the moment we gave up.  Mirrors the cluster
- * of save_file() calls inside persist_state_on_clean_exit() in
- * trinity.c, but without the clean-exit gate: that gate excludes
- * EXIT_FORK_FAILURE, so the fork-pressure bail path would otherwise
- * persist nothing.  Idempotent -- each save_file() is an atomic
- * overwrite, so on the time-limit path (where the trinity.c cleanup
- * will save again) the duplicate is wasted I/O but harmless.  Per-
- * carrier --no-*-warm-start flags still suppress its respective save,
- * matching the trinity.c policy.
+ * cmp-hints pool, chain corpus) at a bail point so the on-disk
+ * snapshot reflects the in-memory high-water at the moment we gave
+ * up.  Mirrors the cluster of save_file() calls inside
+ * persist_state_on_clean_exit() in trinity-warmstart.c, but without
+ * the clean-exit gate: that gate excludes EXIT_FORK_FAILURE, so the
+ * fork-pressure bail path would otherwise persist nothing.
+ * Idempotent -- each save_file() is an atomic overwrite, so on the
+ * time-limit path (where the cleanup in trinity.c will save again)
+ * the duplicate is wasted I/O but harmless.  Per-carrier
+ * --no-*-warm-start flags still suppress its respective save,
+ * matching persist_state_on_clean_exit().
  */
 void final_state_save(void)
 {

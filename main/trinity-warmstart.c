@@ -204,7 +204,8 @@ void warm_start_all(void)
 
 /*
  * Persist every cross-run coverage carrier (minicorpus, kcov bitmap,
- * cmp-hints pool) on a graceful exit so the next run starts warm.
+ * cmp-hints pool, chain corpus) on a graceful exit so the next run
+ * starts warm.
  * Each carrier is independently gated by its own --no-*-warm-start
  * flag, and each save is further conditioned on a clean shutdown
  * reason -- saving from a poisoned shm could feed garbage back in on
