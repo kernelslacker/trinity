@@ -61,8 +61,6 @@ void json_emit_socket_family_grammar_section(void)
 {
 	json_stats_sep();
 	stat_category_emit_json(&socket_family_grammar_category);
-	json_stats_sep();
-	stat_category_emit_json(&xfrm_grammar_category);
 }
 
 void json_emit_net_churn_and_early_storms_section(void)

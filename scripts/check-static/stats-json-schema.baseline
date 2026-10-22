@@ -333,9 +333,6 @@ stats	object
     stats.socket_family_grammar.distinct_seq	u64
     stats.socket_family_grammar.reward	u64
     stats.socket_family_grammar.feedback_picks	u64
-  stats.xfrm_grammar	object
-    stats.xfrm_grammar.msg_kind_draws	u64
-    stats.xfrm_grammar.migrate_state_arm_entered	u64
   stats.blob_mutator	object
     stats.blob_mutator.fills	u64
     stats.blob_mutator.havoc_ops	u64

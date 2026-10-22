@@ -5,7 +5,7 @@ message bodies, and BPF/eBPF programs for every address family and
 netlink subsystem Trinity knows about. This is the largest subsystem
 in the tree by file count.
 
-## Files (133 .c files + 6 headers, ~30,561 LOC)
+## Files (127 .c files + 6 headers, ~28,356 LOC)
 
 Grouped by theme rather than enumerated — the long tail is highly
 repetitive (one file per protocol/family/subsystem, following a
@@ -30,7 +30,7 @@ shared struct-of-callbacks pattern).
   accept -> sendmsg) per family, one entry per `net/proto/<family>.c`.
   Falls back to the legacy v1 `run_alg_chain` path when a family has
   no grammar registered. Each protocol file that defines a grammar
-  (`grammar_inet`, `grammar_unix`, `grammar_xfrm`, etc.) is declared
+  (`grammar_inet`, `grammar_unix`, etc.) is declared
   extern and listed here. Split one concern per TU behind
   `socket-family-grammar-internal.h` (97); the public API stays in
   `include/socket-family-grammar.h`:
@@ -49,11 +49,11 @@ shared struct-of-callbacks pattern).
 
 ### Per-address-family protocol helpers (`proto/`)
 
-- [proto/](proto/CLAUDE.md) — the 43 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`) plus optional `grammar_<family>` (registered in `sfg_registry[]`), including the XFRM (IPsec netlink) grammar cluster. One family per file, shared optname-table-plus-switch pattern.
+- [proto/](proto/CLAUDE.md) — the 37 per-`PF_*`/`AF_*` files, each defining `const struct netproto proto_<family>` (wired into `net_protocols[]`) plus optional `grammar_<family>` (registered in `sfg_registry[]`). One family per file, shared optname-table-plus-switch pattern.
 
 ### Netlink message machinery (`netlink/`)
 
-- [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (47 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers (`grammar_netlink`, `grammar_xfrm`) live in `proto/`; this dir builds the *message bodies* they carry.
+- [netlink/](netlink/CLAUDE.md) — the netlink message-construction engine (nlmsg framing, rtnetlink payloads) plus the genl-family and nfnl-subsystem grammar registries. Subdirs: [netlink/genl/](netlink/genl/CLAUDE.md) (47 files) and [netlink/nfnl/](netlink/nfnl/CLAUDE.md) (12). The AF_NETLINK *socket* helpers (`grammar_netlink`) live in `proto/`; this dir builds the *message bodies* they carry.
 
 ### BPF / eBPF program generation
 
@@ -94,12 +94,7 @@ shared struct-of-callbacks pattern).
    `net_protocols[]`/`sfg_registry[]` (IPV6, RDS, BLUETOOTH, VSOCK,
    XDP, MCTP, IF_ALG) — the directory compiles down to whatever
    subset the build/kernel config supports.
-5. **Stateful sequencing via rings.** XFRM keeps a per-process ring of
-   installed SAs/policies (proto/netlink-xfrm-ring.c) so later
-   UPDSA/NEWAE/DELSA calls target real kernel objects instead of
-   random SPIs that fail lookup — the same "install then reference"
-   idea recurs informally in other coherent-grammar files.
-6. **BPF has two independent, uncoupled generators.** Classic BPF
+5. **BPF has two independent, uncoupled generators.** Classic BPF
    (bpf/bpf.c, cBPF `sock_filter`) targets socket filters/seccomp; eBPF
    (the `bpf/ebpf*.c` cluster) targets `BPF_PROG_LOAD` and is tiered
    (valid/boundary/chaos) to separately stress the verifier's
@@ -107,7 +102,7 @@ shared struct-of-callbacks pattern).
    side has its own private header: `bpf/internal.h` is included only
    by `bpf/bpf.c` and `bpf/disasm.c`, `bpf/ebpf-internal.h` only by the
    eBPF cluster.
-7. **Deliberate CVE-driven attribute coverage.** Several genl family
+6. **Deliberate CVE-driven attribute coverage.** Several genl family
    files (e.g. taskstats) document a specific historical CVE or kernel
    validation function in a header comment and size their attribute
    tables to reach exactly that code path.
@@ -178,12 +173,7 @@ shared struct-of-callbacks pattern).
    absent) in the other; `fds/sockets.c` carries an explicit
    bounds-safety comment about `net_protocols[]` sizing that flags this
    class of risk directly.
-4. **XFRM correctness depends on the SA/policy ring staying in sync**
-   with what the kernel actually accepted — `proto/netlink-xfrm-ring.c`
-   only records entries `xfrm_emit_*` believes succeeded; any missed
-   error path leaves stale ring entries referenced by later
-   UPDSA/DELSA calls.
-5. **Conditional compilation surface is wide**: `USE_IPV6`, `USE_RDS`,
+4. **Conditional compilation surface is wide**: `USE_IPV6`, `USE_RDS`,
    `USE_BLUETOOTH`, `USE_VSOCK`, `USE_XDP`, `USE_MCTP`,
    `USE_IF_ALG`, plus per-genl-family `__has_include()` checks — a
    given build only exercises the subset the target kernel headers and
@@ -198,7 +188,7 @@ registry-and-dispatch layers (address family, genl family, nfnl
 subsystem), plus two independent BPF program generators and the core
 netlink message-construction engine. Complexity concentrates in a
 handful of files — the rtnl payload builders, the main netlink message
-generator, the XFRM emit cluster, and the eBPF tiers — while the other
+generator, and the eBPF tiers — while the other
 ~100 files are short, self-similar, one-family-per-file grammar
 definitions that are cheap to read individually and cheap to extend
 by copying an existing sibling.

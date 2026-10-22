@@ -180,7 +180,6 @@ extern const struct stat_category rtnl_ack_oracle_category;
 extern const struct stat_category rxrpc_key_install_category;
 extern const struct stat_category setsockopt_pairing_category;
 extern const struct stat_category socket_family_grammar_category;
-extern const struct stat_category xfrm_grammar_category;
 extern const struct stat_category uid_change_category;
 extern const struct stat_category userns_bootstrap_category;
 extern const struct stat_category vfs_writes_category;

@@ -58,7 +58,6 @@
 #include "stats/subsys/rxrpc_key_install.h"
 #include "stats/subsys/setsockopt_pairing.h"
 #include "stats/subsys/socket_family_grammar.h"
-#include "stats/subsys/xfrm_grammar.h"
 #include "stats/subsys/syscall_wedge.h"
 #include "stats/subsys/syscall_dispatch.h"
 #include "stats/subsys/topo_pair.h"
@@ -423,9 +422,6 @@ struct stats_s {
 
 	/* socket_family_grammar accounting.  See stats/subsys/socket_family_grammar.h. */
 	struct socket_family_grammar_stats socket_family_grammar __attribute__((aligned(64)));
-
-	/* xfrm_grammar accounting.  See stats/subsys/xfrm_grammar.h. */
-	struct xfrm_grammar_stats xfrm_grammar __attribute__((aligned(64)));
 
 	/* Auto-skipped socket families.  See stats/subsys/no_domains.h. */
 	struct no_domains_stats no_domains __attribute__((aligned(64)));

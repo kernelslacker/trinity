@@ -4,7 +4,7 @@ One file per `PF_*`/`AF_*` family. Each defines `const struct netproto proto_<fa
 
 Shared pattern (`ip-udp.c`, 50 lines): build a `RAND_ARRAY` of valid optnames for the level/protocol, switch on the picked optname, size and fill `so->optval`/`so->optlen` per kernel expectation (including boundary values like GSO segment sizes 0/1/1400/65535).
 
-## Files (43 .c files, ~12,089 LOC)
+## Files (37 .c files, ~9,671 LOC)
 
 ### Largest / notable
 | File | Lines | Role |
@@ -20,22 +20,9 @@ Shared pattern (`ip-udp.c`, 50 lines): build a `RAND_ARRAY` of valid optnames fo
 
 Plus the remaining families following the same optname-table-plus-switch pattern: mctp (290), mpls (285), ip-mptcp (285), bluetooth (253), can (247), pppox (244), qrtr (235), ip-tcp (169), tipc (107), vsock (99), phonet (97), iucv (82), nfc (75), ieee802154 (71), smc (68), ip-udplite (68), atm (64), ip-dccp (57), icmp6 (51), ip-udp (50), ib (50), x25 (45), ip-raw (44).
 
-### XFRM (IPsec netlink) cluster
-`grammar_xfrm` is the second AF_NETLINK grammar slot alongside `netlink.c`'s `grammar_netlink`, pinned to NETLINK_XFRM — a per-family grammar, so it lives here, not in `net/netlink/` (which holds the genl/nfnl message-table machinery). The `xfrm_emit_*` builders were carved by message family into three TUs, all sharing `include/proto-netlink-xfrm-internal.h`.
-
-| File | Lines | Role |
-|---|---|---|
-| netlink-xfrm-state.c | 680 | The SA-family `xfrm_emit_*` builders (newsa, allocspi, updsa, newae, delsa_random, expire, migrate_state), each building a coherent attribute set (AEAD vs paired CRYPT+AUTH_TRUNC, optional COMP/ENCAP/REPLAY/ESN/marks). |
-| netlink-xfrm.c | 571 | `grammar_xfrm`: the coherent NEWSA/UPDSA/NEWAE/EXPIRE/DELSA/NEWPOLICY/DELPOLICY/FLUSH* walk. |
-| netlink-xfrm-attr.c | 501 | Attribute appenders, algorithm-name rotation tables, and address / selector / lifetime helpers shared by the emit TUs. |
-| netlink-xfrm-policy.c | 325 | The policy-family `xfrm_emit_*` builders (newpolicy, delpolicy, polexpire, migrate, setdefault, getdefault). |
-| netlink-xfrm-misc.c | 180 | Everything left over after the state and policy carves: `xfrm_emit_acquire`, `xfrm_emit_flushsa`, `xfrm_emit_flushpolicy`. |
-| netlink-xfrm-ring.c | 177 | Per-process installed-SA/policy rings so later UPDSA/DELSA/NEWAE target a real entry instead of an SPI the kernel rejects on lookup. |
-
 ## Key invariants
 - **Two dispatch tables, both rooted in `net/`.** `net_protocols[]` (per-syscall hooks) and `sfg_registry[]` (coherent multi-call grammars) live in `net/`; a family can populate either, both, or neither. Every file here is an entry in one or both — linked by extern symbol, not by path, so relocation is link-safe.
 - **Attribute shapes are policy-mirrored, not random.** optname/attr tables are sized and typed to match the kernel's own `nla_policy`, so messages reach the real parser instead of bouncing at `-EINVAL`.
-- **XFRM ring must stay in sync** with what the kernel accepted — `netlink-xfrm-ring.c` only records entries `xfrm_emit_*` believed succeeded; a missed error path leaves stale entries referenced by later UPDSA/DELSA calls.
 - **Wide conditional-compilation surface** — `USE_IPV6/RDS/BLUETOOTH/VSOCK/XDP/MCTP/IF_ALG` gate whole families; a build exercises only the subset the target kernel supports.
 
 ## Interactions

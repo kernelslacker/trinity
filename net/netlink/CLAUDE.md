@@ -1,6 +1,6 @@
 # net/netlink/ — Netlink Message Machinery
 
-The netlink side of the socket layer: the core message-construction engine plus the two per-family/per-subsystem grammar registries. The AF_NETLINK *socket* helpers (`grammar_netlink`, `grammar_xfrm`) live in `net/proto/`; this dir builds the *message bodies* those sockets carry — nlmsg framing, rtnetlink payloads, and the generic-netlink (genl) and netfilter-netlink (nfnl) command/attribute grammars.
+The netlink side of the socket layer: the core message-construction engine plus the two per-family/per-subsystem grammar registries. The AF_NETLINK *socket* helpers (`grammar_netlink`) live in `net/proto/`; this dir builds the *message bodies* those sockets carry — nlmsg framing, rtnetlink payloads, and the generic-netlink (genl) and netfilter-netlink (nfnl) command/attribute grammars.
 
 ## Core message plumbing (this dir — 13 .c files + 3 headers, ~6,402 LOC)
 
