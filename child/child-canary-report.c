@@ -244,13 +244,10 @@ const char *canary_crash_sig_render(enum child_op_type op, char *buf, size_t buf
 		off += (size_t)n;
 	}
 
-	if (s->window_crash_sigs_overflow > 0) {
-		int n = snprintf(buf + off, buflen - off, "%s+%u overflow",
-				 off ? " " : "",
-				 s->window_crash_sigs_overflow);
-		if (n > 0 && (size_t)n < buflen - off)
-			off += (size_t)n;
-	}
+	if (s->window_crash_sigs_overflow > 0)
+		snprintf(buf + off, buflen - off, "%s+%u overflow",
+			 off ? " " : "",
+			 s->window_crash_sigs_overflow);
 
 	return buf;
 }

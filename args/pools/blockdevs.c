@@ -76,12 +76,12 @@ static void stat_dev(char *name)
 	add_to_bdevlist(name);
 }
 
-void process_bdev_param(char *optarg)
+void process_bdev_param(char *param)
 {
 	unsigned int len, i;
 	char *buf, *str;
 
-	buf = strdup(optarg);
+	buf = strdup(param);
 	if (!buf)
 		return;
 

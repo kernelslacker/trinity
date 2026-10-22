@@ -81,11 +81,6 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	unsigned long start, len, vec_bytes;
 	void *vec;
 
-	/* Defensive: page_size is set in main() long before sanitisers run,
-	 * but quiet the static analyzer about the divide below. */
-	if (page_size == 0)
-		return;
-
 	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL)
 		return;
@@ -94,7 +89,7 @@ static void sanitise_mincore(struct syscallrecord *rec)
 
 	start = pick_mincore_start(map);
 	len = pick_mincore_len(map->size);
-	if (len == 0)
+	if (len < page_size)
 		len = page_size;
 
 	vec_bytes = (len + page_size - 1) / page_size;

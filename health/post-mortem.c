@@ -356,6 +356,12 @@ static void slurp_proc_file(FILE *fp, pid_t pid, const char *name)
 
 		if (truncated == true)
 			break;
+
+		/* A short count means EOF or a read error.  Stop here: the
+		 * ferror() check below tells the two apart, and another
+		 * fread() would act on a stream already in that state. */
+		if (n < sizeof(buf))
+			break;
 	}
 
 	/* Same marker discipline as the ferror() path below: a reader must

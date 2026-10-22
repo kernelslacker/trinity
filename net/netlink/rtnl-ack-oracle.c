@@ -251,7 +251,7 @@ void rtnl_oracle_drain(int fd, int send_ok)
 	unsigned char rbuf[4096];
 	struct nlmsghdr *nlh;
 	struct nlmsgerr *err;
-	int nleft;
+	ssize_t nleft;
 	ssize_t n;
 	int e, grp, i;
 
@@ -386,9 +386,14 @@ void rtnl_oracle_drain(int fd, int send_ok)
 		 * 4-byte aligned (__nlmsg_put() uses NLMSG_ALIGN), so nleft
 		 * stays ≡ 0 mod 4 and NLMSG_ALIGN(nlmsg_len) <= nleft whenever
 		 * nlmsg_len <= nleft — NLMSG_NEXT never overshoots.
+		 *
+		 * nleft must stay signed so an overshoot goes negative and
+		 * fails NLMSG_OK.  It is ssize_t, not int, so that NLMSG_OK's
+		 * u32 nlmsg_len <= nleft compares against a wider type and
+		 * does not trip -Wsign-compare.
 		 */
-		nleft = (int)((size_t)n <= sizeof(rbuf)
-			      ? (size_t)n : sizeof(rbuf));
+		nleft = (ssize_t)((size_t)n <= sizeof(rbuf)
+				  ? (size_t)n : sizeof(rbuf));
 
 		/*
 		 * Walk every message packed into this datagram.
