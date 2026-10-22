@@ -49,7 +49,6 @@
 #include "sanitise.h"
 #include "sequence.h"
 #include "utils.h"	// zmalloc
-#include "vma-pressure.h"
 
 #include "kernel/if_packet.h"
 /*

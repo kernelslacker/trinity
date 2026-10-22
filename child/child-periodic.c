@@ -21,7 +21,6 @@
 #include "pids.h"
 #include "shm.h"
 #include "trinity.h"
-#include "vma-pressure.h"
 
 /*
  * Sanity check to make sure that the main process is still around
@@ -99,21 +98,13 @@ void periodic_work(struct childdata *child, unsigned long op_nr)
 	 * their cost only on the sample tick.  See child-capdrop-oracle.c. */
 	capdrop_oracle_tick();
 
-	/* Global VMA-pressure watchdog: sample the child's live VMA count
-	 * every VMA_PRESSURE_SAMPLE_PERIOD ops and latch a per-child
-	 * flag the heavy-VMA childops poll at iteration top.  Cadence and
-	 * cost are documented in mm/vma-pressure.c; cheap when latched
-	 * LOW, bounded when latched HIGH (only the backoff regime pays). */
-	vma_pressure_sample_maybe(op_nr);
-
 	/* Every 128 iterations.  Skip the maps-dirty + fd-provider fuzzing
 	 * passes under -c/-r/-g so a targeted-syscall run stays isolated to
 	 * the syscall set the user asked for; the picker gate in
 	 * child_process() handles the per-iteration alt-op leak, this
 	 * handles the periodic-work leak that lives outside that picker.
-	 * check_parent_pid + divergence_sentinel + vma_pressure stay
-	 * unconditional -- those are watchdog / diagnostic work, not
-	 * fuzzing. */
+	 * check_parent_pid + divergence_sentinel stay unconditional --
+	 * those are watchdog / diagnostic work, not fuzzing. */
 	if ((op_nr & 127) == 0 &&
 	    !do_specific_syscall && !random_selection &&
 	    desired_group == GROUP_NONE) {
