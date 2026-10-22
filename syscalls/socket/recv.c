@@ -3,6 +3,7 @@
 			    unsigned flags)
 
  */
+#include <limits.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include "net.h"
@@ -35,6 +36,35 @@ static void sanitise_recv(struct syscallrecord *rec)
 	 * scribbles into adjacent heap memory; defensively redirect away
 	 * from any range that overlaps trinity's alloc_shared regions. */
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
+}
+
+/*
+ * MSG_TRUNC on a datagram, raw, netlink, packet or unix-dgram socket
+ * returns the datagram's real length, which can exceed the buffer
+ * (udp_recvmsg(), netlink_recvmsg(), ...).  Only the int that
+ * sock_recvmsg() returns it in bounds it then.
+ */
+#define RECV_TRUNC_BOUND	INT_MAX
+
+/*
+ * recv and recvfrom return at most the buffer size, or RECV_TRUNC_BOUND
+ * under MSG_TRUNC.  The exception keeps them out of the .bound_arg set,
+ * which is for [0, aN] || -1 returns only.
+ */
+static void post_recv(struct syscallrecord *rec)
+{
+	unsigned long bound = get_arg_snapshot(rec, 3);
+
+	if (get_arg_snapshot(rec, 4) & MSG_TRUNC)
+		bound = RECV_TRUNC_BOUND;
+
+	if (rec->retval == -1UL || rec->retval <= bound)
+		return;
+
+	outputerr("post_recv: retval=%lu exceeds bound=%lu\n",
+		  rec->retval, bound);
+	post_handler_corrupt_ptr_bump_at(rec, NULL,
+					 CORRUPT_PTR_SITE_ENFORCE_COUNT_BOUND);
 }
 
 /*
@@ -121,6 +151,8 @@ static void post_recvfrom(struct syscallrecord *rec)
 {
 	struct recvfrom_post_state *snap;
 
+	post_recv(rec);
+
 	/*
 	 * a6 was the valresult len_io slot; the kernel has either written
 	 * through it or EFAULTed by now.  Clear unconditionally before any
@@ -182,7 +214,10 @@ struct syscallentry syscall_recv = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,
-	.bound_arg = 3,
+	.post = post_recv,
+	/* size (a3) and flags (a4): the dispatch-time values post_recv()
+	 * bounds the return with. */
+	.arg_snapshot_mask = (1u << 2) | (1u << 3),
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -202,7 +237,8 @@ struct syscallentry syscall_recvfrom = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvfrom,
 	.post = post_recvfrom,
-	.bound_arg = 3,
+	/* size (a3) and flags (a4), as for recv. */
+	.arg_snapshot_mask = (1u << 2) | (1u << 3),
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -394,6 +430,7 @@ static void post_recvmsg(struct syscallrecord *rec)
 		(struct recvmsg_post_state *) rec->post_state;
 	struct msghdr *msg;
 	unsigned long retval = rec->retval;
+	unsigned long bound;
 
 	if (snap == NULL)
 		return;
@@ -468,8 +505,9 @@ static void post_recvmsg(struct syscallrecord *rec)
 	/*
 	 * STRONG-VAL count bound: __sys_recvmsg() returns the count of
 	 * bytes received (0..Σ msg->msg_iov[].iov_len) on success or -1
-	 * on failure.  Anything > Σ iov_len (excluding -1UL) is a
-	 * structural ABI regression: a sign-extension tear, a torn write
+	 * on failure; with MSG_TRUNC the real datagram length, bounded by
+	 * RECV_TRUNC_BOUND.  Anything above the bound (excluding -1UL) is
+	 * a structural ABI regression: a sign-extension tear, a torn write
 	 * of the count by a parallel signal-restart path, or -errno
 	 * leaking through the success slot.  iov_len_sum was snapshotted
 	 * at sanitise time into the post_state-private slot rather than
@@ -478,9 +516,12 @@ static void post_recvmsg(struct syscallrecord *rec)
 	 */
 	if ((long) retval == -1L)
 		goto skip_bound;
-	if (retval > snap->iov_len_sum) {
-		outputerr("post_recvmsg: rejecting retval %lu > iov_len_sum %lu\n",
-			  retval, snap->iov_len_sum);
+	bound = snap->iov_len_sum;
+	if (get_arg_snapshot(rec, 3) & MSG_TRUNC)
+		bound = RECV_TRUNC_BOUND;
+	if (retval > bound) {
+		outputerr("post_recvmsg: rejecting retval %lu > bound %lu\n",
+			  retval, bound);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a2 = 0;
 		goto out_free;
@@ -520,6 +561,9 @@ struct syscallentry syscall_recvmsg = {
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmsg,
 	.post = post_recvmsg,
+	/* flags (a3): lifts post_recvmsg()'s iov_len_sum bound under
+	 * MSG_TRUNC. */
+	.arg_snapshot_mask = (1u << 2),
 	.rettype = RET_NUM_BYTES,
 };
 

@@ -8,18 +8,23 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/socket.h>
 
 #include "debug.h"		/* BUG */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
+#include "maps.h"		/* get_map */
+#include "net.h"		/* fd_from_socketinfo */
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
+#include "syscall-internal.h"	/* enforce_count_bound */
 #include "syscalls/syscalls.h"	/* syscall_prctl */
 #include "utils.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -27,8 +32,24 @@
 static unsigned int bumps;
 static unsigned int failed;
 
+/* A case that overwrites a live arg slot after dispatch sets
+ * stomps_expected and counts the tripwire hits; any other hit means the
+ * oracle read a slot whose shadow disagrees with it. */
+static unsigned int stomps;
+static bool stomps_expected;
+
 void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 					void *caller_pc, const char *site)
+{
+	(void) rec;
+	(void) caller_pc;
+	(void) site;
+	bumps++;
+}
+
+void post_handler_corrupt_ptr_bump_at(struct syscallrecord *rec,
+				      void *caller_pc,
+				      enum corrupt_ptr_site site)
 {
 	(void) rec;
 	(void) caller_pc;
@@ -43,7 +64,9 @@ void arg_shadow_stomp_bump(struct syscallrecord *rec, unsigned int argnum,
 	(void) argnum;
 	(void) shadow;
 	(void) current;
-	BUG("a post oracle read an arg whose shadow no longer matched");
+	if (!stomps_expected)
+		BUG("a post oracle read an arg whose shadow no longer matched");
+	stomps++;
 }
 
 /* Copies unless a case says the buffer is not one the real helper would
@@ -74,6 +97,46 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 	if (rec->post_state == (unsigned long) snap)
 		rec->post_state = 0;
 	free(snap);
+}
+
+void post_state_install_sized(struct syscallrecord *rec, void *snap,
+			      size_t size)
+{
+	(void) size;
+	rec->post_state = (unsigned long) snap;
+}
+
+void *post_state_claim_owned(struct syscallrecord *rec,
+			     unsigned long magic_expected,
+			     const char *handler_name)
+{
+	void *snap = (void *) rec->post_state;
+
+	(void) handler_name;
+	if (snap == NULL || *(const unsigned long *) snap != magic_expected)
+		return NULL;
+	return snap;
+}
+
+/* The recv sanitisers reach these.  recvmsg's runs here with no socket
+ * and every map lookup empty, so its iovec entries come out empty; the
+ * others are linked in but never run. */
+int fd_from_socketinfo(struct socketinfo *si)
+{
+	(void) si;
+	BUG("a sanitiser asked for a socket fd");
+	return -1;
+}
+
+struct map *get_map(void)
+{
+	return NULL;
+}
+
+struct map *get_map_with_prot(int required_prot)
+{
+	(void) required_prot;
+	return NULL;
 }
 
 static void expect(const char *what, unsigned int got, unsigned int want)
@@ -225,6 +288,152 @@ static void sched_getscheduler_policy(void)
 	}
 }
 
+/* handle_syscall_ret() runs enforce_count_bound() and then the handler,
+ * so a bound that moves from the one to the other, or is annotated back,
+ * shows here. */
+static void dispatch_post(const struct syscallentry *entry,
+			  struct syscallrecord *rec)
+{
+	enforce_count_bound(entry, rec);
+	if (entry->post != NULL)
+		entry->post(rec);
+}
+
+/* The bytes received, at most the buffer.  A datagram, raw, netlink,
+ * packet or unix-dgram socket returns the real length of the datagram
+ * under MSG_TRUNC instead, even past the buffer; all that bounds the
+ * return then is the int sock_recvmsg() returns it in. */
+static void recv_count(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long size;
+		unsigned long flags;
+		unsigned long retval;
+		bool flags_stomped;	/* MSG_TRUNC gone from the live slot */
+		unsigned int bumps;
+	} cases[] = {
+		{ "the whole buffer", 4096, 0, 4096, false, 0 },
+		{ "a short read", 4096, MSG_DONTWAIT, 17, false, 0 },
+		{ "nothing", 4096, 0, 0, false, 0 },
+		{ "-1", 4096, 0, (unsigned long) -1L, false, 0 },
+		{ "a byte past the buffer", 4096, 0, 4097, false, 1 },
+		{ "past the buffer, flags but not MSG_TRUNC",
+		  4096, MSG_PEEK | MSG_WAITALL | MSG_DONTWAIT, 65536, false, 1 },
+		{ "a datagram longer than the buffer, MSG_TRUNC",
+		  100, MSG_TRUNC, 4096, false, 0 },
+		{ "the length of a datagram, no buffer, MSG_PEEK | MSG_TRUNC",
+		  0, MSG_PEEK | MSG_TRUNC, 512, false, 0 },
+		{ "the largest int, MSG_TRUNC",
+		  100, MSG_TRUNC, INT_MAX, false, 0 },
+		{ "past the int, MSG_TRUNC",
+		  100, MSG_TRUNC, (unsigned long) INT_MAX + 1, false, 1 },
+		{ "a -errno in the return slot, MSG_TRUNC",
+		  100, MSG_TRUNC, (unsigned long) -22L, false, 1 },
+		{ "MSG_TRUNC stomped out of the live flags",
+		  100, MSG_TRUNC, 4096, true, 0 },
+	};
+	const struct syscallentry *entries[] = {
+		&syscall_recv, &syscall_recvfrom,
+	};
+	static struct syscallrecord rec;
+	unsigned int e, i;
+
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (i = 0; i < ARRAY_SIZE(cases); i++) {
+			char what[128];
+
+			memset(&rec, 0, sizeof(rec));
+			rec.a3 = cases[i].size;
+			rec.a4 = cases[i].flags_stomped ? 0 : cases[i].flags;
+			rec.arg_snapshot_mask = entries[e]->arg_snapshot_mask;
+			rec.arg_shadow[2] = cases[i].size;
+			rec.arg_shadow[3] = cases[i].flags;
+			rec.retval = cases[i].retval;
+			rec.errno_post = ((long) cases[i].retval == -1L) ? EINVAL : 0;
+
+			bumps = 0;
+			stomps = 0;
+			stomps_expected = cases[i].flags_stomped;
+			dispatch_post(entries[e], &rec);
+			stomps_expected = false;
+
+			snprintf(what, sizeof(what), "%s, %s", entries[e]->name,
+				 cases[i].what);
+			expect(what, bumps, cases[i].bumps);
+			expect(what, stomps, cases[i].flags_stomped ? 1 : 0);
+		}
+	}
+}
+
+/* Sanitise until the msghdr carries no iovec, so the snapshot's iov_len_sum
+ * is 0 and any byte received is past it.  The fake allocator does not
+ * track, so the msghdr the carrier owns is freed by hand. */
+static struct syscallrecord *recvmsg_rec(void)
+{
+	static struct syscallrecord rec;
+	unsigned int tries;
+
+	for (tries = 0; tries < 4096; tries++) {
+		memset(&rec, 0, sizeof(rec));
+		syscall_recvmsg.sanitise(&rec);
+		if (((struct msghdr *) rec.a2)->msg_iov == NULL)
+			return &rec;
+		free((void *) rec.post_state);
+		free((void *) rec.a2);
+	}
+	BUG("recvmsg sanitiser never drew a msghdr without an iovec");
+	return NULL;
+}
+
+/* Bounded by the iovec it was given, or under MSG_TRUNC by the int. */
+static void recvmsg_count(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long flags;
+		unsigned long retval;
+		bool flags_stomped;	/* MSG_TRUNC gone from the live slot */
+		unsigned int bumps;
+	} cases[] = {
+		{ "nothing", 0, 0, false, 0 },
+		{ "-1", 0, (unsigned long) -1L, false, 0 },
+		{ "a byte into no iovec", 0, 1, false, 1 },
+		{ "a byte into no iovec, flags but not MSG_TRUNC",
+		  MSG_PEEK | MSG_DONTWAIT, 1, false, 1 },
+		{ "a datagram, MSG_TRUNC", MSG_TRUNC, 4096, false, 0 },
+		{ "the largest int, MSG_TRUNC", MSG_TRUNC, INT_MAX, false, 0 },
+		{ "past the int, MSG_TRUNC",
+		  MSG_TRUNC, (unsigned long) INT_MAX + 1, false, 1 },
+		{ "MSG_TRUNC stomped out of the live flags",
+		  MSG_TRUNC, 4096, true, 0 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		struct syscallrecord *rec = recvmsg_rec();
+		struct msghdr *msg = (struct msghdr *) rec->a2;
+		char what[128];
+
+		rec->a3 = cases[i].flags_stomped ? 0 : cases[i].flags;
+		rec->arg_snapshot_mask = syscall_recvmsg.arg_snapshot_mask;
+		rec->arg_shadow[2] = cases[i].flags;
+		rec->retval = cases[i].retval;
+		rec->errno_post = ((long) cases[i].retval == -1L) ? EINVAL : 0;
+
+		bumps = 0;
+		stomps = 0;
+		stomps_expected = cases[i].flags_stomped;
+		dispatch_post(&syscall_recvmsg, rec);
+		stomps_expected = false;
+		free(msg);
+
+		snprintf(what, sizeof(what), "recvmsg, %s", cases[i].what);
+		expect(what, bumps, cases[i].bumps);
+		expect(what, stomps, cases[i].flags_stomped ? 1 : 0);
+	}
+}
+
 void post_oracle_self_check(void);
 void post_oracle_self_check(void)
 {
@@ -234,9 +443,15 @@ void post_oracle_self_check(void)
 		writable_pool_init();
 	out = get_writable_address(sizeof(*out));
 
+	/* recvmsg's sanitiser draws its iovecs from a pool no other suite
+	 * makes. */
+	alloc_iovec_init();
+
 	get_tsc();
 	get_thp_disable();
 	sched_getscheduler_policy();
+	recv_count();
+	recvmsg_count();
 
 	if (failed != 0)
 		BUG("a post oracle judged a return value wrongly");

@@ -768,7 +768,7 @@ struct syscallentry {
 	/*
 	 * Trinity 1-based index (1..6) of the syscall argument whose value
 	 * upper-bounds rec->retval -- typically the "count" / "size" / "len"
-	 * argument of read/write/recv/send-class syscalls.  Consumed at the
+	 * argument of read/write/send-class syscalls.  Consumed at the
 	 * do_syscall layer by enforce_count_bound() in syscall.c, which logs
 	 * any retval > rec->aN as structural ABI corruption (sign-extension
 	 * tear in the return path, sibling-stomp of rec->retval, -errno
@@ -776,7 +776,8 @@ struct syscallentry {
 	 * bound).  Default 0 means "no bound" -- the helper short-circuits.
 	 * Only annotate syscalls whose retval semantics are exactly
 	 * "bytes/items processed in [0, aN] || -1" with no zero-as-query
-	 * exception; iov-sum and zero-as-query syscalls stay per-syscall.
+	 * exception; iov-sum, zero-as-query and MSG_TRUNC (recv, recvfrom)
+	 * syscalls stay per-syscall.
 	 */
 	int bound_arg;
 

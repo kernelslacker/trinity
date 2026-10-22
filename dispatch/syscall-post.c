@@ -29,9 +29,11 @@ void generic_post_close_fd(struct syscallrecord *rec)
  * exactly "bytes/items processed in [0, aN] || -1", driven by the
  * .bound_arg annotation on syscallentry.  Single dispatcher chokepoint
  * means we don't have to sprinkle the same per-syscall .post bound check
- * across every read/write/recv/send-class handler individually -- one
+ * across every read/write/send-class handler individually -- one
  * gate covers the entire helper-eligible set, and adding a new entry to
- * the set is a one-line .bound_arg = N annotation.
+ * the set is a one-line .bound_arg = N annotation.  recv and recvfrom
+ * are not in it: MSG_TRUNC lets them return a datagram's real length,
+ * so post_recv() bounds them.
  *
  * Read the count from rec->aN at validator entry rather than from a
  * post_state snapshot: the validator runs before entry->post, so the
@@ -40,7 +42,7 @@ void generic_post_close_fd(struct syscallrecord *rec)
  * handlers that already keep a snap-bounded copy (write/listmount/
  * readlink/getcwd etc.) remain in place as a defense-in-depth second
  * layer; this helper catches the symmetric set that has no .post today
- * (read/pread64/recv/sendto/...) for the same logical bug class.
+ * (read/pread64/sendto/...) for the same logical bug class.
  *
  * Informational only -- do NOT coerce rec->retval.  Unlike the RET_FD
  * blanket validator, an over-large count-bound retval does not seed a
