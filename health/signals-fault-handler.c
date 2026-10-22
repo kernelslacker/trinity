@@ -1,7 +1,7 @@
 /*
  * health/signals-fault-handler.c — child and main fault handlers.
  *
- * ⚠ ASYNC-SIGNAL-SAFE CRASH PATH — the M6 sigsetjmp recovery site.
+ * ⚠ ASYNC-SIGNAL-SAFE CRASH PATH — the sigsetjmp recovery site.
  *
  * This file owns the sigsetjmp recovery buffers and the SA_SIGINFO
  * crash handlers that read them.  child_fault_handler() is the hot

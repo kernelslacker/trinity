@@ -775,7 +775,7 @@ void stats_timeseries_emit_window(unsigned long op_count);
 void stats_timeseries_drop_in_child(void);
 
 /*
- * Shadow soft-saturation score (row t371-b).  Parent-side, observation-
+ * Shadow soft-saturation score.  Parent-side, observation-
  * only: computed each stats-emit window over trailing 10-min and 60-min
  * horizons from parent-visible counters (distinct_edges, op_count,
  * RUSAGE_CHILDREN, stall_count, trace_truncated).  Raises a shadow

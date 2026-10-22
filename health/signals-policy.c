@@ -106,11 +106,10 @@ void sigxcpu_handler(__unused__ int sig)
  *                    child.  Repaired below; measured by the _unblocked
  *                    counters.
  *
- * The second one was theory until the wedge path started recording
- * SigBlk.  In the first run that carried it, four of the seven reported
- * wedges had SIGALRM blocked, and every one of the seven masks had
- * SIGKILL and SIGSTOP clear -- the kernel's own sigdelsetmask
- * fingerprint, so these are real fuzzed masks and not stale reads.
+ * The second one is not theory: the wedge path records SigBlk, and a
+ * wedged child's mask can show SIGALRM blocked with SIGKILL and SIGSTOP
+ * clear -- the kernel's own sigdelsetmask fingerprint, so it is a real
+ * fuzzed mask and not a stale read.
  *
  * This deliberately narrows what rt_sigprocmask fuzzing can express:
  * the child may block SIGALRM, but not across a NEED_ALARM syscall.

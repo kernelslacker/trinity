@@ -501,7 +501,7 @@ void print_stats(void)
 
 			print_stats_pool_ratio();
 
-			/* Shadow soft-saturation score (t371-b).  Sampled +
+			/* Shadow soft-saturation score.  Sampled +
 			 * recomputed every window from parent-side counters;
 			 * emits one SHADOW_SAT: out.log line right after the
 			 * pool-ratio line so the operator sees the marginal-

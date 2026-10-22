@@ -4,18 +4,17 @@
  * region_tagged() registration protects the whole region against fuzzed
  * value-result kernel writes.
  *
- * The OBJ_LOCAL objpool storage previously came from the child's libc
- * heap via zmalloc_tracked().  range_overlaps_libc_heap() catches the
- * common case (brk arena + labeled non-brk allocator VMAs captured at
- * heap_bounds_init() time), but a glibc mmap arena spawned after
- * heap_bounds_init() falls outside both the pre-fork bbox and the brk
- * arena until the next miss-driven /proc/self/maps re-parse fires.
+ * OBJ_LOCAL objpool storage taken from the child's libc heap via
+ * zmalloc_tracked() depends on range_overlaps_libc_heap(), which
+ * catches the common case (brk arena + labeled non-brk allocator VMAs
+ * captured at heap_bounds_init() time), but a glibc mmap arena spawned
+ * after heap_bounds_init() falls outside both the pre-fork bbox and the
+ * brk arena until the next miss-driven /proc/self/maps re-parse fires.
  * During that window a fuzzed pointer that ends up inside the new arena
  * gets past avoid_shared_buffer_out(), the kernel writes into head->array
  * or a struct object slot, and the next objpool_check() in maps-pick.c
  * (get_map_handle / addr_in_local_runtime_map) trips the SELF-CORRUPT
- * [mm:runtime-map:objpool] marker on the scribbled slot -- 46
- * SIGSEGV/run in run3, the dominant self-corruption crash driver.
+ * [mm:runtime-map:objpool] marker on the scribbled slot.
  *
  * Routing all OBJ_LOCAL pool storage through a single tracked shared_
  * region closes the window unconditionally: range_overlaps_shared() sees
@@ -39,10 +38,9 @@
  *     zeroed by the caller (release_obj memset) but the cursor never
  *     rewinds; on exhaustion the caller falls back to zmalloc_tracked
  *     and pays the range_overlaps_libc_heap safety net instead.
- *     Recycling would need TTL to avoid reusing a slot underneath a
+ *     Recycling would need a TTL to avoid reusing a slot underneath a
  *     stale reader (the deferred-free ring's job for libc-heap
- *     allocations); leaving it to a follow-up commit keeps this first
- *     slice small.
+ *     allocations), and the arena has none.
  *   - Arena size: OBJPOOL_ARENA_BYTES (8 MiB per child of virtual
  *     space).  Physical usage tracks touched pages only, so 200-wide
  *     fleets pay roughly (childdata_high-water * pages) not the full
@@ -55,11 +53,9 @@
  * arena slots: it's a value-keyed prefilter for deferred_free_enqueue's
  * consume gate; arena slots never route through free(), so the
  * registration would just fill the ring with entries that no
- * deferred_free_enqueue call ever consumes.  The only consumer that
- * previously depended on alloc_track_lookup for obj-pool slots was the
- * old alloc_track LRU-based gate in mm/maps-pick.c, which is
- * documented above the current objpool_check() call as intentionally
- * replaced (see obj_pool_slot_check()).
+ * deferred_free_enqueue call ever consumes.  No consumer gates obj-pool
+ * slots on alloc_track_lookup(): mm/maps-pick.c validates a pool slot
+ * with objpool_check() on obj->obj_type (see obj_pool_slot_check()).
  */
 
 #include <errno.h>

@@ -668,8 +668,8 @@ bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 		 * so this arm is exercised only by explicit shadow probes
 		 * that walk the pool by kind.  No RNG draw, no probe-class
 		 * histogram bump (the class enum has no LEN_CORRELATED
-		 * bucket -- adding one is a Slice B follow-up), no ladder:
-		 * length correlation is a single-value probe.
+		 * bucket), no ladder: length correlation is a single-value
+		 * probe.
 		 */
 		*out = (unsigned long)picked->exemplar;
 		return true;

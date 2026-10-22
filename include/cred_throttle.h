@@ -54,7 +54,7 @@ extern const char *const cred_class_name[CRED_CLASS_NR];
 
 /* Per-class hard-failure fraction (EPERM + EINVAL) of total attempts
  * required to declare the class "provably impossible".  Expressed as a
- * percentage so the eventual operator/Dave tweak can be a single number.
+ * percentage so the eventual operator tweak can be a single number.
  * 90 means "9 out of every 10 attempts must hit EPERM or EINVAL with
  * zero observed successes". */
 #define CRED_THROTTLE_HARD_FAIL_PCT 90

@@ -23,10 +23,10 @@
  * bumps edge_pool_exhausted so operator dumps can distinguish a
  * silent cap from a real signal absence.
  *
- * Slice A is observation-only: no consumer of these counters
- * influences the picker in random_syscall/ or the substitution
- * decision in chain-subst.c.  A byte-identical fuzzing run with
- * the observer wired remains the design contract.
+ * No consumer of these counters influences the picker in
+ * random_syscall/ or the substitution decision in chain-subst.c.  A
+ * byte-identical fuzzing run with the observer wired remains the
+ * design contract.
  */
 
 #include <stdbool.h>
@@ -57,7 +57,7 @@
 /*
  * Linear-probe budget for the edge pool.  A miss on all TYPE_GRAPH_
  * EDGE_PROBES neighbouring slots gives up and bumps edge_pool_
- * exhausted -- the graph is a Slice A observation surface and
+ * exhausted -- the graph is an observation-only surface and
  * eventual drop of a lost-race insert is acceptable.
  */
 #define TYPE_GRAPH_EDGE_PROBES		8u

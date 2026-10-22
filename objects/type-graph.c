@@ -4,16 +4,16 @@
  * See include/type-graph.h for the rationale and the on-shm shape.
  * This file owns the direct-mapped publish ring, the open-addressed
  * edge pool, the EMA update primitive, and the top-N text and JSON
- * dumps.  Nothing here reads back into the picker in random_syscall/
- * -- Slice A is observation only; a byte-identical fuzzing run with
- * the observer wired is the design contract.
+ * dumps.  Nothing here reads back into the picker in random_syscall/;
+ * a byte-identical fuzzing run with the observer wired is the design
+ * contract.
  *
  * Cross-child concurrency: the publish ring uses a single monotonic
  * generation stamp under RELAXED atomics; the edge pool uses a CAS
  * on the primary key to publish an insert and RELAXED atomic RMWs on
  * the EMA counters.  A lost-race duplicate insert is possible in a
  * narrow window and would surface as a second edge with the same
- * primary key -- acceptable at the observability grain of Slice A.
+ * primary key -- acceptable at the observability grain of this graph.
  */
 
 #include <stdbool.h>

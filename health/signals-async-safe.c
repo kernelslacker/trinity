@@ -80,19 +80,17 @@ void write_siginfo_safely(int sig, const siginfo_t *info, const char *who)
 /*
  * Signal-delivery state at fault time.
  *
- * Why this exists: four crashes in the 7.2 run came in as SIGSEGV with
- * si_code=SI_KERNEL (128) and si_addr=0, taken while the child was
- * blocked inside a syscall.  That pair means "kernel-generated, not a
- * page fault", and the shortlist of things that produce it is mostly
- * about signal delivery itself -- an alternate stack the kernel could
- * not use, a frame it could not build, a handler running somewhere
- * unexpected.  Every candidate on that shortlist is a property of the
- * child's signal state, and none of it was in the log, so the crashes
- * could be argued about but not classified.
+ * Why this exists: a SIGSEGV with si_code=SI_KERNEL (128) and si_addr=0,
+ * taken while the child is blocked inside a syscall, means
+ * "kernel-generated, not a page fault", and the shortlist of things that
+ * produce it is mostly about signal delivery itself -- an alternate
+ * stack the kernel could not use, a frame it could not build, a handler
+ * running somewhere unexpected.  Every candidate on that shortlist is a
+ * property of the child's signal state, so without that state in the log
+ * such a crash can be argued about but not classified.
  *
  * Three facts, all cheap, and each says a specific thing -- verified
- * against a real kernel-delivered SIGSEGV rather than assumed, because
- * the first cut of this function labelled two of the three wrongly:
+ * against a real kernel-delivered SIGSEGV rather than assumed:
  *
  *   altstack   -- the alternate stack as sigaltstack(2) reports it now.
  *                 Its SS_ONSTACK bit is the direct answer to "is this

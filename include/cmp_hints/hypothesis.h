@@ -45,9 +45,9 @@ enum cmp_hypothesis_kind {
 	 * holds that expected constant; keying is by cmp_field_pool_hash
 	 * (desc, nr, do32, arg_idx, field_idx, size) folded into the
 	 * cmp_ip slot of the hyp entry so the shared alloc/find/pick/derive
-	 * machinery keeps working unmodified.  Slice A is observation-only:
-	 * populated by the record path, drained only by the derive case
-	 * (returns exemplar as expected), never injected by struct_fill.
+	 * machinery keeps working unmodified.  SHADOW only: populated by
+	 * the record path, drained only by the derive case (returns
+	 * exemplar as expected), never injected by struct_fill.
 	 */
 	CMP_HYP_LEN_CORRELATED,
 	CMP_HYP_KIND_NR,

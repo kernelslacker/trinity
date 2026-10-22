@@ -146,8 +146,8 @@ void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
  * Looks for an FT_LEN_BYTES / FT_LEN_COUNT field whose slot value
  * equals arg2 (runtime operand) and records a SHADOW
  * CMP_HYP_LEN_CORRELATED hypothesis with expected == arg1 (compile-
- * time constant).  Never feeds the picker / inject arm -- Slice A is
- * observation-only, byte-identical fuzzing.
+ * time constant).  Never feeds the picker / inject arm: SHADOW only,
+ * byte-identical fuzzing.
  */
 void cmp_hyp_len_correlated_scan_record(const struct cmp_field_scan_slot *slots,
 					unsigned int nr_slots,

@@ -965,12 +965,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * looking for an FT_LEN_* field whose slot value equals arg2
 		 * (runtime operand), records arg1 (compile-time constant) as
 		 * the expected length in a CMP_HYP_LEN_CORRELATED hyp-pool
-		 * entry keyed by cmp_field_pool_hash.  Observation-only in
-		 * Slice A -- neither the picker nor struct_fill consumes
-		 * LEN_CORRELATED entries, so the fuzzing byte stream stays
-		 * byte-identical.  Runs only against KCOV_CMP_CONST records
-		 * (guaranteed by the !KCOV_CMP_CONST drop earlier in this
-		 * loop). */
+		 * entry keyed by cmp_field_pool_hash.  SHADOW only: neither
+		 * the picker nor struct_fill consumes LEN_CORRELATED entries,
+		 * so the fuzzing byte stream stays byte-identical.  Runs only
+		 * against KCOV_CMP_CONST records (guaranteed by the
+		 * !KCOV_CMP_CONST drop earlier in this loop). */
 		if (nr_field_slots != 0)
 			cmp_hyp_len_correlated_scan_record(field_slots,
 							   nr_field_slots,

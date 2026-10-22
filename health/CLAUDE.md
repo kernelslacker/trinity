@@ -7,7 +7,7 @@ The layer that decides whether what just happened is a *finding* (a real kernel 
 | File | Lines | Role |
 |---|---|---|
 | signals-policy.c | 338 | Signal install/mask policy — `mask_signals_child()` and `setup_main_signals()`, watchdog handlers (SIGALRM/SIGXCPU), catch-all `sighandler`, the parent's SIGINT/SIGTERM stop handler. |
-| signals-fault-handler.c | 676 | Child and main fault handlers — the M6 sigsetjmp site, `child_fault_handler()`, `main_fault_handler()`, beacon stamp, buglog redirect, guard-page attribution. |
+| signals-fault-handler.c | 676 | Child and main fault handlers — the sigsetjmp site, `child_fault_handler()`, `main_fault_handler()`, beacon stamp, buglog redirect, guard-page attribution. |
 | signals-precrash.c | 257 | Pre-crash capture — glibc `__abort_msg` capture, per-child stderr memfd, `open_buglog_and_drain_stderr()`. |
 | signals-async-safe.c | 187 | Async-safe utilities — `write_siginfo_safely()`, `write_backtrace_raw_pcs()`, `fault_beacon_extract_{ip,sp}()`. |
 | signals-internal.h | 115 | Private cross-file interface — `struct sigsafe_buf` + `sigsafe_*` inlines; forward decls for de-static'd helpers. |

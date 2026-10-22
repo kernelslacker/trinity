@@ -260,9 +260,10 @@ void apply_chain_substitution(struct syscallrecord *rec,
 	 * that publish_resource() populates; on a hit it stashes the
 	 * inferred (producer_nr, obj_type) tuple in a per-child pending
 	 * slot that the chain executor's post-dispatch outcome hook
-	 * commits alongside the success / novel flags.  Slice A remains
-	 * observation only -- the picker consulting this graph is a
-	 * Slice B change gated on a Dave design pass.
+	 * commits alongside the success / novel flags.  The graph is
+	 * observation only: the picker does not consult it, because that
+	 * would change the fuzzing byte stream the observer must leave
+	 * untouched.
 	 */
 	type_graph_observe_consume(rec->nr, rec->do32bit, slot,
 				   substitute_retval);

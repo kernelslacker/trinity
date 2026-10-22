@@ -478,8 +478,9 @@ void dump_child_fault_beacon(struct childdata *child)
 	 * the reap path after the child has fully exited.  Deferring
 	 * avoids false positives on this per-tick poll path: the child
 	 * publishes the beacon *before* opening or writing the log
-	 * (health/signals.c stamp_fault_beacon precedes
-	 * open_buglog_and_drain_stderr), so a mid-write check here would
+	 * (stamp_fault_beacon() in health/signals-fault-handler.c runs
+	 * before open_buglog_and_drain_stderr() in
+	 * health/signals-precrash.c), so a mid-write check here would
 	 * spuriously charge partial for an otherwise-complete log.
 	 */
 	total_beacon_dumps++;
@@ -491,8 +492,8 @@ void dump_child_fault_beacon(struct childdata *child)
  * that the classification sees the final state of the log file rather than
  * a snapshot mid-write.  The pid is passed explicitly so zombie-deferred
  * callers in process_zombie_pending() can supply the original pid after
- * pids[child->num] has already been set to EMPTY_PIDSLOT (e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)")
- * moved the bug-log path build from dump_child_fault_beacon into here).
+ * pids[child->num] has already been set to EMPTY_PIDSLOT; the bug-log
+ * path is built here from that pid, not in dump_child_fault_beacon().
  *
  * Four outcomes, tracked as distinct counters:
  *
@@ -513,12 +514,12 @@ void dump_child_fault_beacon(struct childdata *child)
  *
  *  complete:    log file present, readable, BUGLOG-COMPLETE sentinel found.
  *               Counted directly via complete_buglog_beacons++ in the
- *               memmem()-found branch so that the residual
+ *               memmem()-found branch, not derived by subtraction, so
+ *               that the residual
  *               total - (no_log + partial + unreadable + complete)
  *               surfaces beacons from children lost before reap_child()
  *               ran classify_child_buglog() (e.g. SIGKILL via
- *               kill_all_kids()).  Prior to e4a44396a761 ("health: fix partial-buglog misclassification (unreadable + poll race)") this gap was
- *               silently absorbed into the subtraction-derived complete.
+ *               kill_all_kids()).
  *
  * access() and open()/read() are safe here (parent context).
  */

@@ -84,7 +84,7 @@ unsigned long cmp_hyp_sign_switch_would_win;
  *      the kernel compare our chosen length against a constant"
  *      opportunity across the fuzz workload; a non-trivial rate on
  *      netlink / sized-ioctl surface is the "is it worth it" gate
- *      for the Slice B live-inject follow-up.
+ *      for a live-inject variant, which is not implemented.
  *
  * cmp_hyp_len_correlated_recorded
  *      Subset of _would_fire where the observe path successfully

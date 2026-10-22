@@ -1,10 +1,10 @@
 /*
- * Shadow soft-saturation score (row t371-b, plateau-slice observability).
+ * Shadow soft-saturation score.
  *
  * OBSERVATION-ONLY: computed every stats interval, consumed by NOTHING.
  * The hard-stall detector (kcov/plateau.c) only fires when the 600s
  * distinct-edges delta drops below KCOV_PLATEAU_ENTER_THRESHOLD (=10).
- * The rc5 saturated tail still gains ~420 edges/600s and reads
+ * The tail of a saturated run still gains ~420 edges/600s and reads
  * "healthy" to that detector -- economic saturation is invisible.
  *
  * This module keeps a ring of parent-side samples covering the last
@@ -92,7 +92,7 @@ static unsigned int sat_ring_count;	/* saturated at SAT_RING_SIZE */
 /* Floors.  Below these the yield is considered "not moving the needle"
  * for the corresponding denominator.  Two floors AND-gated so a burst
  * that's high on one normaliser but low on the other doesn't flip us.
- * Calibrated against the rc5 fixture: the flat/bursty tail (post ~1M
+ * Calibrated against a saturated-tail run: the flat/bursty tail (post ~1M
  * iters) averages ~7-20 new edges per 10k calls with occasional bursts
  * to 80; the pre-saturation region (i<50) sits at ~30-200.  A floor at
  * 25 catches the tail after the hysteresis smoothing without tripping
@@ -106,16 +106,17 @@ static unsigned int sat_ring_count;	/* saturated at SAT_RING_SIZE */
 
 /* Throughput-veto threshold: short-window call rate below half the
  * long-window rate is treated as a starvation event, not saturation.
- * rc5 tail dropped 841 -> 562/sec; anything worse than that is
- * plausibly a fleet or D-state stall, not economic saturation. */
+ * A saturated-tail run dropped 841 -> 562/sec; anything worse than that
+ * is plausibly a fleet or D-state stall, not economic saturation. */
 #define SAT_THROUGHPUT_VETO_RATIO_NUM	1
 #define SAT_THROUGHPUT_VETO_RATIO_DEN	2
 
 /* Trace-truncation veto ratio: veto only when the short-window
  * truncation rate outstrips the long-window baseline by this multiple.
  * KCOV trace-truncation grows slowly and steadily on saturated tails
- * (rc5: ~15 trunc/window baseline).  Vetoing on any rise would fire
- * the entire tail and mask the very saturation we're trying to see.
+ * (~15 trunc/window baseline in a saturated-tail run).  Vetoing on
+ * any rise would fire the entire tail and mask the very saturation
+ * we're trying to see.
  * The real supply-side event we care about is a sudden burst -- e.g.
  * short-window trunc rate 3x the long-window baseline. */
 #define SAT_TRUNC_VETO_RATIO_NUM	3
@@ -125,10 +126,10 @@ static unsigned int sat_ring_count;	/* saturated at SAT_RING_SIZE */
  * finding_events (post_handler_corrupt_ptr + watchdog_fd_evict) meets
  * or exceeds this many events per wall-hour, active findings are in
  * flight and the low edge yield is more likely the corruption-and-
- * recycle loop than economic saturation.  Calibrated against run2:
- * 1,541 watchdog kills across an ~hour dwarfs any reasonable rate
- * floor, and healthy runs with occasional stray corruption catches
- * (<1 per 10 min) stay under it. */
+ * recycle loop than economic saturation.  Calibrated against a run
+ * with 1,541 watchdog kills across an ~hour, which dwarfs any
+ * reasonable rate floor; healthy runs with occasional stray
+ * corruption catches (<1 per 10 min) stay under it. */
 #define SAT_FINDING_VETO_MIN_PER_WALL_HOUR	6U
 
 enum sat_veto_reason {
@@ -327,8 +328,9 @@ void stats_shadow_sat_tick(void)
 	/* Health veto in priority order: a wedge / active finding / trunc-
 	 * loss burst / throughput collapse means the low yield we're seeing
 	 * is a supply-side failure, not economic saturation, and we must
-	 * not conclude saturated.  rc5 tail is the archetypal case:
-	 * throughput dropped 841 -> 562/sec alongside D-state wedges.
+	 * not conclude saturated.  A saturated-tail run whose throughput
+	 * dropped 841 -> 562/sec alongside D-state wedges is the
+	 * archetypal case.
 	 *
 	 * The finding-pending gate is second in priority (after in-flight
 	 * D-state wedges): if the short window shows finding_events
@@ -336,18 +338,19 @@ void stats_shadow_sat_tick(void)
 	 * per-wall-hour rate at or above SAT_FINDING_VETO_MIN_PER_WALL_HOUR,
 	 * the fuzzer is actively churning through the corruption-and-
 	 * recycle loop and the low yield is not economic saturation.
-	 * run2's 1,541-watchdog-kill tail is the archetypal case: the
+	 * A tail with 1,541 watchdog kills is the archetypal case: the
 	 * point-in-time stall_count veto returned to 0 while findings
 	 * were still landing, so the shadow score would otherwise flip
 	 * saturated on active corruption.
 	 *
 	 * The trace-truncation gate is RATE-based rather than
 	 * any-rise-based: kcov truncation grows steadily on any long run
-	 * (~15/window at rc5's pace), so vetoing on any rise would mask
-	 * the very saturation we're trying to see.  Only veto when the
-	 * short-window trunc rate outstrips the long-window baseline by
-	 * SAT_TRUNC_VETO_RATIO -- a genuine burst that indicates active
-	 * instrumentation loss, not steady baseline growth. */
+	 * (~15/window in a saturated-tail run), so vetoing on any rise
+	 * would mask the very saturation we're trying to see.  Only veto
+	 * when the short-window trunc rate outstrips the long-window
+	 * baseline by SAT_TRUNC_VETO_RATIO -- a genuine burst that
+	 * indicates active instrumentation loss, not steady baseline
+	 * growth. */
 	if (st.health_stall_count > 0) {
 		st.veto = SAT_VETO_STALLED_CHILDREN;
 	} else if (sh != NULL

@@ -16,7 +16,7 @@
 #include "params.h"   /* ARRAY_SIZE for STAT_CATEGORY() */
 #include "shm.h"      /* struct stats_s for offsetof() in macros */
 
-/* Shadow soft-saturation JSONL emitter (row t371-b).  Appends the
+/* Shadow soft-saturation JSONL emitter.  Appends the
  * ",\"soft_sat\":{...},\"raw_windows\":[...]" block to fp.  Called
  * from stats_timeseries_emit_window() in stats/log.c after the last
  * scalar block and before the "per_syscall" array.  Public API

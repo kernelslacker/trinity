@@ -1,5 +1,5 @@
 /*
- * SHADOW length-correlation observe path (metacode-novel #7, Slice A).
+ * SHADOW length-correlation observe path.
  *
  * Fires from the per-record loop in cmp_hints_collect().  For every KCOV
  * CMP record that carries KCOV_CMP_CONST -- i.e. arg1 holds a compile-
@@ -18,7 +18,7 @@
  * stored into a CMP_HYP_LEN_CORRELATED entry keyed by
  * cmp_field_pool_hash(desc, nr, do32, arg_idx, field_idx, size) folded
  * into the entry's cmp_ip slot -- reusing the existing hyp-pool alloc /
- * find machinery unmodified.  Slice A is SHADOW: the entry never feeds
+ * find machinery unmodified.  The path is SHADOW: the entry never feeds
  * the picker (its ladder skips LEN_CORRELATED, see hyp-pick.c
  * ladder_kinds[]) and never feeds struct_fill, so this path does not
  * consume RNG and does not perturb the fuzzing byte stream.
@@ -98,7 +98,7 @@ static void cmp_hyp_len_correlated_record_one(unsigned int nr, bool do32,
 	 * field_idx, size) tuples produce different keys with
 	 * overwhelming probability; a hash collision between two distinct
 	 * length fields would fold their observations into a single
-	 * entry, which for SHADOW slice A only smears the would-fire
+	 * entry, which for the SHADOW lane only smears the would-fire
 	 * value counter -- no injection consumes it.
 	 */
 	key = (unsigned long)cmp_field_pool_hash(desc, nr, do32 ? 1U : 0U,
