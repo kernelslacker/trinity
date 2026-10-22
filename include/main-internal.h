@@ -40,7 +40,7 @@ extern unsigned int stall_count;
 int shm_is_corrupt(void);
 int open_child_pidstat(pid_t target);
 char get_pid_state(int childno);
-int find_free_childno(void);
+int find_free_childno(const bool *skip);
 unsigned int handle_children(void);
 void check_children_progressing(void);
 void kill_all_kids(void);

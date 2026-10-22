@@ -59,7 +59,7 @@ static void check_parked_through_reset(unsigned int parked)
 		if (i != parked)
 			pids[i] = getpid();
 	}
-	if (find_free_childno() != CHILD_NOT_FOUND)
+	if (find_free_childno(NULL) != CHILD_NOT_FOUND)
 		BUG("epoch reset: a parked slot is free for a fresh child");
 	for_each_child(i)
 		pids[i] = EMPTY_PIDSLOT;

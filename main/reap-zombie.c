@@ -362,16 +362,22 @@ void process_zombie_pending(void)
  * child lets the dying task's late writes corrupt the new child's
  * childdata (same race shape documented at the top of this file).
  *
+ * @skip, if not NULL, flags slots the caller is passing over for now:
+ * fork_children() flags a slot whose spawns kept failing, so that it
+ * moves on instead of getting the same lowest free slot back.
+ *
  * Returns CHILD_NOT_FOUND when no slot is available; the caller
  * decides whether that means "pid map exhausted" (fatal) or "all empty
- * slots are zombie-pending" (transient, retry once
- * process_zombie_pending() has run).
+ * slots are zombie-pending or skipped" (transient, retry once
+ * process_zombie_pending() has run or on a later call).
  */
-int find_free_childno(void)
+int find_free_childno(const bool *skip)
 {
 	unsigned int i;
 
 	for_each_child(i) {
+		if (skip != NULL && skip[i])
+			continue;
 		if (__atomic_load_n(&pids[i], __ATOMIC_RELAXED) != EMPTY_PIDSLOT)
 			continue;
 		if (zombie_pids[i] != EMPTY_PIDSLOT)

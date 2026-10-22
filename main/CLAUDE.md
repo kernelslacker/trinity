@@ -147,10 +147,16 @@ API surface.
    work (drain, watchdog kill) one more pass to run cleanly before the
    loop exits.
 5. **Bounded backoff everywhere in the spawn path** — per-slot retry cap
-   (10), outer consecutive-failure cap (1000, ~1 min of 10-100ms backoff),
-   and a cumulative per-`fork_children()`-call backoff cap (2s) that yields
+   (10; `fork_children()` then skips the slot for the rest of the call and
+   the next call retries it, so a slot that will not fork does not hold
+   the startup barrier shut) and a cumulative per-`fork_children()`-call
+   backoff cap (2s, about 117 failed attempts at 10-20ms each) that yields
    back to `main_loop` mid-refill so reap/watchdog aren't starved during a
-   sustained fork-pressure episode.
+   sustained fork-pressure episode.  That backoff cap is what bounds a
+   call: the per-call 1000-failure `EXIT_FORK_FAILURE` bail is never
+   reached behind it, and a fleet that cannot fork is retried every tick.
+   The opt-in fork-pressure drain counts failures across calls, so a
+   refill of a few slots still reaches its threshold of 100.
 6. **One-shot forensic snapshots on the bail path** — fork-failure,
    fast-die-loop, and D-state-stuck all have latched (`static bool
    emitted`) one-time dumps (`/proc/self/status`, cgroup pids/memory.events,

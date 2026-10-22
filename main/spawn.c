@@ -32,19 +32,24 @@
 /* CLOCK_MONOTONIC second past which the canary picker may resume
  * scheduling pid-heavy ops; 0 means no suppression is in effect.
  * Parent-private (the canary picker is parent-only).  Written from
- * fork_children() when consecutive_fork_failures crosses
+ * fork_children() when fork_pressure_failures crosses
  * FORK_PRESSURE_DRAIN_THRESHOLD and --fork-pressure-drain is set;
  * read from child-canary-policy.c via fork_pressure_drain_active().  Read
  * RELAXED -- the picker only needs eventual consistency; a one-tick
  * lag in seeing pressure raised or lifted is fine. */
 static unsigned long fork_pressure_active_until;
 
-/* Spawn-failure count at which the drain engages.  Picked an order
- * of magnitude below the bail threshold (max_consecutive_fork_failures
- * = 1000) so the drain has room to actually relieve pressure before
- * the parent gives up.  With the inner spawn_child retry's 10-100ms
- * backoff, 100 consecutive failures is roughly the first 1-2 s of a
- * stuck-fork episode -- past any single ENOMEM blip and into
+/* Consecutive failed spawns in fork_children(), across calls; only a
+ * spawn there that succeeds resets it.  The drain counts these because
+ * a call gives up on a slot after ten attempts, so a refill of a few
+ * slots, the usual case under pid pressure, never reaches the threshold
+ * within one call.  replace_child() leaves it alone: its spawns can win
+ * the pids freed by reaped children while the top-up keeps failing. */
+static unsigned long fork_pressure_failures;
+
+/* Consecutive spawn failures at which the drain engages.  Ten attempts
+ * per slot with 10-20 ms of backoff between them make 100 failures at
+ * least 1.7 s of failing forks -- past any single ENOMEM blip and into
  * sustained pressure. */
 #define FORK_PRESSURE_DRAIN_THRESHOLD	100U
 
@@ -584,14 +589,13 @@ void dump_proc_self_status(void)
 /* Generate children*/
 void fork_children(void)
 {
-	/* Bound the outer respawn loop.  The inner spawn_child retry
-	 * already caps per-slot attempts at 10, but if every slot keeps
-	 * failing (e.g. the process table is full of orphans the parent
-	 * cannot reap) the outer while loop will iterate forever, growing
-	 * a silent wedge with no exit, no watchdog fire, and no operator
-	 * visibility beyond strace.  Track consecutive failed spawn_child
-	 * calls and bail once we cross the threshold; with the 10-100ms
-	 * inner backoff this caps the stuck window at roughly a minute. */
+	/* Consecutive spawn_child() failures within this fork_children()
+	 * call, for the EXIT_FORK_FAILURE bail.  The count starts over on
+	 * every call, and the backoff budget below ends a call after at
+	 * most 117 failures (170 ms of backoff per ten-attempt slot), so
+	 * it never gets near the threshold: the budget is what bounds a
+	 * call, and a fleet that cannot fork is retried by main_loop()
+	 * every tick rather than bailed. */
 	unsigned int consecutive_fork_failures = 0;
 	const unsigned int max_consecutive_fork_failures = 1000;
 	/* Cumulative backoff across all slots in this fork_children call.
@@ -601,6 +605,21 @@ void fork_children(void)
 	 * starved by an endlessly retrying spawn loop. */
 	unsigned int total_backoff_us = 0;
 	const unsigned int max_total_backoff_us = 2000000u;
+	/* Slots this call gave up on after ten failed spawns.
+	 * find_free_childno() returns the lowest free slot, so a slot
+	 * given up on has to be masked or the next pick hands it
+	 * straight back.  A skipped slot does not hold the startup
+	 * barrier, so one that never forks cannot keep the rest of the
+	 * fleet waiting at it.  It stays free, which keeps running_childs
+	 * below live_child_slots, so main_loop()'s top-up calls back next
+	 * tick and retries it with a clear mask.  The 2 s budget fits
+	 * eleven skips, so twelve or more failing slots still hold the
+	 * barrier.  Allocated once: max_children is fixed for the run. */
+	static bool *skipped;
+
+	if (skipped == NULL)
+		skipped = zmalloc(max_children * sizeof(*skipped));
+	memset(skipped, 0, max_children * sizeof(*skipped));
 
 	while (__atomic_load_n(&shm->running_childs, __ATOMIC_RELAXED) < live_child_slots) {
 		int childno;
@@ -612,13 +631,14 @@ void fork_children(void)
 		 * usable when both the live-pid and zombie-pending slots
 		 * are empty — see find_free_childno() and the
 		 * zombie_pids[] comment at the top of this file. */
-		childno = find_free_childno();
+		childno = find_free_childno(skipped);
 		if (childno == CHILD_NOT_FOUND) {
 			/* Distinguish a genuinely-full pid map (a fatal
 			 * bookkeeping bug) from "every empty slot is in
-			 * zombie-pending state" (transient — a future
-			 * process_zombie_pending() pass will retire them
-			 * and main_loop will call us again). */
+			 * zombie-pending state or was skipped" (transient
+			 * — a future process_zombie_pending() pass will
+			 * retire the parked ones, and main_loop will call
+			 * us again). */
 			if (find_childno(EMPTY_PIDSLOT) == CHILD_NOT_FOUND) {
 				/* Every slot holds a pid, but a watchdog
 				 * kill burst can leave slots parked with
@@ -635,13 +655,14 @@ void fork_children(void)
 					exit(EXIT_LOST_CHILD);
 				}
 			} else {
-				/* Every empty slot is parked, so every slot
-				 * that can take a child has one: open the
-				 * startup barrier here.  The store after the
-				 * loop is never reached while a parked slot
-				 * counts in live_child_slots, and the slot's
-				 * refill goes through replace_child(), not
-				 * this loop. */
+				/* Every empty slot is parked or skipped, so
+				 * every slot this call can fill has a child:
+				 * open the startup barrier here.  The store
+				 * after the loop is never reached while such
+				 * a slot counts in live_child_slots.  A
+				 * parked slot's refill goes through
+				 * replace_child(), not this loop, and a
+				 * skipped one waits for the next call. */
 				__atomic_store_n(&shm->ready, true,
 						 __ATOMIC_RELEASE);
 			}
@@ -653,27 +674,28 @@ void fork_children(void)
 
 			while (spawn_child(childno) == false) {
 				consecutive_fork_failures++;
+				fork_pressure_failures++;
 				/* Drain mode: at the first crossing of
-				 * FORK_PRESSURE_DRAIN_THRESHOLD inside this
-				 * burst, arm the recovery window so the canary
+				 * FORK_PRESSURE_DRAIN_THRESHOLD in a failure
+				 * streak, arm the recovery window so the canary
 				 * picker stops scheduling pid-heavy ops.  Re-
-				 * arm on every subsequent failure inside the
-				 * burst (cheap, RELAXED store) so a sustained
+				 * arm on every subsequent failure in the
+				 * streak (cheap, RELAXED store) so a sustained
 				 * pressure spell holds the window open instead
 				 * of timing out mid-spell.  Guarded by the
 				 * opt-in flag -- default behaviour stays
 				 * byte-identical. */
 				if (fork_pressure_drain &&
-				    consecutive_fork_failures >= FORK_PRESSURE_DRAIN_THRESHOLD) {
+				    fork_pressure_failures >= FORK_PRESSURE_DRAIN_THRESHOLD) {
 					struct timespec ts;
 					(void)clock_gettime(CLOCK_MONOTONIC, &ts);
 					__atomic_store_n(&fork_pressure_active_until,
 						(unsigned long)ts.tv_sec +
 							FORK_PRESSURE_DRAIN_RECOVERY_S,
 						__ATOMIC_RELAXED);
-					if (consecutive_fork_failures == FORK_PRESSURE_DRAIN_THRESHOLD)
-						output(0, "main: fork-pressure drain engaged (%u consecutive spawn failures); pid-heavy canary picks suppressed for %u s\n",
-							consecutive_fork_failures,
+					if (fork_pressure_failures == FORK_PRESSURE_DRAIN_THRESHOLD)
+						output(0, "main: fork-pressure drain engaged (%lu consecutive spawn failures); pid-heavy canary picks suppressed for %u s\n",
+							fork_pressure_failures,
 							FORK_PRESSURE_DRAIN_RECOVERY_S);
 				}
 				if (consecutive_fork_failures >= max_consecutive_fork_failures) {
@@ -689,6 +711,7 @@ void fork_children(void)
 					outputerr("Failed to fork initial child for slot %d after %u attempts, skipping slot.\n",
 						childno, retries);
 					dump_fork_failure_snapshot();
+					skipped[childno] = true;
 					break;
 				}
 				{
@@ -702,6 +725,7 @@ void fork_children(void)
 			if (retries >= 10)
 				continue;
 			consecutive_fork_failures = 0;
+			fork_pressure_failures = 0;
 		}
 
 		/* Per-spawn visibility under -v.  Today only the final
@@ -729,14 +753,16 @@ void fork_children(void)
 		 * the running_childs < live_child_slots check and exits
 		 * when the pool is full.  main_loop's existing
 		 * under-target branch will re-enter fork_children on the
-		 * next tick.  Yield only while a fillable slot remains,
-		 * which keeps that branch open for the next call.  Once
-		 * none does, a parked slot alone holds it open only until
-		 * the next tick's zombie pass refills or quarantines the
-		 * slot, so carry on instead: the next pass leaves through
-		 * the loop exit or the parked-slot return, and both open
-		 * the startup barrier. */
-		if (fork_throttle_us > 0 && find_free_childno() != CHILD_NOT_FOUND)
+		 * next tick.  Yield only while a fillable slot this call
+		 * has not skipped remains, which keeps that branch open
+		 * for the next call.  Once none does, carry on instead: a
+		 * parked slot alone holds the branch open only until the
+		 * next tick's zombie pass refills or quarantines the slot,
+		 * and a skipped slot is done for this call.  The next pass
+		 * leaves through the loop exit or the parked-or-skipped
+		 * return, and both open the startup barrier. */
+		if (fork_throttle_us > 0 &&
+		    find_free_childno(skipped) != CHILD_NOT_FOUND)
 			return;
 	}
 	__atomic_store_n(&shm->ready, true, __ATOMIC_RELEASE);
