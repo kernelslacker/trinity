@@ -153,6 +153,11 @@ void fd_protected_self_check(void)
 		if (!(fcntl(moved, F_GETFD) & FD_CLOEXEC))
 			BUG("fd protected: the moved sink is not close-on-exec");
 		check_registry(moved, other);
+		/* Already above the base: a second call has nothing to do
+		 * and must not walk the sink up another slot. */
+		stats_rotation_event_relocate_in_child();
+		if (stats_rotation_event_fd() != moved)
+			BUG("fd protected: a second move changed the sink fd");
 	}
 	if (setrlimit(RLIMIT_NOFILE, &orig) != 0)
 		BUG("fd protected: cannot restore RLIMIT_NOFILE");

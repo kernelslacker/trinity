@@ -31,8 +31,6 @@
 #include "stats_ring.h"		/* stats_ring_enqueue, STATS_FIELD_* */
 #include "trinity.h"		/* output, outputerr */
 
-#include "kernel/fcntl.h"
-
 /*
  * Runtime base of the kernel text segment, read once from /proc/kallsyms
  * (address of "_text"; "_stext" as a fallback).  Subtracted from every PC
@@ -449,30 +447,13 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 *
 	 * The PC fd is always relocated; the CMP fd is relocated only
 	 * when the CMP probe left one behind (kernels without
-	 * KCOV_TRACE_CMP tear it down and leave cmp_fd at -1).  Per-fd
-	 * failure (EMFILE etc.) is silently best-effort: keep the
-	 * original fd and let the registry catch any picker that
-	 * targets it.
+	 * KCOV_TRACE_CMP tear it down and leave cmp_fd at -1, which
+	 * fd_relocate_high() passes through).  Per-fd failure (EMFILE
+	 * etc.) is silently best-effort: keep the original fd and let
+	 * the registry catch any picker that targets it.
 	 */
-	if (kc->fd >= 0 && (unsigned int) kc->fd < PROTECTED_FD_HIGH_BASE) {
-		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
-				   (int) PROTECTED_FD_HIGH_BASE);
-
-		if (new_fd >= 0) {
-			close(kc->fd);
-			kc->fd = new_fd;
-		}
-	}
-	if (kc->cmp_fd >= 0 &&
-	    (unsigned int) kc->cmp_fd < PROTECTED_FD_HIGH_BASE) {
-		int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
-				   (int) PROTECTED_FD_HIGH_BASE);
-
-		if (new_fd >= 0) {
-			close(kc->cmp_fd);
-			kc->cmp_fd = new_fd;
-		}
-	}
+	kc->fd = fd_relocate_high(kc->fd);
+	kc->cmp_fd = fd_relocate_high(kc->cmp_fd);
 
 	kcov_init_child_select_mode(kc);
 }
@@ -678,8 +659,8 @@ void kcov_cleanup_child(struct kcov_child *kc)
  * kc->cmp_trace_buf for the cmp fd).
  *
  * The sequence mirrors kcov_init_child's per-fd setup -- open, KCOV_-
- * INIT_TRACE, mmap, F_DUPFD_CLOEXEC up to PROTECTED_FD_HIGH_BASE -- with two
- * deliberate orderings the bare init path does not need:
+ * INIT_TRACE, mmap, fd_relocate_high() -- with two deliberate orderings
+ * the bare init path does not need:
  *
  *   1. Open the new fd BEFORE closing the old one.  fd_is_protected
  *      reads kc->fd / kc->cmp_fd; if we left either at -1 for the open()
@@ -733,15 +714,7 @@ bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	 * relocation kcov_init_child does.  A failed dup just leaves the
 	 * fresh fd at its low slot; the protected-fd registry still covers
 	 * it via fd_is_protected once we install it below. */
-	if ((unsigned int)new_fd < PROTECTED_FD_HIGH_BASE) {
-		int hi_fd = fcntl(new_fd, F_DUPFD_CLOEXEC,
-				  (int)PROTECTED_FD_HIGH_BASE);
-
-		if (hi_fd >= 0) {
-			close(new_fd);
-			new_fd = hi_fd;
-		}
-	}
+	new_fd = fd_relocate_high(new_fd);
 
 	if (*buf_slot != NULL) {
 		untrack_shared_region((unsigned long)*buf_slot, buf_bytes);

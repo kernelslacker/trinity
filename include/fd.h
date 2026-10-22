@@ -290,6 +290,18 @@ void reroll_protected_fd_arg(unsigned long *slot);
 #define PROTECTED_FD_HIGH_BASE 60000U
 
 /*
+ * Move @fd up to the first free number at or above PROTECTED_FD_HIGH_BASE
+ * and close the low number, so the caller must store the return value
+ * over @fd.  Returns @fd unchanged when it is negative, already at or
+ * above the base, or no slot at or above the base could be had (soft
+ * RLIMIT_NOFILE not above it, or nothing free there): the move is
+ * best-effort and the registry still covers the low number.  Uses
+ * F_DUPFD_CLOEXEC because a dup does not inherit the original's
+ * close-on-exec flag.
+ */
+int fd_relocate_high(int fd);
+
+/*
  * Pick from the fd_types whose ->poll handlers park the caller on a
  * real wait queue (pipe / eventfd / timerfd / signalfd / inotify /
  * fanotify / socket).  Used by poll(2)/ppoll(2)/select(2)/pselect6(2)

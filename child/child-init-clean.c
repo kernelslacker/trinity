@@ -164,15 +164,7 @@ void open_fail_nth(struct childdata *child)
 	 * if the dup fails (EMFILE, no free slot above the base), keep
 	 * the low fd and let fds-protected catch subsequent attempts on
 	 * it.  Mirrors the open_tainted_fd relocation. */
-	if ((unsigned int) fd < PROTECTED_FD_HIGH_BASE) {
-		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
-				   (int) PROTECTED_FD_HIGH_BASE);
-
-		if (new_fd >= 0) {
-			close(fd);
-			fd = new_fd;
-		}
-	}
+	fd = fd_relocate_high(fd);
 
 	child->fail_nth_fd = fd;
 }
@@ -236,15 +228,7 @@ void open_tainted_fd(struct childdata *child)
 	 * if the dup fails (EMFILE, no free slot above the base), keep
 	 * the low fd and let fds-protected catch subsequent attempts on
 	 * it. */
-	if ((unsigned int) fd < PROTECTED_FD_HIGH_BASE) {
-		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
-				   (int) PROTECTED_FD_HIGH_BASE);
-
-		if (new_fd >= 0) {
-			close(fd);
-			fd = new_fd;
-		}
-	}
+	fd = fd_relocate_high(fd);
 
 	child->tainted_fd = fd;
 	child->last_tainted = read_tainted_mask(fd);

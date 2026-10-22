@@ -14,7 +14,6 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
 #include <inttypes.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -30,8 +29,6 @@
 #include "strategy.h"
 #include "trinity.h"
 #include "utils-proc.h"
-
-#include "kernel/fcntl.h"
 
 /*
  * Sink fd.  <0 means the file is not open (either --stats was off, or
@@ -82,23 +79,7 @@ int stats_rotation_event_fd(void)
 
 void stats_rotation_event_relocate_in_child(void)
 {
-	int new_fd;
-
-	if (rotation_event_fd < 0 ||
-	    (unsigned int) rotation_event_fd >= PROTECTED_FD_HIGH_BASE)
-		return;
-
-	/* Best-effort: if the dup fails (soft RLIMIT_NOFILE not above the
-	 * base, no free slot at or above it), keep the low fd and let the
-	 * protected-fd registry catch attempts on it.  CLOEXEC again: a dup
-	 * does not inherit the original's close-on-exec flag. */
-	new_fd = fcntl(rotation_event_fd, F_DUPFD_CLOEXEC,
-		       (int) PROTECTED_FD_HIGH_BASE);
-	if (new_fd < 0)
-		return;
-
-	close(rotation_event_fd);
-	rotation_event_fd = new_fd;
+	rotation_event_fd = fd_relocate_high(rotation_event_fd);
 }
 
 void stats_rotation_event_close(void)

@@ -92,13 +92,13 @@ int stats_rotation_event_fd(void);
 
 /*
  * Move this process's copy of the sink to the first free fd at or above
- * PROTECTED_FD_HIGH_BASE (fd.h) and close the low number it inherited.
- * Called early in every child, before any fuzzed syscall.  The parent
- * keeps the number it opened: it fuzzes nothing, and a high fd there
- * would make every fork copy a ~60k-slot fd table.  Best-effort: when
- * no slot at or above the base is available (soft RLIMIT_NOFILE not
- * above it) the low number stays and only the registry guards it.
- * No-op when the sink is not open.
+ * PROTECTED_FD_HIGH_BASE (see fd_relocate_high()) and close the low
+ * number it inherited.  Called early in every child, before any fuzzed
+ * syscall.  The parent keeps the number it opened: it fuzzes nothing,
+ * and a high fd there would make every fork copy a ~60k-slot fd table.
+ * Best-effort: when no slot at or above the base is available (soft
+ * RLIMIT_NOFILE not above it) the low number stays and only the
+ * registry guards it.  No-op when the sink is not open.
  */
 void stats_rotation_event_relocate_in_child(void);
 

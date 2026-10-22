@@ -1,3 +1,4 @@
+#include <fcntl.h>
 #include <stddef.h>
 #include <unistd.h>
 
@@ -8,6 +9,8 @@
 #include "signals.h"
 #include "syscall.h"
 #include "taint.h"
+
+#include "kernel/fcntl.h"
 
 /*
  * Protected-fd registry.  Argument generators for the close family
@@ -240,4 +243,19 @@ void reroll_protected_fd_arg(unsigned long *slot)
 		}
 	}
 	*slot = (unsigned long) -1;
+}
+
+int fd_relocate_high(int fd)
+{
+	int new_fd;
+
+	if (fd < 0 || (unsigned int) fd >= PROTECTED_FD_HIGH_BASE)
+		return fd;
+
+	new_fd = fcntl(fd, F_DUPFD_CLOEXEC, (int) PROTECTED_FD_HIGH_BASE);
+	if (new_fd < 0)
+		return fd;
+
+	close(fd);
+	return new_fd;
 }
