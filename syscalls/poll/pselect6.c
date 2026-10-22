@@ -104,7 +104,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	 * queues), ~30% legacy random bit positions, ~10% deliberately
 	 * high invalid bits to keep the EBADF leg of do_select() warm.
 	 * Each candidate still passes through fd_poll_can_block() so a
-	 * collision with a FUSE / uffd / io_uring / vCPU / pidfd handle
+	 * collision with a FUSE / uffd / io_uring / pidfd handle
 	 * cannot wedge the child in TASK_UNINTERRUPTIBLE.
 	 */
 	for (i = 0; i < nset; i++) {

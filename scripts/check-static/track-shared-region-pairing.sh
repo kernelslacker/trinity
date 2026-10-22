@@ -261,7 +261,7 @@ if [ "$n" -gt 0 ]; then
 		echo "       on any path.  The error-cleanup label that munmaps"
 		echo "       the tracked region must call untrack_shared_region"
 		echo "       BEFORE munmap.  Mirror the open_io_uring_fd_config"
-		echo "       and create_one_vcpu error-cleanup shapes."
+		echo "       error-cleanup shape."
 	} >&2
 	echo "FAIL: $NAME: $n suspected leak(s)"
 	exit 1

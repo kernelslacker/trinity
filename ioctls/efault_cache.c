@@ -48,8 +48,8 @@
  * the dispatch path (before any arg validation) are listed in
  * efault_optout_devs and skip the probe entirely.  The bogus-arg trick
  * still exercises the dispatch path, so a "rejected" probe on those
- * drivers would slowly leak vcpus / vhost rings / vfio containers /
- * loop devices over a long fuzz run.  Default for every other group is
+ * drivers would slowly leak vhost rings / vfio containers / loop
+ * devices over a long fuzz run.  Default for every other group is
  * probe-enabled; expanding the opt-out list is one string per entry.
  */
 

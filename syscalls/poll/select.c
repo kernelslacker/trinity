@@ -105,7 +105,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	 *          exercised.
 	 *
 	 * Each candidate bit still passes through fd_poll_can_block() so
-	 * a collision with a FUSE / uffd / io_uring / vCPU / pidfd handle
+	 * a collision with a FUSE / uffd / io_uring / pidfd handle
 	 * cannot wedge the child in TASK_UNINTERRUPTIBLE.
 	 */
 	for (i = 0; i < nset; i++) {
