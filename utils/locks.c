@@ -357,7 +357,7 @@ void lock(lock_t *lk)
 
 		if (LOCK_OWNER(s) == pid) {
 			debugf("lol, already have lock!\n");
-			/* cached_pid is not process-unique across fork(); see bust_lock() note below */
+			/* cached_pid is not process-unique across fork(); see force_bust_lock() */
 			show_backtrace();
 			panic(EXIT_LOCKING_CATASTROPHE);
 			_exit(EXIT_LOCKING_CATASTROPHE);
@@ -418,39 +418,20 @@ void unlock(lock_t *lk)
 }
 
 /*
- * Release a lock held by this process after non-local control flow, such
- * as returning from a signal handler with a lock held.  Cross-pid orphan
- * recovery must use force_bust_lock() because the owner check below only
- * admits cached_pid.
+ * Cross-pid orphan release. Parent calls this on a lock held by a dead
+ * child after check_all_locks() has already exhausted its 10-iteration
+ * reap loop.
  *
  * Note: cached_pid is stamped at init time and COW-inherited across fork()
  * without being refreshed, so it is NOT process-unique in a grandchild.
  * A grandchild's lock() call would record the parent's pid as owner, which
- * would misfire the self-deadlock guard (locks.c:358), prevent force_bust_lock()
- * from recovering an orphan held by a dead grandchild, and admit an incorrect
- * bust_lock() release here.  Audited: no grandchild currently reaches lock() --
- * neither userns_run_in_ns() throwaway grandchildren (dispatch/syscall-exec.c)
- * nor bare-fork() race childops (childops/net/<name>-race.c, recipe/supervisor.c,
- * etc.) have lock() call sites in their worker bodies.
- */
-void bust_lock(lock_t *lk)
-{
-	unsigned long s = __atomic_load_n(&lk->state, __ATOMIC_RELAXED);
-
-	if (LOCK_STATE(s) != LOCKED)
-		return;
-	if (LOCK_OWNER(s) != cached_pid)
-		return;
-	unlock(lk);
-}
-
-/*
- * Cross-pid orphan release. Parent calls this on a lock held by a dead
- * child after check_all_locks() has already exhausted its 10-iteration
- * reap loop. bust_lock() above can't do this — its LOCK_OWNER == cached_pid
- * gate rejects every parent-side release of a child-held lock, leaving the
- * post-cap fallback inert and the orphan sitting until check_lock()'s
- * pid_alive scan eventually self-heals it on the next pass.
+ * would misfire the self-deadlock guard in lock() and prevent
+ * force_bust_lock() from recovering an orphan held by a dead grandchild.
+ * Audited: no grandchild currently reaches lock() -- neither
+ * userns_run_in_ns() throwaway grandchildren (dispatch/syscall-exec.c)
+ * nor bare-fork() race childops (childops/net/<name>-race.c,
+ * recipe/supervisor.c, etc.) have lock() call sites in their worker
+ * bodies.
  *
  * Confirm the holder is truly dead before clearing.  Releasing a lock
  * owned by a live process would let two waiters enter the critical
@@ -489,7 +470,7 @@ void force_bust_lock(lock_t *lk)
 
 	owner = LOCK_OWNER(s);
 	stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
-	/* cached_pid COW caveat: see bust_lock() note above */
+	/* cached_pid COW caveat: see the note above this function */
 	if (!is_dead_holder(owner, stored_start)) {
 		static bool warned;
 		if (!warned) {

@@ -6,7 +6,7 @@ limits, namespace/cgroup isolation, crash/debug diagnostics, and small
 pointer-sanity/range helpers consumed from syscalls/, mm/, kcov/, and
 cmp_hints/.
 
-## Files (32 files + 2 internal headers, ~10,562 LOC)
+## Files (32 files + 2 internal headers, ~10,543 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -18,7 +18,7 @@ cmp_hints/.
 | shared_mem_guard.c | 320 | Per-object `CONFIG_GUARD_SHARED` guard-page mode: `guard_pages_alloc`, span derivation, scope classification and naming, guarded-object census |
 | shared_freelist.c | 283 | Size-bucket freelist: `shared_freelist_pop`/`push` with token bounds-checking and CAS slot claim/release |
 | corrupt_ptr.c | 660 | `looks_like_corrupted_ptr()` heuristic (NULL-ish/pid-shaped/kernel-VA/misaligned bands) plus per-child attribution rings (by syscall, by callsite PC, by rejection site) for the cluster-1/2/3 SIGSEGV triage |
-| locks.c | 505 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
+| locks.c | 486 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
 | debug.c | 785 | Backtraces, `BUG()`/panic path, child crash dump (`dump_child_bug`, `dump_child_fault_beacon`, `dump_childdata`), list-corruption assertions, `debugf`/`syslogf` |
 | isolation.c | 413 | Parent-side one-shot namespace provisioning: `unshare(CLONE_NEWNET\|CLONE_NEWNS)`, hand-rolled netlink RTM_NEWLINK/RTM_NEWADDR to bring up lo+loopback addrs, MS_PRIVATE remount; publishes `net_ready`/`mnt_ready` latches to shm |
 | post_state.c | 429 | Ownership table for post-handler state snapshots (`rec->post_state`) hung off zmalloc'd structs — guards against a sibling's value-result write redirecting the pointer into another syscall's chunk |
