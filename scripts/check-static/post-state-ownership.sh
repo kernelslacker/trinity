@@ -36,6 +36,12 @@
 # A handler with the magic stamp but neither register call is the
 # holdout shape and is flagged.
 #
+# lib/ holds the helpers sanitisers call rather than .sanitise handlers
+# (sanitiser_own_fd() is the setup site for every sanitiser that opens an
+# fd it must close), so there every function that assigns a
+# *_POST_STATE_MAGIC cookie is held to the same rule.  A claim site
+# passes the constant as an argument, which is not a stamp.
+#
 # A baseline of grandfathered handlers lives alongside this script as
 # post-state-ownership.baseline (one `file:funcname` per line).  The
 # baseline should shrink over time, never grow.
@@ -69,10 +75,15 @@ find "$ROOT/syscalls" -name '*.c' -print0 \
 	| sort -u > "$SAN_NAMES_FILE"
 
 # Per-file scan.  awk extracts each function whose name is in the
-# sanitise set, runs the ownership-presence heuristic on its body.
+# sanitise set (any function at all in lib/), runs the
+# ownership-presence heuristic on its body.
 while IFS= read -r srcfile; do
 	rel="${srcfile#"$ROOT"/}"
-	awk -v file="$rel" -v sans_file="$SAN_NAMES_FILE" '
+	case "$rel" in
+		lib/*) in_lib=1 ;;
+		*)     in_lib=0 ;;
+	esac
+	awk -v file="$rel" -v sans_file="$SAN_NAMES_FILE" -v lib="$in_lib" '
 	BEGIN {
 		while ((getline n < sans_file) > 0)
 			if (n != "") is_san[n] = 1
@@ -153,10 +164,17 @@ while IFS= read -r srcfile; do
 		code = strip_comments(line)
 
 		# Magic-cookie stamp: the marker that a post_state struct is
-		# being created in this body.  Matches both the assign
-		# (`snap->magic = FOO_POST_STATE_MAGIC`) and any other token
-		# use of the constant; either is sufficient evidence.
-		if (code ~ /_POST_STATE_MAGIC/) cur_has_magic_stamp = 1
+		# being created in this body.  In syscalls/ a sanitise handler
+		# matches on the assign (`snap->magic = FOO_POST_STATE_MAGIC`)
+		# or any other token use of the constant; either is sufficient
+		# evidence.  In lib/ only the assign counts, since the claim
+		# side of a helper pair names the constant too.
+		if (lib) {
+			if (code ~ /magic[[:space:]]*=[[:space:]]*[A-Z0-9_]*_POST_STATE_MAGIC/)
+				cur_has_magic_stamp = 1
+		} else if (code ~ /_POST_STATE_MAGIC/) {
+			cur_has_magic_stamp = 1
+		}
 
 		# Either ownership-table wiring call is sufficient.
 		if (code ~ /post_state_install[[:space:]]*\(/) cur_has_register = 1
@@ -164,14 +182,20 @@ while IFS= read -r srcfile; do
 	}
 	{
 		if (state == 0) {
-			if (match($0, /^[[:space:]]*static[[:space:]].*[[:space:]\*]([A-Za-z_][A-Za-z0-9_]+)[[:space:]]*\(/, m)) {
-				fname = m[1]
-				if (fname in is_san) {
-					reset_state()
-					cur_fname = fname
-					state = 1
-					depth = 0
-				}
+			fname = ""
+			if (lib) {
+				if (match($0, /^[A-Za-z_][A-Za-z0-9_ \t\*]*[ \t\*]([A-Za-z_][A-Za-z0-9_]*)[ \t]*\(/, m) &&
+				    $0 !~ /;[ \t]*$/)
+					fname = m[1]
+			} else if (match($0, /^[[:space:]]*static[[:space:]].*[[:space:]\*]([A-Za-z_][A-Za-z0-9_]+)[[:space:]]*\(/, m)) {
+				if (m[1] in is_san)
+					fname = m[1]
+			}
+			if (fname != "") {
+				reset_state()
+				cur_fname = fname
+				state = 1
+				depth = 0
 			}
 		}
 		if (state == 1) {
@@ -192,7 +216,7 @@ while IFS= read -r srcfile; do
 		}
 	}
 	' "$srcfile"
-done < <(find "$ROOT/syscalls" -name '*.c' -print | sort) > "$RESULTS_FILE"
+done < <(find "$ROOT/syscalls" "$ROOT/lib" -name '*.c' -print | sort) > "$RESULTS_FILE"
 
 new_holdouts=()
 declare -A SEEN_HOLDOUT=()

@@ -1,7 +1,7 @@
 #!/bin/bash
 #
-# post-state-magic: every `struct *_post_state` in syscalls/ should
-# begin with `unsigned long magic` and ship a matching
+# post-state-magic: every `struct *_post_state` in syscalls/ and lib/
+# should begin with `unsigned long magic` and ship a matching
 # `*_POST_STATE_MAGIC` constant in the same file.
 #
 # This is the convention that distinguishes a valid post_state region
@@ -32,8 +32,9 @@ if [ -r "$BASELINE" ]; then
 	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$BASELINE")
 fi
 
-# Walk every syscalls/*.c, find struct *_post_state definitions, and
-# verify each has `unsigned long magic` within the first ~30 lines.
+# Walk every syscalls/ and lib/ .c file, find struct *_post_state
+# definitions, and verify each has `unsigned long magic` within the
+# first ~30 lines.
 # Then verify that a *_POST_STATE_MAGIC macro exists in the same file
 # (case-insensitive on the tag, since tags use lowercase but MAGIC
 # names are uppercase).
@@ -67,7 +68,7 @@ while IFS= read -r srcfile; do
 			}
 		}
 	' "$srcfile"
-done < <(find "$ROOT/syscalls" -name '*.c' -print | sort) | while IFS=':' read -r file tag has_magic; do
+done < <(find "$ROOT/syscalls" "$ROOT/lib" -name '*.c' -print | sort) | while IFS=':' read -r file tag has_magic; do
 	key="$file:$tag"
 	echo "SEEN $key"
 
