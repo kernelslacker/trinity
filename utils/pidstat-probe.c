@@ -141,15 +141,18 @@ struct pidstat_fields pidstat_parse(const char *buf)
 /*
  * Dead-owner fingerprint test used by all three lock recovery sites
  * (check_lock, try_release_dead_holder, force_bust_lock).  Returns true
- * when the task a lock recorded as (pid, start_time) is gone -- either
- * the pid has no task any more or the live start_time differs from the
- * snapshot stored at acquire time (pid recycled to a new process).
- * When /proc cannot say (a full fd table, ENOMEM) the pid number decides:
- * ESRCH from kill(pid, 0) means no task holds it, so it is neither the
- * live holder nor a recycled pid.  The parent has to get that answer,
- * because lock() gives it no other way out of the spin on a holder that
- * is already reaped.  Returning false means the same holder is still
- * alive, or may be, and the caller must not release the lock.
+ * when the task a lock recorded as (pid, start_time) is gone: the pid has
+ * no task any more, the live start_time differs from the snapshot stored
+ * at acquire time (pid recycled to a new process), or the task is a
+ * zombie or dead (state Z or X).  A zombie still answers kill() and still
+ * reads with the start_time it ran with, but it never runs again to
+ * release anything, and the parent that spins in lock() on it cannot reap
+ * it.  When /proc cannot say (a full fd table, ENOMEM) the pid number
+ * decides: ESRCH from kill(pid, 0) means no task holds it, so it is
+ * neither the live holder nor a recycled pid.  The parent has to get that
+ * answer, because lock() gives it no other way out of the spin on a
+ * holder that is already reaped.  Returning false means the same holder
+ * is still alive, or may be, and the caller must not release the lock.
  */
 bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
 {
@@ -161,10 +164,12 @@ bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
 		return true;
 
 	if (res == PIDSTAT_OK) {
-		unsigned long long current = pidstat_parse(buf).start_time;
+		struct pidstat_fields f = pidstat_parse(buf);
 
-		if (current != PID_START_TIME_UNKNOWN)
-			return current != start_time;
+		if (f.state == 'Z' || f.state == 'X')
+			return true;
+		if (f.start_time != PID_START_TIME_UNKNOWN)
+			return f.start_time != start_time;
 	}
 	return kill(pid, 0) == -1 && errno == ESRCH;
 }

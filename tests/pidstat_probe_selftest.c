@@ -409,6 +409,52 @@ static void selftest_identity_live_recycled_gone(void)
 		BUG("pidstat identity: a pid that names no task did not read as gone");
 }
 
+/*
+ * End a held task and leave it an unreaped zombie: waitid() with WNOWAIT
+ * returns once the task has exited, and does not reap it.
+ */
+static void leave_zombie(pid_t pid)
+{
+	siginfo_t si;
+
+	if (kill(pid, SIGKILL) != 0)
+		BUG("pidstat identity: cannot kill the held task");
+	while (waitid(P_PID, pid, &si, WEXITED | WNOWAIT) != 0) {
+		if (errno != EINTR)
+			BUG("pidstat identity: cannot wait for the held task to exit");
+	}
+}
+
+/*
+ * A zombie still answers kill() and still reads in /proc with the start
+ * time it ran with, but it never runs again to release a lock, and a
+ * parent spinning in lock() on it never gets to reap it.
+ */
+static void selftest_identity_zombie(void)
+{
+	unsigned long long start;
+	struct pidstat_fields f;
+	char buf[512];
+	pid_t pid;
+
+	pid = fake_hold_task(0);
+	start = start_time_of(pid);
+	leave_zombie(pid);
+
+	if (kill(pid, 0) != 0 ||
+	    pidstat_read(pid, buf, sizeof(buf)) != PIDSTAT_OK)
+		BUG("pidstat identity: the zombie is not there to be seen");
+	f = pidstat_parse(buf);
+	if (f.state != 'Z' || f.start_time != start)
+		BUG("pidstat identity: the zombie did not read as state Z with its start time");
+
+	if (!pidstat_identity_gone(pid, start))
+		BUG("pidstat identity: a zombie holder with its recorded start time read as alive");
+
+	if (waitpid_eintr(pid, NULL, 0) != pid)
+		BUG("pidstat identity: cannot reap the zombie");
+}
+
 void pidstat_probe_self_check(void);
 void pidstat_probe_self_check(void)
 {
@@ -421,4 +467,5 @@ void pidstat_probe_self_check(void)
 	selftest_read_out_of_fds();
 	selftest_parse();
 	selftest_identity_live_recycled_gone();
+	selftest_identity_zombie();
 }

@@ -73,23 +73,22 @@ static bool check_lock(lock_t *lk)
 		 * below, the pid could be reissued to a new process that re-
 		 * acquires this lock.  The state word might still match `s` if
 		 * the new owner happens to encode identically, so gate the CAS
-		 * on the owner_start_time fingerprint: only release if the live
-		 * owner's start_time differs from the sampled one (or is 0 =
-		 * truly dead); one that /proc could not give releases only
-		 * when kill(pid, 0) says ESRCH.  pidstat_identity_gone() holds
-		 * that rule for try_release_dead_holder() and
-		 * force_bust_lock() as well.
+		 * on the owner_start_time fingerprint: pidstat_identity_gone()
+		 * says gone for a pid with no task, a zombie, or a task whose
+		 * start_time differs from the sampled one, and when /proc
+		 * could not say only if kill(pid, 0) says ESRCH.  It decides
+		 * for try_release_dead_holder() and force_bust_lock() as well.
 		 *
 		 * pid_alive() returns false only for a task that is gone or
 		 * dying.  A probe that fails for any other reason (a refused
 		 * kill(), a /proc it cannot open) counts as alive. */
 		stored_start = __atomic_load_n(&lk->owner_start_time, __ATOMIC_ACQUIRE);
 		if (!pidstat_identity_gone(pid, stored_start)) {
-			/* Same fingerprint, or /proc could not say and a task
-			 * still holds the pid: cannot safely release.  The
-			 * first is the rare same-fingerprint recycle race
-			 * documented above; defer to the next tick either
-			 * way. */
+			/* A live task with the same fingerprint, or /proc could
+			 * not say and a task still holds the pid: cannot
+			 * safely release.  The first is the rare
+			 * same-fingerprint recycle race documented above;
+			 * defer to the next tick either way. */
 			return false;
 		}
 
@@ -297,10 +296,10 @@ bool trylock(lock_t *lk)
  * matches.  We compare against the stored owner_start_time and treat
  * mismatch as "the original holder is gone".
  *
- * Use pid_alive() rather than a raw kill(pid, 0): a zombie holder still
- * has a task struct (kill returns 0) but cannot release the lock, so a
- * naive kill-only check leaves us spinning forever waiting for a corpse
- * that hasn't been reaped yet.
+ * Ask pidstat_identity_gone() rather than a raw kill(pid, 0): a zombie
+ * holder still has a task struct (kill returns 0) but cannot release the
+ * lock, so a naive kill-only check leaves us spinning forever waiting for
+ * a corpse that hasn't been reaped yet.
  */
 static void try_release_dead_holder(lock_t *lk)
 {
@@ -417,11 +416,12 @@ void unlock(lock_t *lk)
  * numeric value would keep the bust refused forever.  Compare the
  * stored owner_start_time against the live /proc/<pid>/stat field 22
  * -- mismatch means the original owner is gone (process exited and a
- * different process now holds that pid).  Match means the original
- * lock-acquiring process is still alive; log once and bail.  ABA-CAS
- * on the sampled state mirrors try_release_dead_holder() so a sibling
- * child grabbing shm->syscalltable_lock during the bust window isn't
- * clobbered.
+ * different process now holds that pid).  Match on a live task means the
+ * original lock-acquiring process is still alive; log once and bail.  A
+ * zombie holder is gone either way, since it can never release the lock.
+ * ABA-CAS on the sampled state mirrors try_release_dead_holder() so a
+ * sibling child grabbing shm->syscalltable_lock during the bust window
+ * isn't clobbered.
  */
 void force_bust_lock(lock_t *lk)
 {
