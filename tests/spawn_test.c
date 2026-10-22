@@ -96,12 +96,36 @@ static void throttled_fill_carries_on_past_a_parked_slot(void)
 		BUG("spawn: a throttled call yielded for a parked slot, with the barrier shut");
 }
 
+/* A parked slot is refilled by the zombie reaper through
+ * replace_child(), never by this loop.  With every empty slot parked
+ * there is nothing to fork: the loop opens the barrier and returns,
+ * rather than leave it shut for as long as the slots stay parked. */
+static void barrier_opens_when_every_empty_slot_is_parked(void)
+{
+	unsigned int i;
+
+	fake_parent_reset();
+	fill_all_but(2, 3);
+	for (i = 2; i < 5; i++)
+		zombie_pids[i] = FAKE_FORK_PID(i);
+
+	fork_children();
+
+	if (!BARRIER_OPEN)
+		BUG("spawn: the barrier stayed shut with every empty slot parked");
+	for (i = 2; i < 5; i++) {
+		if (fake_slot_log[i].spawns != 0 || pids[i] != EMPTY_PIDSLOT)
+			BUG("spawn: forked into a parked slot");
+	}
+}
+
 void spawn_self_check(void);
 void spawn_self_check(void)
 {
 	barrier_opens_once_every_slot_fills();
 	throttled_fill_yields_after_each_spawn();
 	throttled_fill_carries_on_past_a_parked_slot();
+	barrier_opens_when_every_empty_slot_is_parked();
 
 	/* Leave no pids or counts for later suites. */
 	fake_parent_reset();
