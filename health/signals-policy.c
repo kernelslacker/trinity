@@ -56,10 +56,12 @@ static void main_stop_handler(int sig, siginfo_t *info, __unused__ void *ctx)
 static __attribute__((no_sanitize("address")))
 void sighandler(int sig)
 {
-	/* Restore default disposition and re-raise so the kernel emits
-	 * the usual crash artefacts (signal exit, dmesg log, core if
-	 * enabled).  Silent _exit(SUCCESS) hid real fuzzer finds because
-	 * the parent saw WIFEXITED(0) instead of WIFSIGNALED(sig). */
+	/* Restore the default disposition and re-raise, so the child dies
+	 * of the signal itself: the kernel emits the usual crash artefacts
+	 * (signal exit, dmesg log, core if enabled) and the reaper sees
+	 * WIFSIGNALED(sig).  The kernel-fault signals take
+	 * child_fault_handler() instead, which outside debug mode ends the
+	 * child with a clean exit status; see mask_signals_child(). */
 	(void)signal(sig, SIG_DFL);
 	raise(sig);
 }
@@ -177,10 +179,11 @@ void mask_signals_child(void)
 	sigset_t ss, oldss;
 	int i;
 
-	/* Block all signals while we install handlers.  Without this,
-	 * a signal arriving between the catch-all sighandler install
-	 * and the proper handler install would silently _exit(SUCCESS),
-	 * masking the real cause of the child's death. */
+	/* Block all signals while we install handlers, so none is
+	 * delivered against a half-built disposition table: one arriving
+	 * between the catch-all sighandler install and its proper handler
+	 * would die of its default action instead of being handled or
+	 * ignored. */
 	sigfillset(&ss);
 	sigprocmask(SIG_BLOCK, &ss, &oldss);
 
@@ -236,14 +239,14 @@ void mask_signals_child(void)
 		(void)signal(i, SIG_IGN);
 
 	/*
-	 * Install child_fault_handler for the kernel-fault signals.
-	 * Replaces both the catch-all sighandler (which silently
-	 * _exit'd, masking the cause) and the debug-mode SIG_DFL
-	 * override (which dumped a core but no inline backtrace).
-	 * The handler dumps a backtrace + psiginfo to stderr in BOTH
-	 * modes; in debug it then re-raises with SIG_DFL so the kernel
-	 * still drops a core, in non-debug it _exit's cleanly so the
-	 * parent's reaper doesn't see a crash and crash-loop.
+	 * Install child_fault_handler over the catch-all sighandler for
+	 * the kernel-fault signals.  The handler dumps a backtrace +
+	 * psiginfo to stderr in BOTH modes; in debug it then re-raises
+	 * with SIG_DFL so the kernel still drops a core, in non-debug it
+	 * _exit's cleanly so the parent's reaper sees a normal exit and
+	 * respawns without crash-loop noise.  The reaper still counts the
+	 * crash from the fault beacon the handler stamps first
+	 * (handle_child() in main/reap.c).
 	 */
 	{
 		struct sigaction fault_sa;
