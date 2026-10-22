@@ -240,15 +240,15 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 				 * stomping on this rec in shared memory after
 				 * AFTER was published -- leaving retval = -1UL
 				 * and state = AFTER intact but trampling
-				 * errno_post with garbage.  Without a lower
-				 * bound the original guard (err < NR_ERRNOS,
-				 * signed) admits negative values and indexes
-				 * the runtime errnos[] before the array, silently
+				 * errno_post with garbage.  The err >= 0 test
+				 * above is the lower bound: without it a
+				 * negative value would index the runtime
+				 * errnos[] before the array, silently
 				 * corrupting whatever struct field precedes
 				 * the errnos[] member in the per-syscall
 				 * runtime.  Log with a distinct message so this
 				 * corruption shape can be told apart in
-				 * post-mortem logs from the err >= NR_ERRNOS
+				 * post-mortem logs from the err > NR_ERRNOS
 				 * shape handled below. */
 				outputerr("negative errno_post after doing %s: %d (sibling stomp on shared syscallrecord?)\n",
 					entry->name, err);
