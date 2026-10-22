@@ -248,9 +248,14 @@ not aesthetics.
 - **Clamp array access to bounds:** per-syscall loops (especially ones that
   *write* a per-syscall array) clamp to `MAX_NR_SYSCALL`; a bit-position from
   `ctz`/`ffs` of a mask must be masked to the array size before use.
-- **Free with the size used to allocate under a size-class allocator**
-  (`free_shared_str(p, 80)` matching `alloc_shared_str(80)`, not `strlen+1`) — a
-  wrong size strands or corrupts the slab.
+- **Release with the size recorded at allocation, not one re-derived at free
+  time.** `untrack_shared_region()` matches `(addr, size)` exactly and misses
+  silently, and `munmap()` only releases the length it is given, so map
+  teardown passes `tracked_size`, not the fstat-clamped `size` — a short length
+  strands the tracker slot and leaves the VMA tail mapped. A `strlen+1` over a
+  shared-heap payload is the same trap (a syscall can scribble the NUL), which
+  is why `free_shared_str(p)` takes no size and reads the bucket from
+  out-of-band `slot_state`.
 - **A published "ready/valid" flag guarding a payload needs RELEASE on the store
   and ACQUIRE on the load, not RELAXED** — otherwise aarch64 readers can see the
   flag set with stale payload.

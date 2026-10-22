@@ -190,7 +190,7 @@ static bool canary_create_one(unsigned int idx)
 
 	obj = alloc_object();
 	if (obj == NULL) {
-		free_shared_str(shared_path, strlen(shared_path) + 1);
+		free_shared_str(shared_path);
 		close(rfd);
 		return false;
 	}

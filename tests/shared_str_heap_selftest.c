@@ -2,7 +2,7 @@
  * shared_str_heap_free_size_check
  * -------------------------------
  *
- * Regression suite for the free-size authority in utils/shared_str_heap.c.
+ * Regression suite for the free-bucket authority in utils/shared_str_heap.c.
  *
  * The bug it pins:
  *
@@ -11,7 +11,7 @@
  *   If free_shared_str() picks its target bucket by re-strlen()'ing
  *   the payload -- which lives in memory the fuzzer can scribble via
  *   a syscall user pointer -- a stomped terminating NUL turns the
- *   free size into an attacker-controlled quantity.  A NUL wiped
+ *   derived size into an attacker-controlled quantity.  A NUL wiped
  *   entirely runs strlen() past the slot end into adjacent live
  *   payloads, returning a length that maps to a LARGER bucket than
  *   alloc carved.  The subsequent freelist push memsets the wrong
@@ -21,9 +21,8 @@
  *
  *   The fix records the bucket at alloc time in a metadata table
  *   living outside the fuzz-exposed heap; free_shared_str() reads
- *   the recorded bucket instead of re-deriving one from the payload.
- *   The size parameter passed to free_shared_str() is thus advisory
- *   for any slot alloc has tracked.
+ *   the recorded bucket instead of re-deriving one from the payload,
+ *   and takes no size from its caller at all.
  *
  * Suite shape (targets every bucket in [1, 1024]):
  *
@@ -35,9 +34,9 @@
  *     3. Fill the entire target slot with the same non-NUL byte to
  *        stomp the terminating NUL alloc_shared_str() zero-init
  *        left behind.
- *     4. Call free_shared_str() with a strlen()-derived size --
- *        exactly the pattern the maps destructor uses.  strlen()
- *        over-reads through target + spam and returns a length that
+ *     4. Call free_shared_str() on the stomped slot.  A free that
+ *        re-derived its bucket from the payload would strlen()
+ *        over-read through target + spam and get a length that
  *        rounds up to a bucket well past the target's actual
  *        bucket (or off the top of every bucket entirely for the
  *        larger targets).
@@ -140,15 +139,15 @@ static void xfail_double_free_chain(void)
 	/* Build chain slot_a -> slot_b -> nil.
 	 * Free slot_b first so its next-token is 0 (empty),
 	 * then free slot_a so its next-token points at slot_b. */
-	free_shared_str(slot_b, 8);
-	free_shared_str(slot_a, 8);
+	free_shared_str(slot_b);
+	free_shared_str(slot_a);
 	/* slot_a[0..3] now holds the token (offset+1) of slot_b. */
 	memcpy(&link_before, slot_a, sizeof(link_before));
 
 	/* Second free of slot_a.  State at slot_a is FREE(0), which
-	 * is NOT in the LIVE range, so free_shared_str() falls through
-	 * to memset(slot_a, 0, 8) and clobbers the link. */
-	free_shared_str(slot_a, 8);
+	 * is NOT in the LIVE range, so free_shared_str() must leak it
+	 * untouched; a memset would clobber the link. */
+	free_shared_str(slot_a);
 	memcpy(&link_after, slot_a, sizeof(link_after));
 
 	if (link_after != link_before)
@@ -191,10 +190,9 @@ static void xfail_interior_ptr_corruption(void)
 
 	/* Free the stride-aligned interior address big + STRIDE.
 	 * It is in-slab, STRIDE-aligned, but state is UNCARVED (0),
-	 * so free_shared_str() falls through and issues
-	 * memset(big + STRIDE, 0, STRIDE), corrupting the live slot. */
-	free_shared_str(big + SHARED_FREELIST_SLOT_STRIDE,
-			SHARED_FREELIST_SLOT_STRIDE);
+	 * so free_shared_str() must leak it untouched; a memset of
+	 * big + STRIDE would corrupt the live slot. */
+	free_shared_str(big + SHARED_FREELIST_SLOT_STRIDE);
 	memcpy(after_buf, big + SHARED_FREELIST_SLOT_STRIDE,
 	       sizeof(after_buf));
 
@@ -239,7 +237,7 @@ static void xfail_uncarved_ptr_write(void)
 
 	/* Bogus free: uncarved is stride-aligned, inside the heap,
 	 * state == UNCARVED (0) -- should be a no-op; is not at HEAD. */
-	free_shared_str(uncarved, SHARED_FREELIST_SLOT_STRIDE);
+	free_shared_str(uncarved);
 
 	for (i = 0; i < SHARED_FREELIST_SLOT_STRIDE; i++) {
 		if ((unsigned char)uncarved[i] != 'P')
@@ -286,7 +284,7 @@ static void pass_bucket_roundtrip(void)
 
 		/* Free and immediately re-alloc the same size: with one
 		 * slot in the freelist the pop MUST return the same addr. */
-		free_shared_str(slot, bucket_bytes);
+		free_shared_str(slot);
 
 		slot2 = alloc_shared_str(alloc_size);
 		if (slot2 == NULL)
@@ -308,7 +306,7 @@ static void pass_bucket_roundtrip(void)
 
 		/* Return slot2 to the freelist so it is empty entering
 		 * the next iteration (cross-bucket contamination check). */
-		free_shared_str(slot2, bucket_bytes);
+		free_shared_str(slot2);
 
 		/* Cross-bucket leakage check: alloc this bucket's size
 		 * once more; we should get slot back (it is the only slot
@@ -344,7 +342,6 @@ void shared_str_heap_free_size_check(void)
 		size_t alloc_size = cases[i].alloc_size;
 		size_t bucket_bytes = cases[i].bucket_bytes;
 		char *spam_pre, *target, *spam_post, *target2;
-		size_t strlen_free_size;
 
 		/* Prime the offset just before the target with a
 		 * non-NUL-terminated buffer so a strlen() from the
@@ -361,8 +358,8 @@ void shared_str_heap_free_size_check(void)
 
 		/* Bump another spam slot AFTER the target so strlen()
 		 * over-reads through 1024 non-NUL bytes past the target
-		 * -- guaranteeing a strlen-derived free size that lands
-		 * in a different bucket than the target's own. */
+		 * -- guaranteeing a strlen-derived size that lands in a
+		 * different bucket than the target's own. */
 		spam_post = alloc_shared_str(1024);
 		if (spam_post == NULL)
 			fail("spam_post alloc failed", alloc_size, NULL, NULL);
@@ -373,14 +370,11 @@ void shared_str_heap_free_size_check(void)
 		 * slot boundary. */
 		memset(target, 'X', bucket_bytes);
 
-		/* This is the vulnerable free pattern from mm/maps-
-		 * lifecycle.c: strlen(map->name) + 1 as the free size.
-		 * Under the fix the recorded bucket wins and this size
-		 * is ignored; unpatched, it lands the free in the
-		 * wrong bucket (or the leak path for the larger
-		 * targets, which over-shoot all buckets). */
-		strlen_free_size = strlen(target) + 1;
-		free_shared_str(target, strlen_free_size);
+		/* A bucket derived from the stomped payload would land
+		 * the free in the wrong bucket (or the leak path for the
+		 * larger targets, which over-shoot all buckets); only the
+		 * recorded bucket may pick it. */
+		free_shared_str(target);
 
 		/* Alloc the same size again.  The target's bucket
 		 * freelist now holds exactly one slot -- the target we

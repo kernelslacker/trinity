@@ -71,8 +71,7 @@ static void perffd_destructor(struct object *obj)
 	}
 
 	if (obj->perfobj.eventattr != NULL) {
-		free_shared_str(obj->perfobj.eventattr,
-				sizeof(struct perf_event_attr));
+		free_shared_str(obj->perfobj.eventattr);
 		obj->perfobj.eventattr = NULL;
 	}
 	if (leader_fd >= 0) {
@@ -134,8 +133,7 @@ static int open_perf_fd(void)
 	 * arm above uses. */
 	if (rec.a1 == 0) {
 		outputerr("open_perf_fd: sanitise produced NULL attr buf; skipping\n");
-		free_shared_str(obj->perfobj.eventattr,
-				sizeof(struct perf_event_attr));
+		free_shared_str(obj->perfobj.eventattr);
 		obj->perfobj.eventattr = NULL;
 		tracked_free_now(obj);
 		close(fd);

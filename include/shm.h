@@ -217,11 +217,11 @@ struct shm_s {
 
 	/*
 	 * Shared-string heap state (bump cursor, per-bucket freelist
-	 * heads, and the per-slot bucket record that gates
-	 * free_shared_str's bucket choice on the allocated size instead
-	 * of a payload-derived strlen) lives in utils/shared_str_heap.c,
-	 * carved from its own alloc_shared_pool region so that TU stays
-	 * standalone and unit-testable without the shm.h include chain.
+	 * heads, and the per-slot state record that supplies
+	 * free_shared_str's bucket instead of a payload-derived strlen)
+	 * lives in utils/shared_str_heap.c, carved from its own
+	 * alloc_shared_pool region so that TU stays standalone and
+	 * unit-testable without the shm.h include chain.
 	 */
 
 	/* various flags. */

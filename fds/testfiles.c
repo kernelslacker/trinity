@@ -25,7 +25,7 @@ static void testfile_destructor(struct object *obj)
 {
 	close(obj->testfileobj.fd);
 	if (obj->testfileobj.filename != NULL) {
-		free_shared_str((void *) obj->testfileobj.filename, 64);
+		free_shared_str((void *) obj->testfileobj.filename);
 		obj->testfileobj.filename = NULL;
 	}
 }
@@ -101,7 +101,7 @@ static int open_testfile_fds(void)
 		if (obj == NULL) {
 			obj = alloc_object();
 			if (obj == NULL) {
-				free_shared_str(filename, 64);
+				free_shared_str(filename);
 				fails++;
 				if (fails == 100) {
 					output(2, "testfile creation is failing a lot. last error:%s\n", strerror(errno));
@@ -129,7 +129,7 @@ static int open_testfile_fds(void)
 			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_GLOBAL, OBJ_MMAP_TESTFILE);
 
 		} else {
-			free_shared_str(filename, 64);
+			free_shared_str(filename);
 			obj->testfileobj.filename = NULL;
 			fails++;
 			if (fails == 100) {

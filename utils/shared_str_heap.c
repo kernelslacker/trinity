@@ -17,14 +17,14 @@
  *   up to 1024 bytes are recycled through per-bucket freelists on
  *   free; slots above bucket-1024 are bump-and-leak.
  *
- * Free-size authority (the reason the metadata table exists):
+ * Free-bucket authority (the reason the metadata table exists):
  *
  *   Payload bytes -- including the terminating NUL of a strdup-style
  *   allocation -- live in a MAP_SHARED region that can be handed to
  *   fuzzed syscalls as a user pointer.  A syscall that scribbles the
- *   NUL turns any strlen()-derived free size into an attacker-
- *   controlled quantity.  If free_shared_str picked its target bucket
- *   by re-strlen()'ing the payload, a NUL stomp would push the slot
+ *   NUL turns any strlen()-derived size into an attacker-controlled
+ *   quantity.  If free_shared_str picked its target bucket by
+ *   re-strlen()'ing the payload, a NUL stomp would push the slot
  *   into a LARGER bucket than alloc carved -- the next pop from that
  *   larger bucket then hands the caller a too-small chunk that
  *   the push's memset(slot, 0, bucket_size) already scribbled past
@@ -33,14 +33,11 @@
  *   Fix: record the slot's state at alloc time in an out-of-band table
  *   (slot_state, indexed by slot_offset / SHARED_FREELIST_SLOT_STRIDE;
  *   all bucket sizes and slot offsets are multiples of the stride) and
- *   gate free_shared_str's bucket choice on that record instead of on
- *   any quantity a fuzz scribble can influence.  The size parameter
- *   to free_shared_str is kept for API stability but is advisory only
- *   when the slot has a recorded state -- which is every bucketed
- *   slot.  Above-bucket bump-and-leak slots have no record and still
- *   consult the caller-supplied size for the poison memset, capped to
- *   the heap-remaining extent so a fuzzable size cannot drive a
- *   scribble past the heap.
+ *   take free_shared_str's bucket from that record instead of from any
+ *   quantity a fuzz scribble can influence.  free_shared_str therefore
+ *   takes no size: every bucketed slot has a record, and above-bucket
+ *   bump-and-leak slots have none and are leaked without touching the
+ *   slab.
  *
  * Slot-provenance authority (the reason the state is not just a bucket
  * tag):
@@ -294,14 +291,10 @@ char * alloc_shared_strdup(const char *src)
 	return dst;
 }
 
-void free_shared_str(void *p, size_t size)
+void free_shared_str(void *p)
 {
 	size_t off;
 	uint8_t recorded;
-
-	/* size is accepted for API compatibility; provenance state
-	 * now determines all branching and the parameter is unused. */
-	(void)size;
 
 	if (p == NULL)
 		return;
@@ -330,11 +323,9 @@ void free_shared_str(void *p, size_t size)
 		return;
 
 	/* Authoritative state lookup: recorded at alloc time in memory
-	 * the fuzzer cannot reach.  A LIVE(bucket) record picks the
-	 * bucket to push to and wins over whatever the caller passed as
-	 * `size' (the maps path frees by recorded name_alloc_size, not
-	 * a strlen()-derived quantity).  See the block comment at the
-	 * top of this file. */
+	 * the fuzzer cannot reach.  A LIVE(bucket) record is the only
+	 * input that picks the bucket to push to.  See the block comment
+	 * at the top of this file. */
 	recorded = __atomic_load_n(&sss->slot_state[off /
 						    SHARED_FREELIST_SLOT_STRIDE],
 				   __ATOMIC_ACQUIRE);

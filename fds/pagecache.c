@@ -124,7 +124,7 @@ static void pagecache_selfseed_destructor(struct object *obj)
 		close(obj->fileobj.fd);
 	if (obj->fileobj.filename != NULL) {
 		(void)unlink(obj->fileobj.filename);
-		free_shared_str((void *)obj->fileobj.filename, 64);
+		free_shared_str((void *)obj->fileobj.filename);
 		obj->fileobj.filename = NULL;
 	}
 }
@@ -145,7 +145,7 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 
 	fd = open(filename, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
 	if (fd < 0) {
-		free_shared_str(filename, 64);
+		free_shared_str(filename);
 		return false;
 	}
 
@@ -153,7 +153,7 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 	if (ftruncate(fd, size) < 0) {
 		close(fd);
 		(void)unlink(filename);
-		free_shared_str(filename, 64);
+		free_shared_str(filename);
 		return false;
 	}
 	close(fd);
@@ -161,7 +161,7 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 	fd = open(filename, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	if (fd < 0) {
 		(void)unlink(filename);
-		free_shared_str(filename, 64);
+		free_shared_str(filename);
 		return false;
 	}
 
@@ -169,7 +169,7 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 	if (obj == NULL) {
 		close(fd);
 		(void)unlink(filename);
-		free_shared_str(filename, 64);
+		free_shared_str(filename);
 		return false;
 	}
 

@@ -36,7 +36,7 @@ static void sparse_file_destructor(struct object *obj)
 	close(obj->sparsefileobj.fd);
 	if (obj->sparsefileobj.filename != NULL) {
 		unlink(obj->sparsefileobj.filename);
-		free_shared_str((void *) obj->sparsefileobj.filename, 64);
+		free_shared_str((void *) obj->sparsefileobj.filename);
 		obj->sparsefileobj.filename = NULL;
 	}
 }
@@ -67,7 +67,7 @@ static int open_one_sparse_file(unsigned int idx)
 
 	fd = open(filename, O_CREAT | O_RDWR, 0666);
 	if (fd < 0) {
-		free_shared_str(filename, 64);
+		free_shared_str(filename);
 		return false;
 	}
 
@@ -102,7 +102,7 @@ static int open_one_sparse_file(unsigned int idx)
 err:
 	unlink(filename);
 	close(fd);
-	free_shared_str(filename, 64);
+	free_shared_str(filename);
 	return false;
 }
 
