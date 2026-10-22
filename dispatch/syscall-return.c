@@ -484,9 +484,9 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 	}
 
 	/* attempted stays ungated: an attempted invocation IS still an
-	 * attempt even if the grandchild never reached AFTER, and
-	 * (attempted - successes - failures) gives operators visibility
-	 * on how many EXTRA_FORK grandchildren are getting killed. */
+	 * attempt even if no outcome came back, and (attempted - successes -
+	 * failures) gives operators visibility on how many EXTRA_FORK
+	 * dispatches produced none; do_extrafork() lists how that happens. */
 	__atomic_add_fetch(&syscall_rt(entry)->attempted, 1, __ATOMIC_RELAXED);
 
 	/* enforce_count_bound, entry->post, and register_returned_fd all

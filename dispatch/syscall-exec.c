@@ -553,6 +553,16 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 /* This is a special case for things like execve, which would replace our
  * child process with something unknown to us. We use a 'throwaway' process
  * to do the execve in, and let it run for a max of a second before we kill it
+ *
+ * The outcome comes back through rec, which is shared memory: the grandchild
+ * publishes AFTER and the return value there.  A dispatch that never gets
+ * that far leaves rec->state short of AFTER and is counted as attempted
+ * only; attempted less successes and failures is their tally.  They are the
+ * fork failing (ENOMEM in a child that unshared CLONE_NEWPID, once the first
+ * process it forked -- init of the new namespace -- has exited; EAGAIN at
+ * the process limit), this function compiled out (ASAN), and a grandchild
+ * killed at the timeout or crashed.  --dry-run never comes here: do_syscall()
+ * has it synthesize its outcome in the calling child.
  */
 void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		  struct childdata *child)

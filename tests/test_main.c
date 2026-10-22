@@ -44,6 +44,7 @@ void tmpdir_self_check(void);
 void reap_stop_self_check(void);
 void reap_dead_kids_self_check(void);
 void extrafork_reap_self_check(void);
+void dispatch_extrafork_self_check(void);
 void cmp_field_scan_self_check(void);
 void sanitiser_owned_mask_self_check(void);
 void minicorpus_abi_self_check(void);
@@ -201,6 +202,11 @@ int main(int argc, char **argv)
 	printf("  extrafork_reap_self_check ... ");
 	fflush(stdout);
 	extrafork_reap_self_check();
+	printf("OK\n");
+
+	printf("  dispatch_extrafork_self_check ... ");
+	fflush(stdout);
+	dispatch_extrafork_self_check();
 	printf("OK\n");
 
 	printf("  cmp_field_scan_self_check ... ");

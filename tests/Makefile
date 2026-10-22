@@ -171,6 +171,10 @@ REAL_SRCS	:= \
 # args/valresult.c is what recvfrom's sanitiser reaches.
 # dispatch/syscall-post.c brings enforce_count_bound(), which runs ahead
 # of those handlers.
+# dispatch/syscall.c and dispatch/syscall-exec.c bring do_syscall() with the
+# __do_syscall() and do_extrafork() it routes to, which
+# dispatch_extrafork_test.c drives with the kcov bracket, the coupling
+# validator and the other calls the live path reaches faked.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
@@ -198,7 +202,9 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
 	$(TOP)/syscalls/socket/recv.c \
 	$(TOP)/args/valresult.c \
-	$(TOP)/dispatch/syscall-post.c
+	$(TOP)/dispatch/syscall-post.c \
+	$(TOP)/dispatch/syscall.c \
+	$(TOP)/dispatch/syscall-exec.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
@@ -285,6 +291,7 @@ FAKE_SRCS	:= \
 	reap_stop_test.c \
 	reap_dead_kids_test.c \
 	extrafork_reap_test.c \
+	dispatch_extrafork_test.c \
 	cmp_field_scan_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \

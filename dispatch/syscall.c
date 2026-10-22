@@ -9,6 +9,7 @@
 #include "child.h"
 #include "deferred-free.h"
 #include "kcov.h"
+#include "params.h"
 #include "shm.h"
 #include "signals.h"
 #include "syscall.h"
@@ -66,7 +67,12 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * instead of pouring a bug log into /tmp/.  See signals.c. */
 	in_do_syscall = 1;
 
-	if (entry->flags & EXTRA_FORK)
+	/* The grandchild keeps a call's effect on the process out of this
+	 * child.  --dry-run issues no call, so there is nothing to contain,
+	 * and its synthesized outcome has to land in this record like any
+	 * other dry-run call's: through a grandchild it goes missing when
+	 * the fork fails, and wherever do_extrafork() is compiled out. */
+	if ((entry->flags & EXTRA_FORK) && !dry_run)
 		do_extrafork(rec, entry, child);
 	else
 		 /* common-case, do the syscall in this child process. */
