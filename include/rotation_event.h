@@ -32,13 +32,6 @@
 #include <stdint.h>
 
 /*
- * Where a child parks its copy of the sink: above the small numbers that
- * pickers and mutated fd args reach and the registry alone does not
- * cover.  Keep in sync with KCOV_FD_HIGH_BASE.
- */
-#define ROTATION_EVENT_FD_HIGH_BASE 60000U
-
-/*
  * Per-block snapshot assembled by the CAS-winning child at rotation
  * close, BEFORE the next arm is published.  All fields are captured
  * from shm/kcov_shm loads the caller already performed on the close
@@ -99,7 +92,7 @@ int stats_rotation_event_fd(void);
 
 /*
  * Move this process's copy of the sink to the first free fd at or above
- * ROTATION_EVENT_FD_HIGH_BASE and close the low number it inherited.
+ * PROTECTED_FD_HIGH_BASE (fd.h) and close the low number it inherited.
  * Called early in every child, before any fuzzed syscall.  The parent
  * keeps the number it opened: it fuzzes nothing, and a high fd there
  * would make every fork copy a ~60k-slot fd table.  Best-effort: when

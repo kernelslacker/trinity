@@ -133,22 +133,9 @@ struct childdata {
 	 * maybe_inject_fault() write() stamp the fault-count digit string
 	 * into the victim fd (data corruption) and silently disable fault
 	 * injection for the rest of this child's life.  open_fail_nth
-	 * F_DUPFD_CLOEXEC-relocates the slot up to FAIL_NTH_FD_HIGH_BASE
+	 * F_DUPFD_CLOEXEC-relocates the slot up to PROTECTED_FD_HIGH_BASE
 	 * for the same defence-in-depth reason kcov / tainted_fd do. */
 	int fail_nth_fd;
-
-	/* Park the per-child fail-nth fd well above the low-numbered range
-	 * the kernel typically hands out, matching KCOV_FD_HIGH_BASE and
-	 * TAINTED_FD_HIGH_BASE both in value and rationale: open_fail_nth
-	 * runs at child-init time before the fuzz loop starts, so the
-	 * kernel returns lowest-available (3, 4, ...) which sits squarely
-	 * inside every ARG_FD picker and typed-fd reroll working set.
-	 * F_DUPFD_CLOEXEC-relocating the slot up out of that range drops
-	 * the incidental hit rate sharply.  The fds-protected registry
-	 * remains the actual safety net; the relocation is defence-in-
-	 * depth.  Keep this in sync with KCOV_FD_HIGH_BASE /
-	 * TAINTED_FD_HIGH_BASE. */
-#define FAIL_NTH_FD_HIGH_BASE 60000U
 
 	unsigned int seed;
 

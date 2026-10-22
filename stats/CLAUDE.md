@@ -74,7 +74,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | stats-ring.c | Per-child SPSC ring drain into parent-private aggregates. |
 | kcov_diag.c | Descriptor-driven KCOV per-syscall diagnostic helpers. |
 | shadow_sat.c | Observation-only shadow soft-saturation score: a ~60-minute parent-side sample ring yielding distinct-edge yield over short/long horizons, normalised per 10k calls, per wall-hour and per CPU-hour. Consumed by nothing. |
-| rotation_event.c | Observation-only durable JSONL event stream, one record per closed strategy-rotation window, written by the CAS-winning child through `lib/jsonl.c`. Each child parks its copy of the sink fd at 60000+ (the parent keeps its low number) and the protected-fd registry names it. No parent-side aggregate. |
+| rotation_event.c | Observation-only durable JSONL event stream, one record per closed strategy-rotation window, written by the CAS-winning child through `lib/jsonl.c`. Each child parks its copy of the sink fd above `PROTECTED_FD_HIGH_BASE` (the parent keeps its low number) and the protected-fd registry names it. No parent-side aggregate. |
 | arm-verdict.h | The shared dead-arm verdict status tokens, so `stats/dump/subsystems.c` (text) and `stats/json/tail.c` (JSON) cannot drift apart. |
 | subsys/*.h, subsys/*.c | Per-subsystem counter tree: each `<subsys>.h` declares that subsystem's counter struct (pulled into `shm->stats` via `include/stats.h`) and the matching `<subsys>.c` declares its `stat_category` descriptor table with `STAT_FIELD_SUB()`. 203 headers, 149 descriptor TUs — headers without a table are subsystems whose counters are rendered from elsewhere. |
 

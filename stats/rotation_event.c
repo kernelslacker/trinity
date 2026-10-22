@@ -22,6 +22,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "fd.h"
 #include "jsonl.h"
 #include "params.h"
 #include "pids.h"
@@ -84,7 +85,7 @@ void stats_rotation_event_relocate_in_child(void)
 	int new_fd;
 
 	if (rotation_event_fd < 0 ||
-	    (unsigned int) rotation_event_fd >= ROTATION_EVENT_FD_HIGH_BASE)
+	    (unsigned int) rotation_event_fd >= PROTECTED_FD_HIGH_BASE)
 		return;
 
 	/* Best-effort: if the dup fails (soft RLIMIT_NOFILE not above the
@@ -92,7 +93,7 @@ void stats_rotation_event_relocate_in_child(void)
 	 * protected-fd registry catch attempts on it.  CLOEXEC again: a dup
 	 * does not inherit the original's close-on-exec flag. */
 	new_fd = fcntl(rotation_event_fd, F_DUPFD_CLOEXEC,
-		       (int) ROTATION_EVENT_FD_HIGH_BASE);
+		       (int) PROTECTED_FD_HIGH_BASE);
 	if (new_fd < 0)
 		return;
 

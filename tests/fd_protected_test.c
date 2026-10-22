@@ -98,7 +98,7 @@ void fd_protected_self_check(void)
 		BUG("fd protected: the sink is not close-on-exec at open");
 	/* The parent keeps the number it opened: it fuzzes nothing, and a
 	 * high fd there would make every fork copy a 60k-slot fd table. */
-	if ((unsigned int)sink >= ROTATION_EVENT_FD_HIGH_BASE)
+	if ((unsigned int)sink >= PROTECTED_FD_HIGH_BASE)
 		BUG("fd protected: the parent moved the sink above the picker range");
 
 	other = open("/dev/null", O_RDONLY);
@@ -112,8 +112,8 @@ void fd_protected_self_check(void)
 		BUG("fd protected: getrlimit failed");
 	lim = orig;
 	if (lim.rlim_cur == RLIM_INFINITY ||
-	    lim.rlim_cur > ROTATION_EVENT_FD_HIGH_BASE)
-		lim.rlim_cur = ROTATION_EVENT_FD_HIGH_BASE;
+	    lim.rlim_cur > PROTECTED_FD_HIGH_BASE)
+		lim.rlim_cur = PROTECTED_FD_HIGH_BASE;
 	if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
 		BUG("fd protected: cannot lower RLIMIT_NOFILE");
 	stats_rotation_event_relocate_in_child();
@@ -127,24 +127,24 @@ void fd_protected_self_check(void)
 	 * shell's 1024 is not.  Ask for as much as the hard limit allows. */
 	lim = orig;
 	if (lim.rlim_cur != RLIM_INFINITY &&
-	    lim.rlim_cur <= ROTATION_EVENT_FD_HIGH_BASE)
+	    lim.rlim_cur <= PROTECTED_FD_HIGH_BASE)
 		lim.rlim_cur = lim.rlim_max < 65536 ? lim.rlim_max : 65536;
 	can_park = lim.rlim_cur == RLIM_INFINITY ||
-		   lim.rlim_cur > ROTATION_EVENT_FD_HIGH_BASE;
+		   lim.rlim_cur > PROTECTED_FD_HIGH_BASE;
 
 	moved = sink;
 	if (!can_park) {
 		fprintf(stderr, "fd protected: RLIMIT_NOFILE hard limit %lu is "
 			"not above %u, sink relocation not checked\n",
 			(unsigned long)orig.rlim_max,
-			ROTATION_EVENT_FD_HIGH_BASE);
+			PROTECTED_FD_HIGH_BASE);
 	} else {
 		if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
 			BUG("fd protected: cannot raise RLIMIT_NOFILE");
 		stats_rotation_event_relocate_in_child();
 		moved = stats_rotation_event_fd();
 
-		if ((unsigned int)moved < ROTATION_EVENT_FD_HIGH_BASE)
+		if ((unsigned int)moved < PROTECTED_FD_HIGH_BASE)
 			BUG("fd protected: a child did not move the sink above the picker range");
 		/* The inherited number is free for the child to reuse. */
 		if (fcntl(sink, F_GETFD) != -1 || errno != EBADF)

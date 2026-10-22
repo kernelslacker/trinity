@@ -164,9 +164,9 @@ void open_fail_nth(struct childdata *child)
 	 * if the dup fails (EMFILE, no free slot above the base), keep
 	 * the low fd and let fds-protected catch subsequent attempts on
 	 * it.  Mirrors the open_tainted_fd relocation. */
-	if ((unsigned int) fd < FAIL_NTH_FD_HIGH_BASE) {
+	if ((unsigned int) fd < PROTECTED_FD_HIGH_BASE) {
 		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
-				   (int) FAIL_NTH_FD_HIGH_BASE);
+				   (int) PROTECTED_FD_HIGH_BASE);
 
 		if (new_fd >= 0) {
 			close(fd);
@@ -200,20 +200,6 @@ unsigned long read_tainted_mask(int fd)
 	buf[n] = '\0';
 	return strtoul(buf, NULL, 10);
 }
-
-/*
- * Park the per-child taint fd well above the low-numbered range the
- * kernel typically hands out.  Mirrors KCOV_FD_HIGH_BASE (kcov/
- * lifecycle.c) both in value and rationale: open_tainted_fd runs after
- * std{in,out,err} have been isolated but before the fuzz loop starts,
- * so the kernel returns lowest-available (3, 4, ...) which sits
- * squarely inside every ARG_FD picker and typed-fd reroll working set.
- * F_DUPFD_CLOEXEC-relocating the slot up out of that range drops the
- * incidental hit rate sharply.  The fds-protected registry
- * (fds/fds-protected.c) remains the actual safety net; the relocation
- * is defence-in-depth.  Keep this in sync with KCOV_FD_HIGH_BASE.
- */
-#define TAINTED_FD_HIGH_BASE 60000U
 
 /*
  * Cache an fd to /proc/sys/kernel/tainted for the per-childop taint
@@ -250,9 +236,9 @@ void open_tainted_fd(struct childdata *child)
 	 * if the dup fails (EMFILE, no free slot above the base), keep
 	 * the low fd and let fds-protected catch subsequent attempts on
 	 * it. */
-	if ((unsigned int) fd < TAINTED_FD_HIGH_BASE) {
+	if ((unsigned int) fd < PROTECTED_FD_HIGH_BASE) {
 		int new_fd = fcntl(fd, F_DUPFD_CLOEXEC,
-				   (int) TAINTED_FD_HIGH_BASE);
+				   (int) PROTECTED_FD_HIGH_BASE);
 
 		if (new_fd >= 0) {
 			close(fd);

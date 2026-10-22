@@ -86,7 +86,7 @@ struct kcov_pc_diag {
 	 * the syscall table to close / close_range if the chain-
 	 * substitution hypothesis holds; anything else points at an
 	 * unaudited closer.  fd_value preserves the slot number at
-	 * failure for cross-reference with KCOV_FD_HIGH_BASE. */
+	 * failure for cross-reference with PROTECTED_FD_HIGH_BASE. */
 	unsigned long first_ebadf_op_nr;	/* CAS-elected winner, 0 == empty */
 	unsigned long first_ebadf_pid;
 	unsigned int  first_ebadf_syscall_nr;

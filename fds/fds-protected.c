@@ -21,7 +21,7 @@
  * Five classes of fd live in this registry:
  *
  *   - the calling child's kcov PC fd and cmp fd, opened in
- *     kcov_init_child and re-located above KCOV_FD_HIGH_BASE so the
+ *     kcov_init_child and re-located above PROTECTED_FD_HIGH_BASE so the
  *     low-slot ARG_FD pool never naturally hands them out -- but
  *     dup2's RAND_RANGE(rl.rlim_cur+1) and close_range's range walks
  *     can still reach them.  A successful close / dup2 over either
@@ -32,7 +32,7 @@
  *     (child->tainted_fd, opened by open_tainted_fd) and, in parent
  *     context, the panic-check cached fd (trinity_tainted_fd_cached).
  *     Both name /proc/sys/kernel/tainted; open_tainted_fd also
- *     F_DUPFD_CLOEXEC-relocates its slot up to TAINTED_FD_HIGH_BASE
+ *     F_DUPFD_CLOEXEC-relocates its slot up to PROTECTED_FD_HIGH_BASE
  *     for the same defence-in-depth reason kcov does.  A fuzz-induced
  *     rewire onto the taint fd makes the next taint read strtol() an
  *     unrelated file's contents into a fabricated taint bit that
@@ -52,7 +52,7 @@
  *     the next arm-write successfully stamps digit bytes into the
  *     victim file (data corruption) AND silently disables fault
  *     injection for the rest of this child's life.  open_fail_nth
- *     F_DUPFD_CLOEXEC-relocates the slot up to FAIL_NTH_FD_HIGH_BASE
+ *     F_DUPFD_CLOEXEC-relocates the slot up to PROTECTED_FD_HIGH_BASE
  *     for the same defence-in-depth reason kcov / tainted_fd do; the
  *     registry entry here closes the residual window where a dup2 /
  *     dup3 / close_range pick could still land on the slot.
@@ -78,7 +78,7 @@
  *     ftruncate on its number tears the JSONL for every child, and a
  *     close_range walk or a dup2 over it sends that child's records
  *     nowhere or into an unrelated file.  Each child also moves its
- *     copy above ROTATION_EVENT_FD_HIGH_BASE.
+ *     copy above PROTECTED_FD_HIGH_BASE.
  *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
@@ -138,8 +138,8 @@ bool fd_is_protected(int fd)
  * exhaustion fallback, which surfaces to the kernel as 0xFFFFFFFF) as
  * a negative "hi", makes hi < lo true, and returns -1 -- skipping the
  * truncation that should have stopped the kernel-side walk before it
- * reached the kcov fd at KCOV_FD_HIGH_BASE.  All real protected fds
- * fit in int (STDERR_FILENO is 2; KCOV_FD_HIGH_BASE is 60000; the
+ * reached the kcov fd at PROTECTED_FD_HIGH_BASE.  All real protected fds
+ * fit in int (STDERR_FILENO is 2; PROTECTED_FD_HIGH_BASE is 60000; the
  * stderr memfd is well below INT_MAX), so widening the comparison
  * operand to unsigned int doesn't shrink the range we cover.
  */

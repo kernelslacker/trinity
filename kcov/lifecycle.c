@@ -32,30 +32,6 @@
 #include "trinity.h"		/* output, outputerr */
 
 #include "kernel/fcntl.h"
-/*
- * Park the per-child kcov fds well above the low-numbered range the
- * kernel typically hands out.  kcov_init_child runs in the child after
- * std{in,out,err} have been dup2'd to /dev/null but before the main
- * syscall loop starts, so the kernel returns lowest-available (3, 4,
- * ...) which is squarely inside the working set of trinity's argument
- * generators -- every live-fd-ring slot, every typed-fd reroll.
- * F_DUPFD_CLOEXEC-relocating the kcov slots up out of that range drops
- * the incidental hit rate sharply.  The protected-fd registry remains
- * the actual safety net; the relocation is defence-in-depth.
- *
- * 60000 sits inside the RLIMIT_NOFILE=65536 lifted by
- * scripts/run-trinity.sh, leaving ~5500 fds of headroom above for
- * the rest of trinity's working set (well above current usage).
- * Parking KCOV at 60000 keeps it clear of any plausible picker
- * fd range -- fuzzer-pickers that allocate fds densely
- * (epoll/eventfd churn, slab-cache-thrash op, etc.) cannot land
- * siblings in the same numeric range as KCOV's relocated slots
- * -- and is defence-in-depth against a stale-close race
- * producing the EBADF cascade.  If the dup fails for any reason
- * the original low fd is kept and the registry catches
- * subsequent attempts on it.
- */
-#define KCOV_FD_HIGH_BASE 60000U
 
 /*
  * Runtime base of the kernel text segment, read once from /proc/kallsyms
@@ -463,7 +439,7 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 
 	/*
 	 * Both fds are now stable (remote-probe re-mmap dance done, cmp
-	 * setup done or torn down).  Relocate them to KCOV_FD_HIGH_BASE
+	 * setup done or torn down).  Relocate them to PROTECTED_FD_HIGH_BASE
 	 * so the low slots they were handed (3, 4, ...) are out of the
 	 * way of the fuzzer's pickers.  The mmap regions stay valid
 	 * across the close-of-old because they are anchored to the
@@ -478,18 +454,19 @@ void kcov_init_child(struct kcov_child *kc, unsigned int child_id)
 	 * original fd and let the registry catch any picker that
 	 * targets it.
 	 */
-	if (kc->fd >= 0 && (unsigned int) kc->fd < KCOV_FD_HIGH_BASE) {
+	if (kc->fd >= 0 && (unsigned int) kc->fd < PROTECTED_FD_HIGH_BASE) {
 		int new_fd = fcntl(kc->fd, F_DUPFD_CLOEXEC,
-				   (int) KCOV_FD_HIGH_BASE);
+				   (int) PROTECTED_FD_HIGH_BASE);
 
 		if (new_fd >= 0) {
 			close(kc->fd);
 			kc->fd = new_fd;
 		}
 	}
-	if (kc->cmp_fd >= 0 && (unsigned int) kc->cmp_fd < KCOV_FD_HIGH_BASE) {
+	if (kc->cmp_fd >= 0 &&
+	    (unsigned int) kc->cmp_fd < PROTECTED_FD_HIGH_BASE) {
 		int new_fd = fcntl(kc->cmp_fd, F_DUPFD_CLOEXEC,
-				   (int) KCOV_FD_HIGH_BASE);
+				   (int) PROTECTED_FD_HIGH_BASE);
 
 		if (new_fd >= 0) {
 			close(kc->cmp_fd);
@@ -701,7 +678,7 @@ void kcov_cleanup_child(struct kcov_child *kc)
  * kc->cmp_trace_buf for the cmp fd).
  *
  * The sequence mirrors kcov_init_child's per-fd setup -- open, KCOV_-
- * INIT_TRACE, mmap, F_DUPFD_CLOEXEC up to KCOV_FD_HIGH_BASE -- with two
+ * INIT_TRACE, mmap, F_DUPFD_CLOEXEC up to PROTECTED_FD_HIGH_BASE -- with two
  * deliberate orderings the bare init path does not need:
  *
  *   1. Open the new fd BEFORE closing the old one.  fd_is_protected
@@ -756,9 +733,9 @@ bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	 * relocation kcov_init_child does.  A failed dup just leaves the
 	 * fresh fd at its low slot; the protected-fd registry still covers
 	 * it via fd_is_protected once we install it below. */
-	if ((unsigned int)new_fd < KCOV_FD_HIGH_BASE) {
+	if ((unsigned int)new_fd < PROTECTED_FD_HIGH_BASE) {
 		int hi_fd = fcntl(new_fd, F_DUPFD_CLOEXEC,
-				  (int)KCOV_FD_HIGH_BASE);
+				  (int)PROTECTED_FD_HIGH_BASE);
 
 		if (hi_fd >= 0) {
 			close(new_fd);

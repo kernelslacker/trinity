@@ -237,7 +237,7 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	 * long)-1, which the kernel sees as 0xFFFFFFFF.  A signed-int
 	 * compare here would treat that as a negative "hi", skip the
 	 * truncation, and let the kernel walk [a1, 0xFFFFFFFF] -- the
-	 * exact path that closes the kcov fd at KCOV_FD_HIGH_BASE.
+	 * exact path that closes the kcov fd at PROTECTED_FD_HIGH_BASE.
 	 */
 	if ((unsigned int) rec->a1 <= (unsigned int) rec->a2) {
 		int lowest = lowest_protected_fd_in_range(

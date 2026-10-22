@@ -254,8 +254,8 @@ bool fd_is_protected(int fd);
  * long)-1 -- the gen_arg_fd exhaustion fallback -- as int -1.  The
  * inner `hi < lo` guard then returns -1 (no protected fd "in range")
  * even though the kernel, casting to u32, walks [a1, 0xFFFFFFFF] and
- * closes the kcov fd at KCOV_FD_HIGH_BASE.  Unsigned int matches the
- * kernel's view and closes the gap.
+ * closes the kcov fd at PROTECTED_FD_HIGH_BASE.  Unsigned int matches
+ * the kernel's view and closes the gap.
  */
 int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi);
 
@@ -271,6 +271,23 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi);
  * log.  See the block comment above fd_is_protected() in fds.c.
  */
 void reroll_protected_fd_arg(unsigned long *slot);
+
+/*
+ * Where a child parks the fds trinity depends on (kcov PC/cmp, taint,
+ * fail-nth, rotation sink).  Opened or inherited before the fuzz loop,
+ * they sit on the lowest free numbers (3, 4, ...): inside the working
+ * set of the pickers (live-fd rings, typed-fd rerolls) and among the
+ * small numbers mutated fd args reach, paths the registry alone does
+ * not cover.  Moving them up drops the incidental hit rate; the
+ * registry stays the safety net, so a failed move just keeps the low
+ * number.
+ *
+ * 60000 sits inside the RLIMIT_NOFILE=65536 that scripts/run-trinity.sh
+ * lifts, with ~5500 fds of headroom above it, and clear of the numbers
+ * dense fd allocators (epoll/eventfd churn) reach, which also guards
+ * against a stale-close race producing the EBADF cascade.
+ */
+#define PROTECTED_FD_HIGH_BASE 60000U
 
 /*
  * Pick from the fd_types whose ->poll handlers park the caller on a
