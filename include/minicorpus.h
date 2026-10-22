@@ -431,6 +431,17 @@ bool minicorpus_replay(struct syscallrecord *rec);
  * same population. */
 bool corpus_args_replayable(const struct syscallentry *entry);
 
+/* Whether a syscall with an argument of this type is refused whole: its
+ * saved value is a heap pointer that goes stale, or a pid that can name
+ * a live trinity process.  corpus_args_replayable() asks it per argtype,
+ * and so does the chain corpus's replay filter. */
+bool corpus_argtype_refused(enum argtype type);
+
+/* Whether a saved value of this argtype is stale in the replaying run:
+ * an fd, or a pointer into the saving run's heap or writable pool.  Save
+ * and the warm-start loader zero such a slot. */
+bool corpus_argtype_stale_on_replay(enum argtype type);
+
 /* Whether nr's ring holds an entry saved under @do32bit's ABI.  Both
  * ABIs share a ring, so its count alone cannot say.  Reads without the
  * ring lock, as replay does: a torn read misjudges one probe, which the

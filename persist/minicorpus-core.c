@@ -109,13 +109,15 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
 }
 
 /*
- * Whether a saved syscall's args can be replayed safely.  Rejects the
- * argtype set whose values are runtime-relative — replay either feeds
- * the kernel garbage or, for ARG_PID, an active pid that gets signalled.
+ * Whether a syscall with an argument of this type is refused whole.
+ * These are the argtypes whose values are runtime-relative — replay
+ * either feeds the kernel garbage or, for ARG_PID, an active pid that
+ * gets signalled.
  *
- *  - ARG_IOVEC / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP: heap pointers
- *    handed out by generic_sanitise().  After deferred-free eviction
- *    they go stale and replay feeds freed memory to the kernel.
+ *  - ARG_IOVEC / ARG_IOVEC_IN / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP:
+ *    heap pointers handed out by generic_sanitise().  After
+ *    deferred-free eviction they go stale and replay feeds freed memory
+ *    to the kernel.
  *
  *  - ARG_PID: a pid valid in the saving run is meaningless in the
  *    replaying run.  Worse, dense trinity pid allocation plus kernel
@@ -124,9 +126,32 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
  *    pidfd_send_signal / rt_sigqueueinfo entries cascade-SIGKILLs the
  *    fleet.
  *
+ * The chain corpus's replay filter asks this per argtype too, so both
+ * corpora refuse the same list.
+ */
+bool corpus_argtype_refused(enum argtype type)
+{
+	switch (type) {
+	case ARG_IOVEC:
+	case ARG_IOVEC_IN:
+	case ARG_PATHNAME:
+	case ARG_SOCKADDR:
+	case ARG_MMAP:
+	case ARG_PID:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
+ * Whether a saved syscall's args can be replayed safely: no argument is
+ * of a type corpus_argtype_refused() names, and there is at least one.
+ *
  *  - no arguments: nothing to replay.  An entry would only fail the
  *    num_args validator in minicorpus_replay() and be counted as a torn
- *    read.
+ *    read.  The chain corpus does not take this rule: a step with no
+ *    arguments still shapes its chain.
  *
  * Three call sites must agree on this list:
  *
@@ -155,17 +180,8 @@ bool corpus_args_replayable(const struct syscallentry *entry)
 		return false;
 
 	for (i = 0; i < entry->num_args && i < 6; i++) {
-		switch (entry->argtype[i]) {
-		case ARG_IOVEC:
-		case ARG_IOVEC_IN:
-		case ARG_PATHNAME:
-		case ARG_SOCKADDR:
-		case ARG_MMAP:
-		case ARG_PID:
+		if (corpus_argtype_refused(entry->argtype[i]))
 			return false;
-		default:
-			break;
-		}
 	}
 	return true;
 }

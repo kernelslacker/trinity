@@ -2,7 +2,7 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~7,907 LOC)
+## Files (18 files + 2 internal headers, ~7,912 LOC)
 
 The picker (`pickers.c`), the dispatch tail (`dispatch.c`) and the post-dispatch
 attribution helpers (`strategy-accounting.c`) have each been split one concern
@@ -47,7 +47,7 @@ Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
 | chain-persist.c | 651 | Chain-corpus on-disk persistence and mid-run snapshot cadence: versioned, arch- and release-tagged save/load with an atomic rename |
 | chain-exec.c | 633 | `run_sequence_chain()`: draws a chain source (fresh vs corpus replay), dispatches each step, records the outcome (corpus admission + per-resource-kind pair credit) |
 | chain-restype.c | 342 | Resource-type dependency table for `--chain-resource-typing`: one row per fd-family with a producer/consumer split, measured via `chain_restype_replay_win[]` |
-| chain-corpus.c | 336 | The in-memory ring of admitted chains plus init / save / pick; a single fleet-wide ring of inline `chain_entry` slots, lockless on the pick path |
+| chain-corpus.c | 330 | The in-memory ring of admitted chains plus init / save / pick; a single fleet-wide ring of inline `chain_entry` slots, lockless on the pick path; `chain_is_replay_safe()` refuses the minicorpus's argtype list (`corpus_argtype_refused()`) |
 | chain-internal.h | 42 | Cross-file declarations private to the `chain-*.c` cluster |
 
 Cross-cluster private declarations live in `include/random-syscall-internal.h` (the 14 non-chain files here include it; the chain cluster uses `chain-internal.h` instead). Public entry points are split across `include/child-api.h` (the four dispatch-step wrappers), `include/sequence.h` (the chain executor and its corpus API) and `include/syscall.h` (`set_syscall_nr_random`, `compute_numeric_substitute_mask`, `choose_syscall_table`).

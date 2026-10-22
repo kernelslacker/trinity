@@ -17,6 +17,7 @@
 
 #include "child.h"
 #include "kcov.h"
+#include "minicorpus.h"
 #include "params.h"
 #include "random.h"
 #include "rnd.h"
@@ -117,8 +118,10 @@ void chain_corpus_init(void)
  * Returns true if every step in @steps could be replayed without
  * feeding stale heap pointers, stale pids, or sanitise-stashed
  * pointers to the kernel.  Same exclusions as minicorpus_save (which
- * treats these arg types as poison) plus the entry->sanitise gate
- * that random_syscall/dispatch.c applies before it calls minicorpus_save.
+ * treats these arg types as poison, see corpus_argtype_refused()) plus
+ * the entry->sanitise gate that random_syscall/dispatch.c applies
+ * before it calls minicorpus_save.  The minicorpus's no-arguments rule
+ * is not taken: a step with no arguments still shapes the chain.
  *
  * The check happens at save time so the corpus only ever contains
  * chains that are themselves replay-safe.  Saving an unsafe chain and
@@ -139,17 +142,8 @@ bool chain_is_replay_safe(const struct chain_step *steps,
 			return false;
 
 		for (j = 0; j < entry->num_args && j < 6; j++) {
-			switch (entry->argtype[j]) {
-			case ARG_IOVEC:
-			case ARG_IOVEC_IN:
-			case ARG_PATHNAME:
-			case ARG_SOCKADDR:
-			case ARG_MMAP:
-			case ARG_PID:
+			if (corpus_argtype_refused(entry->argtype[j]))
 				return false;
-			default:
-				break;
-			}
 		}
 	}
 	return true;
