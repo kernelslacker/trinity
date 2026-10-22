@@ -501,12 +501,11 @@ out:
 void self_cgroup_cleanup(void)
 {
 	/*
-	 * Parent only.  Children reach exit() on at least four paths --
-	 * zmalloc failure, the operator-stop teardown in debug.c, the socket
-	 * post-handler, and output() -- and atexit handlers run for all of
-	 * them.  A child running this teardown tears down state the parent
-	 * and every sibling are still using.  getpid() rather than mypid():
-	 * a CLONE_VM grandchild inherits its parent worker's cached pid.
+	 * Parent only: a child running this teardown would tear down state
+	 * the parent and every sibling are still using.  Children leave
+	 * through _exit() or trinity_exit() and never run atexit handlers,
+	 * so the gate is defence in depth.  getpid() rather than mypid(): a
+	 * CLONE_VM grandchild inherits its parent worker's cached pid.
 	 */
 	if (getpid() != mainpid)
 		return;
