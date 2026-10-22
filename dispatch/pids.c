@@ -69,16 +69,14 @@ bool pid_alive(pid_t pid)
 	}
 
 	if (kill(pid, 0) != 0) {
-		int saved = errno;
-		/* EPERM means the task exists but we can no longer signal
-		 * it — the child has dropped privileges (setresuid/capset)
-		 * and the parent's uid no longer matches.  Treat as alive,
-		 * matching reap_dead_kids() in main/reap.c; the previous
-		 * "any failure means dead" guard reported cred-dropped
-		 * children as dead and drove premature stuck-detection. */
-		if (saved == EPERM)
-			return true;
-		return false;
+		/* Only ESRCH means the pid is gone; any other errno is a
+		 * refused probe of a task that exists.  A child probing its
+		 * root parent gets EPERM from the kernel's uid check (nobody
+		 * has no CAP_KILL), and a security module can refuse as well:
+		 * EPERM from its CAP_KILL capable hook, EACCES from
+		 * security_task_kill().  A false return always leaves errno
+		 * at ESRCH, which kill_all_kids() and check_lock() read. */
+		return errno != ESRCH;
 	}
 
 	/* kill() returned 0, so the task struct exists.  Check whether
