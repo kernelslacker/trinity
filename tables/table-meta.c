@@ -211,6 +211,34 @@ static void check_no_slots_past_num_args(struct syscallentry *entry)
 	}
 }
 
+/*
+ * generic_sanitise() leaves a sanitiser-owned slot zeroed, so a mask on
+ * an entry with no .sanitise pins that slot to 0 for good, and a bit at
+ * or past num_args names a slot that does not exist (most likely an
+ * off-by-one for the slot that was meant).
+ */
+static void check_sanitiser_owned_mask(struct syscallentry *entry)
+{
+	unsigned int j;
+
+	if (entry == NULL || entry->sanitiser_owned_mask == 0)
+		return;
+
+	if (entry->sanitise == NULL) {
+		outputerr("%s: sanitiser_owned_mask is 0x%x but there is no .sanitise to fill those slots\n",
+			  entry->name, (unsigned int) entry->sanitiser_owned_mask);
+		exit(EXIT_FAILURE);
+	}
+
+	for (j = entry->num_args; j < 8 * sizeof(entry->sanitiser_owned_mask); j++) {
+		if (entry->sanitiser_owned_mask & (1u << j)) {
+			outputerr("%s: sanitiser_owned_mask bit %u is set but num_args=%u; owned slots must be below num_args\n",
+				  entry->name, j, entry->num_args);
+			exit(EXIT_FAILURE);
+		}
+	}
+}
+
 static void sanity_check(const struct syscalltable *table, unsigned int nr)
 {
 	unsigned int i;
@@ -218,6 +246,7 @@ static void sanity_check(const struct syscalltable *table, unsigned int nr)
 	for (i = 0; i < nr; i++) {
 		check_syscall(table[i].entry);
 		check_no_slots_past_num_args(table[i].entry);
+		check_sanitiser_owned_mask(table[i].entry);
 	}
 }
 

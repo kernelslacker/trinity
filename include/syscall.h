@@ -795,6 +795,21 @@ struct syscallentry {
 	 * the address_scrub_mask convention: bit i corresponds to slot (i+1).
 	 */
 	uint8_t arg_snapshot_mask;
+
+	/*
+	 * Per-syscall opt-in bitmap of arg slots (1..6) that .sanitise
+	 * writes on every path without reading the generated value first.
+	 * generic_sanitise() zeroes these slots instead of calling
+	 * fill_arg(), so a struct-pointer slot no longer pays for an
+	 * allocation, a schema fill and a deferred-free enqueue that the
+	 * sanitiser throws away, again on every RedQueen re-exec that
+	 * regenerates the args.  Any sanitiser path that keeps or reads
+	 * the generated value disqualifies the slot.  sanity_check_tables()
+	 * refuses a mask with no .sanitise or a bit at or past num_args.
+	 * Same bit convention as arg_snapshot_mask: bit i corresponds to
+	 * slot (i+1).
+	 */
+	uint8_t sanitiser_owned_mask;
 };
 
 static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entry)
@@ -1051,7 +1066,8 @@ void populate_arglist_all_bits(struct syscallentry *entry);
 
 /*
  * Seed rec->arg_meta[] from entry->argtype[] just before
- * blanket_address_scrub().  SHADOW telemetry: writes the per-slot
+ * blanket_address_scrub(); a slot in entry->sanitiser_owned_mask is
+ * owned by the sanitiser.  SHADOW telemetry: writes the per-slot
  * dir/owner/flags/generation descriptor but does not feed any decision.
  */
 void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec);

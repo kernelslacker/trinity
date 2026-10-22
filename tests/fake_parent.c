@@ -1,9 +1,10 @@
 /*
  * Parent environment for the PARENT_SRCS tests: storage for the parent
- * globals main/loop.c, main/reap.c and main/reap-zombie.c read, and
- * stand-ins for the parent calls their reachable code makes.  Calls
- * that act on one slot land in fake_slot_log[], kill_pid() and output()
- * keep what they were given, and the rest do nothing.
+ * globals main/loop.c, main/reap.c, main/reap-zombie.c and
+ * tables/table-meta.c read, and stand-ins for the parent calls their
+ * reachable code makes.  Calls that act on one slot land in
+ * fake_slot_log[], kill_pid() and output() keep what they were given,
+ * and the rest do nothing.
  */
 
 #include <signal.h>
@@ -41,6 +42,16 @@ unsigned int max_children;
 pid_t *pids;
 struct childdata **children;
 struct stats_published *shm_published;
+
+/* Owned by tables/tables.c, tables-uniarch.c and tables-biarch.c in
+ * production.  Empty, so get_syscall_entry() finds no entry. */
+bool biarch;
+const struct syscalltable *syscalls;
+const struct syscalltable *syscalls_32bit;
+const struct syscalltable *syscalls_64bit;
+unsigned int max_nr_syscalls;
+unsigned int max_nr_32bit_syscalls;
+unsigned int max_nr_64bit_syscalls;
 
 struct fake_slot_log fake_slot_log[FAKE_NR_CHILDREN];
 pid_t fake_killed_pid;
@@ -200,12 +211,6 @@ void inode_spewer_reap(pid_t pid)
 void kmsg_monitor_note_reaped(pid_t pid, int status)
 {
 	(void)pid; (void)status;
-}
-
-struct syscallentry *get_syscall_entry(unsigned int calln, bool do32)
-{
-	(void)calln; (void)do32;
-	return NULL;
 }
 
 void dump_pid_stack(int pid)

@@ -43,6 +43,7 @@ void tmpdir_self_check(void);
 void reap_stop_self_check(void);
 void extrafork_reap_self_check(void);
 void cmp_field_scan_self_check(void);
+void sanitiser_owned_mask_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -181,6 +182,11 @@ int main(int argc, char **argv)
 	printf("  cmp_field_scan_self_check ... ");
 	fflush(stdout);
 	cmp_field_scan_self_check();
+	printf("OK\n");
+
+	printf("  sanitiser_owned_mask_self_check ... ");
+	fflush(stdout);
+	sanitiser_owned_mask_self_check();
 	printf("OK\n");
 
 	return 0;

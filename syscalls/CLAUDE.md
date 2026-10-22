@@ -88,6 +88,12 @@ top of each header as private to that pair of TUs).
    layer a `sanitise_X()` on top that mutates `rec->aN` after generic
    generation has already populated it (see `access.c`'s comment on why it
    repoints only half the time — keeping the ENOENT reject arm alive).
+   A slot the sanitiser writes on every path, without reading the
+   generated value, can go in `.sanitiser_owned_mask`: `generic_sanitise()`
+   then leaves it zeroed instead of building a value (for a struct pointer,
+   an allocation plus schema fill plus deferred-free enqueue) that the
+   sanitiser would replace.  `sanity_check_tables()` refuses a mask on an
+   entry with no `.sanitise` or with a bit at or past `num_args`.
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` is a conditional successful-result inspector (gated on
    `state == AFTER`); `.cleanup` runs unconditionally after `.post` regardless

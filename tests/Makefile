@@ -12,8 +12,8 @@
 # whole trinity build in, defeating the point of a PURE-module test
 # seam.  New PURE modules migrate onto the test target one at a time
 # by adding them to REAL_SRCS below.  PARENT_SRCS is the exception: a
-# few non-PURE parent TUs, linked with --gc-sections so that only the
-# code a test reaches needs fakes (fake_parent.c).
+# few non-PURE TUs, linked with --gc-sections so that only the code a
+# test reaches needs fakes (fake_parent.c).
 #
 # Object files and the linked binary are keyed by build flavor:
 #   normal -> build/          + test-bin
@@ -105,17 +105,24 @@ REAL_SRCS	:= \
 	$(TOP)/dispatch/extrafork-reap.c
 
 # Parent TUs, linked for reset_epoch_state(), the reaper, the zombie
-# reaper and the rotation-events sink, plus utils/uid.c for
-# drop_privs().  They also pull in parent functions the tests never
-# call (main_loop() reaches most of the parent), so each function gets
-# its own section and --gc-sections drops the unreached ones.
-# fake_parent.c covers the rest.
+# reaper, the rotation-events sink and sanity_check_tables(), plus
+# utils/uid.c for drop_privs() and the child-side args/generate-args.c
+# for generic_sanitise() and arg_meta_init().  They also pull in
+# functions the tests never call (main_loop() reaches most of the
+# parent), so each function gets its own section and --gc-sections
+# drops the unreached ones.  -fdata-sections gives each function its
+# own jump-table section too: in a shared .rodata, one reached switch
+# keeps every other function's case targets, and their references,
+# alive.  fake_parent.c covers the rest; sanitiser_owned_mask_test.c
+# fakes fill_arg().
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
 	$(TOP)/main/reap-zombie.c \
 	$(TOP)/stats/rotation_event.c \
-	$(TOP)/utils/uid.c
+	$(TOP)/tables/table-meta.c \
+	$(TOP)/utils/uid.c \
+	$(TOP)/args/generate-args.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
@@ -155,6 +162,7 @@ FAKE_SRCS	:= \
 	reap_stop_test.c \
 	extrafork_reap_test.c \
 	cmp_field_scan_test.c \
+	sanitiser_owned_mask_test.c \
 	test_main.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
@@ -182,7 +190,7 @@ test-ndebug:
 $(TEST_BIN): $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(FAKE_OBJS)
 
-$(PARENT_OBJS) $(CMP_OBJS): CFLAGS += -ffunction-sections
+$(PARENT_OBJS) $(CMP_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
 $(BUILDDIR)/real/%.o: $(TOP)/%.c
 	@mkdir -p $(dir $@)

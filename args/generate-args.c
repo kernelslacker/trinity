@@ -118,6 +118,11 @@ void arg_meta_init(struct syscallentry *entry, struct syscallrecord *rec)
 			owner = m->owner;
 		}
 
+		/* generic_sanitise() skipped a sanitiser-owned slot, so
+		 * whatever it holds now came from the sanitiser. */
+		if (entry->sanitiser_owned_mask & (1u << i))
+			owner = ARG_OWNER_SANITISER;
+
 		*m = (struct arg_slot_meta){
 			.dir = dir,
 			.owner = owner,
@@ -186,6 +191,8 @@ void blanket_address_scrub(struct syscallentry *entry, struct syscallrecord *rec
 
 void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 {
+	uint8_t owned = entry->sanitiser_owned_mask;
+
 	/* Defensive: zero arg slots so any ARG_UNDEFINED entry doesn't
 	 * inherit stale values from the previous syscall's record.  Also
 	 * zero the post_state snapshot slot — sanitisers that use it
@@ -212,19 +219,23 @@ void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec)
 	/* num_args is the authority for which slots are present.
 	 * Don't gate on argtype[i] != 0 — ARG_UNDEFINED is enum value 0,
 	 * which would silently skip filling those slots even though
-	 * fill_arg() handles ARG_UNDEFINED by returning a random value. */
+	 * fill_arg() handles ARG_UNDEFINED by returning a random value.
+	 *
+	 * A slot in sanitiser_owned_mask is replaced on every sanitise
+	 * path, so a generated value would only be thrown away; it is
+	 * zeroed instead, for the same no-stale-value reason as above. */
 	if (entry->num_args >= 1)
-		rec->a1 = fill_arg(entry, rec, 1);
+		rec->a1 = (owned & (1u << 0)) ? 0 : fill_arg(entry, rec, 1);
 	if (entry->num_args >= 2)
-		rec->a2 = fill_arg(entry, rec, 2);
+		rec->a2 = (owned & (1u << 1)) ? 0 : fill_arg(entry, rec, 2);
 	if (entry->num_args >= 3)
-		rec->a3 = fill_arg(entry, rec, 3);
+		rec->a3 = (owned & (1u << 2)) ? 0 : fill_arg(entry, rec, 3);
 	if (entry->num_args >= 4)
-		rec->a4 = fill_arg(entry, rec, 4);
+		rec->a4 = (owned & (1u << 3)) ? 0 : fill_arg(entry, rec, 4);
 	if (entry->num_args >= 5)
-		rec->a5 = fill_arg(entry, rec, 5);
+		rec->a5 = (owned & (1u << 4)) ? 0 : fill_arg(entry, rec, 5);
 	if (entry->num_args >= 6)
-		rec->a6 = fill_arg(entry, rec, 6);
+		rec->a6 = (owned & (1u << 5)) ? 0 : fill_arg(entry, rec, 6);
 }
 
 void generic_free_arg(struct syscallentry *entry, struct syscallrecord *rec)
