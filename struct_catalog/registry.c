@@ -98,11 +98,12 @@ struct slot_binding {
 
 /*
  * Slot-binding pool.  Sized for every registered (nr, arg) cell across
- * both arch tables -- syscall_struct_args[] is ~60 entries today, so 256
- * leaves growth headroom and stays comfortably under any reasonable
- * static budget.  struct_catalog_init() BUG()s if a registration
- * overflows either the pool or the per-slot variant cap rather than
- * silently dropping mappings.
+ * both arch tables.  The ~160 registered entries cover ~120 distinct
+ * (syscall, arg) slots, and a slot takes one cell per arch table it
+ * resolves in, so up to ~240 of the 256 cells can be taken.
+ * struct_catalog_init() BUG()s if a registration overflows either the
+ * pool or the per-slot variant cap rather than silently dropping
+ * mappings.
  */
 #define SLOT_POOL_MAX			256
 
@@ -177,7 +178,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 
 	/*
 	 * Linear scan avoids a second nr-indexed table just for explicit-key
-	 * callers.  The registration table is small (~70 entries today); the
+	 * callers.  The registration table is small (~160 entries today); the
 	 * scan runs once per apply_sockopt_entry call which already does
 	 * O(table) work picking a random row.
 	 *
