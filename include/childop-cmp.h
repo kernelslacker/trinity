@@ -91,14 +91,15 @@
  *
  * do32 is hard-coded to false: childops issue native 64-bit
  * syscalls only -- see the harvest-side comment in
- * childop_cmp_collect() for the same reasoning.  nr-only keying
- * (pilot single-semantic); a future slice adds nr+cmd / nr+field
- * keying and gates ioctl / keyctl / fcntl childops on it.
+ * childop_cmp_collect() for the same reasoning.  Keying is by nr
+ * alone, which assumes one argument semantic per syscall number;
+ * ioctl / keyctl / fcntl style multiplexers would need nr+cmd or
+ * nr+field keying and are not routed through here.
  *
  * The four conversion-chain counters (candidate_accepted /
  * arg_changed / outcome_changed / new_cov) declared in kcov_shm
- * next to the would-* triple have NO bump site in this build --
- * they wait for the C3/C4 live-consume slice.
+ * next to the would-* triple have NO bump site: the resolver's pick
+ * is never consumed live, so there is no conversion to count.
  */
 unsigned long childop_cmp_value(unsigned int nr, enum cmp_hint_use use,
 				unsigned long old, unsigned long fallback);

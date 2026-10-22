@@ -105,10 +105,10 @@ enum childop_cmp_harvest_mode childop_cmp_harvest_mode =
  * knob.  Flipping to ON opts into the SHADOW-only resolver probe
  * (cmp_hints_try_get_ex + would_pick / would_miss / would_value_
  * differs bumps) at the rxrpc field sites -- the returned value is
- * still discarded, so no arg changes and no outcome differs; the
- * knob sizes what a future C3/C4 live consume would do at these
- * sites.  See the childop_cmp_consume_mode enum in include/kcov.h
- * for the full per-mode contract. */
+ * still discarded, so no arg changes and no outcome differs; the knob
+ * sizes what a live consume would do at these sites.  See the
+ * childop_cmp_consume_mode enum in include/kcov.h for the full per-mode
+ * contract. */
 enum childop_cmp_consume_mode childop_cmp_consume_mode =
 	CHILDOP_CMP_CONSUME_OFF;
 

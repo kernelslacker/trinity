@@ -3,14 +3,14 @@
  *
  * childop_cmp_value() is the consumer half of the childop CMP
  * integration -- the producer half (trinity_cmp_syscall wrapper +
- * childop_cmp_reset / _collect helpers) already lives on master
- * behind --childop-cmp-harvest.  This resolver reads the durable
+ * childop_cmp_reset / _collect helpers) runs behind
+ * --childop-cmp-harvest.  This resolver reads the durable
  * per-nr pool that the harvest side (and warm-start / non-childop
  * inserts) populates and shadow-scores what a live consume would
  * return at each childop field site, but always returns the
  * caller's rng fallback so no arg changes and no downstream
- * behaviour differs.  Sized purely to measure the opportunity
- * before the C3/C4 live-consume slice earns its own re-nod.
+ * behaviour differs.  Sized purely to measure what a live consume
+ * would do.
  *
  * See include/childop-cmp.h for the per-mode contract, and
  * include/kcov.h childop_cmp_consume_* for the counter shape.

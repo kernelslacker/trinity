@@ -225,9 +225,8 @@ extern enum childop_cmp_harvest_mode childop_cmp_harvest_mode;
  *      cmp_hints_try_get_ex() and bumps _would_pick / _would_miss /
  *      _would_value_differs on the outcome, but STILL returns the
  *      caller's rng fallback -- no arg is changed, no downstream
- *      behaviour differs.  The C0/C2 shadow ships this switch so
- *      the opportunity size is measurable before the C3/C4 live
- *      consume slice earns its own re-nod.
+ *      behaviour differs.  The switch exists so the size of the
+ *      opportunity is measurable without a live consume.
  *
  * The two modes are kept distinct from --childop-cmp-harvest: harvest
  * is producer-side (kernel CMP records into the quarantined childop

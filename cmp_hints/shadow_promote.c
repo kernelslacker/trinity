@@ -170,9 +170,8 @@ static const struct shadow_arm shadow_arm_registry[SHADOW_ARM_NR] = {
 	 * just emitted, i.e. the class would have contributed a value
 	 * the existing lanes did not.  Argtype gate is deliberately
 	 * narrow this row (two verdicts only) so the promotion
-	 * criterion measures headroom on the informative population;
-	 * follow-up slices widen the inference to more callsites.  No
-	 * live counterpart yet.
+	 * criterion measures headroom on the informative population.
+	 * No live counterpart yet.
 	 */
 	[SHADOW_ARM_CMP_HYP_SIGN_SWITCH] = {
 		.name = "cmp_hyp_sign_switch",

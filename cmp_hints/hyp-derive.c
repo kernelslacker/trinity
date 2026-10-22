@@ -305,10 +305,9 @@ enum cmp_hyp_signedness {
 };
 
 /*
- * SIGN-SWITCH argtype-signedness inference groundwork.  First slice of
- * the D4 sign-switch derive lane: builds the signedness verdict for
- * the two argtype callsites where it can be read off with high
- * confidence, and leaves the rest UNKNOWN for follow-up slices.
+ * SIGN-SWITCH argtype-signedness inference.  Builds the signedness
+ * verdict for the two argtype callsites where it can be read off with
+ * high confidence, and leaves the rest UNKNOWN.
  *
  *   CMP_HINT_CALLSITE_ARG_STRUCT_SIZE is the struct-size / length
  *   argtype family (size_t / u32 in the syscall ABI); its signedness
@@ -325,8 +324,8 @@ enum cmp_hyp_signedness {
  * Every other callsite (ARG_OP, ARG_LIST, ARG_UNDEFINED, STRUCT_FIELD,
  * OTHER, unclassified NR) stays UNKNOWN: OP / LIST flag-and-enum
  * argtypes have no meaningful sign, STRUCT_FIELD's signedness lives in
- * the field descriptor and needs a separate slice to route through,
- * and the sentinel buckets are by construction typeless.
+ * the field descriptor, which this function does not see, and the
+ * sentinel buckets are by construction typeless.
  */
 static enum cmp_hyp_signedness
 cmp_hyp_infer_signedness(const struct cmp_hypothesis *picked,

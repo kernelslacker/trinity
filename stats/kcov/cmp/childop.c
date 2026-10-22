@@ -33,10 +33,10 @@
  * value_differs arrays (see include/kcov.h) into fleet-wide totals,
  * mirroring the hyp would_pick block above -- the per-nr split is
  * available in the raw shm read but the operator-facing dump keys on
- * the fleet-wide would-pull rate + value-differs ratio, which is
- * what the C3/C4 decision gate consults.  Render gated on any-delta
- * so the section stays quiet on a default --childop-cmp-consume=off
- * build (every per-nr counter reads zero).
+ * the fleet-wide would-pull rate + value-differs ratio, which is the
+ * signal for whether a live consume would pay off.  Render gated on
+ * any-delta so the section stays quiet on a default
+ * --childop-cmp-consume=off build (every per-nr counter reads zero).
  */
 void kcov_cmp_render_childop_cmp_consume_shadow_block(long elapsed __unused__)
 {
