@@ -28,7 +28,8 @@
  * structs only; tagged-union and buffer-discriminated descs are skipped,
  * corrupt/short-alloc/unreadable pointers bail cleanly there with
  * cmp_hyp_len_correlated_bad_desc bumped once per collect call so the
- * deflect rate is legible from the default run.
+ * deflect rate is legible.  Both scans are gated off by default
+ * (cmp_struct_scan_enabled in collect.c).
  */
 
 #include <stdint.h>

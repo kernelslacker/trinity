@@ -159,6 +159,16 @@ cmp_field_match_timespec(const struct timespec *ts, unsigned long arg2,
 	return true;
 }
 
+/*
+ * Default-off gate for the struct-field scans: the field attribution
+ * recorder and the LEN_CORRELATED shadow lane.  Neither has a consumer
+ * -- no reader looks up the field-pool keys the recorder writes, and
+ * the hypothesis picker and credit walk skip LEN_CORRELATED entries --
+ * so running them only costs the record loop.  Flip it on with the
+ * first live consumer.
+ */
+static bool cmp_struct_scan_enabled;
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 {
 	unsigned long count;
@@ -230,8 +240,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 * live dispatched syscall (entry != NULL, dispatch_args_valid).
 	 * Its struct args are resolved once, ahead of the record loop
 	 * (cmp_hints_field_scan_resolve() says why).  nr_field_slots
-	 * stays 0 when the call is parent-context, pre-dispatch or has
-	 * no walkable struct arg, and the per-record scans are skipped.
+	 * stays 0 when the scans are gated off (cmp_struct_scan_enabled),
+	 * the call is parent-context or pre-dispatch, or it has no
+	 * walkable struct arg, and the per-record scans are skipped.
 	 */
 	struct cmp_field_scan_slot field_slots[6];
 	unsigned int nr_field_slots = 0;
@@ -388,15 +399,16 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		}
 
 		/* Field-attribution gate is decoupled from the redqueen
-		 * cohort: any dispatched syscall with a valid arg snapshot
-		 * is a candidate for the recording-side field scan.  Held
-		 * separately from rec_args[] / rec_num_args above so the
-		 * scalar fast-path keeps its existing shape (and stays cheap
-		 * for non-struct syscalls).  in_reexec calls are excluded
-		 * for the same reason the scalar gate excludes them -- the
-		 * re-exec's CMP harvest would self-reinforce records into
-		 * the same field pool a parent dispatch just populated. */
-		if (!child->in_reexec) {
+		 * cohort: while cmp_struct_scan_enabled is on, any dispatched
+		 * syscall with a valid arg snapshot is a candidate for the
+		 * recording-side field scan.  Held separately from
+		 * rec_args[] / rec_num_args above so the scalar fast-path
+		 * keeps its existing shape (and stays cheap for non-struct
+		 * syscalls).  in_reexec calls are excluded for the same
+		 * reason the scalar gate excludes them -- the re-exec's CMP
+		 * harvest would self-reinforce records into the same field
+		 * pool a parent dispatch just populated. */
+		if (cmp_struct_scan_enabled && !child->in_reexec) {
 			struct syscallrecord *rec = &child->syscall;
 			struct syscallentry *entry = rec->entry;
 
@@ -938,9 +950,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		 * lift accounting unpolluted -- field attribution is
 		 * recording-side only in this MVP; the consumer side that
 		 * re-injects from these pools is a follow-up.  Runs only
-		 * when the call resolved a walkable struct arg, so non-
-		 * struct / parent-context calls cost a single zero-test per
-		 * record. */
+		 * when the call resolved a walkable struct arg, which it
+		 * never does while cmp_struct_scan_enabled is off, so every
+		 * other call costs a single zero-test per record. */
 		if (nr_field_slots != 0)
 			cmp_hints_field_scan_record(field_slots,
 						    nr_field_slots,

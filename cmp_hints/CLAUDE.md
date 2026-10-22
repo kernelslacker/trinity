@@ -7,7 +7,7 @@ Fuzzer intelligence layer for Trinity. Collects constants the kernel compares sy
 | File | Lines | Role |
 |---|---|---|
 | cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
-| collect.c | 1238 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
+| collect.c | 1250 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
 | pool.c | 1067 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
 | get.c | 656 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
 | credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
@@ -32,7 +32,7 @@ exports to a sibling lane, but not to the public `cmp_hints.h`, live in
 | hyp-pick.c | 270 | Picker: `cmp_hyp_would_pick_locked()` pool walk, specificity ordering, state-aware preference within a kind |
 | hyp-derive.c | 815 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
 | hyp-live.c | 235 | LIVE inject arm: `cmp_hyp_try_live_inject()` and its three gating channels (plateau-amplified A, always-on bootstrap B, PROMOTED-bypass C) |
-| hyp-len-correlated.c | 261 | Length-correlation observe path: matches `KCOV_CMP_CONST` arg2 against `FT_LEN_BYTES`/`FT_LEN_COUNT` fields in the dispatching syscall's cataloged input structs |
+| hyp-len-correlated.c | 262 | Length-correlation observe path: matches `KCOV_CMP_CONST` arg2 against `FT_LEN_BYTES`/`FT_LEN_COUNT` fields in the dispatching syscall's cataloged input structs (gated off by default, see decision 5) |
 
 ## Data model
 
@@ -53,7 +53,7 @@ Per-child:
 2. **Two-tier picker** — during the `CMP_RISING_PC_FLAT` plateau, the recent ring is sampled first for fresh constants; steady state queries only the durable LRU pool.
 3. **A/B live-pick policy** — each child gets arm A (uniform random draw) or arm B (weighted: `FLOOR + wins*4 - misses`, floored). Arm B consumes SHADOW feedback scores from the credit drain; arm A is the control.
 4. **Typed hypothesis inference (`hyp-*.c`)** — on every new constant, 5 parallel lanes observe it: EXACT (per-value identity), BITMASK (single-bit-only values), ENUM_FAMILY (all values at a cmp_ip, accumulating lo/hi/mask), RANGE (synthesized from ENUM_FAMILY at ≥3 hits, span 2..32), BOUNDARY (per-(cmp_ip, width) strict-inequality summary, N-1/N+1). State machine: OBSERVED → first win → PROMOTED; 8+ misses no wins → DEMOTED → sustained misses → RETIRED. PROMOTED gets higher injection probability via the Promoted-Bypass channel (~1.6%).
-5. **Field-scoped attribution (field.c)** — walks cataloged struct arguments, checks if a field value matches CMP arg2, records the constant against that struct::field tuple for precise re-injection at the right arg slot. The struct args are resolved once per collect call (`cmp_hints_field_scan_resolve()`); the length-correlation lane walks the same slots.
+5. **Field-scoped attribution (field.c)** — walks cataloged struct arguments, checks if a field value matches CMP arg2, records the constant against that struct::field tuple for precise re-injection at the right arg slot. The struct args are resolved once per collect call (`cmp_hints_field_scan_resolve()`); the length-correlation lane walks the same slots. Both scans are gated off by `cmp_struct_scan_enabled` (collect.c) until a live consumer exists, so their counters read zero.
 6. **Chaos mode** — every 8th window (~12.5%) suppresses hint injection to let random-arg generation explore invalid-combination space.
 7. **Persistence (persist.c)** — warm-start with 5-version schema evolution: v1→v2 pool capacity 32→16, v2→v3 last_used widened to uint64_t, v3→v4 arch dimension added, v4→v5 KASLR canonicalization. Validity gates: magic, version, max_syscall, per_syscall count, entry_size, payload_bytes, CRC32, kallsyms SHA-256 fingerprint, KASLR-base mode agreement.
 8. **Corruption defense** — every pool accessor checks `cmp_hints_pool_corrupted()`: validates `count <= CAP`, probes canary sentinels flanking the pool (before entries[], after entries[], after lock). Stomped pool is latched corrupted to prevent OOB access; wild-write detection bumps per-channel counters for forensics.
@@ -72,7 +72,7 @@ Per-child:
 
 ## Areas of attention
 
-1. **Largest files** — collect.c (1,238), pool.c (1,067), field.c (895), persist.c (866), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:506–815) is still ~310 lines with deep nesting.
+1. **Largest files** — collect.c (1,250), pool.c (1,067), field.c (895), persist.c (866), hyp-derive.c (815). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:506–815) is still ~310 lines with deep nesting.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
 3. **Field-scan safety depends on `range_readable_user()`** (`cmp_hints_field_scan_resolve()` in field.c) — checks VMA readability before dereferencing struct buffers; a missed page-fault race SEGVs the child (recovery point in health/signals-fault-handler.c).
 

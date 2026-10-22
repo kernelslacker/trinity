@@ -1,8 +1,8 @@
 /*
- * Self-check for the struct-field scans cmp_hints_collect() drives
- * (cmp_hints/field.c, cmp_hints/hyp-len-correlated.c).  A call's
- * struct args are resolved once, not once per CMP record, and the
- * batch handed to the hint pool is the same either way.
+ * Self-check for the struct-field scans cmp_hints_collect() can drive
+ * (cmp_hints/field.c, cmp_hints/hyp-len-correlated.c).  They are gated
+ * off: a collect must not resolve struct args, walk alloc_track or
+ * record anything, and must still hand every record to the hint pool.
  */
 
 #include <setjmp.h>
@@ -64,7 +64,6 @@ static uint32_t scan_buf[2] __attribute__((aligned(8))) = {
 static unsigned long trace_buf[1 + SCAN_RECORDS * 4];
 
 static bool scan_armed;
-static bool scan_buf_tracked;
 static unsigned int alloc_track_lookups;
 static unsigned int desc_lookups;
 static struct cmp_hints_pending flushed[SCAN_RECORDS];
@@ -79,7 +78,7 @@ size_t __wrap_alloc_track_lookup_size(void *ptr)
 	if (!scan_armed)
 		return __real_alloc_track_lookup_size(ptr);
 	alloc_track_lookups++;
-	return (scan_buf_tracked && ptr == scan_buf) ? sizeof(scan_buf) : 0;
+	return ptr == scan_buf ? sizeof(scan_buf) : 0;
 }
 
 const struct struct_desc *struct_arg_lookup(unsigned int nr,
@@ -186,7 +185,7 @@ static unsigned long scan_ip(unsigned int i)
 
 /* One cmp_hints_collect() call for a syscall whose only arg points at
  * scan_buf, over SCAN_RECORDS 4-byte KCOV_CMP_CONST records. */
-static void run_collect(bool tracked)
+static void run_collect(void)
 {
 	struct childdata *child;
 	unsigned int i;
@@ -211,7 +210,6 @@ static void run_collect(bool tracked)
 		rec[3] = scan_ip(i);
 	}
 
-	scan_buf_tracked = tracked;
 	alloc_track_lookups = 0;
 	desc_lookups = 0;
 	nr_flushed = 0;
@@ -271,58 +269,28 @@ static const struct cmp_field_pool *find_field_pool(void)
 	return NULL;
 }
 
-/* A tracked buffer is resolved once, and both scans still record
- * every matching record. */
-static void tracked_buffer_resolved_once(void)
-{
-	const struct kcov_cmp_field_attr *fa;
-	const struct cmp_hypothesis *h;
-	const struct cmp_field_pool *fp;
-
-	run_collect(true);
-	fa = &kcov_shm->cmp_field_attr;
-
-	if (alloc_track_lookups != 1 || desc_lookups != 1)
-		BUG("cmp field scan: struct args resolved per record, not per call");
-	check_flushed();
-
-	if (fa->cmp_field_attribution_scanned != SCAN_RECORDS ||
-	    fa->cmp_field_attribution_found != SCAN_RECORDS / 3)
-		BUG("cmp field scan: field attribution missed records");
-	fp = find_field_pool();
-	if (fp == NULL || fp->key.arg_idx != 1 || fp->key.field_idx != 1 ||
-	    fp->key.size != 4 || fp->count != SCAN_RECORDS / 3)
-		BUG("cmp field scan: field attribution recorded the wrong key");
-
-	if (kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_would_fire !=
-	    SCAN_RECORDS / 3)
-		BUG("cmp field scan: length correlation missed records");
-	h = find_len_correlated();
-	if (h == NULL || h->seen_count != SCAN_RECORDS / 3 ||
-	    h->exemplar != scan_arg1(SCAN_RECORDS - 2))
-		BUG("cmp field scan: length correlation recorded the wrong value");
-
-	free_shm();
-}
-
-/* An untracked buffer costs one lookup and one skip per call. */
-static void untracked_buffer_skipped_once(void)
+/* scan_buf is tracked and a third of the records match each of its
+ * fields, so an enabled scan would resolve it and record. */
+static void struct_field_scans_gated_off(void)
 {
 	const struct kcov_cmp_field_attr *fa;
 
-	run_collect(false);
+	run_collect();
 	fa = &kcov_shm->cmp_field_attr;
 
-	if (alloc_track_lookups != 1 || desc_lookups != 1)
-		BUG("cmp field scan: struct args resolved per record, not per call");
+	if (alloc_track_lookups != 0 || desc_lookups != 0)
+		BUG("cmp field scan: a gated-off scan resolved struct args");
 	check_flushed();
 
-	if (fa->cmp_field_attribution_arg_skipped_short_alloc != 1 ||
-	    kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc != 1)
-		BUG("cmp field scan: an untracked buffer was not skipped once");
 	if (fa->cmp_field_attribution_scanned != 0 ||
-	    kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_would_fire != 0)
-		BUG("cmp field scan: walked a buffer of unknown extent");
+	    fa->cmp_field_attribution_found != 0 ||
+	    fa->cmp_field_attribution_arg_skipped_short_alloc != 0 ||
+	    find_field_pool() != NULL)
+		BUG("cmp field scan: a gated-off field attribution recorded");
+	if (kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_would_fire != 0 ||
+	    kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc != 0 ||
+	    find_len_correlated() != NULL)
+		BUG("cmp field scan: a gated-off length correlation recorded");
 
 	free_shm();
 }
@@ -330,6 +298,5 @@ static void untracked_buffer_skipped_once(void)
 void cmp_field_scan_self_check(void);
 void cmp_field_scan_self_check(void)
 {
-	tracked_buffer_resolved_once();
-	untracked_buffer_skipped_once();
+	struct_field_scans_gated_off();
 }

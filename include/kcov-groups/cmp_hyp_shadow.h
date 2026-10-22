@@ -109,8 +109,10 @@ unsigned long cmp_hyp_sign_switch_would_win;
  *      slots that would otherwise mis-attribute.
  *
  * All counters are RELAXED-bumped and SHADOW-only.  Nothing on the
- * live pick / inject / credit path reads them.  Append-only at the
- * tail per convention so consumer offsets stay stable.
+ * live pick / inject / credit path reads them.  The lane is gated off
+ * by default (cmp_struct_scan_enabled in cmp_hints/collect.c), so all
+ * four read zero.  Append-only at the tail per convention so consumer
+ * offsets stay stable.
  */
 unsigned long cmp_hyp_len_correlated_would_fire;
 unsigned long cmp_hyp_len_correlated_recorded;

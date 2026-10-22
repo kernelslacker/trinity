@@ -110,8 +110,10 @@ struct cmp_field_scan_slot {
 /*
  * Resolve the dispatching syscall's walkable ARG_STRUCT_PTR_IN/INOUT
  * args into @slots, once per cmp_hints_collect() call: neither the desc
- * nor the allocation extent depends on the CMP record.  Returns the
- * number of slots filled.  Definition in cmp_hints/field.c.
+ * nor the allocation extent depends on the CMP record.  Only called
+ * while cmp_struct_scan_enabled (collect.c) is on, and it is off by
+ * default.  Returns the number of slots filled.  Definition in
+ * cmp_hints/field.c.
  */
 struct syscallrecord;
 struct syscallentry;
@@ -123,10 +125,11 @@ unsigned int cmp_hints_field_scan_resolve(struct syscallrecord *srec,
 /*
  * Per-CMP-record field attribution scan.  Definition in
  * cmp_hints/field.c; called from cmp_hints_collect (collect.c) on
- * every KCOV_CMP record whose arg1 matched a scalar slot.  Walks the
- * slots cmp_hints_field_scan_resolve() returned against the cataloged
- * field layout and invokes cmp_hints_field_record() on every matching
- * field.
+ * every KCOV_CMP_CONST record its boring / sentinel filters keep, but
+ * only while cmp_struct_scan_enabled is on.  That gate is off by
+ * default, so the scan does not currently run.  Walks the slots
+ * cmp_hints_field_scan_resolve() returned against the cataloged field
+ * layout and invokes cmp_hints_field_record() on every matching field.
  */
 void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
 				 unsigned int nr_slots,
@@ -137,10 +140,11 @@ void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
 /*
  * Per-CMP-record SHADOW length-correlation scan.  Definition in
  * cmp_hints/hyp-len-correlated.c; called from cmp_hints_collect
- * (collect.c) on every KCOV_CMP_CONST record alongside the
- * cmp_hints_field_scan_record() field-attribution scan, over the same
- * resolved slots.  Looks for an FT_LEN_BYTES / FT_LEN_COUNT field
- * whose slot value equals arg2 (runtime operand) and records a SHADOW
+ * (collect.c) alongside the cmp_hints_field_scan_record() field-
+ * attribution scan, over the same resolved slots and behind the same
+ * cmp_struct_scan_enabled gate, so it does not currently run either.
+ * Looks for an FT_LEN_BYTES / FT_LEN_COUNT field whose slot value
+ * equals arg2 (runtime operand) and records a SHADOW
  * CMP_HYP_LEN_CORRELATED hypothesis with expected == arg1 (compile-
  * time constant).  Never feeds the picker / inject arm -- Slice A is
  * observation-only, byte-identical fuzzing.
