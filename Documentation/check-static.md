@@ -316,14 +316,19 @@ update this section to match `ls scripts/check-static/*.sh`.)
   constant newer than the build host's headers, is skipped with a `SKIP` line
   and a count in the `PASS` line instead of failing; a `TRINITY_LINUS_SRC`
   tree that resolves it gets the value checked as usual.  A baseline symbol
-  with no integer `#define` in the tree is stale and fails.
+  with no integer `#define` in the tree is stale and fails.  Symbols no probe
+  resolves are reported as one count: `unresolved-uapi` for the uapi-shaped
+  ones (ALL_CAPS with an underscore) and `not-uapi-shaped` for names with a
+  trinity-owned prefix or no underscore, a few of which are real constants.
+  `UAPI_SHIM_VALUES_LIST=1` names the uapi-shaped ones.
 - `uapi-shim-values-selftest`: runs `uapi-shim-values` on a scratch tree and
   asserts that a baseline symbol the host's headers lack is skipped, that one
-  with no shim in the tree or a wrong pinned value fails, and that a kernel
-  tree named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol.  It
-  runs no git (a stub answers the revision lookup).  Without it the gate's
-  verdict can drift back to depending on how old the build host's kernel
-  headers are.
+  with no shim in the tree or a wrong pinned value fails, that a kernel tree
+  named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol, and that
+  unresolved symbols are one count rather than a line each.  It runs no git (a
+  stub answers the revision lookup).  Without it the gate's verdict can drift
+  back to depending on how old the build host's kernel headers are, and its
+  findings back under a line per unresolved symbol.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

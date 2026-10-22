@@ -529,21 +529,36 @@ fi
 
 # ---------------------------------------------------------------------------
 # Unresolved-uapi reporting
-# After both tiers, any symbol still unresolved that carries a recognizable
-# uapi-shaped prefix (ALL_CAPS with underscore, common in kernel headers) is
-# reported as a WARN.  This is not a FAIL — trinity-private macros legitimately
-# live in the unresolved set.  Known-private prefixes are excluded.
+# After both tiers, a symbol still unresolved is either trinity's own or a
+# uapi constant no probe could see: its header is outside the probe sets,
+# newer than the host's, or not a uapi header at all.  Neither is a FAIL,
+# because there is nothing to compare the second kind against.  It is also a
+# large standing property of the tree, and a line per symbol would drown the
+# FAIL lines, so it is reported as one count.  UAPI_SHIM_VALUES_LIST=1 names
+# the uapi-shaped symbols.
+#
+# "uapi-shaped" is ALL_CAPS with an underscore that no known-private prefix
+# claims.  Everything else unresolved is only counted (not-uapi-shaped): the
+# prefixes below, and names with no underscore, a few of which are real
+# constants (EPOLLEXCLUSIVE, NCCS).  The prefixes are namespaces trinity owns:
+#   TRINITY_ NR_ MAX_ MIN_ DEFAULT_ __NR_   bookkeeping names
+#   HAVE_ USE_                              configure and per-syscall switches
+#   TAINT_                                  kernel taint bit numbers
+#   GROUP_ RET_                             syscall group and return enums
+#   _FUZZ_ (anywhere)                       ioctl generator tunables
 # ---------------------------------------------------------------------------
-KNOWN_MISSING_RE='^(TRINITY_|NR_|MAX_|MIN_|DEFAULT_|__NR_)'
-unresolved_uapi_count=0
-if [ -s "$SYMS_BAD" ]; then
-    unresolved_uapi=$(grep -E '_' "$SYMS_BAD" | grep -vE "$KNOWN_MISSING_RE" || true)
-    if [ -n "$unresolved_uapi" ]; then
-        unresolved_uapi_count=$(printf '%s\n' "$unresolved_uapi" | wc -l | tr -d ' ')
-        printf '%s\n' "$unresolved_uapi" | \
-            while IFS= read -r sym; do
-                echo "WARN: $NAME: unresolved uapi-shaped symbol: $sym" >&2
-            done
+KNOWN_MISSING_RE='^(TRINITY_|NR_|MAX_|MIN_|DEFAULT_|__NR_|HAVE_|USE_|TAINT_|GROUP_|RET_)|_FUZZ_'
+SYMS_UAPI_SHAPED="$WORKDIR/syms-uapi-shaped.txt"
+total_unresolved=$(wc -l < "$SYMS_BAD" | tr -d ' ')
+grep -E '_' "$SYMS_BAD" | grep -vE "$KNOWN_MISSING_RE" > "$SYMS_UAPI_SHAPED" || true
+unresolved_uapi_count=$(wc -l < "$SYMS_UAPI_SHAPED" | tr -d ' ')
+not_uapi_shaped_count=$((total_unresolved - unresolved_uapi_count))
+if [ "$unresolved_uapi_count" -gt 0 ]; then
+    echo "WARN: $NAME: $unresolved_uapi_count uapi-shaped symbol(s) unresolved by any probe," \
+         "values unchecked ($not_uapi_shaped_count more are not uapi-shaped: a known-private" \
+         "prefix or no underscore; UAPI_SHIM_VALUES_LIST=1 names the uapi-shaped ones)" >&2
+    if [ -n "${UAPI_SHIM_VALUES_LIST:-}" ]; then
+        sed "s/^/WARN: $NAME: unresolved uapi-shaped symbol: /" "$SYMS_UAPI_SHAPED" >&2
     fi
 fi
 
@@ -788,13 +803,12 @@ fi
 # Invariant 1: every harvested symbol is either resolvable or unresolved.
 # harvested = resolvable + total_unresolved; a mismatch indicates a bookkeeping bug.
 #
-# Note: the "known-private" class (TRINITY_*, NR_*, MAX_*, etc. -- symbols that
-# match KNOWN_MISSING_RE) is NOT a separate term here.  Those symbols failed the
-# compiler probe and therefore live in SYMS_BAD, folded into total_unresolved.
-# They are only excluded from the *reporting* step (unresolved-uapi warnings).
-# So the identity is: harvested = resolvable + (unresolved-uapi + known-private)
+# Note: the not-uapi-shaped class (names matching KNOWN_MISSING_RE, or with no
+# underscore) is NOT a separate term here.  Those symbols failed the compiler
+# probe and therefore live in SYMS_BAD, folded into total_unresolved.  They are
+# only split out in the *reporting* step (unresolved-uapi count).
+# So the identity is: harvested = resolvable + (unresolved-uapi + not-uapi-shaped)
 #                   = resolvable + total_unresolved  ✓
-total_unresolved=$(wc -l < "$SYMS_BAD" | tr -d ' ')
 if [ "$harvested" -ne $((probed + total_unresolved)) ]; then
     echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + unresolved $total_unresolved" >&2
     exit 1
@@ -812,5 +826,5 @@ case "$TIER1_STATUS" in
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
 exit 0

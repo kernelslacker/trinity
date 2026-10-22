@@ -1,10 +1,10 @@
 #!/bin/bash
 #
 # uapi-shim-values-selftest: run uapi-shim-values on a scratch tree and pin the
-# baseline verdicts that must not depend on the build host: an entry its headers
-# predate is skipped, a stale one or a wrong value fails, and a symbol only the
-# Tier-2 kernel tree resolves is checked.  It runs no git: a stub supplies the
-# revision the gate keys the Tier-2 header cache on.
+# verdicts that must not depend on the build host: a baseline entry its headers
+# predate is skipped, a stale one or a wrong value fails, a symbol only the
+# Tier-2 kernel tree resolves is checked, and unresolved symbols are one count.
+# It runs no git: a stub gives the revision the Tier-2 header cache is keyed on.
 
 set -u
 
@@ -19,7 +19,8 @@ mkdir -p "$tree/scripts/check-static"
 
 # NDA_DST resolves on any host with linux/neighbour.h.  Nothing declares
 # SELFTEST_NEWER_THAN_HOST, which stands in for a constant newer than the
-# host's headers.
+# host's headers, HAVE_SELFTEST_SWITCH, which has a known-private prefix, or
+# SELFTESTNOUNDERSCORE.
 cat > "$tree/shims.h" <<'EOF'
 #ifndef NDA_DST
 #define NDA_DST 1
@@ -27,6 +28,8 @@ cat > "$tree/shims.h" <<'EOF'
 #ifndef SELFTEST_NEWER_THAN_HOST
 #define SELFTEST_NEWER_THAN_HOST 99
 #endif
+#define HAVE_SELFTEST_SWITCH 1
+#define SELFTESTNOUNDERSCORE 7
 EOF
 
 # The scratch tree harvests a handful of symbols, so every ratchet floor is 1.
@@ -36,13 +39,14 @@ done
 
 # run_gate BASELINE [VAR=VALUE...]: run the gate on the scratch tree with
 # BASELINE as its baseline file.  Leaves the exit status in $rc and the
-# output in $work/out and $work/err.  TRINITY_LINUS_SRC is dropped so a
-# developer's own kernel tree cannot change the outcome.
+# output in $work/out and $work/err.  TRINITY_LINUS_SRC and
+# UAPI_SHIM_VALUES_LIST are dropped so a developer's own kernel tree or
+# listing request cannot change the outcome; cases add them back in "$@".
 run_gate() {
 	printf '%s\n' "$1" > "$tree/scripts/check-static/uapi-shim-values.baseline"
 	shift
 	rc=0
-	env -u TRINITY_LINUS_SRC REPO_ROOT="$tree" "$@" "$GATE" \
+	env -u TRINITY_LINUS_SRC -u UAPI_SHIM_VALUES_LIST REPO_ROOT="$tree" "$@" "$GATE" \
 		> "$work/out" 2> "$work/err" || rc=$?
 }
 
@@ -88,7 +92,24 @@ expect "baseline symbol without a shim: gate fails" [ "$rc" -ne 0 ]
 expect "baseline symbol without a shim: named as stale" \
 	grep -q 'baseline symbol SELFTEST_NO_SUCH_SHIM has no integer #define in the tree' "$work/err"
 
-# Case 4: the host cannot resolve the symbol but the Tier-2 kernel tree can.
+# Case 4: reporting.  Three symbols stay unresolved: one uapi-shaped, one with
+# a known-private prefix and one with no underscore.  All are counted, and only
+# the uapi-shaped one is named, and only when asked for.
+run_gate "NDA_DST 1"
+expect "unresolved symbols: counted in the PASS line" \
+	grep -q 'unresolved-uapi 1 / not-uapi-shaped 2 ' "$work/out"
+expect "unresolved symbols: one summary line" \
+	grep -q '^WARN: uapi-shim-values: 1 uapi-shaped symbol(s) unresolved by any probe' "$work/err"
+expect "unresolved symbols: none named by default" \
+	test "$(grep -c -e SELFTEST_NEWER_THAN_HOST -e HAVE_SELFTEST_SWITCH -e SELFTESTNOUNDERSCORE "$work/err")" -eq 0
+
+run_gate "NDA_DST 1" UAPI_SHIM_VALUES_LIST=1
+expect "listing requested: names the uapi-shaped symbol" \
+	grep -q '^WARN: uapi-shim-values: unresolved uapi-shaped symbol: SELFTEST_NEWER_THAN_HOST$' "$work/err"
+expect "listing requested: leaves out the other two" \
+	test "$(grep -c -e HAVE_SELFTEST_SWITCH -e SELFTESTNOUNDERSCORE "$work/err")" -eq 0
+
+# Case 5: the host cannot resolve the symbol but the Tier-2 kernel tree can.
 # The gate keys its header cache on the tree's git revision, so a stub git
 # answers 0123abc and a pre-seeded cache stands in for headers_install; its
 # neighbour.h defines the symbol on top of the host's header.
