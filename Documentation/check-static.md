@@ -180,6 +180,26 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `head->array_generation++`.  Guards the deferred-free / TTL grow /
   teardown class where a captured `head->array` pointer becomes a
   chunk glibc has already recycled.
+- `params-value-lists`: the values the tree advertises for a mode option
+  must be the values its parser accepts.  The parser is the
+  `strcmp(arg, "value")` arms under `strcmp("option", name)` in
+  `main/params/*.c`.  They are diffed, in both directions, against the
+  option's `--help` row in `help.c` (an `a/b/c`, `a / b` or `a or b`
+  list, which every such option must have), the `value` bullets under
+  its `## --option` heading in the `.md` files (a heading with none is
+  an error) and every inline `--option=a|b|c` in the tracked `.c`,
+  `.h`, `.md`, `.txt`, `.1` and `README` files; an untracked scratch
+  note is not read, and a tree without `.git` is walked instead.  The
+  extractor fails closed: a help row that lists `off` for an option
+  with no arms fails, since that parser is one it cannot read, and so
+  does a missing `option_descs[]` table, an unreadable row or file, and
+  a tree with no arms or no doc sections at all.  It does not read prose
+  preambles, bullets written `* x` or `- **x**`, single-value
+  `--option=x` examples, help strings that mix `/` and `|`, or the
+  parser's own error strings.  Self-tests both directions on synthetic
+  parser, help and doc text, including the `!= 0` guard form, an
+  unbalanced brace in a string and in a char literal, a slash pair that
+  is not a value list, and a tracked-versus-untracked file listing.
 - `post-state-deref`: every `.post` handler that dereferences a
   pointer read from `rec->post_state` must first gate it with
   `looks_like_corrupted_ptr()` or a `*_POST_STATE_MAGIC` cookie
