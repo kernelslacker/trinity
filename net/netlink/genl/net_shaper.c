@@ -34,14 +34,17 @@ static const struct genl_cmd_grammar net_shaper_cmds[] = {
  * every cmd keys on.  METRIC is a u32 enum (BPS / PPS).  BW_MIN /
  * BW_MAX / BURST are u64 rate/burst-size scalars; PRIORITY / WEIGHT
  * are u32 scheduling scalars.  HANDLE, PARENT, and LEAVES are the
- * three nominally nested attrs — emitted as empty containers
- * psample-TUNNEL / ovpn-PEER style so the kernel's nla_validate
- * accepts them at the outer level without recursing into the per-nest
- * sub-policies.  The inner NET_SHAPER_A_HANDLE_{SCOPE,ID} and
- * NET_SHAPER_A_CAPS_* enums share id 1..N with the top-level
- * namespace; the shim header carries #ifndef-guarded fallbacks for
- * those inner ids for the next reader who extends the grammar to
- * recursive nested emission.
+ * three nested attrs.  The kernel recurses into them (HANDLE and
+ * PARENT through net_shaper_handle_nl_policy, LEAVES through
+ * net_shaper_leaf_info_nl_policy, both NLA_POLICY_NESTED in
+ * net/shaper/shaper_nl_gen.c), but the generator has no per-nest
+ * table: it fills each container with 1-3 children drawn from this
+ * flat one, so each child is checked against the inner policy entry
+ * that shares its attribute number.  The inner
+ * NET_SHAPER_A_HANDLE_{SCOPE,ID} and NET_SHAPER_A_CAPS_* enums share
+ * id 1..N with the top-level namespace; the shim header carries
+ * #ifndef-guarded fallbacks for those inner ids for the next reader
+ * who extends the grammar to typed nested emission.
  */
 static const struct nla_attr_spec net_shaper_attrs[] = {
 	{ NET_SHAPER_A_HANDLE,		NLA_KIND_NESTED, 0 },

@@ -22,8 +22,8 @@
  * holds it.  NFNL_MSG_ACCT_GET_CTRZERO and
  * NFNL_MSG_ACCT_OVERQUOTA are deliberately omitted — the former is a
  * read-and-zero variant that would race other subsystems' counters under
- * fuzz, and the latter is a kernel→user multicast event with no callback
- * slot (the dispatcher -EOPNOTSUPP's it cleanly).
+ * fuzz, and the latter is a kernel→user multicast event whose cb[] slot
+ * has no .call (nfnetlink_rcv_msg() answers it -EINVAL).
  *
  * Attribute set: NFACCT_* command-level namespace from
  * include/uapi/linux/netfilter/nfnetlink_acct.h, sized per nfnl_acct_policy

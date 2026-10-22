@@ -42,7 +42,9 @@ static const struct genl_cmd_grammar macsec_cmds[] = {
  * collisions across nests (every nest starts at id 1) are harmless.
  *
  * Variable-length sizes:
- *   KEY    MACSEC_MAX_KEY_LEN (128, GCM-AES-256 max key)
+ *   KEY    16 or 32, the GCM-AES-128 / -256 key.  macsec_genl_sa_policy
+ *          only caps it at MACSEC_MAX_KEY_LEN (128); add_rxsa and
+ *          add_txsa reject any length other than the secy's key_len.
  *   KEYID  MACSEC_KEYID_LEN (16, 128-bit key identifier)
  *   SALT   MACSEC_SALT_LEN (12, 96-bit XPN salt)
  */
@@ -74,19 +76,20 @@ static const struct nla_attr_spec macsec_attrs[] = {
 
 	/* MACSEC_SA_ATTR_* (under MACSEC_ATTR_SA_CONFIG).  Validated by
 	 * macsec_genl_sa_policy.  KEY is the GCM-AES key (16 or 32 bytes
-	 * for AES-128/256, plus salt for the XPN variants); KEYID is the
+	 * for AES-128/256, the same for the XPN variants, whose salt is
+	 * the separate SALT attribute); KEYID is the
 	 * 128-bit secure-association identifier; SSCI / SALT are the
 	 * 5.7-era XPN extensions.  PN sits behind a NLA_POLICY_MIN_LEN(4)
 	 * since the kernel accepts u32 (regular) or u64 (XPN). */
 	{ MACSEC_SA_ATTR_AN,				NLA_KIND_U8,     1 },
 	{ MACSEC_SA_ATTR_ACTIVE,			NLA_KIND_U8,     1 },
 	{ MACSEC_SA_ATTR_PN,				NLA_KIND_U64,    8 },
-	/* AES-GCM key: the macsec_genl_sa_policy rejects every length
-	 * other than 16 (AES-128) or 32 (AES-256), so emitting any
-	 * intermediate length burns budget on guaranteed -EINVAL
-	 * returns from validate_*.  Pick uniformly between the two
-	 * accepted sizes via NLA_KIND_BINARY_FIXED2 so each emission
-	 * actually reaches the post-policy install handlers. */
+	/* AES-GCM key: add_rxsa and add_txsa reject every length other
+	 * than the secy's key_len, 16 (AES-128, the default) or 32
+	 * (AES-256), so emitting any other length burns budget on a
+	 * guaranteed -EINVAL.  Pick uniformly between the two sizes via
+	 * NLA_KIND_BINARY_FIXED2 so an emission can match the secy's
+	 * key_len and reach the install path. */
 	{ MACSEC_SA_ATTR_KEY,				NLA_KIND_BINARY_FIXED2,
 							32, 16 },
 	{ MACSEC_SA_ATTR_KEYID,				NLA_KIND_BINARY, MACSEC_KEYID_LEN },
