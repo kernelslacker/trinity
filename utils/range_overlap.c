@@ -715,7 +715,6 @@ void log_buffer_prot_from_proc_maps(const char *who, unsigned long addr,
 	ssize_t n;
 	bool found = false;
 
-	/* check-static: slow-ok */
 	fd = TEMP_FAILURE_RETRY(open("/proc/self/maps", O_RDONLY | O_CLOEXEC));
 	if (fd < 0) {
 		outputerr("%s: open(/proc/self/maps) failed: errno=%d "

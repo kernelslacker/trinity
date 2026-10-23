@@ -1,19 +1,8 @@
 /*
- * Bitmap + size-bucket accelerators for range_overlaps_shared().
- *
- * shared_region_bitmap[]: one bit per 2 MiB chunk of user VA; set when
- * at least one tracked shared region touches the chunk.  Turns the hot
- * O(N) linear scan into one or two word loads for the common query.
- *
- * tracked_size_bm / tracked_size_bucket_count[]: 64-bucket log2 bitmap
- * encoding whether any tracked region exists in each size class; allows
- * range_overlaps_shared() to short-circuit early when the pool is empty.
- *
- * Both bitmaps use per-chunk uint16_t refcounts so that a bit stays set
- * until the LAST tracked region in that chunk / bucket is removed.
- *
- * shared_bitmap_self_check() asserts the positive-path wiring of both
- * bitmaps at startup.
+ * Bitmap + size-bucket accelerators for range_overlaps_shared(): one bit per
+ * 2 MiB chunk of user VA, and a 64-bucket log2 bitmap of the tracked size
+ * classes.  Both are refcounted so a bit stays set until the LAST tracked
+ * region it covers is removed.
  */
 
 #include <limits.h>

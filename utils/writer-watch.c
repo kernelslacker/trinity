@@ -1,26 +1,9 @@
 /*
  * writer-watch.c -- Stage-2 hardware watchpoint for the writer-pinning
- * canary.  Mate to the Stage-1 sweep in minicorpus.c / syscall.c.
- *
- * The flag --writer-watch=<hexaddr> arms a perf_event_open() hardware
- * WRITE breakpoint (PERF_TYPE_BREAKPOINT / HW_BREAKPOINT_W) on the
- * passed address in every fuzz child.  A write to that address traps
- * synchronously, in the writing child, at the exact instruction.  The
- * event's sigtrap=1 has the kernel raise a SIGTRAP, and
- * writer_trap_handler() in health/signals-fault-handler.c dumps the
- * writer's RIP, syscall nr, childop name, op_nr and pid -- the exact
- * wild writer, with no race.
- *
- * exclude_kernel=0 so kernel-side value-result writes (copy_to_user
- * through a fuzzed pointer that lands in the watched address) trap too.
- *
- * Default-OFF: writer_watch_addr stays 0 unless --writer-watch was
- * passed, and writer_watch_arm_child() short-circuits on 0.  Hardware
- * supports up to four breakpoints (DR0-DR3 on x86); this code arms ONE.
- *
- * Heavyweight debug tool -- default off, only enable for a targeted
- * corruption hunt.  The perf fd costs real resources and the trap
- * handler _exit()s on hit; not appropriate for routine fuzzing.
+ * canary, mate to the Stage-1 --writer-pin-sweep detector.  --writer-watch
+ * takes a hex address and arms a perf_event_open() HW write breakpoint on it
+ * in every child; a hit raises a synchronous SIGTRAP at the writing
+ * instruction, which writer_trap_handler() in health/ reports.
  */
 
 #include <errno.h>

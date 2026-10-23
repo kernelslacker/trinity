@@ -1,15 +1,7 @@
 /*
- * Startup rlimit caps.  Defense-in-depth bound on trinity's
- * process-wide resource use so a runaway fuzzer-side bug cannot
- * walk the host into a global OOM cascade before any kernel-side
- * limit kicks in.
- *
- * Apply soft = min(current_soft, our_target); leave the hard limit
- * alone unless we are still root (in which case we set hard =
- * our_target so a subsequent unprivileged drop cannot raise back
- * over the cap).  Any setrlimit failure logs a warning and
- * continues -- the kernel may have stricter limits already, which
- * is the better outcome.
+ * Startup rlimit caps.  Defense-in-depth bound on trinity's process-wide
+ * resource use so a runaway fuzzer-side bug cannot walk the host into a
+ * global OOM cascade before any kernel-side limit kicks in.
  */
 
 #include <errno.h>
@@ -62,6 +54,13 @@ static void raise_memlock_unlimited(void)
 	output(0, "rlimit: MEMLOCK=unlimited\n");
 }
 
+/*
+ * Cap @resource at @target: soft = min(current soft, target).  The hard limit
+ * is left alone unless we are still root, where hard = target so a subsequent
+ * unprivileged drop cannot raise it back over the cap.  A setrlimit failure
+ * logs and continues; the kernel may already hold a stricter limit, which is
+ * the better outcome.
+ */
 static void cap_one(int resource, const char *name, rlim_t target)
 {
 	struct rlimit rl;

@@ -1,27 +1,7 @@
 /*
- * pc_to_string(): render a captured code pointer as "binary+0xOFFSET".
- *
- * The offset is computed against the dynamic linker's load bias
- * (link_map->l_addr), not against dli_fbase.  This matters because the
- * two diverge for EXEC binaries:
- *
- *   - For EXEC (non-PIE) builds, glibc's dladdr() sets dli_fbase to the
- *     first LOAD segment's mapping address (e.g. 0x400000 on x86-64),
- *     so (pc - dli_fbase) is a file-relative offset that addr2line
- *     CANNOT resolve -- addr2line wants the raw VMA for EXEC objects.
- *   - For PIE/DYN builds, l_addr == the random load base, so
- *     (pc - l_addr) == the link-time VMA, which is what addr2line wants
- *     for shared/PIE objects.
- *
- * Using link_map->l_addr makes the rendered offset addr2line-friendly
- * in both cases:
- *
- *     addr2line -e ./trinity 0xOFFSET
- *
- * Trinity currently builds as an EXEC binary (no -fPIE/-pie in the
- * Makefile), so l_addr is 0 and the rendered offset is the raw VMA;
- * the PIE path is kept correct so the same code works if/when the
- * build flips.
+ * pc_to_string(): render a captured code pointer as "binary+0xOFFSET", an
+ * offset addr2line accepts as is for both EXEC and PIE builds; the load-bias
+ * rule that makes that so is documented at pc_resolve().
  */
 
 #include <dlfcn.h>
@@ -53,10 +33,15 @@
 #define ADDR2LINE_TIMEOUT_MS	5000
 
 /*
- * Resolve a PC to its containing object and that object's load bias.
- * Prefers dladdr1(RTLD_DL_LINKMAP) so we get link_map->l_addr (correct
- * for both EXEC and PIE/DYN); falls back to dli_fbase if the link_map
- * isn't available, which preserves prior behavior for PIE builds.
+ * Resolve a PC to its containing object and that object's load bias.  The
+ * bias is link_map->l_addr, not dli_fbase: for an EXEC (non-PIE) binary
+ * glibc's dladdr() sets dli_fbase to the first LOAD segment's mapping address
+ * (0x400000 on x86-64), so pc - dli_fbase is a file-relative offset that
+ * addr2line cannot resolve, since it wants the raw VMA for EXEC objects.
+ * l_addr is 0 for EXEC and the random load base for PIE/DYN, so pc - l_addr
+ * is the VMA addr2line wants in both cases.  Prefers dladdr1(RTLD_DL_LINKMAP)
+ * to get l_addr; falls back to dli_fbase if the link_map isn't available,
+ * which preserves prior behavior for PIE builds.
  * Returns 1 on success, 0 if the PC can't be attributed to an object.
  */
 static int pc_resolve(void *pc, Dl_info *info, uintptr_t *bias)

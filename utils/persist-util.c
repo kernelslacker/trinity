@@ -1,24 +1,9 @@
 /*
- * Stale staging-file sweeper for persisted-state loaders.
- *
- * Persisted-state writers (minicorpus, cmp_hints, kcov-bitmap) save
- * via the classic write-to-sibling-then-rename
- * pattern: create "<path>.tmp.<pid>", fsync, rename over <path>.
- * If the process dies between fsync and rename -- watchdog SIGKILL,
- * OOM kill, segfault -- the .tmp.<pid> sibling is orphaned and
- * never cleaned up.  Across many runs these accumulate beside the
- * canonical file.
- *
- * persist_sweep_stale_tmp() runs at the top of each load function.
- * It scans the directory holding <path> for siblings matching
- * "<basename>.tmp.<digits>" and unlinks any whose PID no longer
- * refers to a live process.  Live PIDs are left alone -- they
- * belong to a concurrent trinity instance mid-save, whose tmp
- * file is about to be renamed over the target.
- *
- * Best-effort: all errors are swallowed.  A failure to sweep does
- * not block the load -- the worst case is the existing leak, which
- * the next successful sweep cleans up.
+ * Stale staging-file sweeper for persisted-state loaders.  Writers save via
+ * "<path>.tmp.<pid>" and rename over <path>, so a writer killed between fsync
+ * and rename (watchdog SIGKILL, OOM kill, segfault) orphans its sibling;
+ * persist_sweep_stale_tmp() unlinks those whose PID is gone.  Best-effort:
+ * errors are swallowed and never block a load.
  */
 
 #include <dirent.h>
@@ -87,6 +72,8 @@ void persist_sweep_stale_tmp(const char *path)
 		if (pid <= 0 || pid > INT_MAX)
 			continue;
 
+		/* A live PID is a concurrent instance mid-save: its tmp file
+		 * is about to be renamed over the target. */
 		if (kill((pid_t)pid, 0) == 0)
 			continue;
 		if (errno != ESRCH)

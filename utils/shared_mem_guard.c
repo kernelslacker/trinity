@@ -1,20 +1,8 @@
 /*
- * Guard-page debug mode for the shared-memory allocator.
- *
- * Compiled only when CONFIG_GUARD_SHARED is set.  Wraps alloc_shared()
- * regions with PROT_NONE leading/trailing pages so buffer overflows trap
- * at byte granularity in child_fault_handler rather than silently
- * corrupting adjacent shared state.
- *
- * guard_scope governs which allocations get the armour:
- *   OFF   - legacy single-mmap path (no extra VMAs)
- *   POOLS - long-lived pool regions (kcov_shm, str heap, childdata)
- *   ALL   - every alloc_shared() call
- *
- * guard_pages_alloc / guard_pages_derive_span / guard_scope_covers are
- * called from utils/shared_mem.c and are therefore non-static.
- * guard_pages_classify / guard_shared_scope_name / guard_shared_count_guarded
- * are the public API declared in include/utils-mem.h.
+ * Guard-page debug mode for the shared-memory allocator.  Compiled only when
+ * CONFIG_GUARD_SHARED is set: alloc_shared() regions get PROT_NONE leading
+ * and trailing pages, so a buffer overflow traps at byte granularity in
+ * child_fault_handler instead of silently corrupting adjacent shared state.
  */
 
 #ifdef CONFIG_GUARD_SHARED
@@ -130,17 +118,14 @@ void *guard_pages_alloc(size_t size)
 	 *
 	 * Both mprotects run once per guarded region at setup time
 	 * (alloc_shared is called from init paths, not from the arg-gen
-	 * hot loop), so the slow-path checker's blanket ban does not
-	 * apply -- mark explicitly to keep the surface honest.
+	 * hot loop), so they stay off the hot path.
 	 */
-	/* check-static: slow-ok */
 	if (mprotect(base, ps, PROT_NONE) != 0) {
 		outputerr("guard_pages_alloc: mprotect(leading) failed: errno=%d\n",
 			  errno);
 		(void)munmap(base, span);
 		return MAP_FAILED;
 	}
-	/* check-static: slow-ok */
 	if (mprotect(base + ps + pages, ps, PROT_NONE) != 0) {
 		outputerr("guard_pages_alloc: mprotect(trailing) failed: errno=%d\n",
 			  errno);

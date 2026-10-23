@@ -1,12 +1,7 @@
 /*
- * Per-resource safe-limit dictionaries for the rlimit family.  See
- * include/rlimit-safe.h for rationale.
- *
- * The table is sized so each resource carries 3-5 (cur, max) pairs that
- * satisfy the per-resource legality constraints described next to each
- * entry.  All pairs respect the universal "rlim_max >= rlim_cur"
- * invariant the kernel enforces via the bare cmp in do_prlimit() before
- * the resource-specific handler runs.
+ * Per-resource safe-limit dictionaries for the rlimit family; rationale in
+ * include/rlimit-safe.h.  Every pair keeps the universal rlim_max >= rlim_cur
+ * that do_prlimit() enforces before any resource-specific handling.
  */
 
 #include <stddef.h>
