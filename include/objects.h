@@ -654,13 +654,26 @@ void remove_object_by_fd(int fd);
 /*
  * Child-side sibling of remove_object_by_fd(): retire every OBJ_LOCAL
  * object the calling child tracks under @fd, for a number the kernel has
- * already closed or handed out again (dup2/dup3 onto it, or a dup landing
- * on a number a closed fd left behind).  Each object is destroyed with
- * its fd invalidated, so no destructor closes @fd, which may name a new
- * file by now.  Raises no fd event; a caller that closed something
- * reports it through notify_child_fd_closed().
+ * already closed or handed out again (a close of it, dup2/dup3 onto it,
+ * or a dup landing on a number a closed fd left behind).  Each object is
+ * destroyed with its fd invalidated, so no destructor closes @fd, which
+ * may name a new file by now.  Raises no fd event; a caller that closed
+ * something reports it through notify_child_fd_closed().
  */
 void remove_local_objects_by_fd(int fd);
+
+/*
+ * Range sibling of remove_local_objects_by_fd(): retire every OBJ_LOCAL
+ * object whose fd is in [@lo, @hi], for a close_range() that closed them.
+ * It walks the pools, not the numbers, so [3, ~0U] costs what the pools
+ * hold.  A close_range() that closed only some of the span passes @gone:
+ * it is asked about the fd of each object in the span, once per object,
+ * and says whether the kernel closed that one, and the others stay.  Same
+ * contract otherwise: each object is destroyed with its fd invalidated,
+ * nothing is closed, and this raises no fd event.
+ */
+void remove_local_objects_in_range(unsigned int lo, unsigned int hi,
+				   bool (*gone)(int fd));
 
 /* fd hash table for O(1) fd→object lookup */
 #define FD_HASH_SIZE 4096	/* power of 2, must exceed max tracked fds */

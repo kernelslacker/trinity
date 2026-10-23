@@ -4,6 +4,8 @@
  * returns zero on success.
  * On error, -1 is returned, and errno is set appropriately.
  */
+#include <errno.h>
+
 #include "child-api.h"
 #include "fd-event.h"
 #include "objects.h"
@@ -14,7 +16,13 @@ static void post_close(struct syscallrecord *rec)
 {
 	struct childdata *child;
 
-	if (rec->retval != 0)
+	/* close() takes the number off the fd table before it flushes the
+	 * file (fs/open.c), so a close that failed in the flush freed the
+	 * number too: only EBADF says there was none to free.  --dry-run's
+	 * synthesized -1/ENOSYS never reached the kernel. */
+	if (rec->retval != 0 &&
+	    (!syscall_errno_failure(rec) || rec->errno_post == EBADF ||
+	     rec->errno_post == ENOSYS))
 		return;
 
 	/* Publish the close to the parent and drop this child's local
@@ -24,6 +32,10 @@ static void post_close(struct syscallrecord *rec)
 	child = this_child();
 	if (child != NULL)
 		notify_child_fd_closed(child, (int) rec->a1);
+
+	/* The number is free for the kernel to hand out again, and a local
+	 * object still under it would name the file that was just closed. */
+	remove_local_objects_by_fd((int) rec->a1);
 
 	/* Parent-side path (no-op in children). */
 	remove_object_by_fd((int) rec->a1);

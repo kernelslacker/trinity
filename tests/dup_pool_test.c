@@ -1,29 +1,43 @@
 /*
- * Self-check for how dup, dup2 and dup3 pool the descriptor they return.
- * The post handlers run as shipped against a fake object pool.  A copy
- * joins the pool its source came from, and stays out of every pool when
- * the source is untracked or protected, the call failed, or the type is
- * one publish_resource() does not route.  Whatever object a number held
+ * Self-check for how dup, dup2 and dup3 pool the descriptor they return,
+ * and for how close and close_range retire what they free.  The post
+ * handlers run as shipped against a fake object pool.  A copy joins the
+ * pool its source came from, and stays out of every pool when the source
+ * is untracked or protected, the call failed, or the type is one
+ * publish_resource() does not route.  Whatever object a number held
  * before the call is retired, copy pooled or not, and a retire never
  * closes the number: it names the copy by then.  The close itself is
  * reported once, through notify_child_fd_closed(), as before.
+ *
+ * A close retires the local objects under its number once the kernel has
+ * freed it, which a failed close has too unless it says EBADF.  A
+ * close_range retires the objects under the numbers it closed: [lo, hi],
+ * the complement of [lo, hi] with EXCEPT, and with CLOEXEC_ONLY just the
+ * pooled fds the kernel no longer has.  One that only marks close-on-exec
+ * retires nothing.  Its sanitiser never leaves a protected fd in the set
+ * the call closes.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "child.h"
 #include "debug.h"		/* BUG */
+#include "fd.h"			/* lowest_protected_fd_in_range */
 #include "fd-event.h"		/* notify_child_fd_closed */
+#include "kcov-shared.h"	/* kcov_shm */
 #include "objects.h"
 #include "publish_resource.h"
+#include "rnd.h"		/* rnd_seed */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_dup, syscall_dup2, syscall_dup3 */
+#include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
@@ -36,6 +50,7 @@ extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
 #define KCOV_CMP_FD	90101
 
 #define POOL_MAX	16
+#define LOG_MAX		8	/* closes and range closes a case can log */
 #define STALE		0xdeadUL	/* in publish_call_nr: marks an object that predates the call */
 
 struct pool_entry {
@@ -53,7 +68,14 @@ static unsigned int published;
 static unsigned int retires;
 static int retired_fd;
 static unsigned int closes;
-static int closed_fd;
+static int closed_fds[LOG_MAX];
+static unsigned int range_retires;
+static unsigned int range_retired_lo;
+static unsigned int range_retired_hi;
+static unsigned int range_closes;
+static int closed_lo[LOG_MAX];
+static int closed_hi[LOG_MAX];
+static unsigned int global_removes;
 
 /* A type publish_resource() does not route: it returns NULL for it. */
 static enum objecttype unrouted;
@@ -64,7 +86,7 @@ static void check(const char *what, const char *case_name, bool ok)
 {
 	if (ok)
 		return;
-	fprintf(stderr, "dup pool: %s: %s\n", case_name, what);
+	fprintf(stderr, "fd pool: %s: %s\n", case_name, what);
 	failed++;
 }
 
@@ -85,7 +107,7 @@ static void pool_add(bool local, int fd, enum objecttype type)
 		e->obj.publish_call_nr = STALE;
 		return;
 	}
-	BUG("dup pool: the fake pool is full");
+	BUG("fd pool: the fake pool is full");
 }
 
 static struct pool_entry *pool_find(int fd, enum objecttype type)
@@ -144,7 +166,7 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 		published++;
 		return &e->obj;
 	}
-	BUG("dup pool: the fake pool is full");
+	BUG("fd pool: the fake pool is full");
 	return NULL;
 }
 
@@ -165,8 +187,57 @@ void remove_local_objects_by_fd(int fd)
 void notify_child_fd_closed(struct childdata *child, int fd)
 {
 	(void) child;
+	if (closes < LOG_MAX)
+		closed_fds[closes] = fd;
 	closes++;
-	closed_fd = fd;
+}
+
+/* Drops every local object whose number is in [lo, hi], the walk of the
+ * pool the real one makes, asking @gone about each when there is one, and
+ * records the bounds it was given. */
+void remove_local_objects_in_range(unsigned int lo, unsigned int hi,
+				   bool (*gone)(int fd))
+{
+	unsigned int i;
+
+	range_retires++;
+	range_retired_lo = lo;
+	range_retired_hi = hi;
+	for (i = 0; i < POOL_MAX; i++) {
+		if (pool[i].used && pool[i].local && pool[i].fd >= 0 &&
+		    (unsigned int) pool[i].fd >= lo &&
+		    (unsigned int) pool[i].fd <= hi &&
+		    (gone == NULL || gone(pool[i].fd)))
+			pool[i].used = false;
+	}
+}
+
+void notify_child_fd_closed_range(struct childdata *child, int lo, int hi)
+{
+	(void) child;
+	if (range_closes < LOG_MAX) {
+		closed_lo[range_closes] = lo;
+		closed_hi[range_closes] = hi;
+	}
+	range_closes++;
+}
+
+/* The parent-side close path, a no-op in a child. */
+void remove_object_by_fd(int fd)
+{
+	(void) fd;
+	global_removes++;
+}
+
+/* What the fakes saw, from the last call on. */
+static void forget_calls(void)
+{
+	published = 0;
+	retires = 0;
+	closes = 0;
+	range_retires = 0;
+	range_closes = 0;
+	global_removes = 0;
 }
 
 /* Run @entry's post handler on a call that returned @retval, and check
@@ -185,9 +256,7 @@ static void run(const struct syscallentry *entry, const char *case_name,
 	rec.retval = retval;
 	rec.errno_post = (retval == (unsigned long) -1L) ? EBADF : 0;
 
-	published = 0;
-	retires = 0;
-	closes = 0;
+	forget_calls();
 	entry->post(&rec);
 
 	check("the dup count did not move by one per call that worked",
@@ -269,7 +338,7 @@ static void old_object_is_retired(void)
 		check("the replaced number was not retired exactly once", name,
 		      retires == 1 && retired_fd == NEW);
 		check("the close of the replaced fd was not reported once", name,
-		      closes == 1 && closed_fd == NEW);
+		      closes == 1 && closed_fds[0] == NEW);
 
 		/* The same type held it: one object, and a new one. */
 		reset();
@@ -405,10 +474,10 @@ static void unrouted_type_stays_open(void)
 	int copy;
 
 	if (src < 0)
-		BUG("dup pool: cannot open /dev/null");
+		BUG("fd pool: cannot open /dev/null");
 	copy = dup(src);
 	if (copy < 0)
-		BUG("dup pool: cannot dup /dev/null");
+		BUG("fd pool: cannot dup /dev/null");
 
 	reset();
 	unrouted = OBJ_FD_SCRATCH_BLOCK;
@@ -421,6 +490,581 @@ static void unrouted_type_stays_open(void)
 
 	close(copy);
 	close(src);
+}
+
+/* close_range()'s flag bits, as the kernel reads them. */
+#define CR_UNSHARE		(1U << 1)
+#define CR_CLOEXEC		(1U << 2)
+#define CR_EXCEPT		(1U << 3)
+#define CR_CLOEXEC_ONLY		(1U << 4)
+
+/* How far past the first number of a span close_range reports. */
+#define REPORT_CAP		1024
+
+/* The snapshot syscalls/fs/close_range.c installs and its post handler
+ * reads back.  A drift in either makes the handler skip the call, which
+ * the cases below report as a retire that did not happen. */
+struct close_range_snap {
+	unsigned long magic;
+	unsigned int fd;
+	unsigned int max_fd;
+	unsigned int flags;
+};
+#define CLOSE_RANGE_SNAP_MAGIC	0x43524E474D41475FUL
+
+/* Set to leave rec->aN holding what a sibling's stray write could leave
+ * there, so a handler that reads the slots, not the snapshot, goes wrong. */
+static bool stomped_args;
+
+static void run_close(unsigned long fd, unsigned long retval, int err)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = fd;
+	rec.retval = retval;
+	rec.errno_post = err;
+
+	forget_calls();
+	syscall_close.post(&rec);
+}
+
+/* Run close_range's post handler on a call for [lo, hi] with @flags that
+ * returned @retval, the way sanitise would have recorded it. */
+static void run_close_range(unsigned int lo, unsigned int hi,
+			    unsigned int flags, unsigned long retval)
+{
+	static struct syscallrecord rec;
+	struct close_range_snap *snap = malloc(sizeof(*snap));
+
+	if (snap == NULL)
+		BUG("fd pool: cannot allocate a close_range snapshot");
+	*snap = (struct close_range_snap) {
+		.magic = CLOSE_RANGE_SNAP_MAGIC,
+		.fd = lo, .max_fd = hi, .flags = flags,
+	};
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = stomped_args ? 0 : lo;
+	rec.a2 = stomped_args ? UINT_MAX : hi;
+	rec.a3 = stomped_args ? 0 : flags;
+	rec.post_state = (unsigned long) snap;
+	rec.retval = retval;
+	rec.errno_post = retval == 0 ? 0 : EINVAL;
+
+	forget_calls();
+	syscall_close_range.post(&rec);
+}
+
+/* Whether the child was told, one number at a time, that @fd closed. */
+static bool reported_closed(int fd)
+{
+	unsigned int i;
+
+	for (i = 0; i < closes && i < LOG_MAX; i++) {
+		if (closed_fds[i] == fd)
+			return true;
+	}
+	return false;
+}
+
+/* A close that worked frees its number: whatever local object it held
+ * names a file that is gone.  The child's global object is not the pool's
+ * to retire, and the close is still reported once. */
+static void close_retires_the_fds_objects(void)
+{
+	reset();
+	pool_add(true, SRC, OBJ_FD_SOCKET);
+	pool_add(true, 90010, OBJ_FD_EVENTFD);
+	run_close(SRC, 0, 0);
+	check("the closed fd's local object is still pooled", "close",
+	      pool_count(SRC) == 0);
+	check("a close retired an object at another number", "close",
+	      pool_find(90010, OBJ_FD_EVENTFD) != NULL);
+	check("close did not retire its number exactly once", "close",
+	      retires == 1 && retired_fd == SRC);
+	check("close did not report the close exactly once", "close",
+	      closes == 1 && closed_fds[0] == SRC);
+	check("close retired a range", "close", range_retires == 0);
+
+	/* A number a stale object and a newer one both name. */
+	reset();
+	pool_add(true, SRC, OBJ_FD_EVENTFD);
+	pool_add(true, SRC, OBJ_FD_PIPE);
+	run_close(SRC, 0, 0);
+	check("an object survived the close of a number two held", "close",
+	      pool_count(SRC) == 0);
+
+	reset();
+	pool_add(false, SRC, OBJ_FD_PIPE);
+	run_close(SRC, 0, 0);
+	check("close retired the child's global object", "close",
+	      pool_find(SRC, OBJ_FD_PIPE) != NULL);
+}
+
+/* close() takes the number off the fd table before it flushes the file,
+ * so a close that failed in the flush freed it all the same.  Only EBADF,
+ * no such fd, leaves the number and its object alone, and so does
+ * --dry-run's synthesized ENOSYS, which never reached the kernel. */
+static void a_failed_close_retires_only_what_it_freed(void)
+{
+	static const struct {
+		int err;
+		bool freed;
+	} failures[] = {
+		{ EIO, true }, { EINTR, true }, { ENOSPC, true },
+		{ EBADF, false }, { ENOSYS, false },
+	};
+	unsigned int i;
+
+	for (i = 0; i < sizeof(failures) / sizeof(failures[0]); i++) {
+		char name[32];
+
+		snprintf(name, sizeof(name), "close failed with errno %d",
+			 failures[i].err);
+		reset();
+		pool_add(true, SRC, OBJ_FD_PIPE);
+		run_close(SRC, (unsigned long) -1L, failures[i].err);
+		if (failures[i].freed)
+			check("a close that freed its number left the object pooled",
+			      name, pool_count(SRC) == 0 && retires == 1 &&
+			      closes == 1 && closed_fds[0] == SRC);
+		else
+			check("a close that freed nothing changed the pool",
+			      name, pool_count(SRC) == 1 && retires == 0 &&
+			      closes == 0);
+	}
+}
+
+/* A plain close_range, with or without UNSHARE, closes every number in
+ * [lo, hi] in the caller's table: unshared, the copy it keeps lacks them. */
+static void close_range_retires_the_range(void)
+{
+	static const struct {
+		const char *name;
+		unsigned int flags;
+	} plain[] = {
+		{ "close_range", 0 },
+		{ "close_range(UNSHARE)", CR_UNSHARE },
+	};
+	unsigned int i;
+	int live;
+
+	for (i = 0; i < 2; i++) {
+		const char *name = plain[i].name;
+
+		reset();
+		pool_add(true, 90010, OBJ_FD_EVENTFD);
+		pool_add(true, 90020, OBJ_FD_PIPE);
+		pool_add(true, 90025, OBJ_FD_SOCKET);
+		pool_add(true, 90030, OBJ_FD_TIMERFD);
+		pool_add(true, 90040, OBJ_FD_MEMFD);
+		pool_add(false, 90025, OBJ_FD_PIPE);
+		run_close_range(90020, 90030, plain[i].flags, 0);
+		check("an object in the closed range is still pooled", name,
+		      pool_find(90020, OBJ_FD_PIPE) == NULL &&
+		      pool_find(90025, OBJ_FD_SOCKET) == NULL &&
+		      pool_find(90030, OBJ_FD_TIMERFD) == NULL);
+		check("an object outside the closed range was retired", name,
+		      pool_find(90010, OBJ_FD_EVENTFD) != NULL &&
+		      pool_find(90040, OBJ_FD_MEMFD) != NULL);
+		check("a close_range retired the child's global object", name,
+		      pool_find(90025, OBJ_FD_PIPE) != NULL);
+		check("the retire did not take the bounds of the call", name,
+		      range_retires == 1 && range_retired_lo == 90020 &&
+		      range_retired_hi == 90030);
+		check("the close was not reported once for the range", name,
+		      range_closes == 1 && closed_lo[0] == 90020 &&
+		      closed_hi[0] == 90030);
+		check("close_range retired numbers one at a time", name,
+		      retires == 0);
+	}
+
+	/* The kernel's zero is the whole answer for a plain close: a pooled
+	 * number the test never closed goes all the same. */
+	live = open("/dev/null", O_RDONLY);
+	if (live < 0)
+		BUG("fd pool: cannot open /dev/null");
+	reset();
+	pool_add(true, live, OBJ_FD_PIPE);
+	run_close_range(live, live, 0, 0);
+	check("a plain close_range probed a pooled fd before retiring it",
+	      "close_range", pool_count(live) == 0);
+	close(live);
+}
+
+/* EXCEPT closes everything outside [lo, hi]: those numbers are what gets
+ * retired and what gets reported, as the span below lo and the span above
+ * hi, each capped like any other report.  A span no fd can be in is not
+ * reported, and an object inside [lo, hi] is not the call's to retire. */
+static void close_range_except_retires_the_complement(void)
+{
+	static const int numbers[] = {
+		5, 90010, 90020, 90025, 90030, 90031, 95000, 95015,
+	};
+	static const struct {
+		const char *name;
+		unsigned int lo, hi, flags;
+		unsigned int spans;
+		int span_lo[2], span_hi[2];
+	} cases[] = {
+		{ "EXCEPT [90020, 90030]", 90020, 90030, CR_EXCEPT, 2,
+		  { 0, 90031 }, { REPORT_CAP, 90031 + REPORT_CAP } },
+		{ "EXCEPT|UNSHARE [90020, 90030]", 90020, 90030,
+		  CR_EXCEPT | CR_UNSHARE, 2,
+		  { 0, 90031 }, { REPORT_CAP, 90031 + REPORT_CAP } },
+		{ "EXCEPT [0, 90030]", 0, 90030, CR_EXCEPT, 1,
+		  { 90031 }, { 90031 + REPORT_CAP } },
+		{ "EXCEPT [90020, ~0U]", 90020, UINT_MAX, CR_EXCEPT, 1,
+		  { 0 }, { REPORT_CAP } },
+		{ "EXCEPT [0, ~0U]", 0, UINT_MAX, CR_EXCEPT, 0 },
+		{ "EXCEPT [1 << 31, ~0U]", 1U << 31, UINT_MAX, CR_EXCEPT, 1,
+		  { 0 }, { REPORT_CAP } },
+		{ "EXCEPT [10, (1 << 31) + 5]", 10, (1U << 31) + 5, CR_EXCEPT,
+		  1, { 0 }, { 9 } },
+		{ "EXCEPT [10, INT_MAX - 100]", 10, INT_MAX - 100, CR_EXCEPT,
+		  2, { 0, INT_MAX - 99 }, { 9, INT_MAX } },
+	};
+	unsigned int c, n, s;
+
+	for (c = 0; c < sizeof(cases) / sizeof(cases[0]); c++) {
+		const char *name = cases[c].name;
+
+		reset();
+		for (n = 0; n < sizeof(numbers) / sizeof(numbers[0]); n++)
+			pool_add(true, numbers[n], OBJ_FD_PIPE);
+		run_close_range(cases[c].lo, cases[c].hi, cases[c].flags, 0);
+
+		for (n = 0; n < sizeof(numbers) / sizeof(numbers[0]); n++) {
+			unsigned int fd = (unsigned int) numbers[n];
+			bool outside = fd < cases[c].lo || fd > cases[c].hi;
+			char what[64];
+
+			snprintf(what, sizeof(what), "fd %u %s", fd, outside ?
+				 "outside the window is still pooled" :
+				 "inside the window was retired");
+			check(what, name, outside ? pool_count(fd) == 0 :
+			      pool_count(fd) == 1);
+		}
+		check("the closed spans were not reported once each", name,
+		      range_closes == cases[c].spans);
+		for (s = 0; s < cases[c].spans && s < range_closes; s++)
+			check("a reported span is not one the call closed", name,
+			      closed_lo[s] == cases[c].span_lo[s] &&
+			      closed_hi[s] == cases[c].span_hi[s]);
+		check("EXCEPT retired numbers one at a time", name,
+		      retires == 0);
+	}
+}
+
+/* CLOEXEC_ONLY closes only what was close-on-exec, which the call does
+ * not say, so the handler asks the kernel about the pooled fds in the
+ * span it acted on and retires and reports the ones it no longer has.  A
+ * fd that is still open is neither, and nothing outside that span is the
+ * call's to retire, whatever state its number is in. */
+static void close_range_cloexec_only_retires_what_is_gone(void)
+{
+	int devnull = open("/dev/null", O_RDONLY);
+	int dead_low, live_mid, dead_mid, live_high;
+	unsigned int i;
+
+	if (devnull < 0)
+		BUG("fd pool: cannot open /dev/null");
+	/* dead_low < live_mid < dead_mid < live_high, so the numbers are
+	 * real: the test closes two of them and leaves two open. */
+	dead_low = fcntl(devnull, F_DUPFD, 300);
+	live_mid = dead_low < 0 ? -1 : fcntl(devnull, F_DUPFD, dead_low + 1);
+	dead_mid = live_mid < 0 ? -1 : fcntl(devnull, F_DUPFD, live_mid + 1);
+	live_high = dead_mid < 0 ? -1 : fcntl(devnull, F_DUPFD, dead_mid + 1);
+	if (live_high < 0)
+		BUG("fd pool: cannot get four fds above 300");
+	close(dead_low);
+	close(dead_mid);
+
+	for (i = 0; i < 2; i++) {
+		unsigned int flags = CR_CLOEXEC_ONLY | (i ? CR_UNSHARE : 0);
+		const char *name = i ? "CLOEXEC_ONLY|UNSHARE" : "CLOEXEC_ONLY";
+
+		reset();
+		pool_add(true, dead_low, OBJ_FD_EVENTFD);
+		pool_add(true, live_mid, OBJ_FD_PIPE);
+		pool_add(true, dead_mid, OBJ_FD_TIMERFD);
+		pool_add(true, live_high, OBJ_FD_SOCKET);
+		pool_add(true, 90010, OBJ_FD_MEMFD);
+		run_close_range(dead_low, dead_mid, flags, 0);
+		check("a pooled fd the kernel no longer has stayed pooled",
+		      name, pool_count(dead_low) == 0 &&
+		      pool_count(dead_mid) == 0);
+		check("a pooled fd that is still open was retired", name,
+		      pool_count(live_mid) == 1);
+		check("an object outside the span was retired", name,
+		      pool_count(live_high) == 1 && pool_count(90010) == 1);
+		check("the fds found gone were not reported one by one", name,
+		      closes == 2 && reported_closed(dead_low) &&
+		      reported_closed(dead_mid));
+		check("the report named a fd that is still open", name,
+		      !reported_closed(live_mid) && !reported_closed(live_high));
+		check("a span was reported for a close of some of it", name,
+		      range_closes == 0);
+	}
+
+	/* The window [live_mid, dead_mid] is what the call leaves alone: the
+	 * gone fds below and above it are its doing, and the one in it, gone
+	 * though it is, is not. */
+	reset();
+	pool_add(true, dead_low, OBJ_FD_EVENTFD);
+	pool_add(true, live_mid, OBJ_FD_PIPE);
+	pool_add(true, dead_mid, OBJ_FD_TIMERFD);
+	pool_add(true, live_high, OBJ_FD_SOCKET);
+	pool_add(true, 90010, OBJ_FD_MEMFD);
+	run_close_range(live_mid, dead_mid, CR_EXCEPT | CR_CLOEXEC_ONLY, 0);
+	check("a gone fd outside the window stayed pooled",
+	      "EXCEPT|CLOEXEC_ONLY",
+	      pool_count(dead_low) == 0 && pool_count(90010) == 0);
+	check("an object inside the window was retired", "EXCEPT|CLOEXEC_ONLY",
+	      pool_count(live_mid) == 1 && pool_count(dead_mid) == 1);
+	check("an open fd outside the window was retired",
+	      "EXCEPT|CLOEXEC_ONLY", pool_count(live_high) == 1);
+	check("the fds found gone were not reported one by one",
+	      "EXCEPT|CLOEXEC_ONLY", closes == 2 &&
+	      reported_closed(dead_low) && reported_closed(90010));
+	check("the report named a fd the call left open",
+	      "EXCEPT|CLOEXEC_ONLY", !reported_closed(live_mid) &&
+	      !reported_closed(dead_mid) && !reported_closed(live_high));
+	check("a span was reported for a close of some of it",
+	      "EXCEPT|CLOEXEC_ONLY", range_closes == 0);
+
+	close(live_mid);
+	close(live_high);
+	close(devnull);
+}
+
+/* Marking close-on-exec closes nothing, and the kernel never answers a
+ * flags word it does not know with a zero. */
+static void close_range_that_closes_nothing(void)
+{
+	static const unsigned int flags[] = {
+		CR_CLOEXEC, CR_CLOEXEC | CR_UNSHARE, CR_CLOEXEC | CR_EXCEPT,
+		CR_CLOEXEC | CR_CLOEXEC_ONLY, 1U << 30, 1U << 31,
+		CR_EXCEPT | (1U << 5),
+	};
+	unsigned int i;
+
+	for (i = 0; i < sizeof(flags) / sizeof(flags[0]); i++) {
+		char name[48];
+
+		snprintf(name, sizeof(name), "close_range flags %#x", flags[i]);
+		reset();
+		pool_add(true, 90025, OBJ_FD_SOCKET);
+		run_close_range(90020, 90030, flags[i], 0);
+		check("a close_range that closed nothing retired objects",
+		      name, range_retires == 0 && pool_count(90025) == 1);
+		check("a close_range that closed nothing reported a close",
+		      name, range_closes == 0 && closes == 0);
+	}
+}
+
+/* [lo, ~0U] is how a caller closes everything above lo.  The retire
+ * walks the pool, so it reaches every object however far up the range
+ * goes, where the span the call reports is capped. */
+static void close_range_to_the_top_walks_the_pool(void)
+{
+	reset();
+	pool_add(true, 90010, OBJ_FD_EVENTFD);
+	pool_add(true, 90020, OBJ_FD_PIPE);
+	pool_add(true, 90015 + 5000, OBJ_FD_SOCKET);
+	run_close_range(90015, UINT_MAX, 0, 0);
+	check("an object above lo survived a close_range to UINT_MAX",
+	      "close_range", pool_find(90020, OBJ_FD_PIPE) == NULL &&
+	      pool_find(90015 + 5000, OBJ_FD_SOCKET) == NULL);
+	check("an object below lo was retired by a close_range to UINT_MAX",
+	      "close_range", pool_find(90010, OBJ_FD_EVENTFD) != NULL);
+	check("the retire was not given the whole range", "close_range",
+	      range_retires == 1 && range_retired_lo == 90015 &&
+	      range_retired_hi == UINT_MAX);
+}
+
+/* A call that failed closed nothing, and a snapshot that names no range
+ * the kernel could have closed is not acted on.  The slots the post
+ * handler is called with are not what it acts on either. */
+static void close_range_guards(void)
+{
+	reset();
+	pool_add(true, 90025, OBJ_FD_SOCKET);
+	run_close_range(90020, 90030, 0, (unsigned long) -1L);
+	check("a close_range that failed changed the pool", "close_range",
+	      range_retires == 0 && range_closes == 0 &&
+	      pool_count(90025) == 1);
+
+	run_close_range(90030, 90020, 0, 0);
+	check("an inverted range retired objects", "close_range",
+	      range_retires == 0 && pool_count(90025) == 1);
+
+	run_close_range(90030, 90020, CR_EXCEPT, 0);
+	check("an inverted EXCEPT window retired objects", "close_range",
+	      range_retires == 0 && pool_count(90025) == 1);
+
+	run_close_range(1U << 31, UINT_MAX, 0, 0);
+	check("a range of negative fds retired objects", "close_range",
+	      range_retires == 0 && pool_count(90025) == 1);
+
+	/* A stray write to the slots after the call must not redirect the
+	 * retire: it destroys objects. */
+	reset();
+	pool_add(true, 90025, OBJ_FD_SOCKET);
+	pool_add(true, 90050, OBJ_FD_PIPE);
+	stomped_args = true;
+	run_close_range(90020, 90030, 0, 0);
+	stomped_args = false;
+	check("a stomped slot redirected the retire", "close_range",
+	      range_retired_lo == 90020 && range_retired_hi == 90030 &&
+	      pool_find(90050, OBJ_FD_PIPE) != NULL &&
+	      pool_find(90025, OBJ_FD_SOCKET) == NULL);
+}
+
+/* The generator draws the flags from the entry's list, so the list is
+ * what the guard and the retire above have to cover: every flag the
+ * kernel reads, and none it does not. */
+static void close_range_offers_the_flags_it_handles(void)
+{
+	const struct arglist *list = &syscall_close_range.arg_params[2].list;
+	unsigned long offered = 0;
+	unsigned int i;
+
+	for (i = 0; i < list->num; i++)
+		offered |= list->values[i];
+	check("the flags offered are not the flags the handlers cover",
+	      "close_range", offered == (CR_UNSHARE | CR_CLOEXEC | CR_EXCEPT |
+					 CR_CLOEXEC_ONLY));
+}
+
+/* close_range()'s disposable high-fd sandbox, which its sanitiser opens
+ * on first use: where it starts and the most slots it takes. */
+#define SANDBOX_BASE		2048
+#define SANDBOX_SLOTS		64
+
+/* The sanitiser's last word on the range, whatever shape it picked: the
+ * kernel is never told to close a protected fd.  A plain range holds none
+ * of them.  EXCEPT closes everything outside the range, so there the
+ * range holds all of them.  The fake child's protected fds are stderr and
+ * its two kcov fds. */
+static void close_range_sanitiser_spares_protected_fds(void)
+{
+	static const struct {
+		unsigned long a1, a2;
+	} presets[] = {
+		{ 90000, 90010 },	/* clear of every protected fd */
+		{ 90010, 90000 },	/* inverted; may come out upright */
+		{ 3, 90100 },		/* holds one kcov fd, not the other */
+		{ 90100, 90101 },	/* the kcov pair, not stderr */
+		{ 0, 1 },		/* below stderr */
+		{ 3, UINT_MAX },	/* open-ended */
+		{ UINT_MAX, UINT_MAX },	/* gen_arg_fd's exhaustion fallback */
+	};
+	static const unsigned int flagsets[] = {
+		0, CR_UNSHARE, CR_CLOEXEC_ONLY, CR_EXCEPT,
+		CR_EXCEPT | CR_UNSHARE, CR_EXCEPT | CR_CLOEXEC_ONLY,
+		CR_EXCEPT | CR_CLOEXEC,
+	};
+	static const unsigned int protected_fds[] = {
+		STDERR_FILENO, KCOV_FD, KCOV_CMP_FD,
+	};
+	const unsigned int npresets = sizeof(presets) / sizeof(presets[0]);
+	const unsigned int nflagsets = sizeof(flagsets) / sizeof(flagsets[0]);
+	static struct syscallrecord rec;
+	bool sandbox_was_open[SANDBOX_SLOTS];
+	unsigned int except_calls = 0, plain_calls = 0;
+	unsigned int widened = 0, truncated = 0;
+	unsigned int n, p;
+
+	/* The registry the cases expect: stderr and the fake child's kcov
+	 * pair, and nothing in between. */
+	if (lowest_protected_fd_in_range(STDERR_FILENO + 1, KCOV_FD - 1) >= 0)
+		BUG("fd pool: an unexpected fd is protected");
+
+	for (p = 0; p < SANDBOX_SLOTS; p++)
+		sandbox_was_open[p] =
+			fcntl(SANDBOX_BASE + (int) p, F_GETFD) != -1;
+	kcov_shm = calloc(1, sizeof(*kcov_shm));
+	if (kcov_shm == NULL)
+		BUG("fd pool: cannot allocate the kcov diag block");
+	rnd_seed(1);
+
+	for (n = 0; n < 150 * npresets * nflagsets; n++) {
+		unsigned int w = n / nflagsets % npresets;
+		unsigned int f = n % nflagsets;
+		unsigned long before =
+			kcov_shm->pc_diag.close_range_protect_truncate_count;
+		bool ok = true, widened_now = false, truncated_now = false;
+		unsigned int lo, hi, flags;
+		char name[96];
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = presets[w].a1;
+		rec.a2 = presets[w].a2;
+		rec.a3 = flagsets[f];
+		syscall_close_range.sanitise(&rec);
+		lo = (unsigned int) rec.a1;
+		hi = (unsigned int) rec.a2;
+		flags = (unsigned int) rec.a3;
+
+		/* An inverted range is refused before anything is closed. */
+		if (lo <= hi) {
+			for (p = 0; p < 3; p++) {
+				bool inside = lo <= protected_fds[p] &&
+					      protected_fds[p] <= hi;
+
+				ok = ok && (inside == !!(flags & CR_EXCEPT));
+			}
+			if (flags & CR_EXCEPT) {
+				except_calls++;
+				widened_now = lo == STDERR_FILENO &&
+					      hi == KCOV_CMP_FD;
+			} else {
+				plain_calls++;
+				truncated_now = lo == 3 && hi == KCOV_FD - 1;
+			}
+		}
+		widened += widened_now;
+		truncated += truncated_now;
+
+		snprintf(name, sizeof(name),
+			 "sanitise(preset %u, flags %#x) -> [%u, %u], flags %#x",
+			 w, flagsets[f], lo, hi, flags);
+		check(flags & CR_EXCEPT ?
+		      "EXCEPT left a protected fd outside its window" :
+		      "a plain range sweeps a protected fd", name, ok);
+		check("a rewritten range was not counted exactly once", name,
+		      (!widened_now && !truncated_now) ||
+		      kcov_shm->pc_diag.close_range_protect_truncate_count ==
+		      before + 1);
+
+		/* Release the snapshot sanitise took. */
+		rec.retval = (unsigned long) -1L;
+		rec.errno_post = EINVAL;
+		syscall_close_range.post(&rec);
+		if (!ok)
+			goto out;
+	}
+
+	/* The loop above is only worth anything if it reached the shapes
+	 * the guard acts on. */
+	check("the sanitiser never produced an EXCEPT range", "close_range",
+	      except_calls >= 100);
+	check("the sanitiser never produced a plain range", "close_range",
+	      plain_calls >= 100);
+	check("the sanitiser never widened an EXCEPT range", "close_range",
+	      widened > 0);
+	check("the sanitiser never truncated a plain range", "close_range",
+	      truncated > 0);
+
+out:
+	free(kcov_shm);
+	kcov_shm = NULL;
+	for (p = 0; p < SANDBOX_SLOTS; p++) {
+		if (!sandbox_was_open[p])
+			close(SANDBOX_BASE + (int) p);
+	}
 }
 
 void dup_pool_self_check(void);
@@ -440,10 +1084,20 @@ void dup_pool_self_check(void)
 	stdio_is_not_pooled();
 	protected_fds_are_not_pooled();
 	unrouted_type_stays_open();
+	close_retires_the_fds_objects();
+	a_failed_close_retires_only_what_it_freed();
+	close_range_retires_the_range();
+	close_range_except_retires_the_complement();
+	close_range_cloexec_only_retires_what_is_gone();
+	close_range_that_closes_nothing();
+	close_range_to_the_top_walks_the_pool();
+	close_range_guards();
+	close_range_offers_the_flags_it_handles();
+	close_range_sanitiser_spares_protected_fds();
 
 	fake_find_object_by_fd = NULL;
 	fake_this_child = NULL;
 
 	if (failed != 0)
-		BUG("a dup handler pooled or retired the wrong objects");
+		BUG("an fd handler pooled or retired the wrong objects");
 }

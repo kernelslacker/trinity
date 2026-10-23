@@ -11,12 +11,14 @@
  */
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <unistd.h>
 #include "child.h"
 #include "fd.h"
 #include "fd-event.h"
 #include "kcov.h"
+#include "objects.h"
 #include "pids.h"
 #include "random.h"
 #include "sanitise.h"
@@ -27,8 +29,18 @@
 #define CLOSE_RANGE_UNSHARE     (1U << 1)
 #define CLOSE_RANGE_CLOEXEC     (1U << 2)
 
+/* A kernel header that has these spells each as an enumerator plus a
+ * macro of the same name, which an unguarded define here would redefine. */
+#ifndef CLOSE_RANGE_EXCEPT
+#define CLOSE_RANGE_EXCEPT	(1U << 3)
+#endif
+#ifndef CLOSE_RANGE_CLOEXEC_ONLY
+#define CLOSE_RANGE_CLOEXEC_ONLY	(1U << 4)
+#endif
+
 static unsigned long close_range_flags[] = {
 	CLOSE_RANGE_UNSHARE, CLOSE_RANGE_CLOEXEC,
+	CLOSE_RANGE_EXCEPT, CLOSE_RANGE_CLOEXEC_ONLY,
 };
 
 /*
@@ -119,6 +131,87 @@ static void close_range_init_sandbox(void)
 		sandbox_base = base;
 		sandbox_n    = dupped;
 	}
+}
+
+/*
+ * Keep the fds trinity depends on (kcov PC/cmp, STDERR_FILENO, the stderr
+ * capture memfd) out of what the kernel is about to close.  Returns
+ * whether the range had to change.
+ *
+ * Bounds were picked by gen_arg_fd (which already filters protected fds),
+ * so the endpoints themselves are safe -- it is the walk in between, or
+ * with EXCEPT the walk outside them, that needs the guard.
+ *
+ * Compare and pass bounds as unsigned int: the kernel's close_range ABI
+ * takes (unsigned int first, unsigned int last), and gen_arg_fd's
+ * exhaustion fallback hands back (unsigned long)-1, which the kernel sees
+ * as 0xFFFFFFFF.  A signed-int compare here would treat that as a
+ * negative "hi", skip the guard, and let the kernel walk
+ * [a1, 0xFFFFFFFF] -- the exact path that closes the kcov fd at
+ * PROTECTED_FD_HIGH_BASE.
+ */
+static bool keep_protected_fds_open(struct syscallrecord *rec)
+{
+	unsigned int lo = (unsigned int) rec->a1;
+	unsigned int hi = (unsigned int) rec->a2;
+	int lowest;
+
+	/* The kernel refuses an inverted range before it closes anything. */
+	if (lo > hi)
+		return false;
+
+	if (rec->a3 & CLOSE_RANGE_EXCEPT) {
+		/*
+		 * EXCEPT turns the range around: the kernel closes every fd
+		 * outside [a1, a2] (marks it close-on-exec with CLOEXEC), so
+		 * a protected fd is safe only inside it, and
+		 * close_range(~0U, ~0U, EXCEPT) closes everything, the kcov
+		 * fds included.  Truncating the range, as for a plain close
+		 * below, would put more fds outside it, not fewer.  Widen it
+		 * until it holds every protected fd, taking them lowest first
+		 * since lowest_protected_fd_in_range() names only that one.
+		 */
+		unsigned int first = lo, last = hi, next = 0;
+
+		while ((lowest = lowest_protected_fd_in_range(next, UINT_MAX)) >= 0) {
+			if ((unsigned int) lowest < first)
+				first = (unsigned int) lowest;
+			if ((unsigned int) lowest > last)
+				last = (unsigned int) lowest;
+			next = (unsigned int) lowest + 1;
+		}
+		if (first == lo && last == hi)
+			return false;
+		rec->a1 = first;
+		rec->a2 = last;
+		return true;
+	}
+
+	/*
+	 * If the picked range sweeps over a protected fd, truncate the upper
+	 * bound so the kernel never sees the protected slot.  CLOEXEC calls
+	 * just mark fds, but doing the truncation unconditionally keeps the
+	 * snapshot the post handler reads consistent with the kernel's view
+	 * regardless of the flags bit.  If the truncation
+	 * leaves no fds to close (lowest protected fd <= rec->a1) we
+	 * collapse the range to a no-op (close_range(N, N - 1) returns
+	 * -EINVAL) rather than issuing a side-effect-free syscall on an
+	 * unrelated low slot.
+	 */
+	lowest = lowest_protected_fd_in_range(lo, hi);
+	if (lowest < 0)
+		return false;
+
+	if ((unsigned int) lowest <= (unsigned int) rec->a1) {
+		/* Whole range was at or above the lowest
+		 * protected fd -- nothing left to close.
+		 * Invert the bounds so the kernel rejects
+		 * the call instead of issuing a walk. */
+		rec->a2 = rec->a1 > 0 ? rec->a1 - 1UL : 0UL;
+	} else {
+		rec->a2 = (unsigned long) lowest - 1UL;
+	}
+	return true;
 }
 
 static void sanitise_close_range(struct syscallrecord *rec)
@@ -216,54 +309,16 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	/* else: leave the ARG_FD-derived range and the ARG_LIST flags
 	 * untouched -- the original behaviour. */
 
-	/*
-	 * If the picked range sweeps over a protected fd (kcov PC/cmp,
-	 * STDERR_FILENO, the stderr capture memfd), truncate the upper
-	 * bound so the kernel never sees the protected slot.  Bounds were
-	 * picked by gen_arg_fd (which already filters protected fds), so
-	 * the endpoints themselves are safe -- it is the range walk in
-	 * between that needs the guard.  CLOEXEC-only calls just mark
-	 * fds, but doing the truncation unconditionally keeps the snapshot
-	 * the post handler reads consistent with the kernel's view
-	 * regardless of the flags bit.  If the truncation leaves no fds to
-	 * close (lowest protected fd <= rec->a1) we collapse the range to
-	 * a no-op (close_range(N, N - 1) returns -EINVAL) rather than
-	 * issuing a side-effect-free syscall on an unrelated low slot.
-	 *
-	 * Compare and pass bounds as unsigned int: the kernel's
-	 * close_range ABI takes (unsigned int first, unsigned int last),
-	 * and gen_arg_fd's exhaustion fallback hands back (unsigned
-	 * long)-1, which the kernel sees as 0xFFFFFFFF.  A signed-int
-	 * compare here would treat that as a negative "hi", skip the
-	 * truncation, and let the kernel walk [a1, 0xFFFFFFFF] -- the
-	 * exact path that closes the kcov fd at PROTECTED_FD_HIGH_BASE.
-	 */
-	if ((unsigned int) rec->a1 <= (unsigned int) rec->a2) {
-		int lowest = lowest_protected_fd_in_range(
-				(unsigned int) rec->a1,
-				(unsigned int) rec->a2);
-		if (lowest >= 0) {
-			if ((unsigned int) lowest <= (unsigned int) rec->a1) {
-				/* Whole range was at or above the lowest
-				 * protected fd -- nothing left to close.
-				 * Invert the bounds so the kernel rejects
-				 * the call instead of issuing a walk. */
-				rec->a2 = rec->a1 > 0 ? rec->a1 - 1UL : 0UL;
-			} else {
-				rec->a2 = (unsigned long) lowest - 1UL;
-			}
-			/* Visible counter so the operator can SEE the guard
-			 * firing -- a denominator for the first_ebadf=...:
-			 * closer=nr<close_range>[/prot] diag readings.  Zero
-			 * means the picker never landed on a range covering a
-			 * protected fd; non-zero means the guard truncated N
-			 * calls and the kernel never saw the protected slot. */
-			if (kcov_shm != NULL)
-				__atomic_fetch_add(
-					&kcov_shm->pc_diag.close_range_protect_truncate_count,
-					1UL, __ATOMIC_RELAXED);
-		}
-	}
+	/* Visible counter so the operator can SEE the guard firing -- a
+	 * denominator for the first_ebadf=...: closer=nr<close_range>[/prot]
+	 * diag readings.  Zero means the picker never landed on a range that
+	 * reached a protected fd; non-zero means the guard rewrote N calls
+	 * and the kernel never saw the protected slot in what it would
+	 * close. */
+	if (keep_protected_fds_open(rec) && kcov_shm != NULL)
+		__atomic_fetch_add(
+			&kcov_shm->pc_diag.close_range_protect_truncate_count,
+			1UL, __ATOMIC_RELAXED);
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = CLOSE_RANGE_POST_STATE_MAGIC;
@@ -274,10 +329,84 @@ static void sanitise_close_range(struct syscallrecord *rec)
 }
 
 /*
- * If close_range succeeded without CLOEXEC flag, the fds in the range
- * are actually closed.  Enqueue one CLOSE_RANGE event for the span so
- * the parent can count it, and drop the span from this child's local
- * snapshots.
+ * CLOEXEC_ONLY closes only what was close-on-exec, and the call does not
+ * say which numbers those were, so ask the kernel: F_GETFD fails with
+ * EBADF for a number that is no longer open.  What it finds gone is
+ * reported here, so the child's snapshots and the parent hear of those
+ * numbers and of no open one.  Several objects can name one number, and
+ * each asks again.
+ */
+static bool fd_is_closed(int fd)
+{
+	struct childdata *child;
+
+	if (fcntl(fd, F_GETFD) != -1 || errno != EBADF)
+		return false;
+
+	child = this_child();
+	if (child != NULL)
+		notify_child_fd_closed(child, fd);
+	return true;
+}
+
+/*
+ * Retire the local objects under [lo, hi], numbers a successful
+ * close_range closed, and report the close.
+ */
+static void close_span(unsigned int lo, unsigned int hi, unsigned int flags)
+{
+	struct childdata *child;
+
+	/*
+	 * Trinity routinely fuzzes this syscall with negative values.
+	 * The bounds are unsigned bit patterns, so a well-formed range of
+	 * negatives (hi just above lo as signed ints) glides through the
+	 * 1024-fd clamp below and ends up enqueueing a CLOSE_RANGE whose
+	 * lower end casts back to a negative fd.  The parent ring rejects
+	 * it via fd_event_payload_valid(), but each rejection is logged, so
+	 * a stream of such calls spams corrupt-event messages.  Bail --
+	 * the parent has nothing to do with negative fds anyway.
+	 */
+	if ((int) lo < 0)
+		return;
+
+	/* The call did not close every fd in the span, so there is no
+	 * range to report: fd_is_closed() reports each one it finds gone. */
+	if (flags & CLOSE_RANGE_CLOEXEC_ONLY) {
+		remove_local_objects_in_range(lo, hi, fd_is_closed);
+		return;
+	}
+
+	/*
+	 * A local object under a closed number names a file that is gone.
+	 * The span is not capped like the report below: the pool is what
+	 * gets walked, and hi can be as large as ~0U.
+	 */
+	remove_local_objects_in_range(lo, hi, NULL);
+
+	/* Sanity: cap the reported span at 1025 fds */
+	if (hi - lo > 1024)
+		hi = lo + 1024;
+	if (hi > INT_MAX)
+		hi = INT_MAX;
+
+	child = this_child();
+
+	/* Publish one CLOSE_RANGE event and drop this child's local
+	 * snapshots for the whole range in one shot.  Single pass over
+	 * fd_hash[] and the 16-slot live-fd ring instead of per-fd
+	 * walks. */
+	if (child != NULL)
+		notify_child_fd_closed_range(child, (int) lo, (int) hi);
+}
+
+/*
+ * If close_range succeeded without CLOEXEC flag, the fds the flags pick
+ * out are actually closed: [fd, max_fd], or with EXCEPT everything
+ * outside it, and with CLOEXEC_ONLY just those of them that were
+ * close-on-exec.  Enqueue the close for the parent, drop it from this
+ * child's local snapshots, and retire the local objects under the
+ * numbers it closed.
  *
  * The fd/max_fd/flags values are read from the post_state snapshot so
  * a sibling scribbling rec->aN between syscall return and post entry
@@ -287,7 +416,6 @@ static void sanitise_close_range(struct syscallrecord *rec)
 static void post_close_range(struct syscallrecord *rec)
 {
 	struct close_range_post_state *snap;
-	struct childdata *child;
 	unsigned int fd, max_fd, flags;
 
 	/*
@@ -311,22 +439,14 @@ static void post_close_range(struct syscallrecord *rec)
 	if (flags & CLOSE_RANGE_CLOEXEC)
 		goto out_free;
 
-	/*
-	 * Trinity routinely fuzzes this syscall with negative values.
-	 * snap->fd stores the unsigned bit pattern of the original a1,
-	 * so a well-formed range of negatives (max_fd just above fd as
-	 * signed ints) glides through the 1024-fd clamp below and ends
-	 * up enqueueing a CLOSE_RANGE whose lower end casts back to a
-	 * negative fd.  The parent ring rejects it via
-	 * fd_event_payload_valid(), but each rejection is logged, so a
-	 * stream of such calls spams corrupt-event messages.  Bail --
-	 * the parent has nothing to do with negative fds anyway.
-	 */
-	if ((int) fd < 0)
+	/* The kernel answers a flags word it does not know with EINVAL, so
+	 * a snapshot that holds one is not a call that closed anything. */
+	if (flags & ~(CLOSE_RANGE_UNSHARE | CLOSE_RANGE_CLOEXEC |
+		      CLOSE_RANGE_EXCEPT | CLOSE_RANGE_CLOEXEC_ONLY))
 		goto out_free;
 
 	/*
-	 * Guard the unsigned subtraction below.  A snapshot with
+	 * Guard the unsigned subtraction in close_span().  A snapshot with
 	 * max_fd < fd is either a kernel that accepted an inverted range
 	 * (it should not) or a snapshot whose inner fields were
 	 * wholesale-stomped after the magic check; either way, skip the
@@ -337,19 +457,19 @@ static void post_close_range(struct syscallrecord *rec)
 	if (max_fd < fd)
 		goto out_free;
 
-	/* Sanity: cap the reported span at 1025 fds */
-	if (max_fd - fd > 1024)
-		max_fd = fd + 1024;
-
-	child = this_child();
-
-	/* Publish one CLOSE_RANGE event and drop this child's local
-	 * snapshots for the whole range in one shot.  Single pass over
-	 * fd_hash[] and the 16-slot live-fd ring instead of per-fd
-	 * walks. */
-	if (child != NULL)
-		notify_child_fd_closed_range(child,
-					     (int) fd, (int) max_fd);
+	/*
+	 * UNSHARE does not change which numbers close: unshared, the table
+	 * the caller keeps is a copy that lacks them.  EXCEPT closes the
+	 * rest of the table, the span below fd and the one above max_fd.
+	 */
+	if (flags & CLOSE_RANGE_EXCEPT) {
+		if (fd > 0)
+			close_span(0, fd - 1, flags);
+		if (max_fd < UINT_MAX)
+			close_span(max_fd + 1, UINT_MAX, flags);
+	} else {
+		close_span(fd, max_fd, flags);
+	}
 
 out_free:
 	post_state_release(rec, snap);

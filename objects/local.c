@@ -285,11 +285,11 @@ struct object *local_fd_find_by_fd(int fd)
 }
 
 /*
- * Nothing retires a local object when its fd closes, so a number the
- * kernel hands out again can still sit in a pool under the file it used
- * to name, in several pools or twice in one.  Take one object per pass:
- * a destroy that finds the slot inconsistent leaves the object where it
- * was, and the bound stops the loop from finding it forever.
+ * A local object outlives its fd unless a caller retires it, so a number
+ * the kernel hands out again can still sit in a pool under the file it
+ * used to name, in several pools or twice in one.  Take one object per
+ * pass: a destroy that finds the slot inconsistent leaves the object
+ * where it was, and the bound stops the loop from finding it forever.
  */
 void remove_local_objects_by_fd(int fd)
 {
@@ -301,5 +301,42 @@ void remove_local_objects_by_fd(int fd)
 		if (obj == NULL)
 			return;
 		__destroy_object(obj, OBJ_LOCAL, obj->obj_type, true);
+	}
+}
+
+/*
+ * The bounds come from a close_range() and are anything an unsigned int
+ * holds, so this walks the pools, not the numbers: the fd-typed ones, the
+ * range is_fd_type() in registry-lifecycle.c names.  A destroy moves the
+ * last slot into the one it empties: walking down means that object was
+ * already looked at.  A destroy that finds its slot inconsistent leaves
+ * the object in place, and the index still falls.  @gone, when there is
+ * one, is asked about each object in range before it goes, so a close
+ * that took only part of the span retires exactly what it took.
+ */
+void remove_local_objects_in_range(unsigned int lo, unsigned int hi,
+				   bool (*gone)(int fd))
+{
+	unsigned int type;
+
+	for (type = OBJ_FD_PIPE; type <= OBJ_FD_SCRATCH_BLOCK; type++) {
+		struct objhead *head = get_objhead(OBJ_LOCAL, type);
+		unsigned int i;
+
+		if (head == NULL || head->array == NULL)
+			continue;
+
+		for (i = head->num_entries; i-- > 0; ) {
+			struct object *obj = head->array[i];
+			int fd;
+
+			if (obj == NULL)
+				continue;
+			fd = fd_from_object(obj, type);
+			if (fd >= 0 && (unsigned int) fd >= lo &&
+			    (unsigned int) fd <= hi &&
+			    (gone == NULL || gone(fd)))
+				__destroy_object(obj, OBJ_LOCAL, type, true);
+		}
 	}
 }

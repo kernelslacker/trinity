@@ -391,6 +391,13 @@ PARENT_SRCS	+= $(wildcard $(TOP)/stats/kcov/cmp/*.c) \
 FAKE_SRCS	+= stats_render_test.c \
 		   stats_render_golden.c
 
+# syscalls/fs/close.c and close_range.c bring syscall_close and
+# syscall_close_range, whose post handlers dup_pool_test.c drives against
+# its fake object pool.  Same section-per-function treatment as the
+# parent TUs above.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/close.c \
+		   $(TOP)/syscalls/fs/close_range.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

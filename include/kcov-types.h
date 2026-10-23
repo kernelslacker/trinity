@@ -171,10 +171,12 @@ struct kcov_pc_diag {
 	int           first_ebadf_proc_fds[KCOV_FIRST_EBADF_PROC_FD_MAX];
 	unsigned int  first_ebadf_last_closer_syscall_nr;
 	unsigned char first_ebadf_closer_protected_touched;
-	/* Tally of sanitise_close_range() truncations: bumped each time
-	 * the lowest_protected_fd_in_range() guard fires and rewrites
-	 * rec->a2 to keep the kernel-side range below a protected fd
-	 * (kcov PC/cmp, stderr, the stderr capture memfd).  Gives the
+	/* Tally of sanitise_close_range() rewrites: bumped each time the
+	 * protected-fd guard fires.  A plain range is truncated, by
+	 * rewriting rec->a2, to stay below a protected fd (kcov PC/cmp,
+	 * stderr, the stderr capture memfd); with CLOSE_RANGE_EXCEPT, which
+	 * closes everything outside the range, it is widened to hold every
+	 * protected fd.  Gives the
 	 * /prot=absent diag-line readings a denominator -- if the
 	 * counter is non-zero we know the guard is actively firing
 	 * (close_range picker really did target a protected fd; the

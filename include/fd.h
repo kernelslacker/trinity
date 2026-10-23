@@ -246,7 +246,10 @@ bool fd_is_protected(int fd);
  * Returns the lowest protected fd inside [lo, hi] (inclusive), or -1
  * if no protected fd lies in the range.  close_range trims its upper
  * bound to (this value - 1) so the kernel-side walk stops short of
- * the first protected slot rather than skipping it.
+ * the first protected slot rather than skipping it.  With
+ * CLOSE_RANGE_EXCEPT, which closes everything outside the range, it
+ * asks again from just past each answer to find every protected fd and
+ * widens the range to hold them all.
  *
  * lo / hi are unsigned int to match the kernel ABI for close_range
  * (SYSCALL_DEFINE3(close_range, unsigned int, unsigned int, unsigned)).
