@@ -593,6 +593,15 @@ struct syscallentry {
 	uint8_t buf_count_slot;
 
 	/*
+	 * Cached identity of pkey_mprotect, one more of the per-discriminator
+	 * flags below: it shares mprotect's sanitiser, which draws a live key
+	 * for the fourth slot only for it.  Records point at the shared copy
+	 * of the descriptor, so the sanitiser cannot tell the two apart by
+	 * address.  Kept in the rest of the hole after buf_count_slot.
+	 */
+	bool is_pkey_mprotect;
+
+	/*
 	 * Write-once at copy_syscall_table() time; points at this entry's
 	 * slot in the parallel RW syscall_runtime array.  All
 	 * runtime-mutable per-entry state (activation back-indices,

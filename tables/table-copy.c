@@ -133,7 +133,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
 		/*
 		 * Per-discriminator flags consumed by the shared .sanitise /
-		 * .post hooks for the five biarch / variant pairs trinity
+		 * .post hooks for the biarch / variant pairs trinity
 		 * fuzzes.  Resolved once here so the per-call discriminator
 		 * collapses to a single-byte load (see current_entry_is_*()
 		 * in include/tables.h) instead of a lookup-and-strcmp on every
@@ -144,6 +144,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].is_inotify_init1 = (strcmp(copy[m].name, "inotify_init1") == 0);
 		copy[m].is_epoll_create1 = (strcmp(copy[m].name, "epoll_create1") == 0);
 		copy[m].is_execve = (strcmp(copy[m].name, "execve") == 0);
+		copy[m].is_pkey_mprotect = (strcmp(copy[m].name, "pkey_mprotect") == 0);
 		copy[m].is_epoll_wait_family =
 			(strcmp(copy[m].name, "epoll_wait") == 0 ||
 			 strcmp(copy[m].name, "epoll_pwait") == 0 ||

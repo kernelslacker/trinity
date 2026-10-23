@@ -4,6 +4,7 @@
  * substitution, a RedQueen pin) must not leave the kernel a range the
  * sanitiser would have refused.  madvise's (addr, len) stays off trinity's
  * tracked regions, and a buffer-filling count stays inside its buffer.
+ * mprotect's sanitiser, which pkey_mprotect shares, runs here too.
  */
 
 #include <limits.h>
@@ -11,23 +12,30 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
+#include "child.h"			/* struct childdata */
 #include "debug.h"			/* BUG */
 #include "files.h"			/* get_rand_pagecache_fd */
+#include "maps.h"			/* proc_maps_check */
+#include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
-#include "sanitise.h"			/* writable pool */
+#include "sanitise.h"			/* writable pool, get_random_pkey_id */
 #include "syscall.h"			/* struct syscallrecord */
 #include "testfile.h"			/* get_rand_testfile_fd */
 #include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
 #include "utils-macros.h"		/* ARRAY_SIZE */
+#include "utils-mem.h"			/* log_mm_syscall_post_gate_heap_slip */
 
 /* Region tracking in tests/fake_shm.c. */
 void fake_track_region(unsigned long addr, unsigned long size);
 void fake_untrack_regions(void);
 extern bool fake_overlaps_shared;
 extern bool fake_overlaps_libc_heap;
+
+extern struct childdata *fake_this_child;	/* fake_shm.c */
 
 /* sanity_check_tables() over one entry, in tests/sanitiser_owned_mask_test.c. */
 int entry_check_status(struct syscallentry *entry);
@@ -58,6 +66,37 @@ bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 	(void) dstsz;
 	(void) src;
 	return false;
+}
+
+/* The OBJ_PKEY pool, the heap-slip log and the /proc/self/maps oracle
+ * the mm sanitisers and post handlers reach.  The pool hands out
+ * pkey_drawn and the log keeps the name it was given. */
+static int pkey_drawn = -1;
+static const char *heap_slip_name;
+
+int get_random_pkey_id(void)
+{
+	return pkey_drawn;
+}
+
+void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
+					unsigned long addr, unsigned long len,
+					unsigned long detail)
+{
+	(void) addr;
+	(void) len;
+	(void) detail;
+	heap_slip_name = syscall_name;
+}
+
+bool proc_maps_check(unsigned long addr, unsigned long len,
+		     int expected_prot, bool expect_present)
+{
+	(void) addr;
+	(void) len;
+	(void) expected_prot;
+	(void) expect_present;
+	return true;
 }
 
 #define REGION		0x7f0000000000UL
@@ -362,10 +401,81 @@ static void count_held_inside_buffer(void)
 	fake_untrack_regions();
 }
 
+/* A pool mapping for the mm sanitisers to pick, away from every region a
+ * test tracks; ARG_MMAP leaves its struct map in a1.
+ * common_set_mmap_ptr_len() works on this_child()'s record, so the calls
+ * are built there. */
+#define POOL_MAP	0x7e0000000000UL
+#define POOL_PAGES	16UL
+
+static struct object pool_obj;
+static struct childdata mm_child;
+
+static struct syscallrecord *mm_call(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = &mm_child.syscall;
+
+	memset(mrec, 0, sizeof(*mrec));
+	mrec->entry = entry;
+	mrec->a1 = (unsigned long) &pool_obj.map;
+	pool_obj.map.ptr = (void *) POOL_MAP;
+	pool_obj.map.size = POOL_PAGES * page_size;
+	pool_obj.map.tracked_size = pool_obj.map.size;
+	pool_obj.map.prot = PROT_READ | PROT_WRITE;
+	fake_this_child = &mm_child;
+	return mrec;
+}
+
+#define LIVE_PKEY	7
+
+/* pkey_mprotect shares mprotect's sanitiser, which draws a live key for
+ * the fourth slot only for it and names it in the heap-slip line.  The
+ * record points at the table's copy of the descriptor, not at
+ * syscall_pkey_mprotect, so the sanitiser has to know the entry by the
+ * byte copy_syscall_table() stamps on the copy. */
+static void pkey_mprotect_known_through_its_copy(void)
+{
+	struct syscallentry pkey_copy = syscall_pkey_mprotect;
+	struct syscallentry plain_copy = syscall_mprotect;
+	struct syscallentry *const copies[] = { &pkey_copy, &plain_copy };
+	unsigned int c, i, live;
+
+	pkey_copy.is_pkey_mprotect = true;
+	pkey_drawn = LIVE_PKEY;
+
+	for (c = 0; c < ARRAY_SIZE(copies); c++) {
+		struct syscallentry *entry = copies[c];
+
+		live = 0;
+		for (i = 0; i < 100; i++) {
+			struct syscallrecord *mrec = mm_call(entry);
+
+			mrec->a4 = ~0UL;
+			heap_slip_name = NULL;
+			entry->sanitise(mrec);
+			if (heap_slip_name == NULL ||
+			    strcmp(heap_slip_name, entry->name) != 0)
+				BUG("mprotect: the heap-slip line named another entry");
+			if (mrec->a4 == LIVE_PKEY)
+				live++;
+			/* A refused call: the post handler releases the
+			 * snapshot and leaves the mapping alone. */
+			mrec->retval = (unsigned long) -1L;
+			entry->post(mrec);
+		}
+		if (entry->is_pkey_mprotect ? live == 0 : live != 0)
+			BUG("mprotect: a live key went to the wrong entry");
+	}
+
+	pkey_drawn = -1;
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
 	madvise_range_held_off_regions();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
+	pkey_mprotect_known_through_its_copy();
 }

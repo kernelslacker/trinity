@@ -37,11 +37,6 @@
  * from a real map pointer, so a foreign-heap stomp of rec->a5 would
  * slip the guard and cache prot bits into the wrong tracked map.
  */
-/* Forward declaration so sanitise_mprotect() can disambiguate the
- * shared sanitise hook by entry-pointer comparison (the pkey_mprotect
- * entry takes a fourth pkey argument that plain mprotect ignores). */
-extern struct syscallentry syscall_pkey_mprotect;
-
 #define MPROTECT_POST_STATE_MAGIC	0x4D505254UL	/* "MPRT" */
 struct mprotect_post_state {
 	unsigned long magic;
@@ -54,6 +49,7 @@ struct mprotect_post_state {
 
 static void sanitise_mprotect(struct syscallrecord *rec)
 {
+	bool pkey = rec->entry != NULL && rec->entry->is_pkey_mprotect;
 	struct mprotect_post_state *snap;
 	struct map *map;
 
@@ -89,13 +85,11 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * key.  The remaining 40% (and the empty-pool fallback) stay
 	 * random so the unknown-key reject path keeps getting coverage.
 	 */
-	if (rec->entry == &syscall_pkey_mprotect) {
-		if (rnd_modulo_u32(100) < 60) {
-			int id = get_random_pkey_id();
+	if (pkey && rnd_modulo_u32(100) < 60) {
+		int id = get_random_pkey_id();
 
-			if (id >= 0)
-				rec->a4 = (unsigned long) id;
-		}
+		if (id >= 0)
+			rec->a4 = (unsigned long) id;
 	}
 
 	/*
@@ -104,10 +98,8 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * the live brk arena.  Pure observability.  Covers both mprotect
 	 * and pkey_mprotect via the shared sanitiser.
 	 */
-	log_mm_syscall_post_gate_heap_slip(
-		rec->entry == &syscall_pkey_mprotect
-			? "pkey_mprotect" : "mprotect",
-		rec->a1, rec->a2, rec->a3);
+	log_mm_syscall_post_gate_heap_slip(pkey ? "pkey_mprotect" : "mprotect",
+					   rec->a1, rec->a2, rec->a3);
 
 	/*
 	 * Snapshot the inputs the post handler reads.  Without this the
