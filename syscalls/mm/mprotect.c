@@ -55,7 +55,7 @@ struct mprotect_post_state {
  * key, into the snapshot, since post_mprotect caches them into map->prot.
  * A record with no snapshot of ours passes only a range the kernel acts
  * on nothing of.  Shape, then ownership, then magic, as
- * close_range_call_is_vetted() orders them.
+ * post_state_claim_owned() orders them.
  */
 bool mprotect_vet_final_slots(const struct syscallrecord *rec)
 {

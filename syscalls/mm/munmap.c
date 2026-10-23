@@ -61,7 +61,7 @@ struct munmap_post_state {
  * validate_arg_coupling() holds the final slots to the mapping with this
  * (see map_range_vet()).  A record with no snapshot of ours passes only
  * a range the kernel acts on nothing of.  Shape, then ownership, then
- * magic, as close_range_call_is_vetted() orders them.
+ * magic, as post_state_claim_owned() orders them.
  */
 bool munmap_vet_final_slots(const struct syscallrecord *rec)
 {

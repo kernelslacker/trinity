@@ -1,5 +1,6 @@
 #pragma once
 
+struct syscallentry;
 struct syscallrecord;
 
 /*
@@ -12,9 +13,14 @@ struct syscallrecord;
  * meaningful kernel path.
  *
  * A syscall whose sanitiser vets its slots is held to them here as well,
- * since a rewrite after the sanitiser (chain substitution, a RedQueen
- * pin) can undo the vetting: the final slots are the ones the kernel
- * reads.
+ * by the entry's .vet_final hook, since a rewrite after the sanitiser
+ * (chain substitution, a RedQueen pin) can undo the vetting: the final
+ * slots are the ones the kernel reads.
+ *
+ * @entry is the descriptor the caller is dispatching.  The rules read
+ * it, and call its hook, in place of rec->entry: the record sits in
+ * shared memory, where a sibling's stray write could point that
+ * anywhere.
  *
  * Returns 0 when the rec passes (or no per-syscall rule applies);
  * returns -1 when an inconsistency is detected.  On -1 the caller
@@ -22,4 +28,5 @@ struct syscallrecord;
  * post path stays consistent with a normal kernel EINVAL failure;
  * the rejection is logged via outputerr() with a per-syscall tag.
  */
-int validate_arg_coupling(struct syscallrecord *rec);
+int validate_arg_coupling(struct syscallrecord *rec,
+			  const struct syscallentry *entry);

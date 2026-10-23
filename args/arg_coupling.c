@@ -1,10 +1,10 @@
 /*
  * Cross-arg validator and repair pass (contract: include/arg_coupling.h).
  * Runs on the final slot values, after .sanitise, chain substitution and any
- * RedQueen pin, so it judges what the kernel will read: (address, length)
- * coherence, then the per-syscall rules for fcntl F_SETSIG, waits on a pid
- * namespace init, close_range, the madvise, munmap and mprotect ranges and
- * buf_count_slot byte counts.
+ * RedQueen pin, so it judges what the kernel will read: the entry's own
+ * .vet_final rule, (address, length) coherence, then the per-syscall rules
+ * for fcntl F_SETSIG, waits on a pid namespace init, the madvise, munmap and
+ * mprotect ranges and buf_count_slot byte counts.
  */
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -217,9 +217,9 @@ static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
  * kernel accepts.  Bumps per-entry so the fanout across a wide iovec
  * is observable rather than collapsed into a per-syscall tick.
  */
-static void repair_iovec_extents(struct syscallrecord *rec)
+static void repair_iovec_extents(struct syscallrecord *rec,
+				 const struct syscallentry *entry)
 {
-	const struct syscallentry *entry = rec->entry;
 	unsigned int nargs = entry->num_args;
 	unsigned int i;
 
@@ -266,9 +266,9 @@ static void repair_iovec_extents(struct syscallrecord *rec)
  * region gets the count cut to the bytes left in it; one in no tracked
  * region has no extent to cut to, and gets a count of 0.
  */
-static void hold_count_inside_buffer(struct syscallrecord *rec)
+static void hold_count_inside_buffer(struct syscallrecord *rec,
+				     const struct syscallentry *entry)
 {
-	const struct syscallentry *entry = rec->entry;
 	unsigned int slot = entry->buf_count_slot;
 	unsigned long buf, count, extent;
 
@@ -291,17 +291,20 @@ static void hold_count_inside_buffer(struct syscallrecord *rec)
 	arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
 }
 
-int validate_arg_coupling(struct syscallrecord *rec)
+int validate_arg_coupling(struct syscallrecord *rec,
+			  const struct syscallentry *entry)
 {
-	const struct syscallentry *entry;
 	unsigned int addr_slot, len_slot;
 
-	if (rec == NULL)
+	if (rec == NULL || entry == NULL || entry->name == NULL)
 		return 0;
 
-	entry = rec->entry;
-	if (entry == NULL || entry->name == NULL)
-		return 0;
+	/*
+	 * The entry's own rule for its final slots (see .vet_final) runs
+	 * ahead of every rule below, which then judge what it repaired.
+	 */
+	if (entry->vet_final != NULL && entry->vet_final(rec) != 0)
+		return -1;
 
 	/*
 	 * epoll_wait / epoll_pwait / epoll_pwait2: the events output
@@ -355,26 +358,6 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	}
 
 	/*
-	 * close_range: sanitise_close_range() keeps the kcov and other
-	 * protected fds out of the set the call closes and records the
-	 * range it vetted.  Chain substitution rewrites one slot after
-	 * that, and all three take a number, so the kernel could be handed
-	 * a range nobody vetted: an 8 in the flags is EXCEPT, which closes
-	 * everything outside the range, and a pid in max_fd runs the range
-	 * back over the fds above PROTECTED_FD_HIGH_BASE.  A RedQueen pin
-	 * lands after sanitise too.  The post handler also trusts the
-	 * sanitiser's snapshot, so a rewritten call would be retired and
-	 * reported as a range it never closed.  Judged on the final slots
-	 * like F_SETSIG above, but refused rather than repaired: a
-	 * substituted close_range is not worth a second pass of the guard.
-	 */
-	if (entry->is_close_range && !close_range_call_is_vetted(rec)) {
-		outputerr("arg-coupling: %s rejected: the slots are not the range sanitise vetted\n",
-			  entry->name);
-		return -1;
-	}
-
-	/*
 	 * madvise: sanitise_madvise() zeroes an (addr, len) that overlaps
 	 * one of trinity's own regions or the libc heap.  The regions are
 	 * MAP_SHARED anonymous memory, shmem underneath, and MADV_REMOVE
@@ -404,7 +387,7 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	 * may not have become a GUARD_INSTALL (see map_range_vet()).  Chain
 	 * substitution and a RedQueen pin rewrite slots after the sanitiser
 	 * has run, and the kernel unmaps, reprotects or advises every VMA a
-	 * longer range reaches.  Refused like close_range above; a call that
+	 * longer range reaches.  Refused rather than repaired; a call that
 	 * passes has its snapshot moved to the final slots, so the post
 	 * handler acts on what the kernel was handed.
 	 */
@@ -422,7 +405,7 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	 * past it into trinity's own state.  See hold_count_inside_buffer().
 	 */
 	if (entry->buf_count_slot != 0)
-		hold_count_inside_buffer(rec);
+		hold_count_inside_buffer(rec, entry);
 
 	/*
 	 * Non-adjacent (address, length) coupled pair: gen_arg_len()
@@ -448,7 +431,7 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	 * extent get the same probabilistic clamp treatment, per entry,
 	 * independent of any outer addr/len pair the syscall carries.
 	 */
-	repair_iovec_extents(rec);
+	repair_iovec_extents(rec, entry);
 
 	return 0;
 }

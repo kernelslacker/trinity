@@ -118,6 +118,13 @@ top of each header as private to that pair of TUs).
    then cuts a rewritten count (chain substitution, a RedQueen pin) that
    would run the write past the buffer into trinity's own regions, and
    `sanity_check_tables()` refuses a slot with no address argtype before it.
+   A rule the sanitiser's vetting rests on, which a rewrite after it
+   (chain substitution, a RedQueen pin) could undo, goes in `.vet_final`:
+   `validate_arg_coupling()` runs it once on the slots the kernel is about
+   to read, ahead of its generic rules.  It may repair a slot in place and
+   refresh the call's own `post_state` snapshot, and a non-zero return
+   refuses the call (`fs/close_range.c` refuses a range other than the
+   one its sanitiser vetted).
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

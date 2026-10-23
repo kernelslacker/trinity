@@ -397,7 +397,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * (which usually owns that zeroing) never runs on the skip path
 	 * and the caller's kcov_collect() would otherwise re-process the
 	 * previous syscall's PCs against this slot. */
-	if (validate_arg_coupling(rec) != 0) {
+	if (validate_arg_coupling(rec, entry) != 0) {
 		validator_rejected_bump();
 		clear_stale_kcov_state(kc, rec);  /* header zero + dispatch_args_valid clear */
 		srec_publish_begin(rec);

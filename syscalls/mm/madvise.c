@@ -95,7 +95,7 @@ struct madvise_post_state {
  * it.  do_madvise() reads the advice as an int, and a pass moves it into
  * the snapshot for post_madvise's invalidation.  A record with no
  * snapshot of ours passes only a range the kernel acts on nothing of.
- * Shape, then ownership, then magic, as close_range_call_is_vetted()
+ * Shape, then ownership, then magic, as post_state_claim_owned()
  * orders them.
  */
 bool madvise_vet_final_slots(const struct syscallrecord *rec)

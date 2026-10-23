@@ -1,11 +1,12 @@
 /*
  * Self-check for the per-syscall rules validate_arg_coupling() holds the
- * final argument slots to: a rewrite after the sanitiser (chain
- * substitution, a RedQueen pin) must not leave the kernel a range the
- * sanitiser would have refused.  A buffer-filling count stays inside its
- * buffer, a munmap, mprotect, pkey_mprotect or madvise range inside the
- * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
- * tracked regions too, and a madvise never installs guard pages.
+ * final argument slots to, an entry's own .vet_final rule first: a rewrite
+ * after the sanitiser (chain substitution, a RedQueen pin) must not leave
+ * the kernel a range the sanitiser would have refused.  A buffer-filling
+ * count stays inside its buffer, a munmap, mprotect, pkey_mprotect or
+ * madvise range inside the pool mapping its sanitiser picked, madvise's
+ * (addr, len) off trinity's tracked regions too, and a madvise never
+ * installs guard pages.
  */
 
 #include <limits.h>
@@ -217,7 +218,7 @@ static unsigned long count_after(struct syscallentry *entry, unsigned int slot,
 	*slot_of(slot - 1) = buf;
 	*slot_of(slot) = count;
 
-	if (validate_arg_coupling(&rec) != 0)
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
 		BUG("arg coupling: a read-class call was refused");
 	if (*slot_of(slot - 1) != buf)
 		BUG("arg coupling: the buffer slot was rewritten");
@@ -256,7 +257,7 @@ static void vetted_count_kept(struct syscallentry *entry, unsigned int slot,
 
 		if (buf != 0 && (buf < pool || buf >= pool + WRITABLE_POOL_BYTES))
 			BUG("arg coupling: a sanitised buffer left the pool");
-		if (validate_arg_coupling(&rec) != 0 ||
+		if (validate_arg_coupling(&rec, rec.entry) != 0 ||
 		    *slot_of(slot - 1) != buf || *slot_of(slot) != count)
 			BUG("arg coupling: a count the sanitiser sized was rewritten");
 	}
@@ -380,6 +381,109 @@ static void count_held_inside_buffer(void)
 	if (count_after(&getrandom_shape, 2, 0x10000000UL, 0x4000) != 0)
 		BUG("arg coupling: a map buffer reaching a region kept its count");
 	fake_overlaps_shared = false;
+
+	fake_untrack_regions();
+}
+
+/* The probe entry's final-slot rule: it counts its calls, keeps the record
+ * and the count it was handed, and answers vet_final_verdict. */
+static unsigned int vet_final_calls;
+static const struct syscallrecord *vet_final_saw_rec;
+static unsigned long vet_final_saw_count;
+static int vet_final_verdict;
+
+static int probe_vet_final(struct syscallrecord *r)
+{
+	vet_final_calls++;
+	vet_final_saw_rec = r;
+	vet_final_saw_count = r->a3;
+	return vet_final_verdict;
+}
+
+/* validate_arg_coupling() asks an entry's .vet_final once per call, ahead
+ * of its generic rules.  Any non-zero answer refuses the call before the
+ * count rule runs; a pass leaves the count rule to cut, after the hook, a
+ * count the hook saw as the rewrite left it. */
+static void vet_final_asked_first(void)
+{
+	struct syscallentry entry = {
+		.name = "vet_final_probe",
+		.num_args = 3,
+		.argtype = { ARG_FD, ARG_ADDRESS, ARG_LEN },
+		.buf_count_slot = 3,
+		.vet_final = probe_vet_final,
+	};
+	static const int verdicts[] = { 1, -1, 0 };
+	const unsigned long tail = 0x800, count = 0x7ffff000UL;
+	unsigned int i;
+
+	fake_untrack_regions();
+	fake_track_region(REGION, REGION_SIZE);
+	fake_track_region(REGION + REGION_SIZE, 0x10000);
+
+	for (i = 0; i < ARRAY_SIZE(verdicts); i++) {
+		bool refused = verdicts[i] != 0;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &entry;
+		rec.a2 = REGION + REGION_SIZE - tail;
+		rec.a3 = count;
+		vet_final_calls = 0;
+		vet_final_verdict = verdicts[i];
+		if (validate_arg_coupling(&rec, rec.entry) != (refused ? -1 : 0))
+			BUG("arg coupling: the call did not take its final-slot rule's verdict");
+		if (vet_final_calls != 1 || vet_final_saw_rec != &rec ||
+		    vet_final_saw_count != count)
+			BUG("arg coupling: a final-slot rule was not asked once, ahead of the count rule");
+		if (rec.a3 != (refused ? count : tail))
+			BUG("arg coupling: the count rule ran after a refusal, or not after a pass");
+	}
+
+	fake_untrack_regions();
+}
+
+/* The rules are those of the entry the dispatcher passes, not of the one
+ * the record names, which a sibling's stray write can repoint: a record
+ * naming an entry with no hook and no count slot is held to the probe's
+ * hook and count rule when the probe is passed, and one naming the probe,
+ * whose hook would refuse, is held to neither when the other is. */
+static void vet_final_from_the_dispatched_entry(void)
+{
+	struct syscallentry probe = {
+		.name = "vet_final_probe",
+		.num_args = 3,
+		.argtype = { ARG_FD, ARG_ADDRESS, ARG_LEN },
+		.buf_count_slot = 3,
+		.vet_final = probe_vet_final,
+	};
+	struct syscallentry bare = probe;
+	struct syscallentry *const named[] = { &bare, &probe };
+	const unsigned long tail = 0x800, count = 0x7ffff000UL;
+	unsigned int i;
+
+	bare.name = "bare";
+	bare.buf_count_slot = 0;
+	bare.vet_final = NULL;
+
+	fake_untrack_regions();
+	fake_track_region(REGION, REGION_SIZE);
+	fake_track_region(REGION + REGION_SIZE, 0x10000);
+
+	for (i = 0; i < ARRAY_SIZE(named); i++) {
+		struct syscallentry *passed = named[i] == &bare ? &probe : &bare;
+		bool probed = passed == &probe;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = named[i];
+		rec.a2 = REGION + REGION_SIZE - tail;
+		rec.a3 = count;
+		vet_final_calls = 0;
+		vet_final_verdict = probed ? 0 : -1;
+		if (validate_arg_coupling(&rec, passed) != 0 ||
+		    vet_final_calls != (probed ? 1U : 0U) ||
+		    rec.a3 != (probed ? tail : count))
+			BUG("arg coupling: a rule came from the record's entry, not the one passed");
+	}
 
 	fake_untrack_regions();
 }
@@ -879,7 +983,7 @@ static void munmap_sanitised_range_passes(struct syscallentry *entry)
 		entry->sanitise(mrec);
 		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
 			BUG("munmap: the sanitiser built a compat range its slots cannot carry");
-		if (validate_arg_coupling(mrec) != 0)
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("munmap: a range the sanitiser built was refused");
 		mrec->retval = (unsigned long) -1L;
 		entry->post(mrec);
@@ -916,17 +1020,17 @@ static void munmap_rewritten_range_held(struct syscallentry *entry)
 	left = end - start;
 
 	mrec->a2 = left + page_size;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a length running a page past the mapping was kept");
 	mrec->a2 = left;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a length reaching the end of the mapping was refused");
 	mrec->a2 = left - page_size + 1;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a length the kernel rounds to the end was refused");
 	mrec->a1 = end;
 	mrec->a2 = page_size;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a range just past the mapping was kept");
 
 	for (i = 0; i < ARRAY_SIZE(cases); i++) {
@@ -936,7 +1040,7 @@ static void munmap_rewritten_range_held(struct syscallentry *entry)
 			mrec->a1 = cases[i].value;
 		else
 			mrec->a2 = cases[i].value;
-		if (validate_arg_coupling(mrec) != cases[i].verdict)
+		if (validate_arg_coupling(mrec, mrec->entry) != cases[i].verdict)
 			BUG("munmap: a rewritten slot was judged wrongly");
 	}
 
@@ -958,7 +1062,7 @@ static void munmap_post_acts_on_final_range(struct syscallentry *entry)
 
 		entry->sanitise(mrec);
 		mrec->a2 = page_size - 1;
-		if (validate_arg_coupling(mrec) != 0)
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("munmap: a page inside the mapping was refused");
 		final_addr = mrec->a1;
 		mrec->retval = 0;
@@ -985,10 +1089,10 @@ static void munmap_needs_its_snapshot(struct syscallentry *entry)
 	if (mrec->post_state != 0)
 		BUG("munmap: the sanitiser left a snapshot with no mapping");
 	mrec->a2 = page_size;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a call with no mapping kept a range");
 	mrec->a2 = 0;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: an empty call with no mapping was refused");
 
 	mrec = mm_call(entry);
@@ -997,18 +1101,18 @@ static void munmap_needs_its_snapshot(struct syscallentry *entry)
 	mrec->a1 = POOL_MAP;
 	mrec->a2 = page_size;
 	mrec->post_state = 12345;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a call whose snapshot is a pid was passed");
 	mrec->post_state = (unsigned long) snap;
 	post_state_disowned = snap;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a call whose snapshot is not owned was passed");
 	post_state_disowned = NULL;
 	*snap ^= 1UL;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a call whose snapshot has the wrong magic was passed");
 	*snap ^= 1UL;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a call refused for its snapshot was refused once it was whole");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
@@ -1028,7 +1132,7 @@ static void munmap_compat_slots_truncated(struct syscallentry *entry)
 	mrec->a1 = POOL_MAP;
 	mrec->a2 = page_size;
 	mrec->do32bit = true;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a compat call was judged on the slots' upper halves");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
@@ -1037,7 +1141,7 @@ static void munmap_compat_slots_truncated(struct syscallentry *entry)
 	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
 	mrec->do32bit = true;
 	entry->sanitise(mrec);
-	if (mrec->a1 < LOW_POOL_MAP || validate_arg_coupling(mrec) != 0)
+	if (mrec->a1 < LOW_POOL_MAP || validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a compat call over a low mapping was emptied or refused");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
@@ -1047,10 +1151,10 @@ static void munmap_compat_slots_truncated(struct syscallentry *entry)
 	entry->sanitise(mrec);
 	mrec->a1 = LOW_POOL_MAP | (1UL << 32);
 	mrec->a2 = page_size | (1UL << 32);
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("munmap: a native call's upper halves were dropped");
 	mrec->do32bit = true;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a compat call inside a low mapping was refused");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
@@ -1074,7 +1178,7 @@ static void munmap_range_held_to_mapping(void)
 
 	/* The rule is munmap's alone. */
 	mm_call(&other)->a2 = 0x7ffff000UL;
-	if (validate_arg_coupling(&mm_child.syscall) != 0)
+	if (validate_arg_coupling(&mm_child.syscall, mm_child.syscall.entry) != 0)
 		BUG("munmap: the range rule judged an entry that is not munmap");
 
 	fake_get_objhead = NULL;
@@ -1097,7 +1201,7 @@ static int prot_after_rewrite(struct syscallentry *entry, int prot_before,
 	mrec->a2 = len;
 	mrec->a3 = final_prot;
 	mrec->a4 = key;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("mprotect: a range inside the mapping was refused");
 	mrec->retval = 0;
 	entry->post(mrec);
@@ -1136,7 +1240,7 @@ static void mprotect_range_held_to_mapping(void)
 			entry->sanitise(mrec);
 			if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
 				BUG("mprotect: the sanitiser built a compat range its slots cannot carry");
-			if (validate_arg_coupling(mrec) != 0)
+			if (validate_arg_coupling(mrec, mrec->entry) != 0)
 				BUG("mprotect: a range the sanitiser built was refused");
 			mrec->retval = (unsigned long) -1L;
 			entry->post(mrec);
@@ -1146,10 +1250,10 @@ static void mprotect_range_held_to_mapping(void)
 		mrec = mm_call(entry);
 		entry->sanitise(mrec);
 		mrec->a2 = whole + page_size;
-		if (validate_arg_coupling(mrec) != -1)
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
 			BUG("mprotect: a length running past the mapping was kept");
 		mrec->a2 = whole;
-		if (validate_arg_coupling(mrec) != 0)
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("mprotect: a length covering the mapping was refused");
 		mrec->retval = (unsigned long) -1L;
 		entry->post(mrec);
@@ -1158,7 +1262,7 @@ static void mprotect_range_held_to_mapping(void)
 		mrec->a1 = 0;
 		entry->sanitise(mrec);
 		mrec->a2 = page_size;
-		if (validate_arg_coupling(mrec) != -1)
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
 			BUG("mprotect: a call with no mapping kept a range");
 
 		/* Over part of the mapping the cached prot can only lose
@@ -1200,7 +1304,7 @@ static struct syscallrecord *validated(struct syscallentry *entry,
 	mrec->a2 = len;
 	mrec->a3 = MADV_REMOVE_ADVICE;
 
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("arg coupling: a call with no rule against it was refused");
 	if (mrec->a3 != MADV_REMOVE_ADVICE)
 		BUG("arg coupling: the advice slot was rewritten");
@@ -1282,7 +1386,7 @@ static int madvise_verdict(struct syscallentry *entry, unsigned long addr,
 	mrec->a1 = addr;
 	mrec->a2 = len;
 	mrec->a3 = advice;
-	verdict = validate_arg_coupling(mrec);
+	verdict = validate_arg_coupling(mrec, mrec->entry);
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
 	return verdict;
@@ -1313,7 +1417,7 @@ static bool madvise_post_invalidates(struct syscallentry *entry,
 	mrec->a1 = POOL_MAP;
 	mrec->a2 = page_size - 1;
 	mrec->a3 = advice;
-	if (validate_arg_coupling(mrec) != 0)
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("madvise: a page of the mapping was refused");
 	invalidations = 0;
 	mrec->retval = 0;
@@ -1345,7 +1449,7 @@ static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
 		madvise_entry->sanitise(mrec);
 		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
 			BUG("madvise: the sanitiser built a compat range its slots cannot carry");
-		if (validate_arg_coupling(mrec) != 0)
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("madvise: a call the sanitiser built was refused");
 		mrec->retval = (unsigned long) -1L;
 		madvise_entry->post(mrec);
@@ -1375,7 +1479,7 @@ static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
 	mrec->a1 = 0;
 	madvise_entry->sanitise(mrec);
 	mrec->a2 = page_size;
-	if (validate_arg_coupling(mrec) != -1)
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
 		BUG("madvise: a call with no mapping kept a range");
 
 	/* The post handler invalidates by the advice and the range the
@@ -1412,6 +1516,8 @@ void arg_coupling_self_check(void)
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
+	vet_final_asked_first();
+	vet_final_from_the_dispatched_entry();
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	munmap_range_held_to_mapping();

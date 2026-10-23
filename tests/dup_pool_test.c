@@ -1612,7 +1612,6 @@ static void close_range_validator_holds_the_vetted_range(void)
 	unsigned long was;
 	unsigned int n, s;
 
-	entry.is_close_range = true;
 	rnd_seed(1);
 
 	/* Whatever the sanitiser draws is a call it vetted. */
@@ -1624,7 +1623,7 @@ static void close_range_validator_holds_the_vetted_range(void)
 		rec.a3 = presets[n % npresets].a3;
 		entry.sanitise(&rec);
 		check("a call the sanitiser vetted was refused", "close_range",
-		      validate_arg_coupling(&rec) == 0);
+		      validate_arg_coupling(&rec, rec.entry) == 0);
 		rec.retval = (unsigned long) -1L;
 		rec.errno_post = EINVAL;
 		entry.post(&rec);
@@ -1662,7 +1661,7 @@ static void close_range_validator_holds_the_vetted_range(void)
 				 s + 1, sub, was);
 			check(changed ? "a rewritten slot reached the kernel" :
 			      "a slot the kernel reads as vetted was refused",
-			      name, validate_arg_coupling(&rec) ==
+			      name, validate_arg_coupling(&rec, rec.entry) ==
 			      (changed ? -1 : 0));
 			*slot[s] = was;
 		}
@@ -1673,27 +1672,27 @@ static void close_range_validator_holds_the_vetted_range(void)
 	 * hold, or one whose magic is not close_range's. */
 	rec.post_state = 0;
 	check("a call with no snapshot was passed", "close_range",
-	      validate_arg_coupling(&rec) == -1);
+	      validate_arg_coupling(&rec, rec.entry) == -1);
 	rec.post_state = 12345;
 	check("a call whose snapshot is a pid was passed", "close_range",
-	      validate_arg_coupling(&rec) == -1);
+	      validate_arg_coupling(&rec, rec.entry) == -1);
 	rec.post_state = (unsigned long) snap;
 	post_state_disowned = snap;
 	check("a call whose snapshot is not owned was passed", "close_range",
-	      validate_arg_coupling(&rec) == -1);
+	      validate_arg_coupling(&rec, rec.entry) == -1);
 	post_state_disowned = NULL;
 	snap->magic ^= 1UL;
 	check("a call whose snapshot has the wrong magic was passed",
-	      "close_range", validate_arg_coupling(&rec) == -1);
+	      "close_range", validate_arg_coupling(&rec, rec.entry) == -1);
 	snap->magic ^= 1UL;
 	check("a call refused for its snapshot was refused once it was whole",
-	      "close_range", validate_arg_coupling(&rec) == 0);
+	      "close_range", validate_arg_coupling(&rec, rec.entry) == 0);
 
 	/* Only close_range is held to a snapshot. */
 	rec.entry = &other;
 	rec.a3 = CR_EXCEPT;
 	check("a syscall other than close_range was refused", "close_range",
-	      validate_arg_coupling(&rec) == 0);
+	      validate_arg_coupling(&rec, rec.entry) == 0);
 	rec.entry = &entry;
 
 	rec.retval = (unsigned long) -1L;

@@ -158,7 +158,7 @@ static void wildcard_waits_do_not_block(void)
 		rec.a1 = (unsigned long)(long) cases[i].id;
 		options = cases[i].is_waitid ? &rec.a4 : &rec.a3;
 		*options = cases[i].options;
-		if (validate_arg_coupling(&rec) != 0)
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
 			BUG("pidns_init: the coupling validator refused a wait");
 		if (((*options & WNOHANG) != 0) != cases[i].nohang)
 			BUG(cases[i].nohang ?
@@ -180,7 +180,7 @@ static void wildcard_waits_do_not_block(void)
 	rec.entry = &waitid_entry;
 	rec.a1 = P_ALL;
 	rec.a4 = WEXITED | __WALL;
-	(void)validate_arg_coupling(&rec);
+	(void)validate_arg_coupling(&rec, rec.entry);
 	if (rec.a4 & WNOHANG)
 		BUG("pidns_init: a wait was made WNOHANG in a child without an init");
 }

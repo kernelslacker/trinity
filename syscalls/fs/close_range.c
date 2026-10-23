@@ -64,8 +64,8 @@ static unsigned long close_range_flags[] = {
  * have been hardened against; treat it the same way.
  *
  * It is also the record of what the protected-fd guard vetted:
- * close_range_call_is_vetted() holds the slots the kernel is about to
- * read to it.
+ * vet_final_close_range() holds the slots the kernel is about to read
+ * to it.
  */
 #define CLOSE_RANGE_POST_STATE_MAGIC	0x43524E474D41475FUL	/* "CRNGMAG_" */
 struct close_range_post_state {
@@ -82,27 +82,34 @@ struct close_range_post_state {
  * or a byte count in max_fd runs the range back over the fds parked above
  * PROTECTED_FD_HIGH_BASE.  The post handler trusts the snapshot, so a
  * rewritten call would also be retired and reported as a range the
- * kernel never closed.  validate_arg_coupling() asks this on the final
- * slots and refuses the call when it is not the one that was vetted.
+ * kernel never closed.  A call whose slots are not the ones that were
+ * vetted is refused rather than repaired: a substituted close_range is
+ * not worth a second pass of the guard.
  *
  * A record with no snapshot of ours has nothing to vouch for its range,
  * and one wasted call costs less than a closed kcov fd, so it fails too.
  * Shape, then ownership, then magic, as post_state_claim_owned() orders
  * them: the first two keep the read of the third safe.
  */
-bool close_range_call_is_vetted(const struct syscallrecord *rec)
+static int vet_final_close_range(struct syscallrecord *rec)
 {
 	const struct close_range_post_state *snap =
 		(const struct close_range_post_state *) rec->post_state;
 
 	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
 	    snap->magic != CLOSE_RANGE_POST_STATE_MAGIC)
-		return false;
+		goto refuse;
 
 	/* The kernel reads each slot as an unsigned int. */
-	return (unsigned int) rec->a1 == snap->fd &&
-	       (unsigned int) rec->a2 == snap->max_fd &&
-	       (unsigned int) rec->a3 == snap->flags;
+	if ((unsigned int) rec->a1 == snap->fd &&
+	    (unsigned int) rec->a2 == snap->max_fd &&
+	    (unsigned int) rec->a3 == snap->flags)
+		return 0;
+
+refuse:
+	outputerr("arg-coupling: %s rejected: the slots are not the range sanitise vetted\n",
+		  rec->entry->name);
+	return -1;
 }
 
 /*
@@ -514,6 +521,7 @@ struct syscallentry syscall_close_range = {
 	.argname = { [0] = "fd", [1] = "max_fd", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(close_range_flags),
 	.sanitise = sanitise_close_range,
+	.vet_final = vet_final_close_range,
 	.post = post_close_range,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS_IO,

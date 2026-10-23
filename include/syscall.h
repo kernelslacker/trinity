@@ -547,6 +547,19 @@ static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entr
 
 struct syscallentry {
 	void (*sanitise)(struct syscallrecord *rec);
+	/*
+	 * The entry's rule for the slots the kernel is about to read.  Chain
+	 * substitution and a RedQueen pin rewrite slots after .sanitise has
+	 * run, so what the sanitiser vetted has to be held again on the
+	 * final slots.  validate_arg_coupling() calls this once per dispatch,
+	 * after the second blanket_address_scrub() and ahead of its generic
+	 * rules, which then judge any slot it repaired.  It may repair a slot
+	 * in place and refresh the call's own post_state snapshot to the
+	 * final slots.  Returns 0 to dispatch; non-zero refuses the call,
+	 * which then fails with EINVAL without entering the kernel, and the
+	 * hook says why with outputerr().  NULL for an entry with no rule.
+	 */
+	int (*vet_final)(struct syscallrecord *rec);
 	void (*post)(struct syscallrecord *rec);
 	/*
 	 * Unconditional per-syscall teardown hook.  Runs exactly once per
@@ -642,20 +655,11 @@ struct syscallentry {
 	enum objecttype ret_objtype;
 
 	/*
-	 * Cached identity of close_range, set at table init so
-	 * validate_arg_coupling() can hold its slots to the range the
-	 * sanitiser vetted (close_range_call_is_vetted()) with a single
-	 * byte load per dispatch.  It sits in the alignment hole before
-	 * ret_objtype_via_post: the struct has no tail padding left.
-	 */
-	bool is_close_range;
-
-	/*
 	 * Cached identity of madvise, set at table init so
 	 * validate_arg_coupling() can keep its (addr, len) off trinity's
 	 * own regions and inside the pool mapping the sanitiser picked
 	 * (madvise_vet_final_slots()) on the slots the kernel will read.
-	 * Next to is_close_range, in the same alignment hole.
+	 * It sits in the alignment hole before ret_objtype_via_post.
 	 */
 	bool is_madvise;
 
@@ -1129,16 +1133,6 @@ void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
 void post_open_fd(struct syscallrecord *rec);
-
-/*
- * Whether a close_range call is still the one its sanitiser vetted: its
- * three slots, read the way the kernel reads them, equal the range the
- * sanitiser recorded in rec->post_state.  False for a record with no such
- * snapshot as well, since nothing then vouches for the range.  Defined in
- * syscalls/fs/close_range.c, which keeps the snapshot private, and asked
- * by validate_arg_coupling() on the slots the kernel will see.
- */
-bool close_range_call_is_vetted(const struct syscallrecord *rec);
 
 /*
  * Hold a munmap call's final slots to the pool mapping its sanitiser
