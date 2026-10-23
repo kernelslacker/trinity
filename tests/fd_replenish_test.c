@@ -7,6 +7,7 @@
  */
 
 #include <stdbool.h>
+#include <string.h>
 
 #include "debug.h"		/* BUG */
 #include "fd.h"
@@ -63,9 +64,15 @@ void fd_replenish_self_check(void)
 			proto.try_replenish = hooks[layout[i].hook];
 		register_fd_provider(&proto);
 	}
-	i = 0;
-	list_for_each(node, &fd_providers->list)
-		((struct fd_provider *) node)->initialized = layout[i++].initialized;
+	/* Providers linked into the test binary registered before these. */
+	list_for_each(node, &fd_providers->list) {
+		struct fd_provider *prov = (struct fd_provider *) node;
+
+		for (i = 0; i < ARRAY_SIZE(layout); i++) {
+			if (strcmp(prov->name, layout[i].name) == 0)
+				prov->initialized = layout[i].initialized;
+		}
+	}
 
 	for (ticks = 0; ticks < NR_TICKS; ) {
 		unsigned int before = total_calls, served;
