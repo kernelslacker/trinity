@@ -50,7 +50,10 @@ void set_child_cache(int childno, pid_t pid, struct childdata *child)
  * confirms an ENOENT with kill()), or by the state field.
  * Anything that stops the probe short of that (a refused kill(), a full
  * fd table, ENOMEM) says nothing about the task and counts as alive: a
- * false answer releases locks and skips the SIGKILL.
+ * false answer releases locks and skips the SIGKILL.  The exception is a
+ * child of the caller that has exited, which waitid() reports whatever
+ * /proc and kill() allow: it is a zombie, and the parent spinning in
+ * lock() on it cannot reap it.
  */
 bool pid_alive(pid_t pid)
 {
@@ -79,8 +82,11 @@ bool pid_alive(pid_t pid)
 		 * root parent gets EPERM from the kernel's uid check (nobody
 		 * has no CAP_KILL), and a security module can refuse as well:
 		 * EPERM from its CAP_KILL capable hook, EACCES from
-		 * security_task_kill(). */
-		return errno != ESRCH;
+		 * security_task_kill().  A refusal says nothing about a
+		 * zombie, so ask wait about it. */
+		if (errno == ESRCH)
+			return false;
+		return !pidstat_child_exited(pid);
 	}
 
 	/* kill() returned 0, so the task struct exists.  Check whether
@@ -91,7 +97,8 @@ bool pid_alive(pid_t pid)
 		/* Race: process exited between kill() and the read. */
 		return false;
 	case PIDSTAT_UNKNOWN:
-		return true;
+		/* /proc cannot say; wait still can, for a child of ours. */
+		return !pidstat_child_exited(pid);
 	case PIDSTAT_OK:
 		break;
 	}

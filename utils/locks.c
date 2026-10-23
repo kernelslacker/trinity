@@ -76,9 +76,10 @@ static bool check_lock(lock_t *lk)
 		 * on the owner_start_time fingerprint: pidstat_identity_gone()
 		 * says gone for a pid with no task, a zombie, or a task whose
 		 * start_time differs from the sampled one, and when /proc
-		 * could not say only if kill(pid, 0) says ESRCH.  A lock that
-		 * recorded no usable start_time has no fingerprint to compare,
-		 * so a task that is still there is its holder.  It decides for
+		 * could not say only if kill(pid, 0) says ESRCH or the holder
+		 * is a child of ours that has exited.  A lock that recorded
+		 * no usable start_time has no fingerprint to compare, so a
+		 * task that is still there is its holder.  It decides for
 		 * try_release_dead_holder() and force_bust_lock() as well.
 		 *
 		 * pid_alive() returns false only for a task that is gone or

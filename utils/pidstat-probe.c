@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "pidstat-probe.h"
@@ -139,6 +140,26 @@ struct pidstat_fields pidstat_parse(const char *buf)
 }
 
 /*
+ * Is pid an exited child of the caller that nobody has waited for yet?
+ * waitid() answers for a child whatever /proc shows and kill() permits,
+ * so it finds the zombie that a hidden /proc entry or a refused probe
+ * hides.  WNOWAIT only looks: the reap path that owns the child still
+ * collects it.  WNOHANG leaves si_pid at 0 for a child that still runs.
+ * ECHILD, a pid that is not the caller's child or is already reaped, says
+ * nothing about the task and reads as no, as does EINVAL for a pid of 0
+ * or below.
+ */
+bool pidstat_child_exited(pid_t pid)
+{
+	siginfo_t si;
+
+	memset(&si, 0, sizeof(si));
+	if (waitid(P_PID, pid, &si, WEXITED | WNOHANG | WNOWAIT) != 0)
+		return false;
+	return si.si_pid == pid;
+}
+
+/*
  * Dead-owner fingerprint test used by all three lock recovery sites
  * (check_lock, try_release_dead_holder, force_bust_lock).  Returns true
  * when the task a lock recorded as (pid, start_time) is gone: the pid has
@@ -155,11 +176,15 @@ struct pidstat_fields pidstat_parse(const char *buf)
  * fingerprint only the task decides, and one that is still there is taken
  * for the holder.
  *
- * When /proc cannot say (a full fd table, ENOMEM) the pid number decides:
- * ESRCH from kill(pid, 0) means no task holds it, so it is neither the
- * live holder nor a recycled pid.  The parent has to get that answer,
- * because lock() gives it no other way out of the spin on a holder that
- * is already reaped.  Returning false means the same holder is still
+ * When /proc cannot say (a full fd table, ENOMEM, an entry hidden by
+ * hidepid=2 or by another pid namespace) the pid number decides: ESRCH
+ * from kill(pid, 0) means no task holds it, so it is neither the live
+ * holder nor a recycled pid.  The parent has to get that answer, because
+ * lock() gives it no other way out of the spin on a holder that is
+ * already reaped.  An exited child of the caller is gone as well, which
+ * pidstat_child_exited() tells without /proc or any permission on the
+ * pid: it is the zombie that a hidden entry or a refused probe would
+ * keep alive for good.  Returning false means the same holder is still
  * alive, or may be, and the caller must not release the lock.
  */
 bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
@@ -180,5 +205,5 @@ bool pidstat_identity_gone(pid_t pid, unsigned long long start_time)
 		if (f.start_time != PID_START_TIME_UNKNOWN)
 			return recorded && f.start_time != start_time;
 	}
-	return kill(pid, 0) == -1 && errno == ESRCH;
+	return (kill(pid, 0) == -1 && errno == ESRCH) || pidstat_child_exited(pid);
 }

@@ -52,6 +52,11 @@
  * task a lock recorded as (pid, start_time) gone.  The parse is checked
  * against lines of the test's own and against a stat line the kernel
  * wrote, and the test against tasks the test holds.
+ *
+ * pidstat_child_exited() asks waitid() whether a child of the caller has
+ * exited, for the holder that /proc cannot show and kill() will not vouch
+ * for.  It is checked on its own, and as what settles such a holder in
+ * pidstat_identity_gone() when the fd table is full.
  */
 
 #include <errno.h>
@@ -272,29 +277,40 @@ static void selftest_read_enoent_needs_kill(void)
 }
 
 /*
- * With the soft RLIMIT_NOFILE at the lowest free fd number the open of
- * the stat file fails with EMFILE, whatever the task is.  That says
- * nothing about it, so the pid number decides whether a lock holder is
- * gone: kill(pid, 0) finding the task keeps it, and ESRCH from kill()
- * ends it, whatever start time the lock recorded.
+ * Put the soft RLIMIT_NOFILE at the lowest free fd number, so that every
+ * open of a stat file fails with EMFILE, whatever the task is.  @orig gets
+ * the limit to put back.
+ */
+static void limit_fds(struct rlimit *orig)
+{
+	struct rlimit lim;
+	int lowest_free;
+
+	lowest_free = open("/dev/null", O_RDONLY | O_CLOEXEC);
+	if (lowest_free < 0 || getrlimit(RLIMIT_NOFILE, orig) != 0)
+		BUG("pidstat read: cannot find the lowest free fd");
+	close(lowest_free);
+
+	lim = *orig;
+	lim.rlim_cur = lowest_free;
+	if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
+		BUG("pidstat read: cannot lower RLIMIT_NOFILE");
+}
+
+/*
+ * With the fd table full the open of the stat file says nothing about
+ * the task, so the pid number decides whether a lock holder is gone:
+ * kill(pid, 0) finding the task keeps it, and ESRCH from kill() ends it,
+ * whatever start time the lock recorded.
  */
 static void selftest_read_out_of_fds(void)
 {
 	bool gone_alive, gone_esrch;
-	struct rlimit orig, lim;
 	enum pidstat_result res;
+	struct rlimit orig;
 	char buf[512];
-	int lowest_free;
 
-	lowest_free = open("/dev/null", O_RDONLY | O_CLOEXEC);
-	if (lowest_free < 0 || getrlimit(RLIMIT_NOFILE, &orig) != 0)
-		BUG("pidstat read: cannot find the lowest free fd");
-	close(lowest_free);
-
-	lim = orig;
-	lim.rlim_cur = lowest_free;
-	if (setrlimit(RLIMIT_NOFILE, &lim) != 0)
-		BUG("pidstat read: cannot lower RLIMIT_NOFILE");
+	limit_fds(&orig);
 	res = pidstat_read(getpid(), buf, sizeof(buf));
 	gone_alive = pidstat_identity_gone(getpid(), 1);
 	fake_kill_probe_pid = getpid();
@@ -490,6 +506,76 @@ static void selftest_identity_unrecorded_start(void)
 	}
 }
 
+/*
+ * waitid() with WNOWAIT on a child of ours: one that still runs reads as
+ * not exited, and one that has exited reads as exited however often it is
+ * asked, since looking must not reap it, and the wait the reap path makes
+ * afterwards still gets it.  A pid that is not our child, a reaped one
+ * included, gets ECHILD, which says nothing about it, and so does a pid of
+ * 0 or below.
+ */
+static void selftest_child_exited(void)
+{
+	pid_t pid = fake_hold_task(0);
+
+	if (pidstat_child_exited(pid))
+		BUG("pidstat child: a child that is still running read as exited");
+
+	leave_zombie(pid);
+	if (!pidstat_child_exited(pid))
+		BUG("pidstat child: an exited child that was not waited for did not read as exited");
+	if (!pidstat_child_exited(pid))
+		BUG("pidstat child: asking about an exited child reaped it");
+	if (waitpid_eintr(pid, NULL, 0) != pid)
+		BUG("pidstat child: asking took the zombie from the reap path");
+
+	if (pidstat_child_exited(pid))
+		BUG("pidstat child: a reaped child read as exited");
+	if (pidstat_child_exited(getpid()) || pidstat_child_exited(getppid()))
+		BUG("pidstat child: a pid that is not our child read as exited");
+	if (pidstat_child_exited(0) || pidstat_child_exited(-1))
+		BUG("pidstat child: a pid that names no task read as exited");
+}
+
+/*
+ * A zombie that /proc cannot show and kill() refuses is still a zombie,
+ * and a parent spinning in lock() on one cannot reap it.  The fd table
+ * stands in for the /proc that cannot say, and EPERM for the probe that is
+ * refused.  The child that still runs says nothing, and keeps its verdict.
+ */
+static void selftest_identity_zombie_proc_cannot_say(void)
+{
+	bool zombie_gone, refused_gone, running_gone;
+	unsigned long long start;
+	pid_t zombie, running;
+	struct rlimit orig;
+
+	zombie = fake_hold_task(0);
+	running = fake_hold_task(0);
+	start = start_time_of(zombie);
+	leave_zombie(zombie);
+
+	limit_fds(&orig);
+	zombie_gone = pidstat_identity_gone(zombie, start);
+	fake_kill_probe_pid = zombie;
+	fake_kill_probe_errno = EPERM;
+	refused_gone = pidstat_identity_gone(zombie, start);
+	fake_kill_probe_errno = 0;
+	running_gone = pidstat_identity_gone(running, start);
+	if (setrlimit(RLIMIT_NOFILE, &orig) != 0)
+		BUG("pidstat identity: cannot restore RLIMIT_NOFILE");
+
+	if (waitpid_eintr(zombie, NULL, 0) != zombie)
+		BUG("pidstat identity: cannot reap the zombie");
+	end_task(running);
+
+	if (!zombie_gone || !refused_gone || running_gone) {
+		fprintf(stderr, "pidstat identity: /proc cannot say: zombie gone %d, with kill() refused %d, running child gone %d\n",
+			zombie_gone, refused_gone, running_gone);
+		BUG("pidstat identity: a zombie child was not told from a running one by wait");
+	}
+}
+
 void pidstat_probe_self_check(void);
 void pidstat_probe_self_check(void)
 {
@@ -504,4 +590,6 @@ void pidstat_probe_self_check(void)
 	selftest_identity_live_recycled_gone();
 	selftest_identity_zombie();
 	selftest_identity_unrecorded_start();
+	selftest_child_exited();
+	selftest_identity_zombie_proc_cannot_say();
 }

@@ -28,4 +28,6 @@ struct pidstat_fields {
 
 struct pidstat_fields pidstat_parse(const char *buf);
 
+bool pidstat_child_exited(pid_t pid);
+
 bool pidstat_identity_gone(pid_t pid, unsigned long long start_time);
