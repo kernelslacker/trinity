@@ -202,11 +202,6 @@ void canary_queue_init(void)
 	(void)canary_risky_defer;
 }
 
-/* retry_parked_slot(), stage_next_or_park(), close_window_or_park(),
- * log_plateau_edge() and canary_queue_tick() moved to
- * child-canary-picker.c.  canary_queue_summary() and canary_queue_on_crash()
- * moved to child-canary-report.c. */
-
 void canary_queue_on_child_respawn(int childno)
 {
 	if (!canary_queue_live)
@@ -238,6 +233,3 @@ void canary_queue_on_child_respawn(int childno)
 	canary_active_op_set = true;
 	canary_pending_op_set = false;
 }
-
-/* canary_slot_active(), canary_active_op(), and canary_op_is_promoted()
- * moved to child-canary-report.c. */

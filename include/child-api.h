@@ -140,10 +140,10 @@ void child_syscall_ring_push(struct child_syscall_ring *ring,
 /*
  * Periodic-work divergence sentinel.  Re-issues a curated set of
  * "should be deterministic across short windows" syscalls (uname,
- * sysinfo, getrlimit/prlimit64 RLIMIT_NOFILE, sched_getparam(0)),
- * compares against child->sentinel_prev, and reports any unexpected
- * drift via pre_crash_ring + a stats counter.  First tick populates
- * the cache and returns without comparing.  See child-sentinel.c.
+ * sysinfo), compares against child->sentinel_prev, and reports any
+ * unexpected drift via pre_crash_ring + a stats counter.  First tick
+ * populates the cache and returns without comparing.  See
+ * child-sentinel.c.
  */
 void divergence_sentinel_tick(struct childdata *child);
 

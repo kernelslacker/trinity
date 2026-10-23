@@ -108,10 +108,10 @@ _Static_assert((CHILDOP_DECAY_WINDOWS &
 /*
  * Per-childop decaying-ring producer: bump the active slot's edge count
  * by `edges` and bump the cached running sum in lockstep.  See the
- * include/stats.h comment on childop_edge_history[][] for the shape
- * contract; the prototype block in include/child.h covers the multi-
- * producer race envelope.  No-op on out-of-range op (defensive: the
- * producer site in child.c already filters CHILD_OP_SYSCALL via the
+ * stats/subsys/childop.h comment on edge_history[][] for the shape
+ * contract; the prototype block in include/childop-outcome.h covers the
+ * multi-producer race envelope.  No-op on out-of-range op (defensive:
+ * the producer site in child.c already filters CHILD_OP_SYSCALL via the
  * is_alt_op gate, but the test costs nothing and keeps the helper safe
  * to drop into other call sites) and on a zero delta (a clean-edge
  * dispatch that returned no fresh edges should not perturb the cached
@@ -136,11 +136,11 @@ void childop_decay_record_edges(enum child_op_type op, unsigned long edges)
 /*
  * Sister of childop_decay_record_edges(): bump the active slot's wall-
  * time accumulator (nanoseconds) and the matching cached running sum.
- * The producer site in child.c already clamps `ns` to >= 0 (see the
- * CLOCK_MONOTONIC subtraction at child.c:796-799), so a backward clock
- * step cannot drive the cached sum negative here; the >= 0 clamp lives
- * in the producer, not in this helper, matching the existing childop_
- * wall_ns[] add-fetch pattern at child.c:803-804.
+ * The producer site in child_process() already clamps `ns` to >= 0 (the
+ * CLOCK_MONOTONIC split-timer subtraction), so a backward clock step
+ * cannot drive the cached sum negative here; the >= 0 clamp lives in the
+ * producer, not in this helper, matching the adjacent childop.wall_ns[]
+ * add-fetch.
  */
 void childop_decay_record_wall(enum child_op_type op, unsigned long ns)
 {

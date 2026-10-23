@@ -37,9 +37,6 @@
 /* CANARY_BACKOFF_TIME lives in child-canary-internal.h -- shared with
  * the picker's DEMOTED-state backoff check. */
 
-/* CANARY_SETUP_BROKEN_FAILS moved to child-canary-picker.c (only user
- * is canary_queue_tick()'s early-bail branch). */
-
 /* CANARY_SETUP_BROKEN_BACKOFF_TIME lives in child-canary-internal.h --
  * shared with the picker's DEMOTED-state backoff check. */
 
@@ -67,9 +64,6 @@
  * negative rate) and terminates on a truly PC-hostile config. */
 #define CANARY_PC_TRIAL_RETRIES_MAX	3U
 
-/* CANARY_WEDGE_STALL_SEC moved to child-canary-picker.c (only user is
- * canary_queue_tick()'s wedge-stall bail-out branch). */
-
 /* CANARY_PROMOTION_RING_SIZE lives in child-canary-internal.h -- the
  * promotion ring itself is owned by the report TU. */
 
@@ -85,26 +79,11 @@
 #define CANARY_HEALTH_CORRUPT_PTR_THRESHOLD	50UL
 #define CANARY_HEALTH_DEFERRED_FREE_THRESHOLD	50UL
 
-/* CANARY_SUMMARY_INTERVAL_SEC moved to child-canary-report.c alongside
- * canary_queue_summary(). */
-
-/* Skip sets and classification tables: canary_config_blocked[],
- * canary_pid_heavy_ops[], canary_risky_defer[] moved to
- * child-canary-policy.c.  The picker's first-pass order is a per-run
- * random shuffle built in canary_queue_init() below, not a static
- * seed list. */
-
 /* --------------------------------------------------------------------
  * Per-op queue state.  Parent-private; indexed by child_op_type enum.
  * -------------------------------------------------------------------- */
 
 struct canary_op_state canary_ops[NR_CHILD_OP_TYPES];
-
-/* Picker cursors (canary_priority_cursor, canary_fifo_cursor), the
- * resolved priority-list pointer + count (canary_priority_list,
- * canary_priority_list_count), and the --canary-seed widened backing
- * storage (canary_seed_override_widened[]) moved to
- * child-canary-picker.c. */
 
 /* Active op the canary slot(s) should be running right now.  Two-stage
  * commit: enter_canarying() writes canary_pending_op and stamps the
@@ -138,13 +117,6 @@ bool canary_slots_parked = false;
  * historical static vector. */
 bool canary_queue_live = false;
 
-/* Recently-promoted ring (canary_promotion_ring[] + head/count) and the
- * canary_last_summary throttle timestamp moved to child-canary-report.c;
- * push_promotion() lives there too. */
-
-/* canary_last_plateau moved to child-canary-picker.c (only user is
- * log_plateau_edge()). */
-
 /* Per-op latch set by leave_canarying_demote_setup_broken() to mark an op
  * whose last demotion was for 100%-setup-failure shape.  Read by the
  * picker's DEMOTED-state backoff check, which then uses
@@ -156,13 +128,6 @@ bool canary_op_setup_broken[NR_CHILD_OP_TYPES];
 /* --------------------------------------------------------------------
  * Helpers.
  * -------------------------------------------------------------------- */
-
-/* fork_pressure_should_suppress() and the op_is_in_table() dead-code
- * helper moved to child-canary-policy.c alongside canary_pid_heavy_ops[]. */
-
-/* Setup-failure reason table (struct canary_setup_reason_hint,
- * canary_setup_reason_hints[], canary_setup_fail_reason_name(),
- * canary_setup_fail_reason_for_op()) moved to child-canary-policy.c. */
 
 /* Returns a short static string naming the kcov_bracket_begin() reject
  * arm this op has hit at least once, or NULL if no skip reason applies.
@@ -648,8 +613,6 @@ static void leave_canarying_ineligible(enum child_op_type op,
 	output(0, "canary: %s canary-ineligible (reason: no outer bracket; edges=%lu crashes=%u in %lu iters; terminal, no backoff retry; effective for new children at next respawn)\n",
 		s->name, window_edges, s->window_crashes, window_iters);
 }
-
-/* pick_next_canary() moved to child-canary-picker.c. */
 
 /* --------------------------------------------------------------------
  * Shadow recommendation: telemetry-only score-driven verdict on the

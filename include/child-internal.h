@@ -6,24 +6,13 @@
 /*
  * Internal-only declarations for symbols shared between the
  * compilation units that make up the child fuzz loop: child.c (the
- * main loop), the child-init-* sextet (child-init-core.c for the
- * init_child() coordinator, child-init-clean.c for the coredump
- * toggles / fault-injection fd setup / per-slot occupant reset,
- * child-init-isolate.c for stdio isolation, child-init-freeze.c for
- * sibling-childdata mprotect + parent rendezvous, child-init-
- * sandbox.c for the shm->ready barrier + unshare/drop_privs/cap
- * drop + rlimit sweep, and child-init-runtime.c for kcov + A/B
- * cohort stamps + finalize), and the child-altop-* quartet
- * (child-altop-pick.c for the picker/dormancy tables, child-altop-
- * table.c for the op_dispatch[] / alt_op_name metadata, child-
- * altop-budget.c for adaptive budget + decay ring, and child-altop-
- * score.c for the shutdown score dumps).
+ * main loop) and the child-*.c files it calls across the TU boundary.
+ * Each group below names the file that defines it.
  *
- * Symbols here were file-static before the TU split.  They are
- * deliberately NOT promoted into the public include/child.h: callers
- * outside the child trio should keep going through the public APIs
- * (init_child, child_process, etc.); these declarations widen
- * linkage only as far as the split demands.
+ * They are deliberately NOT part of the public include/child.h:
+ * callers outside the child loop should keep going through the public
+ * APIs (init_child, child_process, etc.); these declarations widen
+ * linkage only as far as the loop's own files need.
  */
 
 /* child-init-core.c -- init_child() is the lone setup entry point

@@ -62,8 +62,8 @@ _Static_assert((int)SF_SYSINFO_MEM_UNIT < (int)SF__MAX,
  * captured values for the deferred family.
  *
  * Direct syscall() throughout so a libc wrapper that caches its result
- * (uname, prlimit) cannot mask a kernel-side regression -- the existing
- * uname.c oracle uses the same approach for the same reason.
+ * cannot mask a kernel-side regression -- the existing uname.c oracle
+ * uses the same approach for the same reason.
  */
 static bool sentinel_capture(struct sentinel_reading *out, unsigned int flags)
 {
@@ -115,8 +115,8 @@ static bool sentinel_capture(struct sentinel_reading *out, unsigned int flags)
  * 16 bytes per side is what fits cleanly in the existing ring slot
  * (args is 6 unsigned longs); for the multi-field utsname strings this
  * is enough to capture the divergent prefix in nearly every realistic
- * clobber pattern, and for the scalar sysinfo / rlimit / sched_param
- * fields the entire value fits in the first 8 bytes of each side.
+ * clobber pattern, and for the scalar sysinfo fields the entire value
+ * fits in the first 8 bytes of each side.
  */
 static void sentinel_report(struct childdata *child,
 			    unsigned int syscall_nr,
@@ -152,13 +152,11 @@ static void sentinel_report(struct childdata *child,
 	pre_crash_ring_record(child, &rec, &now);
 
 	/* SF_UNAME_RELEASE and SF_UNAME_MACHINE are legitimately rewritten
-	 * by personality(PER_LINUX32|UNAME26), which the fuzzer can now emit
-	 * again (UNAME26 was added back to personality_flags[] in commit
-	 * "personality: add UNAME26 flag, restore bare-persona reachability").
-	 * Route those into a separate "expected drift" counter — the
-	 * pre_crash_ring entry is still recorded above so the post-mortem
-	 * decoder can replay the divergence, only the live histogram is
-	 * carved out.  Mirror of the 2026-05-09 uid_change_logged split. */
+	 * by personality(PER_LINUX32|UNAME26), which the fuzzer emits
+	 * (UNAME26 is in personality_flags[]).  Route those into a separate
+	 * "expected drift" counter — the pre_crash_ring entry is still
+	 * recorded above so the post-mortem decoder can replay the
+	 * divergence, only the live histogram is carved out. */
 	if (field == SF_UNAME_RELEASE || field == SF_UNAME_MACHINE) {
 		__atomic_add_fetch(&shm->stats.divergence_sentinel.expected_drift,
 				   1, __ATOMIC_RELAXED);
