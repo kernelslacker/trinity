@@ -50,6 +50,430 @@
  */
 #define FRONTIER_SOFT_SCALE 16
 
+/* Live-ring (max_weight > 2) accept of set_syscall_nr_coverage_frontier();
+ * false means retry. */
+static bool frontier_live_accept(unsigned int syscallnr,
+				 unsigned long max_weight,
+				 struct childdata *child)
+{
+	unsigned long w = frontier_recent_count(syscallnr);
+	unsigned long soft_max = (unsigned long)ilog2_ul(max_weight) *
+				 FRONTIER_SOFT_SCALE;
+	unsigned long denom = soft_max + 1UL;
+	unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
+
+	if (roll >= w + 1UL)
+		return false;
+
+	/* Blanket LIVE-regime probabilistic pick-reject.  Reclaims
+	 * ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of LIVE-ring picks
+	 * unconditionally via the SAME goto-retry mechanism the
+	 * frontier-weight roll above already uses, so the picker's
+	 * inner retry budget absorbs the rejected pick the same way
+	 * it absorbs a weight-loss reject and the counters past this
+	 * point stay consistent.
+	 *
+	 * Placed AFTER the frontier-weight accept decision and
+	 * BEFORE the frontier_live_picks bump so a rejected pick is
+	 * counted only in frontier_live_decay_live_rejects, not in
+	 * frontier_live_picks / frontier_live_picks_per_syscall.
+	 * That keeps the documented (live_picks + silent_picks ~=
+	 * frontier_picks_per_syscall) contract intact for the LIVE
+	 * side: a rejected pick does not consume any per-syscall
+	 * pick budget on either side of that identity.  The rejects
+	 * counter sits next to frontier_live_picks in the stats
+	 * dump for the projected reclaim fraction.
+	 *
+	 * Isolated from the F3 SHADOW cooldown signal
+	 * (frontier_live_miss_streak_per_syscall[] +
+	 * frontier_live_cooldown_candidates / _would_skip): this
+	 * gate is unconditional, the cooldown signal is per-syscall.
+	 * The targeted variant that gates the reject on the cooldown
+	 * predicate is a SEPARATE later commit and explicitly does
+	 * NOT try to reach the silent-decay path -- bootstrapping
+	 * the two together would compound risk on the first ramp.
+	 *
+	 * Does NOT touch the cached frontier weight, the ring decay
+	 * loop, or the per-syscall ring -- the smallest possible
+	 * behaviour change that produces the desired reclaim. */
+	if (rnd_modulo_u32(FRONTIER_LIVE_DECAY_REJECT_DENOM) == 0) {
+		__atomic_fetch_add(
+			&shm->stats.frontier.cooldown.live_decay_live_rejects,
+			1UL, __ATOMIC_RELAXED);
+		return false;
+	}
+
+	__atomic_fetch_add(&shm->stats.frontier.core.live_picks, 1UL,
+			   __ATOMIC_RELAXED);
+
+	/* Per-syscall split of the scalar bump above + per-call
+	 * regime stamp consumed by the post-call attribution path in
+	 * random_syscall_step.  ADDITIVE: the picker accept/retry math
+	 * above is byte-identical to the pre-row baseline; the bump
+	 * and stamp run strictly AFTER the accept decision and no
+	 * live-path code reads either site.  Same MAX_NR_SYSCALL
+	 * bound the sibling frontier_picks_per_syscall[] uses. */
+	if (syscallnr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(
+			&shm->stats.frontier.per_syscall.live_picks_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+	child->frontier_pick_regime = FRONTIER_PICK_LIVE;
+	return true;
+}
+
+/* CMP-weighted alternate picker arm (default off).  The
+ * mode load is the only work done under OFF -- the
+ * cmp_frontier_weight() call, the plateau-hint load, and
+ * the substitution itself are all skipped so a fixed-seed
+ * dry-run is byte-identical to a build before this row.
+ * The mode load consumes no RNG.
+ *
+ * SHADOW_ONLY computes the alternate weight, samples the
+ * plateau hint, and bumps the would-route counter on the
+ * plateau-hit subset; the returned w stays at the PC-led
+ * value so picks remain identical to OFF for a given seed.
+ *
+ * COMBINED replaces w with the alternate weight when the
+ * plateau classifier currently reads CMP_RISING_PC_FLAT
+ * -- the "rank the silent regime by CMP-derived signal
+ * instead" contract.  Off-plateau picks retain the PC-led
+ * weight; the arm only kicks in on the regime it was
+ * designed for.  A syscall with no CMP activity sees its
+ * weight drop to 0 under the swap, which the (w + 1) /
+ * (SCALE + 1) accept floor keeps reachable rather than
+ * unreachable.
+ *
+ * See include/cmp-frontier.h for the source-counter choice
+ * and the degrade-safe contract. */
+static unsigned long frontier_cmp_route(unsigned int syscallnr,
+					unsigned long w)
+{
+	enum cmp_frontier_mode cmpf_mode;
+
+	cmpf_mode = __atomic_load_n(&cmp_frontier_mode,
+				    __ATOMIC_RELAXED);
+	if (cmpf_mode != CMP_FRONTIER_OFF) {
+		unsigned long cmp_w = cmp_frontier_weight(syscallnr);
+		int plateau;
+
+		__atomic_fetch_add(&shm->stats.cmp_frontier.samples,
+				   1UL, __ATOMIC_RELAXED);
+		plateau = __atomic_load_n(
+				&shm->plateau_current_hypothesis,
+				__ATOMIC_RELAXED);
+		if (plateau == (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
+			__atomic_fetch_add(
+				&shm->stats.cmp_frontier.would_route,
+				1UL, __ATOMIC_RELAXED);
+			if (cmpf_mode == CMP_FRONTIER_COMBINED) {
+				__atomic_fetch_add(
+					&shm->stats.cmp_frontier.live_routes,
+					1UL, __ATOMIC_RELAXED);
+				w = cmp_w;
+			}
+		}
+	}
+	return w;
+}
+
+/* SHADOW-ONLY silent-streak accounting.  Mirrors the
+ * frontier_silent_picks bump in frontier_silent_accept(); counts
+ * CONSECUTIVE silent-regime accepts of this syscall since the last
+ * productive-edge event for it (reset to zero by
+ * frontier_record_new_edge() in strategy.c, the existing
+ * per-syscall new-edge hook in kcov_collect -- no new
+ * collection path is added).  When the post-increment value
+ * crosses FRONTIER_SHADOW_DECAY_STREAK the global
+ * frontier_shadow_decay_candidates counter bumps exactly
+ * once, the headline shadow stat that estimates how many
+ * decay-candidate syscalls a future LIVE silent-decay variant
+ * of this picker would have demoted, without changing any
+ * selection today.  Same MAX_NR_SYSCALL bound the
+ * frontier_picks_per_syscall[] bump uses.
+ *
+ * Selection-byte-identical contract: the picker accept/retry
+ * math before this point is untouched; the bump runs strictly
+ * after the accept decision and writes only NEW counters
+ * that no live-path code reads.  Mirrors the same
+ * "observation-only, default off-by-construction" shape as
+ * the cred_throttle gate so the frontier picker's
+ * distribution stays byte-identical to today.
+ *
+ * True means the arm-B live reject fired and the pick retries. */
+static bool frontier_silent_decay_reject(unsigned int syscallnr,
+					 struct childdata *child)
+{
+	unsigned long streak;
+
+	if (syscallnr >= MAX_NR_SYSCALL)
+		return false;
+
+	streak = __atomic_add_fetch(
+		&shm->stats.frontier.per_syscall.silent_streak_per_syscall[syscallnr],
+		1UL, __ATOMIC_RELAXED);
+	if (streak == FRONTIER_SHADOW_DECAY_STREAK)
+		__atomic_fetch_add(
+			&shm->stats.frontier.core.shadow_decay_candidates,
+			1UL, __ATOMIC_RELAXED);
+
+	/* SHADOW-ONLY tightened decay predicate.  Pairs with
+	 * the looser frontier_shadow_decay_candidates bump
+	 * above: the looser counter fires on N-silent alone
+	 * (no PC novelty since reset, since the streak is
+	 * reset by frontier_record_new_edge() / _transition_
+	 * edge() on the PC-edge and transition productive
+	 * paths).  The tighter predicate here additionally
+	 * requires that NEITHER per-syscall CMP-pool inserts
+	 * NOR the SUCCESS-bucket errno count has advanced
+	 * since the streak's last reset -- the "no recent
+	 * CMP novelty and no useful errno shift" UNLESS
+	 * clause that distinguishes a genuinely-stuck
+	 * candidate from one whose non-PC novelty stream is
+	 * still moving.
+	 *
+	 * Baseline snapshots are refreshed at every streak
+	 * reset (in strategy.c) so a current-vs-baseline
+	 * equality test is sufficient -- no per-pick stash
+	 * is needed.  Atomic loads under RELAXED ordering:
+	 * shadow predicate, racing producer bumps are
+	 * tolerated (worst case is a one-pick over/under-
+	 * count of the shadow counters, never a perturbation
+	 * of live selection).
+	 *
+	 *  frontier_decay_candidates
+	 *      Edge bump: fires on the (streak ==
+	 *      FRONTIER_SHADOW_DECAY_STREAK) crossing when
+	 *      the UNLESS clause holds, the tighter sibling
+	 *      of the frontier_shadow_decay_candidates bump
+	 *      above.  Strictly <= the looser counter by
+	 *      construction.
+	 *  frontier_decay_would_skip
+	 *      Cumulative bump on every silent-regime pick
+	 *      where the streak is already past threshold
+	 *      AND the UNLESS clause holds -- the projected
+	 *      demote count a live silent-decay variant of
+	 *      this picker would produce. */
+	if (streak >= FRONTIER_SHADOW_DECAY_STREAK &&
+	    kcov_shm != NULL) {
+		unsigned long cmp_now, cmp_base;
+		unsigned long errno_now, errno_base;
+
+		cmp_now = __atomic_load_n(
+			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[syscallnr],
+			__ATOMIC_RELAXED);
+		cmp_base = __atomic_load_n(
+			&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
+			__ATOMIC_RELAXED);
+		{
+			/* Sum the SUCCESS-bucket across every
+			 * picker-context slice so this
+			 * current-vs-baseline compare stays
+			 * consistent with the summed capture
+			 * at the streak-reset baseline snapshot
+			 * (frontier_record_new_edge()). */
+			unsigned int ctx;
+
+			errno_now = 0;
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+				errno_now += __atomic_load_n(
+					&kcov_shm->errno_state.per_syscall_errno[syscallnr][ctx][ERRNO_BUCKET_SUCCESS],
+					__ATOMIC_RELAXED);
+		}
+		errno_base = __atomic_load_n(
+			&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],
+			__ATOMIC_RELAXED);
+
+		if (cmp_now == cmp_base &&
+		    errno_now == errno_base) {
+			__atomic_fetch_add(
+				&shm->stats.frontier.cooldown.decay_would_skip,
+				1UL, __ATOMIC_RELAXED);
+			if (streak == FRONTIER_SHADOW_DECAY_STREAK)
+				__atomic_fetch_add(
+					&shm->stats.frontier.cooldown.decay_candidates,
+					1UL, __ATOMIC_RELAXED);
+
+			/* Arm B live reject for the silent-streak
+			 * decay.  FRONTIER_SILENT_DECAY_REJECT_DENOM-1
+			 * / FRONTIER_SILENT_DECAY_REJECT_DENOM
+			 * probabilistic demote so the syscall still
+			 * samples at ~3% -- any of the four lanes the
+			 * streak resets on (PC-edge, transition,
+			 * CMP-insert, SUCCESS-bucket errno shift) will
+			 * release the decay on the very next pick that
+			 * observes the productive event.  Arm A leaves
+			 * selection byte-identical to today; the shadow
+			 * counters above bumped in lock-step so the
+			 * would-be divergence stays observable across
+			 * both cohorts.  parent context (child == NULL)
+			 * falls through to no-reject to preserve
+			 * baseline behaviour for any non-child caller,
+			 * matching the frontier_blend / errno-plateau
+			 * arm-b parent fallbacks.
+			 *
+			 * Coordination with the errno-plateau decay
+			 * (frontier_errno_decay_reject()): the retry here
+			 * preempts the errno-plateau check that follows in
+			 * this accept iteration, so a single pick can never
+			 * be double-demoted within one iteration
+			 * regardless of how the two arm-B stamps cross.
+			 * Across picks, the joint (silent-decay arm B
+			 * AND errno-plateau arm B) cohort sees
+			 * compounded rejection (~99.9% combined) on a
+			 * syscall both predicates classify as wasteful
+			 * from orthogonal angles -- intentional: both
+			 * gates target the same ~3% recoverable
+			 * sampling rate, and compounding to a smaller
+			 * effective rate on a doubly-classified-stuck
+			 * syscall is strictly safer (any productive
+			 * lane on either predicate still releases the
+			 * decay on the next pick). */
+			if (child != NULL &&
+			    child->frontier_silent_decay_arm_b &&
+			    rnd_modulo_u32(FRONTIER_SILENT_DECAY_REJECT_DENOM) != 0) {
+				__atomic_fetch_add(
+					&shm->stats.frontier.cooldown.silent_decay_live_rejects,
+					1UL, __ATOMIC_RELAXED);
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/* Errno-plateau decay (SHADOW + per-child A/B).  See the
+ * FRONTIER_ERRNO_PLATEAU_* contract in include/strategy.h and the
+ * frontier_errno_plateau_should_decay() implementation in strategy.c.
+ *
+ * Composition with the sibling shadow decay
+ * (frontier_silent_decay_reject()): that one keys on
+ * the CONSECUTIVE-silent-pick streak with a no-CMP-and-no-success-
+ * shift UNLESS clause; this one keys on a LIFETIME dominant-failure-
+ * errno + zero-edge shape.  The two predicates are orthogonal --
+ * a syscall returning EBADF every time will satisfy errno-plateau
+ * after the first FRONTIER_ERRNO_PLATEAU_MIN_CALLS calls regardless
+ * of streak length, and a syscall whose silent streak has crossed
+ * the threshold but whose errno mix is spread across buckets will
+ * satisfy silent-decay only.  The overlap_silent counter tallies
+ * picks where BOTH predicates fire so the operator can read the
+ * incremental coverage the errno-plateau predicate adds.
+ *
+ * The cred_throttle gate already rejected impossible credential
+ * picks; frontier_errno_plateau_should_decay excludes the
+ * credential-class set explicitly so a credential syscall is
+ * never decayed by both gates.
+ *
+ * True means the arm-B live reject fired and the pick retries. */
+static bool frontier_errno_decay_reject(unsigned int syscallnr, bool do32,
+					struct childdata *child)
+{
+	if (!frontier_errno_plateau_should_decay(syscallnr, do32))
+		return false;
+
+	__atomic_fetch_add(
+		&shm->stats.frontier.plateau.errno_decay_would_skip,
+		1UL, __ATOMIC_RELAXED);
+	if (syscallnr < MAX_NR_SYSCALL) {
+		unsigned long s = __atomic_load_n(
+			&shm->stats.frontier.per_syscall.silent_streak_per_syscall[syscallnr],
+			__ATOMIC_RELAXED);
+		if (s >= FRONTIER_SHADOW_DECAY_STREAK)
+			__atomic_fetch_add(
+				&shm->stats.frontier.plateau.errno_decay_overlap_silent,
+				1UL, __ATOMIC_RELAXED);
+	}
+	/* Arm B live reject: REJECT_DENOM-1 / REJECT_DENOM
+	 * probabilistic demote so the syscall still samples at
+	 * ~3% -- any of the four novelty lanes the predicate
+	 * checks will release the decay on the very next pick
+	 * that observes the productive event.  Arm A leaves
+	 * selection byte-identical to today; the shadow counters
+	 * above bumped in lock-step so the would-be divergence
+	 * stays observable across both cohorts.  parent context
+	 * (child == NULL) falls through to no-reject to preserve
+	 * baseline behaviour for any non-child caller, matching
+	 * the frontier_blend arm-b parent fallback. */
+	if (child != NULL && child->frontier_errno_decay_arm_b &&
+	    rnd_modulo_u32(FRONTIER_ERRNO_PLATEAU_REJECT_DENOM) != 0) {
+		__atomic_fetch_add(
+			&shm->stats.frontier.plateau.errno_decay_live_rejects,
+			1UL, __ATOMIC_RELAXED);
+		return true;
+	}
+	return false;
+}
+
+/* Silent-ring (max_weight <= 2) accept of
+ * set_syscall_nr_coverage_frontier(); false means retry. */
+static bool frontier_silent_accept(unsigned int syscallnr, bool do32,
+				   struct childdata *child)
+{
+	unsigned long w = frontier_cold_weight(syscallnr, child);
+	unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
+	unsigned long roll;
+
+	w = frontier_cmp_route(syscallnr, w);
+
+	roll = (unsigned long)rnd_modulo_u32(denom);
+
+	if (roll >= w + 1UL)
+		return false;
+
+	__atomic_fetch_add(&shm->stats.frontier.core.silent_picks, 1UL,
+			   __ATOMIC_RELAXED);
+
+	/* Per-syscall split of the scalar bump above + per-call
+	 * regime stamp consumed by the post-call attribution path in
+	 * random_syscall_step.  ADDITIVE: the picker accept/retry math
+	 * above is byte-identical to the pre-row baseline; the bump
+	 * and stamp run strictly AFTER the accept decision and no
+	 * live-path code reads either site.  Same MAX_NR_SYSCALL
+	 * bound the sibling frontier_picks_per_syscall[] uses. */
+	if (syscallnr < MAX_NR_SYSCALL)
+		__atomic_fetch_add(
+			&shm->stats.frontier.per_syscall.silent_picks_per_syscall[syscallnr],
+			1UL, __ATOMIC_RELAXED);
+	child->frontier_pick_regime = FRONTIER_PICK_SILENT;
+
+	if (frontier_silent_decay_reject(syscallnr, child))
+		return false;
+
+	/*
+	 * SHADOW-ONLY saturation cooldown predicate (gated by
+	 * --frontier-saturation-cooldown != off).  Sibling of the
+	 * silent-streak decay block above and the errno-plateau
+	 * block below; targets the same wasteful-silent-pick shape
+	 * but keys plateau on the windowed frontier-edge ring and
+	 * spares the under-explored struct-arg backlog + the object-
+	 * producer set via distinct-CMP / first-success-TRANSITION /
+	 * precomputed producer-observer bitmap lanes.  See the full
+	 * contract above frontier_satcool_spare() in
+	 * strategy-frontier.c.
+	 */
+	frontier_satcool_spare(syscallnr, do32);
+
+	/*
+	 * SHADOW-ONLY floored-barren sub-floor demote predicate
+	 * (gated by --frontier-barren-demote != off).  Sibling of
+	 * the satcool spare above; targets the pure zero-arg
+	 * getter set whose lifetime PC-edge yield has plateaued
+	 * to a hard floor rather than the windowed-plateau of
+	 * the saturated-productive set the satcool predicate
+	 * owns.  Disjoint from satcool by construction (the
+	 * barren predicate requires lifetime edges == 0 at the
+	 * small FRONTIER_BARREN_C_MIN floor; satcool requires
+	 * the FRONTIER_SATCOOL_CMIN 10000-call magnitude and
+	 * keys plateau on the K-window ring going flat for a
+	 * syscall that HAS produced).  See the full contract
+	 * above frontier_barren_demote() in strategy-frontier.c.
+	 */
+	frontier_barren_demote(syscallnr, do32);
+
+	if (frontier_errno_decay_reject(syscallnr, do32, child))
+		return false;
+	return true;
+}
+
 /*
  * Pick the syscall to run under STRATEGY_COVERAGE_FRONTIER: uniform draw
  * from active_syscalls, then biased acceptance against the per-syscall
@@ -189,381 +613,11 @@ retry:
 	 *    explored and away from the few syscalls that already produced
 	 *    most of the saturated coverage. */
 	if (max_weight > 2) {
-		unsigned long w = frontier_recent_count(syscallnr);
-		unsigned long soft_max = (unsigned long)ilog2_ul(max_weight) *
-					 FRONTIER_SOFT_SCALE;
-		unsigned long denom = soft_max + 1UL;
-		unsigned long roll = (unsigned long)rnd_modulo_u32(denom);
-
-		if (roll >= w + 1UL)
+		if (!frontier_live_accept(syscallnr, max_weight, child))
 			goto retry;
-
-		/* Blanket LIVE-regime probabilistic pick-reject.  Reclaims
-		 * ~1 / FRONTIER_LIVE_DECAY_REJECT_DENOM of LIVE-ring picks
-		 * unconditionally via the SAME goto-retry mechanism the
-		 * frontier-weight roll above already uses, so the picker's
-		 * inner retry budget absorbs the rejected pick the same way
-		 * it absorbs a weight-loss reject and the counters past this
-		 * point stay consistent.
-		 *
-		 * Placed AFTER the frontier-weight accept decision and
-		 * BEFORE the frontier_live_picks bump so a rejected pick is
-		 * counted only in frontier_live_decay_live_rejects, not in
-		 * frontier_live_picks / frontier_live_picks_per_syscall.
-		 * That keeps the documented (live_picks + silent_picks ~=
-		 * frontier_picks_per_syscall) contract intact for the LIVE
-		 * side: a rejected pick does not consume any per-syscall
-		 * pick budget on either side of that identity.  The rejects
-		 * counter sits next to frontier_live_picks in the stats
-		 * dump for the projected reclaim fraction.
-		 *
-		 * Isolated from the F3 SHADOW cooldown signal
-		 * (frontier_live_miss_streak_per_syscall[] +
-		 * frontier_live_cooldown_candidates / _would_skip): this
-		 * gate is unconditional, the cooldown signal is per-syscall.
-		 * The targeted variant that gates the reject on the cooldown
-		 * predicate is a SEPARATE later commit and explicitly does
-		 * NOT try to reach the silent-decay path -- bootstrapping
-		 * the two together would compound risk on the first ramp.
-		 *
-		 * Does NOT touch the cached frontier weight, the ring decay
-		 * loop, or the per-syscall ring -- the smallest possible
-		 * behaviour change that produces the desired reclaim. */
-		if (rnd_modulo_u32(FRONTIER_LIVE_DECAY_REJECT_DENOM) == 0) {
-			__atomic_fetch_add(
-				&shm->stats.frontier.cooldown.live_decay_live_rejects,
-				1UL, __ATOMIC_RELAXED);
-			goto retry;
-		}
-
-		__atomic_fetch_add(&shm->stats.frontier.core.live_picks, 1UL,
-				   __ATOMIC_RELAXED);
-
-		/* Per-syscall split of the scalar bump above + per-call
-		 * regime stamp consumed by the post-call attribution path in
-		 * random_syscall_step.  ADDITIVE: the picker accept/retry math
-		 * above is byte-identical to the pre-row baseline; the bump
-		 * and stamp run strictly AFTER the accept decision and no
-		 * live-path code reads either site.  Same MAX_NR_SYSCALL
-		 * bound the sibling frontier_picks_per_syscall[] uses. */
-		if (syscallnr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(
-				&shm->stats.frontier.per_syscall.live_picks_per_syscall[syscallnr],
-				1UL, __ATOMIC_RELAXED);
-		child->frontier_pick_regime = FRONTIER_PICK_LIVE;
 	} else {
-		unsigned long w = frontier_cold_weight(syscallnr, child);
-		unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
-		unsigned long roll;
-		enum cmp_frontier_mode cmpf_mode;
-
-		/* CMP-weighted alternate picker arm (default off).  The
-		 * mode load is the only work done under OFF -- the
-		 * cmp_frontier_weight() call, the plateau-hint load, and
-		 * the substitution itself are all skipped so a fixed-seed
-		 * dry-run is byte-identical to a build before this row.
-		 * The mode load consumes no RNG.
-		 *
-		 * SHADOW_ONLY computes the alternate weight, samples the
-		 * plateau hint, and bumps the would-route counter on the
-		 * plateau-hit subset; the returned w stays at the PC-led
-		 * value so picks remain identical to OFF for a given seed.
-		 *
-		 * COMBINED replaces w with the alternate weight when the
-		 * plateau classifier currently reads CMP_RISING_PC_FLAT
-		 * -- the "rank the silent regime by CMP-derived signal
-		 * instead" contract.  Off-plateau picks retain the PC-led
-		 * weight; the arm only kicks in on the regime it was
-		 * designed for.  A syscall with no CMP activity sees its
-		 * weight drop to 0 under the swap, which the (w + 1) /
-		 * (SCALE + 1) accept floor keeps reachable rather than
-		 * unreachable.
-		 *
-		 * See include/cmp-frontier.h for the source-counter choice
-		 * and the degrade-safe contract. */
-		cmpf_mode = __atomic_load_n(&cmp_frontier_mode,
-					    __ATOMIC_RELAXED);
-		if (cmpf_mode != CMP_FRONTIER_OFF) {
-			unsigned long cmp_w = cmp_frontier_weight(syscallnr);
-			int plateau;
-
-			__atomic_fetch_add(&shm->stats.cmp_frontier.samples,
-					   1UL, __ATOMIC_RELAXED);
-			plateau = __atomic_load_n(
-					&shm->plateau_current_hypothesis,
-					__ATOMIC_RELAXED);
-			if (plateau == (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT) {
-				__atomic_fetch_add(
-					&shm->stats.cmp_frontier.would_route,
-					1UL, __ATOMIC_RELAXED);
-				if (cmpf_mode == CMP_FRONTIER_COMBINED) {
-					__atomic_fetch_add(
-						&shm->stats.cmp_frontier.live_routes,
-						1UL, __ATOMIC_RELAXED);
-					w = cmp_w;
-				}
-			}
-		}
-
-		roll = (unsigned long)rnd_modulo_u32(denom);
-
-		if (roll >= w + 1UL)
+		if (!frontier_silent_accept(syscallnr, do32, child))
 			goto retry;
-
-		__atomic_fetch_add(&shm->stats.frontier.core.silent_picks, 1UL,
-				   __ATOMIC_RELAXED);
-
-		/* Per-syscall split of the scalar bump above + per-call
-		 * regime stamp consumed by the post-call attribution path in
-		 * random_syscall_step.  ADDITIVE: the picker accept/retry math
-		 * above is byte-identical to the pre-row baseline; the bump
-		 * and stamp run strictly AFTER the accept decision and no
-		 * live-path code reads either site.  Same MAX_NR_SYSCALL
-		 * bound the sibling frontier_picks_per_syscall[] uses. */
-		if (syscallnr < MAX_NR_SYSCALL)
-			__atomic_fetch_add(
-				&shm->stats.frontier.per_syscall.silent_picks_per_syscall[syscallnr],
-				1UL, __ATOMIC_RELAXED);
-		child->frontier_pick_regime = FRONTIER_PICK_SILENT;
-
-		/* SHADOW-ONLY silent-streak accounting.  Mirrors the
-		 * frontier_silent_picks bump above; counts CONSECUTIVE
-		 * silent-regime accepts of this syscall since the last
-		 * productive-edge event for it (reset to zero by
-		 * frontier_record_new_edge() in strategy.c, the existing
-		 * per-syscall new-edge hook in kcov_collect -- no new
-		 * collection path is added).  When the post-increment value
-		 * crosses FRONTIER_SHADOW_DECAY_STREAK the global
-		 * frontier_shadow_decay_candidates counter bumps exactly
-		 * once, the headline shadow stat that estimates how many
-		 * decay-candidate syscalls a future LIVE silent-decay variant
-		 * of this picker would have demoted, without changing any
-		 * selection today.  Same MAX_NR_SYSCALL bound the
-		 * frontier_picks_per_syscall[] bump below uses.
-		 *
-		 * Selection-byte-identical contract: the picker accept/retry
-		 * math above this point is untouched; the bump runs strictly
-		 * after the accept decision and writes only NEW counters
-		 * that no live-path code reads.  Mirrors the same
-		 * "observation-only, default off-by-construction" shape as
-		 * the cred_throttle gate above so the frontier picker's
-		 * distribution stays byte-identical to today. */
-		if (syscallnr < MAX_NR_SYSCALL) {
-			unsigned long streak = __atomic_add_fetch(
-				&shm->stats.frontier.per_syscall.silent_streak_per_syscall[syscallnr],
-				1UL, __ATOMIC_RELAXED);
-			if (streak == FRONTIER_SHADOW_DECAY_STREAK)
-				__atomic_fetch_add(
-					&shm->stats.frontier.core.shadow_decay_candidates,
-					1UL, __ATOMIC_RELAXED);
-
-			/* SHADOW-ONLY tightened decay predicate.  Pairs with
-			 * the looser frontier_shadow_decay_candidates bump
-			 * above: the looser counter fires on N-silent alone
-			 * (no PC novelty since reset, since the streak is
-			 * reset by frontier_record_new_edge() / _transition_
-			 * edge() on the PC-edge and transition productive
-			 * paths).  The tighter predicate here additionally
-			 * requires that NEITHER per-syscall CMP-pool inserts
-			 * NOR the SUCCESS-bucket errno count has advanced
-			 * since the streak's last reset -- the "no recent
-			 * CMP novelty and no useful errno shift" UNLESS
-			 * clause that distinguishes a genuinely-stuck
-			 * candidate from one whose non-PC novelty stream is
-			 * still moving.
-			 *
-			 * Baseline snapshots are refreshed at every streak
-			 * reset (in strategy.c) so a current-vs-baseline
-			 * equality test is sufficient -- no per-pick stash
-			 * is needed.  Atomic loads under RELAXED ordering:
-			 * shadow predicate, racing producer bumps are
-			 * tolerated (worst case is a one-pick over/under-
-			 * count of the shadow counters, never a perturbation
-			 * of live selection).
-			 *
-			 *  frontier_decay_candidates
-			 *      Edge bump: fires on the (streak ==
-			 *      FRONTIER_SHADOW_DECAY_STREAK) crossing when
-			 *      the UNLESS clause holds, the tighter sibling
-			 *      of the frontier_shadow_decay_candidates bump
-			 *      above.  Strictly <= the looser counter by
-			 *      construction.
-			 *  frontier_decay_would_skip
-			 *      Cumulative bump on every silent-regime pick
-			 *      where the streak is already past threshold
-			 *      AND the UNLESS clause holds -- the projected
-			 *      demote count a live silent-decay variant of
-			 *      this picker would produce. */
-			if (streak >= FRONTIER_SHADOW_DECAY_STREAK &&
-			    kcov_shm != NULL) {
-				unsigned long cmp_now, cmp_base;
-				unsigned long errno_now, errno_base;
-
-				cmp_now = __atomic_load_n(
-					&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[syscallnr],
-					__ATOMIC_RELAXED);
-				cmp_base = __atomic_load_n(
-					&shm->stats.frontier.per_syscall.silent_cmp_baseline[syscallnr],
-					__ATOMIC_RELAXED);
-				{
-					/* Sum the SUCCESS-bucket across every
-					 * picker-context slice so this
-					 * current-vs-baseline compare stays
-					 * consistent with the summed capture
-					 * at the streak-reset baseline snapshot
-					 * (frontier_record_new_edge()). */
-					unsigned int ctx;
-
-					errno_now = 0;
-					for (ctx = 0; ctx < PICKER_NCTX; ctx++)
-						errno_now += __atomic_load_n(
-							&kcov_shm->errno_state.per_syscall_errno[syscallnr][ctx][ERRNO_BUCKET_SUCCESS],
-							__ATOMIC_RELAXED);
-				}
-				errno_base = __atomic_load_n(
-					&shm->stats.frontier.per_syscall.silent_errno_success_baseline[syscallnr],
-					__ATOMIC_RELAXED);
-
-				if (cmp_now == cmp_base &&
-				    errno_now == errno_base) {
-					__atomic_fetch_add(
-						&shm->stats.frontier.cooldown.decay_would_skip,
-						1UL, __ATOMIC_RELAXED);
-					if (streak == FRONTIER_SHADOW_DECAY_STREAK)
-						__atomic_fetch_add(
-							&shm->stats.frontier.cooldown.decay_candidates,
-							1UL, __ATOMIC_RELAXED);
-
-					/* Arm B live reject for the silent-streak
-					 * decay.  FRONTIER_SILENT_DECAY_REJECT_DENOM-1
-					 * / FRONTIER_SILENT_DECAY_REJECT_DENOM
-					 * probabilistic demote so the syscall still
-					 * samples at ~3% -- any of the four lanes the
-					 * streak resets on (PC-edge, transition,
-					 * CMP-insert, SUCCESS-bucket errno shift) will
-					 * release the decay on the very next pick that
-					 * observes the productive event.  Arm A leaves
-					 * selection byte-identical to today; the shadow
-					 * counters above bumped in lock-step so the
-					 * would-be divergence stays observable across
-					 * both cohorts.  parent context (child == NULL)
-					 * falls through to no-reject to preserve
-					 * baseline behaviour for any non-child caller,
-					 * matching the frontier_blend / errno-plateau
-					 * arm-b parent fallbacks.
-					 *
-					 * Coordination with the errno-plateau decay
-					 * below: the goto retry here preempts the
-					 * errno-plateau check that follows in this
-					 * accept iteration, so a single pick can never
-					 * be double-demoted within one iteration
-					 * regardless of how the two arm-B stamps cross.
-					 * Across picks, the joint (silent-decay arm B
-					 * AND errno-plateau arm B) cohort sees
-					 * compounded rejection (~99.9% combined) on a
-					 * syscall both predicates classify as wasteful
-					 * from orthogonal angles -- intentional: both
-					 * gates target the same ~3% recoverable
-					 * sampling rate, and compounding to a smaller
-					 * effective rate on a doubly-classified-stuck
-					 * syscall is strictly safer (any productive
-					 * lane on either predicate still releases the
-					 * decay on the next pick). */
-					if (child != NULL &&
-					    child->frontier_silent_decay_arm_b &&
-					    rnd_modulo_u32(FRONTIER_SILENT_DECAY_REJECT_DENOM) != 0) {
-						__atomic_fetch_add(
-							&shm->stats.frontier.cooldown.silent_decay_live_rejects,
-							1UL, __ATOMIC_RELAXED);
-						goto retry;
-					}
-				}
-			}
-		}
-
-		/*
-		 * SHADOW-ONLY saturation cooldown predicate (gated by
-		 * --frontier-saturation-cooldown != off).  Sibling of the
-		 * silent-streak decay block above and the errno-plateau
-		 * block below; targets the same wasteful-silent-pick shape
-		 * but keys plateau on the windowed frontier-edge ring and
-		 * spares the under-explored struct-arg backlog + the object-
-		 * producer set via distinct-CMP / first-success-TRANSITION /
-		 * precomputed producer-observer bitmap lanes.  See the full
-		 * contract above frontier_satcool_spare() in
-		 * strategy-frontier.c.
-		 */
-		frontier_satcool_spare(syscallnr, do32);
-
-		/*
-		 * SHADOW-ONLY floored-barren sub-floor demote predicate
-		 * (gated by --frontier-barren-demote != off).  Sibling of
-		 * the satcool spare above; targets the pure zero-arg
-		 * getter set whose lifetime PC-edge yield has plateaued
-		 * to a hard floor rather than the windowed-plateau of
-		 * the saturated-productive set the satcool predicate
-		 * owns.  Disjoint from satcool by construction (the
-		 * barren predicate requires lifetime edges == 0 at the
-		 * small FRONTIER_BARREN_C_MIN floor; satcool requires
-		 * the FRONTIER_SATCOOL_CMIN 10000-call magnitude and
-		 * keys plateau on the K-window ring going flat for a
-		 * syscall that HAS produced).  See the full contract
-		 * above frontier_barren_demote() in strategy-frontier.c.
-		 */
-		frontier_barren_demote(syscallnr, do32);
-
-		/* Errno-plateau decay (SHADOW + per-child A/B).  See the
-		 * FRONTIER_ERRNO_PLATEAU_* contract in include/strategy.h and the
-		 * frontier_errno_plateau_should_decay() implementation in strategy.c.
-		 *
-		 * Composition with the sibling shadow decay above: that one keys on
-		 * the CONSECUTIVE-silent-pick streak with a no-CMP-and-no-success-
-		 * shift UNLESS clause; this one keys on a LIFETIME dominant-failure-
-		 * errno + zero-edge shape.  The two predicates are orthogonal --
-		 * a syscall returning EBADF every time will satisfy errno-plateau
-		 * after the first FRONTIER_ERRNO_PLATEAU_MIN_CALLS calls regardless
-		 * of streak length, and a syscall whose silent streak has crossed
-		 * the threshold but whose errno mix is spread across buckets will
-		 * satisfy silent-decay only.  The overlap_silent counter tallies
-		 * picks where BOTH predicates fire so the operator can read the
-		 * incremental coverage the errno-plateau predicate adds.
-		 *
-		 * The cred_throttle gate already rejected impossible credential
-		 * picks above; frontier_errno_plateau_should_decay excludes the
-		 * credential-class set explicitly so a credential syscall is
-		 * never decayed by both gates. */
-		if (frontier_errno_plateau_should_decay(syscallnr, do32)) {
-			__atomic_fetch_add(
-				&shm->stats.frontier.plateau.errno_decay_would_skip,
-				1UL, __ATOMIC_RELAXED);
-			if (syscallnr < MAX_NR_SYSCALL) {
-				unsigned long s = __atomic_load_n(
-					&shm->stats.frontier.per_syscall.silent_streak_per_syscall[syscallnr],
-					__ATOMIC_RELAXED);
-				if (s >= FRONTIER_SHADOW_DECAY_STREAK)
-					__atomic_fetch_add(
-						&shm->stats.frontier.plateau.errno_decay_overlap_silent,
-						1UL, __ATOMIC_RELAXED);
-			}
-			/* Arm B live reject: REJECT_DENOM-1 / REJECT_DENOM
-			 * probabilistic demote so the syscall still samples at
-			 * ~3% -- any of the four novelty lanes the predicate
-			 * checks will release the decay on the very next pick
-			 * that observes the productive event.  Arm A leaves
-			 * selection byte-identical to today; the shadow counters
-			 * above bumped in lock-step so the would-be divergence
-			 * stays observable across both cohorts.  parent context
-			 * (child == NULL) falls through to no-reject to preserve
-			 * baseline behaviour for any non-child caller, matching
-			 * the frontier_blend arm-b parent fallback. */
-			if (child != NULL && child->frontier_errno_decay_arm_b &&
-			    rnd_modulo_u32(FRONTIER_ERRNO_PLATEAU_REJECT_DENOM) != 0) {
-				__atomic_fetch_add(
-					&shm->stats.frontier.plateau.errno_decay_live_rejects,
-					1UL, __ATOMIC_RELAXED);
-				goto retry;
-			}
-		}
 	}
 
 	srec_publish_begin(rec);
