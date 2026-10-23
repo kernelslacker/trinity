@@ -1,65 +1,10 @@
 /*
- * Genetlink family grammar: ovpn (OpenVPN data-channel offload).
- *
- * The ovpn-dco kernel module exposes its userspace control plane
- * through a single generic-netlink family ("ovpn") covering the peer
- * lifecycle (PEER_NEW / PEER_SET / PEER_GET / PEER_DEL) and the
- * symmetric-key lifecycle (KEY_NEW / KEY_GET / KEY_SWAP / KEY_DEL).
- * All eight user-callable commands carry GENL_ADMIN_PERM (CAP_NET_ADMIN
- * gated), and genl_family_rcv_msg() checks that flag before it parses
- * attributes, so a child without CAP_NET_ADMIN in the initial user
- * namespace gets -EPERM and never reaches the per-cmd nla_policy walker
- * or the peer-table and key-slot mutation paths; a child that holds it
- * reaches every parser once the message carries a real family_id.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "ovpn", so the per-cmd policy walker plus the peer /
- * key dispatch chains have been routinely cold under generic netlink
- * fuzzing; resolving the family at first NETLINK_GENERIC use lets the
- * message generator address real ovpn messages whose attribute shapes
- * plausibly survive the per-cmd policy.
- *
- * The two *_NTF notification command ids (PEER_DEL_NTF, KEY_SWAP_NTF)
- * are intentionally omitted: the kernel rejects them when issued from
- * userspace, so listing them in the grammar would only burn fuzz
- * budget on a guaranteed -EOPNOTSUPP fast-reject.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample /
- * tcp_metrics model, a single flat nla_attr_spec table lists every id
- * used by this family's commands.  ovpn's top-level OVPN_A_* namespace
- * is small (IFINDEX scalar plus the PEER / KEYCONF nested containers);
- * the rich content — the per-peer transport-endpoint quad (REMOTE_IPV4
- * / REMOTE_IPV6 / REMOTE_IPV6_SCOPE_ID / REMOTE_PORT), the per-peer
- * VPN-side addresses (VPN_IPV4 / VPN_IPV6), the matching LOCAL_IPV4 /
- * LOCAL_IPV6 / LOCAL_PORT triple, the keepalive interval / timeout
- * pair, the response-side per-direction byte / packet counters, the
- * KEYCONF slot / key-id / cipher-alg / encrypt-dir / decrypt-dir tuple,
- * and the inner KEYDIR cipher-key + nonce-tail payloads — lives inside
- * those nested containers.
- *
- * The family carries a nonzero declared version (OVPN_FAMILY_VERSION =
- * 1) so the default_version member is initialised — the kernel's
- * dispatchers don't actually gate on the genlmsghdr.version byte today,
- * but matching the declared family version keeps the message generator
- * honest against any future version-gated dispatch.  hdrsize stays 0:
- * ovpn has no family-specific fixed header, attributes follow the
- * genlmsghdr directly.
- *
- * Header gating mirrors the team / hsr / fou / psample / batadv /
- * tcp_metrics families: <linux/ovpn.h> is the upstream UAPI header
- * carrying every OVPN_CMD_* / OVPN_A_* enum referenced below.  Build
- * hosts lacking the header silently drop the family from the registry
- * instead of failing the build.  Per-symbol #ifndef shims in
- * include/kernel/ovpn.h fill in OVPN_CMD_* / OVPN_A_* on build hosts
- * whose installed uapi predates this family.
- *
- * arch.h is included unconditionally above the __has_include guard so
- * the translation unit is never empty even on build hosts whose uapi
- * lacks <linux/ovpn.h> — the toolchain emits no compile-unit-empty
- * warning and the registry-side ifdef'd extern stays consistent with
- * the absent strong symbol.
+ * Genetlink family grammar: ovpn (OpenVPN data-channel offload), targeting
+ * drivers/net/ovpn/netlink-gen.c and the handlers beside it.  All eight ops
+ * are GENL_ADMIN_PERM; only the top-level OVPN_A_* namespace is listed.
  */
 
+/* Keeps the TU non-empty when the guard below drops the family. */
 #include "arch.h"
 
 #if __has_include(<linux/ovpn.h>)

@@ -1,41 +1,9 @@
 /*
- * Genetlink family grammar: psample (kernel packet sampling).
- *
- * The psample module exposes a single generic-netlink family ("psample")
- * whose only op is PSAMPLE_CMD_GET_GROUP, an unprivileged dumpit; a
- * request without NLM_F_DUMP finds no doit and is rejected the same
- * way as the ids below.  PSAMPLE_CMD_SAMPLE, NEW_GROUP and DEL_GROUP
- * are kernel-to-userspace ids (multicast sample and group-change
- * notifications; NEW_GROUP also labels the GET_GROUP dump replies):
- * the genl core finds no op for them and rejects them with
- * -EOPNOTSUPP at the command lookup, before any attribute parsing, so
- * the grammar omits them.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "psample", so the group dump in net/psample/psample.c
- * has been routinely cold under generic netlink fuzzing; resolving the
- * family at first NETLINK_GENERIC use lets the message generator
- * address it.  The op declares no attribute policy, so the genl core
- * skips attribute parsing for it and the attribute table below is
- * never walked on input; it mirrors the attributes the kernel emits.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou model, a single
- * flat nla_attr_spec table lists every id the family's messages use.
- * psample uses a single flat PSAMPLE_ATTR_* namespace.  The sixteen
- * attrs besides the nested TUNNEL are scalar / binary / flag covering
- * the group-id / sample-rate fields, the per-packet metadata
- * (origsize, group seq, latency, timestamp, proto, in/out ifindex,
- * traffic-class occupancy), the sampled-data and user-cookie binary
- * payloads, and the SAMPLE_PROBABILITY presence-only flag added in
- * 6.7.
- *
- * Header gating mirrors the team / hsr / fou families: <linux/psample.h>
- * is the upstream UAPI header carrying every PSAMPLE_CMD_* and
- * PSAMPLE_ATTR_* enum referenced below.  Build hosts lacking the
- * header silently drop the family from the registry instead of failing
- * the build.  Per-symbol #ifndef shims fill in newer PSAMPLE_ATTR_* on
- * build hosts whose stale uapi predates the tunnel / latency /
- * timestamp / proto / user-cookie / sample-probability additions.
+ * Genetlink family grammar: psample (kernel packet sampling), targeting
+ * net/psample/psample.c.  Its one op, GET_GROUP, is an unprivileged dump
+ * and the family declares no attribute policy, so the genl core skips
+ * attribute parsing and the table below is never walked on input; it
+ * mirrors the attributes the kernel emits.
  */
 
 #if __has_include(<linux/psample.h>)
@@ -44,6 +12,12 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * SAMPLE, NEW_GROUP and DEL_GROUP are kernel-to-userspace ids, not ops
+ * (NEW_GROUP also labels the GET_GROUP dump replies), so they are not
+ * listed.  A GET_GROUP request without NLM_F_DUMP finds no doit and is
+ * rejected the same way.
+ */
 static const struct genl_cmd_grammar psample_cmds[] = {
 	{ PSAMPLE_CMD_GET_GROUP,	"PSAMPLE_CMD_GET_GROUP" },
 };

@@ -1,55 +1,8 @@
 /*
- * Genetlink family grammar: tcp_metrics (TCP per-destination metric
- * cache).
- *
- * The tcp_metrics core exposes its userspace control plane through a
- * single generic-netlink family ("tcp_metrics") with two user-callable
- * commands: TCP_METRICS_CMD_GET (unprivileged metric query / dump) and
- * TCP_METRICS_CMD_DEL (CAP_NET_ADMIN guarded entry / flush).  Both
- * commands key the per-destination lookup on either ADDR_IPV4 /
- * ADDR_IPV6 (and an optional SADDR_IPV4 / SADDR_IPV6 source-address
- * scoping pair), so the per-cmd nla_policy walker plus the metric
- * cache lookup / removal paths in net/ipv4/tcp_metrics.c are the
- * primary attack surface this family unlocks.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "tcp_metrics", so the per-cmd policy walker plus the
- * GET / DEL dispatch chains have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real tcp_metrics messages whose
- * attribute shapes plausibly survive the per-cmd policy and land
- * directly in the cache walker where bugs live.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  tcp_metrics uses a single flat
- * TCP_METRICS_ATTR_* namespace.  The twelve attrs besides the nested
- * VALS are scalar / binary covering the IPv4 / IPv6 destination-address
- * key pair, the matching SADDR_IPV4 / SADDR_IPV6 source-address scoping
- * pair, the
- * msecs-age scalar, the TW timestamp pair, the Fast Open MSS / drop
- * count / drop timestamp triple, the Fast Open cookie binary payload,
- * and the response-side PAD alignment partner.
- *
- * The family carries a nonzero declared version (0x1) so the
- * default_version member is initialised — the kernel's GET / DEL
- * dispatchers don't actually gate on the genlmsghdr.version byte
- * today, but matching the declared family version keeps the message
- * generator honest against any future version-gated dispatch.
- *
- * Header gating mirrors the team / hsr / fou / psample / batadv
- * families: <linux/tcp_metrics.h> is the upstream UAPI header
- * carrying every TCP_METRICS_CMD_* and TCP_METRICS_ATTR_* enum
- * referenced below.  Build hosts lacking the header silently drop
- * the family from the registry instead of failing the build.
- * Per-symbol #ifndef shims fill in newer TCP_METRICS_ATTR_* on
- * build hosts whose stale uapi predates the SADDR_IPV4 / SADDR_IPV6
- * source-key additions or the PAD response-side partner.
- *
- * The family is statically linked into the IPv4 core (no separate
- * module to load), so the family_id resolves on every host that
- * runs a stock kernel — no in-fuzz module probing or KO setup
- * required for the grammar to start emitting structured payloads.
+ * Genetlink family grammar: tcp_metrics (TCP per-destination metric cache),
+ * targeting tcp_metrics_nl_policy and the GET / DEL handlers in
+ * net/ipv4/tcp_metrics.c.  One flat TCP_METRICS_ATTR_* namespace; the cmd
+ * table says which op is privileged.
  */
 
 #if __has_include(<linux/tcp_metrics.h>)

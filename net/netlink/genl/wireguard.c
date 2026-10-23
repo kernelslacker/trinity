@@ -1,30 +1,9 @@
 /*
- * Genetlink family grammar: wireguard.
- *
- * The WireGuard tunnel control plane is a single generic-netlink family
- * (WG_GENL_NAME = "wireguard") with just two commands: GET_DEVICE and
- * SET_DEVICE.  The interesting surface area is the deeply nested
- * attribute tree the kernel parses on SET — drivers/net/wireguard/netlink.c
- * walks WGDEVICE_A_PEERS (a list of WGPEER_A_* nests), and inside each
- * peer it walks WGPEER_A_ALLOWEDIPS (a list of WGALLOWEDIP_A_* nests).
- * The per-allowedip handler then feeds the family/ipaddr/cidr triple to
- * wg_allowedips_insert_v4 / wg_allowedips_insert_v6, which mutate a
- * shared radix trie — a parser path that's never been routinely fuzzed
- * because random nlmsg_type IDs essentially never match the runtime
- * family_id the kernel assigns this family.
- *
- * Spec-driven coverage flips that around: at first NETLINK_GENERIC use
- * the controller dump resolves "wireguard" -> family_id, and from then
- * on the message generator addresses real WG messages whose attribute
- * shapes plausibly survive the per-cmd policy.  Random IFINDEX values
- * cause the post-parse handler to bail with -ENODEV, but that's after
- * the full attribute tree has been walked, so coverage of the parser
- * (and the radix-tree insert in the SET path) is preserved.
- *
- * Header gating mirrors the mptcp_pm family: <linux/wireguard.h> is the
- * upstream UAPI header that ships with kernel headers from 5.6 onward.
- * Older build hosts silently drop the family from the registry instead
- * of failing the build.
+ * Genetlink family grammar: wireguard, targeting
+ * drivers/net/wireguard/netlink.c and its generated policy in
+ * drivers/net/wireguard/generated/netlink.c.  Both ops are
+ * GENL_UNS_ADMIN_PERM.  SET_DEVICE walks the nested PEERS / ALLOWEDIPS
+ * tree and feeds wg_allowedips_insert_v4 / _v6.
  */
 
 #if __has_include(<linux/wireguard.h>)

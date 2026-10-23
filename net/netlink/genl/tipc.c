@@ -1,30 +1,8 @@
 /*
- * Genetlink family grammar: TIPC (Transparent Inter-Process Communication).
- *
- * TIPC's userspace control plane uses its own generic-netlink family
- * "TIPCv2" for everything outside the socket API: bearer enable/disable,
- * cluster network configuration, link state, name table inspection, the
- * monitor framework, the UDP-tunnel media config, and the more recent
- * AEAD key rotation path (TIPC_NL_KEY_SET / TIPC_NL_KEY_FLUSH).  The
- * per-cmd nla_policy tables in net/tipc/bearer.c, net/tipc/link.c,
- * net/tipc/net.c, and net/tipc/node.c are the kind of hand-rolled
- * validators that have produced the bulk of the tipc CVE history
- * (CVE-2022-0382 tipc_msg_validate, CVE-2022-0435 tipc_link_proto_rcv
- * stack overflow, the tipc_nametbl double-free family) and benefit
- * from spec-driven fuzzing of valid family_id + plausible attr nests.
- *
- * Starter command set covers bearer + net + link + name-table, which
- * are the four nests that show up in essentially every TIPC bring-up
- * and teardown sequence.  TIPC_NL_KEY_SET / TIPC_NL_KEY_FLUSH are
- * included so the AEAD key rotation path (added in 5.10) gets touched
- * even though the parser-level coverage is narrower than the bearer
- * side.
- *
- * Header gating mirrors the mptcp_pm family: <linux/tipc_netlink.h>
- * carries the TIPC_GENL_V2_NAME constant plus every TIPC_NL_* and
- * TIPC_NLA_* enum we reference.  Distros without TIPC headers (or
- * cross-build sysroots stripped to a network-app-only subset) silently
- * drop the family from the registry instead of failing the build.
+ * Genetlink family grammar: TIPC (Transparent Inter-Process Communication,
+ * family "TIPCv2"), targeting net/tipc/netlink.c and the per-command
+ * handlers in bearer.c, link.c, net.c and node.c.  Every top-level
+ * attribute is a nest that the handler parses against its own policy.
  */
 
 #if __has_include(<linux/tipc_netlink.h>)

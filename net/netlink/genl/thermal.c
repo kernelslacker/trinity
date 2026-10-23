@@ -1,52 +1,8 @@
 /*
- * Genetlink family grammar: thermal (kernel thermal subsystem).
- *
- * The thermal core exposes its userspace control plane through a single
- * generic-netlink family ("thermal") whose user-callable commands are
- * the read-side accessors over the per-net thermal_zone / cooling_device
- * inventory: TZ_GET_ID enumerates registered thermal zones, TZ_GET_TRIP
- * walks a zone's trip-point table, TZ_GET_TEMP samples the current
- * temperature, TZ_GET_GOV reads the bound governor, CDEV_GET enumerates
- * cooling devices, and THRESHOLD_GET dumps the per-zone user-thresholds
- * list.  All six gate primarily on TZ_ID; the GOV / CDEV / THRESHOLD
- * paths additionally consume the per-object selectors named after them.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "thermal", so the per-cmd nla_policy walker in
- * drivers/thermal/thermal_netlink.c has been routinely cold under
- * generic netlink fuzzing; resolving the family at first NETLINK_GENERIC
- * use lets the message generator address real thermal messages whose
- * attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample / ila /
- * ioam6 / seg6 model, a single flat nla_attr_spec table lists every id
- * used by this family's commands.  The thermal policy carries six
- * nested container attrs (TZ / TZ_TRIP / TZ_GOV / CDEV /
- * CPU_CAPABILITY / THRESHOLD), all bare NLA_NESTED that the kernel only
- * emits.  The remaining scalars cover the TZ_ID / TZ_TEMP /
- * TZ_TRIP_{ID,TYPE,TEMP,HYST} /
- * TZ_MODE / TZ_CDEV_WEIGHT / CDEV_{ID,CUR_STATE,MAX_STATE} /
- * CPU_CAPABILITY_{ID,PERFORMANCE,EFFICIENCY} / THRESHOLD_{TEMP,DIRECTION}
- * u32 selectors and the TZ_NAME / TZ_GOV_NAME / CDEV_NAME strings
- * (kernel policy caps at THERMAL_NAME_LENGTH).  GOV_NAME and
- * TZ_PREV_TEMP are response-side only — emitted by the kernel on dump
- * but absent from the input policy — so they are intentionally omitted.
- * THRESHOLD_ADD and THRESHOLD_DELETE consume TZ_ID + THRESHOLD_TEMP +
- * THRESHOLD_DIRECTION, all of which the table already carries.
- * THRESHOLD_FLUSH consumes TZ_ID only.  TZ_GET_MODE is in the uapi
- * enum but thermal_genl_ops[] registers no op for it, so the genl core
- * rejects it on input and the grammar omits it.  The
- * THERMAL_GENL_EVENT_* enum is the kernel-to-userspace notification
- * channel and is not callable from userspace at all.
- *
- * Header gating mirrors the psample / ila / fou / hsr / seg6 families:
- * <linux/thermal.h> is the upstream UAPI header carrying every
- * THERMAL_GENL_CMD_* and THERMAL_GENL_ATTR_* enum referenced below.
- * Build hosts lacking the header silently drop the family from the
- * registry instead of failing the build.  Per-symbol #ifndef shims
- * fill in newer THERMAL_GENL_ATTR_* / THERMAL_GENL_CMD_* on build hosts
- * whose stale uapi predates the post-6.7 CPU_CAPABILITY triple and the
- * post-6.10 THRESHOLD_* additions.
+ * Genetlink family grammar: thermal (kernel thermal subsystem), targeting
+ * thermal_genl_policy and the handlers in drivers/thermal/thermal_netlink.c.
+ * None of its nine ops is GENL_ADMIN_PERM.  The six nested containers are
+ * output-only; the input ids are read flat from the top level.
  */
 
 #if __has_include(<linux/thermal.h>)
@@ -86,6 +42,14 @@
 #define THERMAL_GENL_ATTR_THRESHOLD_DIRECTION	26
 #endif
 
+/*
+ * TZ_GET_MODE is in the uapi enum but thermal_genl_ops[] registers no op
+ * for it, so the genl core rejects it on input; the THERMAL_GENL_EVENT_*
+ * ids are the kernel-to-userspace notification channel.  THRESHOLD_ADD
+ * and THRESHOLD_DELETE consume TZ_ID + THRESHOLD_TEMP +
+ * THRESHOLD_DIRECTION, THRESHOLD_FLUSH only TZ_ID; the attribute table
+ * carries all three.
+ */
 static const struct genl_cmd_grammar thermal_cmds[] = {
 	{ THERMAL_GENL_CMD_TZ_GET_ID,		"THERMAL_GENL_CMD_TZ_GET_ID" },
 	{ THERMAL_GENL_CMD_TZ_GET_TRIP,		"THERMAL_GENL_CMD_TZ_GET_TRIP" },
@@ -118,7 +82,10 @@ static const struct genl_cmd_grammar thermal_cmds[] = {
  * THERMAL_THRESHOLD_WAY_UP / WAY_DOWN).  TZ / TZ_TRIP / TZ_GOV /
  * CDEV / CPU_CAPABILITY / THRESHOLD are bare NLA_NESTED in
  * thermal_genl_policy that the kernel only emits in replies: no handler
- * parses a nest, the ids above are read flat from the top level.
+ * parses a nest, and the three ids the handlers read (TZ_ID,
+ * THRESHOLD_TEMP, THRESHOLD_DIRECTION) are top-level attrs.  GOV_NAME
+ * and TZ_PREV_TEMP are emitted by the kernel but absent from the input
+ * policy, so they have no entry.
  */
 static const struct nla_attr_spec thermal_attrs[] = {
 	{ THERMAL_GENL_ATTR_TZ,				NLA_KIND_NESTED, 0 },

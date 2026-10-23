@@ -1,19 +1,8 @@
 /*
- * Genetlink family grammar: TASKSTATS.
- *
- * The taskstats interface exports per-task delay accounting and
- * resource usage data — historically the source of CVE-2017-2671
- * (taskstats_user_cmd cpumask UAF) and several smaller validation
- * bugs around CPUMASK parsing.  The family is small (one read
- * command, two attribute namespaces) which makes it the cheapest
- * way to fully cover a genetlink subsystem.
- *
- * TASKSTATS_CMD_GET dispatches by which selector attribute is
- * present — PID, TGID, or REGISTER_CPUMASK / DEREGISTER_CPUMASK
- * (the latter pair walks the per-cpu listener list under
- * listener_lock and drives the cpumask parser).  Covering all four
- * selector attrs with their declared types reaches every branch in
- * taskstats_user_cmd().
+ * Genetlink family grammar: TASKSTATS, targeting taskstats_user_cmd() in
+ * kernel/taskstats.c.  TASKSTATS_CMD_GET (GENL_ADMIN_PERM) dispatches on
+ * which selector attribute is present: PID, TGID, or the REGISTER_CPUMASK /
+ * DEREGISTER_CPUMASK pair, which drives the cpulist parser.
  */
 
 #include <linux/taskstats.h>

@@ -1,32 +1,8 @@
 /*
- * Genetlink family grammar: psp (PSP Security Protocol).
- *
- * Target: the per-cmd nla_policy walkers in net/psp/psp_nl.c plus the
- * assoc-install and key-rotate dispatch chains.  Random nlmsg_type
- * ids essentially never matched the runtime-assigned "psp" family_id,
- * so these arms stayed cold; resolving the family once at first
- * NETLINK_GENERIC use lets the generator address real psp commands
- * whose attribute shapes plausibly survive each per-cmd policy.
- *
- * PSP devices are netdev-attached (in-tree probe vehicle is netdevsim
- * with its psp shim in drivers/net/netdevsim/psp.c) so on a host
- * without a PSP-capable netdev each command bails -ENODEV after the
- * full attribute walk -- which is the parser-level coverage this
- * grammar exists to provide.  DEV_SET, KEY_ROTATE, DEV_ASSOC and
- * DEV_DISASSOC are GENL_ADMIN_PERM, and genl_family_rcv_msg() checks
- * that flag before the per-cmd policy walker, so only a child with
- * CAP_NET_ADMIN in the initial user namespace exercises the validator
- * through them.
- *
- * Flat attribute table.  The four namespaces (DEV / ASSOC / KEYS /
- * STATS) all restart their attribute numbering at 1, so the same
- * numeric id recurs across them.  PSP_A_KEYS_KEY is a
- * variable-length binary blob bounded above at 64 so a single greedy
- * entry can't eat the whole netlink buffer.
- *
- * Header gating: include/kernel/psp.h wraps the upstream UAPI header
- * with per-symbol #ifndef shims so build hosts whose installed uapi
- * predates this family still compile.
+ * Genetlink family grammar: psp (PSP Security Protocol), targeting
+ * net/psp/psp-nl-gen.c and psp_nl.c.  DEV_SET, KEY_ROTATE, DEV_ASSOC and
+ * DEV_DISASSOC are GENL_ADMIN_PERM, the other four ops are not.  One flat
+ * table spans the four attribute namespaces.
  */
 
 #include "kernel/psp.h"

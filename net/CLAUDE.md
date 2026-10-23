@@ -76,10 +76,10 @@ shared struct-of-callbacks pattern).
    side has its own private header: `bpf/internal.h` is included only
    by `bpf/bpf.c` and `bpf/disasm.c`, `bpf/ebpf-internal.h` only by the
    eBPF cluster.
-6. **Deliberate CVE-driven attribute coverage.** Several genl family
-   files (e.g. taskstats) document a specific historical CVE or kernel
-   validation function in a header comment and size their attribute
-   tables to reach exactly that code path.
+6. **Deliberate policy-driven attribute coverage.** Several genl family
+   files (e.g. taskstats) name the kernel policy or validation function
+   in a header comment and size their attribute tables to reach exactly
+   that code path.
 
 ## Integration points
 

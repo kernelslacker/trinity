@@ -1,37 +1,8 @@
 /*
- * Genetlink family grammar: openvswitch (six families).
- *
- * The kernel openvswitch datapath exposes its userspace control plane
- * across six generic-netlink families ("ovs_datapath", "ovs_vport",
- * "ovs_flow", "ovs_packet", "ovs_meter", "ovs_ct_limit").  All six
- * share a 4-byte fixed family header (struct ovs_header — a single
- * dp_ifindex slot) that the kernel consumes via family->hdrsize before
- * walking attributes; the message generator emits that prefix when the
- * family grammar declares hdrsize so the per-cmd nla_policy parsers see
- * TLVs at the offset they expect.
- *
- * The flow family's parser is the densest hand-written nla_validate in
- * the kernel: net/openvswitch/flow_netlink.c::ovs_nla_get_match recursively
- * walks OVS_KEY_ATTR_* (~30 packet-header types, several with nested
- * sub-namespaces of their own — OVS_TUNNEL_KEY_ATTR_*, OVS_NSH_KEY_ATTR_*,
- * OVS_VXLAN_EXT_*) and ovs_nla_copy_actions walks OVS_ACTION_ATTR_*
- * (~25 action types, each with its own optional sub-namespace —
- * OVS_USERSPACE_ATTR_*, OVS_SAMPLE_ATTR_*, OVS_CT_ATTR_* / OVS_NAT_ATTR_*,
- * OVS_CHECK_PKT_LEN_ATTR_*, OVS_DEC_TTL_ATTR_*, OVS_PSAMPLE_ATTR_*).
- * Random nlmsg_type IDs essentially never matched ovs_flow's runtime-
- * assigned family_id, so this validator has been routinely cold under
- * generic netlink fuzzing; controller-resolved family_ids change that.
- *
- * Per the wireguard / tipc model, each family's flat nla_attr_spec table
- * lists every attribute id used by any nest reachable from that family's
- * commands, with collisions across nested namespaces left intentional
- * (the kernel only validates each child against the policy of whichever
- * nest is currently being walked, so id 1 meaning OVS_FLOW_ATTR_KEY at
- * the outer level and OVS_KEY_ATTR_ENCAP one nest deeper is fine).
- *
- * Header gating mirrors mptcp_pm: <linux/openvswitch.h> ships in the
- * upstream UAPI tree; build hosts whose sysroot lacks it silently drop
- * all six families from the registry instead of failing the build.
+ * Genetlink family grammar: openvswitch, six families (ovs_datapath,
+ * ovs_vport, ovs_flow, ovs_packet, ovs_meter, ovs_ct_limit), targeting
+ * net/openvswitch/.  All six set hdrsize to sizeof(struct ovs_header),
+ * which the generator emits before the attributes.
  */
 
 #if __has_include(<linux/openvswitch.h>)

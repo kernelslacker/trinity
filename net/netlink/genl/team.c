@@ -1,42 +1,7 @@
 /*
- * Genetlink family grammar: team (NET_TEAM driver).
- *
- * The NET_TEAM link-aggregation driver exposes its userspace control
- * plane through a single generic-netlink family ("team") with four
- * user-callable commands: TEAM_CMD_NOOP, TEAM_CMD_OPTIONS_SET,
- * TEAM_CMD_OPTIONS_GET, and TEAM_CMD_PORT_LIST_GET.  Every cmd gates
- * on TEAM_ATTR_TEAM_IFINDEX referencing an existing team netdev; on
- * a host with no team device every path bails -ENODEV after the
- * full attribute walk completes — that's the parser-level coverage
- * spec-driven fuzzing exists to provide.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-
- * assigned family_id for "team", so the per-cmd nla_policy walkers
- * in drivers/net/team/team_nl.c plus the option/port nest validators
- * have been routinely cold under generic netlink fuzzing; resolving
- * the family at first NETLINK_GENERIC use lets the message generator
- * address real team messages whose attribute shapes plausibly survive
- * each per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp model, a single flat nla_attr_spec
- * table lists every id used by any nest reachable from this family's
- * commands.  The five nests in play are:
- *   TEAM_ATTR_*           outer (TEAM_IFINDEX + LIST_OPTION + LIST_PORT)
- *   TEAM_ATTR_ITEM_OPTION_* container under TEAM_ATTR_LIST_OPTION
- *   TEAM_ATTR_OPTION_*    inner under TEAM_ATTR_ITEM_OPTION
- *   TEAM_ATTR_ITEM_PORT_* container under TEAM_ATTR_LIST_PORT
- *   TEAM_ATTR_PORT_*      inner under TEAM_ATTR_ITEM_PORT
- * Numeric ids collide across these namespaces (TEAM_ATTR_ITEM_OPTION=1
- * vs TEAM_ATTR_OPTION_NAME=1 vs TEAM_ATTR_PORT_IFINDEX=1, etc.) but
- * the kernel only validates each child against the policy of whichever
- * nest is currently being walked, so the collisions are harmless and
- * the single flat table is the same shape wireguard / tipc / l2tp use.
- *
- * Header gating mirrors the wireguard family: <linux/if_team.h> is
- * the upstream UAPI header carrying TEAM_GENL_NAME plus every
- * TEAM_CMD_* and TEAM_ATTR_* enum referenced below.  Build hosts
- * lacking the header silently drop the family from the registry
- * instead of failing the build.
+ * Genetlink family grammar: team (NET_TEAM link aggregation), targeting
+ * drivers/net/team/team_nl.c and team_core.c.  Every op but NOOP is
+ * GENL_ADMIN_PERM.  One flat table spans the five attribute namespaces.
  */
 
 #if __has_include(<linux/if_team.h>)

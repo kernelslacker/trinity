@@ -1,44 +1,8 @@
 /*
- * Genetlink family grammar: vdpa (virtual data path acceleration).
- *
- * The vdpa subsystem exposes its userspace control plane through a
- * single generic-netlink family ("vdpa") whose commands provision,
- * enumerate, query, and tear down vDPA management and child devices:
- * MGMTDEV_GET enumerates management parents (MGMTDEV_NEW only labels
- * its reply messages and is not an op, so the genl core rejects it on
- * input and the grammar omits it); DEV_NEW / DEV_DEL create and
- * destroy child vdpa devices; DEV_GET / DEV_CONFIG_GET /
- * DEV_VSTATS_GET read back device state, config, and per-queue vendor
- * stats; DEV_ATTR_SET pushes a single attribute (currently MAC
- * address) into the live device.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "vdpa", so the per-cmd nla_policy walker in
- * drivers/vdpa/vdpa.c plus the DEV_NEW provisioning code path have
- * been routinely cold under generic netlink fuzzing; resolving the
- * family at first NETLINK_GENERIC use lets the message generator
- * address real vdpa messages whose attribute shapes plausibly survive
- * the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou model, a single
- * flat nla_attr_spec table lists every id used by this family's
- * commands.  vdpa uses a single flat VDPA_ATTR_* namespace (no nested
- * containers), so the table is simpler than the team / l2tp grammars:
- * scalar / binary attrs covering the management parent bus / dev name
- * pair, the child device name / numeric id / vendor id / max-vq
- * triple, the per-queue index selector, the net-config side
- * (mac, status, mtu, max VQ pairs, min/max VQ size), the feature
- * bitmasks (negotiated, supported, mgmtdev-supported classes), and the
- * vendor stats attr-name / attr-value pair.
- *
- * Header gating mirrors the team / hsr / fou families: <linux/vdpa.h>
- * is the upstream UAPI header carrying every VDPA_CMD_* and
- * VDPA_ATTR_* enum referenced below.  Build hosts lacking the header
- * silently drop the family from the registry instead of failing the
- * build.  Per-symbol #ifndef shims fill in newer VDPA_ATTR_* on build
- * hosts whose stale uapi predates the VENDOR_ATTR_NAME /
- * VENDOR_ATTR_VALUE / QUEUE_INDEX / MGMTDEV_MAX_VQS /
- * SUPPORTED_FEATURES additions.
+ * Genetlink family grammar: vdpa (virtual data path acceleration),
+ * targeting drivers/vdpa/vdpa.c.  DEV_NEW, DEV_DEL, DEV_VSTATS_GET and
+ * DEV_ATTR_SET are GENL_ADMIN_PERM.  One flat VDPA_ATTR_* namespace, no
+ * nested containers.
  */
 
 #if __has_include(<linux/vdpa.h>)
@@ -47,6 +11,10 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * MGMTDEV_NEW only labels the MGMTDEV_GET replies and is not an op, so it
+ * is not listed.
+ */
 static const struct genl_cmd_grammar vdpa_cmds[] = {
 	{ VDPA_CMD_MGMTDEV_GET,		"VDPA_CMD_MGMTDEV_GET" },
 	{ VDPA_CMD_DEV_NEW,		"VDPA_CMD_DEV_NEW" },

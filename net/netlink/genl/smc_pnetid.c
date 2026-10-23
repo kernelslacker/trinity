@@ -1,46 +1,8 @@
 /*
- * Genetlink family grammar: SMC_PNETID (SMC-R PNET table).
- *
- * The SMC-R / SMC-D shared-memory communications stack maintains a
- * "PNET" table mapping a per-fabric PNETID label to the underlying
- * ethernet netdev plus the RoCE/IB device + port the link rides on.
- * Userspace administers that table through a small generic-netlink
- * family (SMCR_GENL_FAMILY_NAME = "SMC_PNETID") with four user-callable
- * commands: GET (dump the table), ADD (install a NAME -> ETHNAME +
- * IBNAME/IBPORT triple), DEL (remove by NAME), FLUSH (drop every
- * entry).  ADD, DEL and FLUSH are GENL_ADMIN_PERM, which
- * genl_family_rcv_msg() checks before the per-cmd nla_policy walker
- * (smc_pnet_policy in net/smc/smc_pnet.c) runs, so a child without
- * CAP_NET_ADMIN in the initial user namespace gets -EPERM for them; a
- * child that holds it, with a real family_id, has the smc_pnet_add /
- * _remove / _dump parsers plus the netdev / IB-device lookup chains
- * directly in its reach.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "SMC_PNETID", so the per-cmd policy walker plus the
- * pnetid table edit paths have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real SMC_PNETID messages whose
- * attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the fou / psample / gtp model, a single flat nla_attr_spec table
- * lists every id used by this family's commands.  SMC_PNETID uses a
- * single flat SMC_PNETID_* namespace (no nested containers): three
- * NUL-terminated string selectors (NAME for the PNETID label,
- * ETHNAME for the ethernet netdev, IBNAME for the IB device) plus a
- * u8 IBPORT physical-port selector.  The kernel's policy caps NAME at
- * SMC_MAX_PNETID_LEN (16), ETHNAME at IFNAMSIZ-1 (15), and IBNAME at
- * IB_DEVICE_NAME_MAX-1 (63); the upper bounds below match those caps
- * so the validator's length-check arm sees both in-range and over-cap
- * payloads.
- *
- * Header gating mirrors the fou / psample / gtp families:
- * <linux/smc.h> is the upstream UAPI header carrying every SMC_PNETID_*
- * enum referenced below.  Build hosts lacking the header silently drop
- * the family from the registry instead of failing the build.  The
- * SMC_PNETID_* ids and the SMCR_GENL_FAMILY_NAME / _VERSION macros
- * have been stable since the initial 4.x landing so no per-symbol
- * fallback shims are required.
+ * Genetlink family grammar: SMC_PNETID (SMC-R PNET table), targeting
+ * smc_pnet_policy and the handlers in net/smc/smc_pnet.c.  ADD, DEL and
+ * FLUSH are GENL_ADMIN_PERM, GET dumps the table.  One flat SMC_PNETID_*
+ * namespace.
  */
 
 #if __has_include(<linux/smc.h>)

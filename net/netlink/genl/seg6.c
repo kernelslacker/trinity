@@ -1,39 +1,7 @@
 /*
- * Genetlink family grammar: SEG6 (IPv6 Segment Routing, RFC 8200 / 8754).
- *
- * The IPv6 SR module exposes its userspace control plane through a
- * single generic-netlink family ("SEG6") with four user-callable
- * commands: SEG6_CMD_SETHMAC, SEG6_CMD_DUMPHMAC, SEG6_CMD_SET_TUNSRC,
- * and SEG6_CMD_GET_TUNSRC.  SETHMAC / DUMPHMAC drive the per-net
- * rhashtable of seg6_hmac_info entries (keyed by HMACKEYID, carrying
- * the secret + algid pair); SET_TUNSRC / GET_TUNSRC swap the per-net
- * IPv6 tunnel-source address used by the lwtunnel encap path.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "SEG6", so the per-cmd nla_policy walker in
- * net/ipv6/seg6.c plus the seg6_hmac_info_add / seg6_hmac_info_del
- * insert/delete paths and the atomic tun_src write have been routinely
- * cold under generic netlink fuzzing; resolving the family at first
- * NETLINK_GENERIC use lets the message generator address real SEG6
- * messages whose attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  SEG6 uses a single flat SEG6_ATTR_* namespace.
- * The remaining six attrs are scalar / binary covering the IPv6
- * destination / tunnel-source address (16-byte in6_addr), the
- * destination-prefix length scalar, and the HMAC keyid / secret /
- * secret-length / algid quadruple that SETHMAC keys on.
- *
- * Header gating mirrors the team / hsr / fou / psample families:
- * <linux/seg6_genl.h> is the upstream UAPI header carrying every
- * SEG6_CMD_* and SEG6_ATTR_* enum referenced below.  Build hosts
- * lacking the header silently drop the family from the registry
- * instead of failing the build.  Per-symbol #ifndef shims fill in
- * SEG6_ATTR_* / SEG6_CMD_* on build hosts whose stale uapi predates
- * the current enum layout; the fallback values match the upstream
- * uapi enum ordering so the wire-format ids the kernel parses match
- * the ones the generator emits.
+ * Genetlink family grammar: SEG6 (IPv6 Segment Routing), targeting
+ * net/ipv6/seg6.c.  All four ops are GENL_ADMIN_PERM.  One flat
+ * SEG6_ATTR_* namespace; HMACINFO is a policy entry only.
  */
 
 #if __has_include(<linux/seg6_genl.h>)
