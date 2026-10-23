@@ -39,7 +39,7 @@ this directory rather than calling libc rand() directly.
 - `args/gen_arg_scalar.c`, `args/handle_arg.c` — primary consumers of `mutate_value()`, `get_boundary_value()`/interesting-value family, and `get_len()`/`get_len_relative()` for ARG_LEN generation
 - `args/pools/blob_mutator*.c` — pull interesting/boundary values and `generate_random_page()` into corpus/blob mutation paths
 - `args/generate-args.c`, `args/argtype_table.c`, `args/gen_arg_time.c`, `args/scrub.c`, `args/struct_fill.c` — address generation (`get_writable_address`, `get_non_null_address`, `get_address`) and shared-buffer scrubbing wired into arg production
-- `struct_catalog/*.c` (catalog, perf, registry, socket, time, validate) — heavy consumers of `get_address()`/`get_writable_address()` family for struct-field pointer fill
+- `struct_catalog/*.c` (catalog, perf, registry, time, validate) — heavy consumers of `get_address()`/`get_writable_address()` family for struct-field pointer fill
 - `mm/maps-*.c`, `persist/deferred-free.c` — address-space code draws from the writable pool and honors `track_shared_region()` exclusions
 - `ioctls/*.c` (autofs, btrfs, dm, i2c-dev, scsi, sg, ioctls.c) and 100+ files under `syscalls/` — broad consumers of address/length/page generators (grep shows 150+ syscalls/*.c call sites)
 - `net/` (25 files under `net/proto/`, `net/netlink/` and `net/sockaddr.c`) and the `inode-spewer`, `procfs-writer` and `rxrpc-key-install` childops — `generate_random_page()`/`generate_rand_bytes()` for wire-format payload fuzzing

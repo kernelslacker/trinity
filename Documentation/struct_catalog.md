@@ -46,7 +46,7 @@ and resolve to NULL -- `gen_arg_struct_ptr_inout` falls through to a
 zeroed fallback buffer that `sanitise_fcntl` overwrites with an fd
 or integer flag word, same as before.
 
-## setsockopt / getsockopt optval -- two-key (level, optname) rows
+## setsockopt optval -- two-key (level, optname) rows
 
 `setsockopt(fd, level, optname, optval, optlen)` optval -- a4.
 
@@ -75,30 +75,3 @@ etc.) that follow this proof.
 BPF arm REPLACES the optval allocation wholesale rather than fills it
 (see the `SO_ATTACH_FILTER` branch of `socket_setsockopt()`), so a
 schema-fill row would race the `bpf_gen_filter()` replacement.
-
-`getsockopt(fd, level, optname, optval, optlen)` optval -- a4.
-
-Mirrors the setsockopt two-key proof batch for the (level, optname)
-pairs the kernel also implements on the getsockopt side. The shape
-at optval is symmetric with setsockopt for these options
-(`struct linger` for `SO_LINGER`, `struct timeval` for `SO_RCVTIMEO`
-/ `SO_SNDTIMEO`), so the same `struct_desc` slots the setsockopt
-rows point at describe the bytes the kernel writes back through
-optval.
-
-`sanitise_getsockopt()` picks (level, optname) via
-`do_setsockopt()` and then allocates a page_size valresult buffer
-at a4 -- `argtype[3]` is `ARG_ADDRESS`, not `ARG_STRUCT_PTR_*`, so
-the schema-aware fill never resolves these rows. Attribution-only
-registration lets `struct_field_for_cmp()` steer KCOV-CMP-learned
-constants at the named `l_onoff` / `l_linger` / `tv_sec` /
-`tv_usec` fields the kernel wrote rather than at coincidentally-
-same-width slots.
-
-Set-only optnames from the setsockopt batch (`IP_ADD_MEMBERSHIP`,
-`MCAST_*`, `SCTP_AUTH_CHUNK`, `SCTP_AUTH_*_KEY`,
-`SCTP_ADD_STREAMS`, `SCTP_SET_PEER_PRIMARY_ADDR`, `SCTP_EVENT`,
-`TCP_REPAIR_OPTIONS`, etc.) are deliberately not mirrored: the
-kernel does not return their payload struct on the get path, and a
-row there would attribute learned constants against bytes never
-written by getsockopt.

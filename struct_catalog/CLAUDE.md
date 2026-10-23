@@ -34,7 +34,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 | sockaddr-sockopt.c | 150 | linger, packet_mreq, group_req, group_source_req |
 | cmp.c | 146 | `struct_field_for_cmp()` — reservoir-sampled heuristic mapping a KCOV-CMP constant to the most likely field (prefers FT_ENUM/FT_FLAGS/FT_VERSION_MAGIC "gate" fields over same-width FT_RAW) |
 | mount.c | 116 | mount_attr |
-| socket.c | 118 | iovec, msghdr, mmsghdr |
 | uffdio.c | 102 | userfaultfd ioctl argument structs; attribution-only, and reached by name rather than through the registration table (ioctl args don't resolve that way) |
 | bpf-task-storage.c | 85 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
 | poll.c | 83 | epoll_event |
@@ -49,7 +48,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | File | Lines | Role |
 |---|---|---|
 | registry/fs.c | 503 | Filesystem / VFS rows: epoll_ctl, open_by_handle_at, utime, mount_setattr / open_tree_attr, and the cmd-discriminated fcntl a3 rows with their pools |
-| registry/net.c | 470 | Network rows: sockaddr / msghdr / mmsghdr on the socket calls, plus the setsockopt / getsockopt (level, optname) two-key rows and their discriminator vocabularies |
+| registry/net.c | 470 | Network rows: the setsockopt (level, optname) two-key rows and their discriminator vocabularies |
 | registry/process.c | 236 | Process rows: clone3, getrlimit, perf_event_open |
 | registry/sched.c | 28 | sched_getattr → sched_attr |
 

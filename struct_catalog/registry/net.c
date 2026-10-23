@@ -1,13 +1,10 @@
 /*
  * Network struct-catalog registrations.
  *
- * Covers the sockaddr / msghdr / mmsghdr rows on bind, connect,
- * sendto, accept, accept4, sendmsg, recvmsg, sendmmsg, recvmmsg,
- * plus the setsockopt / getsockopt (level, optname) two-key rows
- * and their discriminator vocabularies (SO_LINGER, SO_{RCV,SND}TIMEO,
- * IP_ADD_MEMBERSHIP + siblings, IPV6_*, PACKET_*, MCAST_JOIN /
- * MCAST_SOURCE families, and every cataloged SCTP optval when
- * USE_SCTP is on).
+ * The setsockopt (level, optname) two-key rows and their discriminator
+ * vocabularies (SO_LINGER, SO_{RCV,SND}TIMEO, IP_ADD_MEMBERSHIP +
+ * siblings, IPV6_*, PACKET_*, MCAST_JOIN / MCAST_SOURCE families, and
+ * every cataloged SCTP optval when USE_SCTP is on).
  *
  * The struct_catalog/registry.c composition root wires the array
  * declared here into syscall_struct_arg_groups[].
@@ -119,44 +116,12 @@ static const unsigned long setsockopt_sctp_prim_optnames[] = {
 #endif
 
 const struct syscall_struct_arg struct_catalog_registry_net[] = {
-	/* sendmsg(int, const struct msghdr *, int) */
-	{ "sendmsg",		2, &struct_catalog[SC_MSGHDR] },
-	/* recvmsg(int, struct msghdr *, int) */
-	{ "recvmsg",		2, &struct_catalog[SC_MSGHDR] },
-	/* sendmmsg(int, struct mmsghdr *, unsigned int, unsigned int) */
-	{ "sendmmsg",		2, &struct_catalog[SC_MMSGHDR] },
-	/* recvmmsg(int, struct mmsghdr *, unsigned int, unsigned int, struct timespec *) */
-	{ "recvmmsg",		2, &struct_catalog[SC_MMSGHDR] },
-	/* bind(int, struct sockaddr *, socklen_t) */
-	{ "bind",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
-	/* connect(int, struct sockaddr *, socklen_t) */
-	{ "connect",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
-	/* sendto(int, const void *, size_t, int, struct sockaddr *, socklen_t) */
-	{ "sendto",		5, &struct_catalog[SC_SOCKADDR_STORAGE] },
-	/*
-	 * accept(int, struct sockaddr *upeer_sockaddr, int *upeer_addrlen)
-	 * accept4(int, struct sockaddr *upeer_sockaddr, int *upeer_addrlen,
-	 *         int flags)
-	 * a2 is the peer-address OUTPUT slot: sanitise_accept_addrlen()
-	 * publishes a writable-region sockaddr_storage (or a NULL/NULL pair)
-	 * and the kernel writes the peer address back via move_addr_to_user().
-	 * argtype[1] is ARG_SOCKADDR, not ARG_STRUCT_PTR_*, so the schema-aware
-	 * fill never resolves these rows -- attribution-only registration lets
-	 * struct_field_for_cmp() steer KCOV-CMP-learned constants at the named
-	 * ss_family / port / addr fields of sockaddr_storage_variants[] rather
-	 * than at a coincidentally-same-width slot on the accept path.  Mirrors
-	 * bind / connect / sendto above; same descriptor covers both accept
-	 * arms since the sockaddr shape is family-tagged by ss_family and does
-	 * not depend on the extra accept4 flags arg.
-	 */
-	{ "accept",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
-	{ "accept4",		2, &struct_catalog[SC_SOCKADDR_STORAGE] },
 	/*
 	 * setsockopt a4 (optval): two-key (level, optname) rows resolved
-	 * via struct_arg_lookup_two_key() from apply_sockopt_entry().
-	 * Attribution-only; bespoke code in syscalls/socket/setsockopt.c
-	 * and setsockopt-optval-builders.c owns selection / optlen / BPF
-	 * replacement.
+	 * via struct_arg_lookup_two_key() from apply_sockopt_entry(), which
+	 * fills the optval from the descriptor.  A miss falls back to the
+	 * bespoke builders in setsockopt-optval-builders.c; selection,
+	 * optlen and BPF replacement stay in syscalls/socket/setsockopt.c.
 	 * See Documentation/struct_catalog.md.
 	 */
 	{
@@ -383,87 +348,6 @@ const struct syscall_struct_arg struct_catalog_registry_net[] = {
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_sctp_prim_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_sctp_prim_optnames),
-	},
-#endif
-	/*
-	 * getsockopt a4 (optval): mirrors the setsockopt two-key rows
-	 * for gettable (level, optname) pairs; attribution-only.
-	 * Set-only optnames not mirrored (kernel does not return their
-	 * payload struct on the get path).
-	 * See Documentation/struct_catalog.md.
-	 */
-	{
-		"getsockopt", 4, &struct_catalog[SC_LINGER],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= SOL_SOCKET,
-		.discrim2_arg_idx	= 3,
-		.discrim2_value		= SO_LINGER,
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_TIMEVAL],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= SOL_SOCKET,
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_timeval_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_timeval_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_IP_MREQN],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= IPPROTO_IP,
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_ip_mreqn_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ip_mreqn_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_IP_MREQ_SOURCE],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= IPPROTO_IP,
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_ip_mreq_source_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ip_mreq_source_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_IPV6_MREQ],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= IPPROTO_IPV6,
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_ipv6_mreq_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_ipv6_mreq_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_PACKET_MREQ],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= SOL_PACKET,
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_packet_mreq_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_GROUP_REQ],
-		.discrim_arg_idx	= 2,
-		.discrim_values		= setsockopt_mcast_levels,
-		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_mcast_join_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_join_optnames),
-	},
-	{
-		"getsockopt", 4, &struct_catalog[SC_GROUP_SOURCE_REQ],
-		.discrim_arg_idx	= 2,
-		.discrim_values		= setsockopt_mcast_levels,
-		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
-		.discrim2_arg_idx	= 3,
-		.discrim2_values	= setsockopt_mcast_source_optnames,
-		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_source_optnames),
-	},
-#ifdef USE_TCP_REPAIR_OPT
-	{
-		"getsockopt", 4, &struct_catalog[SC_TCP_REPAIR_OPT],
-		.discrim_arg_idx	= 2,
-		.discrim_value		= IPPROTO_TCP,
-		.discrim2_arg_idx	= 3,
-		.discrim2_value		= TCP_REPAIR_OPTIONS,
 	},
 #endif
 	/* sentinel */

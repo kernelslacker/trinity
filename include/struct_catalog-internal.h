@@ -415,24 +415,6 @@ extern const struct struct_field group_req_fields[GROUP_REQ_FIELDS_N];
 extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS_N];
 
 /*
- * socket-family leaf tables defined in struct_catalog/socket.c.
- * Covers struct iovec (msg_iov array element), struct msghdr (sendmsg /
- * recvmsg), and struct mmsghdr (sendmmsg / recvmmsg).  Each _N constant
- * gives the extern decl a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same constant
- * it did before the carve.
- */
-enum {
-	IOVEC_FIELDS_N			= 2,
-	MSGHDR_FIELDS_N			= 7,
-	MMSGHDR_FIELDS_N		= 2,
-};
-
-extern const struct struct_field iovec_fields[IOVEC_FIELDS_N];
-extern const struct struct_field msghdr_fields[MSGHDR_FIELDS_N];
-extern const struct struct_field mmsghdr_fields[MMSGHDR_FIELDS_N];
-
-/*
  * time-shaped leaf tables defined in struct_catalog/time.c.  The _N
  * constants give the extern decls a complete array type so the spine's
  * ARRAY_SIZE() at the reference site keeps folding to the same constant

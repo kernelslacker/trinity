@@ -15,7 +15,6 @@
 #include <sys/epoll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <sys/uio.h>
 #include <utime.h>
 #include <netinet/in.h>
 #include <sys/prctl.h>
@@ -161,12 +160,6 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_size	= sizeof(((struct perf_event_attr *) 0)->
 						 type),
 	},
-	[SC_MSGHDR] = {
-		.name		= "msghdr",
-		.struct_size	= sizeof(struct msghdr),
-		.fields		= msghdr_fields,
-		.num_fields	= ARRAY_SIZE(msghdr_fields),
-	},
 	[SC_SOCKADDR_STORAGE] = {
 		.name			= "sockaddr_storage",
 		.struct_size		= sizeof(struct sockaddr_storage),
@@ -180,17 +173,6 @@ const struct struct_desc struct_catalog[] = {
 						 ss_family),
 	},
 #include "catalog-bpf.inc"
-	/*
-	 * iovec: referenced by msghdr.msg_iov's FT_PTR_ARRAY.elem_struct
-	 * so the pointer pass can resolve sizeof(struct iovec) for
-	 * allocation.
-	 */
-	[SC_IOVEC] = {
-		.name		= "iovec",
-		.struct_size	= sizeof(struct iovec),
-		.fields		= iovec_fields,
-		.num_fields	= ARRAY_SIZE(iovec_fields),
-	},
 	[SC_MOUNT_ATTR] = {
 		.name		= "mount_attr",
 		.struct_size	= sizeof(struct mount_attr),
@@ -237,12 +219,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct file_handle),
 		.fields		= file_handle_fields,
 		.num_fields	= ARRAY_SIZE(file_handle_fields),
-	},
-	[SC_MMSGHDR] = {
-		.name		= "mmsghdr",
-		.struct_size	= sizeof(struct mmsghdr),
-		.fields		= mmsghdr_fields,
-		.num_fields	= ARRAY_SIZE(mmsghdr_fields),
 	},
 #include "catalog-uffdio.inc"
 };
