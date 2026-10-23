@@ -18,9 +18,9 @@
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the addr/len/prot/map the post handler
  * uses to update the trinity-tracked map->prot invariant or to drive
- * the proc-maps oracle.  pkey is captured for the pkey_mprotect entry
- * that shares this sanitise/post pair (key arrives at rec->a4); plain
- * mprotect ignores the field.
+ * the proc-maps oracle.  pkey is the key do_mprotect_pkey() is handed:
+ * a4 for the pkey_mprotect entry that shares this sanitise/post pair,
+ * -1 (leave the key alone) for plain mprotect.
  *
  * A stomped rec->a3 caches the wrong prot bits into map->prot and a
  * later get_map_with_prot() consumer trusts the lie and SEGV_ACCERRs
@@ -118,7 +118,7 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	snap->addr = rec->a1;
 	snap->len  = rec->a2;
 	snap->prot = rec->a3;
-	snap->pkey = rec->a4;
+	snap->pkey = pkey ? rec->a4 : (unsigned long) -1;
 	snap->map  = (unsigned long) map;
 	post_state_install(rec, snap);
 }
@@ -158,6 +158,14 @@ static void post_mprotect(struct syscallrecord *rec)
 	}
 
 	/*
+	 * do_mprotect_pkey() returns 0 for an empty range before it reads
+	 * the prot or the key: nothing changed, so there is nothing to
+	 * record.
+	 */
+	if (snap->len == 0)
+		goto out_free;
+
+	/*
 	 * common_set_mmap_ptr_len() forces rec->a1 = map->ptr but sets
 	 * rec->a2 = rnd_modulo_u32(map->size) & PAGE_MASK, so this path is
 	 * effectively always a sub-range mprotect (a2 < map->size).
@@ -173,8 +181,20 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * False-negatives (skipping a mapping that still has writable
 	 * pages somewhere) are acceptable; false-positives crash the
 	 * child.
+	 *
+	 * Given a key other than 0, the default, or -1, which keeps the
+	 * pages' own, the kernel leaves access to the range to this
+	 * thread's PKRU rights for that key, whatever the prot bits say: a
+	 * key pkey_alloc() set up with PKEY_DISABLE_ACCESS faults every
+	 * load and store with SEGV_PKUERR, one with PKEY_DISABLE_WRITE every
+	 * store, and pkey_mprotect draws its keys from the OBJ_PKEY pool.
+	 * The cached prot cannot vouch for those pages, so the entry is
+	 * dropped the way post_munmap drops a holed one.  The kernel reads
+	 * the key as an int.
 	 */
-	if (snap->addr == (unsigned long)map->ptr && snap->len == map->size)
+	if ((int) snap->pkey != -1 && (int) snap->pkey != 0)
+		map->prot = 0;
+	else if (snap->addr == (unsigned long)map->ptr && snap->len == map->size)
 		map->prot = snap->prot;
 	else
 		map->prot &= snap->prot;

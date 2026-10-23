@@ -471,6 +471,60 @@ static void pkey_mprotect_known_through_its_copy(void)
 	fake_this_child = NULL;
 }
 
+/* The mapping's cached prot after a call that worked with a4 = @key: a
+ * read-write mapping, @size long, made read-write again over a range the
+ * sanitiser drew.  A mapping of a page or more gets a range that is not
+ * empty; under a page the range can only be empty. */
+static int prot_after_keyed_call(struct syscallentry *entry, int key,
+				 unsigned long size)
+{
+	struct syscallrecord *mrec;
+
+	pkey_drawn = key;
+	for (;;) {
+		mrec = mm_call(entry);
+		pool_obj.map.size = size;
+		pool_obj.map.tracked_size = size;
+		mrec->a3 = PROT_READ | PROT_WRITE;
+		mrec->a4 = (unsigned long) key;
+		entry->sanitise(mrec);
+		if (mrec->a2 != 0 || size < page_size)
+			break;
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	mrec->retval = 0;
+	entry->post(mrec);
+	pkey_drawn = -1;
+	return pool_obj.map.prot;
+}
+
+/* A key's access rights live in this thread's PKRU, not in the prot
+ * bits, so a range pkey_mprotect gave a live key leaves the mapping's
+ * cached prot nothing to vouch for.  Key 0, the default, -1, which keeps
+ * the pages' own, and plain mprotect, which has no key slot, leave it to
+ * the prot bits, and so does an empty range, which the kernel returns 0
+ * for before it reads the key. */
+static void keyed_range_drops_cached_prot(void)
+{
+	struct syscallentry pkey_copy = syscall_pkey_mprotect;
+	struct syscallentry plain_copy = syscall_mprotect;
+	const unsigned long whole = POOL_PAGES * page_size;
+	const int rw = PROT_READ | PROT_WRITE;
+
+	pkey_copy.is_pkey_mprotect = true;
+	if (prot_after_keyed_call(&pkey_copy, LIVE_PKEY, whole) != 0)
+		BUG("mprotect: a range given a live key kept its cached prot");
+	if (prot_after_keyed_call(&pkey_copy, LIVE_PKEY, page_size / 2) != rw)
+		BUG("mprotect: a call that changed nothing dropped the cached prot");
+	if (prot_after_keyed_call(&pkey_copy, 0, whole) != rw ||
+	    prot_after_keyed_call(&pkey_copy, -1, whole) != rw)
+		BUG("mprotect: a range left on the default key lost its cached prot");
+	if (prot_after_keyed_call(&plain_copy, LIVE_PKEY, whole) != rw)
+		BUG("mprotect: plain mprotect's fourth slot was taken for a key");
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -478,4 +532,5 @@ void arg_coupling_self_check(void)
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	pkey_mprotect_known_through_its_copy();
+	keyed_range_drops_cached_prot();
 }
