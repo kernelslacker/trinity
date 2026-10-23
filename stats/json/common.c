@@ -76,11 +76,17 @@ void stat_category_emit_json(const struct stat_category *cat)
 	for (i = 0; i < cat->n_fields; i++) {
 		const struct stat_field *f = &cat->fields[i];
 		const char *key = f->json_key ? f->json_key : f->name;
+		unsigned int e;
 
-		printf("%s\"%s\":%lu",
-		       i ? "," : "",
-		       key,
-		       stat_field_load(f));
+		printf("%s\"%s\":", i ? "," : "", key);
+		if (f->n_elems == 0) {
+			printf("%lu", stat_field_load(f, 0));
+			continue;
+		}
+		putchar('[');
+		for (e = 0; e < f->n_elems; e++)
+			printf("%s%lu", e ? "," : "", stat_field_load(f, e));
+		putchar(']');
 	}
 	putchar('}');
 }

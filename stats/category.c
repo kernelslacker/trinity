@@ -1,5 +1,6 @@
 #include "shm.h"
 #include "stats-internal.h"
+#include "stats_ring.h"
 
 /*
  * Descriptor-table form for stat categories whose JSON / text emit shape
@@ -14,9 +15,12 @@
  * struct stats_s + dump_stats_json() + dump_stats() with a single edit
  * site per counter.
  */
-unsigned long stat_field_load(const struct stat_field *f)
+unsigned long stat_field_load(const struct stat_field *f, unsigned int elem)
 {
-	unsigned long *p = (unsigned long *)((char *)&shm->stats + f->offset);
+	const char *base = f->from_aggregate ? (const char *)&parent_stats
+					      : (const char *)&shm->stats;
+	unsigned long *p = (unsigned long *)(base + f->offset) + elem;
+
 	return __atomic_load_n(p, __ATOMIC_RELAXED);
 }
 
@@ -32,12 +36,12 @@ void stat_category_emit_text(const struct stat_category *cat)
 	size_t i;
 
 	for (i = 0; i < cat->n_fields; i++) {
-		if (stat_field_load(&cat->fields[i]) != 0)
+		if (stat_field_load(&cat->fields[i], 0) != 0)
 			goto emit;
 	}
 	return;
 emit:
 	for (i = 0; i < cat->n_fields; i++)
 		stat_row(cat->name, cat->fields[i].name,
-		         stat_field_load(&cat->fields[i]));
+		         stat_field_load(&cat->fields[i], 0));
 }

@@ -9,14 +9,11 @@
  * outstanding gauge, live-remove scan histogram, and close-range
  * enqueue accounting.
  *
- * Bespoke (non-category) RAW group.  Sibling of the fd_lifecycle
- * category (stats/categories/base.c fd_lifecycle_fields[]) -- the
- * lifecycle counters stay in the category; these RAW arrays / scalars
- * were never categorised because they are either wide arrays
- * (histogram, per-provider gauge) or scalar defense-in-depth signals
- * that surface bespoke rows in the dump path.  The surrounding
- * struct stats_s composes an instance of struct fd_stats as its
- * "fd" member.
+ * RAW group.  Its live-remove counters and histogram, ring-full drop
+ * counters and close-range accounting are rows of the fd_lifecycle
+ * category (stats/categories/base.c fd_lifecycle_fields[]).  The
+ * surrounding struct stats_s composes an instance of struct fd_stats
+ * as its "fd" member.
  */
 struct fd_stats {
 	/* fd_event_drain_all() found a live child->fd_event_ring that

@@ -297,7 +297,8 @@ update this section to match `ls scripts/check-static/*.sh`.)
   lock the strengthening commit set out to remove.
 - `stats-json-schema`: pin the structural shape of the `--stats-json`
   document -- key-path + value-type in emission order, with
-  descriptor-driven `STAT_FIELD*()` keys folded in and nested
+  descriptor-driven `STAT_FIELD*()` keys and raw descriptor rows
+  (array-valued ones included) folded in and nested
   key paths (e.g. `stats.fault_injection.armed_fail_nth`) preserved
   -- against a golden baseline.  Catches renamed keys, retyped
   values, reordered emission, and duplicate keys at the same scope

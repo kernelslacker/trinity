@@ -17,11 +17,17 @@
 
 /* Aggregate-stats descriptor types.  One stat_field per counter, one
  * stat_category per group; the renderer walks the field table and
- * pulls each value at f->offset from shm->stats. */
+ * pulls each value at f->offset from shm->stats, or from parent_stats
+ * for a row with .from_aggregate. */
 struct stat_field {
 	const char *name;	/* JSON key / text metric column */
 	const char *json_key;	/* Optional JSON-key override (NULL = use .name). */
-	size_t      offset;	/* offsetof(struct stats_s, <field>) */
+	size_t      offset;	/* offsetof(struct stats_s, <field>), or of
+				 * struct stats_aggregate for .from_aggregate */
+	unsigned int n_elems;	/* 0: one counter.  N: N consecutive counters
+				 * the JSON renderer emits as an array; the
+				 * text renderers show the first. */
+	bool        from_aggregate;	/* read parent_stats, not shm->stats */
 };
 
 struct stat_category {
@@ -115,7 +121,7 @@ void dump_context_regular_suppressed_per_syscall_top(void);
 /* Cross-cluster surface for the stats file split. */
 extern const char * const op_names[];
 bool pc_in_text(void *pc);
-unsigned long stat_field_load(const struct stat_field *f);
+unsigned long stat_field_load(const struct stat_field *f, unsigned int elem);
 
 /* Cluster entry points called by dump_stats().  dump_stats_json() lives in
  * stats/json/; childop_split_dump() lives in stats/periodic/childop-split.c. */
@@ -157,6 +163,7 @@ extern const struct stat_category child_category;
 extern const struct stat_category cold_overflow_category;
 extern const struct stat_category epoll_volatility_category;
 extern const struct stat_category errno_gradient_category;
+extern const struct stat_category fd_lifecycle_category;
 extern const struct stat_category fd_runtime_skipped_category;
 extern const struct stat_category prctl_futex_hash_category;
 extern const struct stat_category genl_family_calls_category;

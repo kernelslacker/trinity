@@ -3,9 +3,10 @@
  * Covers fault-injection, fd-lifecycle, oracle, basic
  * subsystems (vfs / memory-pressure / numa / netlink families /
  * tracefs / bpf), iouring / zombie, corruption / audit, and
- * fs-lifecycle / futex-storm.  The eight basic-subsystem
- * descriptor tables live here rather than under
- * stats/categories/ because they are still JSON-only consumers.
+ * fs-lifecycle / futex-storm.  The basic-subsystem, fault-injection,
+ * corruption and shared-buffer descriptor tables live here rather
+ * than under stats/categories/ because they are still JSON-only
+ * consumers.
  */
 
 #include <stdio.h>
@@ -15,6 +16,21 @@
 #include "stats_ring.h"
 
 /*
+ * Rows that read parent_stats or emit an array are spelled out: the
+ * STAT_FIELD* macros only reach scalars in shm->stats.
+ */
+static const struct stat_field fault_injection_fields[] = {
+	{ .name = "armed_fail_nth", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, fault_injected) },
+	{ .name = "returned_enomem", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, fault_consumed) },
+};
+
+static const struct stat_category fault_injection_category =
+	STAT_CATEGORY("fault_injection",
+	              fault_injection_fields);
+
+/*
  * Emit every counter from struct stats_s as a single JSON object.
  * All scalar counters are emitted unconditionally so consumers see a stable
  * schema regardless of which subsystems happened to fire on this run.
@@ -22,55 +38,9 @@
 void dump_stats_json_fault_and_fd_lifecycle(void)
 {
 	json_stats_sep();
-	printf("\"fault_injection\":{\"armed_fail_nth\":%lu,\"returned_enomem\":%lu},"
-		"\"fd_lifecycle\":{\"stale_detected\":%lu,\"stale_by_generation\":%lu,"
-			"\"closed_tracked\":%lu,\"duped\":%lu,"
-			"\"events_processed\":%lu,\"events_dropped\":%lu,"
-			"\"event_close_count\":%lu,\"event_evict_count\":%lu,"
-			"\"watchdog_evict_count\":%lu,"
-			"\"hash_reinsert_dropped\":%lu,"
-			"\"local_hash_insert_dropped\":%lu,"
-			"\"runtime_registered\":%lu,\"epoll_lazy_armed\":%lu,"
-			"\"epoll_blocking_poll_skipped\":%lu,"
-			"\"random_exhausted\":%lu,"
-			"\"provider_invalid\":%lu,"
-			"\"live_remove_calls\":%lu,"
-			"\"live_remove_miss\":%lu,"
-			"\"live_remove_scan_histogram\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu],"
-			"\"event_full_close\":%lu,"
-			"\"event_full_evict\":%lu,"
-			"\"event_full_close_range\":%lu,"
-			"\"event_close_range_enqueued\":%lu,"
-			"\"event_close_range_length_sum\":%lu}",
-		parent_stats.fault_injected, parent_stats.fault_consumed,
-		shm->stats.fd.stale_detected, shm->stats.fd.stale_by_generation,
-		shm->stats.fd.closed_tracked,
-		shm->stats.fd.duped, shm->stats.fd.events_processed,
-		shm->stats.fd.events_dropped,
-		shm->stats.fd.event_close_count, shm->stats.fd.event_evict_count,
-		shm->stats.fd.watchdog_evict_count,
-		shm->stats.fd.hash_reinsert_dropped,
-		shm->stats.fd.local_hash_insert_dropped,
-		shm->stats.fd_runtime.registered,
-		shm->stats.epoll_volatility.lazy_armed,
-		shm->stats.epoll_volatility.blocking_poll_skipped,
-		shm->stats.fd.random_exhausted,
-		shm->stats.fd.provider_invalid,
-		shm->stats.fd.live_remove_calls,
-		shm->stats.fd.live_remove_miss,
-		shm->stats.fd.live_remove_scan_histogram[0],
-		shm->stats.fd.live_remove_scan_histogram[1],
-		shm->stats.fd.live_remove_scan_histogram[2],
-		shm->stats.fd.live_remove_scan_histogram[3],
-		shm->stats.fd.live_remove_scan_histogram[4],
-		shm->stats.fd.live_remove_scan_histogram[5],
-		shm->stats.fd.live_remove_scan_histogram[6],
-		shm->stats.fd.live_remove_scan_histogram[7],
-		shm->stats.fd.event_full_close,
-		shm->stats.fd.event_full_evict,
-		shm->stats.fd.event_full_close_range,
-		shm->stats.fd.event_close_range_enqueued,
-		shm->stats.fd.event_close_range_length_sum);
+	stat_category_emit_json(&fault_injection_category);
+	json_stats_sep();
+	stat_category_emit_json(&fd_lifecycle_category);
 }
 
 void dump_stats_json_oracle(void)
@@ -286,174 +256,126 @@ void dump_stats_json_iouring_and_zombies(void)
 	stat_category_emit_json(&zombie_slots_category);
 }
 
+/* The parent_stats and array rows are spelled out as in
+ * fault_injection_fields[]. */
+static const struct stat_field corruption_fields[] = {
+	STAT_FIELD_JSON_SUB(fd, event_ring_overwritten, "fd_event_ring_canary"),
+	STAT_FIELD_JSON_SUB(fd, event_payload_corrupt, "fd_event_payload"),
+	STAT_FIELD_JSON_SUB(diag, stats_ring_overwritten, "stats_ring_canary"),
+	{ .name = "deferred_free_corrupt_ptr", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_corrupt_ptr) },
+	{ .name = "post_handler_corrupt_ptr", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, post_handler_corrupt_ptr) },
+	{ .name = "deferred_free_reject", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_reject) },
+	{ .name = "deferred_free_reject_pathname", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_reject_pathname) },
+	{ .name = "deferred_free_reject_iovec", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_reject_iovec) },
+	{ .name = "deferred_free_reject_sockaddr", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_reject_sockaddr) },
+	{ .name = "deferred_free_reject_other", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, deferred_free_reject_other) },
+	{ .name = "snapshot_non_heap_reject", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, snapshot_non_heap_reject) },
+	STAT_FIELD_SUB(diag, rec_canary_stomped),
+	STAT_FIELD_SUB(diag, rzs_blanket_reject),
+	STAT_FIELD_SUB(diag, retfd_blanket_reject),
+	STAT_FIELD_SUB(diag, arena_ptr_stale_caught_arg),
+	STAT_FIELD_SUB(diag, arena_ptr_stale_caught_post_state),
+	STAT_FIELD_SUB(diag, read_walk_aborted),
+	STAT_FIELD_SUB(diag, write_walk_aborted),
+	STAT_FIELD_SUB(diag, sibling_mprotect_failed),
+	STAT_FIELD_JSON_SUB(diag, destroy_object_idx_corrupt, "destroy_object_idx"),
+	STAT_FIELD_SUB(diag, global_obj_uaf_caught),
+	STAT_FIELD_SUB(diag, mseal_content_oracle_fail),
+	STAT_FIELD_SUB(diag, mseal_unexpected_success),
+	STAT_FIELD_JSON_SUB(maps, pool_draw_exhausted, "maps_pool_draw_exhausted"),
+	STAT_FIELD_JSON_SUB(maps, reject_pool_empty, "maps_reject_pool_empty"),
+	STAT_FIELD_JSON_SUB(maps, reject_bogus_obj_ptr, "maps_reject_bogus_obj_ptr"),
+	STAT_FIELD_JSON_SUB(maps, reject_alloc_track_miss, "maps_reject_alloc_track_miss"),
+	STAT_FIELD_JSON_SUB(maps, reject_alloc_track_miss_anon, "maps_reject_alloc_track_miss_anon"),
+	STAT_FIELD_JSON_SUB(maps, reject_alloc_track_miss_file, "maps_reject_alloc_track_miss_file"),
+	STAT_FIELD_JSON_SUB(maps, reject_alloc_track_miss_testfile, "maps_reject_alloc_track_miss_testfile"),
+	STAT_FIELD_JSON_SUB(maps, reject_size_zero, "maps_reject_size_zero"),
+	STAT_FIELD_JSON_SUB(maps, reject_size_too_large, "maps_reject_size_too_large"),
+	STAT_FIELD_JSON_SUB(maps, pool_chosen_anon, "maps_pool_chosen_anon"),
+	STAT_FIELD_JSON_SUB(maps, pool_chosen_file, "maps_pool_chosen_file"),
+	STAT_FIELD_JSON_SUB(maps, pool_chosen_testfile, "maps_pool_chosen_testfile"),
+	STAT_FIELD_JSON_SUB(maps, reject_pool_empty_anon, "maps_reject_pool_empty_anon"),
+	STAT_FIELD_JSON_SUB(maps, reject_pool_empty_file, "maps_reject_pool_empty_file"),
+	STAT_FIELD_JSON_SUB(maps, reject_pool_empty_testfile, "maps_reject_pool_empty_testfile"),
+	{ .name = "maps_prot_reject_by_mask", .n_elems = 8,
+	  .offset = offsetof(struct stats_s, maps.prot_reject_by_mask) },
+	STAT_FIELD_JSON_SUB(maps, pick_attempts_sum, "maps_pick_attempts_sum"),
+	STAT_FIELD_JSON_SUB(maps, pick_successes, "maps_pick_successes"),
+	STAT_FIELD_JSON_SUB(maps, pick_with_prot_attempts_sum, "maps_pick_with_prot_attempts_sum"),
+	STAT_FIELD_JSON_SUB(maps, pick_with_prot_successes, "maps_pick_with_prot_successes"),
+	STAT_FIELD_JSON_SUB(maps, type_resolution_calls, "maps_type_resolution_calls"),
+	STAT_FIELD_JSON_SUB(maps, type_resolution_scan_length_sum, "maps_type_resolution_scan_length_sum"),
+	STAT_FIELD_JSON_SUB(maps, type_resolution_hits, "maps_type_resolution_hits"),
+	STAT_FIELD_JSON_SUB(chain_corpus, save_dup_shape, "chain_corpus_save_dup_shape"),
+	STAT_FIELD_JSON_SUB(chain_corpus, save_unique_shape, "chain_corpus_save_unique_shape"),
+	STAT_FIELD_JSON_SUB(deferred_free, reject_misaligned, "deferred_free_reject_misaligned"),
+	STAT_FIELD_JSON_SUB(deferred_free, reject_corrupt_shape, "deferred_free_reject_corrupt_shape"),
+	STAT_FIELD_JSON_SUB(deferred_free, reject_non_heap, "deferred_free_reject_non_heap"),
+	STAT_FIELD_JSON_SUB(deferred_free, reject_untracked, "deferred_free_reject_untracked"),
+	STAT_FIELD_SUB(deferred_free, nested_scrub_reject_untracked),
+	STAT_FIELD_JSON_SUB(deferred_free, reject_shared_region, "deferred_free_reject_shared_region"),
+	STAT_FIELD_JSON_SUB(deferred_free, outstanding_vmas, "deferred_free_outstanding_vmas"),
+	STAT_FIELD_JSON_SUB(deferred_free, vma_fallback_immediate, "deferred_free_vma_fallback_immediate"),
+	STAT_FIELD_JSON_SUB(deferred_free, enomem_drain, "deferred_free_enomem_drain"),
+	STAT_FIELD_JSON_SUB(deferred_free, rw_restore_enomem, "deferred_free_rw_restore_enomem"),
+	STAT_FIELD_JSON_SUB(deferred_free, pre_dispatch_leaked, "deferred_free_pre_dispatch_leaked"),
+	STAT_FIELD_SUB(deferred_free, ring_evict_leaked),
+	STAT_FIELD_JSON_SUB(deferred_free, tracked_free_unverified_leak, "deferred_free_tracked_free_unverified_leak"),
+	STAT_FIELD_JSON_SUB(deferred_free, gen_arena_admitted, "deferred_free_gen_arena_admitted"),
+	STAT_FIELD_JSON_SUB(deferred_free, gen_arena_retired_ok, "deferred_free_gen_arena_retired_ok"),
+	STAT_FIELD_JSON_SUB(deferred_free, gen_arena_retire_reject, "deferred_free_gen_arena_retire_reject"),
+	STAT_FIELD_JSON_SUB(deferred_free, gen_arena_pressure_leak, "deferred_free_gen_arena_pressure_leak"),
+	STAT_FIELD_JSON_SUB(deferred_free, ring_owned_skip, "deferred_free_ring_owned_skip"),
+	STAT_FIELD_JSON_SUB(deferred_free, double_admit_skip, "deferred_free_double_admit_skip"),
+	STAT_FIELD_SUB(deferred_free, alloc_track_refresh_ring_owned_skip),
+	STAT_FIELD_SUB(deferred_free, alloc_track_refresh_unverified_skip),
+	STAT_FIELD_SUB(deferred_free, alloc_track_refresh_consume_miss),
+	STAT_FIELD_SUB(deferred_free, alloc_track_lookup_array_fallback_hit),
+	STAT_FIELD_SUB(diag, pagecache_canary_corrupt_caught),
+	STAT_FIELD_SUB(diag, objpool_array_stale_caught),
+	{ .name = "lock_word_scribbled", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, lock_word_scribbled) },
+	{ .name = "lossless_slot_implausible", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, lossless_slot_implausible) },
+	STAT_FIELD_SUB(diag, lock_held_scribble),
+	STAT_FIELD_JSON_SUB(chain_restype, replay_len_corrupt, "chain_replay_len_corrupt"),
+};
+
+static const struct stat_category corruption_category =
+	STAT_CATEGORY("corruption",
+	              corruption_fields);
+
+static const struct stat_field shared_buffer_fields[] = {
+	{ .name = "args_redirected", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, shared_buffer_redirected) },
+	{ .name = "range_overlaps_shared_rejects", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, range_overlaps_shared_rejects) },
+	{ .name = "libc_heap_redirected", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, libc_heap_redirected) },
+	{ .name = "libc_heap_embedded_redirected", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, libc_heap_embedded_redirected) },
+	{ .name = "mm_gate_post_slip", .from_aggregate = true,
+	  .offset = offsetof(struct stats_aggregate, mm_gate_post_slip) },
+};
+
+static const struct stat_category shared_buffer_category =
+	STAT_CATEGORY("shared_buffer",
+	              shared_buffer_fields);
+
 void dump_stats_json_corruption_and_audit(void)
 {
 	json_stats_sep();
-	printf("\"corruption\":{"
-			"\"fd_event_ring_canary\":%lu,\"fd_event_payload\":%lu,"
-			"\"stats_ring_canary\":%lu,"
-			"\"deferred_free_corrupt_ptr\":%lu,"
-			"\"post_handler_corrupt_ptr\":%lu,\"deferred_free_reject\":%lu,"
-			"\"deferred_free_reject_pathname\":%lu,"
-			"\"deferred_free_reject_iovec\":%lu,"
-			"\"deferred_free_reject_sockaddr\":%lu,"
-			"\"deferred_free_reject_other\":%lu,"
-			"\"snapshot_non_heap_reject\":%lu,"
-			"\"rec_canary_stomped\":%lu,\"rzs_blanket_reject\":%lu,"
-			"\"retfd_blanket_reject\":%lu,"
-			"\"arena_ptr_stale_caught_arg\":%lu,"
-			"\"arena_ptr_stale_caught_post_state\":%lu,"
-			"\"read_walk_aborted\":%lu,"
-			"\"write_walk_aborted\":%lu,"
-			"\"sibling_mprotect_failed\":%lu,"
-			"\"destroy_object_idx\":%lu,"
-			"\"global_obj_uaf_caught\":%lu,"
-			"\"mseal_content_oracle_fail\":%lu,"
-			"\"mseal_unexpected_success\":%lu,"
-			"\"maps_pool_draw_exhausted\":%lu,"
-			"\"maps_reject_pool_empty\":%lu,"
-			"\"maps_reject_bogus_obj_ptr\":%lu,"
-			"\"maps_reject_alloc_track_miss\":%lu,"
-			"\"maps_reject_alloc_track_miss_anon\":%lu,"
-			"\"maps_reject_alloc_track_miss_file\":%lu,"
-			"\"maps_reject_alloc_track_miss_testfile\":%lu,"
-			"\"maps_reject_size_zero\":%lu,"
-			"\"maps_reject_size_too_large\":%lu,"
-			"\"maps_pool_chosen_anon\":%lu,"
-			"\"maps_pool_chosen_file\":%lu,"
-			"\"maps_pool_chosen_testfile\":%lu,"
-			"\"maps_reject_pool_empty_anon\":%lu,"
-			"\"maps_reject_pool_empty_file\":%lu,"
-			"\"maps_reject_pool_empty_testfile\":%lu,"
-			"\"maps_prot_reject_by_mask\":[%lu,%lu,%lu,%lu,%lu,%lu,%lu,%lu],"
-			"\"maps_pick_attempts_sum\":%lu,"
-			"\"maps_pick_successes\":%lu,"
-			"\"maps_pick_with_prot_attempts_sum\":%lu,"
-			"\"maps_pick_with_prot_successes\":%lu,"
-			"\"maps_type_resolution_calls\":%lu,"
-			"\"maps_type_resolution_scan_length_sum\":%lu,"
-			"\"maps_type_resolution_hits\":%lu,"
-			"\"chain_corpus_save_dup_shape\":%lu,"
-			"\"chain_corpus_save_unique_shape\":%lu,"
-			"\"deferred_free_reject_misaligned\":%lu,"
-			"\"deferred_free_reject_corrupt_shape\":%lu,"
-			"\"deferred_free_reject_non_heap\":%lu,"
-			"\"deferred_free_reject_untracked\":%lu,"
-			"\"nested_scrub_reject_untracked\":%lu,"
-			"\"deferred_free_reject_shared_region\":%lu,"
-			"\"deferred_free_outstanding_vmas\":%lu,"
-			"\"deferred_free_vma_fallback_immediate\":%lu,"
-			"\"deferred_free_enomem_drain\":%lu,"
-			"\"deferred_free_rw_restore_enomem\":%lu,"
-			"\"deferred_free_pre_dispatch_leaked\":%lu,"
-			"\"ring_evict_leaked\":%lu,"
-			"\"deferred_free_tracked_free_unverified_leak\":%lu,"
-			"\"deferred_free_gen_arena_admitted\":%lu,"
-			"\"deferred_free_gen_arena_retired_ok\":%lu,"
-			"\"deferred_free_gen_arena_retire_reject\":%lu,"
-			"\"deferred_free_gen_arena_pressure_leak\":%lu,"
-			"\"deferred_free_ring_owned_skip\":%lu,"
-			"\"deferred_free_double_admit_skip\":%lu,"
-			"\"alloc_track_refresh_ring_owned_skip\":%lu,"
-			"\"alloc_track_refresh_unverified_skip\":%lu,"
-			"\"alloc_track_refresh_consume_miss\":%lu,"
-			"\"alloc_track_lookup_array_fallback_hit\":%lu,"
-			"\"pagecache_canary_corrupt_caught\":%lu,"
-			"\"objpool_array_stale_caught\":%lu,"
-			"\"lock_word_scribbled\":%lu,"
-			"\"lossless_slot_implausible\":%lu,"
-			"\"lock_held_scribble\":%lu,"
-			"\"chain_replay_len_corrupt\":%lu},"
-		"\"shared_buffer\":{\"args_redirected\":%lu,\"range_overlaps_shared_rejects\":%lu,"
-			"\"libc_heap_redirected\":%lu,\"libc_heap_embedded_redirected\":%lu,"
-			"\"mm_gate_post_slip\":%lu}",
-		shm->stats.fd.event_ring_overwritten,
-		shm->stats.fd.event_payload_corrupt,
-		shm->stats.diag.stats_ring_overwritten,
-		parent_stats.deferred_free_corrupt_ptr,
-		parent_stats.post_handler_corrupt_ptr,
-		parent_stats.deferred_free_reject,
-		parent_stats.deferred_free_reject_pathname,
-		parent_stats.deferred_free_reject_iovec,
-		parent_stats.deferred_free_reject_sockaddr,
-		parent_stats.deferred_free_reject_other,
-		parent_stats.snapshot_non_heap_reject,
-		shm->stats.diag.rec_canary_stomped,
-		shm->stats.diag.rzs_blanket_reject,
-		shm->stats.diag.retfd_blanket_reject,
-		shm->stats.diag.arena_ptr_stale_caught_arg,
-		shm->stats.diag.arena_ptr_stale_caught_post_state,
-		shm->stats.diag.read_walk_aborted,
-		shm->stats.diag.write_walk_aborted,
-		shm->stats.diag.sibling_mprotect_failed,
-		shm->stats.diag.destroy_object_idx_corrupt,
-		shm->stats.diag.global_obj_uaf_caught,
-		shm->stats.diag.mseal_content_oracle_fail,
-		shm->stats.diag.mseal_unexpected_success,
-		shm->stats.maps.pool_draw_exhausted,
-		shm->stats.maps.reject_pool_empty,
-		shm->stats.maps.reject_bogus_obj_ptr,
-		shm->stats.maps.reject_alloc_track_miss,
-		shm->stats.maps.reject_alloc_track_miss_anon,
-		shm->stats.maps.reject_alloc_track_miss_file,
-		shm->stats.maps.reject_alloc_track_miss_testfile,
-		shm->stats.maps.reject_size_zero,
-		shm->stats.maps.reject_size_too_large,
-		shm->stats.maps.pool_chosen_anon,
-		shm->stats.maps.pool_chosen_file,
-		shm->stats.maps.pool_chosen_testfile,
-		shm->stats.maps.reject_pool_empty_anon,
-		shm->stats.maps.reject_pool_empty_file,
-		shm->stats.maps.reject_pool_empty_testfile,
-		shm->stats.maps.prot_reject_by_mask[0],
-		shm->stats.maps.prot_reject_by_mask[1],
-		shm->stats.maps.prot_reject_by_mask[2],
-		shm->stats.maps.prot_reject_by_mask[3],
-		shm->stats.maps.prot_reject_by_mask[4],
-		shm->stats.maps.prot_reject_by_mask[5],
-		shm->stats.maps.prot_reject_by_mask[6],
-		shm->stats.maps.prot_reject_by_mask[7],
-		shm->stats.maps.pick_attempts_sum,
-		shm->stats.maps.pick_successes,
-		shm->stats.maps.pick_with_prot_attempts_sum,
-		shm->stats.maps.pick_with_prot_successes,
-		shm->stats.maps.type_resolution_calls,
-		shm->stats.maps.type_resolution_scan_length_sum,
-		shm->stats.maps.type_resolution_hits,
-		shm->stats.chain_corpus.save_dup_shape,
-		shm->stats.chain_corpus.save_unique_shape,
-		shm->stats.deferred_free.reject_misaligned,
-		shm->stats.deferred_free.reject_corrupt_shape,
-		shm->stats.deferred_free.reject_non_heap,
-		shm->stats.deferred_free.reject_untracked,
-		shm->stats.deferred_free.nested_scrub_reject_untracked,
-		shm->stats.deferred_free.reject_shared_region,
-		shm->stats.deferred_free.outstanding_vmas,
-		shm->stats.deferred_free.vma_fallback_immediate,
-		shm->stats.deferred_free.enomem_drain,
-		shm->stats.deferred_free.rw_restore_enomem,
-		shm->stats.deferred_free.pre_dispatch_leaked,
-		shm->stats.deferred_free.ring_evict_leaked,
-		shm->stats.deferred_free.tracked_free_unverified_leak,
-		shm->stats.deferred_free.gen_arena_admitted,
-		shm->stats.deferred_free.gen_arena_retired_ok,
-		shm->stats.deferred_free.gen_arena_retire_reject,
-		shm->stats.deferred_free.gen_arena_pressure_leak,
-		shm->stats.deferred_free.ring_owned_skip,
-		shm->stats.deferred_free.double_admit_skip,
-		shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,
-		shm->stats.deferred_free.alloc_track_refresh_unverified_skip,
-		shm->stats.deferred_free.alloc_track_refresh_consume_miss,
-		shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit,
-		shm->stats.diag.pagecache_canary_corrupt_caught,
-		shm->stats.diag.objpool_array_stale_caught,
-		parent_stats.lock_word_scribbled,
-		parent_stats.lossless_slot_implausible,
-		shm->stats.diag.lock_held_scribble,
-		shm->stats.chain_restype.replay_len_corrupt,
-		parent_stats.shared_buffer_redirected, parent_stats.range_overlaps_shared_rejects,
-		parent_stats.libc_heap_redirected, parent_stats.libc_heap_embedded_redirected,
-		parent_stats.mm_gate_post_slip);
+	stat_category_emit_json(&corruption_category);
+	json_stats_sep();
+	stat_category_emit_json(&shared_buffer_category);
 }
 
 void dump_stats_json_lifecycle_and_storms(void)

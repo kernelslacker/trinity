@@ -2,20 +2,17 @@
 #include "stats-internal.h"
 
 /*
- * Descriptor tables staged for the follow-up JSON fan-out (per-fn conversions
- * of dump_stats_json_iouring_and_zombies / _fault_and_fd_lifecycle).
+ * Descriptor tables behind the JSON sections of
+ * dump_stats_json_iouring_and_zombies() and
+ * dump_stats_json_fault_and_fd_lifecycle().
  *
  * The category JSON key in each case doesn't match the struct member's
- * single prefix, so STAT_FIELD() rows pick whichever prefix matches the
- * actual struct member (packet_fanout_*, recipe_*, nat_t_churn_/nat_t_,
- * fd_/local_fd_/epoll_); .name doubles as the text-side
- * key.  For fd_lifecycle's three cross-prefix members (local_fd_* and
- * epoll_*) the suffix alone wouldn't yield the schema's JSON key, so
- * STAT_FIELD_JSON() pins the JSON key explicitly.
+ * single prefix, so rows pick whichever sub-struct holds the member, and
+ * STAT_FIELD_JSON_SUB() pins the JSON key where the suffix alone wouldn't
+ * yield the schema's; .name doubles as the text-side key.
  *
  * stat_category_emit_text() emits the block when any field in the category
- * is non-zero.  These tables have no live text caller yet -- they land here
- * so the per-fn JSON conversions can be reviewed in isolation.
+ * is non-zero.  These tables have no live text caller.
  */
 /* child_dead_parent_observed: init_child()'s pid-handshake loop saw
  * pid_alive(mainpid) == false -- the parent died before publishing this
@@ -78,13 +75,21 @@ static const struct stat_field fd_lifecycle_fields[] = {
 	                "epoll_blocking_poll_skipped"),
 	STAT_FIELD_SUB(fd, random_exhausted),
 	STAT_FIELD_SUB(fd, provider_invalid),
+	STAT_FIELD_SUB(fd, live_remove_calls),
+	STAT_FIELD_SUB(fd, live_remove_miss),
+	{ .name = "live_remove_scan_histogram", .n_elems = 8,
+	  .offset = offsetof(struct stats_s, fd.live_remove_scan_histogram) },
+	STAT_FIELD_SUB(fd, event_full_close),
+	STAT_FIELD_SUB(fd, event_full_evict),
+	STAT_FIELD_SUB(fd, event_full_close_range),
+	STAT_FIELD_SUB(fd, event_close_range_enqueued),
+	STAT_FIELD_SUB(fd, event_close_range_length_sum),
 };
 
 /* fd_lifecycle has no single natural gate counter; stat_category_emit_text()
  * will emit the block when any field is non-zero, which covers the
  * ORed-fields case automatically. */
-static const struct stat_category fd_lifecycle_category
-	__attribute__((unused)) =
+const struct stat_category fd_lifecycle_category =
 	STAT_CATEGORY("fd_lifecycle",
 	              fd_lifecycle_fields);
 

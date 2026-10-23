@@ -81,7 +81,8 @@ root = sys.argv[1]
 #   STAT_FIELD_SUB(sub, field)              -> key = "field"
 #   STAT_FIELD_JSON(cat, suffix, "jkey")    -> key = "jkey"
 #   STAT_FIELD_JSON_SUB(sub, field, "jkey") -> key = "jkey"
-# stat_category_emit_json() renders every field as %lu, so leaf type is u64.
+# stat_category_emit_json() renders every field as %lu, so leaf type is u64,
+# except a raw row carrying .n_elems, which it renders as an array of %lu.
 FIELD_RE = re.compile(
     r'STAT_FIELD(?P<json>_JSON)?(?P<sub>_SUB)?\s*\(\s*'
     r'[A-Za-z_][A-Za-z0-9_.]*\s*,\s*'
@@ -274,7 +275,8 @@ def parse_fields_body(body):
             jkey_m = re.search(r'\.json_key\s*=\s*"([^"]+)"', elem)
             if name_m or jkey_m:
                 key = jkey_m.group(1) if jkey_m else name_m.group(1)
-                keys.append((key, "u64"))
+                ktype = "array" if re.search(r'\.n_elems\s*=', elem) else "u64"
+                keys.append((key, ktype))
             i = j
             continue
         # Unrecognized token: skip one char and keep going.
@@ -623,7 +625,7 @@ def emit_category_tokens(catvar):
     for i, (k, t) in enumerate(keys):
         if i:
             parts.append(',')
-        parts.append('"%s":%%lu' % k)
+        parts.append(('"%s":[%%lu]' if t == 'array' else '"%s":%%lu') % k)
     parts.append('}')
     return ''.join(parts), None
 

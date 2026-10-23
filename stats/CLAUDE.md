@@ -57,7 +57,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | json/kcov.c | KCOV JSON block (counters, transition globals, top-Ns, cold syscalls, previous-window snapshots). |
 | json/minicorpus.c | Minicorpus JSON block (mutators, stack-depth, saves/evicts, replay-wins, sequence chains). |
 | json/cmp-hints.c | cmp_hints JSON summary (total hints, syscalls-with-hints). |
-| json/core.c | Non-network JSON section emitters + basic-subsystem descriptor tables. |
+| json/core.c | Non-network JSON section emitters + their JSON-local descriptor tables (basic subsystems, fault injection, corruption, shared buffer). |
 | json/network.c | Network / iouring-network long-chain JSON section emitters. |
 | json/tail.c | `vsock_transport_churn` JSON tail. |
 | json/type_graph.c | JSON shape for the resource type-graph observer (the observer itself is `objects/type-graph.c`); kept under `stats/json/` so the schema check finds its format literals. |
@@ -105,7 +105,10 @@ Two parallel counter stores, by design:
    and appending one `STAT_FIELD_SUB()` row to the matching
    `stats/subsys/<subsys>.c` (or, for the cross-prefix and staged tables,
    `stats/categories/`). Text and JSON renderers both walk the descriptors,
-   so they cannot drift from the struct layout.
+   so they cannot drift from the struct layout.  A row that reads
+   `parent_stats` (`.from_aggregate`) or emits N consecutive counters as a
+   JSON array (`.n_elems`) is spelled as a raw designated initializer, which
+   the `stats-json-schema` gate reads like the macro rows.
 2. **SPSC ring for hardened counters** - hot/security-relevant fields move
    through `stats_ring_enqueue()` into `parent_stats`. A contributor adding a
    new security-relevant counter should choose this path rather than direct
