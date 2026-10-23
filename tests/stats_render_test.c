@@ -326,9 +326,9 @@ static void scenario_cmp_full(void)
 
 /*
  * One counter moves in an otherwise quiet window.  The any-delta gate
- * opens for each of these but the first, and the cohort row each one feeds
- * prints under the header it opens.  A scenario keeps to four windows, so
- * its 600 s apiece stay well inside the fake clock's limit.
+ * opens for each of these, and the cohort row each one feeds prints under
+ * the header it opens.  A scenario keeps to four windows, so its 600 s
+ * apiece stay well inside the fake clock's limit.
  */
 static void scenario_cmp_gates_a(void)
 {

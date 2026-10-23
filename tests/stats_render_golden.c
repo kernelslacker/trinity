@@ -659,6 +659,14 @@ const char stats_golden_cmp_idle[] =
 	"  close                       -     6/128    4%             1             2             3             4             5             6             7             8\n";
 
 const char stats_golden_cmp_probe_frontier[] =
+	"KCOV CMP stats over last 600s:\n"
+	"  frontier_blend_samples           +3  (0.005/s, total 3, children a=0 b=0)\n"
+	"  blanket_address_scrub_slots_walked total 0\n"
+	"  arg_meta_addr_with_meta          total 0\n"
+	"  arg_meta_addr_without_meta       total 0\n"
+	"  arg_meta_argtype_stale           total 0\n"
+	"  arg_meta_scrub_would_destroy_in  total 0\n"
+	"  arg_meta_scrub_would_preserve_out total 0\n"
 	"KCOV CMP hyp live inject stats over last 600s:\n"
 	"  cmp_hyp_live_inject_gate_passed  +0  (total 0)\n"
 	"  cmp_hyp_live_injected            +0  (total 0)\n"

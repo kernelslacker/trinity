@@ -185,9 +185,8 @@ static void kcov_cmp_render_prop_injected_callsite(bool any_prop_callsite_delta,
  * current snapshot, the previous one and the delta share this shape, so
  * arming and committing a window are struct copies.  Every member is an
  * unsigned long, so a window also reads as an array of words: the delta
- * is one subtraction per word and the any-delta gate one scan.
- * frontier_blend_samples is last because the gate covers every word
- * before it.
+ * is one subtraction per word and the any-delta gate one scan over all
+ * of them, wherever a member sits in the struct.
  */
 struct cmp_window {
 	unsigned long records, truncated, bloom_skipped, strip_skipped, unique;
@@ -225,14 +224,12 @@ struct cmp_window {
 	unsigned long cmp_inject_arm_b_baseline_fires;
 	unsigned long cmp_inject_denom_diverged;
 	unsigned long prop_ring_argop_arm_b_fires;
+	unsigned long frontier_blend_samples;
 	unsigned long remote_adaptive_samples;
 	unsigned long mut_structured_shadow_divergences;
-	unsigned long frontier_blend_samples;
 };
 
 #define CMP_WINDOW_WORDS	(sizeof(struct cmp_window) / sizeof(unsigned long))
-#define CMP_WINDOW_GATED_WORDS \
-	(offsetof(struct cmp_window, frontier_blend_samples) / sizeof(unsigned long))
 
 _Static_assert(sizeof(struct cmp_window) % sizeof(unsigned long) == 0,
 	       "struct cmp_window must be made of unsigned longs alone");
@@ -530,7 +527,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	any_prop_callsite_delta = words_nonzero(delta.prop_injected_callsite,
 						PROP_INJECTED_CALLSITE_NR);
 
-	if (words_nonzero(d, CMP_WINDOW_GATED_WORDS)) {
+	if (words_nonzero(d, CMP_WINDOW_WORDS)) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
 		emit_rate_rows(elapsed, &cur, &delta, funnel_rows, ARRAY_SIZE(funnel_rows));
