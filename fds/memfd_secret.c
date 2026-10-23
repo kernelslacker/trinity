@@ -28,11 +28,11 @@
 #define NR_MEMFD_SECRET_FDS 4
 
 /*
- * Latched per-process: memfd_secret(2) returned ENOSYS (CONFIG_SECRETMEM=n
- * or syscall not wired on this arch) or EINVAL with the only flag values
- * we ever pass (0 / O_CLOEXEC, both unconditionally valid when the syscall
- * is supported -- so EINVAL here means the kernel disabled the feature at
- * runtime, e.g. secretmem.enable_secretmem=0).  Neither flips during this
+ * Latched per-process: memfd_secret(2) returned ENOSYS (CONFIG_SECRETMEM=n,
+ * syscall not wired on this arch, secretmem.enable=0 or no direct-map
+ * editing: the kernel gives the last two the same -ENOSYS) or EINVAL,
+ * which it gives only for flag bits we never pass (we send 0 / O_CLOEXEC)
+ * and which is latched as a safety net.  Neither flips during this
  * process, so init / regen / consumers all fast-path past the syscall
  * once latched.  Mirrors the unsupported_<name> shape used by
  * landlock / mq.
@@ -162,9 +162,8 @@ static int get_rand_memfd_secret_fd(void)
  * OBJ_GLOBAL pool the parent owns.
  *
  * Honour the unsupported_memfd_secret latch: on a kernel without
- * CONFIG_SECRETMEM or with secretmem.enable_secretmem=0, the syscall
- * has already failed once and further calls would just burn budget on
- * ENOSYS/EINVAL.
+ * CONFIG_SECRETMEM or with secretmem.enable=0, the syscall has already
+ * failed once and further calls would just burn budget on ENOSYS.
  */
 static void memfd_secret_try_replenish(unsigned int budget)
 {

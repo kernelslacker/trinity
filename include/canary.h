@@ -24,12 +24,12 @@
  * The pool is registered as an fd_provider so trinity's existing
  * splice/mmap/sendfile dispatch can pick canary fds at random as
  * SOURCES.  Every entry is opened O_RDONLY and tagged with
- * OBJ_FLAG_NO_WRITE so the natural defence (kernel returns EBADF
- * for write/splice-out/sendfile-out/copy_file_range-out/ftruncate/
- * fallocate against an O_RDONLY fd) keeps the pool's contents
- * stable through normal trinity write-side syscall picks.  Any
- * mutation that gets through is, by construction, a kernel bug in
- * the class this oracle exists to catch.
+ * OBJ_FLAG_NO_WRITE so the natural defence (against an O_RDONLY fd the
+ * kernel returns EBADF for write/splice-out/sendfile-out/
+ * copy_file_range-out/fallocate and EINVAL for ftruncate) keeps the
+ * pool's contents stable through normal trinity write-side syscall
+ * picks.  Any mutation that gets through is, by construction, a
+ * kernel bug in the class this oracle exists to catch.
  */
 
 /*
@@ -37,7 +37,7 @@
  * fds/canary.c::init_canary_fds().  Reserved for future write-side
  * fd dispatch filtering (a syscall picker that asks for "an fd I'm
  * about to write to" can skip entries with this bit set instead of
- * relying on the O_RDONLY EBADF backstop).  Bit 0; remaining bits
+ * relying on the O_RDONLY backstop).  Bit 0; remaining bits
  * are unallocated.
  */
 #define OBJ_FLAG_NO_WRITE	(1u << 0)
