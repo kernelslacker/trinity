@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#include "fd.h"
 #include "objects.h"
 #include "params.h"
 #include "prop_ring.h"
@@ -140,7 +141,7 @@ void register_returned_fd(const struct syscallentry *entry,
 	}
 
 	fd = (int)rec->retval;
-	if (fd <= 2) {
+	if (fd <= 2 || fd_is_protected(fd)) {
 		__atomic_add_fetch(&shm->stats.fd_runtime.stdio, 1,
 				   __ATOMIC_RELAXED);
 		return;

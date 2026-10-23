@@ -12,6 +12,8 @@
 
 #include "name-pool.h"
 #include "objects.h"
+#include "prop_ring.h"
+#include "sanitise.h"
 
 struct object *(*fake_find_local_object_by_fd)(enum objecttype type, int fd);
 struct objhead *(*fake_get_objhead)(enum obj_scope scope, enum objecttype type);
@@ -26,6 +28,28 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 {
 	(void)obj; (void)scope; (void)type;
 	fprintf(stderr, "fake add_object called unexpectedly\n");
+	abort();
+}
+
+void set_object_fd(struct object *obj, enum objecttype type, int fd)
+{
+	(void)obj; (void)type; (void)fd;
+	fprintf(stderr, "fake set_object_fd called unexpectedly\n");
+	abort();
+}
+
+void prop_ring_push_scalar(unsigned int nr, long scalar_val,
+			   enum scalar_kind kind)
+{
+	(void)nr; (void)scalar_val; (void)kind;
+	fprintf(stderr, "fake prop_ring_push_scalar called unexpectedly\n");
+	abort();
+}
+
+void register_returned_pid(pid_t pid)
+{
+	(void)pid;
+	fprintf(stderr, "fake register_returned_pid called unexpectedly\n");
 	abort();
 }
 

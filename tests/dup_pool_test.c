@@ -38,6 +38,7 @@
 #include "sanitise.h"		/* get_pid */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
+#include "syscall-internal.h"	/* register_returned_fd */
 #include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
 #include "unblocker.h"		/* accept_unblocker_fire */
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -2361,6 +2362,25 @@ static void open_result_is_pooled_by_kind(void)
 	}
 }
 
+/* A RET_FD retval naming a protected number is not registered; the fake
+ * alloc_object() aborts if it is. */
+static void retfd_registration_skips_protected_numbers(void)
+{
+	struct syscallentry entry = { .name = "retfd" };
+	struct syscallrecord rec = { 0 };
+	unsigned long before;
+
+	entry.ret_objtype = OBJ_FD_EVENTFD;
+	rec.retval = KCOV_FD;
+	reset();
+	forget_calls();
+	before = shm->stats.fd_runtime.stdio;
+	register_returned_fd(&entry, &rec);
+	check("a protected retval was registered", "register_returned_fd",
+	      published == 0 && pool_count(KCOV_FD) == 0 &&
+	      shm->stats.fd_runtime.stdio == before + 1);
+}
+
 /* stdio and the protected numbers are no pool's, and no call's to retire
  * under. */
 static void pool_leaves_stdio_and_protected_numbers_alone(void)
@@ -3082,6 +3102,7 @@ void dup_pool_self_check(void)
 	openat_oracle_compares_the_inode();
 	open_result_is_pooled_by_kind();
 	pool_leaves_stdio_and_protected_numbers_alone();
+	retfd_registration_skips_protected_numbers();
 	open_result_naming_a_protected_file_is_refused();
 	typed_fd_is_pooled_under_its_type();
 	typed_fd_leaves_stdio_and_protected_numbers_alone();

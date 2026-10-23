@@ -16,9 +16,11 @@ struct fd_runtime_stats {
 	 *   in JSON under the fd_runtime_skipped category so schema
 	 *   consumers see the same top-level keys.
 	 *
-	 * stdio:  fd <= 2.  Either a kernel/test bug surfaced a stdio fd
-	 *   as a fresh syscall return (genuinely noteworthy) or stderr was
-	 *   closed and the next open(2) got re-allocated into slot 2; both
+	 * stdio:  fd <= 2, or a number fd_is_protected() names (kcov,
+	 *   taint, fail-nth, rotation fds).  Either a kernel/test bug
+	 *   surfaced such an fd as a fresh syscall return (genuinely
+	 *   noteworthy), a stomped retval landed on one, or stderr was
+	 *   closed and the next open(2) got re-allocated into slot 2; all
 	 *   warrant a look.
 	 *
 	 * already_registered:  find_local_object_by_fd() matched.  Dominant

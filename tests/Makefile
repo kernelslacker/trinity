@@ -434,7 +434,8 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/accept.c \
 PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/fs/creat.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
-		   $(TOP)/fds/fds-pool.c
+		   $(TOP)/fds/fds-pool.c \
+		   $(TOP)/dispatch/syscall-retfd.c
 
 # syscalls/fs/read.c, syscalls/mq/mq_timedreceive.c, the getters and
 # listers under syscalls/xattr/ and the value-buffer pickers they share
