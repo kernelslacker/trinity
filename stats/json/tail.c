@@ -8,7 +8,6 @@
 #include "shm.h"
 #include "stats-internal.h"
 #include "stats/json/internal.h"
-#include "stats/arm-verdict.h"
 
 void dump_stats_json_vsock_tail(void)
 {

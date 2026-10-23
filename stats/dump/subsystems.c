@@ -33,7 +33,6 @@
 #include "utils.h"
 #include "utils-proc.h"
 #include "version.h"
-#include "stats/arm-verdict.h"
 
 static void dump_stats_render_vfs_writes(void)
 {
