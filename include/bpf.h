@@ -1,6 +1,6 @@
 #pragma once
 
-#include <linux/bpf.h>
+#include "kernel/bpf.h"
 
 int get_rand_bpf_fd(void);
 int get_rand_bpf_prog_fd(void);
