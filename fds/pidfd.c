@@ -19,10 +19,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-/* PIDFD_NONBLOCK == O_NONBLOCK on Linux */
-#ifndef PIDFD_NONBLOCK
-#define PIDFD_NONBLOCK O_NONBLOCK
-#endif
+#include "kernel/pidfd.h"
 
 /*
  * Cross-process safe: only reads obj->pidfdobj scalar fields and the
