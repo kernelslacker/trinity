@@ -48,6 +48,179 @@
 #include "utils-proc.h"
 
 /*
+ * Selection reason for the just-finished window -- the intervention
+ * orchestrator stamped this when it picked prev.  Treated as raw int
+ * across the shm boundary and re-validated here so a wild write
+ * landing on the field falls back to the "policy chose this" path
+ * rather than skipping the learner update spuriously.
+ */
+static enum strategy_selection_reason load_prev_selection_reason(void)
+{
+	int prev_reason_raw;
+	enum strategy_selection_reason prev_reason;
+
+	prev_reason_raw = __atomic_load_n(&shm->current_selection_reason,
+					  __ATOMIC_RELAXED);
+	switch (prev_reason_raw) {
+	case SR_NORMAL_UCB:
+	case SR_ROUND_ROBIN:
+	case SR_COLD_START:
+	case SR_PLATEAU_FORCE:
+		prev_reason = (enum strategy_selection_reason)prev_reason_raw;
+		break;
+	default:
+		prev_reason = SR_NORMAL_UCB;
+		break;
+	}
+	return prev_reason;
+}
+
+/* Per-PIM-mode outcome accounting (observation-only substrate).
+ * When the just-closed window was an SR_PLATEAU_FORCE intervention,
+ * add its deltas to the numerator arrays that pair with
+ * plateau_intervention_mode_windows[].  Attribution uses the mode
+ * latched at the top of the close path (see comment in
+ * maybe_rotate_strategy()), and calls uses the raw op-count delta so
+ * the invariant
+ *
+ *   sum over m of plateau_intervention_mode_calls[m]
+ *     == total fleet ops elapsed while SR_PLATEAU_FORCE was active
+ *
+ * holds by construction.  No dependency on bandit_record_pull's
+ * per-arm learner exclusion of SR_PLATEAU_FORCE: mode outcomes are
+ * a separate diagnostic surface.  RELAXED writes, single-writer
+ * ordering piggybacks on the rotation CAS the same way the existing
+ * denominator does. */
+static void account_pim_window(enum strategy_selection_reason prev_reason,
+			       int prev_intervention_mode_raw,
+			       unsigned long syscalls_in_window,
+			       unsigned long calls_in_window,
+			       unsigned long edges_in_window,
+			       unsigned long cmp_in_window)
+{
+	if (prev_reason == SR_PLATEAU_FORCE &&
+	    prev_intervention_mode_raw >= 0 &&
+	    prev_intervention_mode_raw < NR_PIM_MODES) {
+		int pm = prev_intervention_mode_raw;
+
+		__atomic_fetch_add(&shm->plateau_intervention_mode_calls[pm],
+				   syscalls_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_pc_edge_calls[pm],
+			calls_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_pc_edges[pm],
+			edges_in_window, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&shm->plateau_intervention_mode_cmp_wins[pm],
+			cmp_in_window, __ATOMIC_RELAXED);
+	}
+}
+
+/* Feed the just-finished window into the bandit before asking
+ * the picker to choose the next arm, so UCB1 sees up-to-date
+ * pulls/reward when scoring.  The learner consumes the call-count
+ * delta as today; the real bucket-count delta is recorded into the
+ * parallel diagnostic reward series so the operator can compare the
+ * two reward shapes without changing the learner's behaviour.
+ * Round-robin mode ignores the counters but the bookkeeping is
+ * harmless and lets the end-of-run summary print pulls under either
+ * picker.
+ *
+ * Called on EVERY window including SR_PLATEAU_FORCE.  The
+ * per-arm-per-reason bucketing inside bandit_record_pull captures
+ * every cohort (forced included) so dump-side analysis can split
+ * each arm's exposure by selection path, while the learner-facing
+ * update (bandit_pulls[] / bandit_reward_calls[] / EMA) skips
+ * SR_PLATEAU_FORCE internally to keep the UCB scorer's view of
+ * RANDOM uncontaminated.  All other bookkeeping
+ * (bandit_window_count tick, frontier ring advance, window-start
+ * snapshot reseed) runs unconditionally -- those are coverage-side
+ * structures and must stay aligned with the rotation cadence. */
+static void close_window(int prev, enum strategy_selection_reason prev_reason,
+			 unsigned long calls_in_window,
+			 unsigned long edges_in_window,
+			 unsigned long cmp_in_window,
+			 unsigned long warn_in_window,
+			 bool was_chaos)
+{
+	bandit_record_pull(prev, prev_reason, calls_in_window,
+			   edges_in_window, cmp_in_window,
+			   warn_in_window, was_chaos);
+
+	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
+	 * bloom decay sees the new window index on subsequent calls.
+	 * Bumped after bandit_record_pull so a concurrent observer racing
+	 * the rotation either sees the old (still-valid) window or the
+	 * fresh one — both attribute correctly. */
+	__atomic_fetch_add(&shm->bandit_window_count, 1UL, __ATOMIC_RELAXED);
+
+	/* Roll the per-syscall frontier-edge ring forward and zero the new
+	 * slot so it represents only edges discovered in the upcoming
+	 * window.  Same K-window decay horizon as the CMP-novelty bloom
+	 * above. */
+	frontier_window_advance();
+
+	/* Advance the cmp_hints chaos-mode window counter.  Flips the
+	 * hint-suppression toggle on every CHAOS_WINDOW_MODULO'th window
+	 * so random-arg generation gets a fair shot at the
+	 * invalid-combination space that the kernel-validated cmp_hints
+	 * pool otherwise biases away from. */
+	cmp_hints_chaos_tick();
+}
+
+/* Reseed every *_at_window_start snapshot from the next strategy's
+ * cumulative counters, before the switch is published. */
+static void reseed_window_start(int next)
+{
+	__atomic_store_n(&shm->pc_edge_calls_at_window_start,
+			 __atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->pc_edge_count_at_window_start,
+			 __atomic_load_n(&shm->pc_edge_count_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->bandit_cmp_at_window_start,
+			 __atomic_load_n(&shm->bandit_cmp_new_constants[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	/* Reseed the transition reward window-start snapshots so the per-
+	 * window delta bandit_record_pull reads on the next rotation
+	 * matches the (next, this-window) cohort.  Same RELAXED cadence
+	 * and single-writer ordering as the pc_edge_*_at_window_start
+	 * pair above; consumed by bandit_record_pull under COMBINED mode
+	 * (it folds (transition_edge_count_by_strategy[arm] - this
+	 * snapshot) / TRANSITION_BANDIT_REWARD_WEIGHT_RECIPROCAL into the
+	 * per-arm reward total).  Reseeded unconditionally so OFF/SHADOW_
+	 * ONLY runs keep the snapshot fresh; COMBINED can be flipped on
+	 * mid-run without the bandit reading a stale window-start. */
+	__atomic_store_n(&shm->stats.transition_edge.count_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge.count_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	__atomic_store_n(&shm->stats.transition_edge.calls_at_window_start,
+			 __atomic_load_n(&shm->stats.transition_edge.calls_by_strategy[next],
+					 __ATOMIC_RELAXED),
+			 __ATOMIC_RELAXED);
+	/* Reseed the kmsg_warn_fires snapshot from the live counter (not a
+	 * per-strategy mirror -- the underlying counter is global).  A
+	 * future commit in this stack reads this snapshot at the top of the
+	 * rotation handler to compute the per-window WARN delta and feeds
+	 * it through bandit_record_pull for chaos cohort attribution.
+	 * Reseeded under RELAXED matching the other *_at_window_start stores
+	 * above; the snapshot tolerates a race between read and store
+	 * because the delta is a coarse cohort-level signal, not a precise
+	 * per-call attribution. */
+	__atomic_store_n(&shm->kmsg_warn_fires_at_window_start,
+			 kcov_shm != NULL ?
+				 __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
+						 __ATOMIC_RELAXED) :
+				 0UL,
+			 __ATOMIC_RELAXED);
+}
+
+/*
  * Check the rotation boundary and, if crossed, atomically claim the
  * switch and update shm->current_strategy to whatever the configured
  * picker (round-robin or UCB1 bandit, see strategy.h) selects next.
@@ -74,7 +247,6 @@ void maybe_rotate_strategy(void)
 	unsigned long now;
 	unsigned long last;
 	int prev, next;
-	int prev_reason_raw;
 	int prev_intervention_mode_raw;
 	enum strategy_selection_reason prev_reason;
 	enum strategy_selection_reason next_reason = SR_NORMAL_UCB;
@@ -123,24 +295,7 @@ void maybe_rotate_strategy(void)
 	if (prev < 0 || prev >= NR_STRATEGIES)
 		prev = STRATEGY_HEURISTIC;
 
-	/* Selection reason for the just-finished window -- the intervention
-	 * orchestrator stamped this when it picked prev.  Treated as raw int
-	 * across the shm boundary and re-validated here so a wild write
-	 * landing on the field falls back to the "policy chose this" path
-	 * rather than skipping the learner update spuriously. */
-	prev_reason_raw = __atomic_load_n(&shm->current_selection_reason,
-					  __ATOMIC_RELAXED);
-	switch (prev_reason_raw) {
-	case SR_NORMAL_UCB:
-	case SR_ROUND_ROBIN:
-	case SR_COLD_START:
-	case SR_PLATEAU_FORCE:
-		prev_reason = (enum strategy_selection_reason)prev_reason_raw;
-		break;
-	default:
-		prev_reason = SR_NORMAL_UCB;
-		break;
-	}
+	prev_reason = load_prev_selection_reason();
 
 	/* Latch the plateau intervention mode BEFORE select_next_strategy
 	 * publishes the next mode below.  Attribution rule: the numerator
@@ -186,38 +341,9 @@ void maybe_rotate_strategy(void)
 		__atomic_load_n(&shm->bandit_cmp_at_window_start,
 				__ATOMIC_RELAXED));
 
-	/* Per-PIM-mode outcome accounting (observation-only substrate).
-	 * When the just-closed window was an SR_PLATEAU_FORCE intervention,
-	 * add its deltas to the numerator arrays that pair with
-	 * plateau_intervention_mode_windows[].  Attribution uses the mode
-	 * latched at the top of the close path (see comment there), and
-	 * calls uses the raw op-count delta so the invariant
-	 *
-	 *   sum over m of plateau_intervention_mode_calls[m]
-	 *     == total fleet ops elapsed while SR_PLATEAU_FORCE was active
-	 *
-	 * holds by construction.  No dependency on bandit_record_pull's
-	 * per-arm learner exclusion of SR_PLATEAU_FORCE: mode outcomes are
-	 * a separate diagnostic surface.  RELAXED writes, single-writer
-	 * ordering piggybacks on the CAS above the same way the existing
-	 * denominator does. */
-	if (prev_reason == SR_PLATEAU_FORCE &&
-	    prev_intervention_mode_raw >= 0 &&
-	    prev_intervention_mode_raw < NR_PIM_MODES) {
-		int pm = prev_intervention_mode_raw;
-
-		__atomic_fetch_add(&shm->plateau_intervention_mode_calls[pm],
-				   syscalls_in_window, __ATOMIC_RELAXED);
-		__atomic_fetch_add(
-			&shm->plateau_intervention_mode_pc_edge_calls[pm],
-			calls_in_window, __ATOMIC_RELAXED);
-		__atomic_fetch_add(
-			&shm->plateau_intervention_mode_pc_edges[pm],
-			edges_in_window, __ATOMIC_RELAXED);
-		__atomic_fetch_add(
-			&shm->plateau_intervention_mode_cmp_wins[pm],
-			cmp_in_window, __ATOMIC_RELAXED);
-	}
+	account_pim_window(prev_reason, prev_intervention_mode_raw,
+			   syscalls_in_window, calls_in_window,
+			   edges_in_window, cmp_in_window);
 
 	/* WARN-fires delta + chaos-cohort snapshot for the chaos-mode V2
 	 * attribution.  warn_now reads the live counter kmsg-monitor bumps
@@ -241,49 +367,8 @@ void maybe_rotate_strategy(void)
 	}
 	was_chaos = cmp_hints_chaos_query();
 
-	/* Feed the just-finished window into the bandit before asking
-	 * the picker to choose the next arm, so UCB1 sees up-to-date
-	 * pulls/reward when scoring.  The learner consumes the call-count
-	 * delta as today; the real bucket-count delta is recorded into the
-	 * parallel diagnostic reward series so the operator can compare the
-	 * two reward shapes without changing the learner's behaviour.
-	 * Round-robin mode ignores the counters but the bookkeeping is
-	 * harmless and lets the end-of-run summary print pulls under either
-	 * picker.
-	 *
-	 * Called on EVERY window including SR_PLATEAU_FORCE.  The
-	 * per-arm-per-reason bucketing inside bandit_record_pull captures
-	 * every cohort (forced included) so dump-side analysis can split
-	 * each arm's exposure by selection path, while the learner-facing
-	 * update (bandit_pulls[] / bandit_reward_calls[] / EMA) skips
-	 * SR_PLATEAU_FORCE internally to keep the UCB scorer's view of
-	 * RANDOM uncontaminated.  All other bookkeeping
-	 * (bandit_window_count tick, frontier ring advance, window-start
-	 * snapshot reseed) runs unconditionally -- those are coverage-side
-	 * structures and must stay aligned with the rotation cadence. */
-	bandit_record_pull(prev, prev_reason, calls_in_window,
-			   edges_in_window, cmp_in_window,
-			   warn_in_window, was_chaos);
-
-	/* Tick the rotation counter so bandit_cmp_observe()'s per-syscall
-	 * bloom decay sees the new window index on subsequent calls.
-	 * Bumped after bandit_record_pull so a concurrent observer racing
-	 * the rotation either sees the old (still-valid) window or the
-	 * fresh one — both attribute correctly. */
-	__atomic_fetch_add(&shm->bandit_window_count, 1UL, __ATOMIC_RELAXED);
-
-	/* Roll the per-syscall frontier-edge ring forward and zero the new
-	 * slot so it represents only edges discovered in the upcoming
-	 * window.  Same K-window decay horizon as the CMP-novelty bloom
-	 * above. */
-	frontier_window_advance();
-
-	/* Advance the cmp_hints chaos-mode window counter.  Flips the
-	 * hint-suppression toggle on every CHAOS_WINDOW_MODULO'th window
-	 * so random-arg generation gets a fair shot at the
-	 * invalid-combination space that the kernel-validated cmp_hints
-	 * pool otherwise biases away from. */
-	cmp_hints_chaos_tick();
+	close_window(prev, prev_reason, calls_in_window, edges_in_window,
+		     cmp_in_window, warn_in_window, was_chaos);
 
 	next = select_next_strategy(prev, &next_reason);
 	if (next < 0 || next >= NR_STRATEGIES) {
@@ -291,51 +376,7 @@ void maybe_rotate_strategy(void)
 		next_reason = SR_ROUND_ROBIN;
 	}
 
-	__atomic_store_n(&shm->pc_edge_calls_at_window_start,
-			 __atomic_load_n(&shm->pc_edge_calls_by_strategy[next],
-					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->pc_edge_count_at_window_start,
-			 __atomic_load_n(&shm->pc_edge_count_by_strategy[next],
-					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->bandit_cmp_at_window_start,
-			 __atomic_load_n(&shm->bandit_cmp_new_constants[next],
-					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	/* Reseed the transition reward window-start snapshots so the per-
-	 * window delta bandit_record_pull reads on the next rotation
-	 * matches the (next, this-window) cohort.  Same RELAXED cadence
-	 * and single-writer ordering as the pc_edge_*_at_window_start
-	 * pair above; consumed by bandit_record_pull under COMBINED mode
-	 * (it folds (transition_edge_count_by_strategy[arm] - this
-	 * snapshot) / TRANSITION_BANDIT_REWARD_WEIGHT_RECIPROCAL into the
-	 * per-arm reward total).  Reseeded unconditionally so OFF/SHADOW_
-	 * ONLY runs keep the snapshot fresh; COMBINED can be flipped on
-	 * mid-run without the bandit reading a stale window-start. */
-	__atomic_store_n(&shm->stats.transition_edge.count_at_window_start,
-			 __atomic_load_n(&shm->stats.transition_edge.count_by_strategy[next],
-					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	__atomic_store_n(&shm->stats.transition_edge.calls_at_window_start,
-			 __atomic_load_n(&shm->stats.transition_edge.calls_by_strategy[next],
-					 __ATOMIC_RELAXED),
-			 __ATOMIC_RELAXED);
-	/* Reseed the kmsg_warn_fires snapshot from the live counter (not a
-	 * per-strategy mirror -- the underlying counter is global).  A
-	 * future commit in this stack reads this snapshot at the top of the
-	 * rotation handler to compute the per-window WARN delta and feeds
-	 * it through bandit_record_pull for chaos cohort attribution.
-	 * Reseeded under RELAXED matching the other *_at_window_start stores
-	 * above; the snapshot tolerates a race between read and store
-	 * because the delta is a coarse cohort-level signal, not a precise
-	 * per-call attribution. */
-	__atomic_store_n(&shm->kmsg_warn_fires_at_window_start,
-			 kcov_shm != NULL ?
-				 __atomic_load_n(&kcov_shm->kmsg.kmsg_warn_fires,
-						 __ATOMIC_RELAXED) :
-				 0UL,
-			 __ATOMIC_RELAXED);
+	reseed_window_start(next);
 	/* Publish the selection reason BEFORE current_strategy: the RELEASE
 	 * store on current_strategy below pairs with the picker's and the
 	 * plateau gates' ACQUIRE loads of current_strategy, making the
