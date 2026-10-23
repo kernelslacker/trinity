@@ -166,7 +166,7 @@ int open_pool_files(unsigned int pool_id, enum objecttype objtype)
 			break;
 		}
 
-		mmap_fd(fd, filename, sb.st_size, flags, OBJ_GLOBAL, OBJ_MMAP_FILE);
+		mmap_fd(fd, filename, sb.st_size, flags, OBJ_MMAP_FILE);
 	}
 	return true;
 }

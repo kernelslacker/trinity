@@ -1,7 +1,5 @@
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/mman.h>
 #include <asm/mman.h>
 #include <sys/stat.h>
@@ -398,9 +396,9 @@ void init_child_mappings(void)
 }
 
 /*
- * Set up a mmap object for an fd we already opened.
+ * Set up an OBJ_GLOBAL mmap object for an fd we already opened.
  */
-void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scope, enum objecttype type)
+void mmap_fd(int fd, const char *name, size_t len, int prot, enum objecttype type)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -415,22 +413,13 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scop
 	 * functions when they read the name (the bug class the rest of
 	 * the OBJ_GLOBAL sweep closed).
 	 */
-	if (scope == OBJ_GLOBAL) {
-		obj = alloc_object();
-		if (obj == NULL)
-			return;
-		obj->map.name = alloc_shared_strdup(name);
-		if (obj->map.name == NULL) {
-			deferred_free_enqueue(obj);
-			return;
-		}
-	} else {
-		obj = alloc_object();
-		obj->map.name = strdup(name);
-		if (!obj->map.name) {
-			deferred_free_enqueue(obj);
-			return;
-		}
+	obj = alloc_object();
+	if (obj == NULL)
+		return;
+	obj->map.name = alloc_shared_strdup(name);
+	if (obj->map.name == NULL) {
+		deferred_free_enqueue(obj);
+		return;
 	}
 	obj->map.size = len;
 
@@ -463,15 +452,9 @@ retry_mmap:
 	if (obj->map.ptr == MAP_FAILED) {
 		retries++;
 		if (retries == 100) {
-			if (scope == OBJ_GLOBAL) {
-				free_shared_str(obj->map.name);
-				obj->map.name = NULL;
-				deferred_free_enqueue(obj);
-			} else {
-				free(obj->map.name);
-				obj->map.name = NULL;
-				deferred_free_enqueue(obj);
-			}
+			free_shared_str(obj->map.name);
+			obj->map.name = NULL;
+			deferred_free_enqueue(obj);
 			obj = NULL;
 			return;
 		} else
@@ -523,15 +506,9 @@ retry_mmap:
 	 */
 	if (obj->map.size == 0) {
 		munmap(obj->map.ptr, len > 0 ? len : page_size);
-		if (scope == OBJ_GLOBAL) {
-			free_shared_str(obj->map.name);
-			obj->map.name = NULL;
-			deferred_free_enqueue(obj);
-		} else {
-			free(obj->map.name);
-			obj->map.name = NULL;
-			deferred_free_enqueue(obj);
-		}
+		free_shared_str(obj->map.name);
+		obj->map.name = NULL;
+		deferred_free_enqueue(obj);
 		return;
 	}
 
@@ -553,14 +530,12 @@ retry_mmap:
 	obj->map.tracked_size = len;
 	track_shared_region((unsigned long)obj->map.ptr, len);
 
-	head = get_objhead(scope, type);
+	head = get_objhead(OBJ_GLOBAL, type);
 	if (head != NULL) {
 		head->dump = &map_dump;
-		if (scope == OBJ_GLOBAL) {
-			head->destroy = &map_destructor_shared;
-		}
+		head->destroy = &map_destructor_shared;
 	}
 
-	add_object(obj, scope, type);
+	add_object(obj, OBJ_GLOBAL, type);
 	return;
 }

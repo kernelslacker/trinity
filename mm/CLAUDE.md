@@ -43,7 +43,7 @@ Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects),
 - `fds/sockets.c`, `ioctls/userfaultfd.c`, `syscalls/syslog.c`, `syscalls/ipc/sysv/shmat.c`, `syscalls/mm/numa/move_pages.c`, `syscalls/fs/truncate.c`, `objects/registry-lifecycle.c`, `stats/dump/corruption.c`, `stats/periodic/counter-rates.c` — other consumers of the map pool API (`get_map`/`get_map_with_prot`/`get_map_handle`)
 - `syscalls/mm/mlock/mlock.c`, `munlock.c`, `munlockall.c` — the only callers of `mlock_state_*`; munlockall calls `mlock_state_reset()` after a real kernel `munlockall()` clears every VM_LOCKED VMA
 - `main/trinity.c` — calls `register_loaded_image_segments()` once before `fork_children()`; `main/trinity-warmstart.c` calls `setup_initial_mappings()` during startup, and each child calls `init_child_mappings()` during child init
-- `fds/files.c`, `fds/testfiles.c`, `syscalls/mm/mmap.c` — call `mmap_fd()` to seed OBJ_GLOBAL/OBJ_LOCAL FILE/TESTFILE pool entries from an already-open fd
+- `fds/files.c`, `fds/testfiles.c` — call `mmap_fd()` to seed the OBJ_GLOBAL FILE/TESTFILE pools from an already-open fd
 - `dispatch/syscall-arena.c` — `addr_in_local_runtime_map()` is the live-mapping check in the arena-pointer liveness probe
 
 ## Areas of attention

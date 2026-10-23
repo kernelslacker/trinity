@@ -211,7 +211,7 @@ void random_map_writefn(struct map *map);
 
 unsigned long get_rand_mmap_flags(void);
 
-void mmap_fd(int fd, const char *name, size_t len, int prot, enum obj_scope scope, enum objecttype type);
+void mmap_fd(int fd, const char *name, size_t len, int prot, enum objecttype type);
 
 bool proc_maps_check(unsigned long addr, unsigned long len,
 		     int expected_prot, bool expect_present);
