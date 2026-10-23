@@ -1,11 +1,8 @@
 /*
- * STRATEGY_COVERAGE_FRONTIER picker arm carved out of pickers.c.
- * Uniform draw + biased acceptance against the per-syscall
- * frontier-edge weight via rejection sampling; the silent-regime
- * fallback consults frontier_cold_weight / cmp_frontier_weight
- * from pick-frontier-weight.c.  set_syscall_nr_coverage_frontier
- * is cross-cluster private and declared in
- * include/random-syscall-internal.h.
+ * STRATEGY_COVERAGE_FRONTIER picker arm: uniform draw with biased
+ * acceptance, by rejection sampling, against the per-syscall frontier-edge
+ * weight.  The silent-regime fallback consults frontier_cold_weight() and
+ * cmp_frontier_weight() from pick-frontier-weight.c.
  */
 
 #include <errno.h>

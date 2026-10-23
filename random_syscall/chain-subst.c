@@ -1,16 +1,9 @@
 /*
- * Sequence-chain retval substitution: rewrite one randomly chosen arg
- * slot of the current syscall record with the previous chain step's
- * retval before dispatch-step.c publishes the record.  Called from both
- * the fresh-args path (random_syscall_step) and the corpus-replay path
- * (replay_syscall_step) so the substitution semantics are identical
- * regardless of where the args came from.
- *
- * compute_numeric_substitute_mask is public via include/syscall.h;
- * apply_chain_substitution and rewrite_refused_slots, which the RedQueen
- * pin shares, are cross-cluster private (declared in
- * include/random-syscall-internal.h); argtype_accepts_numeric_
- * substitute is file-scope static.
+ * Sequence-chain retval substitution: overwrite one randomly chosen arg
+ * slot of the current record with the previous chain step's retval before
+ * dispatch-step.c publishes it, whether the args are fresh or replayed.
+ * rewrite_refused_slots(), shared with the RedQueen pin, keeps a late
+ * rewrite from putting trinity's own fds or the parent pid back in a slot.
  */
 
 #include <errno.h>

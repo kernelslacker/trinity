@@ -1,27 +1,9 @@
 /*
- * dispatch-step.c -- dispatch_step() coordinator and CMP RedQueen re-exec.
- *
- * dispatch_step() is the dense correctness boundary where srec
- * publication, fd accounting, kcov / CMP collection, minicorpus save,
- * and the greedy CMP RedQueen re-exec cap all meet.  The three public
- * entry points that populate the record and call into it
- * (random_syscall_step, random_syscall_step_biased,
- * replay_syscall_step) live in the sibling dispatch-wrappers.c.
- *
- * CMP RedQueen helpers (redqueen_reexec_step, redqueen_pin_slot,
- * redqueen_pin_field) live in this same file alongside dispatch_step
- * because they are mutually recursive: redqueen_reexec_step() calls
- * back into dispatch_step() with child->in_reexec set, and
- * dispatch_step()'s tail gate drives the call.  Keeping both in one
- * TU avoids cross-file forward-declaration churn for what is a
- * deliberately self-contained recursion.
- *
- * All public entry points (random_syscall_step,
- * random_syscall_step_biased, replay_syscall_step) are declared in
- * include/child.h; dispatch_step is declared cluster-internal in
- * include/random-syscall-internal.h.  Everything upstream of the raw
- * dispatch (pick, chain substitution, strategy accounting) lives in
- * the sibling random_syscall/ cluster files.
+ * dispatch_step() and the CMP RedQueen re-exec.  dispatch_step() is the
+ * dense correctness boundary where srec publication, fd accounting, kcov /
+ * CMP collection, minicorpus save and the greedy re-exec cap meet.  The
+ * RedQueen helpers stay in this TU because they are mutually recursive
+ * with it: redqueen_reexec_step() re-enters it with child->in_reexec set.
  */
 #include <errno.h>
 #include <signal.h>

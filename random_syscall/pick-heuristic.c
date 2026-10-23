@@ -1,9 +1,7 @@
 /*
- * STRATEGY_HEURISTIC picker arm carved out of pickers.c.  The
- * heuristic picker is trinity's pre-rotation default: uniform draw
- * from active_syscalls, then layered biases (group affinity, kcov
- * cold-skip).  set_syscall_nr_heuristic is cross-cluster private
- * and declared in include/random-syscall-internal.h.
+ * STRATEGY_HEURISTIC picker arm, trinity's pre-rotation default: uniform
+ * draw from active_syscalls, then layered biases (group affinity, kcov
+ * cold-skip).
  */
 
 #include <errno.h>

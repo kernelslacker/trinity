@@ -1,13 +1,9 @@
 /*
- * Per-syscall weight helpers for the STRATEGY_COVERAGE_FRONTIER
- * silent-regime accept gate, carved out of pickers.c.
- *
- * frontier_cold_weight is the plateau-fallback weight when the
- * frontier ring goes silent (max_weight <= 2); cmp_frontier_weight
- * is the CMP-weighted alternate weight consulted under
- * cmp_frontier_mode != CMP_FRONTIER_OFF.  Both cap output at
- * FRONTIER_COLD_SCALE and are declared in
- * include/random-syscall-internal.h.
+ * Weight helpers for the STRATEGY_COVERAGE_FRONTIER silent-regime accept
+ * gate: frontier_cold_weight() is the plateau fallback when the frontier
+ * ring goes silent (max_weight <= 2), cmp_frontier_weight() the CMP-weighted
+ * alternate under cmp_frontier_mode != CMP_FRONTIER_OFF.  Both cap output at
+ * FRONTIER_COLD_SCALE.
  */
 
 #include <errno.h>

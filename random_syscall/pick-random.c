@@ -1,9 +1,8 @@
 /*
- * STRATEGY_RANDOM picker arm carved out of pickers.c.  Uniform draw
- * from active_syscalls with no further biasing -- the "shake the
- * dust off" pass that exposes paths the heuristic biases
- * systematically suppress.  Anti-prior plateau intervention lives
- * here too.  set_syscall_nr_random is public via include/syscall.h.
+ * STRATEGY_RANDOM picker arm: uniform draw from active_syscalls with no
+ * further biasing, the pass that exposes paths the heuristic biases
+ * systematically suppress.  The anti-prior plateau intervention lives here
+ * too.
  */
 
 #include <errno.h>

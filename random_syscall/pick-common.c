@@ -1,10 +1,8 @@
 /*
- * Table selection and validation helpers shared by the three picker
- * arms (set_syscall_nr_heuristic, set_syscall_nr_random,
- * set_syscall_nr_coverage_frontier) in random_syscall/pickers.c.
- * choose_syscall_table is public via include/syscall.h; the rest are
- * cross-cluster private and declared in
- * include/random-syscall-internal.h.
+ * Plumbing shared by the three picker arms (pick-heuristic.c, pick-random.c,
+ * pick-frontier.c): 32/64-bit table selection, the active-syscall count
+ * load, the validation deactivation counters, the EXPENSIVE-syscall accept
+ * gate, the cost-pool selector observers and the group-membership test.
  */
 
 #include <errno.h>
@@ -80,9 +78,6 @@
  * ordering is inferred from the count against the active_syscalls[]
  * slot loads; the val == 0 retry absorbs any tear on the paired
  * entry).  Consumes no RNG so seeded-run determinism is preserved.
- *
- * Prototype lives in random-syscall-internal.h now that the picker
- * arms carved out of pickers.c each want a caller.
  */
 unsigned int load_active_syscall_count(const unsigned int *shm_count,
 				       const char *arch_label)

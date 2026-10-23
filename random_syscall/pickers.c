@@ -1,13 +1,7 @@
 /*
- * Top-level picker dispatcher.  set_syscall_nr() is called from
- * dispatch_step and selects one of the per-strategy picker arms:
- * set_syscall_nr_heuristic (pick-heuristic.c) for STRATEGY_HEURISTIC,
- * set_syscall_nr_random (pick-random.c) for STRATEGY_RANDOM, or
- * set_syscall_nr_coverage_frontier (pick-frontier.c) for
- * STRATEGY_COVERAGE_FRONTIER.  set_syscall_nr and set_syscall_nr_
- * random are public via include/syscall.h; the other picker arms
- * and set_syscall_nr itself are cross-cluster private and declared
- * in include/random-syscall-internal.h.
+ * Top-level picker dispatcher: set_syscall_nr(), called from
+ * random_syscall_step(), routes to the arm for the current strategy
+ * (pick-heuristic.c, pick-random.c or pick-frontier.c).
  */
 
 #include <errno.h>
