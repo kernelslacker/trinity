@@ -1,46 +1,9 @@
 /*
- * Fixed-seed RNG-stream golden hashes.
- *
- * The help text carries 33 separate "byte-identical when off" /
- * "pick stream stays identical to off for a given seed" / "byte-
- * identical to today" promises across the shadow-lane knob rows.
- * Every one of them rests on the same load-bearing invariant: a
- * fixed seed reproduces the exact same sequence of rnd_u32() /
- * rnd_u64() / rnd_modulo_u{32,64}() draws that a pre-row build
- * produced.  A single stray rnd_u32() slipped into an off-path
- * branch desynchronises the stream and silently invalidates every
- * A/B comparison the operator ever runs with that knob.
- *
- * The RNG contract itself is the floor beneath those promises --
- * if the splitmix64 mixer / seed-mix constants / helper shapes
- * shift, every downstream byte-identical claim collapses in one
- * sweep and nothing in the tree today catches the shift.  This
- * suite pins the raw stream: seed the RNG, draw a fixed count of
- * values through each public helper, and hash the result against a
- * golden constant.  A drift shows up as a hash mismatch on the
- * first CI run after the change, not as a corrupted A/B months
- * later.
- *
- * The knob-by-knob byte-identical promises (each of the 33 rows
- * asserting that its off-path issues zero incremental draws) still
- * need a per-knob runtime check.  That check has to run through the
- * option-parse -> hot-path chain, which is not on the PURE-module
- * test seam yet -- it needs the picker migrated onto the arena test
- * infra first.  This row lands the floor; per-knob rows come after
- * that migration.
- *
- * Hashing shape: FNV-1a 64-bit over the raw byte layout of the
- * draw buffer, little-endian on the platforms trinity is built for
- * (x86_64 / aarch64), so the golden is stable across those hosts
- * without an explicit swap.
- *
- * Blessing: the golden constants below were produced by running
- * the test once with placeholder 0s, capturing the observed hashes
- * from the FAIL diagnostic, and pasting them back.  If the splitmix
- * mixer or seed-mix constants change on purpose, do the same one-
- * shot regen and update every EXPECTED_* below in one commit --
- * that regen is the deliberate act that justifies the churn, and
- * the same commit should carry the "why" in its Summary.
+ * Fixed-seed RNG-stream golden hashes.  The "byte-identical when off" knob
+ * promises all rest on one invariant: a fixed seed reproduces the same
+ * rnd_u32() / rnd_u64() / rnd_modulo_u{32,64}() draws.  This suite pins the
+ * raw stream (FNV-1a 64 over the draw buffer, little-endian on x86_64 and
+ * aarch64), so a mixer, seed-mix or helper-shape change fails here.
  */
 
 #include <stdint.h>
@@ -212,6 +175,10 @@ static void check_blob_seed_mix(uint64_t seed, uint64_t expected)
  * class (small integer, low bit density) so a mixer change that
  * happens to preserve one seed's stream would still fail on the
  * other.
+ *
+ * To bless a deliberate change to the mixer or seed-mix constants, set
+ * the EXPECTED_* values to 0 and rerun, pasting back the hash each FAIL
+ * line prints (the test stops at the first mismatch), all in one commit.
  */
 #define SEED_A		0xa17e57ULL
 #define SEED_B		0x2aULL

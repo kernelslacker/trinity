@@ -1,11 +1,9 @@
 /*
  * Object pool and name pool stand-ins for the sanitisers that
- * sanitiser_owned_mask_test.c runs.  Both pools are empty, so a
- * sanitiser takes its empty-pool arm.  What only a post handler or a
- * pool initialiser reaches aborts the test instead of answering, unless
- * a test has installed a hook for it for the duration of the call it
- * drives, as dup_pool_test.c does for the lookup the socketpair post
- * handler makes and the pool head the open post handlers reach.
+ * sanitiser_owned_mask_test.c runs.  Both pools are empty, so a sanitiser
+ * takes its empty-pool arm.  What only a post handler or a pool initialiser
+ * reaches aborts the test, unless a test installs a hook for the call it
+ * drives: dup_pool_test.c hooks find_local_object_by_fd() and get_objhead().
  */
 
 #include <stdbool.h>

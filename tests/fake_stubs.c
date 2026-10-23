@@ -1,50 +1,9 @@
 /*
- * Test-binary linker glue for the remaining PURE-module dependencies
- * that neither the fake shm nor the fake RNG covers.
- *
- * Contents:
- *
- *   __BUG              -- abort with the same (file, func, line, msg)
- *                         payload the production __BUG surfaces, so a
- *                         selftest regression prints an identifiable
- *                         failure and exits non-zero (ASAN then folds
- *                         its own report on top when running under
- *                         -fsanitize=address).
- *
- *   struct_catalog_lookup,
- *   syscall_struct_arg_groups
- *                      -- neutral stubs: today's selftest never lands
- *                         on a live catalog lookup (the depth-cap test
- *                         installs its own lookup override, and the
- *                         address-walk test uses hand-built descs with
- *                         no FT_PTR_STRUCT descent).  The stubs
- *                         satisfy the linker for struct_catalog/
- *                         {address,variant}.c and args/struct_fill.c
- *                         without importing the catalog build.
- *
- *   minicorpus_struct_field_attrib
- *                      -- no-op: the attrib publishes a per-tag
- *                         mutation trial into the live minicorpus
- *                         accounting; a test binary has no minicorpus,
- *                         so drop the record on the floor.
- *
- *   get_random_fd,
- *   ebpf_gen_program_into,
- *   struct_field_fill_schema_aware,
- *   __zmalloc_tracked  -- minimal stubs to satisfy args/struct_fill.c's
- *                         pointer-tag / BPF / schema-fill / alloc paths.
- *                         The struct_field_bounds_test only exercises the
- *                         scalar FT_FLAGS path in Pass 1; none of these
- *                         are reachable when the bounds guard fires first
- *                         (after the fix) or when the process crashes
- *                         before reaching them (before the fix).
- *
- *   mapping_sizes      -- storage for the table get_non_null_address()
- *                         indexes.  rand/random-address.c is linked for
- *                         the writable pool, and the real get_address()
- *                         that comes with it reaches the table through
- *                         struct_fill.c's FT_ADDRESS fill, which no test
- *                         runs, so it stays zeroed.
+ * Test-binary linker glue for the PURE-module dependencies that neither the
+ * fake shm nor the fake RNG covers: the allocator and output stubs
+ * utils/shared_str_heap.c needs, __BUG, the struct-catalog and minicorpus
+ * stubs, and mapping_sizes.  A stub for a path no test reaches aborts if
+ * called, so a coverage gap fails loudly instead of misbehaving silently.
  */
 
 #include <stdarg.h>
@@ -105,6 +64,9 @@ void *alloc_shared(size_t size)
 	return p;
 }
 
+/* The same (file, func, line, msg) payload as the production __BUG, so a
+ * selftest regression prints an identifiable failure and exits non-zero
+ * (ASAN folds its own report on top under -fsanitize=address). */
 void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 	   unsigned int lineno)
 {
@@ -122,6 +84,11 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname,
  * as "semantically identical" copies.
  */
 
+/* Neutral stub: no test lands on a live catalog lookup (the depth-cap test
+ * installs its own override, and the address-walk test uses hand-built
+ * descs with no FT_PTR_STRUCT descent), so NULL satisfies the linker for
+ * struct_catalog/{address,variant}.c and args/struct_fill.c without
+ * importing the catalog build. */
 const struct struct_desc *struct_catalog_lookup(const char *name)
 {
 	(void) name;
@@ -136,6 +103,8 @@ const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
 	{ .entries = NULL },
 };
 
+/* No-op: the attrib publishes a per-tag mutation trial into the live
+ * minicorpus accounting, and a test binary has no minicorpus. */
 void minicorpus_struct_field_attrib(enum field_tag tag)
 {
 	(void) tag;
@@ -199,4 +168,8 @@ void * __zmalloc_tracked(size_t size, const char *func)
 	return p;
 }
 
+/* Storage for the table get_non_null_address() indexes.  rand/random-address.c
+ * is linked for the writable pool, and the real get_address() that comes with
+ * it reaches the table through struct_fill.c's FT_ADDRESS fill, which no test
+ * runs, so it stays zeroed. */
 unsigned long mapping_sizes[NR_MAPPING_SIZES];

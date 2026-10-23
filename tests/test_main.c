@@ -1,15 +1,9 @@
 /*
- * Test-binary driver.
- *
- * Seeds the RNG from a fixed constant (or -s <seed>) so every run is
- * reproducible, then dispatches to the per-suite entry points.  New
- * suites go in a single call in main() -- the test binary is small
- * enough that a suite registry would be more machinery than the ~10
- * total suite entry points ever need.
- *
- * The seed default is chosen for legibility (0xa17e57 -- "a test"),
- * not for RNG quality; the splitmix64 mix inside rnd_seed() folds any
- * seed into a well-distributed 64-bit state.
+ * Test-binary driver: seeds the RNG from a fixed constant (or -s <seed>) so
+ * every run is reproducible, then calls each suite's entry point.  A new
+ * suite is one call in main(), not a registry.  The default seed 0xa17e57
+ * is chosen for legibility, not RNG quality; rnd_seed()'s splitmix64 mix
+ * folds any seed into a well-distributed 64-bit state.
  */
 
 #include <stdio.h>

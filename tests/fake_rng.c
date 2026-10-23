@@ -1,17 +1,9 @@
 /*
- * Test-binary RNG provider.
- *
- * Satisfies the rnd.h contract (rnd_state, rnd_seed, rnd_blob_state,
- * rnd_blob_seed) for PURE modules linked into the test binary without
- * pulling in rand/seed.c's dependency chain (shm->seed, childdata,
- * urandom, syslog, params).  The seed init path is identical to the
- * production path -- same splitmix64 seed mix -- so a test running
- * under a fixed seed produces the same rnd_u32() / rnd_modulo_u32()
- * stream production would at the equivalent (shm seed, childno) pair.
- *
- * Deterministic-by-default: the parent test main() calls test_rng_seed()
- * with a caller-chosen constant so a repro is a single `-s <seed>`
- * flag flip in the harness, not "walk the /dev/urandom draw".
+ * Test-binary RNG provider: rnd_state, rnd_seed(), rnd_blob_state and
+ * rnd_blob_seed() without rand/seed.c's dependency chain (shm->seed,
+ * childdata, urandom, syslog, params).  The seed mix is the production one,
+ * so rnd_seed(s) gives the stream production draws from the same s;
+ * test_main.c seeds it from a fixed constant or -s <seed>.
  */
 
 #include <stdint.h>
