@@ -208,6 +208,148 @@ static inline void syscall_noisy_sample_end(unsigned int nr,
 			   __ATOMIC_RELAXED);
 }
 
+/*
+ * Record the kernel-visible argument values in rec->dispatch_args[] and
+ * the opt-in rec->arg_shadow[], from the locals __do_syscall() is about
+ * to pass to the kernel.
+ */
+static void snapshot_dispatch_args(struct syscallrecord *rec,
+				   struct syscallentry *entry,
+				   unsigned long a1, unsigned long a2,
+				   unsigned long a3, unsigned long a4,
+				   unsigned long a5, unsigned long a6)
+{
+	rec->dispatch_args[0] = a1;
+	rec->dispatch_args[1] = a2;
+	rec->dispatch_args[2] = a3;
+	rec->dispatch_args[3] = a4;
+	rec->dispatch_args[4] = a5;
+	rec->dispatch_args[5] = a6;
+	rec->dispatch_args_valid = true;
+
+	/* Populate rec->arg_shadow[] from the local a1..a6 about to be
+	 * passed to the kernel, so opted-in post handlers reading via
+	 * get_arg_snapshot() see exactly what the kernel saw.  Captured
+	 * here -- after the second blanket_address_scrub and from
+	 * the locals (immune to a sibling stomp between BEFORE and AFTER)
+	 * -- so the shadow holds precisely what the kernel saw.  The only
+	 * stomp the shadow can miss is one that lands after dispatch
+	 * began, which IS the bug class arg_shadow_stomp is meant to
+	 * surface. */
+	{
+		/* arg_snapshot_mask only carries six valid bits (one per
+		 * syscall arg).  Mask the byte to 0x3f before iterating: a
+		 * stray bit 6/7 -- whether from a sanitiser writing the wrong
+		 * field or from future growth past 6 args without bumping
+		 * arg_shadow[] -- would let __builtin_ctz return 6 or 7 and
+		 * the rec->arg_shadow[i] store below would scribble past the
+		 * six-entry array.  The switch default's val=0 alone is not
+		 * enough; it only neuters the value, not the index. */
+		uint8_t mask = (uint8_t)(entry->arg_snapshot_mask & 0x3fu);
+
+		rec->arg_snapshot_mask = mask;
+		while (mask != 0) {
+			unsigned int i = (unsigned int)__builtin_ctz(mask);
+			unsigned long val;
+
+			switch (i + 1) {
+			case 1: val = a1; break;
+			case 2: val = a2; break;
+			case 3: val = a3; break;
+			case 4: val = a4; break;
+			case 5: val = a5; break;
+			case 6: val = a6; break;
+			default: val = 0; break;
+			}
+			rec->arg_shadow[i] = val;
+			mask &= (uint8_t)(mask - 1);
+		}
+	}
+}
+
+/* fail-nth resets to 0 in the kernel after the syscall completes.
+ * Tally whether the armed fault actually triggered (-ENOMEM) vs
+ * went unconsumed (the syscall didn't reach an allocation we hit). */
+static void tally_fault_injection(struct childdata *child,
+				  unsigned long ret, int saved_errno)
+{
+	if (child != NULL) {
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_FAULT_INJECTED, 0, 1);
+		if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
+			stats_ring_enqueue(child->stats_ring,
+					   STATS_FIELD_FAULT_CONSUMED,
+					   0, 1);
+	} else {
+		parent_stats.fault_injected++;
+		if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
+			parent_stats.fault_consumed++;
+	}
+}
+
+/* If we became tainted, get out as fast as we can. */
+static void exit_if_tainted(void)
+{
+	struct timespec _tc0, _tc1;
+	bool _tainted;
+	long _ns;
+
+	clock_gettime(CLOCK_MONOTONIC, &_tc0);
+	_tainted = is_tainted();
+	clock_gettime(CLOCK_MONOTONIC, &_tc1);
+	_ns = (_tc1.tv_sec - _tc0.tv_sec) * 1000000000L
+	      + (_tc1.tv_nsec - _tc0.tv_nsec);
+	__atomic_add_fetch(&shm->stats.diag.taint_check_calls,
+			   1, __ATOMIC_RELAXED);
+	if (_ns > 0)
+		__atomic_add_fetch(&shm->stats.diag.taint_check_ns,
+				   (unsigned long)_ns,
+				   __ATOMIC_RELAXED);
+	if (_tainted) {
+		panic(EXIT_KERNEL_TAINTED);
+		_exit(EXIT_KERNEL_TAINTED);
+	}
+}
+
+/* Body of __do_syscall()'s in-child watchdog eviction window, run once
+ * the predicate there has matched our own alarm on a blocking syscall. */
+static void watchdog_evict_fd_args(struct syscallentry *entry,
+				   struct childdata *child,
+				   unsigned long a1, unsigned long a2,
+				   unsigned long a3, unsigned long a4,
+				   unsigned long a5, unsigned long a6)
+{
+	/* Gate the bookkeeping on "the syscall has fd-bearing arg
+	 * slots", matching the slot-set for_each_fd_arg() will walk
+	 * (fd_arg_mask plus the ARG_SOCKETINFO-in-slot-0 mirror).
+	 * Bump stats and reset fd_lifetime once per stuck-syscall
+	 * event, regardless of how many of those args' raw values
+	 * actually pass the rlimit check inside the walk. */
+	uint8_t gate = entry->fd_arg_mask;
+	if (entry->argtype[0] == ARG_SOCKETINFO)
+		gate |= 0x01;
+
+	if (gate != 0) {
+		unsigned long args[6] = { a1, a2, a3, a4, a5, a6 };
+
+		child->fd_lifetime = 0;
+
+		stats_ring_enqueue(child->stats_ring,
+				   STATS_FIELD_WATCHDOG_FD_EVICT,
+				   0, 1);
+
+		for_each_fd_arg(entry, args,
+				child_watchdog_evict_fd, child);
+	}
+
+	/* Eviction handled here; clear the pending flag so the child
+	 * main loop's sigalrm_pending branch sees a no-op for this
+	 * SIGALRM.  The housekeeping there (alarm(0) and the same
+	 * pending clear) still covers other op_type paths and races
+	 * where the flag is set outside this dispatch window. */
+	sigalrm_pending = 0;
+}
+
 void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		  enum syscallstate state,
 		  struct kcov_child *kc, struct childdata *child)
@@ -292,52 +434,7 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * tripwire on mismatch via get_arg_snapshot(); this snapshot is
 	 * always populated and read directly, suited to a scanning
 	 * consumer rather than a per-slot result oracle. */
-	rec->dispatch_args[0] = a1;
-	rec->dispatch_args[1] = a2;
-	rec->dispatch_args[2] = a3;
-	rec->dispatch_args[3] = a4;
-	rec->dispatch_args[4] = a5;
-	rec->dispatch_args[5] = a6;
-	rec->dispatch_args_valid = true;
-
-	/* Populate rec->arg_shadow[] from the local a1..a6 about to be
-	 * passed to the kernel, so opted-in post handlers reading via
-	 * get_arg_snapshot() see exactly what the kernel saw.  Captured
-	 * here -- after the second blanket_address_scrub above and from
-	 * the locals (immune to a sibling stomp between BEFORE and AFTER)
-	 * -- so the shadow holds precisely what the kernel saw.  The only
-	 * stomp the shadow can miss is one that lands after dispatch
-	 * began, which IS the bug class arg_shadow_stomp is meant to
-	 * surface. */
-	{
-		/* arg_snapshot_mask only carries six valid bits (one per
-		 * syscall arg).  Mask the byte to 0x3f before iterating: a
-		 * stray bit 6/7 -- whether from a sanitiser writing the wrong
-		 * field or from future growth past 6 args without bumping
-		 * arg_shadow[] -- would let __builtin_ctz return 6 or 7 and
-		 * the rec->arg_shadow[i] store below would scribble past the
-		 * six-entry array.  The switch default's val=0 alone is not
-		 * enough; it only neuters the value, not the index. */
-		uint8_t mask = (uint8_t)(entry->arg_snapshot_mask & 0x3fu);
-
-		rec->arg_snapshot_mask = mask;
-		while (mask != 0) {
-			unsigned int i = (unsigned int)__builtin_ctz(mask);
-			unsigned long val;
-
-			switch (i + 1) {
-			case 1: val = a1; break;
-			case 2: val = a2; break;
-			case 3: val = a3; break;
-			case 4: val = a4; break;
-			case 5: val = a5; break;
-			case 6: val = a6; break;
-			default: val = 0; break;
-			}
-			rec->arg_shadow[i] = val;
-			mask &= (uint8_t)(mask - 1);
-		}
-	}
+	snapshot_dispatch_args(rec, entry, a1, a2, a3, a4, a5, a6);
 
 	/*
 	 * --dry-run: run the full argument-generation/sanitise pipeline
@@ -449,46 +546,10 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	if (noisy_sampled)
 		syscall_noisy_sample_end(rec->nr, noisy_before);
 
-	/* fail-nth resets to 0 in the kernel after the syscall completes.
-	 * Tally whether the armed fault actually triggered (-ENOMEM) vs
-	 * went unconsumed (the syscall didn't reach an allocation we hit). */
-	if (fault_armed) {
-		if (child != NULL) {
-			stats_ring_enqueue(child->stats_ring,
-					   STATS_FIELD_FAULT_INJECTED, 0, 1);
-			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
-				stats_ring_enqueue(child->stats_ring,
-						   STATS_FIELD_FAULT_CONSUMED,
-						   0, 1);
-		} else {
-			parent_stats.fault_injected++;
-			if (ret == (unsigned long)-1L && saved_errno == ENOMEM)
-				parent_stats.fault_consumed++;
-		}
-	}
+	if (fault_armed)
+		tally_fault_injection(child, ret, saved_errno);
 
-	/* If we became tainted, get out as fast as we can. */
-	{
-		struct timespec _tc0, _tc1;
-		bool _tainted;
-		long _ns;
-
-		clock_gettime(CLOCK_MONOTONIC, &_tc0);
-		_tainted = is_tainted();
-		clock_gettime(CLOCK_MONOTONIC, &_tc1);
-		_ns = (_tc1.tv_sec - _tc0.tv_sec) * 1000000000L
-		      + (_tc1.tv_nsec - _tc0.tv_nsec);
-		__atomic_add_fetch(&shm->stats.diag.taint_check_calls,
-				   1, __ATOMIC_RELAXED);
-		if (_ns > 0)
-			__atomic_add_fetch(&shm->stats.diag.taint_check_ns,
-					   (unsigned long)_ns,
-					   __ATOMIC_RELAXED);
-		if (_tainted) {
-			panic(EXIT_KERNEL_TAINTED);
-			_exit(EXIT_KERNEL_TAINTED);
-		}
-	}
+	exit_if_tainted();
 
 	if (needalarm)
 		(void)alarm(0);
@@ -511,37 +572,8 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * a normal syscall op is specific to the watchdog path. */
 	if (needalarm && sigalrm_pending &&
 	    ret == (unsigned long)-1L && saved_errno == EINTR &&
-	    child != NULL && child->op_type == CHILD_OP_SYSCALL) {
-		/* Gate the bookkeeping on "the syscall has fd-bearing arg
-		 * slots", matching the slot-set for_each_fd_arg() will walk
-		 * (fd_arg_mask plus the ARG_SOCKETINFO-in-slot-0 mirror).
-		 * Bump stats and reset fd_lifetime once per stuck-syscall
-		 * event, regardless of how many of those args' raw values
-		 * actually pass the rlimit check inside the walk. */
-		uint8_t gate = entry->fd_arg_mask;
-		if (entry->argtype[0] == ARG_SOCKETINFO)
-			gate |= 0x01;
-
-		if (gate != 0) {
-			unsigned long args[6] = { a1, a2, a3, a4, a5, a6 };
-
-			child->fd_lifetime = 0;
-
-			stats_ring_enqueue(child->stats_ring,
-					   STATS_FIELD_WATCHDOG_FD_EVICT,
-					   0, 1);
-
-			for_each_fd_arg(entry, args,
-					child_watchdog_evict_fd, child);
-		}
-
-		/* Eviction handled here; clear the pending flag so the child
-		 * main loop's sigalrm_pending branch sees a no-op for this
-		 * SIGALRM.  The housekeeping there (alarm(0) and the same
-		 * pending clear) still covers other op_type paths and races
-		 * where the flag is set outside this dispatch window. */
-		sigalrm_pending = 0;
-	}
+	    child != NULL && child->op_type == CHILD_OP_SYSCALL)
+		watchdog_evict_fd_args(entry, child, a1, a2, a3, a4, a5, a6);
 
 	srec_publish_begin(rec);
 	rec->errno_post = saved_errno;
