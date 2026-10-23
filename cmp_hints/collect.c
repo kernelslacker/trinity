@@ -158,6 +158,92 @@ cmp_field_match_timespec(const struct timespec *ts, unsigned long arg2,
 	return true;
 }
 
+/*
+ * Stage the inputs of cmp_hints_collect()'s RedQueen attribution scan: the
+ * dispatching syscall's dispatch-time args, their argtypes and the
+ * field-scan gate.  Runs once per call, before the per-record loop, and only
+ * a redqueen_enabled child that is not mid-re-exec stages anything; the
+ * outputs keep the caller's defaults otherwise.
+ */
+static void cmp_attribution_prestage(struct childdata *child,
+				     bool *attribute_enabled,
+				     unsigned long rec_args[6],
+				     unsigned int *rec_num_args,
+				     enum argtype rec_argtype[6],
+				     bool *field_scan_enabled)
+{
+	/*
+	 * Pre-stage the RedQueen attribution scan inputs.  Snapshot
+	 * num_args + the per-rec dispatch_args[] (populated in
+	 * __do_syscall() from the dispatch-time locals a1..a6, after
+	 * the second blanket_address_scrub and before kernel entry)
+	 * into a small stack-resident array so the per-record inner
+	 * loop avoids re-reading rec each iteration -- rec lives at
+	 * the cold tail of childdata and the hot CMP loop should not
+	 * drag those lines into L1 thousands of times.  Reading from
+	 * dispatch_args[] rather than live rec->aN means a sibling
+	 * stomp between dispatch and this scan can't redirect us at
+	 * a post-call slot value the kernel never compared against;
+	 * dispatch_args_valid gates the read so a rec that never
+	 * went through __do_syscall() (zero-init / parent context)
+	 * stays unattributed instead of feeding the scan a zeroed
+	 * arg vector.  Drop the gate entirely on the in_reexec path
+	 * so the re-exec's own CMP harvest cannot stage a second
+	 * tier of attributions -- the per-call buffer stays drained
+	 * around the dispatch and is read back by the dispatch_step
+	 * tail.
+	 */
+	if (child->redqueen_enabled && !child->in_reexec &&
+	    child->reexec_pending_count < MAX_REEXEC_PENDING) {
+		struct syscallrecord *rec = &child->syscall;
+		struct syscallentry *entry = rec->entry;
+
+		if (entry != NULL && entry->num_args > 0 &&
+		    rec->dispatch_args_valid) {
+			unsigned int n = entry->num_args;
+			unsigned int k;
+
+			if (n > 6)
+				n = 6;
+			*rec_num_args = n;
+			rec_args[0] = rec->dispatch_args[0];
+			rec_args[1] = rec->dispatch_args[1];
+			rec_args[2] = rec->dispatch_args[2];
+			rec_args[3] = rec->dispatch_args[3];
+			rec_args[4] = rec->dispatch_args[4];
+			rec_args[5] = rec->dispatch_args[5];
+			/* Snapshot the argtypes so the per-record field
+			 * scan can tell which slots carry a pointer to a
+			 * field-eligible struct without re-reading entry;
+			 * flag the cheap gate so non-timespec syscalls
+			 * skip the scan entirely. */
+			for (k = 0; k < n; k++) {
+				rec_argtype[k] = entry->argtype[k];
+				if (entry->argtype[k] == ARG_TIMESPEC)
+					*field_scan_enabled = true;
+			}
+			*attribute_enabled = true;
+			if (kcov_shm != NULL)
+				__atomic_fetch_add(
+					&kcov_shm->reexec_gate.cmp_attribution_calls_eligible,
+					1UL, __ATOMIC_RELAXED);
+		} else if (kcov_shm != NULL &&
+			   entry != NULL && entry->num_args > 0 &&
+			   !rec->dispatch_args_valid) {
+			/* Redqueen cohort gate cleared and the
+			 * syscall has args worth scanning, but
+			 * the dispatch_args[] snapshot feed is
+			 * missing -- attribution correctly skips
+			 * the call, surface the rate so the
+			 * snapshot-feed health is not silently
+			 * folded into the eligible cohort. */
+			__atomic_fetch_add(
+				&kcov_shm->reexec_gate.cmp_attribution_snapshot_unavailable,
+				1UL, __ATOMIC_RELAXED);
+		}
+	}
+}
+
 void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 {
 	unsigned long count;
@@ -302,76 +388,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 			bloom->records = 0;
 		}
 
-		/*
-		 * Pre-stage the RedQueen attribution scan inputs.  Snapshot
-		 * num_args + the per-rec dispatch_args[] (populated in
-		 * __do_syscall() from the dispatch-time locals a1..a6, after
-		 * the second blanket_address_scrub and before kernel entry)
-		 * into a small stack-resident array so the per-record inner
-		 * loop avoids re-reading rec each iteration -- rec lives at
-		 * the cold tail of childdata and the hot CMP loop should not
-		 * drag those lines into L1 thousands of times.  Reading from
-		 * dispatch_args[] rather than live rec->aN means a sibling
-		 * stomp between dispatch and this scan can't redirect us at
-		 * a post-call slot value the kernel never compared against;
-		 * dispatch_args_valid gates the read so a rec that never
-		 * went through __do_syscall() (zero-init / parent context)
-		 * stays unattributed instead of feeding the scan a zeroed
-		 * arg vector.  Drop the gate entirely on the in_reexec path
-		 * so the re-exec's own CMP harvest cannot stage a second
-		 * tier of attributions -- the per-call buffer stays drained
-		 * around the dispatch and is read back by the dispatch_step
-		 * tail.
-		 */
-		if (child->redqueen_enabled && !child->in_reexec &&
-		    child->reexec_pending_count < MAX_REEXEC_PENDING) {
-			struct syscallrecord *rec = &child->syscall;
-			struct syscallentry *entry = rec->entry;
-
-			if (entry != NULL && entry->num_args > 0 &&
-			    rec->dispatch_args_valid) {
-				unsigned int n = entry->num_args;
-				unsigned int k;
-
-				if (n > 6)
-					n = 6;
-				rec_num_args = n;
-				rec_args[0] = rec->dispatch_args[0];
-				rec_args[1] = rec->dispatch_args[1];
-				rec_args[2] = rec->dispatch_args[2];
-				rec_args[3] = rec->dispatch_args[3];
-				rec_args[4] = rec->dispatch_args[4];
-				rec_args[5] = rec->dispatch_args[5];
-				/* Snapshot the argtypes so the per-record field
-				 * scan can tell which slots carry a pointer to a
-				 * field-eligible struct without re-reading entry;
-				 * flag the cheap gate so non-timespec syscalls
-				 * skip the scan entirely. */
-				for (k = 0; k < n; k++) {
-					rec_argtype[k] = entry->argtype[k];
-					if (entry->argtype[k] == ARG_TIMESPEC)
-						field_scan_enabled = true;
-				}
-				attribute_enabled = true;
-				if (kcov_shm != NULL)
-					__atomic_fetch_add(
-						&kcov_shm->reexec_gate.cmp_attribution_calls_eligible,
-						1UL, __ATOMIC_RELAXED);
-			} else if (kcov_shm != NULL &&
-				   entry != NULL && entry->num_args > 0 &&
-				   !rec->dispatch_args_valid) {
-				/* Redqueen cohort gate cleared and the
-				 * syscall has args worth scanning, but
-				 * the dispatch_args[] snapshot feed is
-				 * missing -- attribution correctly skips
-				 * the call, surface the rate so the
-				 * snapshot-feed health is not silently
-				 * folded into the eligible cohort. */
-				__atomic_fetch_add(
-					&kcov_shm->reexec_gate.cmp_attribution_snapshot_unavailable,
-					1UL, __ATOMIC_RELAXED);
-			}
-		}
+		cmp_attribution_prestage(child, &attribute_enabled, rec_args,
+					 &rec_num_args, rec_argtype,
+					 &field_scan_enabled);
 	}
 
 	/* Two-phase split: the per-child bloom is lock-free child-private
