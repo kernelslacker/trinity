@@ -17,14 +17,7 @@
 #include "valresult.h"
 
 #include "kernel/socket.h"
-/*
- * UIO_MAXIOV is the kernel-side hard cap on iovec count.  Local
- * fallback to the canonical 1024 mirrors generate-args.c:262-267
- * so the file builds against any uapi header vintage.
- */
-#ifndef UIO_MAXIOV
-# define UIO_MAXIOV 1024
-#endif
+#include "kernel/uio.h"
 
 static void sanitise_recv(struct syscallrecord *rec)
 {

@@ -15,6 +15,8 @@
 #include "syscall.h"
 #include "utils.h"
 
+#include "kernel/uio.h"
+
 #ifndef BTRFS_LABEL_SIZE
 #define BTRFS_LABEL_SIZE 256
 #endif
@@ -460,17 +462,6 @@ static void sanitise_btrfs_vol_args_v2(struct syscallrecord *rec)
 }
 
 #ifdef BTRFS_IOC_ENCODED_READ
-/*
- * UIO_FASTIOV / UIO_MAXIOV: local fallback mirrors handle_arg.c so the
- * file builds against any uapi header vintage without extra includes.
- */
-#ifndef UIO_FASTIOV
-# define UIO_FASTIOV 8
-#endif
-#ifndef UIO_MAXIOV
-# define UIO_MAXIOV 1024
-#endif
-
 /*
  * build_encoded_iovec -- populate iov/iovcnt on an encoded-I/O args struct.
  *

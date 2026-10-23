@@ -20,6 +20,8 @@
 #include "syscall.h"
 #include "utils.h"		// min
 
+#include "kernel/uio.h"
+
 unsigned long handle_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum)
 {
 	unsigned long addr = 0;
@@ -303,20 +305,6 @@ void publish_paired_length(struct syscallentry *entry,
 	case 5:	rec->a6 = len; break;
 	}
 }
-
-/*
- * UIO_FASTIOV / UIO_MAXIOV are the kernel-side fast-path and absolute
- * limits on iovec count.  Local fallback to the canonical 8/1024
- * mirrors the SPLICE_F_* fallback constants in include/kernel/splice.h, so the
- * file builds against any uapi header vintage without pulling in
- * <sys/uio.h> just for the boundary constants.
- */
-#ifndef UIO_FASTIOV
-# define UIO_FASTIOV 8
-#endif
-#ifndef UIO_MAXIOV
-# define UIO_MAXIOV 1024
-#endif
 
 static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
 					  struct syscallrecord *rec,
