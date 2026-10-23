@@ -50,14 +50,15 @@
  * entry payload -- a corrupt entry is dropped without taking down the
  * whole file.
  *
- * Format is arch-tagged and kernel-release-tagged: chain corpora built
- * for a different arch or a different compiled kernel image are
- * refused at load time, since syscall numbers and kernel behaviour
- * both change under those variables and a mismatched replay would
- * feed the kernel argument tuples from a completely different
- * dispatch table.  Same policy the per-syscall minicorpus file uses,
- * with a distinct magic so a mis-pointed path can never load one
- * carrier's image into the other's parser.
+ * Format is kernel-release-tagged: a chain corpus built for a different
+ * compiled kernel image is refused at load time, since kernel behaviour
+ * changes under that variable and a mismatched replay would feed the
+ * kernel argument tuples recorded against another image.  The header
+ * carries no arch; the default path is per arch, so syscall numbers
+ * recorded on one arch are never looked up on another.  Same policy the
+ * per-syscall minicorpus file uses, with a distinct magic so a
+ * mis-pointed path can never load one carrier's image into the other's
+ * parser.
  */
 #define CHAIN_CORPUS_FILE_MAGIC		0x54524e43U /* "TRNC" */
 #define CHAIN_CORPUS_FILE_VERSION	1U
