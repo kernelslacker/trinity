@@ -1,17 +1,9 @@
 /*
- * JSON-Lines sink -- see include/jsonl.h.
- *
- * Deliberately free-standing: only libc open/writev/close.  This is
- * the first telemetry pipe brought up during a fuzz run, so it cannot
- * depend on trinity's output(), shm, or logging infrastructure.
- *
- * The sink is opened once in the parent before fork(), so every child
- * inherits the same open file description with a shared write offset.
- * O_APPEND makes each writev() atomically seek to end-of-file, and
- * emitting the JSON payload plus the trailing newline as a single
- * writev() keeps a record contiguous on disk (regular files accept
- * writes up to PIPE_BUF as one extent), so concurrent children cannot
- * braid their records into each other.
+ * JSON-Lines sink -- see include/jsonl.h.  Free-standing on purpose: only libc
+ * open/writev/close, because it is the first telemetry pipe brought up and
+ * cannot rely on output(), shm or logging.  Each record and its newline go out
+ * in one writev() on the O_APPEND descriptor every child inherits, so
+ * concurrent records cannot interleave.
  */
 
 #include <fcntl.h>

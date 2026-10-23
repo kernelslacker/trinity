@@ -1,19 +1,9 @@
 /*
- * cmsg_build() — fuzz-side cmsg ancillary-data builder.
- *
- * See include/cmsg_build.h for the rationale.  Each kind populates
- * cmsg_level / cmsg_type / cmsg_len and a payload of the matching
- * shape, drawn from the writable pool so the kernel can write back
- * (SCM_RIGHTS scm_detach_fds patches cmsg_len in place on receive)
- * and the iov scrub pass leaves the mapping alone.  Payload values
- * mix valid and reserved-bit choices from the trinity RNG -- the
- * kernel parser is what we care about reaching, not realism.
- *
- * Extended kinds (IP_PKTINFO, IPV6_RTHDR, SCM_TXTIME, ...) and the
- * multi-cmsg packer fire only when the cmsg-richness lever is ON;
- * the OFF path through pick_cmsg_kind() draws from the original
- * base-5 modulo with a single rnd_modulo_u32 call so the RNG stream
- * is byte-identical to a build without the lever.
+ * cmsg_build() — fuzz-side cmsg builder (see include/cmsg_build.h).  Buffers
+ * come from the writable pool, so the iov scrub pass leaves them alone and
+ * scm_detach_fds() can patch cmsg_len in place on receive.  Payloads mix
+ * valid and reserved-bit values: the kernel parser is the target, not
+ * realism.  pick_cmsg_kind()'s OFF path keeps the RNG stream byte-identical.
  */
 
 #include <stddef.h>
