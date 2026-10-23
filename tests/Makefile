@@ -515,6 +515,10 @@ PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
 		   $(TOP)/mm/maps-lifecycle.c
 FAKE_SRCS	+= objpool_reader_test.c
 
+# maps_name_test.c runs map_destructor() and the pool clones of the
+# mm/maps-lifecycle.c linked above over fake pools.
+FAKE_SRCS	+= maps_name_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
