@@ -2,18 +2,18 @@
 
 Fuzzer intelligence layer for Trinity. Collects constants the kernel compares syscall-derived values against (KCOV_TRACE_CMP), feeds them back into arg generation to bias inputs toward values likely to pass kernel validation gates.
 
-## Files (16 files, ~8,490 LOC)
+## Files (14 files, ~6,964 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
-| collect.c | 1174 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer (its once-per-call scan setup is `cmp_attribution_prestage()`), cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
-| pool.c | 1046 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
-| get.c | 648 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
-| credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
-| persist.c | 866 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
-| shadow_promote.c | 359 | Measure-only shadow-arm promotion evaluator: walks a registry of shadow arms each stats tick, emits one promotion-criterion line. Writes no generation path. |
-| childop_consume.c | 76 | Consume-side resolver for the childop CMP path (`--childop-cmp-harvest`); shadow-scores what a live consume would return, always returns "no hint" |
+| cmp_hints.c | 332 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
+| collect.c | 1158 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer (its once-per-call scan setup is `cmp_attribution_prestage()`), cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
+| pool.c | 1042 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
+| get.c | 633 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
+| credit.c | 413 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
+| persist.c | 855 | Warm-start persistence: on-disk snapshot/load with kallsyms SHA-256 fingerprinting, KASLR-base validation, CRC32 integrity |
+| shadow_promote.c | 304 | Measure-only shadow-arm promotion evaluator: walks a registry of shadow arms each stats tick, emits one promotion-criterion line. Writes no generation path. |
+| childop_consume.c | 66 | Consume-side resolver for the childop CMP path (`--childop-cmp-harvest`); shadow-scores what a live consume would return, always returns "no hint" |
 
 ### Typed hypothesis store (`hyp-*.c`)
 
@@ -25,12 +25,12 @@ exports to a sibling lane, but not to the public `cmp_hints.h`, live in
 
 | File | Lines | Role |
 |---|---|---|
-| hyp-pool.c | 191 | Pool primitives: `cmp_hyp_find()` / alloc / range-identity. Writers run under the matching durable `cmp_hint_pool` lock. |
-| hyp-observe.c | 259 | Observe path: the five kind-lane inference rules |
-| hyp-credit.c | 440 | Credit path: `cmp_hyp_find_for_credit()`, per-outcome selectors, `cmp_hyp_credit_outcome()` / `cmp_hyp_credit_consume()` |
-| hyp-pick.c | 270 | Picker: `cmp_hyp_would_pick_locked()` pool walk, specificity ordering, state-aware preference within a kind |
-| hyp-derive.c | 814 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
-| hyp-live.c | 235 | LIVE inject arm: `cmp_hyp_try_live_inject()` and its three gating channels (plateau-amplified A, always-on bootstrap B, PROMOTED-bypass C) |
+| hyp-pool.c | 188 | Pool primitives: `cmp_hyp_find()` / alloc / range-identity. Writers run under the matching durable `cmp_hint_pool` lock. |
+| hyp-observe.c | 256 | Observe path: the five kind-lane inference rules |
+| hyp-credit.c | 436 | Credit path: `cmp_hyp_find_for_credit()`, per-outcome selectors, `cmp_hyp_credit_outcome()` / `cmp_hyp_credit_consume()` |
+| hyp-pick.c | 261 | Picker: `cmp_hyp_would_pick_locked()` pool walk, specificity ordering, state-aware preference within a kind |
+| hyp-derive.c | 791 | Derive ladder: `cmp_hyp_derive_value()` plus the pow2/alignment, bitmask FULL_OR/ANDNOT_TOGGLE and sign-switch probe classes |
+| hyp-live.c | 229 | LIVE inject arm: `cmp_hyp_try_live_inject()` and its three gating channels (plateau-amplified A, always-on bootstrap B, PROMOTED-bypass C) |
 
 ## Data model
 
@@ -67,7 +67,7 @@ Per-child:
 
 ## Areas of attention
 
-1. **Largest files** — collect.c (1,174), pool.c (1,046), persist.c (866), hyp-derive.c (814). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:497–791) is still ~295 lines with deep nesting. `cmp_hints_collect()` (collect.c:236–970) is still a ~735-line function: its per-record loop (collect.c:392–923, ~530 lines, with the RedQueen attribution scan nested in it) stays whole on purpose, and only the once-per-call scan setup was carved out, into `cmp_attribution_prestage()`. The post-loop counter flush stays inline: it publishes thirteen same-typed accumulators that the loop increments by name, so a helper would take them as a long positional list or need a struct that rewrites every increment in the loop.
+1. **Largest files** — collect.c (1,158), pool.c (1,042), persist.c (855), hyp-derive.c (791). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:497–791) is still ~295 lines with deep nesting. `cmp_hints_collect()` (collect.c:236–970) is still a ~735-line function: its per-record loop (collect.c:392–923, ~530 lines, with the RedQueen attribution scan nested in it) stays whole on purpose, and only the once-per-call scan setup lives apart, in `cmp_attribution_prestage()`. The post-loop counter flush stays inline: it publishes thirteen same-typed accumulators that the loop increments by name, so a helper would take them as a long positional list or need a struct that rewrites every increment in the loop.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
 3. **Timespec-pin safety depends on `range_readable_user()`** (`cmp_field_match_timespec()` in collect.c) — checks VMA readability before dereferencing the dispatch-time buffer; a missed page-fault race is recovered through the sigsetjmp point in health/signals-fault-handler.c.
 

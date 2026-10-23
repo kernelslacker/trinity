@@ -5,11 +5,12 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, JSONL
 timeseries, and periodic operator-facing dumps.
 
-## Layout (74 .c files + 53 headers, ~22,660 LOC)
+## Layout (73 .c files + 52 headers, ~16,494 LOC)
 
 16 of those `.c` files and 48 of the headers are the per-subsystem counter
-tree under `stats/subsys/` (~391 + ~4,749 LOC), listed as one row at the
-bottom rather than enumerated. The renderers below are the other 58.
+tree under `stats/subsys/` (~391 + ~4,736 LOC), listed as one row at the
+bottom rather than enumerated. The renderers below are the other 57 `.c`
+files, with 4 headers.
 
 | Path | Role |
 |---|---|
@@ -30,7 +31,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | childop/local.c | Local childop run rows, decay recency, fd-delta, and topology-pair shadow dumps. |
 | childop/ranked.c | Ranked childop tables: wall time, edges, util, skips, wedges. |
 | network/childops.c | Network childop aggregate sections. |
-| kcov/dump.c | Shutdown KCOV coverage and comparison diagnostics block — now only the renderer ordering; the blocks live in the `kcov/dump-*.c` siblings. |
+| kcov/dump.c | Shutdown KCOV coverage and comparison diagnostics block — only the renderer ordering; the blocks live in the `kcov/dump-*.c` siblings. |
 | kcov/dump-base.c | Base KCOV counters, warm known-hits, exit-edge delta and totals. |
 | kcov/dump-topn.c | Top-edges / cold-syscall, per-syscall yield and dedup top-Ns. |
 | kcov/dump-remote.c | Remote edge producers plus per-syscall last-edge / last-EFAULT / local-PC top-Ns. |
@@ -165,13 +166,12 @@ Two parallel counter stores, by design:
    top-level periodic counter adds a `cmp_window` member, its load in
    `cmp_window_snapshot()`, and a row in one of the rate-row tables or a
    render call here.
-2. **The shutdown KCOV block is now a five-way render family** -
-   `stats/kcov/dump.c` keeps only the ordering; base, top-N, remote, reexec
+2. **The shutdown KCOV block is a five-way render family** -
+   `stats/kcov/dump.c` holds only the ordering; base, top-N, remote, reexec
    and shadow blocks live in `stats/kcov/dump-<domain>.c` behind
-   `dump-internal.h`. Output is byte-for-byte identical to the pre-split
-   single-file layout, so a new KCOV block goes in the matching domain file
+   `dump-internal.h`, so a new KCOV block goes in the matching domain file
    plus one prototype and one ordered call.
-3. **JSON descriptor ownership is still mixed** - `stats/json/` now mirrors
+3. **JSON descriptor ownership is still mixed** - `stats/json/` mirrors
    the text-dump layout (common, syscalls, kcov, minicorpus, cmp-hints,
    core, network, tail, type_graph, dump), but `stats/json/core.c` still owns
    JSON-local descriptor tables that would more naturally live under
@@ -192,7 +192,7 @@ Two parallel counter stores, by design:
 Counters are produced across the codebase and converge here through two paths:
 bulk childop telemetry lands directly in `shm->stats` and is rendered through
 descriptor tables, while hot/security-relevant counters route through per-child
-SPSC rings into a parent-private aggregate. The shutdown text report is now a
+SPSC rings into a parent-private aggregate. The shutdown text report is a
 thin orchestrator plus section files under `stats/dump/`, `stats/childop/`,
 `stats/network/`, and `stats/kcov/`; JSON and periodic reporting remain their
 own entry points.
