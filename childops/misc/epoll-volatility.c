@@ -1,56 +1,9 @@
 /*
- * epoll_volatility - rapid EPOLL_CTL_ADD/MOD/DEL churn against a small
- * pool of overlapping epfds and target fds.
- *
- * Trinity's random_syscall path issues epoll_create / epoll_ctl /
- * epoll_wait independently and against arbitrary (mostly invalid) fds,
- * so the kernel's epoll code path — ep_insert (RB-tree insert + per-fd
- * epitem list link + waitqueue add), ep_modify (events update + idr
- * lookup), ep_remove (RB-tree erase + per-fd epitem list unlink +
- * waitqueue removal) — only sees one stray operation at a time.  None
- * of the existing childops put sustained concurrent pressure on the
- * per-target-fd epitem list or on cross-epfd cleanup.
- *
- * epoll_volatility closes that gap.  Each invocation:
- *
- *   1. Creates NR_EPFDS epoll instances via epoll_create1(EPOLL_CLOEXEC).
- *   2. Creates NR_TARGET_FDS eventfds (cheap, always pollable, no fd-pair
- *      bookkeeping) — these are the targets that get added/modified/
- *      deleted across every epfd.  Eventfds work as monitor targets in
- *      every container/namespace trinity might run in.
- *   3. Tight bounded loop, capped at MAX_ITERATIONS or BUDGET_NS:
- *      - Pick a random op from {ADD, MOD, DEL, WAIT}.
- *      - For ADD/MOD/DEL: pick a random epfd and a target_fd; bias
- *        toward an unregistered slot (ADD) or a registered slot
- *        (MOD/DEL) by sampling a few random indices, so most ops are
- *        valid.  Some -EEXIST / -ENOENT churn slips through and
- *        exercises the error-return paths.  Random event masks chosen
- *        from EPOLLIN / EPOLLOUT / EPOLLET / EPOLLONESHOT /
- *        EPOLLEXCLUSIVE in random combos so the events_update path
- *        sees realistic mask transitions.
- *      - WAIT: epoll_wait with timeout 1ms and a small evs[] buffer.
- *   4. Teardown (outside the timed budget): close every epfd, then
- *      every target fd.  The per-epfd epitem cleanup runs in the
- *      ep_eventpoll release path when each epfd closes — that's a
- *      core part of the test surface.
- *
- * The overlap is the test surface: 4 epfds × 8 target_fds means a single
- * eventfd can sit on the per-fd epitem list of every epfd at once, so
- * rapid ADD/MOD/DEL across epfds exercises the per-target-fd epitem
- * list cleanup (file_remove_eventpoll style chains) and the
- * cross-epfd waitqueue racing that ep_poll_callback contends with.
- * Multiple epoll_volatility children running in parallel under
- * --alt-op-children give those paths cross-task pressure on top of the
- * per-task burst pressure.
- *
- * Self-bounding:
- *   - MAX_ITERATIONS caps inner-loop iterations.
- *   - BUDGET_NS (200 ms) sits in the same band the other recent thrash
- *     ops use; setup/teardown is OUTSIDE the timed budget so the
- *     storm itself fits in the window.
- *   - alarm(1) is armed by child.c around every non-syscall op, so a
- *     wedged epoll path here still trips the SIGALRM stall detector.
- *   - All epfds and target fds are closed before return.
+ * epoll_volatility - EPOLL_CTL_ADD/MOD/DEL churn against a small pool of
+ * overlapping epfds and eventfd targets, so one eventfd sits on every epfd's
+ * per-fd epitem list at once and ep_insert(), ep_modify(), ep_remove() and
+ * the epfd-close cleanup (ep_clear_and_put()) race across epfds.  The random
+ * syscall path issues one stray epoll op at a time, mostly on invalid fds.
  */
 
 #include <errno.h>
@@ -86,10 +39,12 @@
 
 /* Hard cap on inner loop iterations.  Sized like xattr_thrash and
  * pidfd_storm: cheap enough that 64 iterations finishes well under the
- * 1-second SIGALRM the parent arms before dispatch. */
+ * 1-second alarm child.c arms around every alt-op, so a wedged epoll path
+ * still trips the SIGALRM stall detector. */
 #define MAX_ITERATIONS	64
 
-/* Wall-clock ceiling for the inner loop.  Sits in the 200ms band the
+/* Wall-clock ceiling for the inner loop; setup and teardown sit outside it,
+ * so the storm itself gets the whole window.  Sits in the 200ms band the
  * other recent thrash childops use so dump_stats still ticks regularly
  * and SIGALRM stall detection has plenty of headroom. */
 #define BUDGET_NS	200000000L	/* 200 ms */
@@ -171,6 +126,8 @@ struct epoll_volatility_iter_ctx {
  * Setup phase: create up to NR_EPFDS epoll instances and
  * NR_TARGET_FDS eventfds, recording how many of each were
  * successfully created in ctx->n_epfds / ctx->n_target_fds.
+ * Eventfds are the targets because they are cheap, always pollable and
+ * available in every container or namespace trinity might run in.
  * Returns 0 if the drive phase has something to work with (at
  * least one epfd AND at least one target fd) and -1 otherwise.
  * On -1 the teardown helper is still safe to call: it closes

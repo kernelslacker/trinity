@@ -1,47 +1,9 @@
 /*
  * procfs_writer - discover writable nodes under /proc, /sys and
- * /sys/kernel/debug, then write fuzzy payloads to them.
- *
- * These pseudo-filesystems contain hundreds of hand-written kernel parsers
- * (cgroup controllers, PMU event strings, ftrace, kprobe/uprobe, sysctls,
- * per-task knobs) reachable from user space and historically a rich source
- * of bugs.  The default random-write fuzzer aims at fds returned by
- * fd-creating syscalls; it almost never hits these targets because they
- * make up a tiny slice of the total fd space.
- *
- * Discovery runs once in the parent before fork_children: walk a small
- * set of well-known trees with a bounded recursion depth, stat() every
- * regular file, and keep those accessible W_OK by the parent's
- * (higher-privileged) uid.  Children inherit the entries[] table via
- * COW and use a per-child inaccessible[] prune to skip paths the
- * dropped-privilege child cannot open; a lazy in-child fallback re-runs
- * discovery only if the parent init was skipped.
- *
- * Discovery admission runs two classifiers over each candidate path:
- *   - allow_rules[] tags the parser-shaped families this childop exists
- *     to fuzz (sysctl-net / sysctl-fs / sysctl-vm / sysctl-user /
- *     sysctl-keys / sysctl-random / module-params / sysclass-attr); a
- *     match is admitted unconditionally so a later deny rule that ever
- *     grew to overlap the same subtree could not silently retract the
- *     intent this childop was built for.
- *   - deny_rules[] refuses whole families of host-global control nodes
- *     — panic / watchdog / sysrq / core / kexec / module / trace /
- *     cgroup-host — so a random write cannot silence the kernel's own
- *     crash detectors, mutate policy that later runs inherit, or fire
- *     immediate one-shot actions from a stray byte.  The deny is lifted
- *     only when the operator opts into --dangerous, so a run that WANTS
- *     to mutate host-global knobs (fuzzing the parsers behind them,
- *     deliberately) can do so via one operator-visible flag rather than
- *     a source edit.  A default run never mutates a host-global knob.
- *
- * Each call: pick a random entry, generate a fuzzy payload with the
- * existing rand_bytes generator, open(O_WRONLY|O_NONBLOCK), write, close.
- * Errors are ignored — most writes will EINVAL/EACCES, which is fine; the
- * goal is to exercise the kernel's write handler, not to succeed.
- *
- * One write in four uses gen_text_payload() from rand/text-payloads.c with a
- * 4 KB buffer, exercising long-string, embedded-NUL, format-specifier, and
- * numeric-boundary paths that raw garbage bytes rarely reach.
+ * /sys/kernel/debug, then write fuzzy payloads to them.  The hand-written
+ * parsers behind those pseudo-files are a rich source of bugs that the
+ * fd-driven random write path almost never reaches.  Host-global control nodes
+ * stay denied unless --dangerous; see the admission policy below.
  */
 
 #include <dirent.h>

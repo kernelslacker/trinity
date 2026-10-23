@@ -1,41 +1,9 @@
 /*
- * xattr_thrash - rapid getxattr/setxattr/removexattr/listxattr churn
- * against a small set of shared inodes.
- *
- * Trinity's random_syscall path exercises the xattr syscalls only
- * sporadically, with random (often -ENOTSUP) name/path combinations,
- * so the kernel's xattr slab (xattr_alloc / kmem_cache for struct
- * simple_xattr and the per-fs xattr handler dispatch) rarely sees
- * sustained allocation pressure on the same inodes.  No existing
- * childop pressures it.  xattr_thrash closes that gap: it opens
- * private fds onto the trinity-testfile? pool that the rest of the
- * fuzzer uses and in a tight bounded loop issues a curated mix of
- * set / get / remove / list against a fixed set of user.* names.
- *
- * Different children running xattr_thrash concurrently each open
- * independent fds onto the same underlying inodes, so the kernel
- * sees cross-process modification of the same per-inode xattr list
- * — exercising the simple_xattr_set / simple_xattr_get fast paths,
- * the per-inode i_xattrs rwsem, the xattr handler dispatch
- * (vfs_setxattr -> __vfs_setxattr -> handler->set), and the
- * underlying-fs xattr storage allocator.  The set operations vary
- * the value length across the small-object slab buckets (8 to 32
- * bytes) so the allocator sees a non-uniform size mix instead of a
- * single bucket repeatedly.
- *
- * Per-fd state isn't tracked.  The kernel returns -ENODATA on
- * get/remove of a name that isn't currently set; that reject path
- * is part of the test surface.  -ERANGE from listxattr against an
- * undersized buffer is also expected and counted as a benign fail.
- *
- * Self-bounding: the loop exits at the first of (a) MAX_ITERATIONS
- * inner ops, or (b) BUDGET_NS wall-clock elapsed.  Both bounds sit
- * well inside the 1-second SIGALRM the parent arms before dispatch,
- * so a wedged xattr handler still trips the stall detector.  All
- * xattrs left behind by the final iteration persist on the testfile
- * inodes — that's by design, so the next xattr_thrash invocation
- * (this child or another) starts against an inode that already has
- * xattrs to traverse.
+ * xattr_thrash - set/get/remove/list churn against the inodes of the
+ * trinity-testfile? pool through private fds, so concurrent children contend
+ * on the same per-inode xattr lists and the xattr slab sees the sustained
+ * pressure that the random syscall path (mostly -ENOTSUP name/path draws)
+ * never applies.
  */
 
 #include <errno.h>

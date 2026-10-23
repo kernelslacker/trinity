@@ -1,17 +1,9 @@
 /*
- * inode_spewer - rapidly create and destroy inodes to stress inode
- * allocation, slab caches, and dentry/inode lifecycle management.
- *
- * Creates temporary files, optionally extends them with ftruncate()
- * or fallocate(), then closes and unlinks them.  Files are created
- * under trinity-inodes-<pid>/ inside trinity's own work directory
- * (the "tmp/" subdir trinity chdirs into at startup), never in the
- * system /tmp tmpfs — the latter would blow up host memory and
- * persist across runs.
- *
- * This exercises: inode alloc/free, dentry cache pressure, directory
- * hash table growth, extent allocation (fallocate), and the unlink
- * path including orphan inode handling when fds are still open.
+ * inode_spewer - create and destroy inodes quickly to stress inode and dentry
+ * allocation, directory hash growth, extent allocation and the unlink path,
+ * orphan inodes included.  Files live under trinity-inodes-<pid>/ in
+ * trinity_tmpdir_abs(), trinity's own tmp/ directory, not the system /tmp
+ * tmpfs, which would eat host memory and persist across runs.
  */
 
 #include <dirent.h>

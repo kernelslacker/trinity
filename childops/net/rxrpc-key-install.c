@@ -1,31 +1,9 @@
 /*
- * rxrpc_key_install -- fuzz net/rxrpc/key.c token parsers via add_key(2).
- *
- * Socket-level AF_RXRPC fuzzing can't reach the per-call security setup
- * (rxrpc_init_client_call_security -> init_connection_security / issue_challenge
- * / verify_response in rxkad.c / rxgk.c).  This op closes the easiest slice of
- * that gap: the kernel-side token parser rxrpc_preparse() in net/rxrpc/key.c,
- * reachable purely via add_key("rxrpc", ...) with no socket setup.
- *
- * Iterations rotate seven arms across the three wire formats behind the
- * parser: v1 binary RXKAD, AFS-XDR envelope (with XDR-RXKAD / XDR-RXGK
- * inners), and "rxrpc_s" server keys via preparse_server_key dispatch.
- * Malformed lengths, bad sec_ix, and truncated headers drive the parser
- * fall-through paths.
- *
- * Lifecycle: all keys land on KEY_SPEC_THREAD_KEYRING so thread exit
- * auto-reaps them.  Live serials are kept in a small ring so later iterations
- * KEYCTL_REVOKE / KEYCTL_UNLINK them and drive the rxrpc_destroy{,_s}
- * teardown paths.  -EDQUOT (keys.maxkeys cap) is expected and counted.
- *
- * can_run probe: add_key("rxrpc", "trinity-probe", NULL, 0,
- * KEY_SPEC_THREAD_KEYRING) hits the null-security fast path with no
- * allocation.  -ENOPROTOOPT / -ENOSYS / -EAFNOSUPPORT / -ENODEV latches
- * unsupported_rxrpc_key_install for the rest of the process (no CONFIG_RXRPC
- * or rxrpc.ko not loaded, so the key type isn't registered).
- *
- * Self-bounding: 200 ms wall-clock budget + MAX_ITERATIONS cap.  No socket,
- * no fds, no /sys writes, no module load -- pure parser fuzz.
+ * rxrpc_key_install -- fuzz the net/rxrpc/key.c token parsers
+ * (rxrpc_preparse() and the rxrpc_s server-key path) through add_key(2); no
+ * socket setup is needed.  Keys land on KEY_SPEC_THREAD_KEYRING, so thread
+ * exit reaps them, and a small ring of live serials is revoked or unlinked
+ * to drive rxrpc_destroy{,_s}.  -EDQUOT (keys.maxkeys) is expected.
  */
 
 #include <errno.h>

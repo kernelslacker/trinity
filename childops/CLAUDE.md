@@ -43,6 +43,11 @@ needs a `childop.def` row.
 
 ## Notes
 
+- The looping ops (`xattr_thrash`, `epoll_volatility`, `vsock_transport_churn`,
+  `rxrpc_key_install`) bound themselves twice, by an iteration cap and a
+  200 ms wall-clock budget, both well inside the `alarm(1)` that
+  `child/child.c` arms around every alt-op, so a wedged kernel path still
+  trips the stall detector.
 - `vsock_transport_churn` forks (through `userns_run_in_ns()`). It is the
   membership of the canary picker's pid-heavy suppression set
   (`child/child-canary-policy.c`); anything else that grows an inner fork

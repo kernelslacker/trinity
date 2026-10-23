@@ -1,45 +1,9 @@
 /*
- * pagecache_canary_check -- verifier childop for the canary file
- * pool (fds/canary.c).
- *
- * Picks one canary file at random per invocation, reopens it via
- * its absolute path with a randomly varied read-side flag combo
- * (O_RDONLY, +O_DIRECT, +O_NONBLOCK), optionally drops the file's
- * page cache via posix_fadvise(POSIX_FADV_DONTNEED) on a fraction
- * of runs to force a fresh fetch from disk, then reads the full
- * file contents through one of six paths picked uniformly:
- *
- *     read     buffered read() in 4 KiB chunks
- *     pread    pread() at random in-bounds offsets covering the
- *              full file
- *     readv    readv() with a small iovec
- *     mmap     mmap(PROT_READ) + memcmp, guarded by sigsetjmp +
- *              per-op SIGBUS handler (mirrors the pattern in
- *              mm/fault-read.c)
- *     splice   splice() canary -> pipe, read() the pipe end
- *     sendfile sendfile() canary -> tmpfile, read tmpfile back
- *
- * For each mode the bytes are walked against the deterministic
- * canary_expected_byte() pattern.  On the first mismatch we log
- * the file, the read mode, the offset, the diverged byte plus the
- * next 8 bytes (expected and actual), and bump
- * shm->stats.diag.pagecache_canary_corrupt_caught.  We do NOT bail the
- * run on a single mismatch — log loudly, count, continue.  The bug
- * class this oracle exists to catch is data corruption, not state
- * corruption; multiple data points per run are valuable.
- *
- * Dispatch rate: enabled in dormant_op_disabled[] so pick_op_type
- * routes ~5%/N_enabled_altops per dispatch into this op (≈ 0.4%
- * at the current altop bucket size — within the brief's ~0.5%
- * target).  No new periodic-work hook needed.
- *
- * SIGBUS handling: the mmap variant is the only path that can
- * fault on a healthy file (POSIX_FADV_DONTNEED + a sibling-fuzzed
- * truncate-shape syscall on the same inode could leave a hole
- * behind us between map and access).  Per-op SIGBUS handler with a
- * sigjmp_buf + range guard, restored to the previous handler
- * before return so the global child_fault_handler stays in charge
- * for genuine SIGBUS in any other code path.
+ * pagecache_canary_check -- verifier childop for the canary file pool
+ * (fds/canary.c).  Reopens one canary file with a varied read-side flag
+ * combo, sometimes drops its page cache, and reads it back through one of
+ * six paths (read, pread, readv, mmap, splice, sendfile) against
+ * canary_expected_byte().  A mismatch is logged and counted, never fatal.
  */
 
 #include <errno.h>
@@ -83,9 +47,12 @@ enum read_mode {
 };
 
 /*
- * Per-op SIGBUS guard for the mmap variant.  Set by mmap_check()
- * around the memcmp loop; the handler longjmps back here on a
- * SIGBUS whose si_addr lands inside the active mmap range.
+ * Per-op SIGBUS guard for the mmap variant, the only path that can fault
+ * on a healthy file: a sibling's truncate of the same inode can leave the
+ * mapping past EOF.  Armed by mode_mmap() around the canary walk; the
+ * handler longjmps back here on a SIGBUS whose si_addr lands inside the
+ * active mmap range, and is restored before return so child_fault_handler
+ * stays in charge of any other SIGBUS.
  *
  * volatile / sigjmp_buf rationale matches mm/fault-read.c: ISO C
  * 7.13.2.1 only guarantees post-longjmp values for objects with
@@ -179,6 +146,11 @@ static bool canary_walk(const unsigned char *buf, size_t buf_len,
 	return true;
 }
 
+/*
+ * Log the mismatch loudly and count it, but never end the run: the bug
+ * class this oracle exists to catch is data corruption, not state
+ * corruption, so more data points per run are worth having.
+ */
 static void log_corruption(unsigned int file_idx, const char *path,
 			   const char *mode, size_t mismatch_off,
 			   uint8_t actual_byte,

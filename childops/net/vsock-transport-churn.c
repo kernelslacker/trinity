@@ -1,41 +1,9 @@
 /*
  * vsock_transport_churn - drive AF_VSOCK loopback through transport
- * assignment, buffer-size rotation, connect-timeout rotation, and local-cid
- * ioctl mid-flow.  Targets net/vmw_vsock/af_vsock.c transport assignment,
- * vsock_loopback per-namespace teardown, and the buffer-size / timeout
- * setsockopt paths.
- *
- * Bug classes: vsock virtio refcount imbalance on transport release (per-sock
- * vsk->transport decremented twice when transport-switch races a buffer-size
- * update); vsock_loopback flush race leaving a dangling skb on the ringbuffer;
- * vsock UAF where the vsock_sock outlives a per-netns transport teardown;
- * vsock_bpf sockmap detach ordering.
- *
- * Per iteration (BUDGETED+JITTER, 200 ms wall cap, fresh sockets): listener
- * bound cid=VMADDR_CID_LOCAL port=VMADDR_PORT_ANY, connect from a client with
- * SO_RCV/SNDTIMEO=100ms, run a small send/recv burst, then race
- * SO_VM_SOCKETS_BUFFER_SIZE + SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW +
- * IOCTL_VM_SOCKETS_GET_LOCAL_CID against the still-queued skbs on the
- * loopback ringbuffer; shutdown/close last so the per-cpu loopback worker
- * drains as the final refs go.  Variant 1/4 wraps the whole iteration in a
- * userns_run_in_ns(CLONE_NEWNET) grandchild so vsock_loopback's per-netns
- * transport gets torn down under a live vsk->transport ref.
- *
- * Brick-safety: sockets bind to VMADDR_CID_LOCAL only, so traffic stays on
- * vsock_loopback -- VMADDR_CID_HOST is never touched even on hosts with
- * vhost-vsock loaded.  Inner burst BUDGETED base 4 / floor 8 / cap 16 with
- * JITTER, 200 ms wall cap.  Fresh-netns variant runs in a userns_run_in_ns
- * grandchild; the persistent child never changes creds or namespaces.
- *
- * Per-process cap-gate latch: ns_unsupported_vsock_transport_churn on
- * EAFNOSUPPORT / EPERM / ENOPROTOOPT / ENOENT from the first AF_VSOCK probe;
- * subsequent invocations bump runs+setup_failed and return.
- *
- * Header-gated by __has_include(<linux/vm_sockets.h>) with a setup_failed
- * stub fallback.  VMADDR_CID_LOCAL / PORT_ANY, SO_VM_SOCKETS_BUFFER_SIZE,
- * SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW, IOCTL_VM_SOCKETS_GET_LOCAL_CID get
- * #define fallbacks at their stable UAPI values; unrecognised values return
- * EINVAL/ENOPROTOOPT and the cap-gate latches.
+ * assignment, buffer-size and connect-timeout rotation and the local-cid
+ * ioctl mid-flow (net/vmw_vsock/af_vsock.c, vsock_loopback).  A quarter of
+ * the iterations run in a userns_run_in_ns(CLONE_NEWNET) grandchild.  Sockets
+ * bind VMADDR_CID_LOCAL only: VMADDR_CID_HOST (vhost-vsock) is never touched.
  */
 
 #include <errno.h>
@@ -65,6 +33,9 @@
 #include "userns-bootstrap.h"
 
 #include "kernel/socket.h"
+
+/* Without <linux/vm_sockets.h> the op builds as a stub that counts the run
+ * as setup_failed (the #else branch below). */
 #if __has_include(<linux/vm_sockets.h>)
 
 /* Latch lives in shm (shm->vsock_transport_churn_ns_unsupported).
