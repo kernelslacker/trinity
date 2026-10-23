@@ -2135,6 +2135,52 @@ static void mremap_fixed_target_off_image(void)
 	fake_this_child = NULL;
 }
 
+/* A hugetlb source has the kernel round new_len up to its huge page size
+ * before a fixed move unmaps the target, and refuse a target that size does
+ * not divide, so the sanitiser checks the target as far as the largest
+ * power of two dividing it rounds new_len.  A region in the last page of
+ * that rounding drops MREMAP_FIXED from a draw that keeps it without one:
+ * the draw is found, then replayed from the same RNG state. */
+static void mremap_fixed_target_checked_rounded(void)
+{
+	struct syscallentry mremap_entry = syscall_mremap;
+	struct syscallrecord *mrec;
+	unsigned long newaddr = 0, huge, end;
+	uint64_t state = 0;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(&mremap_entry);
+		state = rnd_state;
+		mremap_entry.sanitise(mrec);
+		newaddr = mrec->a5;
+		mrec->retval = (unsigned long) -1L;
+		mremap_entry.post(mrec);
+		if (mrec->a4 & MREMAP_FIXED)
+			break;
+	}
+	if (i == 1000)
+		BUG("mremap: the sanitiser never kept a fixed target");
+
+	/* The drawn new_len is a few pages, under any huge page size. */
+	huge = newaddr & -newaddr;
+	end = newaddr + ((mrec->a3 + huge - 1) & ~(huge - 1));
+	if (end - page_size < newaddr + mrec->a3)
+		BUG("mremap: the drawn new_len already reaches the rounding");
+
+	fake_untrack_regions();
+	fake_track_region(end - page_size, page_size);
+	mrec = mm_call(&mremap_entry);
+	rnd_state = state;
+	mremap_entry.sanitise(mrec);
+	if (mrec->a4 & MREMAP_FIXED)
+		BUG("mremap: a fixed target was checked only as far as new_len");
+	mrec->retval = (unsigned long) -1L;
+	mremap_entry.post(mrec);
+	fake_untrack_regions();
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2161,4 +2207,5 @@ void arg_coupling_self_check(void)
 	mprotect_range_held_to_mapping();
 	image_table_covers_the_image();
 	mremap_fixed_target_off_image();
+	mremap_fixed_target_checked_rounded();
 }

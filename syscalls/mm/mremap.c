@@ -129,22 +129,41 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	if (rec->a4 & MREMAP_FIXED) {
 		unsigned long align = RAND_ARRAY(alignments);
 		unsigned int shift = (WORD_BIT / 2) - 1;
+		unsigned long huge, unmapped;
 
 		newaddr = RAND_BYTE();
 		newaddr <<= shift;
 		newaddr |= align;
 		newaddr &= ~(align - 1);
 
+		/*
+		 * A hugetlb source has the kernel round new_len up to its
+		 * huge page size before the target is unmapped, and refuse
+		 * a target that size does not divide (align_hugetlb()).
+		 * For a source that is one mapping, the largest power of
+		 * two dividing newaddr bounds that size, so the target is
+		 * checked as far as new_len rounded up to it.  A move-only
+		 * call whose old range runs from an ordinary VMA into a
+		 * hugetlb one escapes the bound: each VMA moves to its own
+		 * offset from newaddr (remap_move()), which the huge page
+		 * size has to divide rather than newaddr.  But the old range
+		 * is built inside one pool entry, so that takes an entry
+		 * that no longer describes its mapping.
+		 */
+		huge = newaddr & -newaddr;
+		unmapped = rec->a3 > ULONG_MAX - (huge - 1) ? ULONG_MAX :
+			   (rec->a3 + huge - 1) & ~(huge - 1);
+
 		/* MREMAP_FIXED unmaps any prior mapping at [newaddr,
-		 * newaddr + rec->a3) before placing the relocated
+		 * newaddr + unmapped) before placing the relocated
 		 * mapping there.  Reject if that range overlaps a
 		 * trinity-owned shared region — otherwise we silently
 		 * unmap our own bookkeeping — or trinity's own image,
 		 * whose text a non-PIE build loads at these low
 		 * addresses. */
-		if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-new", newaddr, rec->a3) ||
-		    range_overlaps_libc_heap(newaddr, rec->a3) ||
-		    range_overlaps_image(newaddr, rec->a3)) {
+		if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-new", newaddr, unmapped) ||
+		    range_overlaps_libc_heap(newaddr, unmapped) ||
+		    range_overlaps_image(newaddr, unmapped)) {
 			rec->a4 &= ~MREMAP_FIXED;
 			newaddr = 0;
 		}
