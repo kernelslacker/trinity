@@ -4,8 +4,6 @@
 /*
  * asmlinkage int sys_modify_ldt(int func, void __user *ptr, unsigned long bytecount)
  */
-#include <linux/types.h> /* before __ASSEMBLY__ == 1 */
-#define __ASSEMBLY__ 1
 #include <asm/ldt.h>
 #include "sanitise.h"
 #include "deferred-free.h"
