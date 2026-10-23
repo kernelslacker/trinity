@@ -1,18 +1,8 @@
 /*
- * Sequence-chain executor.
- *
- * One iteration of run_sequence_chain() draws a chain source (fresh vs
- * corpus replay), dispatches each chain step, and records the outcome
- * (chain_corpus_save admission + per-resource-kind pair credit).  The
- * chain corpus ring and its save/pick helpers live in chain-corpus.c;
- * the resource-typing classifier and consumer table live in
- * chain-restype.c; on-disk persistence and the mid-run snapshot
- * cadence live in chain-persist.c.
- *
- * The static helpers below (pick_chain_length, chain_restype_apply_bias,
- * select_chain_source, execute_chain_steps, record_chain_outcome) are
- * file-scope private to this executor; run_sequence_chain is the only
- * public entry point and is declared in include/sequence.h.
+ * Sequence-chain executor: run_sequence_chain() draws a chain source (fresh
+ * vs corpus replay), dispatches each step and records the outcome (corpus
+ * admission plus per-resource-kind pair credit).  It is the only public
+ * entry point, declared in include/sequence.h.
  */
 
 #include <stdbool.h>

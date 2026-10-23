@@ -1,24 +1,9 @@
 /*
  * Sequence-chain corpus on-disk persistence and mid-run snapshot cadence.
- *
- * Cross-run warm-start: chain_corpus_save_file serialises every
- * occupied slot of the ring under a versioned, arch- and kernel-
- * release-tagged header and atomically renames the result into place.
- * chain_corpus_load_file refuses incompatible headers outright and
- * re-runs the same replay-safety predicate the save side uses
- * (chain_is_replay_safe, imported via chain-internal.h) so a saved
- * chain whose syscall table has since tightened cannot slip back
- * into the ring through the load path, and zeroes the stale fd and
- * pointer slots of the chains it admits, as save does.
- *
- * chain_corpus_default_path builds an XDG-anchored, arch- and kernel-
- * release-tagged path so a saved corpus is never accidentally reused
- * across incompatible kernels.  chain_corpus_enable_snapshots plus
- * chain_corpus_maybe_snapshot wire periodic mid-run saves so a crash
- * between warm-start and clean shutdown does not lose every chain
- * admitted during the run.  The chain corpus ring itself, the
- * executor, and the resource-typing classifier live in the sibling
- * chain-corpus.c, chain-exec.c and chain-restype.c files.
+ * chain_corpus_save_file() writes the ring by atomic rename under a
+ * versioned, kernel-release-tagged header; chain_corpus_load_file() refuses
+ * incompatible headers and re-validates every entry.  The default path is
+ * per arch and kernel release.
  */
 
 #include <errno.h>

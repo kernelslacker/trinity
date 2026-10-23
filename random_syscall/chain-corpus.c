@@ -1,14 +1,8 @@
 /*
- * Sequence chain corpus (Phase 2): the in-memory ring of admitted chains
- * plus init / save / pick.  The rationale for a single fleet-wide ring
- * of inline chain_entry slots (instead of per-syscall banks or a
- * pointer table) and for keeping the pick path lockless lives inline at
- * the function bodies below and in the ring/entry declarations in
- * include/sequence.h.  On-disk persistence and the mid-run snapshot
- * cadence live next to this file in chain-persist.c; the chain
- * executor that generates and replays chains lives in chain-exec.c;
- * the resource-typing classifier and consumer table live in
- * chain-restype.c.
+ * Sequence-chain corpus: the in-memory ring of admitted chains plus init /
+ * save / pick.  Why it is one fleet-wide ring of inline chain_entry slots
+ * with a lockless pick path is explained at the function bodies below and
+ * with the ring and entry declarations in include/sequence.h.
  */
 
 #include <stdbool.h>

@@ -1,31 +1,8 @@
 /*
- * Resource-type dependency table for --chain-resource-typing.
- *
- * Small on purpose: one row per fd-family with a clean producer /
- * consumer split we already ship coverage for.  The whole point of
- * the row is to measure per-kind productivity via
- * chain_restype_replay_win[] BEFORE deciding which families deserve
- * a more elaborate schema.  A universal resource model is out of
- * scope here.
- *
- * Entries are syscall NAMES, not compile-time NRs; the numeric slot
- * is resolved at chain_restype_init() time via search_syscall_table
- * against the active table set (biarch-aware).  Names that fail to
- * resolve on the current arch drop out silently -- a compat gap that
- * removes a producer just leaves that row's producer slot at the
- * -1 sentinel, and classify_producer skips it.
- *
- * PIDFD: clone3 is included as a producer even though it only
- * produces a pidfd when its user-side struct clone_args carries the
- * CLONE_PIDFD flag.  Verifying that would require dereferencing
- * args[0] which may point at a fuzzed / unmapped user buffer.
- * Classifying by NR alone means clone3 without CLONE_PIDFD is a
- * false-positive producer -- but the whole point of the row is to
- * MEASURE per-kind productivity, and the resulting near-zero
- * chain_restype_replay_win[PIDFD] would surface exactly that
- * mismatch.  Same rationale for socket-tcp keying on (a1, a2 & 0xff)
- * -- we can inspect scalar arg values cheaply, but not deref a
- * pointer.
+ * Resource-type dependency table for --chain-resource-typing: one row per fd
+ * family with a producer / consumer split, resolved to syscall numbers at
+ * chain_restype_init().  The classifiers inspect scalar args only and never
+ * dereference user memory.
  */
 
 #include <linux/bpf.h>
@@ -51,6 +28,21 @@ struct chain_restype_row {
 	const char *consumers[CHAIN_RESTYPE_MAX_CONSUMERS];
 };
 
+/*
+ * Deliberately small: one row per fd family with a clean producer/consumer
+ * split we already ship coverage for, to measure per-kind productivity via
+ * chain_restype_replay_win[] before deciding which families deserve a richer
+ * schema.  Entries are syscall names, resolved at chain_restype_init()
+ * against the active (biarch-aware) tables; a name that does not resolve on
+ * this arch leaves its slot at -1 and the classifiers skip it.
+ *
+ * PIDFD lists clone3 although it hands out a pidfd only through
+ * clone_args.pidfd, and only when the flags carry CLONE_PIDFD (the return
+ * value is the child's pid); checking that would mean dereferencing a
+ * fuzzed user pointer.  The false-positive producer shows up as a near-zero
+ * chain_restype_replay_win[PIDFD], which is the measurement working.  The
+ * socket-tcp and bpf-map-fd rows key on scalar args for the same reason.
+ */
 static const struct chain_restype_row chain_restype_table[CHAIN_RESTYPE_NR] = {
 	[CHAIN_RESTYPE_EPOLL_FD] = {
 		.producers = { "epoll_create1", NULL, NULL, NULL },
