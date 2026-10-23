@@ -11,8 +11,7 @@
  * random_syscall_step_biased, replay_syscall_step,
  * set_syscall_nr_random, compute_numeric_substitute_mask,
  * choose_syscall_table) live in include/child.h and include/syscall.h.
- * Everything declared here is cross-cluster private glue that the
- * follow-up cluster carves add as they move code out.  Not a public
+ * Everything declared here is cross-cluster private glue.  Not a public
  * header: only files under random_syscall/ and the tests that drive
  * them are expected to include it.
  */
@@ -27,8 +26,9 @@ struct kcov_pc_result;
 struct reexec_pending;
 
 /* pick-common.c -- table selection and validation helpers, shared by
- * the three picker arms in pickers.c.  choose_syscall_table is public
- * via include/syscall.h; the rest are cluster-private.
+ * the three picker arms (pick-heuristic.c, pick-random.c and
+ * pick-frontier.c).  choose_syscall_table is public via
+ * include/syscall.h; the rest are cluster-private.
  *
  * load_active_syscall_count centralises the RELAXED load + validate +
  * log for the shm active-syscall counts.  Callers detect corruption
@@ -102,8 +102,8 @@ unsigned long cmp_frontier_weight(unsigned int nr);
 bool set_syscall_nr_coverage_frontier(struct syscallrecord *rec,
 				      struct childdata *child);
 
-/* pickers.c -- top-level picker dispatch, called from dispatch_step
- * in dispatch-step.c.  set_syscall_nr_random is public via
+/* pickers.c -- top-level picker dispatch, called from the step entry
+ * points in dispatch-wrappers.c.  set_syscall_nr_random is public via
  * include/syscall.h; the per-strategy picker arms and the frontier
  * weight helpers live in their own sibling files (declared above). */
 bool set_syscall_nr(struct syscallrecord *rec, struct childdata *child);

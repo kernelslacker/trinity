@@ -47,9 +47,10 @@
 /*
  * Checked loader for the shared active-syscall counts.  All three
  * picker arms (set_syscall_nr_heuristic / _random / _coverage_frontier
- * in pickers.c) and the biarch table-selector (choose_syscall_table
- * below) load one of shm->nr_active_syscalls, nr_active_32bit_syscalls,
- * or nr_active_64bit_syscalls under RELAXED, feed it to rnd_modulo_u32
+ * in pick-heuristic.c / pick-random.c / pick-frontier.c) and the biarch
+ * table-selector (choose_syscall_table below) load one of
+ * shm->nr_active_syscalls, nr_active_32bit_syscalls, or
+ * nr_active_64bit_syscalls under RELAXED, feed it to rnd_modulo_u32
  * (), and index child->active_syscalls[] -- which points into the
  * shm->active_syscalls*[MAX_NR_SYSCALL] arrays (include/shm.h).  A
  * stomped count that exceeds MAX_NR_SYSCALL walks the flat draw off

@@ -65,7 +65,7 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 * fast-die ring trips a spurious EXIT_SHM_CORRUPTION panic:
 	 *   - EXIT_MAIN_DISAPPEARED:    child.c PDEATHSIG race; the parent
 	 *     is gone, this is a clean shutdown not corruption.
-	 *   - EXIT_NO_SYSCALLS_ENABLED: pickers.c saw no_syscalls_enabled()
+	 *   - EXIT_NO_SYSCALLS_ENABLED: a picker arm saw no_syscalls_enabled()
 	 *     == true (active set self-disabled via ENOSYS depletion or
 	 *     VALIDATE_FAIL_THRESHOLD).  Exempt unconditionally: a legit
 	 *     depletion cascades 16 lock-spin-bailout children through the

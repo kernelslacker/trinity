@@ -531,8 +531,8 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
  * success transition) is spared from the would_skip attribution
  * regardless of the lifetime EPERM aggregate.
  *
- * Called from the pick-finalise site in random_syscall/pickers.c on
- * both the HEURISTIC and RANDOM arms, alongside the sibling
+ * Called from the pick-finalise site in random_syscall/pick-heuristic.c
+ * and pick-random.c, alongside the sibling
  * cost_pool_selector_live_note attribution so the finalised-pick
  * cadence is shared and the (would_skip / candidates) ratio reads
  * directly off the finalised-pick population without an attempt-vs-

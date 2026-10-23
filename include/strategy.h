@@ -365,8 +365,8 @@ extern enum context_pool_mode context_pool_mode;
 
 /*
  * Path-A regular_suppressed classifier + shadow bump.  Called from the
- * pick-finalise site in random_syscall/pickers.c (both HEURISTIC and
- * RANDOM arms) after every gate has passed and the pick is about to be
+ * pick-finalise site in random_syscall/pick-heuristic.c and
+ * pick-random.c after every gate has passed and the pick is about to be
  * published, alongside the cost_pool_selector_live_note attribution so
  * the shadow projection and the live finalise cadence stay in lock-
  * step.  No-op when context_pool_mode is OFF or kcov_shm is unavailable;
