@@ -205,7 +205,7 @@ static unsigned long per_arch_interesting_addr(unsigned long low)
 	switch (i) {
 	case 0: return MODULE_ADDR | (low & 0x03ffffff);		// module region
 	case 1: return KERNEL_ADDR | (low & 0x0fffff);			// kernel text
-	case 2: return 0x0000003fffffffffUL;				// Sv39 user VA end
+	case 2: return TASK_SIZE - 1;					// last user VA
 	}
 #endif
 

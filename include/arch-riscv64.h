@@ -1,7 +1,7 @@
 #pragma once
 
-/* Sv39 layout; the other paging modes only move the kernel-half bases. */
-#define PAGE_OFFSET		0xffffffd800000000UL
+/* All values assume Sv39; Sv48/Sv57 change TASK_SIZE and PAGE_OFFSET. */
+#define PAGE_OFFSET		0xffffffd600000000UL
 #define TASK_SIZE		(1UL << 38)
 #define MODULE_ADDR		0xffffffff00000000UL
 #define KERNEL_ADDR		0xffffffff80000000UL
