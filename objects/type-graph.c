@@ -1,19 +1,9 @@
 /*
- * Observation-only resource type-graph.
- *
- * See include/type-graph.h for the rationale and the on-shm shape.
- * This file owns the direct-mapped publish ring, the open-addressed
- * edge pool, the EMA update primitive, and the top-N text and JSON
- * dumps.  Nothing here reads back into the picker in random_syscall/;
- * a byte-identical fuzzing run with the observer wired is the design
- * contract.
- *
- * Cross-child concurrency: the publish ring uses a single monotonic
- * generation stamp under RELAXED atomics; the edge pool uses a CAS
- * on the primary key to publish an insert and RELAXED atomic RMWs on
- * the EMA counters.  A lost-race duplicate insert is possible in a
- * narrow window and would surface as a second edge with the same
- * primary key -- acceptable at the observability grain of this graph.
+ * Observation-only resource type-graph (see include/type-graph.h): the
+ * direct-mapped publish ring, the open-addressed edge pool, the EMA update
+ * and the top-N text and JSON dumps.  Nothing here reads back into the
+ * picker in random_syscall/: a byte-identical fuzzing run with the observer
+ * wired is the design contract.
  */
 
 #include <stdbool.h>
@@ -255,7 +245,9 @@ void type_graph_observe_consume(unsigned int consumer_nr, bool do32bit,
  * Locate the edge slot for (p, c, t, a), inserting into an empty
  * slot within TYPE_GRAPH_EDGE_PROBES linear probes if none exists
  * yet.  Returns NULL when every candidate slot belongs to a
- * different edge -- caller bumps edge_pool_exhausted.
+ * different edge -- caller bumps edge_pool_exhausted.  A lost-race insert
+ * can leave a duplicate slot for the same edge in a narrow window; that is
+ * acceptable at this graph's observability grain.
  */
 static struct type_graph_edge *edge_lookup_or_insert(uint16_t producer_nr,
 						     uint16_t consumer_nr,

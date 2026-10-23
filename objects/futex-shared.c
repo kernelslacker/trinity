@@ -1,31 +1,9 @@
 /*
- * Cross-child shared futex word pool.
- *
- * Each entry's obj wrapper lives in the parent's private heap
- * (alloc_object()), but the futex WORD itself lives in a single
- * shared mapping allocated via alloc_shared() before fork.  Every
- * obj's sharedfutexobj.word points into that shared region, so
- * &word[i] is the same virtual address in every child and a pair
- * of children passing it to FUTEX_WAIT / FUTEX_WAKE actually
- * exercises cross-task wake/wait -- which the existing OBJ_FUTEX
- * pool (whose word is per-child private-COW) cannot reach.
- *
- * Keeping the obj wrapper in private heap preserves the structural
- * fix from f8ccdb6d76dc ("objects: remove shm-resident OBJ_GLOBAL
- * pool and snapshot defences"): sibling writes can no longer alias
- * objhead / slot-version metadata and steer derefs past the live
- * allocation.  Only the value-only futex word -- whose racy
- * contents are the racy-by-design contract of this pool -- crosses
- * into shared memory.
- *
- * The pool is small and fixed: NR_SHARED_FUTEX_WORDS entries, sized
- * to concentrate contention across many children onto the same
- * handful of keys.  Larger would dilute the cross-child collisions;
- * smaller would make the picker biased toward whichever entry the
- * random picker landed on first.  All entries are populated by the
- * parent in create_shared_futex_pool() and never destroyed.  Children
- * only ever read the obj pointers via the lockless reader in
- * get_random_object().
+ * Cross-child shared futex word pool: the word lives in one shared mapping,
+ * so two children passing &word[i] to FUTEX_WAIT / FUTEX_WAKE really
+ * contend, which the per-child private-COW OBJ_FUTEX pool cannot reach.
+ * Only the value-only word, racy by design, is shared: the obj wrappers stay
+ * in the parent's private heap so sibling writes cannot alias pool metadata.
  */
 
 #include <stdint.h>
@@ -35,6 +13,8 @@
 #include "shm.h"
 #include "utils.h"
 
+/* Small and fixed on purpose: contention from many children concentrates
+ * on a handful of words, which a larger pool would dilute. */
 #define NR_SHARED_FUTEX_WORDS 32
 
 static uint32_t *shared_futex_words;
@@ -45,6 +25,9 @@ static void dump_shared_futex(struct object *obj, enum obj_scope scope)
 	       obj->sharedfutexobj.word ? *obj->sharedfutexobj.word : 0, scope);
 }
 
+/* The parent fills every entry before fork and never destroys one, so
+ * children only read the obj pointers, locklessly, through
+ * get_random_object(). */
 static void create_shared_futex_pool(void)
 {
 	struct objhead *head;

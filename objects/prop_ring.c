@@ -1,16 +1,9 @@
 /*
- * Per-child ring of small-integer return values captured from recent
- * syscall returns, available for re-injection as input arguments to
- * later syscalls.  See include/prop_ring.h for the data shape and
- * Documentation/architecture or the constant-propagation design note
- * for the motivation.
- *
- * Capture side runs in handle_syscall_ret() after register_returned_fd.
- * Consume side runs in gen_undefined_arg() at low probability so the
- * raw-random exploration path keeps its share of the mutation budget.
- *
- * Single-writer / single-reader from the owning child only.  No
- * atomics, no cross-process visibility.
+ * Per-child ring of small-integer syscall return values, re-injected as
+ * arguments to later syscalls (see include/prop_ring.h).  Captured in
+ * handle_syscall_ret() after register_returned_fd(), consumed by the arg
+ * generators (gen_undefined_arg() and the typed-scalar ones).  Only the
+ * owning child touches it: no atomics, no cross-process visibility.
  */
 
 #include <limits.h>
@@ -38,10 +31,10 @@
  * that default_address_scrub exists to break stays broken. */
 #define PROP_RING_HIGH_PTR	0x40000000UL
 
-/* Baseline inject probability denominator.  Matches the design note's
- * "meaningful share without crowding out random exploration" target --
- * roughly the same per-call injection rate as the cmp_hints case in
- * gen_undefined_arg's mod-9 switch. */
+/* Baseline inject probability denominator: a meaningful share of calls,
+ * but low enough that the raw-random exploration path keeps its share of
+ * the mutation budget.  Roughly the per-call rate of the cmp_hints
+ * shortcut in gen_undefined_arg() (1 in 9). */
 #define PROP_RING_INJECT_MOD		12
 
 /* Per-injection recency-filter probe budget.  If every slot we touch
