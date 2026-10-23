@@ -201,6 +201,29 @@ static void quarantine_threshold_spans_epochs(void)
 	fake_parent_reset();
 }
 
+/* A one-child fleet never reaches the threshold of two, so the run
+ * must stop once its only slot is quarantined. */
+static void last_slot_quarantined_stops(void)
+{
+	pid_t pid;
+
+	fake_parent_reset();
+	max_children = 1;
+	live_child_slots = 1;
+
+	pid = quarantine_slot(0);
+	if (live_child_slots != 0)
+		BUG("epoch reset: quarantining the only slot left a live slot");
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_KERNEL_STUCK)
+		BUG("epoch reset: a fleet with no live slot kept running");
+
+	kill(pid, SIGKILL);
+	(void)waitpid_eintr(pid, NULL, 0);
+
+	fake_parent_reset();
+}
+
 /* Spawns that kept failing to the end of an epoch leave a stall
  * deadline armed and long past.  Kept, it would open the next epoch's
  * barrier at that epoch's first failed spawn. */
@@ -287,6 +310,7 @@ void epoch_reset_self_check(void)
 	carried_slot_reaped_by_drain();
 	quarantined_slot_survives_reset();
 	quarantine_threshold_spans_epochs();
+	last_slot_quarantined_stops();
 	stall_deadline_cleared();
 	scribbled_ring_pointers_healed();
 }

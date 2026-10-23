@@ -178,7 +178,8 @@ void register_zombie_slot(int childno, pid_t pid, const char *reason)
  * is quarantined: removed from the active fleet permanently so the
  * D-state task's late writes cannot corrupt a replacement child's
  * childdata.  Once zombie_quarantine_threshold() slots have been
- * quarantined over the run, it stops with EXIT_KERNEL_STUCK.
+ * quarantined over the run, or no live slot is left, it stops with
+ * EXIT_KERNEL_STUCK.
  */
 void process_zombie_pending(void)
 {
@@ -285,12 +286,16 @@ void process_zombie_pending(void)
 					max_children - live_child_slots;
 				unsigned int thresh = zombie_quarantine_threshold();
 
-				if (quarantined >= thresh) {
+				/* No live slot left means nothing can fork
+				 * again, even when the fleet is smaller than
+				 * the threshold. */
+				if (quarantined >= thresh || live_child_slots == 0) {
 					output(0, "kernel-stuck: %u D-state slots "
 						"quarantined this run "
-						"(threshold %u = max(%u/8,2)) "
-						"— stopping.\n",
-						quarantined, thresh, max_children);
+						"(threshold %u = max(%u/8,2), "
+						"%u live) — stopping.\n",
+						quarantined, thresh, max_children,
+						live_child_slots);
 					panic(EXIT_KERNEL_STUCK);
 				}
 			}
