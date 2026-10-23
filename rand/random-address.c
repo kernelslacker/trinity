@@ -34,12 +34,7 @@
  *   - track_shared_region   -- every mm-syscall sanitiser (munmap,
  *                              mremap, mprotect, madvise, mmap with
  *                              MAP_FIXED) rejects fuzzed addrs that
- *                              would land inside the pool.  The
- *                              mprotect_split / mmap_lifecycle /
- *                              madvise_pattern_cycler childops
- *                              already gate on range_overlaps_shared,
- *                              so the pool is invisible to them
- *                              without childop-side changes.
+ *                              would land inside the pool.
  *   - not add_object'd      -- the pool is never inserted into any
  *                              OBJ_MMAP_* pool, so get_random_object
  *                              walks cannot return it and a fuzzed

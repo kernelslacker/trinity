@@ -51,9 +51,9 @@ void map_destructor(struct object *obj)
 	 * overflow on the first downstream walker (read_mapping_reverse
 	 * / dirty_mapping) that dereferences it.
 	 *
-	 * Runtime OBJ_LOCAL entries (post_mmap CHILD_ANON/MMAPED_FILE,
-	 * mmap_lifecycle do_create) set owns_vma=true at creation and
-	 * fall through to the untrack+munmap below; borrowed clones
+	 * Runtime OBJ_LOCAL entries (post_mmap CHILD_ANON/MMAPED_FILE) set
+	 * owns_vma=true at creation and fall through to the
+	 * untrack+munmap below; borrowed clones
 	 * (owns_vma=false, the zero default) skip it and leak the VA
 	 * for the rest of the child's run -- the global source will
 	 * unmap it via map_destructor_shared() at process teardown.
@@ -280,9 +280,8 @@ void clone_global_mmap_pool(enum objecttype type)
  * With max_entries left at 0 the pool never prunes: every successful
  * fuzzed mmap()/memfd map adds an OBJ_LOCAL entry that is not reclaimed
  * until the child exits, so a long-lived child (canary / D-state-wedged)
- * pins gigabytes of resident shmem and OOMs a small box.  64 matches the
- * self-limit mmap_lifecycle already enforces (MAX_LIFECYCLE_MAPS) and
- * keeps plenty of pool diversity for mm coverage.  GLOBAL pools are
+ * pins gigabytes of resident shmem and OOMs a small box.  64 keeps
+ * plenty of pool diversity for mm coverage.  GLOBAL pools are
  * separately hard-capped at OBJ_GLOBAL_MAX; this is the missing LOCAL cap.
  */
 #define MMAP_LOCAL_MAX_ENTRIES 64U

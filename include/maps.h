@@ -45,8 +45,8 @@ struct map {
 	unsigned char type;
 	/*
 	 * VMA ownership.  true when this struct map created the VMA
-	 * (setup_initial_mappings, mmap_fd, mmap_lifecycle do_create,
-	 * post_mmap runtime creations); false when the VMA pointer was
+	 * (setup_initial_mappings, mmap_fd, post_mmap runtime creations);
+	 * false when the VMA pointer was
 	 * COPIED from another struct map (init_child_mappings ANON clone,
 	 * clone_global_mmap_pool for ANON refills and FILE/TESTFILE seed).
 	 * Only the true owner is allowed to munmap + untrack_shared_region
@@ -75,7 +75,6 @@ struct map {
 	 * VMA state out from under the cache:
 	 *   - post_munmap (slot's VMA was unmapped, in whole or in part)
 	 *   - post_mprotect (sibling mprotect changed the cached invariant)
-	 *   - mprotect-split childop (raw mprotect that bypasses post hooks)
 	 *   - the mprotect failure arm of get_writable_address itself
 	 *     (don't lie about a slot we just failed to upgrade)
 	 *
@@ -191,9 +190,8 @@ bool proc_maps_check(unsigned long addr, unsigned long len,
  * overlaps [addr, addr+len).  Mirrors the conservative map->prot=0
  * invalidate post_munmap's sub-range branch and post_mprotect already
  * apply: get_map_with_prot() then skips the entry so the next consumer
- * (memory_pressure / iouring_* / madvise_pattern_cycler) cannot be
- * handed a tracked map pointer whose pages have been zeroed or
- * hole-punched by an unrelated syscall.  Returns the number of entries
+ * cannot be handed a tracked map pointer whose pages have been zeroed
+ * or hole-punched by an unrelated syscall.  Returns the number of entries
  * the invalidate covered.  The VMA itself is left in place -- the
  * caller's syscall (madvise / fallocate / ftruncate) did not unmap it,
  * only modified its content, so we have no licence to munmap behind
