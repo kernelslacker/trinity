@@ -1,7 +1,5 @@
 /*
- * Per-syscall frontier-edge ring accessors.  Split from strategy.c
- * so the frontier code compiles independently of the bandit / picker
- * / plateau / cmp-novelty translation units.
+ * Per-syscall frontier-edge ring accessors.
  */
 
 #include <limits.h>

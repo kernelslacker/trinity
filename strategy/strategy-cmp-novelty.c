@@ -1,7 +1,5 @@
 /*
- * Per-syscall comparison-constant novelty bloom.  Split from
- * strategy.c so the CMP-novelty surface compiles independently of
- * the bandit / picker / plateau / frontier translation units.
+ * Per-syscall comparison-constant novelty bloom.
  */
 
 #include <stdbool.h>

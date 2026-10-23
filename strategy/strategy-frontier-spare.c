@@ -1,6 +1,5 @@
 /*
- * Spare-lane classifier shared by the coverage-frontier cooldown
- * helpers.  Split from strategy-frontier.c.
+ * Spare-lane classifier shared by the coverage-frontier cooldown helpers.
  */
 
 #include <stdbool.h>

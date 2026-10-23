@@ -1,14 +1,8 @@
 /*
- * Bandit reward attribution and UCB1 arm-selection picker, split
- * from strategy.c.
- *
- * shm->pc_edge_calls_by_strategy[] is the reward signal the learner
- * consumes; pc_edge_count_by_strategy[] is diagnostic-only and does
- * not feed the picker.
- *
- * The picker runs once per STRATEGY_WINDOW: the CAS-winning child at
- * a rotation boundary calls pick_next_strategy() and
- * bandit_record_pull() and writes the outcome to shm->current_strategy.
+ * Bandit reward attribution and UCB1 arm-selection picker.  The reward signal
+ * is pc_edge_calls_by_strategy[] plus secondary terms (see
+ * bandit_record_pull()); SR_PLATEAU_FORCE windows reach only the by-reason
+ * diagnostics, never the learner series.
  */
 
 #include <math.h>

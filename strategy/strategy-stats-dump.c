@@ -1,7 +1,5 @@
 /*
- * Operator-facing strategy summary printed at end of run.  Split from
- * strategy.c so the dump path compiles independently of the bandit /
- * picker / plateau / rescue / frontier translation units.
+ * Operator-facing strategy summary printed at end of run.
  */
 
 #include <stdbool.h>

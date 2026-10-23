@@ -1,9 +1,7 @@
 /*
- * Plateau-intervention machinery: hypothesis classifier, rescue-bias
- * gate, anti-prior accept gate, wall-lever shadow suppression, and
- * the operator-facing intervention-mode name table.  Split from
- * strategy.c so the plateau code compiles independently of the
- * bandit / picker / frontier / cmp-novelty translation units.
+ * Plateau-intervention machinery: hypothesis classifier, rescue-bias gate,
+ * anti-prior accept gate, wall-lever shadow suppression, and the
+ * operator-facing intervention-mode name table.
  */
 
 #include <stdbool.h>

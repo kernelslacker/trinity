@@ -1,11 +1,8 @@
 /*
- * Random-rescue classifier.  A "rescue" is a SR_PLATEAU_FORCE
- * intervention call (always STRATEGY_RANDOM) that lands new edges on
- * a syscall the picker had been ignoring; this module attributes
- * each rescue to a class so the orchestrator can amplify the most
- * productive intervention shape.  Split from strategy.c so the
- * classifier compiles independently of the picker / plateau / dump
- * translation units.
+ * Random-rescue classifier.  A "rescue" is a SR_PLATEAU_FORCE intervention
+ * call (always STRATEGY_RANDOM) that lands new edges on a syscall the picker
+ * had been ignoring; this module attributes each rescue to a class so the
+ * orchestrator can amplify the most productive intervention shape.
  */
 
 #include "child.h"		/* struct childdata */

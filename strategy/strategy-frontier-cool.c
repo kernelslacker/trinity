@@ -1,6 +1,5 @@
 /*
  * Coverage-frontier saturation and barren-demote cooldown helpers.
- * Split from strategy-frontier.c.
  */
 
 #include <stdbool.h>

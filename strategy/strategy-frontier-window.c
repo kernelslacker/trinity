@@ -1,6 +1,5 @@
 /*
- * Per-syscall frontier-edge ring window advance.  Split from
- * strategy-frontier.c.
+ * Per-syscall frontier-edge ring window advance.
  */
 
 #include <limits.h>

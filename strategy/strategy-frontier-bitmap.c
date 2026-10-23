@@ -1,6 +1,5 @@
 /*
- * Producer-observer bitmap for the coverage-frontier spare-lane
- * classifier.  Split from strategy-frontier.c.
+ * Producer-observer bitmap for the coverage-frontier spare-lane classifier.
  */
 
 #include <sched.h>		/* sched_yield */
