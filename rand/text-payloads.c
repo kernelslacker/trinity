@@ -1,14 +1,9 @@
 /*
  * Content-aware text payload generators for kernel string-parser fuzzing.
- *
- * Kernel interfaces (sysfs, procfs, tracefs, debugfs) contain hundreds of
- * hand-written parsers.  A uniform random byte stream fails immediately on
- * the first character for most of them, never reaching the deeper branches
- * where bugs live.  These generators produce inputs that look plausible
- * enough to pass early validation: long repeated-character runs that can
- * overflow fixed buffers, embedded NULs that confuse strlen-based parsers,
- * format specifiers that trigger printf misuse, numeric boundary values that
- * exercise overflow and sign-extension paths, and so on.
+ * sysfs, procfs, tracefs and debugfs hold hundreds of hand-written parsers,
+ * and a uniform random byte stream fails most of them on the first character;
+ * these generators emit inputs plausible enough to pass early validation and
+ * reach the deeper branches where bugs live.
  */
 
 

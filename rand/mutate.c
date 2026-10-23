@@ -1,12 +1,8 @@
 /*
- * Value mutation strategies for kernel argument fuzzing.
- *
- * These functions perturb existing values in ways that target common
- * kernel bug classes: sign-extension across width boundaries, alignment
- * assumptions, endianness mismatches, and bitwise negation.  The
- * mutations are domain-specific to how the kernel handles integers
- * internally (casting between u8/u16/u32/u64, page alignment, etc.)
- * rather than generic arithmetic perturbation.
+ * Value mutation strategies for kernel argument fuzzing: perturbations aimed
+ * at common kernel bug classes (sign-extension across width boundaries,
+ * alignment assumptions, endianness, negation), modelled on how the kernel
+ * casts between integer widths and aligns pages, not on generic arithmetic.
  */
 #include <limits.h>
 #include "arch.h"

@@ -1,32 +1,7 @@
 /*
- * Per-kind stateful name pool.  See include/name-pool.h for the
- * design rationale.
- *
- * Storage layout: a single alloc_shared_pool() region containing one
- * fixed-size ring per kind.  Writes wrap modulo NAME_POOL_SLOTS_PER_
- * KIND, and a separate `filled` counter clamps the slot space the
- * reader picks from (so an unfilled ring never returns a zeroed
- * slot).  Both indices use RELAXED atomics: a torn read of the
- * payload is acceptable (it is fuzz input by construction) but two
- * concurrent writers must not overwrite the same slot, and a reader
- * must not pick a slot past the high-water mark of writes that have
- * landed.  We snapshot the payload into a local buffer before any
- * mutation -- the on-pool bytes can be overwritten by a concurrent
- * record() at any time and the mutator must work against a stable
- * source.
- *
- * Lazy init: the pool pointer is process-private (.bss).  Each child
- * that hits the lane allocates its own shared region on first use;
- * children do NOT share a single pool.  This keeps the alloc safely
- * after parse_args (so --guard-shared=pools wraps it) and avoids any
- * pre-main constructor ordering footgun.  The intra-child stateful
- * arm is the primary coverage win -- the same child's syscall stream
- * is what plants and references a name.
- *
- * Bounding: NAME_KIND__MAX * NAME_POOL_SLOTS_PER_KIND *
- * NAME_POOL_MAX_NAME_LEN = 6 * 16 * 64 = 6 KiB of name bytes plus a
- * few bytes of per-kind bookkeeping, well under any per-region cap.
- * One shared_regions[] slot per child.
+ * Per-kind stateful name pool.  See include/name-pool.h for the design
+ * rationale.  One alloc_shared_pool() region holds a fixed-size ring per
+ * kind, allocated lazily by each child on first use.
  */
 
 #include <stdint.h>
@@ -43,6 +18,13 @@ struct pool_slot {
 	char buf[NAME_POOL_MAX_NAME_LEN];
 };
 
+/*
+ * Both indices are RELAXED atomics.  write_idx is claimed with a fetch_add so
+ * two concurrent writers never take the same slot; filled is the high-water
+ * mark of writes that have landed, so a reader never picks past it and an
+ * unfilled ring never returns a zeroed slot.  A torn read of a slot's
+ * payload is acceptable: it is fuzz input by construction.
+ */
 struct kind_ring {
 	uint32_t write_idx;	/* monotonic; & (SLOTS-1) gives slot */
 	uint32_t filled;	/* clamped to NAME_POOL_SLOTS_PER_KIND */
@@ -55,6 +37,14 @@ struct name_pool {
 
 static struct name_pool *g_pool;
 
+/*
+ * Allocated lazily on a child's first use: g_pool is process-private, so each
+ * child gets its own region and children do not share a pool.  That keeps the
+ * allocation after parse_args() (so --guard-shared=pools wraps it) and
+ * sidesteps pre-main constructor ordering, at the cost of one shared_regions[]
+ * slot per child.  The intra-child stateful arm is the point: the same
+ * child's syscall stream is what plants and references a name.
+ */
 static struct name_pool *get_pool(void)
 {
 	struct name_pool *p;
@@ -302,7 +292,8 @@ size_t name_pool_draw_mutated(enum name_kind kind, char *out, size_t out_cap)
 	 * Snapshot slot under a defensive bound: a concurrent record()
 	 * may be mid-write into this slot.  Read len first, then copy
 	 * at most that many bytes -- a torn len that exceeds the buffer
-	 * is rejected.
+	 * is rejected.  The mutation then works on this local copy, never on
+	 * pool bytes a concurrent record() can overwrite.
 	 */
 	slen = slot->len;
 	if (slen == 0 || slen > NAME_POOL_MAX_NAME_LEN)
