@@ -44,6 +44,7 @@ void tmpdir_self_check(void);
 void reap_stop_self_check(void);
 void reap_dead_kids_self_check(void);
 void extrafork_reap_self_check(void);
+void userns_bootstrap_self_check(void);
 void dispatch_extrafork_self_check(void);
 void tables_extrafork_self_check(void);
 void cmp_collect_self_check(void);
@@ -206,6 +207,11 @@ int main(int argc, char **argv)
 	printf("  extrafork_reap_self_check ... ");
 	fflush(stdout);
 	extrafork_reap_self_check();
+	printf("OK\n");
+
+	printf("  userns_bootstrap_self_check ... ");
+	fflush(stdout);
+	userns_bootstrap_self_check();
 	printf("OK\n");
 
 	printf("  dispatch_extrafork_self_check ... ");

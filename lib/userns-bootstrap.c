@@ -7,10 +7,12 @@
  */
 
 #include <errno.h>
+#include <poll.h>
 #include <sched.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <sys/prctl.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -36,6 +38,10 @@
  * from stats alone instead of collapsing into one opaque slot.  The
  * historical UBS_EXIT_MAP_WRITE_FAIL value (3) is the "other" bucket
  * so existing post-mortem readers do not need a value remap.
+ *
+ * PARENT_GONE is a parent that died before PDEATHSIG was armed.  No one
+ * is left to wait for it, but it keeps its own value so that it can never
+ * read as the userns EPERM, which latches a childop off.
  */
 #define UBS_EXIT_RAN                    0
 #define UBS_EXIT_USERNS_EPERM           1
@@ -44,6 +50,7 @@
 #define UBS_EXIT_TARGET_UNSHARE         4
 #define UBS_EXIT_MAP_WRITE_FAIL_EPERM   5
 #define UBS_EXIT_MAP_WRITE_FAIL_EINVAL  6
+#define UBS_EXIT_PARENT_GONE            7
 
 /*
  * Translate the errno captured at the failing id-map write site into
@@ -122,6 +129,24 @@ static int install_identity_maps(uid_t uid, gid_t gid)
 }
 
 /*
+ * Has the parent that forked us exited?  Its pidfd turns readable once it
+ * has, whichever pid namespace we are in.  getppid() reads 0 when we were
+ * forked into a pid namespace the parent is not in (a child that unshared
+ * CLONE_NEWPID), whether or not the parent is alive, so without a pidfd
+ * only a pid that is neither the parent's nor 0 proves it gone.
+ */
+static bool parent_gone(int parent_pidfd, pid_t expected_ppid)
+{
+	struct pollfd pfd = { .fd = parent_pidfd, .events = POLLIN };
+	pid_t ppid;
+
+	if (parent_pidfd >= 0)
+		return poll(&pfd, 1, 0) > 0;
+	ppid = getppid();
+	return ppid != expected_ppid && ppid != 0;
+}
+
+/*
  * Grandchild body.  Every exit path uses _exit() to skip atexit
  * handlers -- those might touch trinity shared state with a
  * capability profile the rest of the fuzzer doesn't expect.
@@ -132,7 +157,7 @@ static int install_identity_maps(uid_t uid, gid_t gid)
  */
 static void grandchild_body(int target_ns_flags,
 			    int (*fn)(void *), void *arg,
-			    pid_t expected_ppid)
+			    pid_t expected_ppid, int parent_pidfd)
 {
 	int map_err;
 	/*
@@ -145,18 +170,15 @@ static void grandchild_body(int target_ns_flags,
 	 */
 	(void)prctl(PR_SET_PDEATHSIG, SIGKILL);
 	/*
-	 * Detect reparenting that occurred between fork() returning in the
-	 * child and the prctl() arming above — PDEATHSIG does not cover that
-	 * window.  Compare against expected_ppid, the pid of the parent
-	 * captured via getpid() immediately before the fork() call.  Using
-	 * the caller's own pid (not mainpid, the orchestrator global) is
-	 * correct here: the grandchild's parent is the trinity worker, not
-	 * the top-level orchestrator.  The pre-prctl window is structurally
-	 * unresolvable in child code; prctl is the best available mitigation
-	 * for races that occur after this check.
+	 * PDEATHSIG does not cover a parent that died between fork()
+	 * returning and the prctl() above, so look for one here.  The parent
+	 * is the trinity worker that called us (expected_ppid, its getpid()
+	 * just before the fork), not mainpid, the orchestrator.
 	 */
-	if (getppid() != expected_ppid)
-		_exit(EXIT_FAILURE);
+	if (parent_gone(parent_pidfd, expected_ppid))
+		_exit(UBS_EXIT_PARENT_GONE);
+	if (parent_pidfd >= 0)
+		close(parent_pidfd);
 
 	/*
 	 * Capture the parent-ns effective uid/gid BEFORE unshare(CLONE_NEWUSER).
@@ -216,16 +238,23 @@ int userns_run_in_ns(int target_ns_flags, int (*fn)(void *), void *arg)
 	                   1, __ATOMIC_RELAXED);
 
 	pid_t expected_ppid = getpid();
+	int parent_pidfd = -1;
+
+#ifdef __NR_pidfd_open
+	parent_pidfd = (int)syscall(__NR_pidfd_open, expected_ppid, 0);
+#endif
 	pid = fork();
+	if (pid == 0) {
+		grandchild_body(target_ns_flags, fn, arg, expected_ppid,
+				parent_pidfd);
+		_exit(UBS_EXIT_USERNS_OTHER);	/* unreachable */
+	}
+	if (parent_pidfd >= 0)
+		close(parent_pidfd);
 	if (pid < 0) {
 		__atomic_add_fetch(&shm->stats.userns_bootstrap.fork_fail,
 		                   1, __ATOMIC_RELAXED);
 		return -EAGAIN;
-	}
-
-	if (pid == 0) {
-		grandchild_body(target_ns_flags, fn, arg, expected_ppid);
-		_exit(UBS_EXIT_USERNS_OTHER);	/* unreachable */
 	}
 
 	/*
