@@ -2,11 +2,9 @@
  * Cross-arg validator and repair pass (contract: include/arg_coupling.h).
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: the entry's own
- * .vet_final rule, the per-syscall rules for fcntl F_SETSIG and waits on a
- * pid namespace init, then buf_count_slot byte counts and (address,
- * length) coherence.
+ * .vet_final rule, the rule for waits on a pid namespace init, then
+ * buf_count_slot byte counts and (address, length) coherence.
  */
-#include <fcntl.h>
 #include <sys/uio.h>
 #include <sys/wait.h>
 
@@ -307,25 +305,11 @@ int validate_arg_coupling(struct syscallrecord *rec,
 		return -1;
 
 	/*
-	 * fcntl F_SETSIG: routes an O_ASYNC fd's SIGIO to the signal in
-	 * a3, and the fd's owner can be the parent, which has to ignore
-	 * that signal (parent_ignores_sigio_as()).  sanitise_fcntl() draws
-	 * only such a3 values, but chain substitution rewrites the cmd
-	 * slot and the RedQueen pin either slot after it, leaving a3 as
-	 * another cmd's arm drew it.  Judge the pair the kernel will read:
-	 * do_fcntl() takes the cmd as an unsigned int and the arg as an
-	 * int.  A refused signal becomes 0, a plain SIGIO.
-	 */
-	if (entry->is_fcntl && (unsigned int) rec->a2 == F_SETSIG &&
-	    !parent_ignores_sigio_as((unsigned long) (int) rec->a3))
-		rec->a3 = 0;
-
-	/*
 	 * A wait for any child that asks for __WALL or __WCLONE finds the
 	 * child's idle pid namespace init and blocks on it until the alarm:
-	 * see pidns_init_pid.  Judged on the final slots for the same
-	 * reason as F_SETSIG above.  The kernel reads the pid, the idtype
-	 * and the options as ints.
+	 * see pidns_init_pid.  Judged on the final slots, which chain
+	 * substitution and the RedQueen pin rewrite after the sanitiser.
+	 * The kernel reads the pid, the idtype and the options as ints.
 	 */
 	if (pidns_init_pid > 0) {
 		if (entry->is_wait4_family && (int) rec->a1 == -1 &&

@@ -282,7 +282,7 @@ static void fcntl_owner(struct syscallrecord *rec)
 		/* With F_SETOWN this routes a SIGIO to a3, and the owner can
 		 * be the parent: see parent_ignores_sigio_as().  A rewrite of
 		 * the cmd or arg after this runs is judged again at dispatch,
-		 * in validate_arg_coupling(). */
+		 * by vet_final_fcntl(). */
 		if (!parent_ignores_sigio_as(rec->a3))
 			rec->a3 = 0; /* restore default (SIGIO) */
 		/* Scalar-only arm: a3 is a signal number int.  See REEXEC_OK
@@ -782,6 +782,25 @@ static void post_fcntl(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * F_SETSIG routes an O_ASYNC fd's SIGIO to the signal in a3, and the fd's
+ * owner can be the parent, which has to ignore that signal
+ * (parent_ignores_sigio_as()).  sanitise_fcntl() draws only such a3
+ * values, but chain substitution rewrites the cmd slot and the RedQueen
+ * pin either slot after it, leaving a3 as another cmd's arm drew it.
+ * Judge the pair the kernel will read: do_fcntl() takes the cmd as an
+ * unsigned int and the arg as an int.  A refused signal becomes 0, a
+ * plain SIGIO, so the call itself is never refused.  The i386 and arm
+ * fcntl64 slots share this entry.
+ */
+static int vet_final_fcntl(struct syscallrecord *rec)
+{
+	if ((unsigned int) rec->a2 == F_SETSIG &&
+	    !parent_ignores_sigio_as((unsigned long) (int) rec->a3))
+		rec->a3 = 0;
+	return 0;
+}
+
 struct syscallentry syscall_fcntl = {
 	.name = "fcntl",
 	.num_args = 3,
@@ -791,6 +810,7 @@ struct syscallentry syscall_fcntl = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.sanitise = sanitise_fcntl,
+	.vet_final = vet_final_fcntl,
 	.post = post_fcntl,
 	/* a1/a2/a3 (fd/cmd/arg) all feed post_fcntl's oracle: the cmd
 	 * selects the switch arm, the fd is logged on F_SETFL anomalies

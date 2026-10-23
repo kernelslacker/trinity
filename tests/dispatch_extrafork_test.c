@@ -350,7 +350,7 @@ static unsigned long dispatch_fcntl(struct syscallentry *entry,
 static void selftest_fcntl_setsig(void)
 {
 	struct syscallentry fcntl_entry = { .name = "fcntl", .num_args = 3,
-					    .is_fcntl = true };
+					    .vet_final = syscall_fcntl.vet_final };
 	struct syscallentry other_entry = { .name = "probe", .num_args = 3 };
 	unsigned long sig, handed;
 
