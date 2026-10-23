@@ -4,21 +4,64 @@
  * substitution, a RedQueen pin) must not leave the kernel a range the
  * sanitiser would have refused.  madvise is the one that can discard
  * pages every child shares, so its (addr, len) is checked against the
- * regions trinity tracks.
+ * regions trinity tracks; read, pread64 and getrandom write as far as
+ * their count says, so the count may not run the write past the buffer
+ * into those regions.
  */
 
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 
+#include "arch.h"				/* page_size */
 #include "arg_coupling.h"
 #include "debug.h"			/* BUG */
+#include "files.h"			/* get_rand_pagecache_fd */
+#include "pathnames.h"		/* get_testfile_path */
+#include "sanitise.h"			/* writable pool */
 #include "syscall.h"			/* struct syscallrecord */
+#include "testfile.h"			/* get_rand_testfile_fd */
+#include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
+#include "utils-macros.h"		/* ARRAY_SIZE */
 
 /* Region tracking in tests/fake_shm.c. */
 void fake_track_region(unsigned long addr, unsigned long size);
 void fake_untrack_regions(void);
+extern bool fake_overlaps_shared;
 extern bool fake_overlaps_libc_heap;
+
+/* sanity_check_tables() over one entry, in tests/sanitiser_owned_mask_test.c. */
+int entry_check_status(struct syscallentry *entry);
+
+/* The page-cache fd pool pread64's sanitiser draws from is not in this
+ * binary, and an empty one leaves the fd alone. */
+int get_rand_pagecache_fd(void)
+{
+	return -1;
+}
+
+/* The xattr getters plant a value in a testfile when there is one, and
+ * snapshot their path for the post handler; with no testfiles and no
+ * snapshot source they do neither. */
+char *get_testfile_path(void)
+{
+	return NULL;
+}
+
+int get_rand_testfile_fd(void)
+{
+	return -1;
+}
+
+bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
+{
+	(void) dst;
+	(void) dstsz;
+	(void) src;
+	return false;
+}
 
 #define REGION		0x7f0000000000UL
 #define REGION_SIZE	0x100000UL
@@ -109,8 +152,223 @@ static void madvise_range_held_off_regions(void)
 	fake_untrack_regions();
 }
 
+/* The entries that set buf_count_slot whose TUs this binary links, with the
+ * slot the kernel's own signature puts the count in; the buffer is the slot
+ * before it.  getrandom's sanitiser needs the OBJ_MMAP pools, so its shape
+ * is built by hand below. */
+static struct {
+	struct syscallentry *entry;
+	unsigned int slot;
+} const count_entries[] = {
+	{ &syscall_read, 3 },
+	{ &syscall_pread64, 3 },
+	{ &syscall_mq_timedreceive, 3 },
+	{ &syscall_getxattr, 4 },
+	{ &syscall_lgetxattr, 4 },
+	{ &syscall_fgetxattr, 4 },
+	{ &syscall_listxattr, 3 },
+	{ &syscall_llistxattr, 3 },
+	{ &syscall_flistxattr, 3 },
+	{ &syscall_listxattrat, 5 },
+};
+
+/* buf_count_slot is checked at startup: a slot that cannot have a buffer
+ * before it, or one that holds no address, would aim the rule at the wrong
+ * argument.  The real entries that set it pass. */
+static void count_slot_checked_at_table_init(void)
+{
+	unsigned int i;
+	struct syscallentry entry = {
+		.name = "count_slot_probe",
+		.num_args = 3,
+		.argname = { "a1", "a2", "a3" },
+		.argtype = { ARG_FD, ARG_ADDRESS, ARG_LEN },
+		.buf_count_slot = 3,
+	};
+
+	if (entry_check_status(&entry) != 0)
+		BUG("sanity_check_tables: refused a count slot after an address");
+	entry.argtype[1] = ARG_NON_NULL_ADDRESS;
+	if (entry_check_status(&entry) != 0)
+		BUG("sanity_check_tables: refused a count slot after a non-null address");
+	entry.argtype[1] = ARG_MMAP;
+	if (entry_check_status(&entry) != 0)
+		BUG("sanity_check_tables: refused a count slot after a map");
+
+	entry.argtype[1] = ARG_PID;
+	if (entry_check_status(&entry) != EXIT_FAILURE)
+		BUG("sanity_check_tables: accepted a count slot after a pid");
+	entry.argtype[1] = ARG_ADDRESS;
+	entry.buf_count_slot = 1;
+	if (entry_check_status(&entry) != EXIT_FAILURE)
+		BUG("sanity_check_tables: accepted a count slot with no slot before it");
+	entry.buf_count_slot = 4;
+	if (entry_check_status(&entry) != EXIT_FAILURE)
+		BUG("sanity_check_tables: accepted a count slot past num_args");
+
+	for (i = 0; i < ARRAY_SIZE(count_entries); i++) {
+		if (count_entries[i].entry->buf_count_slot != count_entries[i].slot)
+			BUG("arg coupling: an entry lost its count slot, or names the wrong one");
+		if (entry_check_status(count_entries[i].entry) != 0)
+			BUG("sanity_check_tables: refused a real entry's count slot");
+	}
+}
+
+/* Slot n of the record, 1-based. */
+static unsigned long *slot_of(unsigned int slot)
+{
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+
+	return slots[slot - 1];
+}
+
+/* What the kernel will be given for the count, after the validator. */
+static unsigned long count_after(struct syscallentry *entry, unsigned int slot,
+				 unsigned long buf, unsigned long count)
+{
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = entry;
+	*slot_of(slot - 1) = buf;
+	*slot_of(slot) = count;
+
+	if (validate_arg_coupling(&rec) != 0)
+		BUG("arg coupling: a read-class call was refused");
+	if (*slot_of(slot - 1) != buf)
+		BUG("arg coupling: the buffer slot was rewritten");
+	return *slot_of(slot);
+}
+
+#define SANITISER_DRAWS	500
+
+/* What the generator leaves in the count slot for a sanitiser to size:
+ * ARG_LEN's boundaries, and more than a pool holds. */
+static const unsigned long generated_counts[] = {
+	0, 1, 64, 4095, 4096, 4097, 1UL << 16, WRITABLE_POOL_BYTES + 1,
+	0x7ffff000UL, 0xffffffffUL, ~0UL,
+};
+
+/* A call the sanitiser built goes through as it is. */
+static void vetted_count_kept(struct syscallentry *entry, unsigned int slot,
+			      unsigned long pool)
+{
+	unsigned int i;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		unsigned long buf, count;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = entry;
+		*slot_of(slot - 1) = (unsigned long) get_writable_address(page_size);
+		*slot_of(slot) = RAND_ARRAY(generated_counts);
+		entry->sanitise(&rec);
+		buf = *slot_of(slot - 1);
+		count = *slot_of(slot);
+
+		/* The snapshot a post handler would have released. */
+		free((void *) rec.post_state);
+		rec.post_state = 0;
+
+		if (buf != 0 && (buf < pool || buf >= pool + WRITABLE_POOL_BYTES))
+			BUG("arg coupling: a sanitised buffer left the pool");
+		if (validate_arg_coupling(&rec) != 0 ||
+		    *slot_of(slot - 1) != buf || *slot_of(slot) != count)
+			BUG("arg coupling: a count the sanitiser sized was rewritten");
+	}
+}
+
+/* The count is cut where the write would leave the buffer's region for
+ * another tracked one or the heap, and only there. */
+static void count_held_inside_buffer(void)
+{
+	struct syscallentry unmarked = syscall_read;
+	struct syscallentry getrandom_shape = {
+		.name = "getrandom",
+		.num_args = 3,
+		.argtype = { ARG_MMAP, ARG_LEN, ARG_LIST },
+		.buf_count_slot = 2,
+	};
+	const unsigned long tail = 0x800;
+	unsigned long pool, end;
+	unsigned int e;
+
+	writable_pool_init();
+	pool = (unsigned long) get_writable_address(WRITABLE_POOL_BYTES);
+	end = pool + WRITABLE_POOL_BYTES;
+	unmarked.buf_count_slot = 0;
+
+	fake_untrack_regions();
+	fake_track_region(pool, WRITABLE_POOL_BYTES);
+	fake_track_region(end, 0x10000);
+
+	for (e = 0; e < ARRAY_SIZE(count_entries); e++) {
+		struct syscallentry *entry = count_entries[e].entry;
+		unsigned int slot = count_entries[e].slot;
+
+		vetted_count_kept(entry, slot, pool);
+
+		/* A count of the buffer's last bytes, a longer one, and the
+		 * values a rewrite brings: MAX_RW_COUNT, a pid, a whole
+		 * pool and a bit more, an address. */
+		if (count_after(entry, slot, end - tail, tail) != tail)
+			BUG("arg coupling: a count that fits the region was cut");
+		if (count_after(entry, slot, end - tail, tail + 1) != tail)
+			BUG("arg coupling: a count one byte past the region was kept");
+		if (count_after(entry, slot, end - tail, 0x7ffff000UL) != tail)
+			BUG("arg coupling: MAX_RW_COUNT was kept");
+		if (count_after(entry, slot, pool, 3000000UL) != WRITABLE_POOL_BYTES)
+			BUG("arg coupling: a pid-sized count was not cut to the pool");
+		if (count_after(entry, slot, pool, WRITABLE_POOL_BYTES) != WRITABLE_POOL_BYTES ||
+		    count_after(entry, slot, pool + 0x1000, 0x1000) != 0x1000)
+			BUG("arg coupling: a count inside the pool was cut");
+		if (count_after(entry, slot, pool, 0x7f0000001000UL) != WRITABLE_POOL_BYTES)
+			BUG("arg coupling: an address-sized count was not cut to the pool");
+
+		/* An empty count and an empty buffer are not this rule's. */
+		if (count_after(entry, slot, end - tail, 0) != 0 ||
+		    count_after(entry, slot, 0, 0x7ffff000UL) != 0x7ffff000UL)
+			BUG("arg coupling: an empty count or buffer was judged");
+
+		/* Past the region into nothing tracked is left to the kernel's
+		 * own checks, unless the heap is there. */
+		fake_untrack_regions();
+		fake_track_region(pool, WRITABLE_POOL_BYTES);
+		if (count_after(entry, slot, end - tail, 0x7ffff000UL) != 0x7ffff000UL)
+			BUG("arg coupling: a count running into unmapped memory was cut");
+		fake_overlaps_libc_heap = true;
+		if (count_after(entry, slot, end - tail, 0x7ffff000UL) != tail)
+			BUG("arg coupling: a count running into the heap was kept");
+		fake_overlaps_libc_heap = false;
+		fake_track_region(end, 0x10000);
+
+		/* A buffer in no tracked region has no extent: a count that
+		 * reaches one is 0. */
+		if (count_after(entry, slot, 0x10000000UL, 0x4000) != 0x4000)
+			BUG("arg coupling: a clear untracked buffer was cut");
+		fake_overlaps_shared = true;
+		if (count_after(entry, slot, 0x10000000UL, 0x4000) != 0)
+			BUG("arg coupling: an untracked buffer reaching a region kept its count");
+		fake_overlaps_shared = false;
+	}
+
+	/* An entry that does not carry the slot keeps whatever it has. */
+	if (count_after(&unmarked, 3, end - tail, 0x7ffff000UL) != 0x7ffff000UL)
+		BUG("arg coupling: an entry with no count slot was judged");
+
+	/* getrandom's buffer is a map, so the slots are one earlier. */
+	if (count_after(&getrandom_shape, 2, end - tail, 0x7ffff000UL) != tail)
+		BUG("arg coupling: a count in slot 2 was not held to its buffer");
+	fake_overlaps_shared = true;
+	if (count_after(&getrandom_shape, 2, 0x10000000UL, 0x4000) != 0)
+		BUG("arg coupling: a map buffer reaching a region kept its count");
+	fake_overlaps_shared = false;
+
+	fake_untrack_regions();
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
 	madvise_range_held_off_regions();
+	count_slot_checked_at_table_init();
+	count_held_inside_buffer();
 }

@@ -7,7 +7,7 @@ Central registry that turns the 431 per-syscall descriptors under `syscalls/` (a
 | File | Lines | Role |
 |---|---|---|
 | tables.c | 282 | `munge_tables()` startup orchestration, `group_parent[]`, the biarch/uniarch dispatch shims, and the ASAN-only `deactivate_extrafork_syscalls()` sweep (a live ASAN run issues no EXTRA_FORK call, so those entries leave the active table; `--dry-run` keeps them) |
-| table-meta.c | 550 | Read-only accessors and inspection: `search_syscall_table()`, `get_syscall_entry()`, `print_syscall_name()`, `syscall_nr_is_excluded()`, the init-time `sanity_check_tables()` pass, enabled/disabled counters, the `-c`/`-x` arg-name parser |
+| table-meta.c | 579 | Read-only accessors and inspection: `search_syscall_table()`, `get_syscall_entry()`, `print_syscall_name()`, `syscall_nr_is_excluded()`, the init-time `sanity_check_tables()` pass, enabled/disabled counters, the `-c`/`-x` arg-name parser |
 | tables-biarch.c | 458 | Dual-table (32-on-64) arch variant: `syscalls_32bit`/`syscalls_64bit` globals, same operation set doubled, plus 32/64 pairing logic in `enable_random_syscalls_biarch()` and `toggle_syscall_biarch()` |
 | table-activate.c | 233 | Cost-pool-aware `activate_syscall_in_table()`/`deactivate_syscall_in_table()`, the pool-partition assertion, and the lock-taking / lock-free deactivation wrappers the pickers call |
 | tables-uniarch.c | 229 | Single-table arch variant: `syscalls` global, activate/deactivate/toggle/enable-random/group-setup/dump/display, all operating on one flat table |

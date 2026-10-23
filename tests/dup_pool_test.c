@@ -355,13 +355,8 @@ struct socketinfo *get_rand_socketinfo(void)
 	return NULL;
 }
 
-/* The open sanitisers reach these two; the cases run the post handlers. */
-char *get_testfile_path(void)
-{
-	BUG("fd pool: a handler asked for a testfile path");
-	return NULL;
-}
-
+/* The open sanitisers reach this and get_testfile_path(), whose stand-in
+ * is in arg_coupling_test.c; the cases run the post handlers. */
 struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
 {
 	(void) desc;

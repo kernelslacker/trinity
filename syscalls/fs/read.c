@@ -85,6 +85,7 @@ struct syscallentry syscall_read = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
+	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -189,6 +190,7 @@ struct syscallentry syscall_pread64 = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
+	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 

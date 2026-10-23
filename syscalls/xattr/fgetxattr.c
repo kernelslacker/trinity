@@ -380,6 +380,7 @@ struct syscallentry syscall_fgetxattr = {
 	.argtype = { [0] = ARG_FD, [1] = ARG_XATTR_NAME, [2] = ARG_ADDRESS, [3] = ARG_LEN },
 	.argname = { [0] = "fd", [1] = "name", [2] = "value", [3] = "size" },
 	.rettype = RET_NUM_BYTES,
+	.buf_count_slot = 4,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_fgetxattr,

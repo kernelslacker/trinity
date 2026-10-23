@@ -28,9 +28,12 @@
  * Some per-syscall rules ride on the same final values, for what a
  * sanitiser got right and a later rewrite (chain substitution, a RedQueen
  * pin) can undo: an fcntl F_SETSIG signal, a wait that would block on a
- * child's pid namespace init and an madvise range that reaches trinity's
- * own regions are repaired in place, and a close_range whose slots no
- * longer match the range its sanitiser vetted is refused.
+ * child's pid namespace init, an madvise range that reaches trinity's
+ * own regions and a byte count the sanitiser sized to its buffer (read,
+ * pread64, getrandom, the xattr value and list getters, mq_timedreceive)
+ * that would run the write past it into them are repaired in place, and
+ * a close_range whose slots no longer match the range its sanitiser
+ * vetted is refused.
  *
  * Callers see three counters: STATS_FIELD_VALIDATOR_REJECTED (via the
  * -1 return), STATS_FIELD_ARG_CONSTRAINT_REPAIRED (per clamp), and
@@ -277,6 +280,50 @@ static void repair_iovec_extents(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * A call that fills the buffer in the slot before its byte count with up
+ * to that many bytes (entry->buf_count_slot) writes as far as its source
+ * lets it: read() from /dev/zero, getrandom() with nothing to run out
+ * of, an xattr value or list up to XATTR_SIZE_MAX.  The sanitiser sizes
+ * the count to the buffer and moves the buffer off trinity's regions,
+ * and a rewrite of the count afterwards, a substituted return value or a
+ * pinned kernel constant, runs the write on past the buffer's end.
+ * Trinity's buffers come from the writable pool, which is itself a
+ * tracked region and abuts others, so what a long enough write reaches
+ * next is the state every child shares.
+ *
+ * Act only when the bytes past the end of the region the buffer starts in
+ * overlap a tracked region or the libc heap: a count that runs into
+ * unmapped memory stops at the gap with EFAULT, which is a shape the
+ * kernel's own copy checks should keep seeing.  A buffer in a tracked
+ * region gets the count cut to the bytes left in it; one in no tracked
+ * region has no extent to cut to, and gets a count of 0.
+ */
+static void hold_count_inside_buffer(struct syscallrecord *rec)
+{
+	const struct syscallentry *entry = rec->entry;
+	unsigned int slot = entry->buf_count_slot;
+	unsigned long buf, count, extent;
+
+	if (slot < 2 || slot > entry->num_args || slot > 6)
+		return;
+
+	buf = get_argval(rec, slot - 1);
+	count = get_argval(rec, slot);
+	if (buf == 0 || count == 0)
+		return;
+
+	extent = shared_region_size_for(buf);
+	if (count <= extent)
+		return;
+	if (!range_overlaps_shared(buf + extent, count - extent) &&
+	    !range_overlaps_libc_heap(buf + extent, count - extent))
+		return;
+
+	write_arg_slot(rec, slot, extent);
+	arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
+}
+
 int validate_arg_coupling(struct syscallrecord *rec)
 {
 	const struct syscallentry *entry;
@@ -379,6 +426,13 @@ int validate_arg_coupling(struct syscallrecord *rec)
 		rec->a2 = 0;
 		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
 	}
+
+	/*
+	 * A count the sanitiser sized to its buffer may not run the write
+	 * past it into trinity's own state.  See hold_count_inside_buffer().
+	 */
+	if (entry->buf_count_slot != 0)
+		hold_count_inside_buffer(rec);
 
 	/*
 	 * Non-adjacent (address, length) coupled pair: gen_arg_len()

@@ -434,6 +434,19 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/fs/creat.c \
 		   $(TOP)/fds/fds-pool.c
 
+# syscalls/fs/read.c, syscalls/mq/mq_timedreceive.c, the getters and
+# listers under syscalls/xattr/ and the value-buffer pickers they share
+# bring the entries whose sanitisers arg_coupling_test.c runs under the
+# count rule.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
+		   $(TOP)/syscalls/mq/mq_timedreceive.c \
+		   $(TOP)/syscalls/xattr/getxattr.c \
+		   $(TOP)/syscalls/xattr/lgetxattr.c \
+		   $(TOP)/syscalls/xattr/fgetxattr.c \
+		   $(TOP)/syscalls/xattr/listxattr.c \
+		   $(TOP)/syscalls/xattr/listxattrat.c \
+		   $(TOP)/args/pools/xattr.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

@@ -580,6 +580,19 @@ struct syscallentry {
 	char * (*decode)(struct syscallrecord *rec, unsigned int argnum);
 
 	unsigned int number;
+
+	/*
+	 * 1-based slot of the byte count of a call that fills the buffer
+	 * in the slot before it with up to that many bytes, whatever the
+	 * source has to give: read and pread64 from /dev/zero, getrandom,
+	 * the xattr value and list getters, mq_timedreceive.  0 for every
+	 * other entry.  The sanitiser sizes the count to the buffer and
+	 * moves the buffer off trinity's regions; validate_arg_coupling()
+	 * keeps a rewritten count from running the write past the buffer
+	 * into them.  Fills the alignment hole after number.
+	 */
+	uint8_t buf_count_slot;
+
 	/*
 	 * Write-once at copy_syscall_table() time; points at this entry's
 	 * slot in the parallel RW syscall_runtime array.  Split out of the

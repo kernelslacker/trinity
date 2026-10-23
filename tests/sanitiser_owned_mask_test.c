@@ -96,8 +96,10 @@ static void fake_sanitise(struct syscallrecord *rec)
 
 /* sanity_check_tables() exits on a bad entry, so run it over a one-entry
  * table in a child and return the child's exit status.  The child's
- * stderr goes to /dev/null: the refusals are expected. */
-static int entry_check_status(struct syscallentry *entry)
+ * stderr goes to /dev/null: the refusals are expected.  Shared with
+ * arg_coupling_test.c. */
+int entry_check_status(struct syscallentry *entry);
+int entry_check_status(struct syscallentry *entry)
 {
 	struct syscalltable table = { .entry = entry };
 	int status, devnull;

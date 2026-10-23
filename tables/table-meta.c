@@ -239,6 +239,34 @@ static void check_sanitiser_owned_mask(struct syscallentry *entry)
 	}
 }
 
+/*
+ * validate_arg_coupling() keeps the count in buf_count_slot from running a
+ * write past the buffer in the slot before it, so the slot has to exist,
+ * leave room for a buffer, and hold an address there.
+ */
+static void check_buf_count_slot(struct syscallentry *entry)
+{
+	unsigned int slot;
+	enum argtype t;
+
+	if (entry == NULL || entry->buf_count_slot == 0)
+		return;
+
+	slot = entry->buf_count_slot;
+	if (slot < 2 || slot > entry->num_args) {
+		outputerr("%s: buf_count_slot is %u but the buffer needs the slot before it and num_args=%u\n",
+			  entry->name, slot, entry->num_args);
+		exit(EXIT_FAILURE);
+	}
+
+	t = entry->argtype[slot - 2];
+	if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS && t != ARG_MMAP) {
+		outputerr("%s: buf_count_slot is %u but slot %u is not an address argtype (%d)\n",
+			  entry->name, slot, slot - 1, t);
+		exit(EXIT_FAILURE);
+	}
+}
+
 static void sanity_check(const struct syscalltable *table, unsigned int nr)
 {
 	unsigned int i;
@@ -247,6 +275,7 @@ static void sanity_check(const struct syscalltable *table, unsigned int nr)
 		check_syscall(table[i].entry);
 		check_no_slots_past_num_args(table[i].entry);
 		check_sanitiser_owned_mask(table[i].entry);
+		check_buf_count_slot(table[i].entry);
 	}
 }
 
