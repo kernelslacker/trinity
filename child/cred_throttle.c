@@ -1,11 +1,6 @@
 /*
- * Credential-syscall observability oracle + flag-gated throttle.
- *
- * Companion to random_syscall/.  Splitting the implementation out keeps
- * the cred-class enum, the name -> nr cache, and the dump-side counters
- * in a single self-contained TU so a later "expand the class set" or
- * "tune the throttle thresholds" change touches one file instead of the
- * picker hot path.  See include/cred_throttle.h for the design contract.
+ * Credential-syscall observability oracle + flag-gated throttle; the
+ * design contract is in include/cred_throttle.h.
  */
 
 #include <errno.h>

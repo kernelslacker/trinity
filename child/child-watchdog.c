@@ -1,15 +1,7 @@
 /*
- * Stall detection / alarm bookkeeping carved out of child.c.  Every
- * SIGALRM the child_process() loop observes runs through check_stall()
- * to decide whether the current op has stopped making progress; the
- * per-op-type threshold table lives here alongside it.  Split out so
- * make -j can compile the watchdog path concurrently with the
- * periodic-tick and childop dispatch arm helpers.
- *
- * check_stall sheds its `static` linkage here so the child_process()
- * main loop (still in child.c) can reach it across the TU boundary;
- * declaration is in include/child-internal.h.  stall_threshold stays
- * static -- check_stall is its lone caller and both live here.
+ * Stall detection: every SIGALRM child_process() observes runs through
+ * check_stall(), which decides whether the current op has stopped making
+ * progress; the per-op-type threshold table sits alongside it.
  */
 
 #include "child.h"

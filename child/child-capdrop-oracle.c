@@ -1,39 +1,9 @@
 /*
- * Periodic-work cap-drop oracle.
- *
- * Asserts the capset()-to-empty drop in init_child_setup_sandbox()
- * actually held.  Sampled once per ONE_IN(CAPDROP_ORACLE_SAMPLE_DENOM)
- * call to periodic_work().  Each probe is designed to FAIL on a
- * cap-dropped child:
- *
- *   - bpf(BPF_PROG_LOAD, BPF_PROG_TYPE_KPROBE, ...) -> expect EPERM.
- *     A verifier-clean two-instruction program ("r0=0; exit") so the
- *     only thing that can reject the load is the cap gate, not the
- *     verifier.  KPROBE rather than SOCKET_FILTER because the latter
- *     is allowed on systems with kernel.unprivileged_bpf_disabled=0,
- *     which would mask the test.
- *
- *   - mount() with a bogus fstype -> expect EPERM.  may_mount()'s cap
- *     check in path_mount() fires before the fstype lookup, so a
- *     cap-dropped child sees EPERM; if the cap drop ever regresses the
- *     bogus fstype guarantees the call fails ENODEV instead of actually
- *     mounting anything.
- *
- *   - setsockopt(SO_RCVBUFFORCE) on an AF_INET DGRAM socket ->
- *     expect EPERM.  CAP_NET_ADMIN-gated at the top of sock_setsockopt
- *     before the rmem_max bypass.
- *
- *   - capget(self) -> assert effective+permitted+inheritable are EMPTY
- *     on both v3 data slots.  Direct read-back of the drop.
- *
- * Bare syscall(__NR_*) on the bpf / mount / capget probes so the
- * --exclude=<syscall> CLI knob can't silently skip the oracle.
- *
- * SAFETY: every probe expects failure.  On the (alarming) success
- * branch the oracle bumps shm->stats.oracle.capdrop_oracle_anomalies, emits
- * an output(0, ...) anomaly line, and does NOT retry the privileged
- * action.  The bpf success branch closes the unexpectedly-loaded
- * prog fd.
+ * Periodic-work cap-drop oracle: asserts the capset()-to-empty drop in
+ * init_child_setup_sandbox() held, sampled 1 in CAPDROP_ORACLE_SAMPLE_DENOM
+ * ticks.  Every probe is built to fail on a cap-dropped child and never
+ * retries the privileged action.  The bpf, mount and capget probes use
+ * bare syscall(__NR_*) so --exclude=<syscall> cannot skip the oracle.
  */
 
 #include <errno.h>
@@ -142,6 +112,12 @@ static void capdrop_bump_anomaly(void)
 #ifdef USE_BPF
 static const char capdrop_bpf_license[] = "GPL";
 
+/*
+ * KPROBE rather than SOCKET_FILTER: bpf_prog_load() lets an unprivileged
+ * caller load the latter when kernel.unprivileged_bpf_disabled is 0, which
+ * would mask a regression.  The program is verifier-clean ("r0 = 0; exit"),
+ * so only the cap gate can reject the load.
+ */
 static void capdrop_probe_bpf(void)
 {
 	struct bpf_insn insns[] = {

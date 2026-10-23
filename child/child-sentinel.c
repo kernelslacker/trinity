@@ -1,36 +1,9 @@
 /*
- * Periodic-work divergence sentinel.
- *
- * Each tick (every 16 syscalls, gated in child_process), re-issue a
- * curated set of "should be deterministic across short windows"
- * syscalls and compare against the previous tick's reading cached in
- * childdata.sentinel_prev.  Any unexpected drift in the stable fields
- * is the fingerprint of a wild write -- either a fuzzed value-result
- * syscall buffer scribbling our cache, or a fuzzed buffer aimed at the
- * kernel-managed copy that backs one of these reads (utsname's
- * boot-stable strings, sysinfo's boot-stable scalars).  In both
- * directions the divergence surfaces here as adjacent ticks disagreeing.
- *
- * The probe set is deliberately tiny and cheap (two fast syscalls), and
- * sysinfo's loads/uptime/freeram are excluded because they legitimately
- * drift between two adjacent ticks.  Sample fields stay limited to
- * those that should not change at all unless someone stomps memory:
- * utsname's sysname/release/version/machine and sysinfo's
- * totalram/totalswap/totalhigh/mem_unit.  utsname's nodename,
- * RLIMIT_NOFILE rlim_cur/rlim_max, and the task's scheduling priority
- * are deliberately excluded -- they are routinely mutated by successful
- * sethostname / setrlimit / prlimit64 / sched_setparam calls trinity
- * itself fuzzes, so comparing them produces false-positive divergences
- * on every operator-driven write rather than detecting kernel-side
- * corruption.
- *
- * On a hit we push a sentinel-marked entry into the per-child
- * pre_crash_ring (so the post-mortem dumper has the offending field
- * and the first 16 bytes of the old + new readings on hand) and bump a
- * relaxed-atomic stats counter.  Per-field bumping is intentional: a
- * multi-field clobber should outweigh a single-field drift in the
- * counter so noise from a singleton false positive stays visible-but-
- * not-dominant.
+ * Periodic-work divergence sentinel.  Each periodic_work() tick re-reads a
+ * small set of values that stay put unless memory is stomped and compares
+ * them with the previous tick's reading in childdata.sentinel_prev; drift is
+ * the fingerprint of a wild write into our cache or into the kernel-managed
+ * datum behind the read.  Field selection: see struct sentinel_reading.
  */
 
 #include <sys/sysinfo.h>
@@ -192,7 +165,9 @@ static void sentinel_report(struct childdata *child,
 		return;
 	}
 
-	/* Per-field shard.  The bounds-guard pairs with the _Static_assert
+	/* Per-field shard: a multi-field clobber should outweigh a single-field
+	 * drift in the counter, so a singleton false positive stays visible
+	 * but not dominant.  The bounds-guard pairs with the _Static_assert
 	 * above; a corrupt `field` value (out-of-range) is dropped from the
 	 * histogram rather than scribbling past the array. */
 	if ((unsigned int) field < (unsigned int) SF__MAX) {

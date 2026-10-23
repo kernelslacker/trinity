@@ -1,15 +1,8 @@
 /*
- * Childop dispatch-arm helpers carved out of child.c: the
- * lowest-free-fd probe that brackets each alt-op dispatch to detect
- * fd leaks, and the per-child corruption-rate storm-recycle check the
- * loop consults on the LOCAL_STORM_CHECK_PERIOD gate.  Split out so
- * make -j can compile the alt-op dispatch bookkeeping concurrently
- * with the periodic-tick and watchdog helpers.
- *
- * probe_lowest_free_fd and storm_rate_recycle shed their `static`
- * linkage here so the child_process() main loop (still in child.c) can
- * reach them across the TU boundary; declarations are in
- * include/child-internal.h.
+ * Alt-op dispatch bookkeeping for child_process(): probe_lowest_free_fd(),
+ * the fd-leak proxy that brackets each alt-op dispatch, and
+ * storm_rate_recycle(), the per-child corruption-rate recycle check run on
+ * the LOCAL_STORM_CHECK_PERIOD gate.
  */
 
 #include <errno.h>

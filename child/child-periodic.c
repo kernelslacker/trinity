@@ -1,13 +1,6 @@
 /*
- * Periodic maintenance work carved out of child.c: the every-16-ops
- * periodic_work() tick and its parent-pid watchdog helper.  Split out
- * so make -j can compile the periodic-tick path concurrently with the
- * childop dispatch arm and the watchdog / stall detector helpers.
- *
- * periodic_work sheds its `static` linkage here so the child_process()
- * main loop (still in child.c) can reach it across the TU boundary;
- * declaration is in include/child-internal.h.  check_parent_pid stays
- * static -- periodic_work is its lone caller and both live here.
+ * Periodic maintenance: periodic_work(), the every-16-ops tick, and the
+ * parent-pid check it runs.
  */
 
 #include <stdlib.h>
