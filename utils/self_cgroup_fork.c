@@ -20,9 +20,7 @@
 #include "self-cgroup-internal.h"
 
 #include "kernel/fcntl.h"
-#ifndef CLONE_INTO_CGROUP
-#define CLONE_INTO_CGROUP 0x200000000ULL
-#endif
+#include "kernel/sched.h"
 
 static bool clone3_unavailable;	/* latched on first ENOSYS */
 

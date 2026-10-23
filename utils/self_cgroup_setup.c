@@ -28,9 +28,7 @@
 #include "self-cgroup-internal.h"
 
 #include "kernel/fcntl.h"
-#ifndef CLONE_INTO_CGROUP
-#define CLONE_INTO_CGROUP 0x200000000ULL
-#endif
+#include "kernel/sched.h"
 
 /*
  * Sub-cgroup layout (all under the v2 cgroup we belong to at startup):
