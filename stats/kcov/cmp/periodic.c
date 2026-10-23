@@ -11,11 +11,11 @@
  *
  * The window state is gathered into struct cmp_window (the counters the
  * dump differences) and struct cmp_levels (the values it prints as they
- * stand), both local to this TU.  The render helpers live in their
- * per-domain siblings declared in stats/kcov/cmp/internal.h; the
- * burst-drain and callsite blocks, which no sibling owns, are static
- * helpers above the entry point and take their counters as explicit
- * arguments.
+ * stand), both local to this TU.  The plain rate lines are listed in the
+ * rate-row tables; the rest of the fan-out is the render helpers in their
+ * per-domain siblings declared in stats/kcov/cmp/internal.h, plus the
+ * burst-drain and callsite blocks, which no sibling owns: static helpers
+ * above the entry point that take their counters as explicit arguments.
  */
 
 #include <errno.h>
@@ -183,7 +183,11 @@ static void kcov_cmp_render_prop_injected_callsite(bool any_prop_callsite_delta,
 /*
  * The counters the dump differences from one window to the next.  The
  * current snapshot, the previous one and the delta share this shape, so
- * arming and committing a window are struct copies.
+ * arming and committing a window are struct copies.  Every member is an
+ * unsigned long, so a window also reads as an array of words: the delta
+ * is one subtraction per word and the any-delta gate one scan.
+ * frontier_blend_samples is last because the gate covers every word
+ * before it.
  */
 struct cmp_window {
 	unsigned long records, truncated, bloom_skipped, strip_skipped, unique;
@@ -221,10 +225,17 @@ struct cmp_window {
 	unsigned long cmp_inject_arm_b_baseline_fires;
 	unsigned long cmp_inject_denom_diverged;
 	unsigned long prop_ring_argop_arm_b_fires;
-	unsigned long frontier_blend_samples;
 	unsigned long remote_adaptive_samples;
 	unsigned long mut_structured_shadow_divergences;
+	unsigned long frontier_blend_samples;
 };
+
+#define CMP_WINDOW_WORDS	(sizeof(struct cmp_window) / sizeof(unsigned long))
+#define CMP_WINDOW_GATED_WORDS \
+	(offsetof(struct cmp_window, frontier_blend_samples) / sizeof(unsigned long))
+
+_Static_assert(sizeof(struct cmp_window) % sizeof(unsigned long) == 0,
+	       "struct cmp_window must be made of unsigned longs alone");
 
 /*
  * Values the dump prints as they stand, with no window delta: the A/B
@@ -246,6 +257,79 @@ struct cmp_levels {
 	unsigned long blanket_address_scrub_slots_walked;
 	unsigned long mut_structured_shadow_samples;
 };
+
+static bool words_nonzero(const unsigned long *w, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		if (w[i] != 0)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * The counters that print as a plain "name +delta (rate/s, total)" line,
+ * in print order; the rows between two sibling renderers are one table.
+ */
+struct rate_row {
+	const char *name;
+	size_t      off;	/* offsetof(struct cmp_window, <counter>) */
+};
+
+static const struct rate_row funnel_rows[] = {
+	{ "cmp_records_collected", offsetof(struct cmp_window, records) },
+	{ "cmp_trace_truncated", offsetof(struct cmp_window, truncated) },
+	{ "cmp_hints_bloom_skipped", offsetof(struct cmp_window, bloom_skipped) },
+	{ "cmp_hints_strip_skipped", offsetof(struct cmp_window, strip_skipped) },
+	{ "cmp_hints_unique_inserts", offsetof(struct cmp_window, unique) },
+	{ "cmp_hints_save_reject_nonconst", offsetof(struct cmp_window, save_reject_nonconst) },
+	{ "cmp_hints_save_reject_uninteresting", offsetof(struct cmp_window, save_reject_uninteresting) },
+	{ "cmp_hints_save_reject_sentinel", offsetof(struct cmp_window, save_reject_sentinel) },
+	{ "cmp_hints_save_reject_dup", offsetof(struct cmp_window, save_reject_dup) },
+	{ "cmp_hints_save_reject_cap", offsetof(struct cmp_window, save_reject_cap) },
+	{ "cmp_hints_try_get_attempts", offsetof(struct cmp_window, try_get_attempts) },
+	{ "cmp_hints_try_get_returned", offsetof(struct cmp_window, try_get_returned) },
+	{ "cmp_hints_injected", offsetof(struct cmp_window, injected) },
+	{ "propagation_injected", offsetof(struct cmp_window, prop_injected) },
+};
+
+static const struct rate_row reexec_rows[] = {
+	{ "reexec_attempts", offsetof(struct cmp_window, reexec_attempts) },
+	{ "reexec_attempts_with_new_cmp", offsetof(struct cmp_window, reexec_attempts_with_new_cmp) },
+	{ "reexec_attribution_found", offsetof(struct cmp_window, reexec_attribution_found) },
+	{ "reexec_attribution_ambiguous", offsetof(struct cmp_window, reexec_attribution_ambiguous) },
+	{ "reexec_attribution_width_match", offsetof(struct cmp_window, reexec_attribution_width_match) },
+	{ "reexec_new_cmps_total", offsetof(struct cmp_window, reexec_new_cmps_total) },
+	{ "reexec_new_edges_total", offsetof(struct cmp_window, reexec_new_edges_total) },
+};
+
+static const struct rate_row reexec_drop_rows[] = {
+	{ "reexec_skipped_destructive", offsetof(struct cmp_window, reexec_skipped_destructive) },
+	{ "reexec_skipped_validate_silent", offsetof(struct cmp_window, reexec_skipped_validate_silent) },
+	{ "reexec_window_cap_hit", offsetof(struct cmp_window, reexec_window_cap_hit) },
+	{ "reexec_pending_dropped", offsetof(struct cmp_window, reexec_pending_dropped) },
+};
+
+static const struct rate_row cmp_parent_rows[] = {
+	{ "cmp_parent_calls_enabled", offsetof(struct cmp_window, cmp_parent_calls_enabled) },
+	{ "cmp_parent_calls_control", offsetof(struct cmp_window, cmp_parent_calls_control) },
+	{ "cmp_parent_new_cmps_enabled", offsetof(struct cmp_window, cmp_parent_new_cmps_enabled) },
+	{ "cmp_parent_new_cmps_control", offsetof(struct cmp_window, cmp_parent_new_cmps_control) },
+};
+
+static void emit_rate_rows(long elapsed, const struct cmp_window *cur,
+			   const struct cmp_window *delta,
+			   const struct rate_row *rows, size_t n)
+{
+	size_t i;
+
+	for (i = 0; i < n; i++)
+		kcov_cmp_rate_line(elapsed, rows[i].name,
+				   *(const unsigned long *)((const char *)delta + rows[i].off),
+				   *(const unsigned long *)((const char *)cur + rows[i].off));
+}
 
 static void cmp_window_snapshot(struct cmp_window *cur, struct cmp_levels *lvl)
 {
@@ -408,10 +492,14 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	struct cmp_window cur, delta;
 	struct cmp_levels lvl;
 	struct timespec now;
+	const unsigned long *c = (const unsigned long *)&cur;
+	const unsigned long *p = (const unsigned long *)&prev;
+	unsigned long *d = (unsigned long *)&delta;
 	long elapsed;
-	bool any_callsite_delta = false;
-	bool any_callsite_wins_delta = false;
-	bool any_prop_callsite_delta = false;
+	bool any_callsite_delta;
+	bool any_callsite_wins_delta;
+	bool any_prop_callsite_delta;
+	size_t i;
 
 	if (kcov_shm == NULL)
 		return;
@@ -432,155 +520,20 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
 		return;
 
-	delta.records       = sat_sub_ul(cur.records,       prev.records);
-	delta.truncated     = sat_sub_ul(cur.truncated,     prev.truncated);
-	delta.bloom_skipped = sat_sub_ul(cur.bloom_skipped, prev.bloom_skipped);
-	delta.strip_skipped = sat_sub_ul(cur.strip_skipped, prev.strip_skipped);
-	delta.unique        = sat_sub_ul(cur.unique,        prev.unique);
-	delta.try_get_attempts = sat_sub_ul(cur.try_get_attempts, prev.try_get_attempts);
-	delta.try_get_returned = sat_sub_ul(cur.try_get_returned, prev.try_get_returned);
-	delta.injected         = sat_sub_ul(cur.injected,         prev.injected);
-	delta.prop_injected    = sat_sub_ul(cur.prop_injected,    prev.prop_injected);
-	delta.chaos_suppressed = sat_sub_ul(cur.chaos_suppressed, prev.chaos_suppressed);
-	delta.count_oob        = sat_sub_ul(cur.count_oob,        prev.count_oob);
-	delta.canary_lock_post = sat_sub_ul(cur.canary_lock_post, prev.canary_lock_post);
-	delta.canary_pre       = sat_sub_ul(cur.canary_pre,       prev.canary_pre);
-	delta.canary_post      = sat_sub_ul(cur.canary_post,      prev.canary_post);
-	delta.reexec_attempts                = sat_sub_ul(cur.reexec_attempts,                prev.reexec_attempts);
-	delta.reexec_attempts_with_new_cmp   = sat_sub_ul(cur.reexec_attempts_with_new_cmp,   prev.reexec_attempts_with_new_cmp);
-	delta.reexec_attribution_found       = sat_sub_ul(cur.reexec_attribution_found,       prev.reexec_attribution_found);
-	delta.reexec_attribution_ambiguous   = sat_sub_ul(cur.reexec_attribution_ambiguous,   prev.reexec_attribution_ambiguous);
-	delta.reexec_attribution_width_match = sat_sub_ul(cur.reexec_attribution_width_match, prev.reexec_attribution_width_match);
-	delta.reexec_new_cmps_total          = sat_sub_ul(cur.reexec_new_cmps_total,          prev.reexec_new_cmps_total);
-	delta.reexec_new_edges_total         = sat_sub_ul(cur.reexec_new_edges_total,         prev.reexec_new_edges_total);
-	delta.reexec_attempts_by_arm[0]      = sat_sub_ul(cur.reexec_attempts_by_arm[0],      prev.reexec_attempts_by_arm[0]);
-	delta.reexec_attempts_by_arm[1]      = sat_sub_ul(cur.reexec_attempts_by_arm[1],      prev.reexec_attempts_by_arm[1]);
-	delta.reexec_new_cmps_by_arm[0]      = sat_sub_ul(cur.reexec_new_cmps_by_arm[0],      prev.reexec_new_cmps_by_arm[0]);
-	delta.reexec_new_cmps_by_arm[1]      = sat_sub_ul(cur.reexec_new_cmps_by_arm[1],      prev.reexec_new_cmps_by_arm[1]);
-	delta.reexec_new_edges_by_arm[0]     = sat_sub_ul(cur.reexec_new_edges_by_arm[0],     prev.reexec_new_edges_by_arm[0]);
-	delta.reexec_new_edges_by_arm[1]     = sat_sub_ul(cur.reexec_new_edges_by_arm[1],     prev.reexec_new_edges_by_arm[1]);
-	delta.reexec_skipped_destructive     = sat_sub_ul(cur.reexec_skipped_destructive,     prev.reexec_skipped_destructive);
-	delta.reexec_skipped_validate_silent = sat_sub_ul(cur.reexec_skipped_validate_silent, prev.reexec_skipped_validate_silent);
-	delta.reexec_window_cap_hit          = sat_sub_ul(cur.reexec_window_cap_hit,          prev.reexec_window_cap_hit);
-	delta.reexec_pending_dropped         = sat_sub_ul(cur.reexec_pending_dropped,         prev.reexec_pending_dropped);
-	delta.reexec_gate_skip_in_reexec     = sat_sub_ul(cur.reexec_gate_skip_in_reexec,     prev.reexec_gate_skip_in_reexec);
-	delta.reexec_gate_skip_disabled      = sat_sub_ul(cur.reexec_gate_skip_disabled,      prev.reexec_gate_skip_disabled);
-	delta.reexec_gate_skip_mode          = sat_sub_ul(cur.reexec_gate_skip_mode,          prev.reexec_gate_skip_mode);
-	delta.reexec_gate_skip_chain_mid     = sat_sub_ul(cur.reexec_gate_skip_chain_mid,     prev.reexec_gate_skip_chain_mid);
-	delta.reexec_gate_skip_no_new_cmp    = sat_sub_ul(cur.reexec_gate_skip_no_new_cmp,    prev.reexec_gate_skip_no_new_cmp);
-	delta.reexec_gate_skip_no_pending    = sat_sub_ul(cur.reexec_gate_skip_no_pending,    prev.reexec_gate_skip_no_pending);
-	delta.reexec_gate_skip_rate          = sat_sub_ul(cur.reexec_gate_skip_rate,          prev.reexec_gate_skip_rate);
-	delta.reexec_gate_pass               = sat_sub_ul(cur.reexec_gate_pass,               prev.reexec_gate_pass);
-	delta.cmp_parent_calls_enabled       = sat_sub_ul(cur.cmp_parent_calls_enabled,       prev.cmp_parent_calls_enabled);
-	delta.cmp_parent_calls_control       = sat_sub_ul(cur.cmp_parent_calls_control,       prev.cmp_parent_calls_control);
-	delta.cmp_parent_new_cmps_enabled    = sat_sub_ul(cur.cmp_parent_new_cmps_enabled,    prev.cmp_parent_new_cmps_enabled);
-	delta.cmp_parent_new_cmps_control    = sat_sub_ul(cur.cmp_parent_new_cmps_control,    prev.cmp_parent_new_cmps_control);
-	delta.save_reject_nonconst      = sat_sub_ul(cur.save_reject_nonconst,      prev.save_reject_nonconst);
-	delta.save_reject_uninteresting = sat_sub_ul(cur.save_reject_uninteresting, prev.save_reject_uninteresting);
-	delta.save_reject_sentinel      = sat_sub_ul(cur.save_reject_sentinel,      prev.save_reject_sentinel);
-	delta.save_reject_dup           = sat_sub_ul(cur.save_reject_dup,           prev.save_reject_dup);
-	delta.save_reject_cap           = sat_sub_ul(cur.save_reject_cap,           prev.save_reject_cap);
-	{
-		unsigned int cs;
-		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-			delta.cmp_hint_callsite[cs] =
-				sat_sub_ul(cur.cmp_hint_callsite[cs], prev.cmp_hint_callsite[cs]);
-			if (delta.cmp_hint_callsite[cs] != 0)
-				any_callsite_delta = true;
-			delta.cmp_hint_callsite_pc_wins[cs] =
-				sat_sub_ul(cur.cmp_hint_callsite_pc_wins[cs],
-					   prev.cmp_hint_callsite_pc_wins[cs]);
-			delta.cmp_hint_callsite_misses[cs] =
-				sat_sub_ul(cur.cmp_hint_callsite_misses[cs],
-					   prev.cmp_hint_callsite_misses[cs]);
-			if (delta.cmp_hint_callsite_pc_wins[cs] != 0 ||
-			    delta.cmp_hint_callsite_misses[cs] != 0)
-				any_callsite_wins_delta = true;
-		}
-	}
-	{
-		unsigned int cs;
-		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
-			delta.prop_injected_callsite[cs] =
-				sat_sub_ul(cur.prop_injected_callsite[cs], prev.prop_injected_callsite[cs]);
-			if (delta.prop_injected_callsite[cs] != 0)
-				any_prop_callsite_delta = true;
-		}
-	}
-	delta.cmp_hints_consumed             = sat_sub_ul(cur.cmp_hints_consumed,             prev.cmp_hints_consumed);
-	delta.cmp_hint_wins                  = sat_sub_ul(cur.cmp_hint_wins,                  prev.cmp_hint_wins);
-	delta.cmp_hint_misses                = sat_sub_ul(cur.cmp_hint_misses,                prev.cmp_hint_misses);
-	delta.cmp_hint_cmp_novelty_wins      = sat_sub_ul(cur.cmp_hint_cmp_novelty_wins,      prev.cmp_hint_cmp_novelty_wins);
-	delta.cmp_hint_stash_overflow        = sat_sub_ul(cur.cmp_hint_stash_overflow,        prev.cmp_hint_stash_overflow);
-	delta.cmp_hint_credit_entry_evicted  = sat_sub_ul(cur.cmp_hint_credit_entry_evicted,  prev.cmp_hint_credit_entry_evicted);
-	delta.cmp_recent_inserts             = sat_sub_ul(cur.cmp_recent_inserts,             prev.cmp_recent_inserts);
-	delta.cmp_recent_evicts              = sat_sub_ul(cur.cmp_recent_evicts,              prev.cmp_recent_evicts);
-	delta.cmp_recent_would_pick          = sat_sub_ul(cur.cmp_recent_would_pick,          prev.cmp_recent_would_pick);
-	delta.cmp_recent_would_miss          = sat_sub_ul(cur.cmp_recent_would_miss,          prev.cmp_recent_would_miss);
-	delta.cmp_recent_live_picks          = sat_sub_ul(cur.cmp_recent_live_picks,          prev.cmp_recent_live_picks);
-	delta.cmp_inject_arm_a_baseline_fires = sat_sub_ul(cur.cmp_inject_arm_a_baseline_fires, prev.cmp_inject_arm_a_baseline_fires);
-	delta.cmp_inject_arm_b_baseline_fires = sat_sub_ul(cur.cmp_inject_arm_b_baseline_fires, prev.cmp_inject_arm_b_baseline_fires);
-	delta.cmp_inject_denom_diverged       = sat_sub_ul(cur.cmp_inject_denom_diverged,       prev.cmp_inject_denom_diverged);
-	delta.prop_ring_argop_arm_b_fires     = sat_sub_ul(cur.prop_ring_argop_arm_b_fires,     prev.prop_ring_argop_arm_b_fires);
-	delta.frontier_blend_samples          = sat_sub_ul(cur.frontier_blend_samples,          prev.frontier_blend_samples);
-	delta.remote_adaptive_samples         = sat_sub_ul(cur.remote_adaptive_samples,         prev.remote_adaptive_samples);
-	delta.mut_structured_shadow_divergences = sat_sub_ul(cur.mut_structured_shadow_divergences, prev.mut_structured_shadow_divergences);
+	for (i = 0; i < CMP_WINDOW_WORDS; i++)
+		d[i] = sat_sub_ul(c[i], p[i]);
+	any_callsite_delta = words_nonzero(delta.cmp_hint_callsite,
+					   CMP_HINT_CALLSITE_NR);
+	any_callsite_wins_delta =
+		words_nonzero(delta.cmp_hint_callsite_pc_wins, CMP_HINT_CALLSITE_NR) ||
+		words_nonzero(delta.cmp_hint_callsite_misses, CMP_HINT_CALLSITE_NR);
+	any_prop_callsite_delta = words_nonzero(delta.prop_injected_callsite,
+						PROP_INJECTED_CALLSITE_NR);
 
-	if ((delta.records | delta.truncated | delta.bloom_skipped | delta.strip_skipped |
-	     delta.unique | delta.try_get_attempts | delta.try_get_returned |
-	     delta.injected | delta.prop_injected |
-	     delta.chaos_suppressed | delta.count_oob |
-	     delta.canary_lock_post |
-	     delta.canary_pre | delta.canary_post |
-	     delta.reexec_attempts | delta.reexec_attempts_with_new_cmp |
-	     delta.reexec_attribution_found |
-	     delta.reexec_attribution_ambiguous | delta.reexec_attribution_width_match |
-	     delta.reexec_new_cmps_total |
-	     delta.reexec_new_edges_total |
-	     delta.reexec_attempts_by_arm[0] | delta.reexec_attempts_by_arm[1] |
-	     delta.reexec_new_cmps_by_arm[0] | delta.reexec_new_cmps_by_arm[1] |
-	     delta.reexec_new_edges_by_arm[0] | delta.reexec_new_edges_by_arm[1] |
-	     delta.reexec_skipped_destructive | delta.reexec_skipped_validate_silent |
-	     delta.reexec_window_cap_hit | delta.reexec_pending_dropped |
-	     delta.reexec_gate_skip_in_reexec | delta.reexec_gate_skip_disabled |
-	     delta.reexec_gate_skip_mode | delta.reexec_gate_skip_chain_mid |
-	     delta.reexec_gate_skip_no_new_cmp | delta.reexec_gate_skip_no_pending |
-	     delta.reexec_gate_skip_rate | delta.reexec_gate_pass |
-	     delta.cmp_parent_calls_enabled | delta.cmp_parent_calls_control |
-	     delta.cmp_parent_new_cmps_enabled | delta.cmp_parent_new_cmps_control |
-	     delta.save_reject_nonconst | delta.save_reject_uninteresting |
-	     delta.save_reject_sentinel | delta.save_reject_dup |
-	     delta.save_reject_cap |
-	     delta.cmp_hints_consumed | delta.cmp_hint_wins | delta.cmp_hint_misses |
-	     delta.cmp_hint_cmp_novelty_wins | delta.cmp_hint_stash_overflow |
-	     delta.cmp_hint_credit_entry_evicted |
-	     delta.cmp_recent_inserts | delta.cmp_recent_evicts |
-	     delta.cmp_recent_would_pick | delta.cmp_recent_would_miss |
-	     delta.cmp_recent_live_picks |
-	     delta.cmp_inject_arm_a_baseline_fires |
-	     delta.cmp_inject_arm_b_baseline_fires |
-	     delta.cmp_inject_denom_diverged |
-	     delta.prop_ring_argop_arm_b_fires |
-	     delta.remote_adaptive_samples |
-	     delta.mut_structured_shadow_divergences) != 0 ||
-	    any_callsite_delta || any_callsite_wins_delta ||
-	    any_prop_callsite_delta) {
+	if (words_nonzero(d, CMP_WINDOW_GATED_WORDS)) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
-		kcov_cmp_rate_line(elapsed, "cmp_records_collected", delta.records, cur.records);
-		kcov_cmp_rate_line(elapsed, "cmp_trace_truncated", delta.truncated, cur.truncated);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_bloom_skipped", delta.bloom_skipped, cur.bloom_skipped);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_strip_skipped", delta.strip_skipped, cur.strip_skipped);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_unique_inserts", delta.unique, cur.unique);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_nonconst", delta.save_reject_nonconst, cur.save_reject_nonconst);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_uninteresting", delta.save_reject_uninteresting, cur.save_reject_uninteresting);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_sentinel", delta.save_reject_sentinel, cur.save_reject_sentinel);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_dup", delta.save_reject_dup, cur.save_reject_dup);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_cap", delta.save_reject_cap, cur.save_reject_cap);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_attempts", delta.try_get_attempts, cur.try_get_attempts);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_returned", delta.try_get_returned, cur.try_get_returned);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_injected", delta.injected, cur.injected);
-		kcov_cmp_rate_line(elapsed, "propagation_injected", delta.prop_injected, cur.prop_injected);
+		emit_rate_rows(elapsed, &cur, &delta, funnel_rows, ARRAY_SIZE(funnel_rows));
 		if (delta.chaos_suppressed) {
 			unsigned long rate_milli = (delta.chaos_suppressed * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, chaos_active=%d)\n",
@@ -593,23 +546,14 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 						 delta.canary_lock_post, cur.canary_lock_post,
 						 delta.canary_pre, cur.canary_pre,
 						 delta.canary_post, cur.canary_post);
-		kcov_cmp_rate_line(elapsed, "reexec_attempts", delta.reexec_attempts, cur.reexec_attempts);
-		kcov_cmp_rate_line(elapsed, "reexec_attempts_with_new_cmp", delta.reexec_attempts_with_new_cmp, cur.reexec_attempts_with_new_cmp);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_found", delta.reexec_attribution_found, cur.reexec_attribution_found);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_ambiguous", delta.reexec_attribution_ambiguous, cur.reexec_attribution_ambiguous);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_width_match", delta.reexec_attribution_width_match, cur.reexec_attribution_width_match);
-		kcov_cmp_rate_line(elapsed, "reexec_new_cmps_total", delta.reexec_new_cmps_total, cur.reexec_new_cmps_total);
-		kcov_cmp_rate_line(elapsed, "reexec_new_edges_total", delta.reexec_new_edges_total, cur.reexec_new_edges_total);
+		emit_rate_rows(elapsed, &cur, &delta, reexec_rows, ARRAY_SIZE(reexec_rows));
 		kcov_cmp_render_reexec_burst_drain_cohort(delta.reexec_attempts_by_arm,
 							  cur.reexec_attempts_by_arm,
 							  delta.reexec_new_cmps_by_arm,
 							  cur.reexec_new_cmps_by_arm,
 							  delta.reexec_new_edges_by_arm,
 							  cur.reexec_new_edges_by_arm);
-		kcov_cmp_rate_line(elapsed, "reexec_skipped_destructive", delta.reexec_skipped_destructive, cur.reexec_skipped_destructive);
-		kcov_cmp_rate_line(elapsed, "reexec_skipped_validate_silent", delta.reexec_skipped_validate_silent, cur.reexec_skipped_validate_silent);
-		kcov_cmp_rate_line(elapsed, "reexec_window_cap_hit", delta.reexec_window_cap_hit, cur.reexec_window_cap_hit);
-		kcov_cmp_rate_line(elapsed, "reexec_pending_dropped", delta.reexec_pending_dropped, cur.reexec_pending_dropped);
+		emit_rate_rows(elapsed, &cur, &delta, reexec_drop_rows, ARRAY_SIZE(reexec_drop_rows));
 		kcov_cmp_render_reexec_skip_reason_breakdown(elapsed,
 							     delta.reexec_gate_skip_in_reexec, cur.reexec_gate_skip_in_reexec,
 							     delta.reexec_gate_skip_disabled, cur.reexec_gate_skip_disabled,
@@ -619,10 +563,7 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 							     delta.reexec_gate_skip_no_pending, cur.reexec_gate_skip_no_pending,
 							     delta.reexec_gate_skip_rate, cur.reexec_gate_skip_rate,
 							     delta.reexec_gate_pass, cur.reexec_gate_pass);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_enabled", delta.cmp_parent_calls_enabled, cur.cmp_parent_calls_enabled);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_control", delta.cmp_parent_calls_control, cur.cmp_parent_calls_control);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_enabled", delta.cmp_parent_new_cmps_enabled, cur.cmp_parent_new_cmps_enabled);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_control", delta.cmp_parent_new_cmps_control, cur.cmp_parent_new_cmps_control);
+		emit_rate_rows(elapsed, &cur, &delta, cmp_parent_rows, ARRAY_SIZE(cmp_parent_rows));
 		kcov_cmp_render_cmp_hint_callsites(any_callsite_delta, any_callsite_wins_delta,
 						   delta.cmp_hint_callsite, cur.cmp_hint_callsite,
 						   delta.cmp_hint_callsite_pc_wins,

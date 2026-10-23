@@ -156,10 +156,14 @@ Two parallel counter stores, by design:
    blocks no sibling owns are static helpers in this file).  The window
    state is two structs: `struct cmp_window` holds every counter the dump
    differences, and the snapshot, the previous snapshot and the delta are
-   three values of it, so arming and committing a window are struct copies;
-   `struct cmp_levels` holds the values printed as they stand.  Any new
-   top-level periodic counter has to add its member, its load in
-   `cmp_window_snapshot()`, its delta, and its render here.
+   three values of it, so arming and committing a window are struct copies
+   and the delta and the any-delta gate are loops over its words;
+   `struct cmp_levels` holds the values printed as they stand.  A new
+   top-level periodic counter adds a `cmp_window` member, its load in
+   `cmp_window_snapshot()`, and a row in one of the rate-row tables or a
+   render call here.  `frontier_blend_samples` stays the last member
+   because the any-delta gate stops before it, so a window where only that
+   counter moved opens no "KCOV CMP stats" section.
 2. **The shutdown KCOV block is now a five-way render family** -
    `stats/kcov/dump.c` keeps only the ordering; base, top-N, remote, reexec
    and shadow blocks live in `stats/kcov/dump-<domain>.c` behind
