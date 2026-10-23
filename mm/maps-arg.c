@@ -161,15 +161,13 @@ bool page_span_inside(const struct page_span *pages, unsigned long base,
 }
 
 /*
- * The munmap, mprotect, pkey_mprotect, madvise and set_mempolicy_home_node
- * sanitisers build their range inside one pool mapping and keep it off
+ * A sanitiser that builds its range inside one pool mapping keeps it off
  * trinity's regions, but chain substitution can rewrite a numeric slot,
- * and a RedQueen pin any slot, after they have run, and the kernel acts on
- * every VMA the final range reaches: do_vmi_munmap() across holes,
- * do_mprotect_pkey() up to the first one, do_madvise() and
- * set_mempolicy_home_node() across them.  A longer range reaches the
- * next pool mapping, which stays in the pool with pages its entry no
- * longer describes, or trinity's own regions.
+ * and a RedQueen pin any slot, after it has run, and the kernel acts on
+ * the VMAs as far as the final range reaches, munmap's across holes
+ * (do_vmi_munmap()).  A longer range reaches the next pool mapping, which
+ * stays in the pool with pages its entry no longer describes, or
+ * trinity's own regions.
  *
  * So the pages the final slots have the kernel act on have to lie inside
  * the mapping the sanitiser picked, as far as the kernel mapped it:

@@ -2,6 +2,9 @@
  * asmlinkage unsigned long sys_mremap(unsigned long addr,
  *   unsigned long old_len, unsigned long new_len,
  *   unsigned long flags, unsigned long new_addr)
+ *
+ * The old range stays inside the pool mapping the sanitiser picked, and a
+ * fixed move goes where it vetted, final slots included (vet_final_mremap()).
  */
 
 #include <sys/mman.h>
@@ -47,8 +50,11 @@ static const unsigned long mremap_invalid_combos[] = {
 };
 
 /*
- * Snapshot of the two mremap inputs read by the post handler, captured
- * at sanitise time and consumed by the post handler.  Lives in
+ * Snapshot of the mremap call the sanitiser built: the old range in the
+ * mapping it picked and the new length, which the post handler reads, and
+ * the flags and target, which vet_final_mremap() holds a fixed move to.
+ * Captured at sanitise time, its range and new length moved to the final
+ * slots at dispatch, and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the new_len value that gets cached into
@@ -67,9 +73,61 @@ static const unsigned long mremap_invalid_combos[] = {
 #define MREMAP_POST_STATE_MAGIC	0x4D52454D5F4D4147UL	/* "MREM_MAG" */
 struct mremap_post_state {
 	unsigned long magic;
+	struct map_range range;
 	unsigned long new_len;
-	unsigned long map;
+	unsigned long flags;
+	unsigned long new_addr;
 };
+
+/*
+ * The kernel acts on the old range first: a shrink unmaps its tail across
+ * holes (shrink_vma()), a move takes every VMA in it (remap_move()).  So
+ * it has to stay inside the mapping the sanitiser picked (see
+ * map_range_vet()), which also keeps it off trinity's regions and the libc
+ * heap: the sanitiser empties a range on them, and nothing rewrites a1
+ * after it, as ARG_MMAP takes no substitute and the entry is never
+ * re-executed.
+ *
+ * MREMAP_FIXED unmaps whatever lies at the target before it moves anything
+ * there (mremap_to()), so a final call carrying it has to be the one the
+ * sanitiser vetted, flags, new_len and new_addr alike; MREMAP_DONTUNMAP
+ * alone only hints at the target (vrm_set_new_addr()).  A FIXED or MAYMOVE
+ * bit the sanitiser did not draw is refused too, and a record with no
+ * snapshot of ours drew none.  Refused rather than repaired, each slot
+ * read once, as the kernel reads it: the low 32 bits for a compat call.  A
+ * pass moves that new_len to the snapshot, which the post handler caches.
+ * Shape, then ownership, then magic, as post_state_claim_owned() orders
+ * them.
+ */
+static int vet_final_mremap(struct syscallrecord *rec)
+{
+	struct mremap_post_state *snap =
+		(struct mremap_post_state *) rec->post_state;
+	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+	unsigned long new_len = rec->a3 & mask, flags = rec->a4 & mask;
+	unsigned long drawn = 0;
+	struct map_range *range = NULL;
+
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == MREMAP_POST_STATE_MAGIC) {
+		range = &snap->range;
+		drawn = snap->flags & mask;
+	}
+
+	/* A FIXED bit past the first test was drawn, so snap is ours. */
+	if ((flags & ~drawn & (MREMAP_FIXED | MREMAP_MAYMOVE)) ||
+	    ((flags & MREMAP_FIXED) &&
+	     (flags != drawn || new_len != (snap->new_len & mask) ||
+	      ((rec->a5 ^ snap->new_addr) & mask))) ||
+	    !map_range_vet(rec, range)) {
+		outputerr("arg-coupling: mremap rejected: the old range leaves the mapping sanitise picked, or the move is not one it vetted\n");
+		return -1;
+	}
+
+	if (range != NULL)
+		snap->new_len = new_len;
+	return 0;
+}
 
 static void sanitise_mremap(struct syscallrecord *rec)
 {
@@ -86,13 +144,20 @@ static void sanitise_mremap(struct syscallrecord *rec)
 
 	map = common_set_mmap_ptr_len(NULL);
 	if (map == NULL) {
-		/* No mapping available; stash NULL for post_mremap to skip. */
+		/* No mapping available; stash NULL for post_mremap to skip.
+		 * With no snapshot, vet_final_mremap() refuses a move, so
+		 * the move bits ARG_LIST drew go too: a refusal is left to
+		 * mean a rewrite happened. */
+		rec->a4 &= ~(unsigned long) (MREMAP_FIXED | MREMAP_MAYMOVE);
 		rec->a6 = 0;
 		return;
 	}
 
+	/* A compat call's old range has to fit the 32 bits the kernel reads
+	 * of each slot, or it is emptied as one over trinity's regions is. */
 	if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-old", rec->a1, rec->a2) ||
-	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
+	    range_overlaps_libc_heap(rec->a1, rec->a2) ||
+	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
@@ -160,10 +225,12 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		 * trinity-owned shared region — otherwise we silently
 		 * unmap our own bookkeeping — or trinity's own image,
 		 * whose text a non-PIE build loads at these low
-		 * addresses. */
+		 * addresses.  A compat call's kernel would truncate a
+		 * target its slots cannot carry to one nobody checked. */
 		if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-new", newaddr, unmapped) ||
 		    range_overlaps_libc_heap(newaddr, unmapped) ||
-		    range_overlaps_image(newaddr, unmapped)) {
+		    range_overlaps_image(newaddr, unmapped) ||
+		    (rec->do32bit && (newaddr > UINT_MAX || rec->a3 > UINT_MAX))) {
 			rec->a4 &= ~MREMAP_FIXED;
 			newaddr = 0;
 		}
@@ -196,17 +263,23 @@ static void sanitise_mremap(struct syscallrecord *rec)
 	 * the guard and the bookkeeping write lands in someone else's
 	 * allocation.  rec->a3 is unguarded entirely; a stomped value
 	 * caches the wrong size into map->size and a later consumer that
-	 * trusts m->size walks off the actual mapping.  post_state is
-	 * private to the post handler.  post_state_install pairs the
-	 * rec->post_state assign with the ownership-table register so
-	 * the observable window between the two is closed; post_mremap()
-	 * will then gate the snap through post_state_claim_owned() and
-	 * prove ownership before dereferencing any field.
+	 * trusts m->size walks off the actual mapping.  The flags and the
+	 * target are kept as vetted for vet_final_mremap().  post_state
+	 * is private to the post handler and that hook.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_mremap() will then gate the snap through
+	 * post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic   = MREMAP_POST_STATE_MAGIC;
-	snap->new_len = rec->a3;
-	snap->map     = rec->a6;
+	snap->magic      = MREMAP_POST_STATE_MAGIC;
+	snap->range.map  = map;
+	snap->range.addr = rec->a1;
+	snap->range.len  = rec->a2;
+	snap->new_len    = rec->a3;
+	snap->flags      = rec->a4;
+	snap->new_addr   = rec->a5;
 	post_state_install(rec, snap);
 }
 
@@ -230,7 +303,7 @@ static void post_mremap(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	map = (struct map *) snap->map;
+	map = snap->range.map;
 
 	if (ptr == MAP_FAILED || map == NULL)
 		goto out_free;
@@ -344,6 +417,7 @@ struct syscallentry syscall_mremap = {
 	.name = "mremap",
 	.num_args = 5,
 	.sanitise = sanitise_mremap,
+	.vet_final = vet_final_mremap,
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_LEN, [3] = ARG_LIST },
 	.argname = { [0] = "addr", [1] = "old_len", [2] = "new_len", [3] = "flags", [4] = "new_addr" },
 	.arg_params[3].list = ARGLIST(mremap_flags),

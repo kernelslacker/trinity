@@ -2181,24 +2181,61 @@ static void mremap_fixed_target_checked_rounded(void)
 	fake_this_child = NULL;
 }
 
+/* What an mremap() call is redrawn for: a new_len below the mapping's size
+ * or above it, a fixed target, MAYMOVE alone or with DONTUNMAP, or no move
+ * at all. */
+enum mremap_draw {
+	MREMAP_DRAW_SHRINK,
+	MREMAP_DRAW_GROW,
+	MREMAP_DRAW_FIXED,
+	MREMAP_DRAW_MAYMOVE,
+	MREMAP_DRAW_DONTUNMAP,
+	MREMAP_DRAW_IN_PLACE,
+};
+
 /* An mremap() call the sanitiser built over the pool mapping, redrawn
- * until its new_len is below the mapping's size, or above it for @grow. */
+ * until it is the one @want names. */
 static struct syscallrecord *mremap_drawn(struct syscallentry *entry,
-					  bool grow)
+					  enum mremap_draw want)
 {
 	const unsigned long whole = POOL_PAGES * page_size;
+	const unsigned long moves = MREMAP_FIXED | MREMAP_MAYMOVE |
+				    MREMAP_DONTUNMAP;
 	struct syscallrecord *mrec;
 	unsigned int i;
 
 	for (i = 0; i < 1000; i++) {
+		bool hit = false;
+
 		mrec = mm_call(entry);
 		entry->sanitise(mrec);
-		if (grow ? mrec->a3 > whole : mrec->a3 < whole)
+		switch (want) {
+		case MREMAP_DRAW_SHRINK:
+			hit = mrec->a3 < whole;
+			break;
+		case MREMAP_DRAW_GROW:
+			hit = mrec->a3 > whole;
+			break;
+		case MREMAP_DRAW_FIXED:
+			hit = (mrec->a4 & MREMAP_FIXED) != 0;
+			break;
+		case MREMAP_DRAW_MAYMOVE:
+			hit = (mrec->a4 & moves) == MREMAP_MAYMOVE;
+			break;
+		case MREMAP_DRAW_DONTUNMAP:
+			hit = (mrec->a4 & moves) ==
+			      (MREMAP_MAYMOVE | MREMAP_DONTUNMAP);
+			break;
+		case MREMAP_DRAW_IN_PLACE:
+			hit = !(mrec->a4 & (MREMAP_FIXED | MREMAP_MAYMOVE));
+			break;
+		}
+		if (hit)
 			return mrec;
 		mrec->retval = (unsigned long) -1L;
 		entry->post(mrec);
 	}
-	BUG("mremap: the sanitiser never drew the new length the case needs");
+	BUG("mremap: the sanitiser never drew the call the case needs");
 }
 
 /* An mremap() that worked leaves the pool entry describing the mapping the
@@ -2214,7 +2251,9 @@ static void mremap_post_follows_mapping(void)
 
 	fake_get_objhead = no_pool;
 	for (i = 0; i < 3; i++) {
-		struct syscallrecord *mrec = mremap_drawn(&mremap_entry, i == 2);
+		struct syscallrecord *mrec =
+			mremap_drawn(&mremap_entry, i == 2 ? MREMAP_DRAW_GROW :
+						    MREMAP_DRAW_SHRINK);
 		unsigned long to = i == 1 ? moved_to : POOL_MAP;
 		unsigned long new_len = mrec->a3;
 
@@ -2242,6 +2281,187 @@ static void mremap_post_follows_mapping(void)
 		munmap_entry.post(mrec);
 	}
 	fake_get_objhead = NULL;
+	fake_this_child = NULL;
+}
+
+/* Whatever the sanitiser builds passes: over the pool mapping, over one
+ * whose size is larger than its tracked size, and as a compat call.
+ * Over the high mapping a compat call is built with an empty old range,
+ * and never with a target its 32-bit slots cannot carry. */
+static void mremap_sanitised_call_passes(struct syscallentry *entry)
+{
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(entry);
+
+		if (i & 1)
+			pool_obj.map.size = 2 * POOL_PAGES * page_size;
+		if (i % 5 == 0)
+			pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+		mrec->do32bit = (i % 3) == 0;
+		entry->sanitise(mrec);
+		if (mrec->do32bit &&
+		    (mrec->a1 > UINT_MAX || mrec->a2 > UINT_MAX ||
+		     ((mrec->a4 & MREMAP_FIXED) &&
+		      (mrec->a5 > UINT_MAX || mrec->a3 > UINT_MAX))))
+			BUG("mremap: the sanitiser built a compat call its slots cannot carry");
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mremap: a call the sanitiser built was refused");
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+}
+
+/* A rewritten slot is refused when it runs the old range past the mapping,
+ * moves a mapping the sanitiser meant to resize in place, or aims a fixed
+ * move anywhere but the target the sanitiser vetted: a substituted
+ * address, a longer new_len, other flags.  MREMAP_DONTUNMAP alone only
+ * hints at a target, so a DONTUNMAP move to a substituted address passes,
+ * with the equal lengths the kernel requires of it; and a resize with no
+ * fixed target is the kernel's to place, so a rewritten new_len passes,
+ * and the post handler caches the new_len the kernel was handed. */
+static void mremap_rewrites_held(struct syscallentry *entry)
+{
+	const unsigned long whole = POOL_PAGES * page_size;
+	const unsigned long elsewhere = POOL_MAP + 0x40000000UL;
+	struct syscallrecord *mrec;
+	unsigned long a3, a4, a5;
+
+	mrec = mremap_drawn(entry, MREMAP_DRAW_IN_PLACE);
+	mrec->a2 = whole + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: an old range running past the mapping was kept");
+	mrec->a2 = whole;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: an old range covering the mapping was refused");
+	mrec->a4 |= MREMAP_MAYMOVE;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a MAYMOVE the sanitiser did not draw was kept");
+	mrec->a4 |= MREMAP_FIXED;
+	mrec->a5 = elsewhere;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a FIXED the sanitiser did not draw was kept");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mremap_drawn(entry, MREMAP_DRAW_FIXED);
+	a3 = mrec->a3;
+	a4 = mrec->a4;
+	a5 = mrec->a5;
+	mrec->a5 = elsewhere;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a fixed move to a substituted address was kept");
+	mrec->a5 = a5;
+	mrec->a3 = a3 + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a fixed move grown past its vetted target was kept");
+	mrec->a3 = a3;
+	mrec->a4 = a4 ^ MREMAP_DONTUNMAP;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a fixed move with flags the sanitiser did not draw was kept");
+	mrec->a4 = a4;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: the fixed move the sanitiser vetted was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mremap_drawn(entry, MREMAP_DRAW_DONTUNMAP);
+	mrec->a2 = 2 * page_size;
+	mrec->a3 = 2 * page_size;
+	mrec->a5 = elsewhere;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: a DONTUNMAP move to a substituted address was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mremap_drawn(entry, MREMAP_DRAW_MAYMOVE);
+	mrec->a3 = 3 * page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: a resize with a rewritten new_len was refused");
+	mrec->retval = elsewhere;
+	entry->post(mrec);
+	if (pool_obj.map.size != 3 * page_size ||
+	    pool_obj.map.tracked_size != 3 * page_size)
+		BUG("mremap: the post handler cached the new_len sanitise drew");
+}
+
+/* Nothing was drawn for a call without the call's own snapshot: none, a pid
+ * where the pointer was, one the ownership table does not hold, or one with
+ * another magic.  Only a call that moves nothing over an old range the
+ * kernel acts on nothing of goes through then.  The sanitiser drops the
+ * move bits the generator drew for a call it found no mapping for, so a
+ * refusal there still means a rewrite. */
+static void mremap_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	mrec->a1 = 0;
+	mrec->a4 = MREMAP_FIXED | MREMAP_MAYMOVE;
+	entry->sanitise(mrec);
+	if (mrec->post_state != 0)
+		BUG("mremap: the sanitiser left a snapshot with no mapping");
+	if (mrec->a4 & (MREMAP_FIXED | MREMAP_MAYMOVE))
+		BUG("mremap: a call with no mapping kept the move the generator drew");
+	mrec->a3 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: a call with no mapping that moves nothing was refused");
+	mrec->a4 = MREMAP_MAYMOVE;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a call with no mapping kept a move");
+	mrec->a4 = 0;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a call with no mapping kept an old range");
+
+	mrec = mremap_drawn(entry, MREMAP_DRAW_FIXED);
+	mrec->a2 = 0;
+	snapshot_gate_held(mrec, "mremap");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
+/* A compat call's kernel reads the low 32 bits of each slot: over a low
+ * mapping, a fixed target whose upper half a rewrite changed is still the
+ * one the sanitiser vetted, and a native call's is not. */
+static void mremap_compat_target_truncated(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(entry);
+		pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+		mrec->do32bit = true;
+		entry->sanitise(mrec);
+		if (mrec->a4 & MREMAP_FIXED)
+			break;
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	if (i == 1000)
+		BUG("mremap: the sanitiser never drew a compat fixed move");
+
+	mrec->a5 |= 1UL << 32;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mremap: a compat fixed move was judged on its target's upper half");
+	mrec->do32bit = false;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mremap: a native fixed move's rewritten upper half was dropped");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
+/* mremap's final old range stays inside the mapping its sanitiser picked,
+ * and it moves to a fixed target only as the sanitiser vetted it. */
+static void mremap_held_to_vetted_call(void)
+{
+	struct syscallentry mremap_entry = syscall_mremap;
+
+	mremap_sanitised_call_passes(&mremap_entry);
+	mremap_rewrites_held(&mremap_entry);
+	mremap_needs_its_snapshot(&mremap_entry);
+	mremap_compat_target_truncated(&mremap_entry);
 	fake_this_child = NULL;
 }
 
@@ -2273,4 +2493,5 @@ void arg_coupling_self_check(void)
 	mremap_fixed_target_off_image();
 	mremap_fixed_target_checked_rounded();
 	mremap_post_follows_mapping();
+	mremap_held_to_vetted_call();
 }

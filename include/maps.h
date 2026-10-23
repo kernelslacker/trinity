@@ -201,10 +201,9 @@ bool page_span_inside(const struct page_span *pages, unsigned long base,
 		      unsigned long size);
 
 /*
- * The range a munmap, mprotect, pkey_mprotect, madvise or
- * set_mempolicy_home_node sanitiser built inside one pool mapping, as its
- * private post_state snapshot keeps it: the mapping it picked, and the
- * (addr, len) slots as the kernel reads them.
+ * A range a sanitiser built inside one pool mapping, as the call's private
+ * post_state snapshot keeps it: the mapping it picked, and the (addr, len)
+ * slots as the kernel reads them.
  */
 struct map_range {
 	struct map *map;
