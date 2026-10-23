@@ -93,13 +93,13 @@ void map_destructor(struct object *obj)
 	 * membership, it does not consume the entry.  A later
 	 * df_alloc_track_consume() (the deferred-free ring drain, or after
 	 * glibc reuses the freed chunk for a new tracked allocation) then
-	 * still returns true and free()s it a second time -- the ASAN
-	 * bad-free observed at deferred-free.c:697.  tracked_free_now()
-	 * consumes the alloc_track entry as it frees, skips ring-owned
-	 * pointers so the ring's drain stays authoritative, and still
-	 * leaks an unproven (scribbled) name because the consume gate
-	 * rejects any pointer __zmalloc never produced -- "release what we
-	 * own, leak the unproven".
+	 * still returns true and free()s it a second time -- an ASAN
+	 * bad-free in df_tracked_free_checked() on the ring-drain path.
+	 * tracked_free_now() consumes the alloc_track entry as it frees,
+	 * skips ring-owned pointers so the ring's drain stays
+	 * authoritative, and still leaks an unproven (scribbled) name
+	 * because the consume gate rejects any pointer __zmalloc never
+	 * produced -- "release what we own, leak the unproven".
 	 */
 	tracked_free_now(map->name);
 	map->name = NULL;

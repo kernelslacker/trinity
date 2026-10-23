@@ -300,10 +300,10 @@ struct deferred_free_stats {
 	 * scribble.  The previous shape called deferred_alloc_track
 	 * (@ptr, 0) unconditionally, which blessed the latter class
 	 * as tracked and let the next df_tracked_free_checked() free() it
-	 * -- ASAN bad-free at deferred-free.c:880 (free_ring_entry /
-	 * ring_evict_oldest_safe / tracked_free_now) on an interior
-	 * pointer that consume() approved on the falsely-blessed
-	 * re-insert.  Non-zero proves the gate is engaged. */
+	 * -- an ASAN bad-free in df_tracked_free_checked() (reached from
+	 * free_ring_entry / ring_evict_oldest_safe / tracked_free_now) on
+	 * an interior pointer that consume() approved on the falsely-
+	 * blessed re-insert.  Non-zero proves the gate is engaged. */
 	unsigned long alloc_track_refresh_consume_miss;
 
 	/* alloc_track_lookup() found @ptr via the linear df_alloc_track[]
