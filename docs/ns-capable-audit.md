@@ -17,6 +17,15 @@ class-3 count of 61 together represent **100 permanently dead entries** under th
 current child capability model — a substantial dead tail that burns fuzz budget on
 guaranteed `-EPERM` fast-rejects.
 
+The counts are the census as first run and have drifted since.  Against a
+kernel tree in the 7.4 merge window (v7.3-2415), nfsd gates 12 commands (4
+below), nl802154 34 (~10), netlabel 13 (~4) and macsec 10 of its 11
+(`GET_TXSC` is not gated); nl80211 and netdev also carry `GENL_ADMIN_PERM`
+commands (15 and 2) that are in neither class count.  The class-3 total, and
+with it the dead share under Key Findings, is therefore a floor.  The kernel
+paths and line numbers below were re-checked against that tree; they move
+with every release, so grep for the gate macro when one stops matching.
+
 ---
 
 ## Classification
@@ -40,12 +49,12 @@ guaranteed `-EPERM` fast-rejects.
 |---|---|---|---|---|
 | `FIFREEZE` | `ioctls/vfs.c:240` | `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` (`fs/ioctl.c:389`) | **2** | Reachable when child owns the mount's superblock (e.g. tmpfs in a child-owned mount namespace); `sb->s_user_ns` reflects user\_ns of the namespace that mounted the fs |
 | `FITHAW` | `ioctls/vfs.c:241` | `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` (`fs/ioctl.c:406`) | **2** | Same as FIFREEZE; both ioctls share the `ioctl_fsfreeze`/`ioctl_fsthaw` path |
-| `TUNSETIFF` | `ioctls/tun.c:299` | `ns_capable(net->user_ns, CAP_NET_ADMIN)` via `tun_not_capable()` (`drivers/net/tun.c:520`) | **2** | Reachable when child unshares its own network namespace; `net` is derived from `current`'s netns |
-| `TUNSETPERSIST` | `ioctls/tun.c:301` | `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`drivers/net/tun.c:2709` has `capable()` path, `2763` has `ns_capable()`) | **2** | Mixed: TUNSETPERSIST with flag=0 hits `ns_capable`; non-zero flag path hits `capable(CAP_NET_ADMIN)` → class 1 for that branch |
-| `BTRFS_IOC_ENCODED_READ` | `ioctls/btrfs.c:199` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c`) | **1** | Already documented as permanently dead |
-| `BTRFS_IOC_ENCODED_WRITE` | `ioctls/btrfs.c:202` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c`) | **1** | Same; btrfs encoded I/O unconditionally requires global CAP\_SYS\_ADMIN |
+| `TUNSETIFF` | `ioctls/tun.c:299` | `ns_capable(net->user_ns, CAP_NET_ADMIN)`: `tun_not_capable()` (`drivers/net/tun.c:516`) when attaching to an existing device, `tun_set_iff()` (`:2911`) when creating one | **2** | Reachable when child unshares its own network namespace; `net` is derived from `current`'s netns.  `IFF_NAPI_FRAGS` also needs `capable(CAP_NET_ADMIN)` (`:2857`), dead for that flag |
+| `TUNSETPERSIST` | `ioctls/tun.c:301` | none of its own (`drivers/net/tun.c:3298`); needs an fd already attached by `TUNSETIFF` | **2** | `-EBADFD` on an unattached fd, so it inherits the `TUNSETIFF` gate above; the flag value does not change the check |
+| `BTRFS_IOC_ENCODED_READ` | `ioctls/btrfs.c:201` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c`) | **1** | Already documented as permanently dead |
+| `BTRFS_IOC_ENCODED_WRITE` | `ioctls/btrfs.c:204` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c`) | **1** | Same; btrfs encoded I/O unconditionally requires global CAP\_SYS\_ADMIN |
 | btrfs snap/resize/scrub/balance/quota/send/device group (~32 ioctls) | `ioctls/btrfs.c` (various) | `capable(CAP_SYS_ADMIN)` in `fs/btrfs/ioctl.c` (35 distinct call sites) | **1** | Covers `BTRFS_IOC_SNAP_CREATE(_V2)`, `RESIZE`, `SCAN_DEV`, `ADD_DEV`, `RM_DEV(_V2)`, `BALANCE(_V2/_CTL/_PROGRESS)`, `SCRUB(_CANCEL/_PROGRESS)`, `SUBVOL_CREATE(_V2)`, `SNAP_DESTROY(_V2)`, `QUOTA_CTL`, `QGROUP_{ASSIGN,CREATE,LIMIT}`, `SEND`, `DEV_REPLACE`, `SET_FEATURES`, `GET_DEV_STATS` (reset flag) — all call `capable(CAP_SYS_ADMIN)` in the handler body and return `-EPERM` unconditionally under capset-to-empty |
-| MSR read/write | `ioctls/msr.c` | `capable(CAP_SYS_RAWIO)` (`arch/x86/kernel/msr.c:211`) | **1** | MSR device access checks `capable(CAP_SYS_RAWIO)` at open; both read and write ioctls inherit the open-time gate |
+| MSR read/write | `ioctls/msr.c` | `capable(CAP_SYS_RAWIO)` (`arch/x86/kernel/msr.c:214`) | **1** | MSR device access checks `capable(CAP_SYS_RAWIO)` at open; both read and write ioctls inherit the open-time gate |
 | `NBD_CMD_CONNECT`, `NBD_CMD_DISCONNECT`, `NBD_CMD_RECONFIGURE` | `net/netlink/genl/nbd.c` | `netlink_capable(skb, CAP_SYS_ADMIN)` inside handler body (`drivers/block/nbd.c`) — not `GENL_ADMIN_PERM` | **1** | Policy parse runs unprivileged (no `GENL_ADMIN_PERM` flag); the handler itself calls `netlink_capable()`, blocking execution. Counted as class 1 because the check is inline in the handler body rather than a `GENL_ADMIN_PERM` flag; it resolves to the same `&init_user_ns` test as class 3, so the entry is dead either way |
 
 ---
@@ -61,16 +70,16 @@ coverage.
 
 | Surface | Trinity file | Kernel gate | Class | Notes |
 |---|---|---|---|---|
-| nfsd `THREADS_SET`, `VERSION_SET`, `LISTENER_SET`, `POOL_MODE_SET` (4 cmds) | `net/netlink/genl/nfsd.c` | `GENL_ADMIN_PERM` → `netlink_capable()` → `&init_user_ns` (`fs/nfsd/netlink.c:133,145,157,169`) | **3** | Four SET commands dead; `RPC_STATUS_GET` + GET variants have no `GENL_ADMIN_PERM` and do reach handlers |
+| nfsd `THREADS_SET`, `VERSION_SET`, `LISTENER_SET`, `POOL_MODE_SET` (4 cmds) | `net/netlink/genl/nfsd.c` | `GENL_ADMIN_PERM` → `netlink_capable()` → `&init_user_ns` (`fs/nfsd/netlink.c:133,145,157,169`) | **3** | Four SET commands dead; `RPC_STATUS_GET` and the `THREADS`/`VERSION`/`LISTENER`/`POOL_MODE` GET variants have no `GENL_ADMIN_PERM` and do reach handlers.  The export-cache and unlock commands (`SVC_EXPORT_*`, `EXPKEY_*`, `CACHE_FLUSH`, `UNLOCK_*`) are gated the same way and are not in the 4 |
 | lockd `SERVER_SET` | `net/netlink/genl/lockd.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`fs/lockd/netlink.c`) | **3** | Only the SET cmd is gated; `SERVER_GET` is unprivileged |
 | macsec all 11 cmds | `net/netlink/genl/macsec.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/net/macsec.c`) | **3** | Full SA/SC/TX lifecycle (`GET_TXSC`, `ADD/DEL/UPD_RXSC`, `ADD/DEL/UPD_TXSA`, `ADD/DEL/UPD_RXSA`, `UPD_OFFLOAD`); all 11 commands dead |
 | ovpn all 8 cmds | `net/netlink/genl/ovpn.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/net/ovpn/netlink-gen.c`) | **3** | Peer (`NEW/SET/GET/DEL`) and key (`NEW/GET/SWAP/DEL`) lifecycle; all 8 dead |
 | tcmu 4 cmds | `net/netlink/genl/tcmu.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/target/target_core_user.c`) | **3** | `SET_FEATURES`, `ADDED/REMOVED/RECONFIG_DEVICE_DONE`; all 4 dead |
 | sunrpc `IP_MAP_SET_REQS`, `UNIX_GID_SET_REQS`, `CACHE_FLUSH` (+2 paired cmds, 5 total) | `net/netlink/genl/sunrpc.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/sunrpc/netlink.c`) | **3** | Write cmds dead; `CACHE_NOTIFY` is kernel-emitted only |
-| dpll all 6 cmds | `net/netlink/genl/dpll.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/dpll/dpll_netlink.c`) | **3** | `DEVICE_ID_GET`, `DEVICE_GET`, `DEVICE_SET`, `PIN_ID_GET`, `PIN_GET`, `PIN_SET`; all 6 dead |
-| drm-ras all 3 cmds | `net/netlink/genl/drm-ras.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/gpu/drm/drm_gpuvm.c` region) | **3** | `LIST_NODES`, `GET_ERROR_COUNTER`, `CLEAR_ERROR_COUNTER`; all 3 dead |
-| handshake `ACCEPT`, `DONE` (2 cmds) | `net/netlink/genl/handshake.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/handshake/netlink.c`) | **3** | Both user-callable cmds dead; `READY` is kernel-emitted multicast only |
-| net\_shaper `SET`, `DELETE`, `GROUP` (3 of 5 cmds) | `net/netlink/genl/net_shaper.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/core/net_shaper.c`) | **3** | 3 write cmds dead; `CAP_GET` and `GET` are unprivileged and reach handlers |
+| dpll all 6 cmds | `net/netlink/genl/dpll.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/dpll/dpll_nl.c`; handlers in `dpll_netlink.c`) | **3** | `DEVICE_ID_GET`, `DEVICE_GET`, `DEVICE_SET`, `PIN_ID_GET`, `PIN_GET`, `PIN_SET`; all 6 dead |
+| drm-ras all 3 cmds | `net/netlink/genl/drm-ras.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/gpu/drm/drm_ras_nl.c`) | **3** | `LIST_NODES`, `GET_ERROR_COUNTER`, `CLEAR_ERROR_COUNTER`; all 3 dead |
+| handshake `ACCEPT`, `DONE` (2 cmds) | `net/netlink/genl/handshake.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/handshake/genl.c:34,41`) | **3** | Both user-callable cmds dead; `READY` is kernel-emitted multicast only |
+| net\_shaper `SET`, `DELETE`, `GROUP` (3 of 5 cmds) | `net/netlink/genl/net_shaper.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/shaper/shaper_nl_gen.c:112,121,130`) | **3** | 3 write cmds dead; `CAP_GET` and `GET` are unprivileged and reach handlers |
 | nl802154 admin cmds (~10) | `net/netlink/genl/nl802154.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/ieee802154/nl802154.c:2795–2867`) | **3** | Add/del PAN, add/del iface, start/stop pan, set coordinator, etc.; ~10 admin cmds dead; GET cmds are unprivileged |
 | netlabel admin cmds (~4) | `net/netlink/genl/netlabel.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/netlabel/netlabel_calipso.c:336,343`) | **3** | CALIPSO DOI add/del + CIPSO variants; write cmds dead |
 
@@ -87,15 +96,15 @@ but are structurally unlockable without any code change to trinity.
 
 | Surface | Trinity file | Kernel gate | Class | Notes |
 |---|---|---|---|---|
-| batadv SET\_MESH, SET\_HARDIF, SET\_VLAN, TP\_METER, TP\_METER\_CANCEL (5 write cmds) + 10 table / routing-algo dumps (15 gated cmds) | `net/netlink/genl/batadv.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/batman-adv/netlink.c:1419–1525`) | **2** | Trinity comment correctly notes no `GENL_ADMIN_PERM`; the 5 write cmds and the 10 dumps all use `GENL_UNS_ADMIN_PERM`; `GET_MESH`, `GET_HARDIF` and `GET_VLAN` carry no flag; child-owned netns grants access |
-| ovs datapath/vport/flow/packet/meter/conntrack cmds (~14) | `net/netlink/genl/ovs.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/openvswitch/datapath.c:736`, `conntrack.c:1960,1967`, `meter.c:695,707`) | **2** | Full OVS control plane — new/del/get for datapath, vport, flow, packet exec, meter, conntrack; 14+ cmds reachable via child netns |
-| l2tp tunnel/session add/del/modify/get (8 cmds) | `net/netlink/genl/l2tp.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/l2tp/l2tp_netlink.c:946–971`) | **2** | `TUNNEL_{ADD,DELETE,MODIFY,GET}` and `SESSION_{ADD,DELETE,MODIFY,GET}`; 8 cmds reachable |
-| tipc bearer/link/name/node/media/sock cmds (~12) | `net/netlink/genl/tipc.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/tipc/netlink.c:159–208`) | **2** | Config and stats for bearer, link, name table, node, media, sock — 12 write cmds; child-owned netns unlocks |
+| batadv SET\_MESH, SET\_HARDIF, SET\_VLAN, TP\_METER, TP\_METER\_CANCEL (5 write cmds) + 10 table / routing-algo dumps (15 gated cmds) | `net/netlink/genl/batadv.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/batman-adv/netlink.c:1427–1533`) | **2** | Trinity comment correctly notes no `GENL_ADMIN_PERM`; the 5 write cmds and the 10 dumps all use `GENL_UNS_ADMIN_PERM`; `GET_MESH`, `GET_HARDIF` and `GET_VLAN` carry no flag; child-owned netns grants access |
+| ovs datapath/vport/flow/packet/meter/conntrack cmds (~14) | `net/netlink/genl/ovs.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/openvswitch/datapath.c:738`, `conntrack.c:1992,1999`, `meter.c:695,707`) | **2** | Full OVS control plane — new/del/get for datapath, vport, flow, packet exec, meter, conntrack; 14+ cmds reachable via child netns |
+| l2tp tunnel/session add/del/modify/get (8 cmds) | `net/netlink/genl/l2tp.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/l2tp/l2tp_netlink.c:949–993`) | **2** | `TUNNEL_{ADD,DELETE,MODIFY,GET}` and `SESSION_{ADD,DELETE,MODIFY,GET}`; 8 cmds reachable |
+| tipc bearer/link/name/node/media/sock cmds (~12) | `net/netlink/genl/tipc.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/tipc/netlink.c:159–292`) | **2** | Config and stats for bearer, link, name table, node, media, sock — 12 write cmds; child-owned netns unlocks |
 | mptcp\_pm endpoint/limits/addr cmds (9 cmds) | `net/netlink/genl/mptcp_pm.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/mptcp/mptcp_pm_gen.c:9 sites`) | **2** | Endpoint add/del/get, limits set/get, subflow create/destroy, addr announce/remove; 9 cmds reachable |
 | ethtool write cmds (~25) | `net/netlink/genl/ethtool.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/ethtool/netlink.c`, 25 sites) | **2** | Covers link-settings SET, rings SET, channels SET, coalesce SET, pause SET, EEE SET, WoL SET, features SET, RSS SET, FEC SET, cable-test START, tunnel-info, PHC-vclocks, etc.; large write surface reachable via child veth+netns |
-| wireguard `WG_CMD_GET_DEVICE`, `WG_CMD_SET_DEVICE` (2 cmds) | `net/netlink/genl/wireguard.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`drivers/net/wireguard/netlink.c`, 2 sites) | **2** | Both cmds reachable; child can create a WireGuard interface in its own netns |
+| wireguard `WG_CMD_GET_DEVICE`, `WG_CMD_SET_DEVICE` (2 cmds) | `net/netlink/genl/wireguard.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`drivers/net/wireguard/generated/netlink.c`, 2 sites) | **2** | Both cmds reachable; child can create a WireGuard interface in its own netns |
 | nl80211 all write cmds (~96) | `net/netlink/genl/nl80211.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/wireless/nl80211.c`, 96 sites) | **2** | Largest class-2 surface: full cfg80211 control plane — interface add/del, AP start/stop, station add/del/change, key add/del, scan, connect/disconnect, mesh, P2P, regulatory, channel, PMK, NAN, etc.; 96 cmds currently unreached |
-| netdev `NETDEV_CMD_BIND_RX` (1 cmd) | `net/netlink/genl/netdev.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/core/netdev-genl-gen.c:223`) | **2** | Single write cmd; other netdev cmds (`DEV_GET`, `QUEUE_GET`, `NAPI_GET`, `QSTATS_GET`) are unprivileged; `BIND_TX` uses `GENL_ADMIN_PERM` → class 3 |
+| netdev `NETDEV_CMD_BIND_RX` (1 cmd) | `net/netlink/genl/netdev.c` | `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` (`net/core/netdev-genl-gen.c:230`) | **2** | Single write cmd; other netdev cmds (`DEV_GET`, `QUEUE_GET`, `NAPI_GET`, `QSTATS_GET`, `BIND_TX`) are unprivileged; `NAPI_SET` and `QUEUE_CREATE` use `GENL_ADMIN_PERM` → class 3 |
 
 ---
 
