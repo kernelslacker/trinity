@@ -2,9 +2,9 @@
 
 One file per generic-netlink family, plus the runtime registry. Each family file declares a `genl_cmd_grammar[]` (`{CMD, "name"}`) and an `nla_attr_spec[]` (`{ATTR, NLA_KIND_*, size}`, mirroring the kernel's `nla_policy`), packaged into a `struct genl_family_grammar`.
 
-## Files (47 .c files, ~6,221 LOC)
-- `families.c` (712) — runtime registry: walks the statically-declared `genl_family_grammar` structs, resolves each family's dynamic `family_id` via `CTRL_CMD_GETFAMILY`/`NLM_F_DUMP` and records each listed op's doit/dumpit capability in the grammar's `cmd_caps[]`, exposes lookup helpers to the message generator. Families are `__has_include()`-gated against kernel UAPI headers.
-- 46 per-family files (`nl80211.c`, `ethtool.c`, `devlink.c`, `wireguard.c`, `macsec.c`, `ovs.c`, `tipc.c`, `dpll.c`, ...). Pattern shown by `taskstats.c`. Largest: `ovs.c` (441), `netlabel.c` (226), `batadv.c` (178), `macsec.c` (175), `nfsd.c` (167); 34 are under 130 lines.
+## Files (47 .c files, ~4,755 LOC)
+- `families.c` (700) — runtime registry: walks the statically-declared `genl_family_grammar` structs, resolves each family's dynamic `family_id` via `CTRL_CMD_GETFAMILY`/`NLM_F_DUMP` and records each listed op's doit/dumpit capability in the grammar's `cmd_caps[]`, exposes lookup helpers to the message generator. Families are `__has_include()`-gated against kernel UAPI headers.
+- 46 per-family files (`nl80211.c`, `ethtool.c`, `devlink.c`, `wireguard.c`, `macsec.c`, `ovs.c`, `tipc.c`, `dpll.c`, ...). Pattern shown by `taskstats.c`. Largest: `ovs.c` (413), `netlabel.c` (183), `macsec.c` (174), `nl802154.c` (136), `batadv.c` (131); 41 are under 130 lines.
 
 ## Notes
 - Attribute specs mirror the kernel `nla_policy` exactly; header comments name the kernel policy and handlers the shape targets (e.g. taskstats → `taskstats_user_cmd()`).

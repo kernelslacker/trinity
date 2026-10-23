@@ -5,7 +5,7 @@ message bodies, and BPF/eBPF programs for every address family and
 netlink subsystem Trinity knows about. This is the largest subsystem
 in the tree by file count.
 
-## Files (123 .c files + 5 headers, ~22,324 LOC)
+## Files (123 .c files + 5 headers, ~20,299 LOC)
 
 Grouped by theme rather than enumerated — the long tail is highly
 repetitive (one file per protocol/family/subsystem, following a
@@ -18,11 +18,11 @@ shared struct-of-callbacks pattern).
   setsockopt, gen_sockaddr, gen_msg, nr_triplets, ...}` — every
   per-protocol file below populates one of these and is wired in here.
 - `sockaddr.c` (47) — `generate_sockaddr()`: picks a family (or honors
-  `--specific-domain`), looks up `net_protocols[pf]`, and calls its
+  `--domain`), looks up `net_protocols[pf]`, and calls its
   `gen_sockaddr` hook; falls back to a random blob for unregistered
   families. 50/50 chance it just emits `AF_UNSPEC` instead.
-- `domains.c` (157) — name<->`PF_*` lookup table for `--specific-domain`
-  and `--exclude-domains` CLI parsing (`find_specific_domain`,
+- `domains.c` (157) — name<->`PF_*` lookup table for `--domain`
+  and `--no_domain` CLI parsing (`find_specific_domain`,
   `parse_exclude_domains`).
 
 ### Per-address-family protocol helpers (`proto/`)
@@ -35,7 +35,7 @@ shared struct-of-callbacks pattern).
 
 ### BPF / eBPF program generation
 
-- [bpf/](bpf/CLAUDE.md) — two independent BPF program generators (classic `sock_filter` for socket filters/seccomp, and tiered eBPF for `BPF_PROG_LOAD`), the classic-BPF disassembler, and the AF_XDP umem tracker (10 `.c` files + 2 internal headers). The eBPF side is split one tier per TU behind `ebpf-internal.h`: `ebpf.c` (126) keeps only the fill-into-buffer core and tier pick, with `ebpf-tier1.c` (404), `ebpf-tier2.c` (244), `ebpf-tier3.c` (164) and the shared `ebpf-helpers.c` (207) / `ebpf-regs.c` (85) / `ebpf-map-fd.c` (80).
+- [bpf/](bpf/CLAUDE.md) — two independent BPF program generators (classic `sock_filter` for socket filters/seccomp, and tiered eBPF for `BPF_PROG_LOAD`), the classic-BPF disassembler, and the AF_XDP umem tracker (10 `.c` files + 2 internal headers). The eBPF side is split one tier per TU behind `ebpf-internal.h`: `ebpf.c` (120) holds the fill-into-buffer core and tier pick, with `ebpf-tier1.c` (404), `ebpf-tier2.c` (240), `ebpf-tier3.c` (159) and the shared `ebpf-helpers.c` (203) / `ebpf-regs.c` (83) / `ebpf-map-fd.c` (79).
 
 ### Misc
 - `unblocker.c` (310) — loopback-only accept-unblocker / pipe-waker
@@ -113,18 +113,18 @@ shared struct-of-callbacks pattern).
 
 ## Areas of attention
 
-1. **The netlink message generator has been split twice** — first the
-   rtnl payloads out of the message generator, then each rtnl group out
-   of the payload file. `netlink/msg-rtnl-neigh.c` (905) is now the
-   largest file here, followed by `netlink/msg-rtnl-tc.c` (607),
-   `netlink/msg-tables.c` (590), `netlink/msg-rtnl-route.c` (578) and
-   `netlink/msg-attr-random.c` (480). A single payload generator still
+1. **The netlink message generator is already split two ways** — the rtnl
+   payload builders apart from the message generator, and one translation
+   unit per rtnl group. `netlink/msg-rtnl-neigh.c` (899) is the
+   largest file here, followed by `netlink/msg-rtnl-tc.c` (601),
+   `netlink/msg-tables.c` (570), `netlink/msg-rtnl-route.c` (560) and
+   `netlink/msg-attr-random.c` (462). A single payload generator still
    spans hundreds of lines of nested attribute construction.
-2. **The eBPF generator's three tiers are now three TUs** —
-   `bpf/ebpf.c` (126) keeps only the fill-into-buffer core and the tier
+2. **The eBPF generator's three tiers are three TUs** —
+   `bpf/ebpf.c` (120) holds the fill-into-buffer core and the tier
    pick; valid-program synthesis (`ebpf-tier1.c`), boundary-case
    synthesis (`ebpf-tier2.c`) and pure-chaos corruption
-   (`ebpf-tier3.c`) no longer sit side by side, but they still share
+   (`ebpf-tier3.c`) are separate files, but they share
    `ebpf-helpers.c` / `ebpf-regs.c` / `ebpf-map-fd.c`, so a change to a
    shared emitter reaches all three tiers at once.
 3. **`net_protocols[]` sizing** — `fds/sockets.c` carries an explicit

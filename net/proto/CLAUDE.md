@@ -4,20 +4,20 @@ One file per `PF_*`/`AF_*` family. Each defines `const struct netproto proto_<fa
 
 Shared pattern (`ip-udp.c`, 50 lines): build a `RAND_ARRAY` of valid optnames for the level/protocol, switch on the picked optname, size and fill `so->optval`/`so->optlen` per kernel expectation (including boundary values like GSO segment sizes 0/1/1400/65535).
 
-## Files (37 .c files, ~5,693 LOC)
+## Files (37 .c files, ~5,666 LOC)
 
 ### Largest / notable
 | File | Lines | Role |
 |---|---|---|
 | ip-sctp.c | 538 | SCTP control surface. |
-| ipv4.c | 522 | Full AF_INET: raw sockets, IP options, ip_tables/ebtables/arp_tables/ip_set/ip_vs setsockopt levels, multicast. |
+| ipv4.c | 517 | Full AF_INET: raw sockets, IP options, ip_tables/ebtables/arp_tables/ip_set/ip_vs setsockopt levels, multicast. |
 | alg.c + alg-dict.c | 435 + 414 | AF_ALG crypto sockets; the dict is a curated table of real cipher/hash/AEAD names so `bind()` finds a registered transform instead of `-EINVAL`. |
-| ipv6.c | 380 | AF_INET6 equivalent of ipv4.c. |
+| ipv6.c | 368 | AF_INET6 equivalent of ipv4.c. |
 | key.c | 350 | PF_KEY. |
 | xdp.c | 251 | AF_XDP umem/ring setup (via `net/bpf/xdp-umem-track.c`). |
 | packet.c / netlink.c | 172 / 133 | AF_PACKET; AF_NETLINK per-protocol sockaddr and `SOL_NETLINK` options, delegating message-body shape to `netlink_gen_msg` and draining the rtnl ACK oracle in `post_send`. |
 
-Plus the remaining families following the same optname-table-plus-switch pattern: pppox (244), can (238), bluetooth (236), ip-tcp (169), unix (102), llc (100), tipc (98), vsock (90), phonet (88), rds (87), rxrpc (84), ip-mptcp (83), iucv (82), nfc (75), ieee802154 (71), ip-udplite (68), atm (64), smc (59), ip-dccp (57), icmp6 (51), ip-udp (50), ib (50), kcm (47), x25 (45), mctp (45), ip-raw (44), mpls (40), qrtr (31).
+Plus the remaining families following the same optname-table-plus-switch pattern: pppox (244), can (238), bluetooth (236), ip-tcp (169), llc (100), unix (99), tipc (98), vsock (90), phonet (88), rds (87), rxrpc (84), iucv (82), ip-mptcp (78), nfc (75), ieee802154 (71), ip-udplite (68), atm (64), smc (59), ip-dccp (57), icmp6 (51), ip-udp (50), ib (50), kcm (47), x25 (45), mctp (45), ip-raw (42), mpls (40), qrtr (31).
 
 ## Key invariants
 - **One dispatch table, rooted in `net/`.** `net_protocols[]` (per-syscall hooks) lives in `net/`; every file here is an entry in it, linked by extern symbol, not by path, so relocation is link-safe.

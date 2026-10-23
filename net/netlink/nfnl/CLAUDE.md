@@ -2,9 +2,9 @@
 
 One file per netfilter-netlink (NFNL) subsystem, plus the registry. Same `{cmd, attrs}` table pattern as `genl/`, but simpler: `NFNL_SUBSYS_*` is a compile-time constant, so no dynamic family-id resolution is needed.
 
-## Files (12 .c files, ~1,468 LOC)
-- `subsystems.c` (160) — per-subsystem registry; stamps each grammar's stats counter into the shared arena.
-- 11 per-subsystem files (`nftables.c` 304, `ipset.c` 232, `ctnetlink.c` 146, `cttimeout.c` 144, `cthelper.c` 82, `ulog.c` 70, `nfqueue.c` 70, `osf.c` 68, `acct.c` 68, `hook.c` 63, `nft-compat.c` 61).
+## Files (12 .c files, ~1,106 LOC)
+- `subsystems.c` (150) — per-subsystem registry; stamps each grammar's stats counter into the shared arena.
+- 11 per-subsystem files (`nftables.c` 285, `ipset.c` 160, `ctnetlink.c` 125, `cttimeout.c` 95, `nfqueue.c` 49, `acct.c` 46, `ulog.c` 45, `cthelper.c` 42, `hook.c` 39, `osf.c` 38, `nft-compat.c` 32).
 
 ## Notes
 - Attribute shapes mirror the kernel `nla_policy`; wired by extern struct, collected by `subsystems.c`. Link-time, no path coupling.
