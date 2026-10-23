@@ -126,6 +126,22 @@ update this section to match `ls scripts/check-static/*.sh`.)
   directions -- a planted guarded conflict must fire, a planted unguarded
   one must not.
 
+- `shim-cross-tu`: a uapi fallback written into a `.c` file -- a
+  `#define` in the true branch of an `#ifndef` or `#if !defined()` block,
+  whether the guard names the symbol itself, another member of its
+  family or a configure `HAVE_` probe -- must stay local to that file.
+  It fails when another `.c` carries its own copy, or when any other `.c`
+  or any `.h` uses the symbol: against a kernel-headers package that
+  predates it, the file holding the copy builds while the one relying on
+  the system header does not, and the copies drift apart unseen.  The fix
+  is the `include/kernel/<header.h>` mirror of the kernel header the
+  symbol comes from.  A use is an identifier token outside comments and
+  literals; names tested by `#ifdef`, `#ifndef` or `defined()`, dropped
+  by `#undef` or defined in an `#else` branch do not count, nor does a
+  header's own guarded copy, and `scripts/` is not read.  Self-tests both
+  directions on a planted tree, and fails if the scan finds fewer than
+  200 fallbacks.
+
 - `check-static-doc-parity`: every `scripts/check-static/*.sh` must have a
   row in the list below, and every row must name a script that exists.  The
   battery is the project's change detector; a check nobody can find in the
