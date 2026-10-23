@@ -17,9 +17,6 @@
 
 #include "kernel/resource.h"
 #include "kernel/sched.h"
-#ifndef RLIM_INFINITY
-#define RLIM_INFINITY (~0ULL)
-#endif
 
 /*
  * RLIMIT_NICE on the kernel side is encoded as `20 - nice`, with the
