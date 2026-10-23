@@ -16,3 +16,6 @@
 #if defined(__riscv) && __riscv_xlen == 64
 #include "syscalls-riscv64.h"
 #endif
+#ifdef __loongarch64
+#include "syscalls-loongarch.h"
+#endif

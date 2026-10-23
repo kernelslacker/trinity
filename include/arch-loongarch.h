@@ -1,0 +1,16 @@
+#pragma once
+
+#define PAGE_OFFSET		0x9000000000000000UL
+#define TASK_SIZE		(1UL << 47)
+#define MODULE_ADDR		0xffff000002008000UL
+#define KERNEL_ADDR		0x9000000000200000UL
+
+#define PAGE_SHIFT		14
+#define PTE_FILE_MAX_BITS	48
+
+#define PTRACE_GETREGS		12
+#define PTRACE_SETREGS		13
+#define PTRACE_GETFPREGS	14
+#define PTRACE_SETFPREGS	15
+
+#define SYSCALLS syscalls_loongarch
