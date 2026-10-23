@@ -2086,6 +2086,55 @@ static void madvise_held(void)
 	fake_this_child = NULL;
 }
 
+/* The image table holds the pages of every segment of this binary's own
+ * image, text, rodata and data alike, and nothing else: a function, a
+ * constant and a variable of the binary are in it, a fresh anonymous
+ * mapping is not, and a range that wraps counts as in it. */
+static void image_table_covers_the_image(void)
+{
+	static const char constant[] = "rodata";
+	static char variable[16];
+	void *anon;
+
+	register_loaded_image_segments();
+	if (!range_overlaps_image((unsigned long) image_table_covers_the_image, 1) ||
+	    !range_overlaps_image((unsigned long) constant, sizeof(constant)) ||
+	    !range_overlaps_image((unsigned long) variable, sizeof(variable)))
+		BUG("image-segments: a page of the binary's own image was left out");
+
+	anon = mmap(NULL, page_size, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (anon == MAP_FAILED)
+		BUG("image-segments: no anonymous page to compare");
+	if (range_overlaps_image((unsigned long) anon, page_size))
+		BUG("image-segments: an anonymous mapping was taken for the image");
+	munmap(anon, page_size);
+
+	if (!range_overlaps_image(ULONG_MAX - page_size + 1, 2 * page_size))
+		BUG("image-segments: a range that wraps was not counted");
+}
+
+/* A fixed move unmaps its target first, so mremap's sanitiser keeps the
+ * target off trinity's own image as well as its regions and the heap: a
+ * non-PIE build loads its text where the small alignments put targets.
+ * The image table is the one image_table_covers_the_image() filled. */
+static void mremap_fixed_target_off_image(void)
+{
+	struct syscallentry mremap_entry = syscall_mremap;
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(&mremap_entry);
+
+		mremap_entry.sanitise(mrec);
+		if ((mrec->a4 & MREMAP_FIXED) &&
+		    range_overlaps_image(mrec->a5, mrec->a3))
+			BUG("mremap: a fixed target on trinity's own image was kept");
+		mrec->retval = (unsigned long) -1L;
+		mremap_entry.post(mrec);
+	}
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2110,4 +2159,6 @@ void arg_coupling_self_check(void)
 	mseal_seals_only_its_own_mapping();
 	remap_file_pages_range_held_to_mapping();
 	mprotect_range_held_to_mapping();
+	image_table_covers_the_image();
+	mremap_fixed_target_off_image();
 }

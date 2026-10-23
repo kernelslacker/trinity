@@ -53,6 +53,10 @@ struct stats_aggregate parent_stats;
  * a child for the duration of the call it drives. */
 struct childdata *fake_this_child;
 
+/* track_shared_region() below tracks nothing, so the table it fills is
+ * always empty; register_loaded_image_segments() reads its count. */
+unsigned int nr_shared_regions;
+
 /* ---------- Function stubs ----------------------------------------------- */
 
 void track_shared_region(unsigned long addr, unsigned long size)

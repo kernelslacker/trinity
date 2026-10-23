@@ -139,9 +139,12 @@ static void sanitise_mremap(struct syscallrecord *rec)
 		 * newaddr + rec->a3) before placing the relocated
 		 * mapping there.  Reject if that range overlaps a
 		 * trinity-owned shared region — otherwise we silently
-		 * unmap our own bookkeeping. */
+		 * unmap our own bookkeeping — or trinity's own image,
+		 * whose text a non-PIE build loads at these low
+		 * addresses. */
 		if (RANGE_OVERLAPS_SHARED_AUDITED("mremap-new", newaddr, rec->a3) ||
-		    range_overlaps_libc_heap(newaddr, rec->a3)) {
+		    range_overlaps_libc_heap(newaddr, rec->a3) ||
+		    range_overlaps_image(newaddr, rec->a3)) {
 			rec->a4 &= ~MREMAP_FIXED;
 			newaddr = 0;
 		}

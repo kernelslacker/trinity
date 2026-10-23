@@ -1,22 +1,42 @@
 /*
- * Register every writable PT_LOAD segment of trinity's loaded image (main exe
- * and every DSO) with shared_regions[], so range_overlaps_shared() refuses
- * fuzzed mmap/munmap/mremap/madvise/mprotect calls that target trinity's own
- * .data and .bss.  Runs once, before fork_children(), so every child inherits
- * the populated table.
+ * Walk every PT_LOAD segment of trinity's loaded image (main exe and every
+ * DSO) once, before fork_children(): the writable ones go to shared_regions[],
+ * so range_overlaps_shared() refuses fuzzed mm calls on trinity's own .data
+ * and .bss, and every one, text and rodata too, to the image table that
+ * range_overlaps_image() reads.  Every child inherits both.
  */
 
+#include <limits.h>
 #include <link.h>
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "arch.h"
 #include "trinity.h"
 #include "utils.h"
 
 struct phdr_walk_state {
 	unsigned int regions_registered;
 	unsigned int objects_with_writable;
+	unsigned int segments_dropped;
 };
+
+/*
+ * The pages of every PT_LOAD segment.  Read-only ones stay out of
+ * shared_regions[]: range_in_tracked_shared() vouches for a tracked region
+ * as writable scratch, and a repair would then store into text.  An unmap
+ * of text is as fatal as one of .bss, though, so a sanitiser that picks an
+ * unmap target outside its pool mapping asks range_overlaps_image() too.
+ * A native process loads a few dozen segments; one past the end is counted
+ * and reported, and goes unprotected.
+ */
+#define MAX_IMAGE_SEGMENTS	128
+
+static struct {
+	unsigned long start;
+	unsigned long end;
+} image_segments[MAX_IMAGE_SEGMENTS];
+static unsigned int nr_image_segments;
 
 static const char *image_display_name(const char *dlpi_name)
 {
@@ -39,22 +59,30 @@ static int phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
 		const ElfW(Phdr) *ph = &info->dlpi_phdr[i];
 		unsigned long base, len;
 
-		if (ph->p_type != PT_LOAD)
-			continue;
-		/* Read-only segments need no protection: a fuzzed mprotect
-		 * that strips R+X only faults on the next instruction fetch,
-		 * which the fault handler catches.  Writable ones are the
-		 * exposure: a fuzzed munmap of the BSS would silently zero
-		 * static state, shared_regions[] included. */
-		if ((ph->p_flags & PF_W) == 0)
-			continue;
-		if (ph->p_memsz == 0)
+		if (ph->p_type != PT_LOAD || ph->p_memsz == 0)
 			continue;
 
 		base = (unsigned long)info->dlpi_addr + ph->p_vaddr;
 		/* memsz, not filesz: the BSS is the part of a writable
 		 * segment beyond filesz, and the part most worth protecting. */
 		len  = (unsigned long)ph->p_memsz;
+
+		if (nr_image_segments < MAX_IMAGE_SEGMENTS) {
+			image_segments[nr_image_segments].start = base & PAGE_MASK;
+			image_segments[nr_image_segments].end =
+				(base + len + page_size - 1) & PAGE_MASK;
+			nr_image_segments++;
+		} else {
+			st->segments_dropped++;
+		}
+
+		/* Only the writable ones go to shared_regions[] (see
+		 * image_segments[]): a fuzzed munmap of the BSS would silently
+		 * zero static state, shared_regions[] included, where a fuzzed
+		 * mprotect that strips R+X off text only faults on the next
+		 * instruction fetch, which the fault handler catches. */
+		if ((ph->p_flags & PF_W) == 0)
+			continue;
 
 		track_shared_region(base, len);
 		st->regions_registered++;
@@ -73,10 +101,33 @@ static int phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
 	return 0;
 }
 
+/*
+ * Whether [addr, addr + len) touches a page of trinity's loaded image.  A
+ * range that wraps does, as range_overlaps_shared() counts one, and an
+ * empty one does when its start lies in a segment.
+ */
+bool range_overlaps_image(unsigned long addr, unsigned long len)
+{
+	unsigned int i;
+
+	if (len != 0 && addr > ULONG_MAX - len)
+		return true;
+
+	for (i = 0; i < nr_image_segments; i++) {
+		unsigned long start = image_segments[i].start;
+		unsigned long end = image_segments[i].end;
+
+		if (len == 0 ? (addr >= start && addr < end)
+			     : (addr < end && start < addr + len))
+			return true;
+	}
+	return false;
+}
+
 /* Covers the objects loaded at the call; one dlopen()ed later is not tracked. */
 void register_loaded_image_segments(void)
 {
-	struct phdr_walk_state st = { 0, 0 };
+	struct phdr_walk_state st = { 0, 0, 0 };
 	unsigned int after;
 
 	dl_iterate_phdr(phdr_callback, &st);
@@ -84,6 +135,10 @@ void register_loaded_image_segments(void)
 	output(1, "image-segments: registered %u writable PT_LOAD segments across %u object%s\n",
 	       st.regions_registered, st.objects_with_writable,
 	       st.objects_with_writable == 1 ? "" : "s");
+
+	if (st.segments_dropped != 0)
+		outputerr("image-segments: image table full at %u segments; %u more left out of range_overlaps_image()\n",
+			  MAX_IMAGE_SEGMENTS, st.segments_dropped);
 
 	/* Sanity floor: every supported libc layout produces at least two
 	 * writable PT_LOAD segments -- the main executable's data/BSS and

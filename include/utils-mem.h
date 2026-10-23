@@ -257,6 +257,12 @@ bool kcov_registration_still_present(unsigned long addr, unsigned long size,
  */
 void untrack_shared_region(unsigned long addr, unsigned long size);
 void register_loaded_image_segments(void);
+/*
+ * Whether [addr, addr + len) touches any page of a segment of trinity's
+ * loaded image, text and rodata included, which shared_regions[] holds
+ * only the writable ones of.  See mm/image-segments.c.
+ */
+bool range_overlaps_image(unsigned long addr, unsigned long len);
 void log_load_bases(void);
 
 /*

@@ -513,6 +513,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 		   $(TOP)/syscalls/mm/madvise.c \
 		   $(TOP)/mm/maps-arg.c
 
+# syscalls/mm/mremap.c brings mremap, whose sanitiser and post handler
+# arg_coupling_test.c runs over the same fake pool mapping, and
+# mm/image-segments.c the image table the test fills from the binary's
+# own segments, which mremap's fixed target is kept off.
+PARENT_SRCS	+= $(TOP)/syscalls/mm/mremap.c \
+		   $(TOP)/mm/image-segments.c
+
 # syscalls/poll/epoll_wait.c and epoll_pwait.c bring the epoll_wait
 # family, whose shared .vet_final hook arg_coupling_test.c runs through
 # validate_arg_coupling().
