@@ -424,8 +424,8 @@ struct vsock_netns_ctx {
  * discarded on _exit() -- the parent's `childop_direct_syscalls_add()`
  * drain at vsock_transport_churn() exit therefore undercounts by the
  * fresh-netns iterations (VS_UNSHARE_VARIANT_PCT of outer_iters).
- * Keeping a single reporter call per invocation (mirroring pipe-thrash)
- * is worth the ~25% undercount vs. plumbing a fork-shared accumulator. */
+ * Keeping a single reporter call per invocation is worth the ~25%
+ * undercount vs. plumbing a fork-shared accumulator. */
 static int iter_one_in_fresh_netns_fn(void *arg)
 {
 	struct vsock_netns_ctx *ctx = arg;

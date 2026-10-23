@@ -37,10 +37,10 @@
  * inflating fd consumption. */
 #define NR_TARGET_FDS	8
 
-/* Hard cap on inner loop iterations.  Sized like xattr_thrash and
- * pidfd_storm: cheap enough that 64 iterations finishes well under the
- * 1-second alarm child.c arms around every alt-op, so a wedged epoll path
- * still trips the SIGALRM stall detector. */
+/* Hard cap on inner loop iterations.  Sized like xattr_thrash: cheap
+ * enough that 64 iterations finishes well under the 1-second alarm
+ * child.c arms around every alt-op, so a wedged epoll path still trips
+ * the SIGALRM stall detector. */
 #define MAX_ITERATIONS	64
 
 /* Wall-clock ceiling for the inner loop; setup and teardown sit outside it,

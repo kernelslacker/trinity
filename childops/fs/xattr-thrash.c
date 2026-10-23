@@ -30,9 +30,9 @@
  * inodes the rest of the fuzzer touches. */
 #define NR_XATTR_FDS	4
 
-/* Hard cap on inner iterations.  Sized like flock_thrash: small enough
- * that even worst-case xattr storage pressure on the test fs completes
- * well under the 1-second alarm. */
+/* Hard cap on inner iterations: small enough that even worst-case xattr
+ * storage pressure on the test fs completes well under the 1-second
+ * alarm. */
 #define MAX_ITERATIONS	64
 
 /* Wall-clock ceiling per invocation.  Sits in the 200ms band the other
