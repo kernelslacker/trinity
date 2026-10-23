@@ -168,6 +168,28 @@ bool addr_in_local_runtime_map(unsigned long addr, unsigned long len) __must_che
  */
 struct map * common_set_mmap_ptr_len(enum objecttype *out_type);
 
+/*
+ * The range a munmap, mprotect, pkey_mprotect or madvise sanitiser built
+ * inside one pool mapping, as its private post_state snapshot keeps it:
+ * the mapping it picked, and the (addr, len) slots as the kernel reads
+ * them.
+ */
+struct map_range {
+	struct map *map;
+	unsigned long addr;
+	unsigned long len;
+};
+
+/*
+ * Hold the final (addr, len) slots of such a call to @range's mapping,
+ * NULL for a call with no snapshot, and on a pass refresh @range to them.
+ * @empty_only passes only a range the kernel acts on nothing of.  False
+ * refuses the call.  O(1), no pool walk; see mm/maps-arg.c.
+ */
+struct syscallrecord;
+bool map_range_vet(const struct syscallrecord *rec,
+		   struct map_range *range, bool empty_only);
+
 void dirty_mapping(struct map *map);
 void dirty_random_mapping(void);
 

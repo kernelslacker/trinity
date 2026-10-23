@@ -113,3 +113,66 @@ type_resolved:
 
 	return map;
 }
+
+/*
+ * The munmap, mprotect, pkey_mprotect and madvise sanitisers build their
+ * range inside one pool mapping and keep it off trinity's regions, but
+ * chain substitution can rewrite a numeric slot, and a RedQueen pin any
+ * slot, after they have run, and the kernel acts on every VMA the final
+ * range reaches: do_vmi_munmap() across holes, do_mprotect_pkey() up to
+ * the first one, do_madvise() across them.  A longer range reaches the
+ * next pool mapping, which stays in the pool with pages its entry no
+ * longer describes, or trinity's own regions.
+ *
+ * All three refuse an unaligned start and a range whose page-rounded end
+ * wraps, do nothing with a length of 0, and act on
+ * [addr, addr + PAGE_ALIGN(len)) otherwise (check_input_range() and
+ * madvise_do_behavior() for madvise); a compat call hands them the low
+ * 32 bits of each slot.  A range they act on has to lie inside the
+ * mapping the sanitiser picked, as far as the kernel mapped it:
+ * tracked_size is the length the VMA was made with and size its
+ * walkable part, smaller for a file clamped to its end and larger after
+ * an mremap() grow, so the larger of the two, page-rounded.
+ *
+ * The mapping comes from the call's own snapshot; with none, only a range
+ * the kernel acts on nothing of passes.  A pass moves the snapshot's addr
+ * and len to the slots as the kernel reads them, since the post handler
+ * reads nothing else.
+ */
+bool map_range_vet(const struct syscallrecord *rec,
+		   struct map_range *range, bool empty_only)
+{
+	unsigned long addr = rec->a1, len = rec->a2, end, extent;
+	const struct map *map;
+
+	if (rec->do32bit) {
+		addr = (unsigned int) addr;
+		len = (unsigned int) len;
+	}
+
+	if ((addr & ~PAGE_MASK) || len == 0 ||
+	    len > ULONG_MAX - (page_size - 1))
+		goto vetted;
+	end = addr + ((len + page_size - 1) & PAGE_MASK);
+	if (end <= addr)
+		goto vetted;
+
+	if (range == NULL || empty_only)
+		return false;
+	map = range->map;
+	if (is_corrupt_ptr_shape(map))
+		return false;
+	extent = map->tracked_size > map->size ? map->tracked_size : map->size;
+	if (extent > ULONG_MAX - (page_size - 1) ||
+	    addr < (unsigned long) map->ptr ||
+	    end - (unsigned long) map->ptr >
+			((extent + page_size - 1) & PAGE_MASK))
+		return false;
+
+vetted:
+	if (range != NULL) {
+		range->addr = addr;
+		range->len = len;
+	}
+	return true;
+}

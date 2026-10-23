@@ -660,6 +660,14 @@ struct syscallentry {
 	bool is_madvise;
 
 	/*
+	 * Cached identity of munmap, set at table init so
+	 * validate_arg_coupling() can hold its final range to the pool
+	 * mapping the sanitiser picked (munmap_vet_final_slots()) with a
+	 * single byte load per dispatch.  In the same alignment hole.
+	 */
+	bool is_munmap;
+
+	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls
@@ -1125,6 +1133,14 @@ void post_open_fd(struct syscallrecord *rec);
  * by validate_arg_coupling() on the slots the kernel will see.
  */
 bool close_range_call_is_vetted(const struct syscallrecord *rec);
+
+/*
+ * Hold a munmap call's final slots to the pool mapping its sanitiser
+ * picked (map_range_vet()).  A pass refreshes the call's snapshot to
+ * them; false refuses the call.  Defined in syscalls/mm/munmap.c, which
+ * keeps the snapshot private, for validate_arg_coupling().
+ */
+bool munmap_vet_final_slots(const struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

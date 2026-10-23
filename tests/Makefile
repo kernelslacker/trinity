@@ -450,12 +450,14 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/syscalls/xattr/listxattrat.c \
 		   $(TOP)/args/pools/xattr.c
 
-# syscalls/mm/mprotect.c brings mprotect and pkey_mprotect, whose shared
-# sanitiser arg_coupling_test.c runs over a fake pool mapping, and
-# mm/maps-arg.c the common_set_mmap_ptr_len() it picks its range with.
-# The pkey pool, the heap-slip log and the /proc/self/maps oracle they
-# reach are faked there.
+# syscalls/mm/mprotect.c and munmap.c bring mprotect, pkey_mprotect and
+# munmap, whose sanitisers arg_coupling_test.c runs over a fake pool
+# mapping, and mm/maps-arg.c the common_set_mmap_ptr_len() they pick
+# their range with and the map_range_vet() validate_arg_coupling()
+# holds it to.  The pkey pool, the heap-slip log and the
+# /proc/self/maps oracle they reach are faked there.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
+		   $(TOP)/syscalls/mm/munmap.c \
 		   $(TOP)/mm/maps-arg.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

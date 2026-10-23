@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
+ *
+ * The range stays inside the pool mapping the sanitiser picked, final
+ * slots included (munmap_vet_final_slots()).
  */
 #include "arch.h"
 #include "maps.h"
@@ -16,7 +19,8 @@
 
 /*
  * Snapshot of the four munmap inputs read by the post handler, captured
- * at sanitise time and consumed by the post handler.  Lives in
+ * at sanitise time, its range moved to the final slots at dispatch
+ * (munmap_vet_final_slots()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot:
@@ -34,9 +38,7 @@
  */
 struct munmap_post_state {
 	unsigned long magic;
-	unsigned long addr;
-	unsigned long len;
-	unsigned long map;
+	struct map_range range;
 	unsigned long action;
 	/*
 	 * OBJ_MMAP_* pool the underlying obj lives in, as resolved by
@@ -54,6 +56,23 @@ struct munmap_post_state {
 };
 
 #define MUNMAP_POST_STATE_MAGIC	0x4D554E4D41505F5FUL	/* "MUNMAP__" */
+
+/*
+ * validate_arg_coupling() holds the final slots to the mapping with this
+ * (see map_range_vet()).  A record with no snapshot of ours passes only
+ * a range the kernel acts on nothing of.  Shape, then ownership, then
+ * magic, as close_range_call_is_vetted() orders them.
+ */
+bool munmap_vet_final_slots(const struct syscallrecord *rec)
+{
+	struct munmap_post_state *snap =
+		(struct munmap_post_state *) rec->post_state;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != MUNMAP_POST_STATE_MAGIC)
+		return map_range_vet(rec, NULL, false);
+	return map_range_vet(rec, &snap->range, false);
+}
 
 static void sanitise_munmap(struct syscallrecord *rec)
 {
@@ -127,8 +146,12 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * munmap can blow away trinity's shared state and crash everyone.
 	 * For WHOLE, also drop the action so post_munmap doesn't run the
 	 * destructor (which would munmap(map->ptr, map->size) regardless).
+	 * A compat call hands the kernel only the low 32 bits of each slot,
+	 * so a range they cannot carry is emptied too, rather than left for
+	 * validate_arg_coupling() to refuse.
 	 */
-	if (RANGE_OVERLAPS_SHARED_AUDITED("munmap", rec->a1, rec->a2)) {
+	if (RANGE_OVERLAPS_SHARED_AUDITED("munmap", rec->a1, rec->a2) ||
+	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 		action = 0;
@@ -150,19 +173,20 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 * rec->a1/a2 retargets the proc-maps oracle at a window the
 	 * syscall never touched -- forging either a clean compare or a
 	 * never-happened anomaly.  post_state is private to the post
-	 * handler.  post_state_install pairs the rec->post_state assign
-	 * with the ownership-table register so the observable window
-	 * between the two is closed; post_munmap() will then gate the
-	 * snap through post_state_claim_owned() and prove ownership
-	 * before dereferencing any field.
+	 * handler, and validate_arg_coupling() moves the range to the
+	 * slots the kernel is handed.  post_state_install pairs the
+	 * rec->post_state assign with the ownership-table register so the
+	 * observable window between the two is closed; post_munmap() will
+	 * then gate the snap through post_state_claim_owned() and prove
+	 * ownership before dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic  = MUNMAP_POST_STATE_MAGIC;
-	snap->addr   = rec->a1;
-	snap->len    = rec->a2;
-	snap->map    = rec->a3;
-	snap->action = rec->a4;
-	snap->type   = (unsigned long) map_type;
+	snap->magic      = MUNMAP_POST_STATE_MAGIC;
+	snap->range.map  = map;
+	snap->range.addr = rec->a1;
+	snap->range.len  = rec->a2;
+	snap->action     = rec->a4;
+	snap->type       = (unsigned long) map_type;
 	post_state_install(rec, snap);
 }
 
@@ -185,7 +209,7 @@ static void post_munmap(struct syscallrecord *rec)
 	if (rec->retval != 0)
 		goto out_free;
 
-	map = (struct map *) snap->map;
+	map = snap->range.map;
 	action = snap->action;
 
 	/*
@@ -254,11 +278,12 @@ static void post_munmap(struct syscallrecord *rec)
 	 * /proc/self/maps.  Any overlapping entry means the kernel's VMA
 	 * teardown silently failed despite returning success.
 	 */
-	if (snap->addr != 0 && snap->len > 0 && ONE_IN(100)) {
-		if (!proc_maps_check(snap->addr, snap->len, 0, false)) {
+	if (snap->range.addr != 0 && snap->range.len > 0 && ONE_IN(100)) {
+		if (!proc_maps_check(snap->range.addr, snap->range.len,
+				     0, false)) {
 			output(0, "mmap oracle: munmap(%lx, %lu) succeeded "
 			       "but range still in /proc/self/maps\n",
-			       snap->addr, snap->len);
+			       snap->range.addr, snap->range.len);
 			__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}

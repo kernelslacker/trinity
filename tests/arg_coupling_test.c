@@ -3,8 +3,9 @@
  * final argument slots to: a rewrite after the sanitiser (chain
  * substitution, a RedQueen pin) must not leave the kernel a range the
  * sanitiser would have refused.  madvise's (addr, len) stays off trinity's
- * tracked regions, and a buffer-filling count stays inside its buffer.
- * mprotect's sanitiser, which pkey_mprotect shares, runs here too.
+ * tracked regions, a buffer-filling count stays inside its buffer, and a
+ * munmap range inside the pool mapping its sanitiser picked.  mprotect's
+ * sanitiser, which pkey_mprotect shares, runs here too.
  */
 
 #include <limits.h>
@@ -36,6 +37,9 @@ extern bool fake_overlaps_shared;
 extern bool fake_overlaps_libc_heap;
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
+extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
+					   enum objecttype type);	/* fake_objects.c */
+extern const void *post_state_disowned;	/* post_oracle_test.c */
 
 /* sanity_check_tables() over one entry, in tests/sanitiser_owned_mask_test.c. */
 int entry_check_status(struct syscallentry *entry);
@@ -70,9 +74,12 @@ bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 
 /* The OBJ_PKEY pool, the heap-slip log and the /proc/self/maps oracle
  * the mm sanitisers and post handlers reach.  The pool hands out
- * pkey_drawn and the log keeps the name it was given. */
+ * pkey_drawn, the log keeps the name it was given and the oracle the
+ * range it was asked about. */
 static int pkey_drawn = -1;
 static const char *heap_slip_name;
+static unsigned long maps_checked_addr, maps_checked_len;
+static unsigned int maps_checks;
 
 int get_random_pkey_id(void)
 {
@@ -92,10 +99,11 @@ void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
 bool proc_maps_check(unsigned long addr, unsigned long len,
 		     int expected_prot, bool expect_present)
 {
-	(void) addr;
-	(void) len;
 	(void) expected_prot;
 	(void) expect_present;
+	maps_checked_addr = addr;
+	maps_checked_len = len;
+	maps_checks++;
 	return true;
 }
 
@@ -525,6 +533,248 @@ static void keyed_range_drops_cached_prot(void)
 	fake_this_child = NULL;
 }
 
+/* No pool holds the test mapping.  munmap's sanitiser asks, to know
+ * which pool a whole-mapping unmap takes the entry out of. */
+static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
+{
+	(void) scope;
+	(void) type;
+	return NULL;
+}
+
+#define MM_DRAWS	500
+
+/* Whatever the sanitiser builds is a range it vetted, a whole-mapping
+ * unmap included: of a mapping as it was made, of a file mapping clamped
+ * below its VMA, of one whose tracked size was never set, and of one an
+ * mremap() grow left larger than its tracked size.  A compat call over
+ * the high mapping is built empty rather than refused. */
+static void munmap_sanitised_range_passes(struct syscallentry *entry)
+{
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(entry);
+
+		switch (i % 4) {
+		case 1:
+			pool_obj.map.size = 5 * page_size + 100;
+			pool_obj.map.tracked_size = 8 * page_size;
+			break;
+		case 2:
+			pool_obj.map.size = 5 * page_size + 100;
+			pool_obj.map.tracked_size = 0;
+			break;
+		case 3:
+			pool_obj.map.size = 2 * POOL_PAGES * page_size;
+			break;
+		}
+		mrec->do32bit = (i % 10) == 0;
+		entry->sanitise(mrec);
+		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
+			BUG("munmap: the sanitiser built a compat range its slots cannot carry");
+		if (validate_arg_coupling(mrec) != 0)
+			BUG("munmap: a range the sanitiser built was refused");
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+}
+
+/* A rewritten slot that runs the range past the mapping, or moves it out,
+ * is refused, whatever brought it: a page too many, a pid, an address.  A
+ * range still inside passes, and so does one the kernel acts on nothing
+ * of: empty, unaligned, wrapping. */
+static void munmap_rewritten_range_held(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	unsigned long end = POOL_MAP + POOL_PAGES * page_size;
+	unsigned long start, left;
+	static const struct {
+		unsigned int slot;
+		unsigned long value;
+		int verdict;
+	} cases[] = {
+		{ 2, 0x7ffff000UL, -1 },
+		{ 2, 3000000UL, -1 },
+		{ 2, 0, 0 },
+		{ 2, ~0UL, 0 },
+		{ 2, ~0UL - 0x1000UL, 0 },
+		{ 1, POOL_MAP - 0x1000UL, -1 },
+		{ 1, 0x10000000UL, -1 },
+		{ 1, POOL_MAP + 1, 0 },
+	};
+	unsigned int i;
+
+	entry->sanitise(mrec);
+	start = mrec->a1;
+	left = end - start;
+
+	mrec->a2 = left + page_size;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a length running a page past the mapping was kept");
+	mrec->a2 = left;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("munmap: a length reaching the end of the mapping was refused");
+	mrec->a2 = left - page_size + 1;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("munmap: a length the kernel rounds to the end was refused");
+	mrec->a1 = end;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a range just past the mapping was kept");
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		mrec->a1 = start;
+		mrec->a2 = page_size;
+		if (cases[i].slot == 1)
+			mrec->a1 = cases[i].value;
+		else
+			mrec->a2 = cases[i].value;
+		if (validate_arg_coupling(mrec) != cases[i].verdict)
+			BUG("munmap: a rewritten slot was judged wrongly");
+	}
+
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
+/* A call that passes leaves the post handler the range the kernel was
+ * handed: the oracle it runs on one call in a hundred asks about the
+ * final slots, not the ones the sanitiser drew. */
+static void munmap_post_acts_on_final_range(struct syscallentry *entry)
+{
+	unsigned long final_addr = 0;
+	unsigned int i;
+
+	maps_checks = 0;
+	for (i = 0; i < 10000 && maps_checks == 0; i++) {
+		struct syscallrecord *mrec = mm_call(entry);
+
+		entry->sanitise(mrec);
+		mrec->a2 = page_size - 1;
+		if (validate_arg_coupling(mrec) != 0)
+			BUG("munmap: a page inside the mapping was refused");
+		final_addr = mrec->a1;
+		mrec->retval = 0;
+		entry->post(mrec);
+	}
+	if (maps_checks == 0)
+		BUG("munmap: the post handler never asked the oracle");
+	if (maps_checked_addr != final_addr ||
+	    maps_checked_len != page_size - 1)
+		BUG("munmap: the post handler acted on the range sanitise drew");
+}
+
+/* Nothing names a mapping without the call's own snapshot: none, a pid
+ * where the pointer was, one the ownership table does not hold, or one
+ * with another magic.  Only a range the kernel acts on nothing of goes
+ * through then. */
+static void munmap_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	unsigned long *snap;
+
+	mrec->a1 = 0;
+	entry->sanitise(mrec);
+	if (mrec->post_state != 0)
+		BUG("munmap: the sanitiser left a snapshot with no mapping");
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a call with no mapping kept a range");
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("munmap: an empty call with no mapping was refused");
+
+	mrec = mm_call(entry);
+	entry->sanitise(mrec);
+	snap = (unsigned long *) mrec->post_state;
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = page_size;
+	mrec->post_state = 12345;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a call whose snapshot is a pid was passed");
+	mrec->post_state = (unsigned long) snap;
+	post_state_disowned = snap;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a call whose snapshot is not owned was passed");
+	post_state_disowned = NULL;
+	*snap ^= 1UL;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a call whose snapshot has the wrong magic was passed");
+	*snap ^= 1UL;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("munmap: a call refused for its snapshot was refused once it was whole");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
+/* A compat call hands the kernel the low 32 bits of each slot, so the
+ * range is judged on those: a high mapping's address truncates to
+ * somewhere else, and an upper half on a low mapping's slots drops.  The
+ * sanitiser builds a real compat range over a low mapping. */
+#define LOW_POOL_MAP	0x40000000UL
+
+static void munmap_compat_slots_truncated(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	entry->sanitise(mrec);
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = page_size;
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a compat call was judged on the slots' upper halves");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mm_call(entry);
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	mrec->do32bit = true;
+	entry->sanitise(mrec);
+	if (mrec->a1 < LOW_POOL_MAP || validate_arg_coupling(mrec) != 0)
+		BUG("munmap: a compat call over a low mapping was emptied or refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mm_call(entry);
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	entry->sanitise(mrec);
+	mrec->a1 = LOW_POOL_MAP | (1UL << 32);
+	mrec->a2 = page_size | (1UL << 32);
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("munmap: a native call's upper halves were dropped");
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("munmap: a compat call inside a low mapping was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
+/* munmap's final range stays inside the mapping its sanitiser picked. */
+static void munmap_range_held_to_mapping(void)
+{
+	struct syscallentry munmap_entry = syscall_munmap;
+	struct syscallentry other = syscall_munmap;
+
+	/* As copy_syscall_table() stamps the copy. */
+	munmap_entry.is_munmap = true;
+	fake_get_objhead = no_pool;
+
+	munmap_sanitised_range_passes(&munmap_entry);
+	munmap_rewritten_range_held(&munmap_entry);
+	munmap_post_acts_on_final_range(&munmap_entry);
+	munmap_needs_its_snapshot(&munmap_entry);
+	munmap_compat_slots_truncated(&munmap_entry);
+
+	/* The rule is munmap's alone. */
+	mm_call(&other)->a2 = 0x7ffff000UL;
+	if (validate_arg_coupling(&mm_child.syscall) != 0)
+		BUG("munmap: the range rule judged an entry that is not munmap");
+
+	fake_get_objhead = NULL;
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -533,4 +783,5 @@ void arg_coupling_self_check(void)
 	count_held_inside_buffer();
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
+	munmap_range_held_to_mapping();
 }
