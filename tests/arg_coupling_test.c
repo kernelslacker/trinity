@@ -14,6 +14,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -1115,6 +1116,32 @@ static void munmap_post_acts_on_final_range(struct syscallentry *entry)
 		BUG("munmap: the post handler acted on the range sanitise drew");
 }
 
+/* @mrec, a call @name's hook passes with its own snapshot, is judged
+ * without it: the pointer swapped for a pid, the snapshot disowned by the
+ * ownership table, its magic changed.  Each is refused, and the call
+ * passes again once the snapshot is whole. */
+static void snapshot_gate_held(struct syscallrecord *mrec, const char *name)
+{
+	unsigned long *snap = (unsigned long *) mrec->post_state;
+	int pid, disowned, magic, whole;
+
+	mrec->post_state = 12345;
+	pid = validate_arg_coupling(mrec, mrec->entry);
+	mrec->post_state = (unsigned long) snap;
+	post_state_disowned = snap;
+	disowned = validate_arg_coupling(mrec, mrec->entry);
+	post_state_disowned = NULL;
+	*snap ^= 1UL;
+	magic = validate_arg_coupling(mrec, mrec->entry);
+	*snap ^= 1UL;
+	whole = validate_arg_coupling(mrec, mrec->entry);
+	if (pid != -1 || disowned != -1 || magic != -1 || whole != 0) {
+		fprintf(stderr, "%s: verdict %d with a pid for its snapshot, %d disowned, %d with another magic, %d whole\n",
+			name, pid, disowned, magic, whole);
+		BUG("arg coupling: a call was judged by a snapshot not its own");
+	}
+}
+
 /* Nothing names a mapping without the call's own snapshot: none, a pid
  * where the pointer was, one the ownership table does not hold, or one
  * with another magic.  Only a range the kernel acts on nothing of goes
@@ -1122,7 +1149,6 @@ static void munmap_post_acts_on_final_range(struct syscallentry *entry)
 static void munmap_needs_its_snapshot(struct syscallentry *entry)
 {
 	struct syscallrecord *mrec = mm_call(entry);
-	unsigned long *snap;
 
 	mrec->a1 = 0;
 	entry->sanitise(mrec);
@@ -1137,23 +1163,9 @@ static void munmap_needs_its_snapshot(struct syscallentry *entry)
 
 	mrec = mm_call(entry);
 	entry->sanitise(mrec);
-	snap = (unsigned long *) mrec->post_state;
 	mrec->a1 = POOL_MAP;
 	mrec->a2 = page_size;
-	mrec->post_state = 12345;
-	if (validate_arg_coupling(mrec, mrec->entry) != -1)
-		BUG("munmap: a call whose snapshot is a pid was passed");
-	mrec->post_state = (unsigned long) snap;
-	post_state_disowned = snap;
-	if (validate_arg_coupling(mrec, mrec->entry) != -1)
-		BUG("munmap: a call whose snapshot is not owned was passed");
-	post_state_disowned = NULL;
-	*snap ^= 1UL;
-	if (validate_arg_coupling(mrec, mrec->entry) != -1)
-		BUG("munmap: a call whose snapshot has the wrong magic was passed");
-	*snap ^= 1UL;
-	if (validate_arg_coupling(mrec, mrec->entry) != 0)
-		BUG("munmap: a call refused for its snapshot was refused once it was whole");
+	snapshot_gate_held(mrec, "munmap");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
 }
