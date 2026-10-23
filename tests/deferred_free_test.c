@@ -6,8 +6,8 @@
  * (ASAN=1), and NDEBUG (NDEBUG=1).  All twelve fixtures pass in all
  * three flavors.
  *
- * Prerequisites: persist/deferred-free.c compiled as a REAL_SRC (added
- * by the test-seam extension that compiles persist/deferred-free.c).
+ * Prerequisites: persist/deferred-free*.c compiled as REAL_SRCs (added
+ * by the test-seam extension that compiles persist/deferred-free*.c).
  *
  * mprotect failure injection (fixture 7): the Makefile passes
  * -Wl,--wrap=mprotect so every PLT mprotect call in the linked binary
@@ -193,7 +193,7 @@ static void fixture_duplicate_address(void)
 /*                                                                     */
 /* Force alloc_track[] and alloc_track_hash[] out of agreement via the */
 /* duplicate-ptr displacement scenario described in the alloc_track_   */
-/* lookup() comment (deferred-free.c §"Membership probe"):            */
+/* lookup() comment (deferred-free-alloc-track.c "Membership probe"): */
 /*                                                                     */
 /*   1. Track ptr_A -> array slot S1, hash[H_A] = ptr_A               */
 /*   2. Track ptr_A again -> array slot S2, hash unchanged (idempotent)*/

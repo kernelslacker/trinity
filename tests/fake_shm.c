@@ -19,11 +19,11 @@
  */
 
 /*
- * persist/deferred-free.c seam (prerequisite for direct
+ * persist/deferred-free*.c seam (prerequisite for direct
  * deferred-free unit coverage on the test seam).
  *
  * Globals and function stubs that satisfy the link when
- * persist/deferred-free.c is compiled as a REAL_SRC.  No fixture
+ * persist/deferred-free*.c are compiled as REAL_SRCs.  No fixture
  * exercises the deferred-free machinery in this commit; the stubs
  * exist solely so the seam links and future fixture TUs can be added
  * without mixing link fixes into test logic.

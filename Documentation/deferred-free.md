@@ -1,9 +1,9 @@
 # Deferred-free design notes
 
-Companion to `persist/deferred-free.c`.  The source file carries per-field and
-per-decl invariants inline; this document collects the multi-paragraph
-design-rationale essays those inline pointers refer to.  Sections are ordered
-roughly to match declaration order in the source.
+Companion to the `persist/deferred-free*.c` files.  The sources carry per-field
+and per-decl invariants inline; this document collects the multi-paragraph
+design-rationale essays those inline pointers refer to.  Each section is
+titled for the function or structure it explains.
 
 ## alloc_track hash table
 
@@ -20,17 +20,18 @@ the `PROT_READ` steady state and a repair would need an mprotect RW bracket.
 
 `alloc_track[]` remains the source of truth for lifecycle (which slot a ptr
 lives in, who got displaced on rotation); the hash mirrors it for membership
-only.  Every write to `alloc_track[]` in this file is paired with the matching
-hash op inside the same function, so the two stay in lock-step apart from the
-duplicate-ptr case below.  A divergence here isn't just a perf miss -- it
-would be a correctness bug in the deferred-free gate, the very thing the
-opt-in `zmalloc_tracked()` set was built around.
+only.  Every write to `alloc_track[]` in `deferred-free-alloc-track.c` is
+paired with the matching hash op inside the same function, so the two stay in
+lock-step apart from the duplicate-ptr case below.  A divergence here isn't
+just a perf miss -- it would be a correctness bug in the deferred-free gate,
+the very thing the opt-in `zmalloc_tracked()` set was built around.
 
 16384 slots vs `ALLOC_TRACK_SIZE=4096` -> 0.25 max load factor, keeping the
 average probe length ~1.3 even at full occupancy.  Power of two so the modulo
 collapses to a bitmask.  Storage shares the `alloc_track` mmap region (see
-`alloc_track` declaration in the source) so one mprotect bracket covers both
-arrays.  Slots DO hold pointer values an attacker can turn into a `free()`
+the `alloc_track_base` declaration in `deferred-free-regions.c`) so one mprotect
+bracket covers both arrays.  Slots DO hold pointer values an attacker can turn
+into a `free()`
 target -- `alloc_track_lookup` gates `cleanup_release_post_state` ->
 `tracked_free_now` -> `free()` and the deferred-free enqueue admission, and
 `alloc_track_consume` (same pages) is the deferred-free free-time ownership

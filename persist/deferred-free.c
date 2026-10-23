@@ -4,7 +4,9 @@
  * overlap in time and expose kernel UAF / stale-ref / double-free.
  * Membership tests stay bounded under millions of syscalls: alloc_track
  * goes through a side hash, ring and arena residency are bounded scans
- * of the authoritative arrays.
+ * of the authoritative arrays.  The alloc_track side-set, generation
+ * arena, protected regions and per-record release live in the
+ * deferred-free-*.c siblings.
  */
 
 #include <errno.h>
