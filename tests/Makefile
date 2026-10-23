@@ -504,9 +504,15 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 # keyctl's sanitiser asks for a key serial pool that is not there.
 # objects/objpool-arena.c brings the arena a child's local pools live
 # in, which objpool_reader_test.c builds its pools from.
+# mm/maps-lifecycle.c brings clone_global_mmap_pool(), whose dedup walk
+# the same test runs over a local pool that already holds every global
+# map, so it never reaches the alloc_object() and add_object() of a
+# fresh clone; fake_shm.c answers the heap_brk_maybe_refresh() that
+# alloc_object() names.
 PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
 		   $(TOP)/objects/registry.c \
-		   $(TOP)/objects/objpool-arena.c
+		   $(TOP)/objects/objpool-arena.c \
+		   $(TOP)/mm/maps-lifecycle.c
 FAKE_SRCS	+= objpool_reader_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

@@ -15,7 +15,7 @@
 #include "stats_ring.h"		/* struct stats_aggregate, stats_ring_enqueue */
 #include "utils-mem.h"		/* track/untrack_shared_region, range_overlaps_shared,
 				   range_overlaps_libc_heap, is_in_glibc_heap,
-				   heap_bounds_init */
+				   heap_bounds_init, heap_brk_maybe_refresh */
 #include "utils-alloc.h"	/* deferred_free_reject_bump,
 				   looks_like_corrupted_ptr_pc,
 				   log_self_corrupt_culprit */
@@ -153,6 +153,10 @@ bool is_in_glibc_heap(const void *p)
 }
 
 void heap_bounds_init(void)
+{
+}
+
+void heap_brk_maybe_refresh(void)
 {
 }
 

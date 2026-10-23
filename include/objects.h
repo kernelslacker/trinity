@@ -514,6 +514,14 @@ void destroy_global_objects(void);
 void objpool_local_arena_init(void);
 
 /*
+ * True if [p, p+size) lies wholly inside the objpool arena, whose
+ * storage is neither libc heap nor tracked by alloc_track.  Public so
+ * mm/maps-lifecycle.c's dedup walk can tell an arena obj from a
+ * libc-fallback one; objects/objpool-arena.c lists the callers.
+ */
+bool objpool_local_arena_owns(const void *p, unsigned long size) __must_check;
+
+/*
  * Self-registration for global object initializers.  Each object subsystem
  * calls REG_GLOBAL_OBJ() once (at program startup, via a constructor) to
  * register its init function.  init_global_objects() iterates the list and

@@ -59,16 +59,11 @@ void destroy_objects(enum objecttype type, enum obj_scope scope);
  *                                 returns NULL on unavailable / oversize
  *                                 / exhausted, cueing the caller to fall
  *                                 back to zmalloc_tracked.
- *   objpool_local_arena_owns   -- containment check used by the release
- *                                 path to route back into the arena
- *                                 memset-and-leak branch instead of the
- *                                 libc-heap deferred_free_enqueue path,
- *                                 and by the pool readers to accept
- *                                 arena storage, which is not libc heap.
  *
  * The parent-side one-shot init entry point (objpool_local_arena_init)
- * is declared in include/objects.h so the pre-fork init call from
- * utils/shm.c can pick it up without pulling in the internal glue.
+ * and the containment check (objpool_local_arena_owns) are declared in
+ * include/objects.h, so the pre-fork init call from utils/shm.c and the
+ * mm/maps-lifecycle.c dedup walk can reach them without pulling in the
+ * internal glue.
  */
 void *objpool_local_arena_alloc(unsigned long size) __must_check;
-bool objpool_local_arena_owns(const void *p, unsigned long size) __must_check;

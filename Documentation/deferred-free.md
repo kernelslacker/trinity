@@ -94,11 +94,14 @@ array (at head) and exactly once in the hash; on a miss the alloc_track
 state is unchanged.
 
 Pair with the `OBJ_LOCAL` anon-pool dedup-skip in `clone_global_mmap_pool`:
-dedup'd pool entries don't trigger a fresh `__zmalloc_tracked`, so without
-this refresh their `alloc_track` slots rotate out under churn from unrelated
-tracked allocations faster than any fixed `ALLOC_TRACK_SIZE` can absorb at
-full throughput.  Refreshing the LRU position on reuse keeps a long-lived
-dedup'd entry resident regardless of churn rate.
+dedup'd libc-heap pool entries (the `zmalloc_tracked()` fallback) don't
+trigger a fresh `__zmalloc_tracked`, so without this refresh their
+`alloc_track` slots rotate out under churn from unrelated tracked
+allocations faster than any fixed `ALLOC_TRACK_SIZE` can absorb at full
+throughput.  Refreshing the LRU position on reuse keeps a long-lived
+dedup'd entry resident regardless of churn rate.  An entry in the objpool
+arena, where a child's local pool objects normally live, is never
+tracked, so the dedup-skip leaves it alone (`objpool_local_arena_owns()`).
 
 Ring-residency gate: skip the consume + re-add when `@ptr` is currently
 pinned in the deferred ring.  The ring already owns the chunk's lifecycle

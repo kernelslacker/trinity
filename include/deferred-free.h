@@ -65,9 +65,10 @@ size_t alloc_track_lookup_size(void *ptr) __must_check;
 
 /*
  * Refresh an existing tracked allocation's LRU position.  Use this
- * when an already-tracked pointer is re-referenced (mm/maps-lifecycle.c dedup-skip,
- * add_object_grow_capacity()'s touch of a libc-heap head->array -- an arena
- * one is never tracked) and you want it to survive subsequent LRU rotation.
+ * when an already-tracked pointer is re-referenced (mm/maps-lifecycle.c's
+ * dedup-skip of a libc-fallback local obj, add_object_grow_capacity()'s
+ * touch of a libc-heap head->array -- arena storage is never tracked) and
+ * you want it to survive subsequent LRU rotation.
  * Bumps alloc_track_refresh_consume_miss and leaves the alloc_track state
  * unchanged when @ptr is not currently tracked (rotated out, or never
  * tracked -- the two are indistinguishable from the refresh site, and the

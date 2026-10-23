@@ -1,16 +1,17 @@
 /*
- * Self-check for the storage test the pool readers make before a load:
- * get_random_object(), objpool_check() and for_each_obj take the arrays
- * and objects a child's OBJ_LOCAL pools keep in the objpool arena, still
- * take what the libc fallback allocates, and refuse what is in neither.
- * The heap probe answers for one buffer, so the arena lies outside the
- * heap as it does in a child.
+ * Self-check for the code that tells a child's arena-backed pool storage
+ * from libc heap: get_random_object(), objpool_check() and for_each_obj
+ * take arena, fallback and mixed pools and refuse storage in neither, and
+ * clone_global_mmap_pool()'s dedup walk refreshes alloc_track only for a
+ * fallback copy.  The heap probe answers for one buffer, so the arena
+ * lies outside the heap as it does in a child.
  */
 
 #include <stdbool.h>
 #include <string.h>
 
 #include "debug.h"		/* BUG */
+#include "mm/maps-internal.h"	/* clone_global_mmap_pool */
 #include "objects.h"
 #include "objects-internal.h"	/* objpool_local_arena_alloc */
 #include "shm.h"
@@ -185,6 +186,60 @@ static void stray_storage_is_refused(void)
 		check_refuses_obj(stray_objs[i]);
 }
 
+static struct objhead global_maps, local_maps;
+
+static struct objhead *the_map_pools(enum obj_scope scope,
+				     enum objecttype type)
+{
+	if (type != OBJ_MMAP_ANON)
+		return NULL;
+	return scope == OBJ_GLOBAL ? &global_maps : &local_maps;
+}
+
+/*
+ * The dedup walk refreshes the alloc_track slot of a local copy only when
+ * it is a libc-fallback object, which release_obj() will hand to
+ * deferred_free_enqueue(); an arena copy is never tracked.  Every global
+ * map here already has a local copy, so the walk clones nothing, and the
+ * fallback copy is not tracked either, so its refresh is the one consume
+ * miss the walk may count.  The regions alloc_track_refresh() reads are
+ * the ones deferred_free_ownership_self_check() set up.
+ */
+static void dedup_refreshes_only_fallback_copies(void)
+{
+	static char name[] = "dedup";
+	static struct object global_objs[POOL_SIZE];
+	struct object **local_array = arena_alloc(POOL_SIZE * sizeof(*local_array));
+	unsigned long miss = shm->stats.deferred_free.alloc_track_refresh_consume_miss;
+	unsigned long refreshed;
+	unsigned int i;
+
+	for (i = 0; i < POOL_SIZE; i++) {
+		struct object *copy = i == 0 ? &heap_store.objs[0]
+					     : arena_alloc(sizeof(struct object));
+
+		global_objs[i].map.name = name;
+		global_objs[i].map.ptr = (void *)(0x10000UL * (i + 1));
+		heap_store.array[i] = &global_objs[i];
+		copy->map.ptr = global_objs[i].map.ptr;
+		local_array[i] = copy;
+	}
+	global_maps = (struct objhead){ .array = heap_store.array,
+					.num_entries = POOL_SIZE };
+	local_maps = (struct objhead){ .array = local_array,
+				       .num_entries = POOL_SIZE };
+
+	fake_get_objhead = the_map_pools;
+	clone_global_mmap_pool(OBJ_MMAP_ANON);
+	fake_get_objhead = the_pool;
+
+	refreshed = shm->stats.deferred_free.alloc_track_refresh_consume_miss - miss;
+	if (refreshed > 1)
+		BUG("objpool reader: the dedup walk refreshed an arena copy");
+	if (refreshed == 0)
+		BUG("objpool reader: the dedup walk did not refresh the fallback copy");
+}
+
 /* Take what is left of the arena, largest block first.  Every block is a
  * multiple of 16 bytes, so the last one ends where the arena does. */
 static unsigned long take_rest_of_arena(void)
@@ -248,6 +303,7 @@ void objpool_reader_self_check(void)
 	arena_pool_is_read(arena_objs);
 	fallback_pool_is_read(arena_objs);
 	stray_storage_is_refused();
+	dedup_refreshes_only_fallback_copies();
 	arena_extent_is_checked(arena_objs[0]);
 
 	fake_get_objhead = NULL;

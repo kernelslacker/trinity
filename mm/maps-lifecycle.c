@@ -231,18 +231,22 @@ void clone_global_mmap_pool(enum objecttype type)
 		 * each refill appends N copies of every global entry,
 		 * bloating per-child memory (leaked strdup'd names) and
 		 * skewing future uniform draws.
+		 *
+		 * A hit keeps the local obj rather than allocating a fresh
+		 * one, so its alloc_track slot only ages.  Refresh it: a
+		 * libc-fallback obj has to stay tracked until release_obj()
+		 * hands it to deferred_free_enqueue(), whose ownership gate
+		 * leaks an untracked pointer.  An arena obj is never tracked
+		 * or freed, and is skipped by the extent release_obj()
+		 * decides by.
 		 */
 		if (localhead != NULL && localhead->array != NULL) {
 			for_each_obj(localhead, localobj, lidx) {
 				if (localobj->map.ptr == m->ptr) {
 					dup = true;
-					/* Refresh the local obj in df_alloc_track[] so the validator
-					 * LRU lookup at get_map_handle (mm/maps-pick.c) stays warm
-					 * even when dedup skips a fresh __zmalloc_tracked.  Without
-					 * this, dedup starves alloc_track and pool entries rotate
-					 * out under churn (the 256->4096 alloc_track widen was outpaced 100x
-					 * at full throughput). */
-					alloc_track_refresh(localobj);
+					if (!objpool_local_arena_owns(localobj,
+							sizeof(*localobj)))
+						alloc_track_refresh(localobj);
 					break;
 				}
 			}

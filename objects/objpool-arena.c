@@ -63,13 +63,15 @@ void objpool_local_arena_init(void)
 }
 
 /*
- * Return true if [p, p+size) falls entirely inside the arena.  Used by
- * release_obj() and add_object_grow_capacity() to choose the arena
- * memset/no-op path over the deferred_free_enqueue() path, and by
- * objpool_storage_plausible() to accept arena storage, which the libc
- * heap check refuses.  size==0 degenerates to a point-in-arena check.
- * A NULL base (init failed or ran before this call) returns false so
- * callers unconditionally take the libc-heap path.
+ * Return true if [p, p+size) falls entirely inside the arena.  Arena
+ * storage never reaches free() or alloc_track: release_obj() and
+ * add_object_grow_capacity() use this to keep it off the
+ * deferred_free_enqueue() path, add_object_grow_capacity() and
+ * clone_global_mmap_pool()'s dedup walk to skip its alloc_track
+ * refresh, and objpool_storage_plausible() to accept it where the libc
+ * heap check refuses it.  size==0 degenerates to a point-in-arena
+ * check.  A NULL base (init failed or ran before this call) returns
+ * false so callers unconditionally take the libc-heap path.
  */
 bool objpool_local_arena_owns(const void *p, unsigned long size)
 {
