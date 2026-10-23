@@ -30,9 +30,9 @@ static const struct genl_cmd_grammar handshake_cmds[] = {
 /*
  * Attribute spec follows the HANDSHAKE_A_ACCEPT_* enum in
  * <linux/handshake.h>.  SOCKFD is a uapi-s32 listener-socket fd that
- * the kernel sets on the reply side and that ACCEPT request messages
- * leave unset; emitting it as a four-byte scalar lets the validator
- * see both sign-extensions and the kernel's bad-fd rejection path.
+ * the kernel sets on the reply side.  ACCEPT's request policy has no
+ * slot for it (id 1 is untyped there), so a request that carries it is
+ * rejected with -EINVAL at the policy walk, before the handler runs.
  * HANDLER_CLASS is a u32 enum (NONE / TLSHD / MAX) the ACCEPT request
  * keys on to pick a queue; emitting random four-byte values exercises
  * the unknown-class rejection branch alongside the in-range values.
