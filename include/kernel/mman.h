@@ -6,6 +6,14 @@
 #ifndef PROT_SEM
 #define PROT_SEM 0x8
 #endif
+#ifdef __aarch64__
+#ifndef PROT_MTE
+#define PROT_MTE	0x20		/* aarch64 MTE (5.10+) */
+#endif
+#ifndef PROT_BTI
+#define PROT_BTI	0x10		/* aarch64 BTI */
+#endif
+#endif
 #ifndef MAP_HUGETLB
 #define MAP_HUGETLB 0x40000
 #endif

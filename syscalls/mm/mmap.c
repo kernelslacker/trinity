@@ -522,16 +522,6 @@ static char * decode_mmap(struct syscallrecord *rec, unsigned int argnum)
 	return NULL;
 }
 
-#ifdef __aarch64__
-#ifndef PROT_MTE
-#define PROT_MTE	0x20		/* aarch64 MTE (5.10+) */
-#endif
-
-#ifndef PROT_BTI
-#define PROT_BTI	0x10		/* aarch64 BTI */
-#endif
-#endif
-
 static unsigned long mmap_prots[] = {
 	PROT_READ, PROT_WRITE, PROT_EXEC, PROT_SEM,
 #ifdef __aarch64__
