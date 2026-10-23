@@ -52,8 +52,8 @@ static const unsigned long mremap_invalid_combos[] = {
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the new_len value that gets cached into
- * map->size, or retarget the trinity-tracked map pointer the post
- * handler updates.
+ * map->size and map->tracked_size, or retarget the trinity-tracked map
+ * pointer the post handler updates.
  *
  * Unlike the readlink/statfs family, post_mremap does not memcpy out of
  * a kernel-written user buffer; it writes the kernel's returned address
@@ -264,6 +264,18 @@ static void post_mremap(struct syscallrecord *rec)
 
 	map->ptr = ptr;
 	map->size = snap->new_len;
+	/*
+	 * The VMA the entry now describes was made new_len long, and
+	 * tracked_size is that extent: map_destructor() and a whole-mapping
+	 * munmap unmap it, and map_range_vet() holds a later range to it.
+	 * Left at the old length, a shrink or a move has them reach past the
+	 * VMA into whatever is mapped there since.  The clamp below lowers
+	 * only size, as post_mmap()'s does.  The shared-region tracker never
+	 * sees the change: the entries over tracked regions are clones that
+	 * do not own their VMA, which map_destructor() never untracks, and
+	 * the sanitiser empties the old range of every one of them.
+	 */
+	map->tracked_size = snap->new_len;
 
 	/*
 	 * Invalidate the get_writable_address() known_rw skip-cache.  The

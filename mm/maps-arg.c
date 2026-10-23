@@ -173,9 +173,10 @@ bool page_span_inside(const struct page_span *pages, unsigned long base,
  *
  * So the pages the final slots have the kernel act on have to lie inside
  * the mapping the sanitiser picked, as far as the kernel mapped it:
- * tracked_size is the length the VMA was made with and size its walkable
- * part, smaller for a file clamped to its end and larger after an
- * mremap() grow, so the larger of the two.
+ * tracked_size is the length the VMA was made with, and size its walkable
+ * part, which a file clamp lowers below it.  The larger of the two is
+ * taken so that an entry whose tracked_size was never set falls back to
+ * size, as map_destructor() does.
  *
  * The mapping comes from the call's own snapshot; with none, only a range
  * the kernel acts on nothing of passes.  A pass moves the snapshot's addr

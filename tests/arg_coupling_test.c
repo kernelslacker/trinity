@@ -997,9 +997,9 @@ static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
 
 /* Whatever the sanitiser builds is a range it vetted, a whole-mapping
  * unmap included: of a mapping as it was made, of a file mapping clamped
- * below its VMA, of one whose tracked size was never set, and of one an
- * mremap() grow left larger than its tracked size.  A compat call over
- * the high mapping is built empty rather than refused. */
+ * below its VMA, of one whose tracked size was never set, and of one
+ * whose size is larger than its tracked size.  A compat call over the
+ * high mapping is built empty rather than refused. */
 static void munmap_sanitised_range_passes(struct syscallentry *entry)
 {
 	unsigned int i;
@@ -1352,8 +1352,8 @@ static void range_pages_read_as_the_kernel_does(void)
 }
 
 /* set_mempolicy_home_node's sanitiser turns the ARG_MMAP handle into the
- * picked mapping's address and a length inside it, over a mapping an
- * mremap() grow left larger than its tracked size too, and its hook holds
+ * picked mapping's address and a length inside it, over a mapping whose
+ * size is larger than its tracked size too, and its hook holds
  * the final slots there: a length or an address a rewrite moves out of
  * the mapping is refused, a range still inside passes, and so does one
  * the kernel acts on nothing of.  A compat call is built empty over the
@@ -1690,9 +1690,9 @@ static void remap_file_pages_range_held_to_mapping(void)
 		entry.cleanup(mrec);
 	}
 
-	/* Over a mapping an mremap() grow left larger than its tracked size
-	 * too; a compat call over the high mapping is built empty rather
-	 * than refused. */
+	/* Over a mapping whose size is larger than its tracked size too; a
+	 * compat call over the high mapping is built empty rather than
+	 * refused. */
 	for (i = 0; i < MM_DRAWS; i++) {
 		mrec = remap_call(&entry);
 		if (i & 1)
@@ -1776,9 +1776,9 @@ static void mprotect_range_held_to_mapping(void)
 		struct syscallentry *entry = entries[e];
 		struct syscallrecord *mrec;
 
-		/* Over a mapping an mremap() grow left larger than its
-		 * tracked size too; a compat call over the high mapping is
-		 * built empty rather than refused. */
+		/* Over a mapping whose size is larger than its tracked
+		 * size too; a compat call over the high mapping is built
+		 * empty rather than refused. */
 		for (i = 0; i < MM_DRAWS; i++) {
 			mrec = mm_call(entry);
 			if (i & 1)
@@ -2017,9 +2017,9 @@ static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
 	struct syscallrecord *mrec;
 	unsigned int i;
 
-	/* Over a mapping an mremap() grow left larger than its tracked size
-	 * too; a compat call over the high mapping is built empty rather
-	 * than refused. */
+	/* Over a mapping whose size is larger than its tracked size too; a
+	 * compat call over the high mapping is built empty rather than
+	 * refused. */
 	for (i = 0; i < MM_DRAWS; i++) {
 		mrec = mm_call(madvise_entry);
 		if (i & 1)
@@ -2181,6 +2181,70 @@ static void mremap_fixed_target_checked_rounded(void)
 	fake_this_child = NULL;
 }
 
+/* An mremap() call the sanitiser built over the pool mapping, redrawn
+ * until its new_len is below the mapping's size, or above it for @grow. */
+static struct syscallrecord *mremap_drawn(struct syscallentry *entry,
+					  bool grow)
+{
+	const unsigned long whole = POOL_PAGES * page_size;
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		if (grow ? mrec->a3 > whole : mrec->a3 < whole)
+			return mrec;
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	BUG("mremap: the sanitiser never drew the new length the case needs");
+}
+
+/* An mremap() that worked leaves the pool entry describing the mapping the
+ * kernel made, where it returned and new_len long, as its VMA's extent too:
+ * a munmap of it is held to that, not to the length it had before.  A
+ * shrink in place, a shrink that moved, and a grow. */
+static void mremap_post_follows_mapping(void)
+{
+	struct syscallentry mremap_entry = syscall_mremap;
+	struct syscallentry munmap_entry = syscall_munmap;
+	const unsigned long moved_to = POOL_MAP + 0x40000000UL;
+	unsigned int i;
+
+	fake_get_objhead = no_pool;
+	for (i = 0; i < 3; i++) {
+		struct syscallrecord *mrec = mremap_drawn(&mremap_entry, i == 2);
+		unsigned long to = i == 1 ? moved_to : POOL_MAP;
+		unsigned long new_len = mrec->a3;
+
+		mrec->retval = to;
+		mremap_entry.post(mrec);
+		if (pool_obj.map.ptr != (void *) to ||
+		    pool_obj.map.size != new_len ||
+		    pool_obj.map.tracked_size != new_len)
+			BUG("mremap: the pool entry does not describe the mapping the kernel made");
+
+		/* mm_call() would put the mapping back as it was. */
+		mrec = &mm_child.syscall;
+		memset(mrec, 0, sizeof(*mrec));
+		mrec->entry = &munmap_entry;
+		mrec->a1 = (unsigned long) &pool_obj.map;
+		munmap_entry.sanitise(mrec);
+		mrec->a1 = to;
+		mrec->a2 = new_len + page_size;
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("mremap: a munmap past the remapped mapping was kept");
+		mrec->a2 = new_len;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mremap: a munmap of the remapped mapping was refused");
+		mrec->retval = (unsigned long) -1L;
+		munmap_entry.post(mrec);
+	}
+	fake_get_objhead = NULL;
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2208,4 +2272,5 @@ void arg_coupling_self_check(void)
 	image_table_covers_the_image();
 	mremap_fixed_target_off_image();
 	mremap_fixed_target_checked_rounded();
+	mremap_post_follows_mapping();
 }
