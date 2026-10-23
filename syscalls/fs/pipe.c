@@ -12,6 +12,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/watch_queue.h"
 static void register_pipe_fd(int fd, bool reader)
 {
 	struct object *new;
@@ -258,10 +259,6 @@ struct syscallentry syscall_pipe = {
 /*
  * SYSCALL_DEFINE2(pipe2, int __user *, fildes, int, flags)
  */
-
-#ifndef O_NOTIFICATION_PIPE
-#define O_NOTIFICATION_PIPE	O_EXCL
-#endif
 
 static unsigned long pipe2_flags[] = {
 	O_CLOEXEC, O_NONBLOCK, O_DIRECT, O_NOTIFICATION_PIPE,

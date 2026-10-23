@@ -16,6 +16,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/watch_queue.h"
 /*
  * Only the read end of an O_NOTIFICATION_PIPE pipe carries a watch_queue;
  * the write end is a normal pipe writer that the kernel uses to push
@@ -26,9 +27,6 @@
  * cycle.
  */
 
-#ifndef O_NOTIFICATION_PIPE
-#define O_NOTIFICATION_PIPE	O_EXCL
-#endif
 #ifndef IOC_WATCH_QUEUE_SET_SIZE
 #define IOC_WATCH_QUEUE_SET_SIZE	_IO('W', 0x60)
 #endif
