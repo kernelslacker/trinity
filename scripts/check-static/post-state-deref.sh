@@ -10,11 +10,9 @@
 # one validates the USE SITE (the handler must actually consult the
 # cookie / heap-shape gate before chasing the pointer).
 #
-# The bug class this catches is the io_submit post_state deref
-# (fixed in b526ecb0c675 ("io_submit: gate post_state deref with
-# looks_like_corrupted_ptr")): post_io_submit() snapshotted iocbpp into
-# rec->post_state, NULL-checked the snapshot, and then walked iocbpp[i]
-# straight through.  A sibling-syscall scribble of rec->post_state with
+# The bug class this catches is the io_submit post_state deref:
+# post_io_submit() snapshotted iocbpp into rec->post_state, NULL-checked
+# the snapshot, and then walked iocbpp[i] straight through.  A sibling-syscall scribble of rec->post_state with
 # a heap-shaped but foreign pointer would slip past the NULL gate and
 # drive a child SIGSEGV that surfaced as a false-positive trinity bug.
 # The sibling post_io_setup() handler had it right -- gate with

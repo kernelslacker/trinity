@@ -383,10 +383,9 @@ comm -23 "$FIELDS" "$REACHABLE" > "$UNREACHED"
 # Pre-emptive assertion: every field about to be flagged UNREACHED must
 # have zero occurrences in the HFILES_POP \ HFILES_EXCL gap.
 #
-# f216b3830da2 ("check-stats-reachable: separate population and exclusion
-# header sets") split the old single HFILES into HFILES_POP (all
-# headers under $ROOT, ~593 files) and HFILES_EXCL ($SUBSYS_DIR +
-# $ROOT/include, ~535 files), leaving ~58 headers in HFILES_POP that are
+# The script keeps two header sets: HFILES_POP (all headers under $ROOT,
+# ~593 files) and HFILES_EXCL ($SUBSYS_DIR + $ROOT/include, ~535 files),
+# leaving ~58 headers in HFILES_POP that are
 # NOT in HFILES_EXCL.  Those 58 gap headers are covered neither by the
 # write-exclusion scan (HFILES_NORM, built from HFILES_EXCL) nor by the
 # consumer-read scan.  A field referenced only from a gap header would

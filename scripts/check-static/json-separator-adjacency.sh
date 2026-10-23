@@ -3,12 +3,10 @@
 # json-separator-adjacency: detect missing comma separators between
 # adjacent stat_category_emit_json() calls within a function in stats/json/*.c.
 #
-# Background: 872757fb803b ("stats/json: fix missing comma before ip6mr_churn
-# in network section") fixed a real malformed-JSON bug in
-# dump_stats_json_netfilter_and_xfrm() (network.c:329-332) where the
-# putchar(',') between ipmr_getroute_pktinfo_category and ip6mr_churn_category
-# was missing.  The static schema gate reconstructs from source and never
-# parses binary output, so the missing comma passed every pre-existing check.
+# Background: a real malformed-JSON bug had a missing putchar(',') between
+# two adjacent stat_category_emit_json() calls in one dump function.  The
+# static schema gate reconstructs from source and never parses binary
+# output, so the missing comma passed every pre-existing check.
 # The runtime gate (scripts/check-runtime-json-output.sh) only covers paths the
 # fixture actually exercises, leaving paths outside the baseline unvalidated.
 #
@@ -16,19 +14,19 @@
 # because a comma can be wrong in two ways:
 #
 #   NO SEPARATOR   - two stat_category_emit_json() calls with no separator
-#                    between them, i.e. a missing comma (the 872757fb803b bug).
+#                    between them, i.e. a missing comma (the bug above).
 #   ORPHAN SEPARATOR - two separators with no emit between them, i.e. a comma
 #                    with nothing to separate.  This is what deleting a stats
 #                    category leaves behind: the category's emit line goes and
 #                    its json_stats_sep() stays, producing ",," and a document
 #                    that no JSON parser will accept.  Categories get deleted
-#                    routinely now (the childop burns), so this direction is
-#                    not hypothetical -- it was found by the runtime gate
+#                    whenever a childop goes away, so this direction is not
+#                    hypothetical -- it was found by the runtime gate
 #                    while this check, whose entire subject is separator
 #                    adjacency, passed the same tree.
 #
-# Regression fixture: the pre-fix pre-image of dump_stats_json_netfilter_and_xfrm
-# (minus the putchar between ipmr_getroute_pktinfo_category and ip6mr_churn_category)
+# Regression fixture: a reduced copy of the function that shipped the bug
+# (no putchar between ipmr_getroute_pktinfo_category and ip6mr_churn_category)
 # is replayed inline as a known-bad input; the detector must produce exactly
 # one hit against it.
 
@@ -155,13 +153,11 @@ PYEOF
 }
 
 # ---------------------------------------------------------------------------
-# Regression fixture: replay the pre-fix pre-image of
-# dump_stats_json_netfilter_and_xfrm to verify the detector catches the
-# historical missing-separator bug (872757fb803b^).
+# Regression fixture: replay a reduced copy of the function that shipped the
+# missing-separator bug, to verify the detector catches it.
 #
-# The snippet reproduces the offending function tail verbatim, omitting the
-# putchar(',') that was added between ipmr_getroute_pktinfo_category and
-# ip6mr_churn_category.  The detector must report exactly one violation.
+# The snippet omits the putchar(',') between ipmr_getroute_pktinfo_category
+# and ip6mr_churn_category.  The detector must report exactly one violation.
 # ---------------------------------------------------------------------------
 
 FIXTURE_FILE="$(mktemp /tmp/json-sep-fixture.XXXXXX.c)"

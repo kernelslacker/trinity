@@ -46,7 +46,6 @@
 # ---------------------------------------------------------------------------
 # XFRMA_* -- linux/xfrm.h (newer attrs shimmed in net/netlink/msg-tables.c)
 #   enum positions verified against linux-linus include/uapi/linux/xfrm.h
-#   (commit 053ee9424ae8 corrected these from an off-by-one)
 # ---------------------------------------------------------------------------
 XFRMA_NAT_KEEPALIVE_INTERVAL  34
 XFRMA_SA_PCPU                 35

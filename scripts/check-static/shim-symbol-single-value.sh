@@ -15,9 +15,9 @@
 # whichever copy its includes reach, and the two halves of trinity then
 # disagree about the ABI while every build stays green.
 #
-# That is not hypothetical: struct ns_id_req shipped as a 24-byte layout
-# in struct_catalog/ and a 32-byte layout in include/kernel/nsfs.h, with
-# NS_ID_REQ_SIZE_VER0 defined as both 24 and 32, until 4464b8fc4301.
+# That is not hypothetical: struct ns_id_req once shipped as a 24-byte
+# layout in struct_catalog/ and a 32-byte layout in include/kernel/nsfs.h,
+# with NS_ID_REQ_SIZE_VER0 defined as both 24 and 32.
 # The catalog wrote listns fields at offsets the sanitiser did not use.
 # Nothing in the battery asked the one question that would have caught
 # it, even though uapi-shim-values had both pairs sitting in its harvest.
