@@ -3,7 +3,7 @@
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: (address, length)
  * coherence, then the per-syscall rules for fcntl F_SETSIG, waits on a pid
- * namespace init, close_range, madvise, the munmap and mprotect ranges and
+ * namespace init, close_range, the madvise, munmap and mprotect ranges and
  * buf_count_slot byte counts.
  */
 #include <fcntl.h>
@@ -384,7 +384,11 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	 * kernel constant in either slot, which leaves the kernel reading a
 	 * range nobody vetted.  Repaired as the sanitiser does, on the final
 	 * slots like F_SETSIG above; the advice stays, so a REMOVE that
-	 * lands here reaches the kernel as an empty range.
+	 * lands here reaches the kernel as an empty range.  The rule below,
+	 * which holds the range to the mapping the sanitiser picked, does
+	 * not make this one redundant: the initial anonymous mappings and
+	 * mmap_fd()'s file mappings are pool mappings and tracked regions
+	 * at once.  This runs first, so the snapshot takes the repair.
 	 */
 	if (entry->is_madvise &&
 	    (range_overlaps_shared(rec->a1, rec->a2) ||
@@ -395,18 +399,21 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	}
 
 	/*
-	 * munmap, mprotect, pkey_mprotect: the final range has to stay
-	 * inside the pool mapping the sanitiser picked (see map_range_vet()).
-	 * Chain substitution and a RedQueen pin rewrite slots after the
-	 * sanitiser has run, and the kernel unmaps or reprotects every VMA a
+	 * munmap, mprotect, pkey_mprotect, madvise: the final range has to
+	 * stay inside the pool mapping the sanitiser picked, and a madvise
+	 * may not have become a GUARD_INSTALL (see map_range_vet()).  Chain
+	 * substitution and a RedQueen pin rewrite slots after the sanitiser
+	 * has run, and the kernel unmaps, reprotects or advises every VMA a
 	 * longer range reaches.  Refused like close_range above; a call that
 	 * passes has its snapshot moved to the final slots, so the post
 	 * handler acts on what the kernel was handed.
 	 */
 	if ((entry->is_munmap && !munmap_vet_final_slots(rec)) ||
-	    (entry->is_mprotect_family && !mprotect_vet_final_slots(rec))) {
-		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
-			  entry->name);
+	    (entry->is_mprotect_family && !mprotect_vet_final_slots(rec)) ||
+	    (entry->is_madvise && !madvise_vet_final_slots(rec))) {
+		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked%s\n",
+			  entry->name,
+			  entry->is_madvise ? ", or the advice installs guard pages" : "");
 		return -1;
 	}
 

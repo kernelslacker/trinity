@@ -1,5 +1,9 @@
 /*
  * SYSCALL_DEFINE3(madvise, unsigned long, start, size_t, len_in, int, behavior)
+ *
+ * The range stays inside the pool mapping the sanitiser picked, and a
+ * GUARD_INSTALL acts on none, final slots included
+ * (madvise_vet_final_slots()).
  */
 #include <sys/mman.h>
 #include "deferred-free.h"
@@ -65,7 +69,8 @@ static const unsigned long madvise_bucket_destructive[] = {
 
 /*
  * Snapshot of the madvise inputs read by the post handler, captured at
- * sanitise time and consumed by the post handler.  Lives in
+ * sanitise time, moved to the final slots at dispatch
+ * (madvise_vet_final_slots()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot retarget invalidate_obj_mmap_in_range() at an
@@ -78,10 +83,35 @@ static const unsigned long madvise_bucket_destructive[] = {
 #define MADVISE_POST_STATE_MAGIC	0x4D414456UL	/* "MADV" */
 struct madvise_post_state {
 	unsigned long magic;
-	unsigned long addr;
-	unsigned long len;
+	struct map_range range;
 	unsigned long advice;
 };
+
+/*
+ * validate_arg_coupling() holds the final slots to the mapping with this
+ * (see map_range_vet()), and fails a final MADV_GUARD_INSTALL over any
+ * range the kernel acts on: its guard PTEs fault on access while the
+ * entry's prot still claims the pages, which is why the sanitiser empties
+ * it.  do_madvise() reads the advice as an int, and a pass moves it into
+ * the snapshot for post_madvise's invalidation.  A record with no
+ * snapshot of ours passes only a range the kernel acts on nothing of.
+ * Shape, then ownership, then magic, as close_range_call_is_vetted()
+ * orders them.
+ */
+bool madvise_vet_final_slots(const struct syscallrecord *rec)
+{
+	struct madvise_post_state *snap =
+		(struct madvise_post_state *) rec->post_state;
+	int advice = (int) rec->a3;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != MADVISE_POST_STATE_MAGIC)
+		return map_range_vet(rec, NULL, false);
+	if (!map_range_vet(rec, &snap->range, advice == MADV_GUARD_INSTALL))
+		return false;
+	snap->advice = (unsigned long) advice;
+	return true;
+}
 
 static void sanitise_madvise(struct syscallrecord *rec)
 {
@@ -99,8 +129,11 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	if (map == NULL)
 		return;
 
+	/* A compat call's range has to fit the 32 bits the kernel reads of
+	 * each slot, or it is emptied as one over trinity's regions is. */
 	if (range_overlaps_shared(rec->a1, rec->a2) ||
-	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
+	    range_overlaps_libc_heap(rec->a1, rec->a2) ||
+	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
@@ -118,12 +151,15 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	/*
 	 * MADV_GUARD_INSTALL plants guard PTEs that fault on access without
 	 * touching prot. common_set_mmap_ptr_len() above always pins this call
-	 * to a sub-range of a pool entry, so range_overlaps_shared() never
-	 * fires for it (pool entries aren't tracked in shared_regions[]). The
+	 * to a sub-range of a pool entry, so range_overlaps_shared() fires
+	 * for it only on the entries that are tracked regions themselves (the
+	 * initial anonymous mappings, mmap_fd()'s file mappings). The
 	 * map's prot stays PROT_READ|PROT_WRITE, so get_map_with_prot() will
 	 * later hand the same entry to a consumer that writes through it,
 	 * which then SEGVs on the first per-page write into the guarded
-	 * range. Neutralise the call to keep the pool usable.
+	 * range. Neutralise the call to keep the pool usable, and
+	 * validate_arg_coupling() refuses one a rewrite makes a GUARD_INSTALL
+	 * later.
 	 * GUARD_INSTALL no longer has its own bucket; this check fires only
 	 * when the long-tail ARG_OP draw lands on MADV_GUARD_INSTALL.
 	 * Consequence: make_pte_marker(PTE_MARKER_GUARD) is unreachable from
@@ -146,14 +182,16 @@ static void sanitise_madvise(struct syscallrecord *rec)
 
 	/*
 	 * Snapshot AFTER every rewrite above (range_overlaps_shared zero,
-	 * bucket advice override, GUARD_INSTALL zero) so the post handler
-	 * sees the final addr/len/advice the syscall actually ran with.
+	 * bucket advice override, GUARD_INSTALL zero), with the mapping the
+	 * range was built in; validate_arg_coupling() moves addr, len and
+	 * advice to the slots the kernel is handed.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic  = MADVISE_POST_STATE_MAGIC;
-	snap->addr   = rec->a1;
-	snap->len    = rec->a2;
-	snap->advice = rec->a3;
+	snap->magic      = MADVISE_POST_STATE_MAGIC;
+	snap->range.map  = map;
+	snap->range.addr = rec->a1;
+	snap->range.len  = rec->a2;
+	snap->advice     = rec->a3;
 	post_state_install(rec, snap);
 }
 
@@ -203,13 +241,13 @@ static void post_madvise(struct syscallrecord *rec)
 	if (rec->retval != 0)
 		goto out_free;
 
-	if (snap->len == 0)
+	if (snap->range.len == 0)
 		goto out_free;
 
 	if (!madvise_advice_hole_punches(snap->advice))
 		goto out_free;
 
-	invalidate_obj_mmap_in_range(snap->addr, snap->len);
+	invalidate_obj_mmap_in_range(snap->range.addr, snap->range.len);
 
 out_free:
 	post_state_release(rec, snap);

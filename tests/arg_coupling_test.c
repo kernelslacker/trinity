@@ -2,10 +2,10 @@
  * Self-check for the per-syscall rules validate_arg_coupling() holds the
  * final argument slots to: a rewrite after the sanitiser (chain
  * substitution, a RedQueen pin) must not leave the kernel a range the
- * sanitiser would have refused.  madvise's (addr, len) stays off trinity's
- * tracked regions, a buffer-filling count stays inside its buffer, and a
- * munmap, mprotect or pkey_mprotect range inside the pool mapping its
- * sanitiser picked.
+ * sanitiser would have refused.  A buffer-filling count stays inside its
+ * buffer, a munmap, mprotect, pkey_mprotect or madvise range inside the
+ * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
+ * tracked regions too, and a madvise never installs guard pages.
  */
 
 #include <limits.h>
@@ -20,6 +20,7 @@
 #include "child.h"			/* struct childdata */
 #include "debug.h"			/* BUG */
 #include "files.h"			/* get_rand_pagecache_fd */
+#include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
 #include "maps.h"			/* proc_maps_check */
 #include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
@@ -72,14 +73,16 @@ bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 	return false;
 }
 
-/* The OBJ_PKEY pool, the heap-slip log and the /proc/self/maps oracle
- * the mm sanitisers and post handlers reach.  The pool hands out
- * pkey_drawn, the log keeps the name it was given and the oracle the
- * range it was asked about. */
+/* The OBJ_PKEY pool, the heap-slip log, the /proc/self/maps oracle and
+ * the pool invalidation the mm sanitisers and post handlers reach.  The
+ * pool hands out pkey_drawn, the log keeps the name it was given, and the
+ * oracle and the invalidation the range they were handed. */
 static int pkey_drawn = -1;
 static const char *heap_slip_name;
 static unsigned long maps_checked_addr, maps_checked_len;
 static unsigned int maps_checks;
+static unsigned long invalidated_addr, invalidated_len;
+static unsigned int invalidations;
 
 int get_random_pkey_id(void)
 {
@@ -107,94 +110,27 @@ bool proc_maps_check(unsigned long addr, unsigned long len,
 	return true;
 }
 
+unsigned int invalidate_obj_mmap_in_range(unsigned long addr,
+					  unsigned long len)
+{
+	invalidated_addr = addr;
+	invalidated_len = len;
+	invalidations++;
+	return 0;
+}
+
 #define REGION		0x7f0000000000UL
 #define REGION_SIZE	0x100000UL
 #define MADV_REMOVE_ADVICE	9UL
 
-/* The shape of madvise's table entry; its sanitiser needs the OBJ_MMAP
- * pools, which the test binary does not have. */
-static struct syscallentry madvise_entry = {
-	.name = "madvise",
-	.num_args = 3,
-	.argtype = { ARG_MMAP, ARG_LEN, ARG_OP },
-	.is_madvise = true,
-};
-
-/* Same slots, not madvise. */
+/* Same slots as madvise, and no rule of its own. */
 static struct syscallentry other_entry = {
-	.name = "mprotect",
+	.name = "probe",
 	.num_args = 3,
 	.argtype = { ARG_MMAP, ARG_LEN, ARG_OP },
 };
 
 static struct syscallrecord rec;
-
-/* Run the validator over one call and leave the final slots in rec. */
-static void validated(struct syscallentry *entry, unsigned long addr,
-		      unsigned long len)
-{
-	memset(&rec, 0, sizeof(rec));
-	rec.entry = entry;
-	rec.a1 = addr;
-	rec.a2 = len;
-	rec.a3 = MADV_REMOVE_ADVICE;
-
-	if (validate_arg_coupling(&rec) != 0)
-		BUG("arg coupling: a call with no rule against it was refused");
-	if (rec.a3 != MADV_REMOVE_ADVICE)
-		BUG("arg coupling: the advice slot was rewritten");
-}
-
-static void expect_zeroed(unsigned long addr, unsigned long len)
-{
-	validated(&madvise_entry, addr, len);
-	if (rec.a1 != 0 || rec.a2 != 0)
-		BUG("arg coupling: madvise range reaching a tracked region was kept");
-}
-
-static void expect_kept(struct syscallentry *entry, unsigned long addr,
-			unsigned long len)
-{
-	validated(entry, addr, len);
-	if (rec.a1 != addr || rec.a2 != len)
-		BUG("arg coupling: a range the rule has no reason to touch was rewritten");
-}
-
-/* The range the kernel will read is held to what the sanitiser would have
- * accepted: nothing of trinity's own, nothing of the libc heap. */
-static void madvise_range_held_off_regions(void)
-{
-	fake_untrack_regions();
-	fake_track_region(REGION, REGION_SIZE);
-
-	/* Wholly inside the region, and a length that grows a clean start
-	 * into it: the two things a pin or a substituted return value do. */
-	expect_zeroed(REGION + 0x1000, 0x1000);
-	expect_zeroed(REGION - 0x10000, 0x7ffff000UL);
-	expect_zeroed(REGION - 0x1000, 0x2000);
-	expect_zeroed(REGION + REGION_SIZE - 0x1000, 0x10000);
-
-	/* A range that wraps the address space is refused as the sanitiser
-	 * refuses it, whatever it started as. */
-	expect_zeroed(ULONG_MAX - 0xfffUL, 0x4000);
-
-	/* Clear ranges, below and above the region, keep both slots. */
-	expect_kept(&madvise_entry, REGION - 0x10000, 0x1000);
-	expect_kept(&madvise_entry, REGION + REGION_SIZE, 0x1000);
-	expect_kept(&madvise_entry, 0x10000000UL, 0x4000);
-
-	/* Any other entry with the same slots is not this rule's. */
-	expect_kept(&other_entry, REGION + 0x1000, 0x1000);
-	expect_kept(&other_entry, REGION - 0x10000, 0x7ffff000UL);
-
-	/* The libc heap is held off the same way. */
-	fake_overlaps_libc_heap = true;
-	expect_zeroed(0x10000000UL, 0x4000);
-	expect_kept(&other_entry, 0x10000000UL, 0x4000);
-	fake_overlaps_libc_heap = false;
-
-	fake_untrack_regions();
-}
 
 /* The entries that set buf_count_slot whose TUs this binary links, with the
  * slot the kernel's own signature puts the count in; the buffer is the slot
@@ -874,10 +810,229 @@ static void mprotect_range_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* Run the validator over a call whose slots end up (@addr, @len,
+ * MADV_REMOVE) and leave the final slots in the record.  An entry with a
+ * sanitiser builds the call first, over a pool mapping that starts at
+ * @addr's page and runs past @len, so its snapshot names a mapping the
+ * range lies in. */
+static struct syscallrecord *validated(struct syscallentry *entry,
+				       unsigned long addr, unsigned long len)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	if (entry->sanitise != NULL) {
+		pool_obj.map.ptr = (void *) (addr & PAGE_MASK);
+		pool_obj.map.size = (len | (page_size - 1)) + 1;
+		pool_obj.map.tracked_size = pool_obj.map.size;
+		entry->sanitise(mrec);
+	}
+	mrec->a1 = addr;
+	mrec->a2 = len;
+	mrec->a3 = MADV_REMOVE_ADVICE;
+
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("arg coupling: a call with no rule against it was refused");
+	if (mrec->a3 != MADV_REMOVE_ADVICE)
+		BUG("arg coupling: the advice slot was rewritten");
+	if (entry->sanitise != NULL) {
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	return mrec;
+}
+
+static void expect_zeroed(struct syscallentry *entry, unsigned long addr,
+			  unsigned long len)
+{
+	struct syscallrecord *mrec = validated(entry, addr, len);
+
+	if (mrec->a1 != 0 || mrec->a2 != 0)
+		BUG("arg coupling: madvise range reaching a tracked region was kept");
+}
+
+static void expect_kept(struct syscallentry *entry, unsigned long addr,
+			unsigned long len)
+{
+	struct syscallrecord *mrec = validated(entry, addr, len);
+
+	if (mrec->a1 != addr || mrec->a2 != len)
+		BUG("arg coupling: a range the rule has no reason to touch was rewritten");
+}
+
+/* The range the kernel will read is held to what the sanitiser would have
+ * accepted: nothing of trinity's own, nothing of the libc heap.  A range
+ * that reaches either is emptied, not refused, as the sanitiser empties
+ * it; the initial anonymous mappings and mmap_fd()'s file mappings are
+ * tracked regions as well as pool mappings, so the hold to the mapping
+ * below does not make this redundant. */
+static void madvise_range_held_off_regions(struct syscallentry *madvise_entry)
+{
+	fake_untrack_regions();
+	fake_track_region(REGION, REGION_SIZE);
+
+	/* Wholly inside the region, and a length that grows a clean start
+	 * into it: the two things a pin or a substituted return value do. */
+	expect_zeroed(madvise_entry, REGION + 0x1000, 0x1000);
+	expect_zeroed(madvise_entry, REGION - 0x10000, 0x7ffff000UL);
+	expect_zeroed(madvise_entry, REGION - 0x1000, 0x2000);
+	expect_zeroed(madvise_entry, REGION + REGION_SIZE - 0x1000, 0x10000);
+
+	/* A range that wraps the address space is refused as the sanitiser
+	 * refuses it, whatever it started as. */
+	expect_zeroed(madvise_entry, ULONG_MAX - 0xfffUL, 0x4000);
+
+	/* Clear ranges, below and above the region, inside the call's own
+	 * mapping keep both slots. */
+	expect_kept(madvise_entry, REGION - 0x10000, 0x1000);
+	expect_kept(madvise_entry, REGION + REGION_SIZE, 0x1000);
+	expect_kept(madvise_entry, 0x10000000UL, 0x4000);
+
+	/* Any other entry with the same slots is not this rule's. */
+	expect_kept(&other_entry, REGION + 0x1000, 0x1000);
+	expect_kept(&other_entry, REGION - 0x10000, 0x7ffff000UL);
+
+	/* The libc heap is held off the same way. */
+	fake_overlaps_libc_heap = true;
+	expect_zeroed(madvise_entry, 0x10000000UL, 0x4000);
+	expect_kept(&other_entry, 0x10000000UL, 0x4000);
+	fake_overlaps_libc_heap = false;
+
+	fake_untrack_regions();
+}
+
+/* What validate_arg_coupling() makes of a madvise the sanitiser built
+ * over the pool mapping and a rewrite left at (@addr, @len, @advice). */
+static int madvise_verdict(struct syscallentry *entry, unsigned long addr,
+			   unsigned long len, unsigned long advice)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	int verdict;
+
+	entry->sanitise(mrec);
+	mrec->a1 = addr;
+	mrec->a2 = len;
+	mrec->a3 = advice;
+	verdict = validate_arg_coupling(mrec);
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	return verdict;
+}
+
+/* Whether the post handler invalidated the final range of a call that
+ * worked, after its sanitiser drew an advice that @punched holes (or not)
+ * and a rewrite left page_size - 1 bytes at the mapping and @advice. */
+static bool madvise_post_invalidates(struct syscallentry *entry,
+				     bool punched, unsigned long advice)
+{
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		if ((mrec->a3 == MADV_DONTNEED ||
+		     mrec->a3 == MADV_DONTNEED_LOCKED ||
+		     mrec->a3 == MADV_REMOVE || mrec->a3 == MADV_FREE) == punched)
+			break;
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	if (i == 1000)
+		BUG("madvise: the sanitiser never drew the advice the case needs");
+
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = page_size - 1;
+	mrec->a3 = advice;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("madvise: a page of the mapping was refused");
+	invalidations = 0;
+	mrec->retval = 0;
+	entry->post(mrec);
+	if (invalidations != 0 &&
+	    (invalidated_addr != POOL_MAP || invalidated_len != page_size - 1))
+		BUG("madvise: the post handler invalidated the range sanitise drew");
+	return invalidations != 0;
+}
+
+/* madvise's final range stays inside the mapping the sanitiser picked,
+ * and a GUARD_INSTALL a rewrite puts in the advice acts on no range: its
+ * guard pages would fault while the pool entry still claims them. */
+static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
+{
+	const unsigned long end = POOL_MAP + POOL_PAGES * page_size;
+	const unsigned long guard = MADV_GUARD_INSTALL;
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	/* Over a mapping an mremap() grow left larger than its tracked size
+	 * too; a compat call over the high mapping is built empty rather
+	 * than refused. */
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mm_call(madvise_entry);
+		if (i & 1)
+			pool_obj.map.size = 2 * POOL_PAGES * page_size;
+		mrec->do32bit = (i % 10) == 0;
+		madvise_entry->sanitise(mrec);
+		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
+			BUG("madvise: the sanitiser built a compat range its slots cannot carry");
+		if (validate_arg_coupling(mrec) != 0)
+			BUG("madvise: a call the sanitiser built was refused");
+		mrec->retval = (unsigned long) -1L;
+		madvise_entry->post(mrec);
+	}
+
+	if (madvise_verdict(madvise_entry, POOL_MAP, end - POOL_MAP + 1,
+			    MADV_REMOVE_ADVICE) != -1 ||
+	    madvise_verdict(madvise_entry, end, page_size,
+			    MADV_REMOVE_ADVICE) != -1 ||
+	    madvise_verdict(madvise_entry, POOL_MAP - page_size, 2 * page_size,
+			    MADV_REMOVE_ADVICE) != -1)
+		BUG("madvise: a range leaving the mapping was kept");
+	if (madvise_verdict(madvise_entry, POOL_MAP, end - POOL_MAP,
+			    MADV_REMOVE_ADVICE) != 0)
+		BUG("madvise: a range covering the mapping was refused");
+
+	/* The kernel reads the advice as an int. */
+	if (madvise_verdict(madvise_entry, POOL_MAP, page_size, guard) != -1 ||
+	    madvise_verdict(madvise_entry, POOL_MAP, page_size,
+			    guard | (1UL << 32)) != -1)
+		BUG("madvise: a guard install over the mapping was kept");
+	if (madvise_verdict(madvise_entry, POOL_MAP, 0, guard) != 0 ||
+	    madvise_verdict(madvise_entry, POOL_MAP + 1, page_size, guard) != 0)
+		BUG("madvise: a guard install the kernel acts on nothing of was refused");
+
+	mrec = mm_call(madvise_entry);
+	mrec->a1 = 0;
+	madvise_entry->sanitise(mrec);
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec) != -1)
+		BUG("madvise: a call with no mapping kept a range");
+
+	/* The post handler invalidates by the advice and the range the
+	 * kernel was handed. */
+	if (!madvise_post_invalidates(madvise_entry, false, MADV_DONTNEED))
+		BUG("madvise: a hole punch put in the advice was not invalidated");
+	if (madvise_post_invalidates(madvise_entry, true, MADV_NORMAL))
+		BUG("madvise: an advice rewritten from a hole punch was invalidated");
+}
+
+/* madvise's rules, over a copy of its table entry. */
+static void madvise_held(void)
+{
+	struct syscallentry madvise_entry = syscall_madvise;
+
+	/* As copy_syscall_table() stamps the copy. */
+	madvise_entry.is_madvise = true;
+
+	madvise_range_held_off_regions(&madvise_entry);
+	madvise_range_held_to_mapping(&madvise_entry);
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
-	madvise_range_held_off_regions();
+	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	pkey_mprotect_known_through_its_copy();

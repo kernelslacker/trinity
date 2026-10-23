@@ -654,8 +654,9 @@ struct syscallentry {
 	/*
 	 * Cached identity of madvise, set at table init so
 	 * validate_arg_coupling() can keep its (addr, len) off trinity's
-	 * own regions on the slots the kernel will read.  Next to
-	 * is_close_range, in the same alignment hole.
+	 * own regions and inside the pool mapping the sanitiser picked
+	 * (madvise_vet_final_slots()) on the slots the kernel will read.
+	 * Next to is_close_range, in the same alignment hole.
 	 */
 	bool is_madvise;
 
@@ -1153,6 +1154,13 @@ bool munmap_vet_final_slots(const struct syscallrecord *rec);
  * prot and the key in the snapshot.  Defined in syscalls/mm/mprotect.c.
  */
 bool mprotect_vet_final_slots(const struct syscallrecord *rec);
+
+/*
+ * The same for madvise, which also refuses a final MADV_GUARD_INSTALL
+ * over any range the kernel acts on; a pass also refreshes the advice in
+ * the snapshot.  Defined in syscalls/mm/madvise.c.
+ */
+bool madvise_vet_final_slots(const struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);
