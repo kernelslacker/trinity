@@ -1,13 +1,9 @@
 /*
- * Self-check for parent_stop_reason() (include/signals.h): which
- * SIGINT/SIGTERM deliveries stop the parent.  An operator outside the
- * children's uid must get a clean stop; anything a fuzzing child can
- * send must not.  Covers root and non-root runs (init_uids() leaves
- * nobody_uid 0 in the latter), the overflowuid a child in an unmapped
- * user namespace arrives as, and a failure shutdown keeping its reason.
- * Also checks that a child ignores SIGINT, which fault signals the
- * parent takes for real, and that every signal the F_SETSIG sanitiser
- * may route a SIGIO to is one the parent ignores.
+ * Self-check for parent_stop_reason() (include/signals.h): an operator outside
+ * the children's uid gets a clean stop and nothing a fuzzing child can send
+ * does, for root and non-root runs, the overflowuid of an unmapped user
+ * namespace, and a failure shutdown keeping its reason.  Also that a child
+ * ignores SIGINT and the parent ignores every signal F_SETSIG may route.
  */
 
 #include <signal.h>
@@ -34,6 +30,7 @@ struct uid_setup {
 
 static const struct uid_setup root_run = { 0, 65534, 65534 };
 static const struct uid_setup root_run_nobody99 = { 0, 99, 65534 };
+/* A non-root run: init_uids() leaves nobody_uid 0. */
 static const struct uid_setup user_run = { 1000, 0, 65534 };
 
 struct stop_case {

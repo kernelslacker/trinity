@@ -1,15 +1,9 @@
 /*
- * Self-check for EXTRA_FORK dispatch (dispatch/syscall.c).  A live call
- * reports back from its throwaway grandchild through the shared record.  A
- * --dry-run call has nothing to contain, so its synthesized outcome has to
- * land in the caller's own record; routed through do_extrafork() it is lost
- * wherever that is compiled out (ASAN).  The fchdir, fchroot and setns
- * sanitisers run in the child, so the fd they open has to be closed there,
- * and only that one.  The coupling validator that runs on the final argument
- * slots must keep an fcntl F_SETSIG from routing a SIGIO the parent would not
- * ignore, whatever rewrote the slots after the sanitiser.  A live call whose
- * fork fails because the child's forks were moved into a pid namespace that
- * has lost its init has to recycle the child.
+ * Self-check for EXTRA_FORK dispatch (dispatch/syscall.c): a live call
+ * reports back through the shared record and a --dry-run call records in
+ * the caller's own.  The fchdir, fchroot and setns sanitisers close only the
+ * fd they opened, the coupling validator keeps F_SETSIG to signals the parent
+ * ignores, and a fork failing in a dead pid namespace recycles the child.
  */
 
 #include <errno.h>

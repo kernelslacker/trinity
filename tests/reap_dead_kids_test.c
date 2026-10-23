@@ -1,11 +1,9 @@
 /*
- * Self-check for the second pass of reap_dead_kids() (main/reap.c): a
- * slot with a pidstat fd is judged by that fd alone, and one without is
- * probed with kill(pid, 0), where only ESRCH reaps it.  The probe is
- * failed with any errno, and the probes counted, through the kill()
- * wrapper in fake_parent.c, which is transparent unless armed.  Also the
- * pid_alive() branch of kill_all_kids(), which the fake pid_alive() in
- * fake_parent.c answers from the same probe.
+ * Self-check for the second pass of reap_dead_kids() (main/reap.c): a slot
+ * with a pidstat fd is judged by that fd alone, and one without is probed
+ * with kill(pid, 0), where only ESRCH reaps it (the kill() wrapper in
+ * fake_parent.c fails the probe with any errno).  Also the pid_alive()
+ * branch of kill_all_kids(), which the fake pid_alive() answers the same way.
  */
 
 #include <errno.h>

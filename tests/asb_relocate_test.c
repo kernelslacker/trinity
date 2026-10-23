@@ -1,11 +1,9 @@
 /*
  * Self-check for the writable-pool exemption in asb_relocate(), reached
- * through avoid_shared_buffer_out(): a range wholly inside the pool is
- * left where it is, and any other range the overlap predicates flag is
- * moved into it, one whose end wraps the address space included.  A
- * length the pool cannot hold has no slot to move to, so the pointer
- * stays; get_writable_address() refuses such a size, one that wraps its
- * round-up to the slot alignment too, rather than vend an empty slot.
+ * through avoid_shared_buffer_out(): a range wholly inside the pool stays,
+ * any other flagged range moves into it (one whose end wraps the address
+ * space included), and a length the pool cannot hold leaves the pointer.
+ * get_writable_address() refuses such a size, a wrapping round-up included.
  */
 
 #include <limits.h>

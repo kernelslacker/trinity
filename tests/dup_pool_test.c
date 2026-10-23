@@ -1,44 +1,9 @@
 /*
- * Self-check for how dup, dup2, dup3 and fcntl(F_DUPFD*) pool the
- * descriptor they return, how pidfd_getfd pools the socket or pipe end it
- * returns, and how close and close_range retire what they free.  The post
- * handlers run as shipped against a fake object pool.  A copy joins the
- * pool its source came from, and stays out of every pool when the source
- * is untracked or protected, the call failed, or the type is one
- * publish_resource() does not route.  Whatever object a number held
- * before the call is retired, copy pooled or not, and a retire never
- * closes the number: it names the copy by then.  The close itself is
- * reported once, through notify_child_fd_closed(), as before.
- *
- * A pidfd_getfd copy comes from another process, so no pool names its
- * source: fstat() types it, and a file that is neither a socket nor a
- * pipe end is not pooled and is closed.
- *
- * A close retires the local objects under its number once the kernel has
- * freed it, which a failed close has too unless it says EBADF.  A
- * close_range retires the objects under the numbers it closed: [lo, hi],
- * the complement of [lo, hi] with EXCEPT, and with CLOEXEC_ONLY just the
- * pooled fds the kernel no longer has.  One that only marks close-on-exec
- * retires nothing.  Its sanitiser never leaves a protected fd in the set
- * the call closes.
- *
- * The socket producers (socket, socketpair, accept, accept4 and the
- * socketcall multiplexer) publish a local socket carrying a triplet: the
- * call's own for a new socket, the listener's for an accepted one.  Those
- * cases hold the publish as it is whichever way the handlers make it.
- *
- * The open family (open, openat, openat2, open_by_handle_at and creat) pools
- * the regular file or directory a call returned as a local testfile.  A device,
- * a FIFO, a socket and a second name of a protected file are closed.  The
- * object the number held is retired first, pooled or not.  The pool holds
- * POOLED_FD_MAX files and makes room by destroying its oldest object,
- * never by closing a number itself.  The fstat oracles report a dead fd.
- *
- * An ioctl a group published RET_FD for (the pidfs namespace getters)
- * returns an fd nothing else owns, and its post handler pools it the same
- * way, or closes it when the pool will not take it: every fd such calls
- * return ends up in the pool or closed, and the pool never holds more than
- * POOLED_FD_MAX.
+ * Self-check for how the post handlers pool and retire the descriptors a
+ * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
+ * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
+ * pidfs namespace getters, close and close_range.  Whatever object a number
+ * held is retired, copy pooled or not, and a retire never closes the number.
  */
 
 #include <errno.h>

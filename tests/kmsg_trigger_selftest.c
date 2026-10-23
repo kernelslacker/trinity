@@ -1,32 +1,9 @@
 /*
- * kmsg_trigger_selftest.c -- regression fixture for the kmsg-monitor
- * WARNING trigger string.
- *
- * Background: upstream: 28ea295f941e (v6.19-rc1) rewrote the
- * WARN banner emitted by __warn() in kernel/panic.c from:
- *
- *   WARNING: CPU: %d PID: %d at %s:%d %pS
- *
- * to:
- *
- *   WARNING: %s:%d at %pS, CPU#%d: %s/%d
- *
- * The old trigger string "WARNING: CPU:" matched the old format but
- * produces zero hits against any kernel >= v6.19-rc1, making every
- * WARN_ON()/WARN() splat invisible to the monitor.
- *
- * The fix narrows the trigger to the common prefix "WARNING: " which
- * matches both spellings and every lockdep WARNING: variant.
- *
- * This selftest:
- *   1. Verifies the UPDATED trigger "WARNING: " matches concrete
- *      banners in both the old and new kernel formats.
- *   2. Verifies the OLD trigger "WARNING: CPU:" is blind to the new
- *      banner format (documents WHY the change was necessary).
- *
- * The fixture strings are verbatim examples of real kernel output so
- * that a future upstream reword that breaks the trigger will fail this
- * test rather than silently blinding the monitor.
+ * Regression fixture for the kmsg-monitor WARNING trigger.  Since v6.19
+ * __warn() prints "WARNING: <file>:<line> at <sym>, CPU#<n>: <comm>/<pid>"
+ * where it printed "WARNING: CPU: <n> PID: <n> at ...".  "WARNING: " must
+ * match both banners and lockdep's, while the old "WARNING: CPU:" misses the
+ * new one; a future upstream reword then fails here, not silently.
  */
 
 #include <assert.h>

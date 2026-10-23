@@ -1,12 +1,9 @@
 /*
- * Self-check for run_fd_provider_replenish() (fds/fds.c): with more
- * eligible providers than REPLENISH_MAX_PROVIDERS_PER_TICK, every working
- * tick serves exactly that many, and the walk has to move on from one tick
- * to the next.  One that restarts at the head of the list never reaches the
- * providers past the first few, however many opt in.  The providers are
- * fakes registered through the real registry and the dispatcher is the real
- * one.  Two are not eligible, one never initialised and one without a hook,
- * and must not use up a tick's cap.
+ * Self-check for run_fd_provider_replenish() (fds/fds.c): with more eligible
+ * providers than REPLENISH_MAX_PROVIDERS_PER_TICK, every working tick serves
+ * exactly that many and the walk moves on between ticks, so providers past
+ * the first few are reached.  An ineligible one (never initialised, or with
+ * no hook) must not use up a tick's cap.  Fakes run on the real registry.
  */
 
 #include <stdbool.h>

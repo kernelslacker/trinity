@@ -1,58 +1,9 @@
 /*
- * shared_str_heap_free_size_check
- * -------------------------------
- *
- * Regression suite for the free-bucket authority in utils/shared_str_heap.c.
- *
- * The bug it pins:
- *
- *   alloc_shared_str() carves size-classed slots from a MAP_SHARED
- *   region and pushes them back onto per-bucket freelists on free.
- *   If free_shared_str() picks its target bucket by re-strlen()'ing
- *   the payload -- which lives in memory the fuzzer can scribble via
- *   a syscall user pointer -- a stomped terminating NUL turns the
- *   derived size into an attacker-controlled quantity.  A NUL wiped
- *   entirely runs strlen() past the slot end into adjacent live
- *   payloads, returning a length that maps to a LARGER bucket than
- *   alloc carved.  The subsequent freelist push memsets the wrong
- *   number of bytes past the slot, and the next pop hands a too-
- *   small chunk out as if it were the larger bucket's slot -- silent
- *   scribble class.
- *
- *   The fix records the bucket at alloc time in a metadata table
- *   living outside the fuzz-exposed heap; free_shared_str() reads
- *   the recorded bucket instead of re-deriving one from the payload,
- *   and takes no size from its caller at all.
- *
- * Suite shape (targets every bucket in [1, 1024]):
- *
- *   For each bucket:
- *     1. Prime an adjacent "spam" slot filled with a non-NUL byte so
- *        the target slot's neighbour holds no zero for strlen() to
- *        stop on.
- *     2. Alloc the target at a size that lands in this bucket.
- *     3. Fill the entire target slot with the same non-NUL byte to
- *        stomp the terminating NUL alloc_shared_str() zero-init
- *        left behind.
- *     4. Call free_shared_str() on the stomped slot.  A free that
- *        re-derived its bucket from the payload would strlen()
- *        over-read through target + spam and get a length that
- *        rounds up to a bucket well past the target's actual
- *        bucket (or off the top of every bucket entirely for the
- *        larger targets).
- *     5. Alloc the same size again; assert the returned pointer is
- *        the target pointer.  Because each bucket contains exactly
- *        one slot at this point (the target we just freed), a same-
- *        bucket pop returns the same address the freelist head was
- *        installed with.  A wrong-bucket free (unpatched) leaves the
- *        correct bucket empty and forces a fresh bump alloc, which
- *        returns a different address -- the assertion fires and the
- *        test binary exits non-zero.
- *
- * Determinism: no RNG use, no /proc reads, no clock reads.  The
- * heap is freshly re-mapped at the top of the suite via
- * shared_str_heap_reset_for_test() so a prior test's residue cannot
- * skew the "same pointer comes back" check.
+ * Regression suite for the free-bucket authority in utils/shared_str_heap.c:
+ * free_shared_str() must take the bucket from the record made at alloc time,
+ * never from a strlen() of the payload.  That memory is fuzzer-scribbleable,
+ * and a stomped NUL would pick a larger bucket and memset past the slot.
+ * Covers every bucket plus the provenance gates for non-LIVE pointers.
  */
 
 #include <stdio.h>

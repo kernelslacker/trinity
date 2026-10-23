@@ -1,12 +1,9 @@
 /*
- * Self-check for the pointer guard in redqueen_pin_field(): a field is
- * pinned only through a well-formed pointer to a struct timespec wholly
- * inside the writable pool, and any other slot is left untouched.
- * range_in_writable_pool() also gets its edge cases checked directly.
- * The value mask a scalar pin and chain substitution share keeps
- * protected fds out of fd slots and the parent's pid out of pid slots,
- * and either rewrite withdraws the return type a sanitiser published for
- * the call it built.
+ * Self-check for redqueen_pin_field(): a field is pinned only through a
+ * well-formed pointer to a struct timespec wholly inside the writable pool
+ * (range_in_writable_pool()'s edges included); any other slot is left alone.
+ * The value mask a pin and chain substitution share keeps protected fds
+ * and the parent's pid out of their slots; either rewrite withdraws a rettype.
  */
 
 #include <limits.h>

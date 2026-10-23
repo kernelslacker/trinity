@@ -1,12 +1,9 @@
 /*
  * Self-check for the idle init of a child's new pid namespace
- * (child/child-pidns-init.c).  Each fixture runs in a helper that
- * unshares a user and a pid namespace, standing in for a sandboxed
- * child, starts the init and checks that the namespace stays usable,
- * that the init keeps out of the child's way, its fuzzed waits included,
- * and that pidns_init_lost() notices when it is gone but not on an ENOMEM
- * where the sandbox left the forks.  Skipped where unprivileged user
- * namespaces are not available.
+ * (child/child-pidns-init.c).  Each fixture runs in a helper that unshares a
+ * user and a pid namespace, standing in for a sandboxed child: the namespace
+ * stays usable, the init keeps out of the child's way (fuzzed waits included),
+ * and pidns_init_lost() notices a lost init but not an ENOMEM.
  */
 
 #include <errno.h>

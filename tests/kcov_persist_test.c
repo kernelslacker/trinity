@@ -1,11 +1,9 @@
 /*
- * Self-check for the kcov bitmap warm-start loader (kcov/persist.c).
- * The blocks behind the bitmap sit where the writer's layout puts them,
- * so a priors or diag block the loader skips (another MAX_NR_SYSCALL, a
- * failed scratch alloc) must not shift the block that follows it, and
- * the log must name the real cause of any block it refuses.  A file the
- * loader turns down and a save that cannot finish must each close the one
- * fd they opened exactly once and leave nothing behind.
+ * Self-check for the kcov bitmap warm-start loader (kcov/persist.c).  A priors
+ * or diag block the loader skips (another MAX_NR_SYSCALL, a failed scratch
+ * alloc) must not shift the block behind it, and the log must name the real
+ * cause of any block it refuses.  A file the loader turns down and a save that
+ * cannot finish each close their one fd exactly once and leave nothing behind.
  */
 
 #include <dirent.h>

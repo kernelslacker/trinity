@@ -1,39 +1,9 @@
 /*
- * struct_field_bounds_test.c -- unsigned-overflow guard for the
- * struct-field sanitiser bounds predicate.
- *
- * Defect: every bounds check in scrub_field_array() and
- * struct_fill_passes() used the form:
- *
- *     if (f->offset + f->size > size) continue;
- *
- * Both members are `unsigned int`; `size` is `unsigned int`.  When
- * f->offset + f->size exceeds UINT_MAX the result wraps modulo 2^32
- * *before* the comparison.  A pair like {.offset = UINT_MAX-4,
- * .size = 8} sums to 3, which is less than any realistic buffer size,
- * so the guard is bypassed and the subsequent memcpy walks 4 GB past
- * the buffer end.
- *
- * Fix: replace with the non-wrapping two-disjunct form:
- *
- *     if (f->offset > size || f->size > size - f->offset) continue;
- *
- * The first disjunct establishes f->offset <= size before the
- * subtraction, so `size - f->offset` cannot underflow.
- *
- * Test procedure:
- *   - Set up a 16-byte buffer filled with a sentinel byte (0xAA).
- *   - Build a single-field array: {.tag = FT_FLAGS, .offset = UINT_MAX-4,
- *     .size = 8, .u.flags.mask = 0xFF}.
- *   - Call struct_fill_passes(buf, 16, fields, 1, NULL).
- *   - With the *old* predicate the sum wraps to 3, the guard is not
- *     taken, fill_field_flags() writes 8 bytes to buf + (UINT_MAX-4),
- *     and the process crashes with SIGSEGV (test FAILS before fix).
- *   - With the *fixed* predicate the first disjunct fires (UINT_MAX-4 > 16),
- *     the field is skipped, the buffer is untouched (test PASSES after fix).
- *
- * rec is passed as NULL; struct_fill_passes does not dereference rec
- * in Pass 1 for a scalar FT_FLAGS field, so this is safe.
+ * Unsigned-overflow guard for the struct-field bounds predicate in
+ * scrub_field_array() and struct_fill_passes(): a field {offset = UINT_MAX-4,
+ * size = 8} wraps offset + size to 3, so a sum-then-compare check passes it
+ * and the fill writes 4 GB past the buffer.  The predicate must be the
+ * non-wrapping `offset > size || f->size > size - f->offset`.
  */
 
 #include <assert.h>

@@ -1,62 +1,9 @@
 /*
- * Self-checks for utils/pidstat-probe.c.
- *
- * pidstat_task_gone() replaced a kill(pid, 0) liveness probe in the
- * reap path, because kill() asks about a pid *number* and therefore
- * lies once the kernel recycles that number onto an unrelated
- * process.  The replacement is only sound because of a procfs
- * property that nothing in this tree controls: a read through an fd
- * opened on /proc/<pid>/stat fails once the task struct behind it is
- * released, and keeps succeeding while the task merely exited and is
- * waiting to be reaped.  If that ever changes, the reap path silently
- * goes back to leaking slots -- so pin the behaviour with a test
- * rather than trusting the comment that asserts it.
- *
- *   - probe_no_fd:      fd < 0 means "no oracle", not "task gone".
- *                       Callers whose open failed soft must keep
- *                       their old fallback instead of reaping a slot
- *                       whose child may well be running.
- *
- *   - probe_live_self:  an fd on our own /proc/self/stat reads, so a
- *                       live task is never reported gone.
- *
- *   - probe_zombie_then_gone: fork a child that exits immediately,
- *                       open its stat file, and prove the probe says
- *                       "not gone" while it is an unreaped zombie
- *                       (the waitpid(-1) drain owns those), then says
- *                       "gone" after the wait releases the task.
- *
- *   - probe_failed_read: only the released task's ESRCH counts as gone.
- *                       A read that fails any other way, or reads
- *                       nothing, says nothing about the task, and
- *                       reaping the slot of a live child on it leaves
- *                       the child running with nothing to track or
- *                       kill it.  pread() is wrapped so each failure
- *                       can be injected.
- *
- * The fork here is the only one in the test binary.  It is a bare
- * fork/_exit/waitpid with no shm and no trinity state, and the parent
- * waits for it before returning, so nothing outlives the check.
- *
- * pidstat_read() asks the same question by pid number, for pid_alive()
- * and pid_start_time().  Only a pid with no task reads as gone: a read
- * that fails for any other reason, a full fd table above all, must not,
- * or a live lock holder looks dead and a running child skips its SIGKILL.
- * ENOENT is one of those reasons unless kill(pid, 0) agrees: hidepid=2
- * and a /proc mounted for another pid namespace answer it for a task the
- * caller can signal.  The kill() wrapper in fake_parent.c stands in for
- * what kill() says.
- *
- * pidstat_parse() picks the state and start_time out of a stat line, and
- * pidstat_identity_gone() builds the lock recovery test on it: is the
- * task a lock recorded as (pid, start_time) gone.  The parse is checked
- * against lines of the test's own and against a stat line the kernel
- * wrote, and the test against tasks the test holds.
- *
- * pidstat_child_exited() asks waitid() whether a child of the caller has
- * exited, for the holder that /proc cannot show and kill() will not vouch
- * for.  It is checked on its own, and as what settles such a holder in
- * pidstat_identity_gone() when the fd table is full.
+ * Self-checks for utils/pidstat-probe.c.  pidstat_task_gone() is only sound
+ * because of a procfs property nothing in this tree controls: a read through
+ * an fd on /proc/<pid>/stat fails once the task struct is released and keeps
+ * succeeding while the task is an unreaped zombie.  If that changed, the reap
+ * path would silently leak slots, so the cases pin it and the helpers on it.
  */
 
 #include <errno.h>
@@ -135,6 +82,8 @@ static void selftest_live_self(void)
 	close(fd);
 }
 
+/* The child is a bare fork/_exit with no shm and no trinity state, and the
+ * wait below reaps it, so nothing outlives the check. */
 static void selftest_zombie_then_gone(void)
 {
 	pid_t pid, waited;

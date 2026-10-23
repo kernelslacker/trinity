@@ -1,59 +1,9 @@
 /*
- * Self-checks for utils/shared_freelist.c's bounds AND provenance
- * armour.
- *
- * The primitives run over a caller-owned slab and treat every token
- * (head or slot-link) as fuzzer-writable input, so this suite drives
- * them against a private fake heap:
- *
- *   - freelist_roundtrip:   push a slot, pop it, prove pop returned
- *                           exactly the same address and a zeroed slot,
- *                           and that a second pop finds an empty list.
- *
- *   - freelist_corrupt_head: stomp the head with a wild token (offset
- *                           past the slab, extending past the end, and
- *                           token == UINT32_MAX) and prove pop returns
- *                           NULL without wild-reading -- the fake heap
- *                           is flanked by PROT_NONE guard pages so any
- *                           wild deref/memset would SIGSEGV inside the
- *                           test, not return quietly.
- *
- *   - freelist_corrupt_link: push a valid slot, then stomp its stored
- *                           link with a wild token, and prove pop
- *                           returns the valid slot AND detaches the
- *                           wild chain (the head becomes empty rather
- *                           than pointing into unrelated memory).
- *
- *   - freelist_push_out_of_range: hand freelist_push a pointer that
- *                           isn't inside the slab and prove nothing is
- *                           linked (the head stays sentinel-empty and
- *                           a follow-up pop returns NULL).
- *
- *   - freelist_link_to_live: forge the head with a token that names a
- *                           slot marked LIVE and prove pop refuses to
- *                           re-hand-out the slot (would alias a live
- *                           allocation) even though the token is in
- *                           bounds and slot-start-aligned.
- *
- *   - freelist_cross_bucket: push a slot legitimately onto bucket A's
- *                           free list, then forge the head of bucket
- *                           B with that slot's token and prove B's
- *                           pop refuses -- the state records the slot
- *                           as FREE(A), not FREE(B).
- *
- *   - freelist_interior_offset: forge the head with a token that names
- *                           an aligned interior byte inside a live
- *                           slot and prove pop refuses (state is
- *                           UNCARVED for the interior offset).
- *
- *   - freelist_double_free: push the same slot twice and prove the
- *                           second push is refused -- the state was
- *                           already FREE, not LIVE, so the LIVE->FREE
- *                           CAS fails and the slot is not linked
- *                           twice.  A follow-up alloc/free cycle proves
- *                           the free list is not corrupted (a truncated
- *                           chain from the double-link would surface
- *                           as a wrong-address pop).
+ * Self-checks for utils/shared_freelist.c's bounds and provenance armour.  The
+ * primitives run over a caller-owned slab and treat every token (head or slot
+ * link) as fuzzer-writable, so each case forges one against a private fake
+ * heap and expects push and pop to refuse it: no wild read, no live,
+ * foreign-bucket or interior slot handed out, no slot linked twice.
  */
 
 #include <stdbool.h>
@@ -85,6 +35,9 @@ struct fake_heap {
 	uint8_t state[FAKE_HEAP_CAP / SHARED_FREELIST_SLOT_STRIDE];
 };
 
+/* The fake heap is flanked by PROT_NONE guard pages, so a wild dereference or
+ * memset in the code under test faults inside the test instead of returning
+ * quietly. */
 static void fake_heap_init(struct fake_heap *h)
 {
 	long page_l = sysconf(_SC_PAGESIZE);

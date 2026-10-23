@@ -1,35 +1,9 @@
 /*
- * dispatch_stage_order_test.c -- invariant checks for dispatch_step()'s
- * stage ordering.
- *
- * dispatch_step() coordinates every post-syscall stage: kcov collection,
- * cmp-hint credit/reset, corpus publication, cleanup, completion
- * accounting, and the RedQueen re-exec drain.  Statement ORDER in that
- * function is the transaction -- a reorder can silently mis-attribute
- * wins, double-publish corpus entries, or let an inner re-exec recurse.
- * These tests verify the five load-bearing ordering invariants without
- * importing the real dispatch-step.c (which carries the full trinity
- * dep chain).  Instead each test simulates the relevant fragment of the
- * dispatch_step control flow inside a local harness and asserts the
- * invariant directly.
- *
- * Suite entry point: dispatch_stage_order_self_check()
- *
- * Tests
- * -----
- * 1. one_completion     -- exactly one completion bump per real call;
- *                          zero bumps when the pre-dispatch step fails.
- * 2. credit_ordering    -- the !in_reexec gate fires credit before reset
- *                          on the outer pass and skips both on the inner.
- * 3. corpus_once        -- corpus save fires exactly once per qualifying
- *                          outer pass; inner pass (in_reexec=true) is
- *                          tagged rq_sourced but does not double-publish
- *                          the outer entry.
- * 4. cleanup_all_paths  -- cleanup stage runs on every exit path
- *                          (productive, non-productive, early-return).
- * 5. recursive_boundary -- the in_reexec gate blocks a second-level
- *                          recursion; inner passes cannot credit or
- *                          publish as an outer pass would.
+ * Invariant checks for dispatch_step()'s stage ordering.  Statement order
+ * there is the transaction: a reorder can silently mis-attribute wins,
+ * double-publish corpus entries or let an inner re-exec recurse.  Each test
+ * simulates the relevant fragment of the control flow in a local harness,
+ * without the real dispatch-step.c and its dependency chain.
  */
 
 #include <stdbool.h>

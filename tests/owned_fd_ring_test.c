@@ -1,15 +1,9 @@
 /*
  * Self-check for owned_fd_ring_record() (include/owned-fd-ring.h): a ring
  * closes an aged-out fd only while its number still names the file it
- * recorded.  A fuzzed close() frees the number and the next fd-creating
- * call hands it to an unrelated file, which the ring must leave open.
- * owned_fd_ring_retire() takes a number out of every ring without closing
- * it, and leaves the other slots as they were.  account_fd_and_group() runs
- * as shipped and retires the number of every fd a call returns, except one
- * the call was handed itself.
- * Pipes stand in for provider fds: each has an inode of its own, and the
- * two ends of one pipe share it, which models a number that fstat() cannot
- * tell from the one that was recorded.
+ * recorded, so a number freed by a fuzzed close() and reissued stays open.
+ * owned_fd_ring_retire() drops a number from every ring without closing it;
+ * account_fd_and_group() retires every fd a call returns but one it was given.
  */
 
 #include <fcntl.h>
@@ -198,6 +192,9 @@ void owned_fd_ring_self_check(void)
 	struct stat st, want;
 	int a[2], b[2], owned, other;
 
+	/* Pipes stand in for provider fds: each has an inode of its own, and
+	 * the two ends of one pipe share it, which models a number that
+	 * fstat() cannot tell from the one that was recorded. */
 	if (pipe(a) < 0 || pipe(b) < 0)
 		BUG("owned fd ring: pipe failed");
 

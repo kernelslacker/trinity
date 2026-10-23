@@ -1,85 +1,9 @@
 /*
- * stats_opclock_lossless_test.c -- invariant checks for the lossless
- * per-child op-count counter (stats_ring.lossless_op_count).
- *
- * The op counter lives in each child's own struct stats_ring page as a
- * plain unsigned long (single writer -- no atomic needed, no shared
- * cacheline contention).  The parent sums across all children's rings
- * in stats_ring_drain_all() to derive total_op_count and op_count.
- *
- * These tests simulate the key invariants without importing the real
- * trinity shm / ring / stats-ring modules.  They model:
- *   - a fixed-capacity SPSC ring (RING_CAP slots)
- *   - a per-child lossless_op_count plain unsigned long
- *   - the stats_aggregate scalars (op_count, total_op_count,
- *     epoch_start_op_count)
- *   - simulated drains that sum per-child lossless_op_count
- *   - simulated epoch resets
- * The per-slot plausibility guard is not modelled: the guarded drain
- * calls production's opclock_slot_observe() from
- * include/stats_ring_opclock_limits.h.
- *
- * Suite entry point: stats_opclock_lossless_self_check()
- *
- * Tests
- * -----
- * 1. ring_full_no_loss       -- lossless_op_count reflects all ops even
- *                               when the ring saturates and drops occur.
- * 2. epoch_semantics         -- reset correctly snapshots epoch_start;
- *                               op_count = total - epoch_start always
- *                               equals ops since last reset.
- * 3. call_limit_exact        -- call-limit check fires at EXACTLY the
- *                               right count even under ring saturation.
- * 4. epoch_termination       -- epoch-iteration limit check fires at
- *                               exactly epoch_iterations ops after
- *                               reset, not delayed by ring drops.
- * 5. rotation_boundary       -- strategy rotation clock (fleet_op_count
- *                               = op_count from per-child sum) triggers
- *                               at the correct window boundary.
- * 6. child_respawn_preserve  -- simulated child exit + respawn preserves
- *                               lossless_op_count in the ring page
- *                               (mirrors stats_ring_init which does NOT
- *                               zero lossless_op_count on respawn).
- *                               The parent drain reads the counter
- *                               directly; no compensation is needed.
- *
- * 7. delta_guard             -- exercises the delta-based plausibility
- *                               arm from 1e1a436cc490 ("stats-ring: add per-slot delta plausibility guard for lossless_op_count"): a scribble to
- *                               P + 1e8 + 1 (below the absolute ceiling
- *                               but above the per-drain delta limit)
- *                               stalls the aggregate across repeated
- *                               drains and survives a stats_ring_init
- *                               respawn, until a plausible climb
- *                               rebases the slot and later ops count
- *                               again.
- *
- * 8. first_drain_scribble     -- mirror of test 7: scribble a
- *                               pointer-shaped value (below absolute
- *                               ceiling) BEFORE the first drain so
- *                               prev == 0.  Verifies the guard rejects
- *                               it rather than admitting it as the
- *                               baseline and locking total_op_count
- *                               HIGH.
- *
- * 9. transient_and_downward_scribbles -- one wild reading costs
- *                               nothing once the true value returns; a
- *                               backward jump holds the aggregate and
- *                               rebases after a plausible climb.
- *
- * 10. over_ceiling_scribble_rebases -- a slot rebased on a value above
- *                               the absolute ceiling stays trusted.
- *
- * 11. clock_scribble_never_counts -- a nanosecond clock written into the
- *                               counter never reaches the sum at a busy
- *                               or idle drain cadence, and rebases stop
- *                               at LOSSLESS_OP_COUNT_MAX_REBASES.
- *
- * 12. second_run_restarts_the_span -- a second implausible run reports
- *                               again and waits a full span to rebase.
- *
- * 13. wobbling_scribble_never_rebases -- a counter rewritten between two
- *                               nearby values never climbs, so never
- *                               rebases.
+ * Invariant checks for the lossless per-child op-count counter
+ * (stats_ring.lossless_op_count) and the drain that sums it.  A simulated SPSC
+ * ring, counter, aggregate scalars, drains and epoch resets stand in for the
+ * real shm and ring modules; the per-slot plausibility guard is production's
+ * opclock_slot_observe() (include/stats_ring_opclock_limits.h).
  */
 
 #include <stdbool.h>

@@ -1,52 +1,9 @@
 /*
- * deferred_free_test.c -- deferred-free ownership and sealing fixtures.
- *
- * Twelve fixtures covering deferred-free ownership and sealing
- * invariants.  Three build flavors exist: debug (default), ASAN
- * (ASAN=1), and NDEBUG (NDEBUG=1).  All twelve fixtures pass in all
- * three flavors.
- *
- * Prerequisites: persist/deferred-free*.c compiled as REAL_SRCs (added
- * by the test-seam extension that compiles persist/deferred-free*.c).
- *
- * mprotect failure injection (fixture 7): the Makefile passes
- * -Wl,--wrap=mprotect so every PLT mprotect call in the linked binary
- * goes through __wrap_mprotect() below.  When g_mprotect_fail_countdown
- * is zero (the default) the wrapper is transparent.  Fixture 7 sets it
- * to 5 before calling deferred_free_seal_all() to make the first five
- * "seal" (PROT_READ or PROT_NONE) calls fail with EACCES; they succeed
- * again once the countdown reaches zero.  ASAN's shadow-memory mprotect
- * calls go through __sanitizer_internal_mprotect (a direct syscall) and
- * are not routed via the PLT, so they are unaffected.
- *
- * Suite entry point: deferred_free_ownership_self_check()
- *
- * Fixtures
- * --------
- * 1. duplicate_address     -- enqueue same addr twice; second rejected
- * 2. hash_desync_authority -- array is authoritative, hash accelerator
- * 3. ring_ownership        -- exactly one owner per ring slot
- * 4. generation_retirement -- retired entries unreachable after flush
- * 5. enomem_disposal       -- consume-fail => leak, not partial free
- * 6. signal_unwind         -- loop-top seal_all restores after longjmp
- * 7. seal_failure_per_region (×5) -- NO dispatch after mprotect fail;
- *                                    seal_all returns false on failure,
- *                                    true on clean re-seal (all flavors)
- * 8. permanent_seal_failure_suppresses_dispatch -- permanent mprotect
- *                                    failure: seal_all returns false on
- *                                    every call; simulated chokepoint
- *                                    caller proves dispatch suppressed
- * 9. generation_retire_after_rotation -- a consume miss at retire
- *                                    leaks the chunk; it is not
- *                                    counted as gen_arena_retired_ok
- * 10. arena_ownership      -- an arena-held pointer is refused by
- *                                    enqueue, tracked_free_now and
- *                                    alloc_track_refresh
- * 11. generation_retire_in_window -- an evicted pointer is freed before
- *                                    one-per-tick alloc_track churn
- *                                    rotates its slot out
- * 12. arena_eviction_burst -- ~2 evictions per iteration never fall
- *                                    back to the pressure leak
+ * Deferred-free ownership and sealing fixtures (persist/deferred-free*.c,
+ * linked as REAL_SRCs): one owner per ring slot, the array rather than the
+ * hash accelerator as authority, retirement and arena ownership, and
+ * seal_all() failing safe when mprotect fails.  Entry point:
+ * deferred_free_ownership_self_check().
  */
 
 #include <errno.h>
@@ -71,6 +28,10 @@ extern int __real_mprotect(void *addr, size_t len, int prot);
 int __wrap_mprotect(void *addr, size_t len, int prot);
 
 /*
+ * The Makefile's -Wl,--wrap=mprotect sends every PLT mprotect call through
+ * __wrap_mprotect().  ASAN's own shadow-memory mprotects are a direct
+ * syscall, not routed through the PLT, so they are unaffected.
+ *
  * When > 0, the first g_mprotect_fail_countdown "seal" mprotect calls
  * (prot == PROT_READ or prot == PROT_NONE) are failed with EACCES.
  * All other mprotect calls (prot & PROT_WRITE, i.e. "unlock" calls)

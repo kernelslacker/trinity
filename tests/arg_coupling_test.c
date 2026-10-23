@@ -2,11 +2,8 @@
  * Self-check for the per-syscall rules validate_arg_coupling() holds the
  * final argument slots to: a rewrite after the sanitiser (chain
  * substitution, a RedQueen pin) must not leave the kernel a range the
- * sanitiser would have refused.  madvise is the one that can discard
- * pages every child shares, so its (addr, len) is checked against the
- * regions trinity tracks; read, pread64 and getrandom write as far as
- * their count says, so the count may not run the write past the buffer
- * into those regions.
+ * sanitiser would have refused.  madvise's (addr, len) stays off trinity's
+ * tracked regions, and a buffer-filling count stays inside its buffer.
  */
 
 #include <limits.h>

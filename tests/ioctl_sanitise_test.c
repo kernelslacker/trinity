@@ -1,17 +1,9 @@
 /*
- * Self-check for what sanitise_ioctl() hands the dispatcher.  A group's
- * sanitiser publishes RET_FD for the cmds whose return value is the new
- * fd, and for those alone: a cmd that writes the fd into its arg
- * returns 0.  sanitise_ioctl() withdraws the claim when the group was
- * drawn without regard to the fd, since the cmd then reaches a driver
- * that owns the return value.  One call in sixteen draws the group
- * first and swaps in an fd of its class, when there is one the group
- * claims and no stray fd is protected.
- *
- * pidfs refuses a namespace getter's non-zero arg, so most of the getters
- * the pidfd group builds carry a zero one.  The groups that name a typed-fd
- * class claim the fds of it the child made itself, not only the ones the
- * parent opened.
+ * Self-check for what sanitise_ioctl() hands the dispatcher: RET_FD only for
+ * cmds whose return value is the new fd, withdrawn when the group was drawn
+ * without regard to the fd; the group-first draw (one call in sixteen) that
+ * swaps in an fd of the group's class; the zero arg of the pidfs namespace
+ * getters; and typed-fd groups claiming the fds the child made itself.
  */
 
 #include <fcntl.h>
