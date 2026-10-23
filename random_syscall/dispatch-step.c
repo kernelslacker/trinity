@@ -917,9 +917,23 @@ bool redqueen_pin_refused(const struct syscallentry *entry,
  * validated against the entry's num_args at attribution emit time, but
  * defensive against a corrupted pending entry that survived the slot
  * bound check.
+ *
+ * An entry that multiplexes several operations on one syscall (ioctl,
+ * bpf, fcntl, futex, seccomp) has its sanitiser publish the return type
+ * of the operation it picked in rec->rettype, from its cmd or op slot
+ * and, for ioctl, the fd that chose the driver.  A rewrite of those
+ * leaves that type describing a different call: a stale RET_FD has the
+ * fd accounting take whatever the new operation returns for a fresh
+ * descriptor, retiring the pooled fd that owns that number, and the
+ * bound check call a large count corruption; a stale RET_ZERO_SUCCESS
+ * has the dispatcher coerce a legitimate count to -EINVAL.  Which slots
+ * matter differs per entry, so a rewrite of any slot falls back to the
+ * entry's own return type, which for these entries claims nothing; the
+ * price of a rewrite that missed the key is an fd nobody accounts for.
  */
-static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
-			      unsigned long value, unsigned int size)
+void redqueen_pin_slot(struct syscallrecord *rec,
+		       const struct syscallentry *entry, unsigned int slot,
+		       unsigned long value, unsigned int size)
 {
 	unsigned long *aN;
 	unsigned long m;
@@ -946,6 +960,7 @@ static void redqueen_pin_slot(struct syscallrecord *rec, unsigned int slot,
 	m = (size > 0 && size < sizeof(unsigned long))
 		? ((1UL << (size * 8U)) - 1UL) : ~0UL;
 	*aN = (*aN & ~m) | (value & m);
+	rec->rettype = entry->rettype;
 }
 
 /*
@@ -1145,7 +1160,7 @@ static bool redqueen_reexec_step(struct childdata *child,
 
 	srec_publish_begin(rec);
 	if (p->field_kind == REEXEC_FIELD_NONE)
-		redqueen_pin_slot(rec, p->slot, p->value, p->size);
+		redqueen_pin_slot(rec, entry, p->slot, p->value, p->size);
 	else
 		redqueen_pin_field(rec, p);
 	srec_publish_end(rec);

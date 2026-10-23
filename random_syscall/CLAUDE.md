@@ -23,9 +23,9 @@ Dispatch and chain substitution:
 
 | File | Lines | Role |
 |---|---|---|
-| dispatch-step.c | 1312 | `dispatch_step()`: the actual `do_syscall()` call plus all post-call bookkeeping (kcov/cmp collection, minicorpus save, cmp_hints credit, strategy attribution), and the CMP RedQueen greedy re-exec tail (`redqueen_pin_refused`, `redqueen_pin_slot`, `redqueen_pin_field`, `redqueen_reexec_step`) |
+| dispatch-step.c | 1328 | `dispatch_step()`: the actual `do_syscall()` call plus all post-call bookkeeping (kcov/cmp collection, minicorpus save, cmp_hints credit, strategy attribution), and the CMP RedQueen greedy re-exec tail (`redqueen_pin_refused`, `redqueen_pin_slot`, `redqueen_pin_field`, `redqueen_reexec_step`) |
 | dispatch-wrappers.c | 271 | The three public entry points that converge on `dispatch_step()`: `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
-| chain-subst.c | 286 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and `rewrite_refused_slots()`, the protected-fd/parent-pid mask the RedQueen pin shares |
+| chain-subst.c | 290 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and `rewrite_refused_slots()`, the protected-fd/parent-pid mask the RedQueen pin shares |
 
 Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.h`:
 
@@ -70,7 +70,9 @@ All three arms share the same skeleton: `choose_syscall_table()` picks 32 vs 64-
 - `rewrite_refused_slots()` takes the slots a value must not be written to out of the eligible set: if the substitute is the parent's pid (judged by its low 32 bits, as the kernel reads a `pid_t`), ARG_PID slots are masked out (protects against accidentally sending SIGKILL-class syscalls to trinity's own main process); if it is a protected fd (kcov PC/cmp fd, stderr capture memfd), fd-typed slots are masked out (protects against `dup2`/`close_range` closing trinity's own instrumentation fds). The RedQueen pin asks the same function before it spends a re-exec on a constant (`redqueen_pin_refused()`). That looks only at the value: a sanitiser's own protection of its slots is held again at dispatch, where `validate_arg_coupling()` refuses a `close_range` whose slots changed (a substituted 8 in the flags is EXCEPT, a pid in `max_fd` re-extends the range over the parked fds).
 - The eligible slot is chosen via an explicit popcount + rank walk over the bitmask, not `ctz`, specifically to keep the draw uniform (a raw ctz pick would bias 2:1 toward low-numbered slots).
 
-Called identically from the fresh-args path (`random_syscall_step`), the bias path (`random_syscall_step_biased`) and the replay path (`replay_syscall_step`). The redqueen re-exec pin (`redqueen_pin_slot`/`redqueen_pin_field` in dispatch-step.c) is a related but separate single-slot/single-field override that shares only the value mask.
+The write also resets `rec->rettype` to `entry->rettype` when the sanitiser had published a per-call return type (ioctl, bpf, fcntl, futex, seccomp, whose static type is `RET_NONE`): that type described the operation the sanitiser built, and a stale `RET_FD` has the fd accounting retire and push an fd that was never created while a stale `RET_ZERO_SUCCESS` has the dispatcher coerce a real count to `-EINVAL`.
+
+Called identically from the fresh-args path (`random_syscall_step`), the bias path (`random_syscall_step_biased`) and the replay path (`replay_syscall_step`). The redqueen re-exec pin (`redqueen_pin_slot`/`redqueen_pin_field` in dispatch-step.c) is a related but separate single-slot/single-field override that shares the value mask, and `redqueen_pin_slot()` withdraws a published `rec->rettype` the same way.
 
 ## How dispatch works
 

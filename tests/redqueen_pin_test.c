@@ -4,7 +4,9 @@
  * inside the writable pool, and any other slot is left untouched.
  * range_in_writable_pool() also gets its edge cases checked directly.
  * The value mask a scalar pin and chain substitution share keeps
- * protected fds out of fd slots and the parent's pid out of pid slots.
+ * protected fds out of fd slots and the parent's pid out of pid slots,
+ * and either rewrite withdraws the return type a sanitiser published for
+ * the call it built.
  */
 
 #include <limits.h>
@@ -337,6 +339,92 @@ static void substitution_value_mask(void)
 	}
 }
 
+/* An entry that multiplexes operations on one syscall claims no return type
+ * of its own: its sanitiser publishes the operation's in rec->rettype.  One
+ * with a fixed return type is the control. */
+static struct syscallentry mux_entry = {
+	.name = "rettype_mux_test",
+	.num_args = 3,
+	.argtype = { ARG_FD, ARG_OP, ARG_UNDEFINED },
+	.rettype = RET_NONE,
+};
+
+static struct syscallentry fixed_entry = {
+	.name = "rettype_fixed_test",
+	.num_args = 3,
+	.argtype = { ARG_FD, ARG_OP, ARG_UNDEFINED },
+	.rettype = RET_FD,
+};
+
+/* A pin of any slot of a multiplexed call drops the return type the
+ * sanitiser published for it, and leaves a fixed one alone. */
+static void pin_withdraws_rettype(void)
+{
+	unsigned int slot;
+
+	for (slot = 1; slot <= 3; slot++) {
+		unsigned long *const slots[3] = { &rec.a1, &rec.a2, &rec.a3 };
+
+		memset(&rec, 0, sizeof(rec));
+		rec.rettype = RET_FD;
+		redqueen_pin_slot(&rec, &mux_entry, slot, 0x40, sizeof(long));
+		if (*slots[slot - 1] != 0x40)
+			BUG("rettype: the pin did not land");
+		if (rec.rettype != RET_NONE)
+			BUG("rettype: a pinned call kept the type published for the old operation");
+
+		memset(&rec, 0, sizeof(rec));
+		rec.rettype = RET_FD;
+		redqueen_pin_slot(&rec, &fixed_entry, slot, 0x40, sizeof(long));
+		if (rec.rettype != RET_FD)
+			BUG("rettype: a pin changed the type of an entry that fixes its own");
+	}
+
+	/* A pin dropped for its slot rewrites nothing. */
+	memset(&rec, 0, sizeof(rec));
+	rec.rettype = RET_FD;
+	redqueen_pin_slot(&rec, &mux_entry, 7, 0x40, sizeof(long));
+	if (rec.rettype != RET_FD)
+		BUG("rettype: a pin past the sixth slot changed the type");
+}
+
+/* Substitution does the same: a call it rewrote loses the published type,
+ * one it left alone keeps it. */
+static void substitution_withdraws_rettype(void)
+{
+	unsigned int i, rewritten = 0, kept = 0;
+
+	mux_entry.numeric_substitute_mask = compute_numeric_substitute_mask(&mux_entry);
+	fixed_entry.numeric_substitute_mask = compute_numeric_substitute_mask(&fixed_entry);
+
+	for (i = 0; i < 4000; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = rec.a2 = rec.a3 = 0x1111;
+		rec.rettype = RET_FD;
+
+		apply_chain_substitution(&rec, &mux_entry, true, INNOCENT_FD);
+
+		if (rec.a1 != 0x1111 || rec.a2 != 0x1111 || rec.a3 != 0x1111) {
+			rewritten++;
+			if (rec.rettype != RET_NONE)
+				BUG("rettype: a substituted call kept the type published for the old operation");
+		} else {
+			kept++;
+			if (rec.rettype != RET_FD)
+				BUG("rettype: a call substitution left alone lost its type");
+		}
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = rec.a2 = rec.a3 = 0x1111;
+		rec.rettype = RET_FD;
+		apply_chain_substitution(&rec, &fixed_entry, true, INNOCENT_FD);
+		if (rec.rettype != RET_FD)
+			BUG("rettype: substitution changed the type of an entry that fixes its own");
+	}
+	if (rewritten == 0 || kept == 0)
+		BUG("rettype: substitution never rewrote, or always rewrote, a call");
+}
+
 void redqueen_pin_self_check(void);
 void redqueen_pin_self_check(void)
 {
@@ -360,4 +448,6 @@ void redqueen_pin_self_check(void)
 	bad_pointer_not_written(base + WRITABLE_POOL_BYTES);
 	pin_value_mask();
 	substitution_value_mask();
+	pin_withdraws_rettype();
+	substitution_withdraws_rettype();
 }

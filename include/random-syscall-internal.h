@@ -158,6 +158,15 @@ void redqueen_pin_field(struct syscallrecord *rec,
 			const struct reexec_pending *p);
 
 /*
+ * The scalar RedQueen pin.  redqueen_reexec_step() is its only caller; it
+ * is declared here so tests/redqueen_pin_test.c can check what it leaves
+ * of the record.
+ */
+void redqueen_pin_slot(struct syscallrecord *rec,
+		       const struct syscallentry *entry, unsigned int slot,
+		       unsigned long value, unsigned int size);
+
+/*
  * Whether redqueen_reexec_step() refuses the scalar pin @p for @entry;
  * declared here so tests/redqueen_pin_test.c can reach the judgement
  * without the re-exec.

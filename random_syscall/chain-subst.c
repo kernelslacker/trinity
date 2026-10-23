@@ -264,6 +264,9 @@ void apply_chain_substitution(struct syscallrecord *rec,
 	case 5: rec->a5 = substitute_retval; break;
 	case 6: rec->a6 = substitute_retval; break;
 	}
+	/* The sanitiser's published return type was for the slot's old value:
+	 * see redqueen_pin_slot(). */
+	rec->rettype = entry->rettype;
 	if (minicorpus_shm != NULL)
 		__atomic_fetch_add(&minicorpus_shm->chain_substitution_count,
 				   1, __ATOMIC_RELAXED);
