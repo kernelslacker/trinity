@@ -48,7 +48,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | fds-param.c | 95 | `--enable-fds` / `--disable-fds` parsing (`process_fds_param`) |
 | fds-registry.c | 93 | The constructor-time provider list: `register_fd_provider()`, `fd_provider_name()`, `dump_fd_provider_names()` |
 | fds-internal.h | 66 | Private cross-file interface for the carve-outs — the counters and provider arrays that used to be file-statics in `fds.c`, and the replenish per-tick cap |
-| owned-fd-ring.c | 83 | `owned_fd_ring_record()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded, and retires a recorded number from every provider's ring |
+| owned-fd-ring.c | 89 | `owned_fd_ring_record()` and `owned_fd_ring_retire()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded; a retire takes a number out of every provider's ring without closing it, and a record retires the number it is given first |
 | fds-diag.c | 42 | `fd_provider_init_fail()` and the last-init-reason slot `open_fds()` reads back |
 | devfs.c | 34 | `/dev` pool provider (thin wrapper over files.c, pool 0) |
 | procfs.c | 18 | `/proc` pool provider (thin wrapper over files.c, pool 1) |

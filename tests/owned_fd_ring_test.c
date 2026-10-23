@@ -3,6 +3,8 @@
  * closes an aged-out fd only while its number still names the file it
  * recorded.  A fuzzed close() frees the number and the next fd-creating
  * call hands it to an unrelated file, which the ring must leave open.
+ * owned_fd_ring_retire() takes a number out of every ring without closing
+ * it, and leaves the other slots as they were.
  * Pipes stand in for provider fds: each has an inode of its own, and the
  * two ends of one pipe share it, which models a number that fstat() cannot
  * tell from the one that was recorded.
@@ -62,10 +64,11 @@ void owned_fd_ring_self_check(void)
 	 * instead of clearing one.
 	 */
 	static struct owned_fd_ring wrap_ring, recycled_ring, reissued_ring,
-				    unreadable_ring, first_ring, second_ring;
+				    unreadable_ring, first_ring, second_ring,
+				    retired_ring, selective_ring;
 	int fresh[MAX_OWNED_FDS];
 	struct stat st, want;
-	int a[2], b[2], owned;
+	int a[2], b[2], owned, other;
 
 	if (pipe(a) < 0 || pipe(b) < 0)
 		BUG("owned fd ring: pipe failed");
@@ -149,6 +152,44 @@ void owned_fd_ring_self_check(void)
 	if (fcntl(owned, F_GETFD) >= 0)
 		BUG("owned fd ring: kept an fd past the end of its ring");
 	close_all(fresh, MAX_OWNED_FDS);
+
+	/*
+	 * The number was freed behind the ring's back and handed out again to
+	 * a file fstat() cannot tell from the recorded one, by a call other
+	 * than the ring's provider.  Its stale slot is retired, so the ring
+	 * leaves the new fd open when it wraps.
+	 */
+	owned = own_and_close(&retired_ring, a[1]);
+	if (dup2(a[0], owned) != owned)
+		BUG("owned fd ring: cannot recycle the fd number");
+	owned_fd_ring_retire(owned);
+	record_fresh(&retired_ring, b[1], fresh, MAX_OWNED_FDS);
+	if (fcntl(owned, F_GETFD) < 0)
+		BUG("owned fd ring: a retired slot closed its number's new owner");
+	close_all(fresh, MAX_OWNED_FDS);
+	close(owned);
+
+	/*
+	 * Retiring a number closes nothing and touches no other slot: the
+	 * fd stays open now and after the wrap, and the ring still closes the
+	 * fd it owns that was not retired.
+	 */
+	owned = dup(a[1]);
+	other = dup(a[1]);
+	if (owned < 0 || other < 0)
+		BUG("owned fd ring: dup failed");
+	owned_fd_ring_record(&selective_ring, owned);
+	owned_fd_ring_record(&selective_ring, other);
+	owned_fd_ring_retire(owned);
+	if (fcntl(owned, F_GETFD) < 0)
+		BUG("owned fd ring: retiring a slot closed its fd");
+	record_fresh(&selective_ring, b[1], fresh, MAX_OWNED_FDS);
+	if (fcntl(owned, F_GETFD) < 0)
+		BUG("owned fd ring: closed an fd after its slot was retired");
+	if (fcntl(other, F_GETFD) >= 0)
+		BUG("owned fd ring: retiring a number kept another slot's fd");
+	close_all(fresh, MAX_OWNED_FDS);
+	close(owned);
 
 	close(a[0]);
 	close(a[1]);

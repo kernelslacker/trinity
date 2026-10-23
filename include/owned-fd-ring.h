@@ -36,6 +36,16 @@ struct owned_fd_ring {
  * closed first, but only while its number still names the file it was
  * recorded as: a fuzzed close() or dup2() can free or take over the number,
  * and the next fd-creating call hands it to an unrelated file.  Recording a
- * number also retires it from every other ring.
+ * number also retires it from every ring.
  */
 void owned_fd_ring_record(struct owned_fd_ring *ring, int fd);
+
+/*
+ * Forget every slot, in every ring, that names @fd, and close nothing.  The
+ * kernel only hands out a free number, so a slot that still names one the
+ * kernel has just handed to someone else is stale: for the files fstat()
+ * cannot tell apart it would close the new owner when its ring wraps.  A
+ * walk of MAX_OWNED_FDS slots in each ring that has recorded, with no
+ * syscall.
+ */
+void owned_fd_ring_retire(int fd);

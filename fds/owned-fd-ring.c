@@ -40,12 +40,31 @@ static void owned_fd_slot_evict(const struct owned_fd_slot *slot)
 	close(slot->fd);
 }
 
+/*
+ * fstat() cannot tell a recycled number from the original for the fds
+ * hooked onto the one inode that anon_inode_getfile() and
+ * anon_inode_getfd() hand out (eventfd, epoll, signalfd, timerfd,
+ * inotify, fanotify, ...).  But the kernel only hands out a free
+ * number, so an older slot naming @fd, in this ring or in another
+ * provider's, is stale.
+ */
+void owned_fd_ring_retire(int fd)
+{
+	struct owned_fd_ring *r;
+	unsigned int i;
+
+	for (r = rings; r != NULL; r = r->next) {
+		for (i = 0; i < MAX_OWNED_FDS; i++) {
+			if (r->slot[i].fd == fd)
+				r->slot[i].fd = -1;
+		}
+	}
+}
+
 void owned_fd_ring_record(struct owned_fd_ring *ring, int fd)
 {
 	struct owned_fd_slot *slot = &ring->slot[ring->head % MAX_OWNED_FDS];
-	struct owned_fd_ring *r;
 	struct stat st;
-	unsigned int i;
 
 	if (!ring->linked) {
 		ring->next = rings;
@@ -53,21 +72,8 @@ void owned_fd_ring_record(struct owned_fd_ring *ring, int fd)
 		ring->linked = true;
 	}
 
-	/*
-	 * fstat() cannot tell a recycled number from the original for the fds
-	 * hooked onto the one inode that anon_inode_getfile() and
-	 * anon_inode_getfd() hand out (eventfd, epoll, signalfd, timerfd,
-	 * inotify, fanotify, ...).  But the kernel only hands out a free
-	 * number, so an older slot naming @fd, in this ring or in another
-	 * provider's, is stale.  Retire it before the eviction below, which
-	 * may be that very slot.
-	 */
-	for (r = rings; r != NULL; r = r->next) {
-		for (i = 0; i < MAX_OWNED_FDS; i++) {
-			if (r->slot[i].fd == fd)
-				r->slot[i].fd = -1;
-		}
-	}
+	/* Retire before the eviction below, which may be that very slot. */
+	owned_fd_ring_retire(fd);
 
 	if (ring->head >= MAX_OWNED_FDS)
 		owned_fd_slot_evict(slot);
