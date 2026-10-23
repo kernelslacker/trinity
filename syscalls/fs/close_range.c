@@ -365,5 +365,7 @@ struct syscallentry syscall_close_range = {
 	.post = post_close_range,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS_IO,
-	.flags = REEXEC_SANITISE_OK,
+	/* Not REEXEC_SANITISE_OK: the protected-fd clamp only holds for the
+	 * a1/a2/a3 that sanitise picked, and a RedQueen pin applied after it
+	 * (max_fd, or an EXCEPT flags word) can undo it and close a kcov fd. */
 };
