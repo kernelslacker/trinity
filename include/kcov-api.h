@@ -1,9 +1,9 @@
 #pragma once
 
 /* Public KCOV API: lifecycle, enable/disable, collect, plateau,
- * persistence, canary.  Split out of include/kcov.h.  All prototypes
- * assume struct kcov_child and struct kcov_shared visibility, which
- * kcov.h re-exports through the facade. */
+ * persistence, canary.  All prototypes assume struct kcov_child and
+ * struct kcov_shared visibility, which kcov.h re-exports through the
+ * facade. */
 
 #include "kcov-types.h"
 #include "kcov-shared.h"

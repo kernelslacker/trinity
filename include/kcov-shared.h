@@ -1,12 +1,12 @@
 #pragma once
 
 /* struct kcov_shared, its extern pointer, and per-nr accessors.
- * Split out of include/kcov.h.  Storage layout of struct kcov_shared
- * is offset-sensitive: consumers snapshot fields via __atomic_load_n
- * and stats/kcov/cmp/ indexes into fixed-length arrays here.  Do not
- * add alignment attributes, reorder fields, or insert nested structs
- * without matching updates in every consumer.  New fields are always
- * appended at the tail so existing offsets stay stable.
+ * Storage layout of struct kcov_shared is offset-sensitive: consumers
+ * snapshot fields via __atomic_load_n and stats/kcov/cmp/ indexes into
+ * fixed-length arrays here.  Do not add alignment attributes, reorder
+ * fields, or insert nested structs without matching updates in every
+ * consumer.  New fields are always appended at the tail so existing
+ * offsets stay stable.
  *
  * Per-member documentation for the aggregated group structs lives in
  * the include/kcov-groups/<group>.h header that defines each type.
@@ -236,7 +236,7 @@ struct kcov_shared {
 extern struct kcov_shared *kcov_shm;
 
 /* Combined per-nr accessors for the [nr][do32?1:0]-split productivity
- * arrays.  Readers that want the pre-split scalar sum both arch dims
+ * arrays.  Readers that want the combined scalar sum both arch dims
  * with RELAXED atomics -- a torn pair across the two loads is a
  * one-bump skew, well inside the slack the picker accept/retry loop
  * already tolerates.  Callers gate on kcov_shm != NULL and nr <

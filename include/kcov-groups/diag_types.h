@@ -1,10 +1,9 @@
 #pragma once
 
-/* KCOV diagnostic types split out of kcov-types.h -- the per-record
- * kernel wire layout, per-syscall diag counter slot, and the EBADF
- * chronicle snapshot slot.  The two "big" diag structs kcov_cmp_diag
- * and kcov_pc_diag deliberately STAY in kcov-types.h (the shared-type
- * home) since they predate the group refactor.  Included from
+/* KCOV diagnostic types: the per-record kernel wire layout,
+ * per-syscall diag counter slot, and the EBADF chronicle snapshot
+ * slot.  The two "big" diag structs kcov_cmp_diag and kcov_pc_diag
+ * live in kcov-types.h (the shared-type home).  Included from
  * kcov-types.h so consumers keep seeing these types transparently. */
 
 #include "types.h"	/* uint32_t / uint64_t */

@@ -1,6 +1,6 @@
 #pragma once
 
-/* Per-child (non-shared) KCOV structs split out of kcov-types.h.
+/* Per-child (non-shared) KCOV structs.
  * These live in each child's private memory (kcov_child on childdata,
  * kcov_child_local_stats behind a pointer on childdata, dedup slots
  * mmap'd child-private).  Included from kcov-types.h so consumers keep

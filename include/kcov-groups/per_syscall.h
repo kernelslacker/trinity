@@ -16,7 +16,7 @@ struct kcov_per_syscall {
  * top-syscalls dump in stats.c. */
 /* [nr][picker_context][do32 ? 1 : 0] -- 32-bit and 64-bit paths
  * bump their own slot so IA32 compat entries no longer merge with
- * the 64-bit total; readers that want the pre-split per-nr value
+ * the 64-bit total; readers that want the combined per-nr value
  * sum both arch dims via per_syscall_edges_total() /
  * _calls_total() below.  The picker_context dim splits INIT-user
  * picks from other caller-context picks so a context that skews

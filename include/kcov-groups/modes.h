@@ -1,6 +1,6 @@
 #pragma once
 
-/* KCOV mode enums and companion constants split out of kcov-types.h.
+/* KCOV mode enums and companion constants.
  * Each mode's comment lives next to its enum (the consumer of the mode).
  * Included from kcov-types.h so any file that includes kcov-types.h keeps
  * seeing these types transparently. */

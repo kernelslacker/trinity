@@ -1,15 +1,14 @@
 #pragma once
 
 /* KCOV constants, enum modes, and non-shared child/diagnostic structs.
- * Split out of include/kcov.h.  Do not add fields to struct kcov_shared
- * here -- that lives in kcov-shared.h.
+ * Do not add fields to struct kcov_shared here -- that lives in
+ * kcov-shared.h.
  *
- * The bulk of the type definitions have been carved into per-topic
- * sub-headers under include/kcov-groups/; this file now hosts the
- * "big two" diagnostic structs (kcov_cmp_diag and kcov_pc_diag) that
- * predate the group refactor, and their format helper decls.  Every
- * carved sub-header is #included below so consumers still get the full
- * kcov-types.h symbol set from a single include. */
+ * Most of the type definitions live in per-topic sub-headers under
+ * include/kcov-groups/; this file hosts the "big two" diagnostic
+ * structs (kcov_cmp_diag and kcov_pc_diag) and their format helper
+ * decls.  Every sub-header is #included below so consumers get the
+ * full kcov-types.h symbol set from a single include. */
 
 #include <time.h>
 
