@@ -45,173 +45,79 @@
 #include "trinity.h"
 #include "utils.h"
 
-/*
- * Cold-syscall weight for the frontier picker's plateau fallback path.
- * Returns a value in [0, FRONTIER_COLD_SCALE] that the accept gate in
- * set_syscall_nr_coverage_frontier() consumes as the bias toward this
- * syscall when the frontier ring has gone silent.  Higher = more biased
- * toward picking this syscall.
+/* BLENDED weight (mode-gated): treat
+ * per_syscall_edges (call-count of productive calls) as the stable
+ * backbone and ADD logarithmic credit for three disjoint per-call
+ * yield signals:
  *
- * Three regimes, deliberately distinguished:
+ *   bucket_bits_real
+ *       PC bit transitions across the AFL-style hit-count buckets
+ *       (per_syscall_diag[].bucket_bits_real).  Fires when a known
+ *       edge moves into a never-seen hit-count bucket -- "new
+ *       behaviour on known code".  Weight 1x.
  *
- *   calls == 0 (never invoked)
- *     -- return FRONTIER_COLD_SCALE.  Maximum bias.  These are
- *        genuinely under-explored slots the picker should be steering
- *        to.
+ *   distinct_pcs
+ *       First-sight PC events (per_syscall_diag[].distinct_pcs):
+ *       dedup_inc first-sightings of a PC the global bitmap had
+ *       not seen.  Unambiguous new coverage; weighted 2x to
+ *       reflect higher signal-to-noise than the bucket-bit term.
  *
- *   calls > 0 && edges == 0 (invoked, never productive)
- *     -- return 0.  Minimum bias.  The syscall has had its shot and
- *        failed to produce any new coverage; biasing toward it pulls
- *        the picker into a bug-graveyard where it spends the plateau
- *        re-running calls that already established themselves as
- *        unproductive.  The +1 smoothing on w in the caller's accept
- *        gate keeps these syscalls reachable at the uniform floor
- *        ((0+1)/(SCALE+1)) rather than starving entirely.
+ *   transition_edges_real_local  (THIS COMMIT)
+ *       New transition slots flipped (per_syscall_transition_edges_
+ *       real_local): a 0 -> 1 in the (prev_canon_pc, cur_canon_pc)
+ *       hash, restricted to local-mode traces.  Fires when a new
+ *       ORDERING between two PCs is observed -- can happen on
+ *       warm-known code (a new route through already-mapped
+ *       blocks).  Weight 1x: symmetric to bucket_bits in that a
+ *       transition can fire on already-known edges, so the
+ *       higher-confidence 2x slot stays reserved for distinct_pcs.
  *
- *   calls > 0 && edges > 0 (invoked, some productivity)
- *     -- return SCALE - floor(SCALE * edges / calls).  Linear inverse
- *        productivity, same shape as before but at the new SCALE
- *        resolution: a perfectly productive syscall (edges == calls)
- *        lands at 0, a syscall that has produced a small fraction of
- *        new edges across many calls keeps a near-full weight.
- *        edges <= calls by construction so the subtraction can't
- *        underflow.
+ * The three terms are STRICTLY DISJOINT discovery signals: a
+ * single PC-edge discovery bumps {edges, bucket_bits_real,
+ * distinct_pcs}; a single transition discovery bumps
+ * {transition_edges_real_local} and (via kcov_collect's separate
+ * branch) {per_syscall_transition_edges_real}.  A call that
+ * discovers both kinds of novelty correctly contributes to both
+ * terms because two distinct novelty events happened -- there is
+ * no double-counting.  The bucket-bits and distinct-pcs terms are
+ * the PC-edge backbone; the disjoint transition term layered on
+ * top is what makes blend_weight differ from old_weight under
+ * COMBINED mode.
  *
- * The previous shape conflated the first two regimes: both never-tried
- * and tried-but-broken returned SCALE, so the plateau-fallback picker
- * weighted the bug-graveyard identically to the genuinely under-explored
- * frontier and burned its picks re-running known dead-ends.  Splitting
- * the two regimes is the headline fix; the SCALE bump (16 -> 256, see
- * the FRONTIER_COLD_SCALE macro comment) is what lets the third regime's
- * integer divide actually distinguish productivity below ~6% from MAX
- * instead of flooring everything in that range to the ceiling.
+ * Diag counters are split by [nr][do32]; sum both arch slots so
+ * the blend's productivity numerator pairs against the unsplit
+ * per_syscall_calls denominator -- matches the unsplit
+ * per_syscall_edges shape the old branch uses.  Transitions are
+ * unsplit by [do32] (the per_syscall_transition_edges family
+ * never grew the arch split), so a single load suffices for the
+ * transition term.
  *
- * Semantics note: per_syscall_edges has "bumps by 1 per call that
- * discovered >=1 new edge" semantics (see include/kcov.h), not raw
- * bucket-edge counts, so edges <= calls by construction.  Reads are
- * RELAXED -- a stale snapshot is harmless; a racing kcov_collect bump
- * that lands mid-pick only shifts the weight by one step, well inside
- * the slack the outer accept/retry loop already tolerates.
+ * ilog2() is the per-call contribution clamp on each term: a
+ * syscall whose single huge trace dumped a million transition
+ * slots contributes ~20 to the score, not a million, so one
+ * productive call cannot monopolize the frontier window.
  *
- * Returns the uniform-floor (FRONTIER_COLD_SCALE) when kcov_shm is
- * unavailable so the caller's accept gate degrades to plain uniform
- * pick rather than wedging on a NULL deref -- matches the kcov-less
- * fallback the rest of the codebase already takes (see
- * kcov_syscall_cold_skip_pct in kcov.c for the sibling pattern).
- */
-unsigned long frontier_cold_weight(unsigned int nr,
-					  struct childdata *child)
+ * blend_productivity is capped at calls so the SCALE subtraction
+ * cannot underflow -- same invariant the OLD branch in
+ * frontier_cold_weight() relies on for the productive range.
+ *
+ * The transition term is folded only when kcov_transition_reward_
+ * mode != OFF.  Under SHADOW_ONLY the term IS folded into
+ * blend_weight (so the A/B counters measure the divergence
+ * the COMBINED switch would activate); frontier_cold_weight() still
+ * returns old_weight, so live selection stays byte-identical.  Under OFF
+ * the term is zeroed so blend_weight reproduces the legacy formula
+ * exactly, keeping the A/B counters comparable to baseline runs. */
+static unsigned long frontier_blend_weight(unsigned int nr,
+					   unsigned long edges,
+					   unsigned long calls)
 {
-	unsigned long edges, calls;
 	unsigned long bucket_bits, distinct_pcs;
 	unsigned long transition_edges_real_local;
-	unsigned long old_weight, blend_weight;
 	unsigned long blend_productivity;
-	unsigned long picked_weight;
+	unsigned long blend_weight;
 	enum kcov_transition_reward_mode trew_mode;
-	enum reach_band_mode rb_mode;
 
-	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return FRONTIER_COLD_SCALE;
-
-	calls = per_syscall_calls_total(nr);
-
-	/* Never invoked: MAX bias, genuinely under-explored.  Bypass the
-	 * shadow A/B math entirely -- both formulas agree on
-	 * FRONTIER_COLD_SCALE in this case and the early return keeps the
-	 * cold-path overhead untouched for syscalls that have never seen
-	 * a single call. */
-	if (calls == 0)
-		return FRONTIER_COLD_SCALE;
-
-	edges = per_syscall_edges_total(nr);
-
-	/* OLD weight (call-count only): the live-path productivity signal
-	 * this function has always returned.  Logic preserved verbatim from
-	 * the pre-blend implementation.  Computed unconditionally so the
-	 * SHADOW blend below can compare against it, then returned at the
-	 * tail so the picker's per-syscall distribution stays byte-
-	 * identical to today.
-	 *
-	 *  edges == 0 -- invoked but never productive (bug-graveyard);
-	 *  edges >= calls -- RELAXED-load inversion against the steady-
-	 *                    state edges <= calls invariant, treat as
-	 *                    fully productive (would otherwise underflow
-	 *                    the unsigned subtract).
-	 *
-	 * The caller's (w+1)/(SCALE+1) accept floor keeps a w == 0
-	 * syscall reachable in both regimes. */
-	if (edges == 0)
-		old_weight = 0;
-	else if (edges >= calls)
-		old_weight = 0;
-	else
-		old_weight = FRONTIER_COLD_SCALE -
-			     (edges * FRONTIER_COLD_SCALE) / calls;
-
-	/* BLENDED weight (mode-gated): treat
-	 * per_syscall_edges (call-count of productive calls) as the stable
-	 * backbone and ADD logarithmic credit for three disjoint per-call
-	 * yield signals:
-	 *
-	 *   bucket_bits_real
-	 *       PC bit transitions across the AFL-style hit-count buckets
-	 *       (per_syscall_diag[].bucket_bits_real).  Fires when a known
-	 *       edge moves into a never-seen hit-count bucket -- "new
-	 *       behaviour on known code".  Weight 1x.
-	 *
-	 *   distinct_pcs
-	 *       First-sight PC events (per_syscall_diag[].distinct_pcs):
-	 *       dedup_inc first-sightings of a PC the global bitmap had
-	 *       not seen.  Unambiguous new coverage; weighted 2x to
-	 *       reflect higher signal-to-noise than the bucket-bit term.
-	 *
-	 *   transition_edges_real_local  (THIS COMMIT)
-	 *       New transition slots flipped (per_syscall_transition_edges_
-	 *       real_local): a 0 -> 1 in the (prev_canon_pc, cur_canon_pc)
-	 *       hash, restricted to local-mode traces.  Fires when a new
-	 *       ORDERING between two PCs is observed -- can happen on
-	 *       warm-known code (a new route through already-mapped
-	 *       blocks).  Weight 1x: symmetric to bucket_bits in that a
-	 *       transition can fire on already-known edges, so the
-	 *       higher-confidence 2x slot stays reserved for distinct_pcs.
-	 *
-	 * The three terms are STRICTLY DISJOINT discovery signals: a
-	 * single PC-edge discovery bumps {edges, bucket_bits_real,
-	 * distinct_pcs}; a single transition discovery bumps
-	 * {transition_edges_real_local} and (via kcov_collect's separate
-	 * branch) {per_syscall_transition_edges_real}.  A call that
-	 * discovers both kinds of novelty correctly contributes to both
-	 * terms because two distinct novelty events happened -- there is
-	 * no double-counting.  The bucket-bits and distinct-pcs terms are
-	 * the PC-edge backbone; the disjoint transition term layered on
-	 * top is what makes blend_weight differ from old_weight under
-	 * COMBINED mode.
-	 *
-	 * Diag counters are split by [nr][do32]; sum both arch slots so
-	 * the blend's productivity numerator pairs against the unsplit
-	 * per_syscall_calls denominator above -- matches the unsplit
-	 * per_syscall_edges shape the old branch uses.  Transitions are
-	 * unsplit by [do32] (the per_syscall_transition_edges family
-	 * never grew the arch split), so a single load suffices for the
-	 * transition term.
-	 *
-	 * ilog2() is the per-call contribution clamp on each term: a
-	 * syscall whose single huge trace dumped a million transition
-	 * slots contributes ~20 to the score, not a million, so one
-	 * productive call cannot monopolize the frontier window.
-	 *
-	 * blend_productivity is capped at calls so the SCALE subtraction
-	 * cannot underflow -- same invariant the OLD branch above relies
-	 * on for the productive range.
-	 *
-	 * The transition term is folded only when kcov_transition_reward_
-	 * mode != OFF.  Under SHADOW_ONLY the term IS folded into
-	 * blend_weight (so the A/B counters below measure the divergence
-	 * the COMBINED switch would activate); the function still returns
-	 * old_weight, so live selection stays byte-identical.  Under OFF
-	 * the term is zeroed so blend_weight reproduces the legacy formula
-	 * exactly, keeping the A/B counters comparable to baseline runs. */
 	trew_mode = __atomic_load_n(&kcov_transition_reward_mode,
 				    __ATOMIC_RELAXED);
 
@@ -243,19 +149,24 @@ unsigned long frontier_cold_weight(unsigned int nr,
 		blend_weight = FRONTIER_COLD_SCALE -
 			       (blend_productivity * FRONTIER_COLD_SCALE) /
 			       calls;
+	return blend_weight;
+}
 
-	/* A/B counters.  Bumped once per call so the operator can read
-	 * the run-wide divergence pattern between the OLD (call-count
-	 * only) and BLENDED (call-count + ilog2(bucket_bits) +
-	 * 2*ilog2(distinct_pcs) + ilog2(transition_edges_real_local))
-	 * productivity scores.  Counter names predate the transition
-	 * term but the semantics ("how often the blend would steer
-	 * differently") are unchanged.  The counters fire from both
-	 * arms in lock-step so the would-be divergence stays observable
-	 * regardless of which arm the calling child is stamped under;
-	 * the LIVE behaviour delta from Arm B's blend_weight promotion
-	 * shows up downstream in frontier_silent_picks / per-syscall
-	 * pick rates rather than in these sums. */
+/* A/B counters.  Bumped once per call so the operator can read
+ * the run-wide divergence pattern between the OLD (call-count
+ * only) and BLENDED (call-count + ilog2(bucket_bits) +
+ * 2*ilog2(distinct_pcs) + ilog2(transition_edges_real_local))
+ * productivity scores.  Counter names predate the transition
+ * term but the semantics ("how often the blend would steer
+ * differently") are unchanged.  The counters fire from both
+ * arms in lock-step so the would-be divergence stays observable
+ * regardless of which arm the calling child is stamped under;
+ * the LIVE behaviour delta from Arm B's blend_weight promotion
+ * shows up downstream in frontier_silent_picks / per-syscall
+ * pick rates rather than in these sums. */
+static void frontier_blend_ab_note(unsigned long old_weight,
+				   unsigned long blend_weight)
+{
 	__atomic_fetch_add(&shm->stats.frontier.plateau.blend_samples, 1UL,
 			   __ATOMIC_RELAXED);
 	__atomic_fetch_add(&shm->stats.frontier.plateau.blend_old_weight_sum,
@@ -271,50 +182,41 @@ unsigned long frontier_cold_weight(unsigned int nr,
 	else
 		__atomic_fetch_add(&shm->stats.frontier.plateau.blend_new_equal,
 				   1UL, __ATOMIC_RELAXED);
+}
 
-	/* Per-child A/B arm promotes the blend (now including the
-	 * transition term) to the live picker for half the children
-	 * (Arm B); the other half (Arm A) returns the historical OLD
-	 * weight so the picker's per-syscall distribution stays byte-
-	 * identical to the pre-blend baseline for that cohort.  The
-	 * frontier_blend_* shm counters above record the would-be
-	 * divergence for both arms in lock-step, so the operator can
-	 * read the live promotion delta off a single run instead of
-	 * gating it on a fleet-wide mode flip.  child==NULL (parent
-	 * context, should not reach here under the FRONTIER picker)
-	 * falls back to the OLD weight to preserve baseline behaviour. */
-	if (child != NULL && child->frontier_blend_arm_b)
-		picked_weight = blend_weight;
-	else
-		picked_weight = old_weight;
+/* Reach-band picker weighting (default off).  Bands the syscall
+ * by edges_total (per_syscall_edges + warm-loaded _prior) and
+ * adjusts the silent-regime weight frontier_cold_weight() picked
+ * so the MID band's stale slot is demoted harder than the cold curve
+ * alone gives it, while the HIGH band's productive slot earns a
+ * protection bump that the inverse-productivity old/blend weight
+ * formula otherwise sinks toward zero.  See include/reach-band.h
+ * for the OFF / SHADOW_ONLY / COMBINED contract and the band-
+ * boundary / multiplier rationale.
+ *
+ * OFF early-out: the mode load is the only work done under
+ * default; the band classification, edges_prior / total_calls /
+ * last_edge_at loads, and the demote/boost arithmetic are all
+ * skipped, so a fixed-seed dry-run is byte-identical to a build
+ * before this row.  The mode load consumes no RNG, matching the
+ * mode-load shape kcov_transition_reward_mode and frontier_group_
+ * antilock_mode use at their own hook sites.
+ *
+ * RELAXED-load guard: edges, kcov_shm->per_syscall.per_syscall_edges_prior,
+ * total_calls, and last_edge_at[nr] are separate atomic loads
+ * that can sample inconsistent snapshots; the (total > last) +
+ * (total - last) > KCOV_COLD_THRESHOLD pair is the same shape
+ * the cold-skip helper in kcov.c uses to keep the unsigned
+ * subtract from wrapping when last momentarily reads larger
+ * than total under a concurrent kcov_collect update.  Match
+ * that idiom -- treat the inverted sample as "no stale gap"
+ * rather than wrapping. */
+static unsigned long frontier_reach_band_adjust(unsigned int nr,
+						unsigned long edges,
+						unsigned long picked_weight)
+{
+	enum reach_band_mode rb_mode;
 
-	/* Reach-band picker weighting (default off).  Bands the syscall
-	 * by edges_total (per_syscall_edges + warm-loaded _prior) and
-	 * adjusts the silent-regime weight returned above so the MID
-	 * band's stale slot is demoted harder than the cold curve alone
-	 * gives it, while the HIGH band's productive slot earns a
-	 * protection bump that the inverse-productivity old/blend weight
-	 * formula otherwise sinks toward zero.  See include/reach-band.h
-	 * for the OFF / SHADOW_ONLY / COMBINED contract and the band-
-	 * boundary / multiplier rationale.
-	 *
-	 * OFF early-out: the mode load is the only work done under
-	 * default; the band classification, edges_prior / total_calls /
-	 * last_edge_at loads, and the demote/boost arithmetic are all
-	 * skipped, so a fixed-seed dry-run is byte-identical to a build
-	 * before this row.  The mode load consumes no RNG, matching the
-	 * mode-load shape kcov_transition_reward_mode and frontier_group_
-	 * antilock_mode use at their own hook sites.
-	 *
-	 * RELAXED-load guard: edges, kcov_shm->per_syscall.per_syscall_edges_prior,
-	 * total_calls, and last_edge_at[nr] are separate atomic loads
-	 * that can sample inconsistent snapshots; the (total > last) +
-	 * (total - last) > KCOV_COLD_THRESHOLD pair is the same shape
-	 * the cold-skip helper in kcov.c uses to keep the unsigned
-	 * subtract from wrapping when last momentarily reads larger
-	 * than total under a concurrent kcov_collect update.  Match
-	 * that idiom -- treat the inverted sample as "no stale gap"
-	 * rather than wrapping. */
 	rb_mode = __atomic_load_n(&reach_band_mode, __ATOMIC_RELAXED);
 	if (rb_mode != REACH_BAND_OFF) {
 		unsigned long reach;
@@ -403,6 +305,129 @@ unsigned long frontier_cold_weight(unsigned int nr,
 
 	return picked_weight;
 }
+
+/*
+ * Cold-syscall weight for the frontier picker's plateau fallback path.
+ * Returns a value in [0, FRONTIER_COLD_SCALE] that the accept gate in
+ * set_syscall_nr_coverage_frontier() consumes as the bias toward this
+ * syscall when the frontier ring has gone silent.  Higher = more biased
+ * toward picking this syscall.
+ *
+ * Three regimes, deliberately distinguished:
+ *
+ *   calls == 0 (never invoked)
+ *     -- return FRONTIER_COLD_SCALE.  Maximum bias.  These are
+ *        genuinely under-explored slots the picker should be steering
+ *        to.
+ *
+ *   calls > 0 && edges == 0 (invoked, never productive)
+ *     -- return 0.  Minimum bias.  The syscall has had its shot and
+ *        failed to produce any new coverage; biasing toward it pulls
+ *        the picker into a bug-graveyard where it spends the plateau
+ *        re-running calls that already established themselves as
+ *        unproductive.  The +1 smoothing on w in the caller's accept
+ *        gate keeps these syscalls reachable at the uniform floor
+ *        ((0+1)/(SCALE+1)) rather than starving entirely.
+ *
+ *   calls > 0 && edges > 0 (invoked, some productivity)
+ *     -- return SCALE - floor(SCALE * edges / calls).  Linear inverse
+ *        productivity, same shape as before but at the new SCALE
+ *        resolution: a perfectly productive syscall (edges == calls)
+ *        lands at 0, a syscall that has produced a small fraction of
+ *        new edges across many calls keeps a near-full weight.
+ *        edges <= calls by construction so the subtraction can't
+ *        underflow.
+ *
+ * The previous shape conflated the first two regimes: both never-tried
+ * and tried-but-broken returned SCALE, so the plateau-fallback picker
+ * weighted the bug-graveyard identically to the genuinely under-explored
+ * frontier and burned its picks re-running known dead-ends.  Splitting
+ * the two regimes is the headline fix; the SCALE bump (16 -> 256, see
+ * the FRONTIER_COLD_SCALE macro comment) is what lets the third regime's
+ * integer divide actually distinguish productivity below ~6% from MAX
+ * instead of flooring everything in that range to the ceiling.
+ *
+ * Semantics note: per_syscall_edges has "bumps by 1 per call that
+ * discovered >=1 new edge" semantics (see include/kcov.h), not raw
+ * bucket-edge counts, so edges <= calls by construction.  Reads are
+ * RELAXED -- a stale snapshot is harmless; a racing kcov_collect bump
+ * that lands mid-pick only shifts the weight by one step, well inside
+ * the slack the outer accept/retry loop already tolerates.
+ *
+ * Returns the uniform-floor (FRONTIER_COLD_SCALE) when kcov_shm is
+ * unavailable so the caller's accept gate degrades to plain uniform
+ * pick rather than wedging on a NULL deref -- matches the kcov-less
+ * fallback the rest of the codebase already takes (see
+ * kcov_syscall_cold_skip_pct in kcov.c for the sibling pattern).
+ */
+unsigned long frontier_cold_weight(unsigned int nr,
+					  struct childdata *child)
+{
+	unsigned long edges, calls;
+	unsigned long old_weight, blend_weight;
+	unsigned long picked_weight;
+
+	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
+		return FRONTIER_COLD_SCALE;
+
+	calls = per_syscall_calls_total(nr);
+
+	/* Never invoked: MAX bias, genuinely under-explored.  Bypass the
+	 * shadow A/B math entirely -- both formulas agree on
+	 * FRONTIER_COLD_SCALE in this case and the early return keeps the
+	 * cold-path overhead untouched for syscalls that have never seen
+	 * a single call. */
+	if (calls == 0)
+		return FRONTIER_COLD_SCALE;
+
+	edges = per_syscall_edges_total(nr);
+
+	/* OLD weight (call-count only): the live-path productivity signal
+	 * this function has always returned.  Logic preserved verbatim from
+	 * the pre-blend implementation.  Computed unconditionally so the
+	 * SHADOW blend below can compare against it, then returned at the
+	 * tail so the picker's per-syscall distribution stays byte-
+	 * identical to today.
+	 *
+	 *  edges == 0 -- invoked but never productive (bug-graveyard);
+	 *  edges >= calls -- RELAXED-load inversion against the steady-
+	 *                    state edges <= calls invariant, treat as
+	 *                    fully productive (would otherwise underflow
+	 *                    the unsigned subtract).
+	 *
+	 * The caller's (w+1)/(SCALE+1) accept floor keeps a w == 0
+	 * syscall reachable in both regimes. */
+	if (edges == 0)
+		old_weight = 0;
+	else if (edges >= calls)
+		old_weight = 0;
+	else
+		old_weight = FRONTIER_COLD_SCALE -
+			     (edges * FRONTIER_COLD_SCALE) / calls;
+
+	blend_weight = frontier_blend_weight(nr, edges, calls);
+
+	frontier_blend_ab_note(old_weight, blend_weight);
+
+	/* Per-child A/B arm promotes the blend (now including the
+	 * transition term) to the live picker for half the children
+	 * (Arm B); the other half (Arm A) returns the historical OLD
+	 * weight so the picker's per-syscall distribution stays byte-
+	 * identical to the pre-blend baseline for that cohort.  The
+	 * frontier_blend_* shm counters above record the would-be
+	 * divergence for both arms in lock-step, so the operator can
+	 * read the live promotion delta off a single run instead of
+	 * gating it on a fleet-wide mode flip.  child==NULL (parent
+	 * context, should not reach here under the FRONTIER picker)
+	 * falls back to the OLD weight to preserve baseline behaviour. */
+	if (child != NULL && child->frontier_blend_arm_b)
+		picked_weight = blend_weight;
+	else
+		picked_weight = old_weight;
+
+	return frontier_reach_band_adjust(nr, edges, picked_weight);
+}
+
 /*
  * CMP-weighted alternate weight for the silent-regime accept gate in
  * set_syscall_nr_coverage_frontier() below.  See the enum comment in
