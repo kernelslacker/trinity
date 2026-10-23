@@ -7,20 +7,20 @@ content-aware text payload generation. Everything downstream (args/,
 struct_catalog/, mm/, syscalls/, childops/) draws its randomness through
 this directory rather than calling libc rand() directly.
 
-## Files (10 files, ~3,131 LOC)
+## Files (10 files, ~3,078 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | random.c | 316 | Core munged integer generators: `rand16()`/`rand32()`/`rand64()`, bitmask helpers (`set_rand_bitmask`, `rand_single_bit[64]`, `randbits[64]`), byte-repeat (`rept_byte`) |
 | interesting-numbers.c | 245 | Static a-priori boundary-value corpus: `get_boundary_value()`, `get_negative_edge_value()`, `get_sizeof_boundary_value()` (overflow-in-multiplication probes), `get_interesting_{8,16,32}bit_value()`, `get_interesting_value()` (64-bit + per-arch canonical/non-canonical address probes) |
-| text-payloads.c | 564 | Content-aware string generators for kernel string parsers: long-run strings, embedded NUL, printf format-string attacks, numeric-boundary strings, path traversal, cpu-list/bitmap-list syntax, binary control chars, plus a per-kind stateful name lane (netdev/key-desc/xattr/bpf-obj/mq/netlink-table) that bridges into name-pool.c |
-| random-address.c | 899 | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
+| text-payloads.c | 559 | Content-aware string generators for kernel string parsers: long-run strings, embedded NUL, printf format-string attacks, numeric-boundary strings, path traversal, cpu-list/bitmap-list syntax, binary control chars, plus a per-kind stateful name lane (netdev/key-desc/xattr/bpf-obj/mq/netlink-table) that bridges into name-pool.c |
+| random-address.c | 894 | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
 | random-page.c | 262 | Buffer-dirtying generators: `generate_rand_bytes()` (10 strategies incl. garbage, printable text, numeric-ASCII, fabricated pseudo-struct, printk format specifiers with %p extensions), `generate_random_page()` |
-| name-pool.c | 314 | Lock-free shared per-kind name ring (create-then-reference statefulness): `name_pool_record()` / `name_pool_draw_mutated()` with 5 mutation ops (exact/flip-byte/truncate/case-flip/suffix-grow) |
-| mutate.c | 169 | Value mutation strategies targeting kernel bug classes: truncate, sign-extend, alignment perturbation, negate, byte-swap, single-bit flip, arith delta, cross-width extend; `shift_flag_bit()` for flag-adjacency probing |
+| name-pool.c | 305 | Lock-free shared per-kind name ring (create-then-reference statefulness): `name_pool_record()` / `name_pool_draw_mutated()` with 5 mutation ops (exact/flip-byte/truncate/case-flip/suffix-grow) |
+| mutate.c | 165 | Value mutation strategies targeting kernel bug classes: truncate, sign-extend, alignment perturbation, negate, byte-swap, single-bit flip, arith delta, cross-width extend; `shift_flag_bit()` for flag-adjacency probing |
 | random-length.c | 155 | Length/size generators: `get_len()` (boundary/sizeof-boundary/typesize/masked-random blend), `get_len_relative()` (object-size-capped variant for kernel-WRITES-buffer safety) |
-| seed.c | 161 | PRNG seeding and reproducibility: `init_seed()` (urandom or `-s`), `set_seed()` (per-child seed via splitmix32-style `seed_combine`), `reseed()` (parent bumps shm seed on child crash) |
-| rand-warn.c | 46 | Runtime tripwire: `--wrap=rand` catches any libc `rand()` callsite that slipped past the static `no-libc-rand.sh` grep (e.g. via macro expansion), warns once per child, forwards to libc |
+| seed.c | 147 | PRNG seeding and reproducibility: `init_seed()` (urandom or `-s`), `set_seed()` (per-child seed via splitmix32-style `seed_combine`), `reseed()` (parent bumps shm seed on child crash) |
+| rand-warn.c | 30 | Runtime tripwire: `--wrap=rand` catches any libc `rand()` callsite that slipped past the static `no-libc-rand.sh` grep (e.g. via macro expansion), warns once per child, forwards to libc |
 
 ## Key design decisions
 
@@ -46,7 +46,7 @@ this directory rather than calling libc rand() directly.
 - `syscalls/{keyctl/add_key,keyctl/keyctl,keyctl/request_key,mq/mq_open,bpf,socket/setsockopt-optval-builders}.c`, `args/pools/xattr.c`, `net/proto/pppox.c` — record/reuse names via name-pool.c's per-kind ring
 - `childops/fs/procfs-writer.c` — direct consumer of `gen_text_payload()` for procfs/sysfs/debugfs string-parser fuzzing
 - `child/child-init-freeze.c`, `child/child.c`, `main/loop.c`, `main/spawn.c`, `utils/shm.c` — seed lifecycle: `init_seed()` at startup, `set_seed()` per fork, `reseed()` on crash detection
-- `syscalls/{fchmodat2,file_getattr,file_setattr,getxattrat,listxattrat,removexattrat,setxattrat}.c` — direct `mutate_value()`/`shift_flag_bit()` callers for xattr/attr flag fuzzing
+- `syscalls/fs/path/fchmodat2.c`, `syscalls/fs/stat/file_getattr.c`, `syscalls/fs/stat/file_setattr.c`, `syscalls/xattr/getxattrat.c`, `syscalls/xattr/listxattrat.c`, `syscalls/xattr/removexattrat.c`, `syscalls/xattr/setxattrat.c` — direct `shift_flag_bit()` callers for xattr/attr flag fuzzing
 
 ### Relationship to cmp_hints/
 
@@ -58,7 +58,7 @@ this directory rather than calling libc rand() directly.
 
 ## Areas of attention
 
-1. **random-address.c is oversized for its concerns** (899 LOC) — combines the writable-pool allocator, shared-buffer relocation (with a `sigsetjmp` fault-recovery window), iovec-shape picking, iovec/msghdr scrub, and iovec-pool lifecycle in one file. The `alloc_iovec()`/`pick_iovec_entry_shape()`/`fill_iov_entry_map_backed()` cluster alone is ~350 lines of tightly-coupled per-direction (KERNEL_READ vs KERNEL_WRITE) bucket-weight logic that would be easy to get subtly wrong when adding a new shape.
+1. **random-address.c is oversized for its concerns** (894 LOC) — combines the writable-pool allocator, shared-buffer relocation (with a `sigsetjmp` fault-recovery window), iovec-shape picking, iovec/msghdr scrub, and iovec-pool lifecycle in one file. The `alloc_iovec()`/`pick_iovec_entry_shape()`/`fill_iov_entry_map_backed()` cluster alone is ~325 lines of tightly-coupled per-direction (KERNEL_READ vs KERNEL_WRITE) bucket-weight logic that would be easy to get subtly wrong when adding a new shape.
 2. **PRNG is not cryptographically strong by design** — splitmix64 is chosen explicitly for speed and small state, not statistical rigor; the code comments this as an accepted tradeoff ("output quality is more than enough for fuzz argument generation"). This is a reasoned tradeoff, not an oversight, but it means all downstream randomness (including address/length choices that interact with ASLR-adjacent logic) inherits a non-CSPRNG source.
 3. **Deliberate small biases documented, not bugs** — `rand16()`/`rand32()`/`rand64()` note ~0.3 percentage-point bias in their "1-in-25" post-mix gates (using `% 25` against an 8-bit slice rather than a bounded draw) and accept it explicitly as "acceptable for a fuzz-flavour gate." Anyone tightening RNG determinism/statistical guarantees elsewhere in the tree should not assume these paths are uniform.
 4. **Every RNG stream must be seeded from the combined value** — `set_seed()` seeds the main stream (`rnd_seed(mixed)`) and the `--blob-ab-mode` stream (`rnd_blob_seed(mixed)`) from the same (shm seed, childno) value so `-s` reproduces both. A new process-local stream that is not seeded there silently breaks `-s` reproducibility without a compile-time signal — rand-warn.c's runtime tripwire only fires on libc `rand()` being *called*, not on a stream going unseeded.

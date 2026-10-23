@@ -7,7 +7,7 @@ pure data-plus-resolution: it contains no fill/mutate logic of its own (that
 lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
 `args/scrub.c`).
 
-## Files (49 .c files, ~10,502 LOC)
+## Files (27 .c files, ~5,730 LOC)
 
 The registration table and the union-bpf_attr tables have each been split: the
 per-domain registration arrays live under `struct_catalog/registry/` and the
@@ -15,28 +15,28 @@ per-cmd BPF field tables under `bpf-*.c`.
 
 | File | Lines | Role |
 |---|---|---|
-| sockaddr-af.c | 792 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
-| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), `struct_catalog_lookup()` by name |
-| sctp.c | 587 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
-| perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
-| bpf-link.c | 493 | BPF_LINK_* family field tables: BPF_LINK_UPDATE / BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI, UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP) |
-| bpf.c | 478 | union bpf_attr spine: the remaining per-cmd field tables plus `bpf_attr_variants[]` tagged-union dispatch (one variant per bpf(2) cmd), aggregating the sibling `bpf-*.c` tables |
-| registry.c | 343 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
-| bpf-prog.c | 297 | BPF_PROG_* command family field tables |
-| variant.c | 260 | Generic discriminator resolution: `read_rec_arg`, `discrim_key_matches`, `discrim_key2_matches` (shared with registry.c's rec-based lookup), `struct_desc_resolve_variant`, `struct_desc_resolve_nested_variant` |
-| time.c | 231 | utimbuf, timeval field tables |
-| fcntl.c | 203 | flock, f_owner_ex, file_handle field tables + fcntl cmd vocab |
-| validate.c | 189 | Init-time slot-shape guard: BUGs if a registration row's arg_idx lands on a non-struct-shaped argtype (catches the arg_idx off-by-one class of bug) |
-| sockaddr-mcast.c | 171 | ip_mreqn, ip_mreq_source, ipv6_mreq + well-known multicast-address vocab pools |
-| address.c | 158 | FT_ADDRESS reachability walk: `struct_desc_has_address_field()` / `struct_arg_any_has_address_field()` — a bounded recursive scan, through `FT_PTR_STRUCT`/`FT_PTR_ARRAY` targets and every variant, deciding whether a struct can reach an `FT_ADDRESS` field; it feeds the nested-address scrub mask in `args/scrub.c` |
-| bpf-map.c | 155 | BPF_MAP_* command family field tables |
-| sockaddr-sockopt.c | 150 | linger, packet_mreq, group_req, group_source_req |
-| mount.c | 116 | mount_attr |
-| bpf-task-storage.c | 85 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
-| poll.c | 83 | epoll_event |
-| bpf-btf.c | 70 | BTF family: BPF_BTF_LOAD and the generic BPF_OBJ_GET_INFO_BY_FD info-query slot |
-| sched.c | 61 | sched_attr, clone_args |
-| resource.c | 48 | rlimit |
+| sockaddr-af.c | 780 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
+| catalog.c | 224 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), `struct_catalog_lookup()` by name |
+| sctp.c | 586 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
+| perf.c | 561 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
+| bpf-link.c | 488 | BPF_LINK_* family field tables: BPF_LINK_UPDATE / BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI, UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP) |
+| bpf.c | 477 | union bpf_attr spine: the remaining per-cmd field tables plus `bpf_attr_variants[]` tagged-union dispatch (one variant per bpf(2) cmd), aggregating the sibling `bpf-*.c` tables |
+| registry.c | 334 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
+| bpf-prog.c | 278 | BPF_PROG_* command family field tables |
+| variant.c | 234 | Generic discriminator resolution: `read_rec_arg`, `discrim_key_matches`, `discrim_key2_matches` (shared with registry.c's rec-based lookup), `struct_desc_resolve_variant`, `struct_desc_resolve_nested_variant` |
+| time.c | 54 | utimbuf, timeval field tables |
+| fcntl.c | 108 | flock, f_owner_ex, file_handle field tables + fcntl cmd vocab |
+| validate.c | 172 | Init-time slot-shape guard: BUGs if a registration row's arg_idx lands on a non-struct-shaped argtype (catches the arg_idx off-by-one class of bug) |
+| sockaddr-mcast.c | 168 | ip_mreqn, ip_mreq_source, ipv6_mreq + well-known multicast-address vocab pools |
+| address.c | 139 | FT_ADDRESS reachability walk: `struct_desc_has_address_field()` / `struct_arg_any_has_address_field()` — a bounded recursive scan, through `FT_PTR_STRUCT`/`FT_PTR_ARRAY` targets and every variant, deciding whether a struct can reach an `FT_ADDRESS` field; it feeds the nested-address scrub mask in `args/scrub.c` |
+| bpf-map.c | 153 | BPF_MAP_* command family field tables |
+| sockaddr-sockopt.c | 127 | linger, packet_mreq, group_req, group_source_req |
+| mount.c | 64 | mount_attr |
+| bpf-task-storage.c | 79 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
+| poll.c | 42 | epoll_event |
+| bpf-btf.c | 65 | BTF family: BPF_BTF_LOAD and the generic BPF_OBJ_GET_INFO_BY_FD info-query slot |
+| sched.c | 52 | sched_attr, clone_args |
+| resource.c | 24 | rlimit |
 | tcp.c | 33 | tcp_repair_opt (gated `USE_TCP_REPAIR_OPT`) |
 
 `struct_catalog/registry/` holds the per-domain registration arrays that
@@ -44,10 +44,10 @@ per-cmd BPF field tables under `bpf-*.c`.
 
 | File | Lines | Role |
 |---|---|---|
-| registry/fs.c | 503 | Filesystem / VFS rows: epoll_ctl, open_by_handle_at, utime, mount_setattr / open_tree_attr, and the cmd-discriminated fcntl a3 rows with their pools |
-| registry/net.c | 470 | Network rows: the setsockopt (level, optname) two-key rows and their discriminator vocabularies |
-| registry/process.c | 236 | Process rows: clone3, getrlimit, perf_event_open |
-| registry/sched.c | 28 | sched_getattr → sched_attr |
+| registry/fs.c | 97 | Filesystem / VFS rows: epoll_ctl, open_by_handle_at, utime, mount_setattr / open_tree_attr, and the cmd-discriminated fcntl a3 rows with their pools |
+| registry/net.c | 348 | Network rows: the setsockopt (level, optname) two-key rows and their discriminator vocabularies |
+| registry/process.c | 25 | Process rows: clone3, getrlimit, perf_event_open |
+| registry/sched.c | 18 | sched_getattr → sched_attr |
 
 `catalog.c` additionally `#include`s three `catalog-*.inc` fragments (~187 LOC) —
 blocks of `struct_catalog[]` designated initializers for the bpf, setsockopt
