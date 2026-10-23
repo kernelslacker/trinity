@@ -1,10 +1,9 @@
 #pragma once
 
 /*
- * Cross-TU internal glue for the objects/registry-*.c source split.
- * Symbols here were file-local static in the pre-split registry.c and
- * are shared exclusively across the registry-*.c sibling TUs
- * (registry.c, registry-lifecycle.c, registry-pool.c, registry-pick.c,
+ * Cross-TU internal glue for the objects/registry-*.c sibling TUs.
+ * Symbols here are shared exclusively across them (registry.c,
+ * registry-lifecycle.c, registry-pool.c, registry-pick.c,
  * registry-diag.c).  Not part of the objects/ cross-subsystem API --
  * that lives in include/objects-internal.h.
  */

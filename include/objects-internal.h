@@ -2,10 +2,9 @@
 
 /*
  * Cross-TU internal glue for the objects/ subsystem dir.  Symbols
- * declared here were file-local static in the pre-carve objects.c and
- * are shared exclusively across the objects/ subsystem dir TUs.  Not part of the
- * public objects.h API -- consumers outside objects/ must go through
- * include/objects.h.
+ * declared here are shared exclusively across the objects/ TUs.  Not
+ * part of the public objects.h API -- consumers outside objects/ must
+ * go through include/objects.h.
  */
 
 #include "objects.h"
