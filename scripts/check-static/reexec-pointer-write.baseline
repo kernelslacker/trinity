@@ -57,6 +57,7 @@ syscalls/process/prlimit64.c:syscall_prlimit64
 syscalls/process/ptrace.c:syscall_ptrace
 syscalls/process/setrlimit.c:syscall_setrlimit
 syscalls/quota/quotactl.c:syscall_quotactl
+syscalls/riscv/riscv_hwprobe.c:syscall_riscv_hwprobe
 syscalls/sched/sched_getaffinity.c:syscall_sched_getaffinity
 syscalls/sched/sched_setparam.c:syscall_sched_setparam
 syscalls/sched/sched_setscheduler.c:syscall_sched_setscheduler
