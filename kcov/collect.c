@@ -348,6 +348,69 @@ static void kcov_account_warm_known(unsigned int nr, unsigned long call_nr)
 				 call_nr, __ATOMIC_RELAXED);
 }
 
+/*
+ * Shadow transition coverage per-syscall accounting.  The
+ * call-count counter (per_syscall_transition_edges) bumps by
+ * 1 for any call that produced ≥ 1 new transition slot — the
+ * top-N stats block uses its delta the same way the PC top-N
+ * uses per_syscall_edges.  The real counter
+ * (per_syscall_transition_edges_real) carries the raw flip
+ * count so a single call that opens a large new region is
+ * not flattened to the same weight as a call that flipped a
+ * single slot.
+ *
+ * per_syscall_transition_edges_real_local mirrors the _real
+ * counter restricted to local-mode kcov traces (remote-mode
+ * traces merge coverage copied from remote contexts whose PC
+ * ordering is not verified to preserve transition adjacency
+ * -- see the kcov_transition_reward_mode enum comment in
+ * include/kcov.h).  It is the local-only signal frontier_
+ * cold_weight() folds into its blend; the unfiltered _real
+ * counter stays the stats-dump observability signal so the
+ * top-N output keeps reflecting the full transition load.
+ * Gated additionally on kcov_transition_reward_mode != OFF
+ * so OFF mode pays zero per-call cost.
+ *
+ * The caller gates on transitions_this_call > 0, so the helper is reached
+ * only on a call that flipped a new transition slot.
+ */
+static void kcov_account_transitions(struct kcov_child *kc, unsigned int nr,
+				     unsigned long transitions_this_call)
+{
+	enum kcov_transition_reward_mode trew_mode =
+		__atomic_load_n(&kcov_transition_reward_mode,
+				__ATOMIC_RELAXED);
+
+	__atomic_fetch_add(
+		&kcov_shm->transitions.per_syscall_transition_edges[nr],
+		1, __ATOMIC_RELAXED);
+	__atomic_fetch_add(
+		&kcov_shm->transitions.per_syscall_transition_edges_real[nr],
+		transitions_this_call, __ATOMIC_RELAXED);
+	if (!kc->remote_mode &&
+	    trew_mode != KCOV_TRANSITION_REWARD_OFF)
+		__atomic_fetch_add(
+			&kcov_shm->transitions.per_syscall_transition_edges_real_local[nr],
+			transitions_this_call,
+			__ATOMIC_RELAXED);
+
+	/* SHADOW-ONLY topology-pair sample, transition lane.
+	 * Co-located with the
+	 * unconditional per_syscall_transition_edges_real bump
+	 * above so the topology aggregate's transition lane
+	 * fires whenever a transition is discovered, regardless
+	 * of the kcov_transition_reward_mode rollback knob or
+	 * the local/remote split downstream gates apply.  The
+	 * PC-edge sibling tail call in frontier_record_new_edge
+	 * (at the end of kcov_account_new_edge()) is similarly
+	 * unconditional on mode -- this co-location keeps the
+	 * PC and transition lanes drawing from the same child
+	 * population for the per-setup_op comparison the shadow
+	 * aggregator surfaces. */
+	topo_pair_record_shadow(nr,
+				TOPO_PAIR_REASON_TRANSITION);
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -672,61 +735,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__atomic_fetch_add(
 				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].distinct_pcs,
 				local_distinct_pcs, __ATOMIC_RELAXED);
-		/* Shadow transition coverage per-syscall accounting.  The
-		 * call-count counter (per_syscall_transition_edges) bumps by
-		 * 1 for any call that produced ≥ 1 new transition slot — the
-		 * top-N stats block uses its delta the same way the PC top-N
-		 * uses per_syscall_edges.  The real counter
-		 * (per_syscall_transition_edges_real) carries the raw flip
-		 * count so a single call that opens a large new region is
-		 * not flattened to the same weight as a call that flipped a
-		 * single slot.
-		 *
-		 * per_syscall_transition_edges_real_local mirrors the _real
-		 * counter restricted to local-mode kcov traces (remote-mode
-		 * traces merge coverage copied from remote contexts whose PC
-		 * ordering is not verified to preserve transition adjacency
-		 * -- see the kcov_transition_reward_mode enum comment in
-		 * include/kcov.h).  It is the local-only signal frontier_
-		 * cold_weight() folds into its blend; the unfiltered _real
-		 * counter stays the stats-dump observability signal so the
-		 * top-N output keeps reflecting the full transition load.
-		 * Gated additionally on kcov_transition_reward_mode != OFF
-		 * so OFF mode pays zero per-call cost. */
-		if (transitions_this_call > 0) {
-			enum kcov_transition_reward_mode trew_mode =
-				__atomic_load_n(&kcov_transition_reward_mode,
-						__ATOMIC_RELAXED);
-
-			__atomic_fetch_add(
-				&kcov_shm->transitions.per_syscall_transition_edges[nr],
-				1, __ATOMIC_RELAXED);
-			__atomic_fetch_add(
-				&kcov_shm->transitions.per_syscall_transition_edges_real[nr],
-				transitions_this_call, __ATOMIC_RELAXED);
-			if (!kc->remote_mode &&
-			    trew_mode != KCOV_TRANSITION_REWARD_OFF)
-				__atomic_fetch_add(
-					&kcov_shm->transitions.per_syscall_transition_edges_real_local[nr],
-					transitions_this_call,
-					__ATOMIC_RELAXED);
-
-			/* SHADOW-ONLY topology-pair sample, transition lane.
-			 * Co-located with the
-			 * unconditional per_syscall_transition_edges_real bump
-			 * above so the topology aggregate's transition lane
-			 * fires whenever a transition is discovered, regardless
-			 * of the kcov_transition_reward_mode rollback knob or
-			 * the local/remote split downstream gates apply.  The
-			 * PC-edge sibling tail call in frontier_record_new_edge
-			 * (below the found_new branch above) is similarly
-			 * unconditional on mode -- this co-location keeps the
-			 * PC and transition lanes drawing from the same child
-			 * population for the per-setup_op comparison the shadow
-			 * aggregator surfaces. */
-			topo_pair_record_shadow(nr,
-						TOPO_PAIR_REASON_TRANSITION);
-		}
+		if (transitions_this_call > 0)
+			kcov_account_transitions(kc, nr, transitions_this_call);
 	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
 		/* per-childop mirror
 		 * of the per-syscall local/remote PC split above.  Indexed
@@ -787,7 +797,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		 * per-call counter would still be a valid local count;
 		 * gating here keeps the caller-side accounting symmetric
 		 * with the per_syscall_transition_edges_real_local gate
-		 * above so OFF mode pays zero attribution cost). */
+		 * in kcov_account_transitions() so OFF mode pays zero
+		 * attribution cost). */
 		if (!kc->remote_mode &&
 		    __atomic_load_n(&kcov_transition_reward_mode,
 				    __ATOMIC_RELAXED) !=
