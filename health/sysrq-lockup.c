@@ -1,45 +1,9 @@
 /*
- * sysrq-lockup: opt-in (--sysrq-on-lockup) wedge diagnostic.
- *
- * The parent watchdog already screams "STUCK CHILD:" for each wedged
- * task and kills them once the per-child no-progress window elapses,
- * but the kernel-side story of *why* a task is wedged (whose lock, whose
- * completion, which CPU is spinning) lives inside the kernel and gets
- * evicted from the printk ringbuffer quickly under a busy fuzz load.
- * When a large fraction of the fleet wedges simultaneously, the most
- * useful diagnostic is the kernel's own "show blocked tasks + backtrace
- * all CPUs" dump.  SysRq 'w' + 'l' produce exactly that.
- *
- * Gated on --sysrq-on-lockup so a default run is byte-identical: the
- * caller in main/reap-watchdog.c short-circuits on the global flag
- * before invoking any code in this file.
- *
- * Threshold: max(3, running_childs/2).  Below 3 the lower bound avoids
- * firing on a two-child dev run where "half wedged" is meaningless; at
- * larger scale the /2 ratio catches genuine fleet-wide events without
- * arming on a single sticky syscall.
- *
- * SysRq chars: 'w' (show_state_filter TASK_UNINTERRUPTIBLE) followed by
- * 'l' (backtrace all active CPUs).  Deliberately NOT 't' (dump all
- * tasks, far too noisy at fleet scale) and NOT the full dump-all bit.
- *
- * Latching: fires once per wedge event.  wedge_event_latched is set
- * true when a fire happens and cleared once stall_count drops back
- * below the threshold, so a subsequent fleet wedge in the same run can
- * also fire.  The latch means back-to-back watchdog ticks observing
- * the same wedge do NOT produce redundant kernel dumps.
- *
- * Pre-check: /proc/sys/kernel/sysrq controls what the sysrq handler
- * accepts.  A value of 0 blocks even userspace writes to
- * /proc/sysrq-trigger; try to raise it to 1 (accept all).  On EACCES /
- * EPERM (no CAP_SYS_ADMIN or a hardened sysctl) log and give up rather
- * than treating it as a hard failure -- the flag was best-effort.
- *
- * kmsg drain: open a private /dev/kmsg fd, seek to end BEFORE writing
- * the trigger so we only capture the post-mortem output, then
- * poll+read until either the record cap or the wall-clock cap is
- * reached.  A private fd side-steps the kmsg-monitor helper process:
- * both readers get independent stream positions.
+ * sysrq-lockup: opt-in (--sysrq-on-lockup) wedge diagnostic.  When a large
+ * fraction of the fleet wedges at once it fires SysRq 'w' + 'l' and drains
+ * the result from /dev/kmsg: the kernel's own blocked-task and all-CPU
+ * backtrace dump, which the printk ring evicts fast under fuzz load.  The
+ * check returns on !sysrq_on_lockup, so a default run is byte-identical.
  */
 
 #include <errno.h>
@@ -71,12 +35,17 @@
 #define KMSG_POLL_TIMEOUT_MS	50
 #define KMSG_BUFSIZE		16384
 
+/*
+ * Set when a fire happens, cleared once stall_count drops back below the
+ * threshold: one kernel dump per wedge event rather than one per watchdog
+ * tick, while a later fleet wedge in the same run can still fire.
+ */
 static bool wedge_event_latched;
 
 /*
- * Compute the fire threshold.  Split out so the caller comparison
- * reads directly from the spec's max(3, running/2) formula and stays
- * consistent across ticks even if the running count shifts.
+ * Fire threshold: max(3, running_childs / 2).  The floor keeps a two-child
+ * dev run, where "half wedged" is meaningless, from firing; above it the
+ * ratio catches a fleet-wide event without arming on one sticky syscall.
  */
 static unsigned int wedge_threshold(unsigned int running_childs)
 {
@@ -297,11 +266,12 @@ static void fire_sysrq_dump(unsigned int stall_count, unsigned int threshold)
 	if (!ensure_sysrq_enabled())
 		return;
 
-	/* Open kmsg BEFORE writing the trigger and seek to the end, so
-	 * we only capture post-trigger output.  A failed open just skips
-	 * the drain -- we still want the sysrq write to happen so the
-	 * dump lands on the console / netconsole path even without us
-	 * reading it back. */
+	/* Open a private kmsg fd BEFORE writing the trigger and seek to the
+	 * end, so we only capture post-trigger output; a private fd also
+	 * keeps the stream position independent of the kmsg-monitor
+	 * helper's.  A failed open just skips the drain -- we still want
+	 * the sysrq write to happen so the dump lands on the console /
+	 * netconsole path even without us reading it back. */
 	kmsg_fd = open(KMSG_PATH, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
 	if (kmsg_fd >= 0) {
 		if (lseek(kmsg_fd, 0, SEEK_END) == (off_t)-1) {
@@ -313,6 +283,9 @@ static void fire_sysrq_dump(unsigned int stall_count, unsigned int threshold)
 			KMSG_PATH, strerror(errno));
 	}
 
+	/* 'w' (blocked tasks, TASK_UNINTERRUPTIBLE) then 'l' (backtrace of all
+	 * active CPUs).  Deliberately not 't': a dump of every task is far too
+	 * noisy at fleet scale. */
 	if (!sysrq_write_char('w')) {
 		if (kmsg_fd >= 0)
 			close(kmsg_fd);

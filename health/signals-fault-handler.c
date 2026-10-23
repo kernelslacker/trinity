@@ -1,24 +1,9 @@
 /*
- * health/signals-fault-handler.c — child and main fault handlers.
- *
- * ⚠ ASYNC-SIGNAL-SAFE CRASH PATH — the sigsetjmp recovery site.
- *
- * This file owns the sigsetjmp recovery buffers and the SA_SIGINFO
- * crash handlers that read them.  child_fault_handler() is the hot
- * path: it runs inside a signal handler delivered to a fuzzing child
- * that has just taken a real fault.  ALL code paths reachable from
- * the point where the siglongjmp gates are checked must be either:
- *   - on the POSIX 2024 §2.4.3 async-signal-safe list (write(2),
- *     open(2), close(2), dup2(2), lseek(2), read(2), _exit(2),
- *     umask(2), sigaction(2)), or
- *   - one of the hand-rolled sigsafe_{putc,...}/fault_beacon_extract_{ip,sp} helpers
- *     from signals-internal.h / signals-async-safe.c.
- *
- * Do NOT add libc stdio, malloc, dladdr, fopen, or locale-touching
- * calls to the post-gate paths without careful review of the deadlock
- * class documented in signals-async-safe.c::write_backtrace_raw_pcs().
- *
- * See Documentation/signals.md for the full contract.
+ * health/signals-fault-handler.c — child and main fault handlers, and the
+ * sigsetjmp recovery site they siglongjmp to.  ASYNC-SIGNAL-SAFE CRASH PATH:
+ * code past the siglongjmp gates in child_fault_handler() may call only
+ * POSIX-safe libc or the sigsafe_* / fault_beacon_extract_* helpers (see
+ * write_backtrace_raw_pcs() for why).  Contract: Documentation/signals.md.
  */
 #include <setjmp.h>	/* sigjmp_buf, siglongjmp */
 #include <stdlib.h>	/* EXIT_SUCCESS */

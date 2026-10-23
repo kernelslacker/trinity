@@ -1,19 +1,9 @@
 /*
  * health/signals-policy.c — signal install/mask policy for parent and child.
  *
- * Owns the two volatile pending-flag globals, the watchdog handlers
- * (SIGALRM, SIGXCPU), the catch-all default-restore sighandler, the
- * parent's SIGINT/SIGTERM stop handler, and the two public installers:
- *
- *   mask_signals_child()   — full child signal disposition table
- *   setup_main_signals()   — parent signal disposition table
- *
- * Handler ordering in mask_signals_child() is load-bearing: the
- * catch-all sighandler loop runs first (establishes a safe default for
- * every signal), then the per-signal overrides layer on top.  Do not
- * reorder the sigaction() calls without a careful review of the
- * window between sigprocmask(SIG_BLOCK) and sigprocmask(SIG_SETMASK).
- *
+ * Owns the watchdog handlers (SIGALRM, SIGXCPU) and their pending flags, the
+ * catch-all default-restore sighandler, the parent's SIGINT/SIGTERM stop
+ * handler, and the installers mask_signals_child() and setup_main_signals().
  * See Documentation/signals.md.
  */
 #include <signal.h>	/* sigaction, sigset_t, SA_SIGINFO, SA_RESTART */
@@ -183,7 +173,10 @@ void mask_signals_child(void)
 	 * delivered against a half-built disposition table: one arriving
 	 * between the catch-all sighandler install and its proper handler
 	 * would die of its default action instead of being handled or
-	 * ignored. */
+	 * ignored.  The order matters too: the catch-all loop goes first to
+	 * give every signal a safe default, and the per-signal overrides
+	 * below layer on top of it, so do not reorder the sigaction() calls
+	 * without reviewing the window before the mask is restored. */
 	sigfillset(&ss);
 	sigprocmask(SIG_BLOCK, &ss, &oldss);
 

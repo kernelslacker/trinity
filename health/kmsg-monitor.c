@@ -1,42 +1,9 @@
 /*
- * kmsg-monitor: live /dev/kmsg scraper for kernel diagnostic reports.
- *
- * Trinity already notices that the kernel went sideways via the taint
- * bit, but by the time taint flips we've lost the most useful piece of
- * evidence: the actual diagnostic dump (KASAN/KMSAN/KCSAN/UBSAN
- * report, lockdep splat, RCU stall, hung task warning, etc).  Those
- * land in the kernel printk ringbuffer as soon as the kernel notices
- * the bug, often *before* the taint bit gets set, and they roll out of
- * the buffer fast on busy systems.
- *
- * The monitor runs as a forked HELPER PROCESS (not a thread).  Doing
- * it in a parent-side pthread would force fork() to clone a multi-
- * threaded process every time the spawn loop carved a new fuzz child:
- * fork only inherits the calling thread, so if the spawn raced while
- * the monitor held glibc's stdio FILE lock the child would inherit the
- * lock held but ownerless and deadlock the first time it called into
- * fprintf.  Running the monitor as a separate process keeps the parent
- * single-threaded at fork time and gives the monitor its own glibc
- * stdio state.
- *
- * Lifecycle:
- *   - kmsg_monitor_start() fork()s once during early init (before the
- *     fuzz-child fork-storm).  Parent stashes the helper pid.
- *   - The helper installs a SIGTERM handler, requests
- *     PR_SET_PDEATHSIG=SIGTERM so it dies if the parent crashes, opens
- *     /dev/kmsg O_NONBLOCK, seeks to the end of the ringbuffer, and
- *     polls + reads records until SIGTERM.
- *   - kmsg_monitor_stop() SIGTERMs the helper and waitpids it.  ESRCH
- *     / ECHILD are tolerated: reap_dead_kids' generic waitpid(-1)
- *     drain may have already reaped the helper, and it calls
- *     kmsg_monitor_note_reaped() so the cached pid is cleared.
- *   - The helper is intentionally NOT registered in pids[]/
- *     running_childs/childdata — it is infrastructure, not a fuzz
- *     child, and the fuzz-side reap_child accounting does not apply.
- *
- * Scope is deliberately narrow: detect and log only.  Correlating
- * reports back to which child / which syscall provoked them is a
- * follow-up.
+ * kmsg-monitor: live /dev/kmsg scraper that captures the kernel's own
+ * diagnostic dump (KASAN/KMSAN/KCSAN/UBSAN, lockdep, RCU stall, hung task)
+ * before the taint bit flips and the printk ring rolls it out.  Detect and
+ * log only.  Runs as a forked helper process outside the fuzz-child
+ * pids[]/childdata accounting.
  */
 
 #include <errno.h>
@@ -476,6 +443,15 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 	_exit(0);
 }
 
+/*
+ * The monitor is a forked helper process, not a pthread.  A parent-side
+ * thread would make every fuzz-child fork() clone a multi-threaded process,
+ * and a child forked while the monitor held glibc's stdio FILE lock could
+ * inherit it held but ownerless and deadlock on its first fprintf.  A
+ * separate process keeps the parent single-threaded at fork time and gives
+ * the monitor its own stdio state.  Started once during early init, before
+ * the fuzz-child fork storm.
+ */
 void kmsg_monitor_start(void)
 {
 	pid_t pid;

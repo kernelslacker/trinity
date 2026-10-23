@@ -1,18 +1,8 @@
 /*
- * health/signals-precrash.c — pre-crash stderr capture and bug-log setup.
- *
- * Provides:
- *  - glibc __abort_msg capture so SIGABRT handlers can retrieve the
- *    malloc_printerr / __libc_message text before it races with the
- *    shared stderr memfd drain.
- *  - An anonymous in-memory file (memfd) that backs the child's stderr
- *    after init_stderr_memfd() runs, buffering pre-fault glibc output
- *    for the fault handler to flush into the on-disk bug log.
- *  - open_buglog_and_drain_stderr(): opens the per-pid bug log, drains
- *    the buffered stderr content into it, and redirects STDERR_FILENO
- *    to the bug log file so subsequent in-handler writes land there.
- *    Called from child_fault_handler() in signals-fault-handler.c.
- *
+ * health/signals-precrash.c — pre-crash stderr capture and bug-log setup:
+ * the glibc __abort_msg capture, the per-child stderr memfd that buffers
+ * pre-fault glibc output, and open_buglog_and_drain_stderr(), which
+ * child_fault_handler() calls to flush both into the per-pid bug log.
  * See Documentation/signals.md.
  */
 #include <dlfcn.h>

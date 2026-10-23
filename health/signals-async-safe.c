@@ -1,16 +1,9 @@
 /*
- * health/signals-async-safe.c — async-signal-safe formatting utilities.
- *
- * Provides the signal-number/siginfo dump, backtrace raw-PC emitter,
- * and ucontext IP/SP extractors used by the fault handlers in
- * signals-fault-handler.c and by the main-process fault handler in
- * signals-policy.c.
- *
- * All functions here touch ONLY:
- *   - caller-supplied stack buffers
- *   - write(2) / backtrace() from the POSIX 2024 §2.4.3 safe list
- *   - pure inline ucontext reads
- * No allocator, no stdio, no locale, no lock.
+ * health/signals-async-safe.c — async-signal-safe dump helpers for the fault
+ * handlers: siginfo, signal-delivery state, raw-PC backtrace and the ucontext
+ * IP/SP extractors.  They touch only caller-supplied stack buffers, write(2),
+ * a raw sigaltstack(2) query, a pre-warmed backtrace() and ucontext reads:
+ * no allocator, stdio, locale or lock.
  */
 #include <signal.h>	/* siginfo_t / stack_t */
 #include <string.h>	/* memcpy of the ucontext sigmask word */

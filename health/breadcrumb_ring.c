@@ -1,19 +1,9 @@
 /*
- * Per-child breadcrumb ring for post_handler_corrupt_ptr fires.  The
- * headline counter and the (nr, do32bit) / (nr, do32bit, pc) attribution
- * shards already tell us "how many fires" and "which handler / which
- * PC".  This ring captures the per-fire payload the shards drop on the
- * floor: the scribbled pointer value itself, the syscall arg slot it
- * was caught on (when the caller knows), and a short site tag so a
- * triage pass can name the scribbler without an extra doc-archaeology
- * step.
- *
- * Ownership / coherence model mirrors prop_ring and the
- * local_corrupt_ptr_* shards: the owning child is the sole writer of
- * its own ring, the parent is the sole reader at periodic-dump time,
- * and a torn read on a single slot at dump time is acceptable
- * (.valid=false slots are skipped; a slot caught mid-write surfaces
- * stale-but-real data from the prior wraparound resident).  No atomics.
+ * Per-child breadcrumb ring for post_handler_corrupt_ptr fires.  The headline
+ * counter and attribution shards say how many fires and from which handler or
+ * PC; this ring keeps the per-fire payload: the scribbled pointer, the arg
+ * slot it was caught on and a site tag.  The owning child is the sole writer
+ * and the parent the sole reader at dump time; .valid publishes a slot.
  */
 
 #include <stdbool.h>
@@ -92,7 +82,9 @@ void corrupt_ptr_breadcrumb_push(const struct syscallrecord *rec,
  * walk starts at head (the next-write index, i.e. the oldest entry).
  * Before wrap, only slots [0, head) are populated and the walk starts
  * at 0.  Skips slots whose .valid flag is clear so a freshly-cleaned
- * child contributes nothing to the dump.
+ * child contributes nothing to the dump.  A slot the owning child rewrites
+ * while it is being copied can still come out torn; that is acceptable for
+ * a diagnostic dump.
  */
 static unsigned int linearise_child(const struct corrupt_ptr_breadcrumb_ring *ring,
 				    struct corrupt_ptr_breadcrumb *out,
