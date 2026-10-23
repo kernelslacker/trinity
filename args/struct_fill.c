@@ -202,49 +202,14 @@ static void random_byte_fill(unsigned char *p, unsigned long nbytes,
 		p[nbytes - 1] = 0;
 }
 
-/*
- * Schema-aware field fill: dispatch on f->tag and produce a
- * tag-respecting value, falling back to the FT_RAW per-field random
- * splat for tags this build does not yet specialise.
- *
- * All catalog entries default to FT_RAW; an unannotated struct
- * therefore produces byte-identical output to the pre-schema
- * struct_field_fill -- the rand32() call sequence is preserved
- * field-for-field, width-for-width.  As individual structs migrate
- * to FIELDX() annotations, their fields begin consuming the per-tag
- * mutators below.
- *
- * Three passes resolve the cross-field coupling between PTR and LEN
- * tags without an init-time topological sort:
- *
- *  1. Scalar pass: FT_FLAGS / FT_RAW / reserved tags.  Order-
- *     independent so we can run it first without observing the
- *     pointer fields the later passes will populate.
- *  2. Pointer pass: FT_PTR_BYTES / FT_PTR_ARRAY / FT_PTR_STRUCT.
- *     Allocate a sub-buffer via zmalloc_tracked, write the pointer
- *     into the slot, remember the chosen size (bytes for BYTES /
- *     STRUCT, element count for ARRAY) keyed by field index.
- *     Optional pointers may roll NULL+0 with OPTIONAL_PRESENT_PCT
- *     bias toward present, so the NULL-args kernel path keeps
- *     coverage too.
- *  3. Length pass: FT_LEN_BYTES / FT_LEN_COUNT.  Resolve the paired
- *     buffer field by name, read the size/count chosen in pass 2,
- *     write it into the slot at the LEN field's natural width.
- *     Coupled fields stay consistent -- the kernel sees a length
- *     that matches the buffer it describes.
- */
-void struct_fill_passes(unsigned char *buf, unsigned int size,
-			       const struct struct_field *fields,
-			       unsigned int n,
-			       struct syscallrecord *rec)
+/* Pass 1 of struct_fill_passes(): scalar tags. */
+static void fill_scalar_pass(unsigned char *buf, unsigned int size,
+			     const struct struct_field *fields,
+			     unsigned int n,
+			     struct syscallrecord *rec)
 {
-	unsigned long chosen_len[STRUCT_FILL_MAX_FIELDS] = {0};
 	unsigned int i;
 
-	if (n > STRUCT_FILL_MAX_FIELDS)
-		n = STRUCT_FILL_MAX_FIELDS;
-
-	/* Pass 1: scalar tags. */
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 
@@ -417,21 +382,27 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 			break;
 		}
 	}
+}
 
-	/*
-	 * Pre-pin pass: when a LEN field carries a buf_fields[] list
-	 * (multi-pair gating, e.g. kprobe_multi's cnt gating
-	 * syms+addrs+cookies), roll one shared count and write it into
-	 * chosen_len[] for every listed sibling.  Pass 2 then reads
-	 * chosen_len[i] for those pointer fields instead of rolling its
-	 * own, so all siblings agree on the same count and the LEN
-	 * field's value matches every pointer it gates.
-	 *
-	 * Cap: minimum across the listed siblings' max_count /
-	 * max_bytes; absent any cap, the PTR_ARRAY_DEFAULT_MAX default
-	 * applies.  All siblings must therefore set a sensible cap or
-	 * accept the conservative default.
-	 */
+/*
+ * Pre-pin pass: when a LEN field carries a buf_fields[] list
+ * (multi-pair gating, e.g. kprobe_multi's cnt gating
+ * syms+addrs+cookies), roll one shared count and write it into
+ * chosen_len[] for every listed sibling.  Pass 2 then reads
+ * chosen_len[i] for those pointer fields instead of rolling its
+ * own, so all siblings agree on the same count and the LEN
+ * field's value matches every pointer it gates.
+ *
+ * Cap: minimum across the listed siblings' max_count /
+ * max_bytes; absent any cap, the PTR_ARRAY_DEFAULT_MAX default
+ * applies.  All siblings must therefore set a sensible cap or
+ * accept the conservative default.
+ */
+static void pin_shared_lens(const struct struct_field *fields,
+			    unsigned int n, unsigned long *chosen_len)
+{
+	unsigned int i;
+
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 		unsigned long count;
@@ -472,8 +443,133 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 			chosen_len[p] = count;
 		}
 	}
+}
 
-	/* Pass 2: pointer tags. */
+/* FT_PTR_ARRAY arm of fill_pointer_pass(); *chosen is chosen_len[i]. */
+static void fill_ptr_array(unsigned char *buf, const struct struct_field *f,
+			   struct syscallrecord *rec, unsigned long *chosen)
+{
+	unsigned int cap = f->u.ptr_array.max_count;
+	const struct struct_desc *elem;
+	unsigned int elem_size = 0;
+	unsigned long count, nbytes;
+	void *sub;
+
+	if (cap == 0)
+		cap = PTR_ARRAY_DEFAULT_MAX;
+
+	/*
+	 * elem_struct (cataloged struct, size from
+	 * struct_size) takes precedence; elem_size
+	 * (scalar byte width, e.g. 8 for a u64 array)
+	 * is the fallback when no struct is named.  At
+	 * least one must resolve to a non-zero width
+	 * for the allocation to proceed.
+	 */
+	elem = struct_catalog_lookup(f->u.ptr_array.elem_struct);
+	if (elem != NULL && elem->struct_size != 0)
+		elem_size = elem->struct_size;
+	else if (f->u.ptr_array.elem_size != 0)
+		elem_size = f->u.ptr_array.elem_size;
+
+	if (elem_size == 0) {
+		/*
+		 * Neither a cataloged elem_struct nor an
+		 * elem_size override: leave NULL.  Paired
+		 * LEN field will read chosen_len == 0 and
+		 * plant zero, so the (NULL, 0) shape the
+		 * kernel sees is internally consistent.
+		 */
+		write_field_uint(buf, f, 0);
+		return;
+	}
+
+	if (*chosen != 0)
+		count = *chosen;
+	else
+		count = 1 + rnd_modulo_u32(cap);
+	/*
+	 * Clamp count so count * elem_size cannot wrap
+	 * size_t: an overflow would size the allocation
+	 * from the wrapped result while the fill loop
+	 * below still iterated the unwrapped count, writing
+	 * past the end of sub and corrupting Trinity's own
+	 * heap -- masking or fabricating kernel bugs.
+	 */
+	if (count > SIZE_MAX / elem_size)
+		count = SIZE_MAX / elem_size;
+	nbytes = count * elem_size;
+	sub = zmalloc_tracked(nbytes);
+	deferred_free_enqueue_or_leak(sub);
+	/*
+	 * Schema-fill each element when a cataloged
+	 * elem_struct resolved -- zmalloc_tracked only
+	 * zeroes, so a cataloged array would otherwise
+	 * reach the kernel as count all-zero structs and
+	 * the elem_struct annotation would be silently
+	 * inert.  Mirrors the per-buffer fill the single-
+	 * pointer FT_PTR_STRUCT case does.  The
+	 * scalar elem_size-override path (elem == NULL or
+	 * elem->struct_size == 0) stays zero-filled.
+	 */
+	if (elem != NULL && elem->struct_size != 0) {
+		unsigned long j;
+
+		for (j = 0; j < count; j++)
+			struct_field_fill_schema_aware(
+				(unsigned char *) sub
+					+ j * elem_size,
+				elem->struct_size, elem, rec);
+	}
+	write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+	*chosen = count;
+}
+
+#ifdef USE_BPF
+/*
+ * FT_BPF_PROGRAM arm of fill_pointer_pass(); *chosen is chosen_len[i].
+ * Marker-only tag: allocate a max-tier-sized sub-buffer
+ * and hand it to ebpf_gen_program_into(), which rolls
+ * its own tier (50/25/25 valid/boundary/chaos) and emits
+ * the instruction stream.  prog_type is read from the
+ * sibling "prog_type" field already populated by the
+ * scalar pass; absent or unreadable, default to UNSPEC
+ * so the universal helper set still applies.  chosen_len
+ * carries the generator's actual emit count so the
+ * paired FT_LEN_COUNT writes a matching insn_cnt.
+ */
+static void fill_bpf_program(unsigned char *buf, const struct struct_field *f,
+			     const struct struct_field *fields, unsigned int n,
+			     unsigned long *chosen)
+{
+	const unsigned int max_insns = EBPF_GEN_PROG_MAX_INSNS;
+	unsigned int nbytes = max_insns * (unsigned int) sizeof(struct bpf_insn);
+	int pt_idx = find_field_index_in(fields, n, "prog_type");
+	unsigned int prog_type = 0;
+	int out_count = 0;
+	void *sub;
+
+	if (pt_idx >= 0 && (unsigned int) pt_idx < n)
+		prog_type = (unsigned int)
+			read_field_uint(buf, &fields[pt_idx]);
+
+	sub = zmalloc_tracked(nbytes);
+	ebpf_gen_program_into(sub, (int) max_insns,
+			      &out_count, prog_type);
+	deferred_free_enqueue_or_leak(sub);
+	write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+	*chosen = (unsigned long) out_count;
+}
+#endif
+
+/* Pass 2 of struct_fill_passes(): pointer tags. */
+static void fill_pointer_pass(unsigned char *buf, unsigned int size,
+			      const struct struct_field *fields,
+			      unsigned int n, unsigned long *chosen_len,
+			      struct syscallrecord *rec)
+{
+	unsigned int i;
+
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 
@@ -513,119 +609,17 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 			break;
 		}
 
-		case FT_PTR_ARRAY: {
-			unsigned int cap = f->u.ptr_array.max_count;
-			const struct struct_desc *elem;
-			unsigned int elem_size = 0;
-			unsigned long count, nbytes;
-			void *sub;
-
-			if (cap == 0)
-				cap = PTR_ARRAY_DEFAULT_MAX;
-
-			/*
-			 * elem_struct (cataloged struct, size from
-			 * struct_size) takes precedence; elem_size
-			 * (scalar byte width, e.g. 8 for a u64 array)
-			 * is the fallback when no struct is named.  At
-			 * least one must resolve to a non-zero width
-			 * for the allocation to proceed.
-			 */
-			elem = struct_catalog_lookup(f->u.ptr_array.elem_struct);
-			if (elem != NULL && elem->struct_size != 0)
-				elem_size = elem->struct_size;
-			else if (f->u.ptr_array.elem_size != 0)
-				elem_size = f->u.ptr_array.elem_size;
-
-			if (elem_size == 0) {
-				/*
-				 * Neither a cataloged elem_struct nor an
-				 * elem_size override: leave NULL.  Paired
-				 * LEN field will read chosen_len == 0 and
-				 * plant zero, so the (NULL, 0) shape the
-				 * kernel sees is internally consistent.
-				 */
-				write_field_uint(buf, f, 0);
-				break;
-			}
-
-			if (chosen_len[i] != 0)
-				count = chosen_len[i];
-			else
-				count = 1 + rnd_modulo_u32(cap);
-			/*
-			 * Clamp count so count * elem_size cannot wrap
-			 * size_t: an overflow would size the allocation
-			 * from the wrapped result while the fill loop
-			 * below still iterated the unwrapped count, writing
-			 * past the end of sub and corrupting Trinity's own
-			 * heap -- masking or fabricating kernel bugs.
-			 */
-			if (count > SIZE_MAX / elem_size)
-				count = SIZE_MAX / elem_size;
-			nbytes = count * elem_size;
-			sub = zmalloc_tracked(nbytes);
-			deferred_free_enqueue_or_leak(sub);
-			/*
-			 * Schema-fill each element when a cataloged
-			 * elem_struct resolved -- zmalloc_tracked only
-			 * zeroes, so a cataloged array would otherwise
-			 * reach the kernel as count all-zero structs and
-			 * the elem_struct annotation would be silently
-			 * inert.  Mirrors the per-buffer fill the single-
-			 * pointer FT_PTR_STRUCT case below does.  The
-			 * scalar elem_size-override path (elem == NULL or
-			 * elem->struct_size == 0) stays zero-filled.
-			 */
-			if (elem != NULL && elem->struct_size != 0) {
-				unsigned long j;
-
-				for (j = 0; j < count; j++)
-					struct_field_fill_schema_aware(
-						(unsigned char *) sub
-							+ j * elem_size,
-						elem->struct_size, elem, rec);
-			}
-			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
-			chosen_len[i] = count;
+		case FT_PTR_ARRAY:
+			fill_ptr_array(buf, f, rec, &chosen_len[i]);
 			break;
-		}
 
-		case FT_BPF_PROGRAM: {
+		case FT_BPF_PROGRAM:
 #ifdef USE_BPF
-			/*
-			 * Marker-only tag: allocate a max-tier-sized sub-buffer
-			 * and hand it to ebpf_gen_program_into(), which rolls
-			 * its own tier (50/25/25 valid/boundary/chaos) and emits
-			 * the instruction stream.  prog_type is read from the
-			 * sibling "prog_type" field already populated by the
-			 * scalar pass; absent or unreadable, default to UNSPEC
-			 * so the universal helper set still applies.  chosen_len
-			 * carries the generator's actual emit count so the
-			 * paired FT_LEN_COUNT writes a matching insn_cnt.
-			 */
-			const unsigned int max_insns = EBPF_GEN_PROG_MAX_INSNS;
-			unsigned int nbytes = max_insns * (unsigned int) sizeof(struct bpf_insn);
-			int pt_idx = find_field_index_in(fields, n, "prog_type");
-			unsigned int prog_type = 0;
-			int out_count = 0;
-			void *sub;
-
-			if (pt_idx >= 0 && (unsigned int) pt_idx < n)
-				prog_type = (unsigned int)
-					read_field_uint(buf, &fields[pt_idx]);
-
-			sub = zmalloc_tracked(nbytes);
-			ebpf_gen_program_into(sub, (int) max_insns,
-					      &out_count, prog_type);
-			deferred_free_enqueue_or_leak(sub);
-			write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
-			chosen_len[i] = (unsigned long) out_count;
+			fill_bpf_program(buf, f, fields, n, &chosen_len[i]);
 #else
 			write_field_uint(buf, f, 0);
 #endif
 			break;
-		}
 
 		case FT_PTR_STRUCT: {
 			const struct struct_desc *target;
@@ -692,8 +686,15 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 			break;
 		}
 	}
+}
 
-	/* Pass 3: length tags. */
+/* Pass 3 of struct_fill_passes(): length tags. */
+static void fill_length_pass(unsigned char *buf, unsigned int size,
+			     const struct struct_field *fields,
+			     unsigned int n, const unsigned long *chosen_len)
+{
+	unsigned int i;
+
 	for (i = 0; i < n; i++) {
 		const struct struct_field *f = &fields[i];
 		int paired;
@@ -729,6 +730,53 @@ void struct_fill_passes(unsigned char *buf, unsigned int size,
 		else
 			write_field_uint(buf, f, chosen_len[paired]);
 	}
+}
+
+/*
+ * Schema-aware field fill: dispatch on f->tag and produce a
+ * tag-respecting value, falling back to the FT_RAW per-field random
+ * splat for tags this build does not yet specialise.
+ *
+ * All catalog entries default to FT_RAW; an unannotated struct
+ * therefore produces byte-identical output to the pre-schema
+ * struct_field_fill -- the rand32() call sequence is preserved
+ * field-for-field, width-for-width.  As individual structs migrate
+ * to FIELDX() annotations, their fields begin consuming the per-tag
+ * mutators below.
+ *
+ * Three passes resolve the cross-field coupling between PTR and LEN
+ * tags without an init-time topological sort:
+ *
+ *  1. Scalar pass: FT_FLAGS / FT_RAW / reserved tags.  Order-
+ *     independent so we can run it first without observing the
+ *     pointer fields the later passes will populate.
+ *  2. Pointer pass: FT_PTR_BYTES / FT_PTR_ARRAY / FT_PTR_STRUCT.
+ *     Allocate a sub-buffer via zmalloc_tracked, write the pointer
+ *     into the slot, remember the chosen size (bytes for BYTES /
+ *     STRUCT, element count for ARRAY) keyed by field index.
+ *     Optional pointers may roll NULL+0 with OPTIONAL_PRESENT_PCT
+ *     bias toward present, so the NULL-args kernel path keeps
+ *     coverage too.
+ *  3. Length pass: FT_LEN_BYTES / FT_LEN_COUNT.  Resolve the paired
+ *     buffer field by name, read the size/count chosen in pass 2,
+ *     write it into the slot at the LEN field's natural width.
+ *     Coupled fields stay consistent -- the kernel sees a length
+ *     that matches the buffer it describes.
+ */
+void struct_fill_passes(unsigned char *buf, unsigned int size,
+			       const struct struct_field *fields,
+			       unsigned int n,
+			       struct syscallrecord *rec)
+{
+	unsigned long chosen_len[STRUCT_FILL_MAX_FIELDS] = {0};
+
+	if (n > STRUCT_FILL_MAX_FIELDS)
+		n = STRUCT_FILL_MAX_FIELDS;
+
+	fill_scalar_pass(buf, size, fields, n, rec);
+	pin_shared_lens(fields, n, chosen_len);
+	fill_pointer_pass(buf, size, fields, n, chosen_len, rec);
+	fill_length_pass(buf, size, fields, n, chosen_len);
 }
 
 /*
