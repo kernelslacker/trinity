@@ -79,6 +79,17 @@ source side of both sections is pinned by the static
 end-to-end: open failures for `--stats-log-file` and the auto-named
 timeseries/rotation files are verified to surface in stderr with exit 0.
 
+## Older-uapi build (opt-in)
+
+    make uapi-check [KERNEL_SRC=<kernel git tree>] [UAPI_TAG=<tag>]
+
+Compiles every trinity and test-binary object against the uapi headers
+of an older kernel tag (v6.12 by default), so a symbol used without a
+`#ifndef` or `HAVE_` fallback fails here rather than on a distribution
+with older headers.  It needs a local kernel git tree, which
+`check-static` cannot assume, so it stays out of the battery.
+`Documentation/HACKING.txt` covers the floor and the failure summary.
+
 ## What today's checks enforce
 
 (See each script for the precise rule.  This list is hand-maintained;

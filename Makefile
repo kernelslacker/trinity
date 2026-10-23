@@ -298,34 +298,21 @@ check-static:
 check-runtime: trinity
 	@./scripts/check-runtime-json-output.sh
 
-# `make uapi-check KERNEL_SRC=<kernel git tree>` compiles the tree and
-# the test-binary objects against the uapi headers of an older kernel, to
-# catch a symbol the build host's newer headers supply that no fallback
-# covers; Documentation/HACKING.txt says why UAPI_TAG defaults to v6.12.
-# scripts/uapi-sysroot.sh installs the tag's headers from KERNEL_SRC,
-# never writing to it, into a sysroot cached under
-# $XDG_CACHE_HOME/trinity-uapi ($HOME/.cache/trinity-uapi when that is
-# unset).  configure and the objects run in build-uapi/<tag>, apart from
-# the main build.  Nothing is linked and nothing is run.  A CFLAGS taken
-# from the environment comes back from make fully expanded, naming the
-# tree's own config.h, so configure and the sub-makes start without it.
+# `make uapi-check [KERNEL_SRC=<kernel git tree>] [UAPI_TAG=<tag>]`
+# compiles the tree and the test-binary objects against the uapi headers
+# of an older kernel, to catch a symbol the build host's newer headers
+# supply that no fallback covers, and lists the failures by symbol;
+# Documentation/HACKING.txt says why UAPI_TAG defaults to v6.12.
+# scripts/uapi-check.sh does the work, in build-uapi/<tag>; nothing is
+# linked and nothing is run.  MAKE appears in the recipe so the sub-makes
+# it starts share this make's jobserver.
 UAPI_TAG	?= v6.12
-UAPI_SYSROOT	:= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/trinity-uapi/$(UAPI_TAG)
-UAPI_BUILD	:= $(CURDIR)/build-uapi/$(UAPI_TAG)
 UAPI_JOBS	= $(if $(findstring -j,$(MAKEFLAGS)),,-j$(NR_CPUS))
 
 .PHONY: uapi-check uapi-objs
 uapi-check:
-	@if [ -z "$(KERNEL_SRC)" ]; then echo "usage: make uapi-check KERNEL_SRC=<kernel git tree> [UAPI_TAG=$(UAPI_TAG)]" >&2; exit 1; fi
-	@CC="$(CC)" scripts/uapi-sysroot.sh "$(KERNEL_SRC)" "$(UAPI_TAG)" "$(UAPI_SYSROOT)"
-	@mkdir -p $(UAPI_BUILD)
-	@cd $(UAPI_BUILD) && env -u CFLAGS CC="$(CC)" SYSROOT="$(UAPI_SYSROOT)" \
-		$(CURDIR)/configure > configure.log
-	@env -u CFLAGS $(MAKE) --no-print-directory $(UAPI_JOBS) OBJDIR=$(UAPI_BUILD)/ \
-		CONFIG_H=$(UAPI_BUILD)/config.h SYSROOT="$(UAPI_SYSROOT)" uapi-objs
-	@env -u CFLAGS $(MAKE) -s --no-print-directory $(UAPI_JOBS) -C tests BUILDDIR=$(UAPI_BUILD)/tests \
-		CONFIG_H=$(UAPI_BUILD)/config.h SYSROOT="$(UAPI_SYSROOT)" objs
-	@echo "uapi-check: trinity and test objects compile against $(UAPI_TAG) uapi headers"
+	@MAKE="$(MAKE)" CC="$(CC)" KERNEL_SRC="$(KERNEL_SRC)" UAPI_TAG="$(UAPI_TAG)" \
+		UAPI_JOBS="$(UAPI_JOBS)" scripts/uapi-check.sh
 
 uapi-objs: $(OBJS)
 

@@ -7,12 +7,19 @@
   (or need to test prescence of a header file), add it to configure. This should
   be a last resort, in most cases an #ifndef addition to kernel fallback headers will be enough.
 
-  `make uapi-check KERNEL_SRC=<kernel git tree>` finds what such a build would trip over
-  before anyone has to.  It installs the uapi headers of an older kernel tag from that
-  tree into a sysroot cached under $XDG_CACHE_HOME/trinity-uapi (or $HOME/.cache), reruns
-  configure against it and compiles trinity and the test-binary objects in build-uapi/<tag>.
-  The kernel tree is only read, nothing is linked and nothing is run.  The first run takes
-  under a minute and leaves about 10MB in the cache; later runs reuse it.
+  `make uapi-check [KERNEL_SRC=<kernel git tree>]` finds what such a build would trip over
+  before anyone has to.  KERNEL_SRC defaults to $HOME/src/kernel/git-trees/linux.  It
+  installs the uapi headers of an older kernel tag from that tree into a sysroot cached
+  under $XDG_CACHE_HOME/trinity-uapi (or $HOME/.cache), reruns configure against it and
+  compiles trinity and the test-binary objects in build-uapi/<tag>.  The kernel tree is only
+  read, nothing is linked and nothing is run.  The first run takes under a minute and leaves
+  about 10MB in the cache; later runs reuse it.  It is opt-in, not part of check-static,
+  because it needs a kernel tree.
+
+  The compile keeps going past a failing file, and a failed run lists the missing symbols,
+  the most widespread first, with the number of files each breaks and one example error
+  (UAPI_CHECK_TOP= sets how many; default 20).  The full log is build-uapi/<tag>/build.log
+  and every error, one per line, is in build-uapi/<tag>/errors.tsv.
 
   The tag defaults to v6.12 (override with UAPI_TAG=).  It is the 2024 longterm release,
   still maintained, and the uapi base of Debian 13 and RHEL 10.  The longterm releases
