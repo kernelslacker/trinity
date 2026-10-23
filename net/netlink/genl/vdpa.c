@@ -39,8 +39,8 @@ static const struct genl_cmd_grammar vdpa_cmds[] = {
  * / MGMTDEV_SUPPORTED_CLASSES / VENDOR_ATTR_VALUE are u64 bitmasks /
  * stat values.  The kernel's vdpa_nl_policy validates a subset of
  * these on input; the remainder are response-side payloads emitted by
- * the GET commands.  Listing them all here exercises the validator's
- * "ignore on input" branch the same way the fou peer-side attrs do.
+ * the GET commands.  The ops validate strictly, so each of those costs
+ * an -EINVAL on every command.
  */
 static const struct nla_attr_spec vdpa_attrs[] = {
 	{ VDPA_ATTR_MGMTDEV_BUS_NAME,		NLA_KIND_STRING, 0 },

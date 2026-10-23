@@ -46,18 +46,17 @@ static const struct genl_cmd_grammar nfsd_cmds[] = {
  * cleanly with the RPC_STATUS dump response u32 ids (XID / FLAGS /
  * PROG).  Id 4 is a NUL_STRING for THREADS_SET's SERVER_SCOPE selector
  * -- the RPC_STATUS_VERSION u32 at id 4 disagrees on kind but is
- * response-only, so it lands on the validator's "ignore on input"
- * branch the same way the fou / psample / handshake grammars do.
+ * response-only, so the entry follows SCOPE.  The ops validate
+ * strictly, so every op but THREADS_SET answers an id 4 with -EINVAL.
  * Ids 5..14 are response-side payloads emitted by RPC_STATUS_GET:
  * PROC and COMPOUND_OPS are u32 RPC opcode selectors, SERVICE_TIME
  * is a u64 nanoseconds counter, PAD is the alignment partner for the
  * SERVICE_TIME u64 (zero-byte payload matches the wire shape), the
  * SADDR4 / DADDR4 pair are __be32 IPv4 endpoint addresses, SADDR6 /
  * DADDR6 are 16-byte IPv6 endpoint addresses, and the SPORT / DPORT
- * pair are __be16 wire-encoded port numbers.  Listing them all here
- * exercises the validator's "ignore on input" branch and the
- * dispatch-then-discard accounting in nfsd_nl_rpc_status_get_dumpit
- * the same way the fou / psample response-side enumerations do.
+ * pair are __be16 wire-encoded port numbers.  Listing them costs an
+ * -EINVAL on every op whose policy has no slot for them; RPC_STATUS_GET,
+ * which emits them, has no policy and takes no attributes.
  *
  * NFSD_A_CACHE_NOTIFY_CACHE_TYPE (id 1, U32) and NFSD_A_CACHE_FLUSH_
  * MASK (id 1, U32) are consistent with the existing id 1 U32 entry;

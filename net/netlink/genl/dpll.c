@@ -46,8 +46,9 @@ static const struct genl_cmd_grammar dpll_cmds[] = {
  * the remainder are response-side payloads emitted by DEVICE_GET.
  * TEMP is a u32-wire signed temperature reading scaled by
  * DPLL_TEMP_DIVIDER.  PAD is the u8 padding slot the YNL generator
- * emits for u64 alignment and is listed so the validator's "ignore on
- * input" branch is exercised the same way the fou / ovpn grammars do.
+ * emits for u64 alignment.  The ops validate strictly, so each
+ * response-side id, PAD included, costs an -EINVAL on every command
+ * whose policy has no slot for it.
  *
  * The per-pin DPLL_A_PIN_* enum shares id 1..N with the top-level
  * DPLL_A_* namespace and a single flat table cannot disambiguate the

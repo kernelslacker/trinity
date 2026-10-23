@@ -48,9 +48,9 @@ static const struct genl_cmd_grammar handshake_cmds[] = {
  * KEYRING is a u32 keyring serial the kernel emits on the reply.
  *
  * Most of these are response-side payloads (the ACCEPT request body
- * only carries HANDLER_CLASS); listing them all here exercises the
- * validator's "ignore on input" branch the same way the fou /
- * psample / ovpn / dpll grammars do.  The HANDSHAKE_A_DONE_* and
+ * only carries HANDLER_CLASS).  The ops validate strictly, so listing
+ * one costs an -EINVAL on each command whose policy has no slot for
+ * it.  The HANDSHAKE_A_DONE_* and
  * HANDSHAKE_A_X509_* enums share id 1..N with this namespace and a
  * single flat table cannot disambiguate the overlapping keys, so only
  * ACCEPT_* -- the largest namespace, and the one a handler meets at
