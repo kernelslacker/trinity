@@ -5,6 +5,7 @@
  * What only a post handler or a pool initialiser reaches aborts the test,
  * unless a test installs a hook for the call it drives: dup_pool_test.c
  * hooks find_local_object_by_fd() and get_objhead(), maps_name_test.c
+ * alloc_object() and add_object(), canary_path_test.c get_objhead(),
  * alloc_object() and add_object().
  */
 

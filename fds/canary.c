@@ -1,12 +1,14 @@
 /*
  * Canary file pool: an fd_provider exposing NR_CANARY_FILES trinity-owned
- * files, created at init under the tmp dir and published read-only, whose
- * bytes are deterministic at every (file_idx, offset).  The verifier childop
- * pagecache_canary_check (childops/mm/pagecache-canary-check.c) consumes it;
- * the O_RDONLY / OBJ_FLAG_NO_WRITE rationale is in include/canary.h.
+ * files, created at init in the run's working directory (tmp/ when it
+ * exists) and published read-only, whose bytes are deterministic at every
+ * (file_idx, offset).  The verifier childop pagecache_canary_check
+ * (childops/mm/pagecache-canary-check.c) consumes it; the O_RDONLY /
+ * OBJ_FLAG_NO_WRITE rationale is in include/canary.h.
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -22,15 +24,12 @@
 #include "trinity.h"
 #include "utils.h"
 
-/*
- * Path is relative to trinity's run-time CWD.  change_tmp_dir()
- * (called from main() before open_fds()) chdirs us into the tmp/
- * subdir of the launch directory, so a "canary" basename here
- * resolves to <launch>/tmp/canary on disk.  No leading "tmp/"
- * prefix — that would land at <launch>/tmp/tmp/canary.
- */
 #define CANARY_DIR		"canary"
-#define CANARY_PATH_CAP		96
+/*
+ * The longest path open() accepts; a directory too deep to hold a pool
+ * path fails init rather than have the path truncated.
+ */
+#define CANARY_PATH_CAP		PATH_MAX
 #define CANARY_FILL_BUF_SIZE	4096
 
 /*
@@ -115,7 +114,7 @@ static bool canary_fill_file(int fd, unsigned int file_idx, size_t size)
 }
 
 /*
- * Build the on-disk file at tmp/canary/<idx>, fill it with the
+ * Build the on-disk file at @dir/<idx>, fill it with the
  * deterministic pattern, then reopen O_RDONLY and publish as an
  * OBJ_FD_CANARY object.  Returns true on success.
  *
@@ -124,14 +123,19 @@ static bool canary_fill_file(int fd, unsigned int file_idx, size_t size)
  * its own contents — a wild-write through a fuzzed dup3()/sendfd()
  * cannot turn a stray write-end into a content-mutation primitive.
  */
-static bool canary_create_one(unsigned int idx)
+static bool canary_create_one(const char *dir, unsigned int idx)
 {
 	char path[CANARY_PATH_CAP];
 	struct object *obj;
 	char *shared_path;
 	int wfd, rfd;
 
-	snprintf(path, sizeof(path), "%s/%u", CANARY_DIR, idx);
+	if ((size_t)snprintf(path, sizeof(path), "%s/%u", dir, idx) >=
+	    sizeof(path)) {
+		outputerr("canary: %s/%u is longer than %zu bytes\n",
+			  dir, idx, sizeof(path) - 1);
+		return false;
+	}
 
 	(void)unlink(path);
 	wfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -193,8 +197,30 @@ static bool canary_create_one(unsigned int idx)
 
 static int init_canary_fds(void)
 {
+	char cwd[CANARY_PATH_CAP];
+	char dir[CANARY_PATH_CAP];
 	struct objhead *head;
 	unsigned int i;
+
+	/*
+	 * Every pool path is absolute, built from the directory init runs in:
+	 * the tmp dir main() has moved into when there is one, the launch
+	 * directory when not.  The verifier reopens them in children whose
+	 * cwd a fuzzed chdir() has moved, where a path relative to the cwd at
+	 * init names nothing, or an unrelated file.  trinity_tmpdir_abs() is
+	 * no anchor: without a tmp dir it is the fixed /tmp, the same pool
+	 * paths for every run.  With no cwd to anchor at, build no pool.
+	 */
+	if (getcwd(cwd, sizeof(cwd)) == NULL) {
+		outputerr("canary: getcwd failed: %s\n", strerror(errno));
+		return false;
+	}
+	if ((size_t)snprintf(dir, sizeof(dir), "%s/%s", cwd, CANARY_DIR) >=
+	    sizeof(dir)) {
+		outputerr("canary: %s/%s is longer than %zu bytes\n",
+			  cwd, CANARY_DIR, sizeof(dir) - 1);
+		return false;
+	}
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_CANARY);
 	head->destroy = &canary_destructor;
@@ -222,14 +248,14 @@ static int init_canary_fds(void)
 	}
 	memset(canary_pool, 0, sizeof(*canary_pool));
 
-	if (mkdir(CANARY_DIR, 0755) != 0 && errno != EEXIST) {
+	if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
 		outputerr("canary: mkdir %s failed: %s\n",
-			  CANARY_DIR, strerror(errno));
+			  dir, strerror(errno));
 		return false;
 	}
 
 	for (i = 0; i < NR_CANARY_FILES; i++) {
-		if (!canary_create_one(i)) {
+		if (!canary_create_one(dir, i)) {
 			/* Partial pool is still useful — keep what we
 			 * built and continue.  The verifier checks
 			 * canary_pool_size() before picking a slot. */
@@ -245,7 +271,7 @@ static int init_canary_fds(void)
 	}
 
 	output(1, "canary: initialised %u/%u files in %s\n",
-		canary_pool->count, NR_CANARY_FILES, CANARY_DIR);
+		canary_pool->count, NR_CANARY_FILES, dir);
 	return true;
 }
 

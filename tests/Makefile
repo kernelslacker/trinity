@@ -421,6 +421,15 @@ PARENT_SRCS	+= $(wildcard $(TOP)/stats/kcov/cmp/*.c) \
 FAKE_SRCS	+= stats_render_test.c \
 		   stats_render_golden.c
 
+# fds/canary.c brings the canary pool's provider, which registers itself at
+# load time, and childops/mm/pagecache-canary-check.c the childop that
+# reopens the pool's files.  canary_path_test.c runs the provider's init hook
+# against the object-pool hooks in fake_objects.c, then the childop.  Same
+# section-per-function treatment as the parent TUs above.
+PARENT_SRCS	+= $(TOP)/fds/canary.c \
+		   $(TOP)/childops/mm/pagecache-canary-check.c
+FAKE_SRCS	+= canary_path_test.c
+
 # syscalls/fs/close.c, close_range.c and fcntl.c and
 # syscalls/pidfd/pidfd_getfd.c bring syscall_close, syscall_close_range,
 # syscall_fcntl and syscall_pidfd_getfd, whose post handlers

@@ -566,6 +566,8 @@ bool pagecache_canary_check(struct childdata *child)
 	default: break;
 	}
 
+	/* info->path is absolute, so a chdir() this child fuzzed earlier
+	 * cannot redirect the reopen. */
 	fd = open(info->path, open_flags);
 	direct_calls++;
 	if (fd < 0 && (open_flags & O_DIRECT) && errno == EINVAL) {
