@@ -312,8 +312,8 @@ static void sanitise_fsconfig(struct syscallrecord *rec)
  * the original fsopen / fspick post path and this fsconfig dispatch
  * (parent destructor ran, fd recycling collided, scope migration).
  * Republishing keeps fsmount consumers finding it; the
- * find_local_object_by_fd() short-circuit avoids the duplicate-publish
- * shape post-double-publish.sh exists to flag.
+ * find_local_object_by_fd() short-circuit keeps an fd that is still in
+ * the pool from being enrolled twice.
  */
 static void post_fsconfig_record_fsctx_ready(struct syscallrecord *rec)
 {

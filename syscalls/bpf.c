@@ -303,11 +303,11 @@ static void sanitise_bpf(struct syscallrecord *rec)
  * Ownership-table + magic-cookie reject pair.  Sequenced inside the
  * helper in the only correct order (ownership first, then magic --
  * the cookie alone does not prove the snap is the live one for this
- * record; see post-state-deref-order check).  Returns false on either
- * gate firing; on false the caller must return without freeing snap.
- * The looks_like_corrupted_ptr() shape gates that bracket this call
- * stay in post_bpf so the post-state-deref static checker can see
- * them next to the snap->* dereferences.
+ * record; see the ORDERING note in post-state-deref.sh).  Returns false
+ * on either gate firing; on false the caller must return without freeing
+ * snap.  The looks_like_corrupted_ptr() shape gates that bracket this
+ * call stay in post_bpf so post-state-deref.sh can see them next to the
+ * snap->* dereferences.
  */
 static bool bpf_post_state_owned_and_valid_magic(struct syscallrecord *rec,
 						 struct bpf_post_state *snap)

@@ -174,7 +174,7 @@ static void sanitise_setxattrat_scrub_flags(struct syscallrecord *rec)
  *
  * setxattrat is itself the set, so no separate plant is needed --
  * the syscall populates the per-inode xattr list directly.  This
- * is path-pin only, no sanitiser-slow-path setxattr() call.
+ * is path-pin only: the sanitiser makes no setxattr() call of its own.
  */
 static void sanitise_setxattrat_repoint_pathname(struct syscallrecord *rec)
 {
