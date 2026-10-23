@@ -67,7 +67,7 @@
 # address-of rule lets them through without needing a file-level
 # allowlist.
 #
-# A baseline of grandfathered offenders lives alongside this script
+# A baseline of grandfathered offenders may live alongside this script
 # as shm-latch-direct.baseline (one `file:funcname` per line).  The
 # baseline should shrink over time, never grow.
 
@@ -178,8 +178,7 @@ for srcfile in "${SRCFILES[@]}"; do
 		raw = $0
 		code = strip_strings(strip_comments(raw))
 
-		# Function-definition tracker, same shape as the
-		# fd-event-close-direct check.  Trinity convention: the
+		# Function-definition tracker.  Trinity convention: the
 		# definition opener is a column-0 line containing
 		# `IDENT(`, followed by `{` at column 1 on a later line.
 		if (raw ~ /^[A-Za-z_]/ && match(raw, /([A-Za-z_][A-Za-z0-9_]+)[[:space:]]*\(/, m)) {

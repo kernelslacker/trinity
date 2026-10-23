@@ -18,9 +18,9 @@
 #   Case 1 — block-comment opener in string literal
 #     const char *s = "a /* b";
 #     if (getppid() == 1) { ... }
-#   The getppid() == 1 line must survive stripping and therefore must be
-#   flagged by getppid-one-literal.sh.  Before the fix, in_block was set by
-#   the /* inside the string and never cleared, so line 2 was dropped.
+#   The getppid() == 1 line must survive stripping, so a gate that greps
+#   the stripped output can still flag it.  Before the fix, in_block was set
+#   by the /* inside the string and never cleared, so line 2 was dropped.
 #
 #   Case 2 — line-comment opener in string literal
 #     const char *url = "http://example.com";

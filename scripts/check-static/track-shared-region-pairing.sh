@@ -199,8 +199,7 @@ FNR == 1 {
 	sub(/\/\/.*$/, "", line_no_lc)
 
 	# Brace deltas.  Strings containing { } are rare in trinity and
-	# not worth the lexer cost; the existing post-double-publish.sh
-	# check accepts the same tradeoff.
+	# not worth the lexer cost.
 	n_open = gsub(/\{/, "{", line_no_lc)
 	n_close = gsub(/\}/, "}", line_no_lc)
 	delta = n_open - n_close

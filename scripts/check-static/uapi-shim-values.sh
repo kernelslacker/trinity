@@ -127,13 +127,11 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
 sort -u -o "$HARVEST" "$HARVEST"
 
 # Harvest floor: the pipeline collects every integer #define in the source
-# tree (excluding scripts/), yielding ~3743 unique SYM→value pairs on the
-# baseline run.  The floor is ratcheted via uapi-shim-harvest-floor.baseline
-# (matching the tier1-probed-floor pattern) so a silently-collapsed
-# find/perl/grep pipeline fails hard rather than passing vacuously (mirrors
-# MIN_ARMS rationale; fa88fdd8adbb ("check-static/dead-arm-runtime-probe:
-# convert to MAPPING-table shape")).  This check runs unconditionally and is
-# the only surviving quantitative floor on the linus-tree-absent path.
+# tree (excluding scripts/).  The floor is ratcheted via
+# uapi-shim-harvest-floor.baseline (matching the tier1-probed-floor pattern)
+# so a silently-collapsed find/perl/grep pipeline fails hard rather than
+# passing vacuously.  This check runs unconditionally and is the only
+# surviving quantitative floor on the linus-tree-absent path.
 harvest_floor=0
 if [ -f "$HARVEST_FLOOR_FILE" ]; then
     harvest_floor=$(grep -oE '^[0-9]+' "$HARVEST_FLOOR_FILE" | head -1 || true)

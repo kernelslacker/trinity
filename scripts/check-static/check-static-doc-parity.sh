@@ -8,9 +8,7 @@
 # hand-maintained (the note at the top of that section says as much).
 # Without a gate, the list drifts silently: a new check lands with no
 # doc row, and by the time a reader notices, half a dozen scripts have
-# no explanation of what they enforce.  That is exactly the state
-# 17c1420e3d8d ("check-static: gate sfg phase-order invariants") uncovered when it added the sfg-phase-order-invariants
-# row -- 22 earlier scripts had no row at all.
+# no explanation of what they enforce.
 #
 # The check reads both sides symbolically:
 #   * script side: ls scripts/check-static/*.sh, strip the .sh suffix.
