@@ -29,7 +29,6 @@ static unsigned int nodemask_get_max_node(void)
 	if (cached != UINT_MAX)
 		return cached;
 
-	/* check-static: slow-ok */
 	fp = fopen("/sys/devices/system/node/online", "r");
 	if (fp == NULL) {
 		cached = 0;
