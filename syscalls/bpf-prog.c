@@ -91,7 +91,7 @@ static bool bpf_prog_load(union bpf_attr *attr)
 	 * receive coverage.  One value in 17 is deliberately out-of-mask (0x10)
 	 * to exercise the log_level & ~BPF_LOG_MASK reject arm in
 	 * bpf_verifier_log_attr_valid().  BPF_LOG_MASK = 0xF. */
-	unsigned int log_level_raw = rnd_modulo_u32(17); /* dead-arm-detect: not a multi-arm dispatch */
+	unsigned int log_level_raw = rnd_modulo_u32(17);
 	attr->log_level = log_level_raw < 16 ? log_level_raw : 0x10U;
 	if (attr->log_level == 0) {
 		attr->log_size = 0;
