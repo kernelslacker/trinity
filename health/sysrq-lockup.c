@@ -21,7 +21,6 @@
 #include "trinity.h"		/* output, outputerr */
 #include "utils.h"		/* max, ARRAY_SIZE */
 
-#define SYSRQ_STATE_PATH	"/proc/sys/kernel/sysrq"
 #define SYSRQ_TRIGGER_PATH	"/proc/sysrq-trigger"
 #define KMSG_PATH		"/dev/kmsg"
 
@@ -52,63 +51,6 @@ static unsigned int wedge_threshold(unsigned int running_childs)
 	unsigned int half = running_childs / 2U;
 
 	return max(3U, half);
-}
-
-/*
- * Ensure /proc/sys/kernel/sysrq is non-zero.  Returns true if the
- * subsequent write to /proc/sysrq-trigger has any chance of taking
- * effect.  A read failure is treated as "assume it's fine and try" --
- * the trigger write will surface its own error if the sysctl really
- * did block it, and gating a diagnostic on a proc-read hiccup would
- * hide the very event this feature exists to capture.
- */
-static bool ensure_sysrq_enabled(void)
-{
-	char buf[32];
-	int fd;
-	ssize_t n;
-	int rd_errno = 0;
-
-	fd = open(SYSRQ_STATE_PATH, O_RDONLY | O_CLOEXEC);
-	if (fd < 0)
-		return true;
-
-	n = read(fd, buf, sizeof(buf) - 1);
-	if (n < 0)
-		rd_errno = errno;
-	close(fd);
-
-	if (n <= 0) {
-		if (rd_errno)
-			output(0, "sysrq-on-lockup: read(%s) failed: %s, proceeding\n",
-				SYSRQ_STATE_PATH, strerror(rd_errno));
-		return true;
-	}
-	buf[n] = '\0';
-
-	/* The sysctl value is a decimal integer possibly followed by \n.
-	 * Anything non-zero (any bit set) means the sysrq handler will
-	 * accept our trigger write, so short-circuit before touching a
-	 * write path that needs CAP_SYS_ADMIN. */
-	if (buf[0] != '0' || (buf[1] != '\0' && buf[1] != '\n'))
-		return true;
-
-	fd = open(SYSRQ_STATE_PATH, O_WRONLY | O_CLOEXEC);
-	if (fd < 0) {
-		output(0, "sysrq-on-lockup: %s is 0 and cannot be raised: %s\n",
-			SYSRQ_STATE_PATH, strerror(errno));
-		return false;
-	}
-	n = write(fd, "1\n", 2);
-	if (n < 0) {
-		int e = errno;
-		close(fd);
-		output(0, "sysrq-on-lockup: write(%s, 1) failed: %s\n",
-			SYSRQ_STATE_PATH, strerror(e));
-		return false;
-	}
-	close(fd);
-	return true;
 }
 
 /*
@@ -262,9 +204,6 @@ static void fire_sysrq_dump(unsigned int stall_count, unsigned int threshold)
 
 	output(0, "sysrq-lockup: fleet wedge detected (stall=%u threshold=%u), firing SysRq w+l\n",
 		stall_count, threshold);
-
-	if (!ensure_sysrq_enabled())
-		return;
 
 	/* Open a private kmsg fd BEFORE writing the trigger and seek to the
 	 * end, so we only capture post-trigger output; a private fd also
