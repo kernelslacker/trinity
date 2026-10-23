@@ -1,8 +1,7 @@
 /*
- * Per-opcode payload builders for io_uring_register(2).  Split out of
- * syscalls/io_uring/io_uring_register.c via io_uring_register-internal.h
- * so the builder family compiles in parallel with the dispatch/sanitise/post
- * core.  The builders touch no file-statics in io_uring_register.c.
+ * Per-opcode payload builders for io_uring_register(2), declared in
+ * io_uring_register-internal.h.  The builders touch no file-statics in
+ * io_uring_register.c.
  */
 #include <limits.h>
 #include <sched.h>

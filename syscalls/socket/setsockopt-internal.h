@@ -1,14 +1,13 @@
 /*
  * setsockopt-internal.h
  *
- * Shared declarations split out of syscalls/socket/setsockopt.c so the
- * per-(level, optname) optval builders (build_int_*, build_linger,
- * build_timeval, build_ip_mreqn, build_ipv6_mreq, build_packet_mreq,
- * the build_sctp_* family, build_string_ifname) can live in their
- * own translation unit and compile in parallel with the dispatch
- * table, paired-sockopt engine and syscall hooks.  This header is
- * private to the two TUs that make up setsockopt -- do not include it
- * from anywhere else.
+ * Shared declarations for the per-(level, optname) optval builders
+ * (build_int_*, build_linger, build_timeval, build_ip_mreqn,
+ * build_ipv6_mreq, build_packet_mreq, the build_sctp_* family,
+ * build_string_ifname), which live in their own translation unit apart
+ * from the dispatch table, paired-sockopt engine and syscall hooks.
+ * This header is private to the two TUs that make up setsockopt -- do
+ * not include it from anywhere else.
  *
  * The builders touch no file-statics in setsockopt.c; they read only
  * trinity's rnd_* RNG helpers and write a sized payload into the

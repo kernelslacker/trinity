@@ -1,42 +1,9 @@
 /*
  * SYSCALL_DEFINE2(fchroot, int, fd, unsigned int, flags)
  *
- * On success, zero is returned.
- * On error, -1 is returned, and errno is set appropriately.
- *
- * Linux 7.3, 20370a5f5d9b ("fs: add fchroot()"), part of the failfs
- * series.  fd-based counterpart to chroot(2), and rather more than that:
- * it composes with O_PATH fds and with detached mount trees from
- * open_tree(OPEN_TREE_CLONE), and it carries a second, separately
- * guarded entry point that chroot(2) has no equivalent of.
- *
- * The kernel side, in order, because the order is what makes this
- * fuzzable at all:
- *
- *   1. flags must be zero            -> -EINVAL
- *   2. fd == FD_FAILFS_ROOT (-10004) -> chroot into failfs, guarded by
- *      EITHER CAP_SYS_CHROOT in the caller's userns, OR all three of
- *      no_new_privs set, fs->users == 1, and !current_chrooted()
- *   3. otherwise: fd_raw lookup -> -EBADF, d_can_lookup -> -ENOTDIR,
- *      file_permission(MAY_EXEC | MAY_CHDIR), ns_capable(CAP_SYS_CHROOT)
- *
- * Step 2 is the interesting one and the reason this entry is not
- * NEEDS_ROOT the way chroot is.  It is a root swap reachable WITHOUT
- * CAP_SYS_CHROOT, gated by three hand-written conditions that have to
- * agree -- one of which (no_new_privs) trinity's own prctl fuzzing can
- * set, and one of which (fs->users) is about sharing that a clone()
- * elsewhere in the same child can change underneath it.  Hand-written
- * multi-condition guards in front of a privileged state change are the
- * shape worth pointing a fuzzer at.
- *
- * EXTRA_FORK because a SUCCESSFUL call is not something a fuzz child
- * survives usefully: every subsequent path lookup resolves against the
- * new root, and if that root is failfs -- a filesystem whose stated
- * purpose is to fail operations -- the child spends the rest of its
- * life collecting errors from syscalls that would otherwise be doing
- * work.  Running it in a throwaway grandchild keeps the swap and its
- * consequences inside a process that exits immediately.  Same rationale
- * as execve's EXTRA_FORK: irreversible process state, contained.
+ * flags must be 0.  fd == FD_FAILFS_ROOT (-10004) swaps the root into failfs
+ * without CAP_SYS_CHROOT when no_new_privs is set, fs->users == 1 and the
+ * caller is not chrooted, which is why this entry is not NEEDS_ROOT.
  */
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -123,7 +90,14 @@ struct syscallentry syscall_fchroot = {
 	.argname = { [0] = "fd", [1] = "flags" },
 	.arg_params[1].list = ARGLIST(fchroot_flags),
 	.rettype = RET_ZERO_SUCCESS,
-	/* EXTRA_FORK spawns a helper process per dispatch, the same explicit
+	/* A successful call is not something a fuzz child survives usefully:
+	 * every later path lookup resolves against the new root, and if that
+	 * root is failfs, a filesystem whose purpose is to fail operations,
+	 * the child spends the rest of its life collecting errors.  EXTRA_FORK
+	 * keeps the swap in a throwaway grandchild, as execve's does:
+	 * irreversible process state, contained.
+	 *
+	 * EXTRA_FORK spawns a helper process per dispatch, the same explicit
 	 * re-exec disqualifier execve carries: a re-exec would fork another
 	 * grandchild.  AVOID_REEXEC is unconditional, so no later per-call
 	 * REEXEC_OK publish can reopen it. */

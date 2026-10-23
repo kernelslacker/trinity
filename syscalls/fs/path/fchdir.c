@@ -1,33 +1,9 @@
 /*
  * SYSCALL_DEFINE1(fchdir, unsigned int, fd)
  *
- * On success, zero is returned.
- * On error, -1 is returned, and errno is set appropriately.
- *
- * Linux 7.3 (same failfs series as fchroot): fchdir gained a sentinel
- * branch triggered by fd == FD_FAILFS_ROOT (-10004) that calls
- * failfs_current_chdir() with no capability test, no no_new_privs
- * check, and no fs->users or current_chrooted() guard whatsoever.
- * Any caller that supplies that exact fd value reaches it.  Compare
- * fchroot's FD_FAILFS_ROOT branch in the same series: it sits behind
- * a four-condition guard requiring either CAP_SYS_CHROOT or the
- * conjunction of no_new_privs, fs->users == 1, and
- * !current_chrooted().  Same sentinel, same series, sibling syscalls,
- * completely different permission models.  The unguarded one is the
- * one a fuzzer cannot reach by default.
- *
- * ARG_FD draws from the open-fd pool; -10004 never appears there, so
- * the failfs branch is cold by construction unless the sanitiser names
- * it explicitly.  The three-way split below keeps every arm reachable.
- *
- * EXTRA_FORK because the failure mode of a successful failfs chdir is
- * not a crash -- it is a child that keeps running while every
- * AT_FDCWD-relative lookup returns EOPNOTSUPP and getcwd() returns
- * "(unreachable)".  That child silently stops testing anything useful
- * for the rest of its life, turning coverage into noise.  Wrapping the
- * call in a throwaway grandchild confines the poisoned working
- * directory to a process that exits immediately, leaving the parent
- * unaffected.
+ * fd == FD_FAILFS_ROOT (-10004) reaches failfs_current_chdir() with no
+ * capability, no_new_privs or fs->users guard, unlike fchroot's sentinel
+ * branch.  ARG_FD never draws it, so the sanitiser names it explicitly.
  */
 #include <fcntl.h>
 #include <unistd.h>
@@ -79,7 +55,12 @@ struct syscallentry syscall_fchdir = {
 	.argtype = { [0] = ARG_FD },
 	.argname = { [0] = "fd" },
 	.rettype = RET_ZERO_SUCCESS,
-	/* EXTRA_FORK spawns a helper process per dispatch, the same explicit
+	/* A successful failfs chdir is not a crash: the child keeps running
+	 * while every AT_FDCWD-relative lookup fails EOPNOTSUPP and getcwd()
+	 * reports an unreachable path, silently testing nothing for the rest
+	 * of its life.  EXTRA_FORK confines that to a throwaway grandchild.
+	 *
+	 * EXTRA_FORK spawns a helper process per dispatch, the same explicit
 	 * re-exec disqualifier execve carries: a re-exec would fork another
 	 * grandchild.  AVOID_REEXEC is unconditional, so no later per-call
 	 * REEXEC_OK publish can reopen it. */

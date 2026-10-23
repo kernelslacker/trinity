@@ -3,9 +3,7 @@
  *
  * On x86_64 the uname syscall (SYS_uname / __NR_uname == 63) dispatches to
  * sys_newuname and writes a 6-field struct new_utsname (six 65-byte char
- * arrays: sysname, nodename, release, version, machine, domainname) -- the
- * legacy 5-field old_utsname comment above is x86-32 / compat-only history.
- * The oracle below targets the x86_64 ABI shape.
+ * arrays); the oracle below targets that shape.
  */
 #include <stdbool.h>
 #include <stddef.h>

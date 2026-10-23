@@ -1,16 +1,10 @@
 /*
  * SYSCALL_DEFINE1(olduname, struct oldold_utsname __user *, name)
  *
- * The legacy "olduname" entry point is the predecessor of both uname /
- * newuname.  It writes a fixed five-field struct oldold_utsname (five
- * 9-byte char arrays: sysname, nodename, release, version, machine -- no
- * domainname).  The fields are NOT guaranteed null-terminated when the
- * underlying uts_ns->name string is exactly nine characters long.
- *
- * On x86_64 SYS_olduname / __NR_olduname are not defined -- the syscall
- * exists only on x86_32 and a handful of other legacy ABIs as a compat
- * shim.  The post-syscall oracle below is therefore #if-guarded to a
- * no-op on x86_64; only the sanitiser, argtypes and entry stub remain.
+ * The legacy predecessor of uname / newuname.  SYS_olduname / __NR_olduname
+ * are not defined on x86_64 (the syscall exists only on x86_32 and a handful
+ * of other legacy ABIs), so the post oracle below is #if-guarded to a no-op
+ * there and only the sanitiser, argtypes and entry stub remain.
  */
 #include <stdbool.h>
 #include <stddef.h>

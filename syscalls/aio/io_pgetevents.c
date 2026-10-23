@@ -1,9 +1,6 @@
 /*
- * SYSCALL_DEFINE6(io_pgetevents,
- *                 aio_context_t, ctx_id,
- *                 long, min_nr,
- *                 long, nr,
- *                 struct io_event __user *, events,
+ * SYSCALL_DEFINE6(io_pgetevents, aio_context_t, ctx_id, long, min_nr,
+ *                 long, nr, struct io_event __user *, events,
  *                 struct __kernel_timespec __user *, timeout,
  *                 const struct __aio_sigset __user *, usig)
  */

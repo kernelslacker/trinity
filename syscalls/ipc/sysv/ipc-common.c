@@ -1,26 +1,8 @@
 /*
- * Post-handler helpers shared across the SysV IPC syscall family.
- *
- * Five direct *get / *ctl post handlers (shmget, msgget, semget,
- * shmctl, msgctl) each open-coded one of two shapes:
- *
- *   1. *get: bound-check retval against 0..INT_MAX, then publish the
- *      id into the per-child OBJ_LOCAL pool.  The bound check is the
- *      anti-wild-write guard documented in bdd493d138a7 ("ipc: snapshot retval in post_ipc") for the
- *      sysvipc multiplexer; the per-direct-syscall sites had the same
- *      shape with only the oracle prefix and the register hook
- *      differing.
- *
- *   2. *ctl: validate the pre-allocated out-buffer snap on
- *      rec->post_state via heap-shape + magic-cookie + ownership-table
- *      gates, then deferred-free the inner buf and the snap.  Both
- *      shmctl_post_state and msgctl_post_state carried identical
- *      fields and identical guard sequences with only the syscall
- *      name and the magic constant differing.
- *
- * Folding both shapes here lets each per-syscall .post body shrink to
- * a trampoline and lets the shmctl/msgctl sanitisers share one snap
- * shape and one allocation site.
+ * Post-handler helpers shared across the SysV IPC syscall family (shmget,
+ * msgget, semget, shmctl, msgctl): the *get handlers bound-check the retval
+ * and publish the id into the per-child OBJ_LOCAL pool; the *ctl handlers
+ * validate the out-buffer snapshot on rec->post_state and deferred-free it.
  */
 #include <limits.h>
 #include <stddef.h>

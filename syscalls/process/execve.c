@@ -1,11 +1,7 @@
 /*
- * SYSCALL_DEFINE3(execve,
- *                const char __user *, filename,
- *                const char __user *const __user *, argv,
- *                const char __user *const __user *, envp)
- *
- * On success, execve() does not return
- * on error -1 is returned, and errno is set appropriately.
+ * SYSCALL_DEFINE3(execve, const char __user *, filename,
+ *                 const char __user *const __user *, argv,
+ *                 const char __user *const __user *, envp)
  */
 #include <errno.h>
 #include <unistd.h>

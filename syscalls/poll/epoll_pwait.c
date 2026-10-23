@@ -1,15 +1,9 @@
 /*
-SYSCALL_DEFINE6(epoll_pwait, int, epfd, struct epoll_event __user *, events,
-		int, maxevents, int, timeout, const sigset_t __user *, sigmask,
-		size_t, sigsetsize)
-
-SYSCALL_DEFINE6(epoll_pwait2, int, epfd, struct epoll_event __user *, events,
-		int, maxevents, const struct __kernel_timespec __user *, timeout,
-		const sigset_t __user *, sigmask, size_t, sigsetsize)
-
- * When  successful, returns the number of file descriptors ready for the requested I/O,
- * or zero if no file descriptor became ready during the requested timeout milliseconds.
- * When an error occurs, returns -1 and errno is set appropriately.
+ * SYSCALL_DEFINE6(epoll_pwait, int, epfd, struct epoll_event __user *, events,
+ *         int, maxevents, int, timeout, const sigset_t __user *, sigmask,
+ *         size_t, sigsetsize)
+ * epoll_pwait2 is the same with a const struct __kernel_timespec __user *
+ * timeout in place of the int milliseconds.
  */
 #include <limits.h>
 #include <signal.h>

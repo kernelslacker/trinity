@@ -1,12 +1,9 @@
 /*
  * SYSCALL_DEFINE3(lookup_dcookie, u64 cookie64, char __user *buf, size_t len)
  *
- * lookup_dcookie resolves an oprofile dcookie (an opaque u64 handle that
- * the kernel hands out to identify a dentry) back into the textual path
- * of that dentry, copying up to `len` bytes into `buf`.  Retval is the
- * number of bytes written.  On most modern kernels CONFIG_PROFILING /
- * oprofile is disabled and the syscall returns -ENOSYS, so the post hook
- * below is a no-op in practice on the common case.
+ * Resolves an oprofile dcookie to the path of its dentry.  Current kernels no
+ * longer implement it (the syscall is sys_ni_syscall and fails -ENOSYS), so
+ * the post hook below only does work on older kernels.
  */
 #include <stdbool.h>
 #include <stddef.h>

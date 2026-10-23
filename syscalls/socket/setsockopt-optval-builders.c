@@ -1,15 +1,9 @@
 /*
- * Structured payload builders for the common (level, optname) shapes.
- *
- * Each builder writes a sane-ish value of the optname's documented
- * ABI shape into `buf` (always backed by the page_size allocation
- * created in do_setsockopt) and returns the byte length the kernel
- * expects.  Biasing draws toward these entries lets per-protocol
- * copy_from_user / option-dispatch code run on well-formed inputs
- * instead of failing at the size check.
- *
- * RNG comes from trinity's rnd_* helpers exclusively; libc rand() is
- * not used.
+ * Structured payload builders for the common (level, optname) shapes: each
+ * writes a well-formed value of the optname's ABI shape into `buf` (always
+ * backed by the page_size allocation made in do_setsockopt) and returns the
+ * byte length the kernel expects, so per-protocol copy_from_user / option
+ * dispatch runs on valid inputs instead of failing at the size check.
  */
 
 #include <sys/socket.h>

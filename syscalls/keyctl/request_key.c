@@ -1,26 +1,10 @@
 /*
  * SYSCALL_DEFINE4(request_key, const char __user *, _type,
-	const char __user *, _description,
-	const char __user *, _callout_info,
-	key_serial_t, destringid)
+ *         const char __user *, _description,
+ *         const char __user *, _callout_info, key_serial_t, destringid)
  *
- * Without a sanitise hook the dispatcher hands the kernel random userspace
- * addresses for _type/_description/_callout_info.  strndup_user() on a
- * random pointer either EFAULTs or interns an effectively-random short
- * string; either way the kernel's lookup_user_key()/key_type lookup
- * rejects it before request_key_and_link() can run anything interesting
- * (key cache lookup, upcall, /sbin/request-key invocation, link into
- * destination keyring), so the syscall stays stuck on the early
- * EINVAL/EFAULT cliff and the OBJ_KEY_SERIAL producer pool (the wired
- * .ret_objtype = OBJ_KEY_SERIAL hook) never sees a successful return.
- *
- * Mirror add_key()'s shape: pick a real key-type string from the
- * registered set, build a randomized "<prefix>_<hex>" description so
- * dcache compares hit different slots, and either pass NULL callout_info
- * (lookup-only, no upcall) or a short string (drives the upcall path).
- * Destination keyring draws from the OBJ_KEY_SERIAL pool when populated
- * and falls back to a KEY_SPEC_* constant, so the link step actually
- * resolves.
+ * Without the sanitiser, random _type / _description pointers fail early, so
+ * request_key_and_link() never runs and the key-serial pool sees no success.
  */
 #include <linux/keyctl.h>
 #include <stdio.h>
