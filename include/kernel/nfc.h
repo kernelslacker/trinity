@@ -9,7 +9,7 @@
 #define NFC_ATS_MAXSIZE		20
 #endif
 
-/* sockaddr_nfc and protocol fallbacks moved from former monolithic fallback header */
+/* sockaddr_nfc and protocol fallbacks */
 #if __has_include(<linux/nfc.h>)
 /* already included */
 #else

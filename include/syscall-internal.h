@@ -21,7 +21,7 @@
  * reject, dry-run) so kcov_collect() does not re-harvest the previous
  * call's CMP/PC records against the current rec->nr, and
  * cmp_hints_collect() does not misattribute stale dispatch_args[] to
- * this call's nr.  Three formerly identical ~12-line blocks, now one.
+ * this call's nr.
  */
 static inline void clear_stale_kcov_state(struct kcov_child *kc,
 					  struct syscallrecord *rec)

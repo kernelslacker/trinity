@@ -159,10 +159,10 @@ void post_state_release(struct syscallrecord *rec, void *snap);
  */
 
 /*
- * Shape-only predicate split out of looks_like_corrupted_ptr_pc so
- * callers that want the same heuristic but want to bump a different
- * counter (deferred_free_enqueue, into deferred_free_reject) can share
- * the band definition without going through the post_handler bumper.
+ * Shape-only predicate behind looks_like_corrupted_ptr_pc, so callers
+ * that want the same heuristic but want to bump a different counter
+ * (deferred_free_enqueue, into deferred_free_reject) can share the
+ * band definition without going through the post_handler bumper.
  * Returns true when @p does NOT look like a heap pointer we could have
  * handed out -- i.e. NULL-ish, non-canonical, or misaligned.
  */

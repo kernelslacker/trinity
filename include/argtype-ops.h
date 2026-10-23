@@ -116,9 +116,8 @@ struct argtype_ops {
 	/*
 	 * If non-ARG_UNDEFINED, this argtype expects the immediately
 	 * following slot to be the named length type and will publish
-	 * the chosen length there.  Replaces the hardcoded
-	 * ARG_IOVEC -> ARG_IOVECLEN and ARG_SOCKADDR -> ARG_SOCKADDRLEN
-	 * checks that previously lived inside the generators.
+	 * the chosen length there (ARG_IOVEC -> ARG_IOVECLEN,
+	 * ARG_SOCKADDR -> ARG_SOCKADDRLEN).
 	 */
 	enum argtype paired_length;
 

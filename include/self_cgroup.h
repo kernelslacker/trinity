@@ -79,9 +79,7 @@ extern unsigned int fork_throttle_us;
  * Syntactic validation of a --memory-max / --memory-high /
  * --memory-swap-max argument.  Called from parse_args() so a malformed
  * value is rejected at parse time, before self_cgroup_setup() or any
- * fork/fuzz work runs -- the historical validator lived inside
- * self_cgroup_setup(), so this hook catches a bad value during
- * argument handling instead of only when setup first parses it.
+ * fork/fuzz work runs.
  * Accepts "max", "<n>%" with 1 <= n <= 100, and
  * "<n>[KMG]" decimal byte counts; rejects leading signs, empty input,
  * unknown suffixes, percentage out-of-range, and overflow.  Emits a
