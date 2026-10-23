@@ -369,7 +369,7 @@ static void sanitise_rseq_slice_extension(struct syscallrecord *rec)
 	 * For SET, arg3 carries the feature flag
 	 * (PR_RSEQ_SLICE_EXT_ENABLE = 0x01 to enable, 0 to
 	 * disable).  GET and the reject draw require
-	 * arg3-arg5 zero.  Per 4f56302c4d6d.
+	 * arg3-arg5 zero.
 	 */
 	static const unsigned long rseq_ext_cmds[] = {
 		PR_RSEQ_SLICE_EXTENSION_GET, PR_RSEQ_SLICE_EXTENSION_SET, 3,
@@ -390,7 +390,7 @@ static void sanitise_timer_create_restore_ids(struct syscallrecord *rec)
 	 * arg2: OFF (0), ON (1), GET (2); 3 is out-of-range to
 	 * keep the kernel's -EINVAL reject path covered.
 	 * arg3-arg5 must be zero — the kernel rejects non-zero
-	 * trailing args with -EINVAL.  Per 4f56302c4d6d.
+	 * trailing args with -EINVAL.
 	 */
 	static const unsigned long timer_restore_cmds[] = {
 		PR_TIMER_CREATE_RESTORE_IDS_OFF,
@@ -411,11 +411,10 @@ static void sanitise_set_thp_disable(struct syscallrecord *rec)
 	 * arg3: flags, only meaningful when disabling (arg2 != 0):
 	 *   0                             normal disable,
 	 *   PR_THP_DISABLE_EXCEPT_ADVISED (1<<1) keeps THP active
-	 *   only for madvise(MADV_HUGEPAGE) regions (kernel 6.16+,
-	 *   4f56302c4d6d); 4 is out-of-range to cover the reject
-	 *   path.  Nonzero flags with arg2==0 are rejected by the
-	 *   kernel, so arg3 must be 0 when re-enabling THP.
-	 *   arg4-arg5 must be zero.
+	 *   only for madvise(MADV_HUGEPAGE) regions; 4 is out-of-range
+	 *   to cover the reject path.  Nonzero flags with arg2==0 are
+	 *   rejected by the kernel, so arg3 must be 0 when re-enabling
+	 *   THP.  arg4-arg5 must be zero.
 	 */
 	static const unsigned long thp_flags[] = {
 		0, PR_THP_DISABLE_EXCEPT_ADVISED, 4,

@@ -197,8 +197,8 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 *
 	 * The buffer-bounded usize clamp below still runs unchanged on
 	 * the biased value so it can never exceed the allocation backing
-	 * rec->a3 (preserves the kernel write-OOB guard from
-	 * 6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")).  Mirrors the pattern at the top of
+	 * rec->a3 (preserves the kernel write-OOB guard of the
+	 * sched_getattr user_size clamp).  Mirrors the pattern at the top of
 	 * sanitise_sched_getattr.
 	 */
 	if (!ONE_IN(8)) {
@@ -259,10 +259,9 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 *     more than that without re-resolving the slot, so use
 	 *     page_size as the conservative bound.
 	 *
-	 * Mirrors the resolution pattern from sched_getattr's clamp
-	 * (6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")) but for the pool-backed ARG_NON_NULL_ADDRESS
-	 * buffer family rather than the catalog-backed ARG_STRUCT_PTR_OUT
-	 * family.
+	 * Mirrors the resolution pattern from sched_getattr's clamp but for
+	 * the pool-backed ARG_NON_NULL_ADDRESS buffer family rather than the
+	 * catalog-backed ARG_STRUCT_PTR_OUT family.
 	 */
 	if (rec->a3 != pre_a3)
 		buf_alloc_size = rec->a4 > (unsigned long) page_size
@@ -281,7 +280,7 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 * min(usize, sizeof(struct file_attr)) bytes and overruns the live
 	 * allocation into adjacent heap-arena or pool-neighbour objects --
 	 * the same kernel write-OOB shape the sched_getattr clamp
-	 * (6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")) closed for sched_attr.  Bounding usize at sanitise
+	 * closed for sched_attr.  Bounding usize at sanitise
 	 * time preserves the freedom to fuzz across the buffer-bounded range
 	 * while keeping the kernel's write inside the allocation.
 	 */

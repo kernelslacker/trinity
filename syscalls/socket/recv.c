@@ -80,7 +80,7 @@ static void post_recv(struct syscallrecord *rec)
  * backing); buf and len_io are both released via the snap-owned vrb
  * in the post handler.
  *
- * Mirrors getsockopt.c (85a13cbe8f22 ("valresult: add value-result helper, migrate getsockopt")).
+ * Mirrors getsockopt.c.
  */
 #define RECVFROM_POST_STATE_MAGIC	0x5243564652533230UL	/* "RCVFRS20" */
 struct recvfrom_post_state {
@@ -505,7 +505,7 @@ static void post_recvmsg(struct syscallrecord *rec)
 	 * leaking through the success slot.  iov_len_sum was snapshotted
 	 * at sanitise time into the post_state-private slot rather than
 	 * re-walked from the sibling-stomp-vulnerable msghdr.  Mirrors
-	 * lgetxattr 0149a1a272f2 ("lgetxattr: bound returned attribute size to size argument") for the bound shape.
+	 * lgetxattr's returned-size bound for the bound shape.
 	 */
 	if ((long) retval == -1L)
 		goto skip_bound;
@@ -797,8 +797,8 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	 * received mmsghdr entries (1..vlen) on success or -1 on failure.
 	 * Compare against snap->vlen, the trusted sanitise-time value, so a
 	 * sibling scribble of rec->a3 cannot launder an oversized retval
-	 * past this bound.  Mirrors epoll_wait 218332f25865 ("epoll_wait: bound returned ready-fd count to maxevents") / epoll_pwait
-	 * 029df6e7a5a4 ("epoll_pwait: bound returned ready-fd count to maxevents").
+	 * past this bound.  Mirrors the ready-fd bound in epoll_wait and
+	 * epoll_pwait.
 	 */
 	if ((long) retval != -1L && retval > vlen) {
 		outputerr("post_recvmmsg: rejecting retval %ld > vlen %u\n",

@@ -426,7 +426,8 @@ static void post_sendmsg(struct syscallrecord *rec)
 	 * by a parallel signal-restart path, or -errno leaking through the
 	 * success slot.  iov_len_sum was snapshotted at sanitise time into
 	 * the post_state-private slot rather than re-walked from the
-	 * sibling-stomp-vulnerable msghdr.  Mirrors recvmsg afc01784b6dc ("recvmsg: bound returned bytes to msg_iov[] total length").
+	 * sibling-stomp-vulnerable msghdr.  Mirrors recvmsg's bound on the
+	 * returned byte count.
 	 */
 	if ((long) retval == -1L)
 		goto skip_bound;
@@ -719,9 +720,8 @@ static void post_sendmmsg(struct syscallrecord *rec)
 	 * success or -1UL on failure.  Compare against snap->vlen, the
 	 * trusted sanitise-time value -- a sibling scribble of rec->a3
 	 * between the call and the post handler running cannot launder an
-	 * oversized retval past this bound.  Mirrors epoll_wait
-	 * 218332f25865 ("epoll_wait: bound returned ready-fd count to maxevents") / epoll_pwait
-	 * 029df6e7a5a4 ("epoll_pwait: bound returned ready-fd count to maxevents").
+	 * oversized retval past this bound.  Mirrors the ready-fd bound in
+	 * epoll_wait and epoll_pwait.
 	 */
 	if ((long) retval != -1L && retval > vlen) {
 		outputerr("post_sendmmsg: rejected retval=0x%lx > vlen=%u\n",

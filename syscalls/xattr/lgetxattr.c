@@ -140,9 +140,8 @@ static void sanitise_lgetxattr_install_post_snapshot(struct syscallrecord *rec,
 	 * write spills into adjacent heap-arena / pool-neighbour objects
 	 * and corrupts glibc chunk metadata, with the abort surfacing far
 	 * downstream (deferred_free_flush, _int_malloc on a corrupted
-	 * tcache, etc.).  Same shape as the sched_getattr clamp
-	 * (6a4fd0a95f4e ("sched_getattr: clamp user_size argument to buffer allocation size")), applied here to the pool-backed ARG_ADDRESS
-	 * buffer family.
+	 * tcache, etc.).  Same shape as the sched_getattr clamp, applied
+	 * here to the pool-backed ARG_ADDRESS buffer family.
 	 *
 	 *   - If avoid_shared_buffer_out() redirected (pointer changed),
 	 *     the replacement came from get_writable_address(rec->a4) and

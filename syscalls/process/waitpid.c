@@ -85,9 +85,7 @@ static void sanitise_waitpid(struct syscallrecord *rec)
  * (4194304)] on success. Any other retval is a structural ABI regression
  * (e.g. -errno bleeding through the syscall return path, or a pid_ns
  * translation bug). Mirrors the pid-bound style used in
- * 2b0ede823c51 ("getpgrp: bound returned pgid before procfs cross-check oracle") /
- * b326ef37c4fe ("gettid: bound returned pid before procfs cross-check oracle") /
- * 5c1b124f1379 ("getppid: bound returned ppid before procfs cross-check oracle").
+ * getpgrp, gettid and getppid.
  *
  * Poison-writeback oracle: on retval > 0 (a child was reaped) the
  * kernel is contractually required to write *stat_addr when the caller

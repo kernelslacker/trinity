@@ -355,8 +355,7 @@ static void post_mmap_clamp_filebacked(struct object *new, struct syscallrecord 
  * fallocate(FALLOC_FL_PUNCH_HOLE) it, or fallocate(FALLOC_FL_
  * COLLAPSE_RANGE) it.  Walking the now-stale stored size SIGBUSes
  * BUS_ADRERR on the first page past the new EOF, killing the child
- * before it contributes to coverage (3x ba67bbc7 + 2x 899fc9d9
- * cluster, post_mmap → memcpy SIGBUS).
+ * before it contributes to coverage (post_mmap → memcpy SIGBUS).
  *
  * Re-snapshot into a stack-local and re-fstat right before the
  * dirty walk, mirroring dirty_random_mapping (mm/maps-dirty.c).  The

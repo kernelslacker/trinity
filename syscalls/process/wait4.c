@@ -104,9 +104,7 @@ static void sanitise_wait4(struct syscallrecord *rec)
  * child has changed state, or the reaped child pid in [1, PID_MAX_LIMIT
  * (4194304)] on success. *stat_addr and *ru are separate concerns; only
  * the retval is bound-checked here. Mirrors the pid-bound style used in
- * 2b0ede823c51 ("getpgrp: bound returned pgid before procfs cross-check oracle") /
- * b326ef37c4fe ("gettid: bound returned pid before procfs cross-check oracle") /
- * 5c1b124f1379 ("getppid: bound returned ppid before procfs cross-check oracle").
+ * getpgrp, gettid and getppid.
  *
  * Poison-writeback oracle: on retval > 0 (a child was reaped) the
  * kernel is contractually required to write *stat_addr and *ru when
