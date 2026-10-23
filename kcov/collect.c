@@ -157,6 +157,46 @@ static unsigned int dedup_inc(struct kcov_dedup_slot *dedup, unsigned int edge,
 	return 1;
 }
 
+/*
+ * Account a call whose trace filled the buffer and return the PC count that
+ * was kept.  Reached only on such a call, so it stays out of kcov_collect()'s
+ * straight-line path.
+ */
+static unsigned long kcov_note_trace_truncated(unsigned int nr, bool do32)
+{
+	unsigned long count;
+
+	/* Kernel wanted to record more PCs than the buffer holds; the
+	 * tail of this call's coverage was dropped.  Bump a counter so
+	 * the post-mortem can show whether kcov_trace_size needs to
+	 * grow again (raise it via --kcov-trace-size; the compile-time
+	 * KCOV_TRACE_SIZE is just the default). */
+	__atomic_fetch_add(&kcov_shm->coverage.trace_truncated, 1,
+		__ATOMIC_RELAXED);
+	if (nr < MAX_NR_SYSCALL) {
+		__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].trace_truncated,
+			1, __ATOMIC_RELAXED);
+	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
+		unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
+		if (op < KCOV_CHILDOP_NR_MAX)
+			__atomic_fetch_add(
+				&kcov_shm->childop_kcov.childop_kcov_trace_truncated[op],
+				1, __ATOMIC_RELAXED);
+	}
+	count = (unsigned long)kcov_trace_size - 1;
+	/* Trace-loss magnitude accounting.  count is now the post-cap PC
+	 * count actually captured (= kcov_trace_size - 1 on every
+	 * truncation branch); bumping trace_loss by this value gives a
+	 * cumulative "PC-magnitude captured under truncation" counter
+	 * whose true dropped-tail length is strictly greater than zero
+	 * on every event.  See the field comment on trace_loss in
+	 * kcov-groups/coverage.h for the ratio consumers. */
+	__atomic_fetch_add(&kcov_shm->coverage.trace_loss, count,
+		__ATOMIC_RELAXED);
+
+	return count;
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -236,35 +276,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
-	if (count >= (unsigned long)kcov_trace_size - 1) {
-		/* Kernel wanted to record more PCs than the buffer holds; the
-		 * tail of this call's coverage was dropped.  Bump a counter so
-		 * the post-mortem can show whether kcov_trace_size needs to
-		 * grow again (raise it via --kcov-trace-size; the compile-time
-		 * KCOV_TRACE_SIZE is just the default). */
-		__atomic_fetch_add(&kcov_shm->coverage.trace_truncated, 1,
-			__ATOMIC_RELAXED);
-		if (nr < MAX_NR_SYSCALL) {
-			__atomic_fetch_add(&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].trace_truncated,
-				1, __ATOMIC_RELAXED);
-		} else if (nr >= CHILDOP_KCOV_NR_BASE) {
-			unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
-			if (op < KCOV_CHILDOP_NR_MAX)
-				__atomic_fetch_add(
-					&kcov_shm->childop_kcov.childop_kcov_trace_truncated[op],
-					1, __ATOMIC_RELAXED);
-		}
-		count = (unsigned long)kcov_trace_size - 1;
-		/* Trace-loss magnitude accounting.  count is now the post-cap PC
-		 * count actually captured (= kcov_trace_size - 1 on every
-		 * truncation branch); bumping trace_loss by this value gives a
-		 * cumulative "PC-magnitude captured under truncation" counter
-		 * whose true dropped-tail length is strictly greater than zero
-		 * on every event.  See the field comment on trace_loss in
-		 * kcov-groups/coverage.h for the ratio consumers. */
-		__atomic_fetch_add(&kcov_shm->coverage.trace_loss, count,
-			__ATOMIC_RELAXED);
-	}
+	if (count >= (unsigned long)kcov_trace_size - 1)
+		count = kcov_note_trace_truncated(nr, do32);
 
 	/* CAS-loop-up the per-syscall trace-size high-water mark using the
 	 * post-cap count.  Same shape as the dedup_max_probe_seen update
