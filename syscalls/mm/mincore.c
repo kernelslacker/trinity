@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(mincore, unsigned long, start, size_t, len, unsigned char __user *, vec)
+ *
+ * The final len reports no more pages than the vec the sanitiser sized
+ * holds, into that vec (vet_final_mincore()).
  */
 #include <stdint.h>
 #include "arch.h"
@@ -63,7 +66,9 @@ static unsigned long pick_mincore_len(unsigned long map_size)
  * post handler running cannot redirect the untouched-buffer check at
  * a foreign user page.  poison_seed == 0 is the sanitise-refused-to-
  * stamp signal (vec == 0 or vec_bytes == 0) and the post handler must
- * no-op the untouched-buffer arm.
+ * no-op the untouched-buffer arm.  vec_bytes is what vec holds, until
+ * vet_final_mincore() moves it to the bytes the len it judged has the
+ * kernel fill.
  */
 #define MINCORE_POST_STATE_MAGIC	0x4D434F52UL	/* "MCOR" */
 #define MINCORE_POISON_SEED		0x4D434F52504F5321ULL /* "MCORPOS!" */
@@ -73,6 +78,49 @@ struct mincore_post_state {
 	size_t vec_bytes;
 	uint64_t poison_seed;
 };
+
+/*
+ * The kernel writes a byte into vec for each page of the final len, a
+ * partial page counted whole, up to the first hole (sys_mincore()), so
+ * that count has to fit the vec the sanitiser sized, and the slot has to
+ * name that vec: a len rewritten after it, a substituted return value or a
+ * pinned constant, runs the write past the buffer, and a pinned vec aims
+ * it anywhere.  What vec holds and where is the snapshot's, and a record
+ * with no snapshot of ours passes only a len of no pages.  Refused rather
+ * than repaired, each slot read once, as the kernel reads it: the low 32
+ * bits for a compat call.  A pass leaves the snapshot the bytes that len
+ * has the kernel fill, all the post handler's untouched-buffer check may
+ * look at: none for a len of 0.  The address and length rule after the
+ * hook can still shorten len, and the kernel then fills fewer, but a vec
+ * filled in part never matches the poison, so the check stays quiet.
+ * Shape, then ownership, then magic, as post_state_claim_owned() orders
+ * them.
+ */
+static int vet_final_mincore(struct syscallrecord *rec)
+{
+	struct mincore_post_state *snap =
+		(struct mincore_post_state *) rec->post_state;
+	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+	unsigned long len = rec->a2 & mask, vec = rec->a3 & mask;
+	unsigned long pages = len / page_size + ((len & ~PAGE_MASK) != 0);
+	size_t holds = 0;
+
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == MINCORE_POST_STATE_MAGIC)
+		holds = snap->vec_bytes;
+	else
+		snap = NULL;
+
+	/* A page left after the first test fits vec_bytes, so snap is ours. */
+	if (pages > holds || (pages != 0 && vec != snap->vec)) {
+		outputerr("arg-coupling: mincore rejected: the len reports more pages than vec holds, or vec is not the one sanitise sized\n");
+		return -1;
+	}
+
+	if (snap != NULL)
+		snap->vec_bytes = pages;
+	return 0;
+}
 
 static void sanitise_mincore(struct syscallrecord *rec)
 {
@@ -100,6 +148,14 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) vec;
 
 	avoid_shared_buffer_out(&rec->a3, vec_bytes);
+
+	/* A compat call's kernel would write at the low 32 bits of a vec
+	 * above them, which nobody sized: it gets no pages to report, and
+	 * the snapshot nothing to check. */
+	if (rec->do32bit && rec->a3 > UINT_MAX) {
+		rec->a2 = 0;
+		vec_bytes = 0;
+	}
 
 	/* Hand vec to the per-rec owned-buffer carrier: rec_owned_drain()
 	 * frees it unconditionally after dispatch, capturing the genuine
@@ -158,7 +214,14 @@ struct syscallentry syscall_mincore = {
 	.argname = { [0] = "start", [1] = "len", [2] = "vec" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_mincore,
+	.vet_final = vet_final_mincore,
 	.post = post_mincore,
 	.rettype = RET_ZERO_SUCCESS,
-	.flags = REEXEC_SANITISE_OK,
+	/*
+	 * SKIP_BLANKET_SCRUB: vec is the only scrubbed slot, and
+	 * vet_final_mincore() holds it to the buffer the sanitiser sized and
+	 * moved off trinity's regions, so a scrub could only move it again
+	 * and turn the call into a refusal.
+	 */
+	.flags = REEXEC_SANITISE_OK | SKIP_BLANKET_SCRUB,
 };

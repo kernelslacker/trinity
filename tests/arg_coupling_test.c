@@ -35,6 +35,7 @@
 #include "pathnames.h"		/* get_testfile_path */
 #include "rnd.h"			/* rnd_state */
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
+#include "shm.h"			/* shm->stats */
 #include "syscall.h"			/* struct syscallrecord */
 #include "testfile.h"			/* get_rand_testfile_fd */
 #include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
@@ -2465,6 +2466,174 @@ static void mremap_held_to_vetted_call(void)
 	fake_this_child = NULL;
 }
 
+/* Run mincore()'s post handler over a call that returned @retval, then free
+ * the vec its sanitiser handed the record: rec_owned_drain() frees only
+ * what alloc-track holds, which the test binary's zmalloc_tracked() never
+ * registers. */
+static void mincore_done(struct syscallentry *entry, struct syscallrecord *mrec,
+			 unsigned long retval)
+{
+	mrec->retval = retval;
+	entry->post(mrec);
+	while (mrec->owned_count > 0)
+		free(mrec->owned[--mrec->owned_count]);
+}
+
+/* The sanitiser sizes vec to the pages of the len it drew, and whatever it
+ * builds passes, a compat call included.  A len rewritten to more pages
+ * than vec holds is refused, whatever brought it: one byte more, which the
+ * kernel counts as a page, a pid, an address, the largest length.  One
+ * within vec passes, a compat call's judged on the slot's low 32 bits.
+ * The post handler's untouched-buffer check then looks only at the bytes
+ * the kernel was asked to fill, so a call rewritten to a len of 0, which
+ * the kernel returns 0 for without writing a byte, is not taken for one
+ * that left vec untouched. */
+static void mincore_len_held_to_vec(struct syscallentry *entry)
+{
+	/* Added to the len the sanitiser drew, a whole number of pages. */
+	const unsigned long grown_by[] = {
+		1, page_size, 3000000UL, 0x7f0000001000UL,
+	};
+	struct syscallrecord *mrec;
+	unsigned long cap, untouched;
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mm_call(entry);
+		mrec->do32bit = (i % 10) == 0;
+		entry->sanitise(mrec);
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mincore: a call the sanitiser built was refused");
+		mincore_done(entry, mrec, (unsigned long) -1L);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(grown_by); i++) {
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		mrec->a2 += grown_by[i];
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("mincore: a len grown past vec was kept");
+		mincore_done(entry, mrec, (unsigned long) -1L);
+	}
+
+	/* A pass leaves the snapshot the bytes the final len has the kernel
+	 * fill, so a len of 0 comes last. */
+	mrec = mm_call(entry);
+	entry->sanitise(mrec);
+	cap = mrec->a2;
+	mrec->a2 = ULONG_MAX;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mincore: the largest len was kept");
+	mrec->a2 = cap - 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: a len inside vec was refused");
+	mrec->a2 = cap | (1UL << 32);
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mincore: a native len's upper half was dropped");
+	/* A compat call reads the low halves: of len, which are cap again,
+	 * and of vec, which name the sanitiser's vec only below 4 GiB, as a
+	 * non-PIE brk heap's do and an ASAN heap's do not. */
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec, mrec->entry) != (mrec->a3 <= UINT_MAX ? 0 : -1))
+		BUG("mincore: a compat call was judged on its slots' upper halves");
+	mrec->do32bit = false;
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: a len of 0 was refused");
+	untouched = shm->stats.post_handler_untouched_out_buf;
+	mincore_done(entry, mrec, 0);
+	if (shm->stats.post_handler_untouched_out_buf != untouched)
+		BUG("mincore: a call asked to fill nothing was taken for one that left vec untouched");
+}
+
+/* Without the call's own snapshot there is no vec to count on: none, from
+ * a mapping too small to have a page, which leaves vec the buffer the
+ * generator drew, a pid where the pointer was, one the ownership table
+ * does not hold, or one with another magic.  Only a len of no pages goes
+ * through then. */
+static void mincore_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	pool_obj.map.size = page_size / 2;
+	mrec->a3 = 0x10000000UL;
+	entry->sanitise(mrec);
+	if (mrec->post_state != 0 || mrec->a2 != 0)
+		BUG("mincore: the sanitiser built a call over a mapping with no page");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: an empty call with no vec was refused");
+	mrec->a2 = 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mincore: a call with no vec kept a len");
+
+	mrec = mm_call(entry);
+	entry->sanitise(mrec);
+	snapshot_gate_held(mrec, "mincore");
+	mincore_done(entry, mrec, (unsigned long) -1L);
+}
+
+/* The kernel writes into whatever vec the final slot names, so a call that
+ * reports any page has to name the vec the sanitiser sized: a pinned vec
+ * is refused unless the len reports none.  A compat call's kernel reads
+ * the slot's low 32 bits, so the sanitiser gives a compat call whose vec
+ * lies above them, as the writable pool it moves vec into does, a len of
+ * no pages, and the call passes; one whose vec fits keeps its len. */
+static void mincore_vec_held(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	unsigned long vec;
+
+	entry->sanitise(mrec);
+	vec = mrec->a3;
+	mrec->a3 = vec + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mincore: a pinned vec was kept");
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: a pinned vec reporting no pages was refused");
+	mrec->a3 = vec;
+	mincore_done(entry, mrec, (unsigned long) -1L);
+
+	/* The heap the vec comes from counts as the libc heap here, so the
+	 * sanitiser moves it into the writable pool count_held_inside_buffer()
+	 * set up. */
+	mrec = mm_call(entry);
+	mrec->do32bit = true;
+	fake_overlaps_libc_heap = true;
+	entry->sanitise(mrec);
+	fake_overlaps_libc_heap = false;
+	if (mrec->a3 <= UINT_MAX)
+		BUG("mincore: the vec did not move into the pool above 4 GiB");
+	if (mrec->a2 != 0)
+		BUG("mincore: a compat call kept a len for a vec its slot cannot carry");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: an emptied compat call was refused");
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mincore: a compat len rewritten past an emptied call was kept");
+	mincore_done(entry, mrec, (unsigned long) -1L);
+
+	mrec = mm_call(entry);
+	mrec->do32bit = true;
+	entry->sanitise(mrec);
+	if ((mrec->a3 <= UINT_MAX) != (mrec->a2 != 0))
+		BUG("mincore: a compat call's len did not follow whether its slot carries vec");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mincore: a compat call the sanitiser built was refused");
+	mincore_done(entry, mrec, (unsigned long) -1L);
+}
+
+/* mincore's final len reports no more pages than its vec holds. */
+static void mincore_held_to_vec(void)
+{
+	struct syscallentry mincore_entry = syscall_mincore;
+
+	mincore_len_held_to_vec(&mincore_entry);
+	mincore_needs_its_snapshot(&mincore_entry);
+	mincore_vec_held(&mincore_entry);
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2494,4 +2663,5 @@ void arg_coupling_self_check(void)
 	mremap_fixed_target_checked_rounded();
 	mremap_post_follows_mapping();
 	mremap_held_to_vetted_call();
+	mincore_held_to_vec();
 }
