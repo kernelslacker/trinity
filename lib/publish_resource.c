@@ -23,11 +23,13 @@
  * the legacy alloc_object()/add_object() path) doesn't leave
  * an orphaned object behind us.
  *
- * mmap/sockinfo/watch_queue/pipe/epoll and
- * the futex/sysv_shm/aio_iocb families need pool-specific
- * state the unified shape can't carry.  Return NULL so the
- * caller falls back to the legacy alloc_object()/add_object()
- * pair.
+ * mmap, watch_queue, the futex/sysv_shm/aio_iocb families and the
+ * dev_template, sparse-file, pagecache, canary and scratch_block
+ * pools need pool-specific state the unified shape can't carry.
+ * Return NULL so the caller falls back to the legacy
+ * alloc_object()/add_object() pair.  The socket, pipe and epoll
+ * pools are routed: their extra fields are patched on the object
+ * this returns.
  */
 static bool publish_resource_type_supported(enum objecttype type)
 {

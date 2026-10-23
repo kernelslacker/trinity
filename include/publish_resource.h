@@ -46,13 +46,12 @@
  *                 retains lifetime ownership.  No strdup happens here.
  *
  * Pools whose per-object struct carries fields the unified shape
- * cannot cleanly hold (mmap's strdup'd name + ptr + size + prot +
- * flags + type tuple, sockinfo's inherited triplet, watch_queue's
- * peer_fd, pipe's reader bool, epoll's create1/pool_idx)
- * intentionally fall through to the
- * "id only" path: publish_resource() stamps the primary handle and
- * returns the obj pointer so the caller can patch any remaining
- * pool-specific fields before the obj escapes the publish site.
+ * cannot cleanly hold (sockinfo's triplet, pipe's reader bool, epoll's
+ * create1/pool_idx) take the "id only" path: publish_resource()
+ * stamps the primary handle and returns the obj pointer so the caller
+ * can patch any remaining pool-specific fields before the obj escapes
+ * the publish site.  mmap (a strdup'd name + ptr + size + prot + flags
+ * + type tuple) and watch_queue (peer_fd) are not routed at all.
  */
 struct resource_meta {
 	unsigned int flags;
@@ -80,10 +79,10 @@ struct object;
  * Returns the published object on success so callers that need to
  * patch a not-covered field can chase it.  Returns NULL on
  * alloc_object() failure or when @type is not routed by the wrapper
- * (mmap, sockinfo, watch_queue, pipe, epoll,
- * futex/sysv_shm — these carry pool-specific allocations or
- * inherited state that the unified shape cannot represent).  On
- * failure the caller still owns @id; the wrapper performs no
+ * (mmap, watch_queue, aio_iocb, futex/sysv_shm and the dev_template,
+ * sparse-file, pagecache, canary and scratch_block pools — these carry
+ * pool-specific allocations that the unified shape cannot represent).
+ * On failure the caller still owns @id; the wrapper performs no
  * cleanup of the kernel handle.
  */
 struct object *publish_resource(enum objecttype type, unsigned long id,

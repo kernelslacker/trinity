@@ -6,6 +6,7 @@
 #include <sys/socket.h>
 #include "net.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -165,17 +166,17 @@ static void register_sock_fd(int fd, unsigned long family,
 static void register_accepted_fd(int fd, int listener_fd)
 {
 	struct fd_hash_entry *listen_entry;
-	struct object *new;
+	struct object *obj;
 
-	new = alloc_object();
-	new->sockinfo.fd = fd;
+	listen_entry = fd_hash_lookup(listener_fd);
+
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return;
 
 	/* Inherit triplet from the listening socket. */
-	listen_entry = fd_hash_lookup(listener_fd);
 	if (listen_entry != NULL && listen_entry->type == OBJ_FD_SOCKET)
-		new->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
-
-	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+		obj->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
 }
 
 static void post_socketcall(struct syscallrecord *rec)

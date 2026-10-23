@@ -8,6 +8,7 @@
 #include <netinet/in.h>
 #include "net.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "unblocker.h"
@@ -146,22 +147,21 @@ static void sanitise_accept(struct syscallrecord *rec)
 static void post_accept(struct syscallrecord *rec)
 {
 	struct fd_hash_entry *listen_entry;
-	struct object *new;
+	struct object *obj;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	new = alloc_object();
-	new->sockinfo.fd = fd;
+	listen_entry = fd_hash_lookup(rec->a1);
+
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return;
 
 	/* Inherit triplet from the listening socket. */
-	listen_entry = fd_hash_lookup(rec->a1);
-	if (listen_entry != NULL && listen_entry->type == OBJ_FD_SOCKET) {
-		new->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
-	}
-
-	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+	if (listen_entry != NULL && listen_entry->type == OBJ_FD_SOCKET)
+		obj->sockinfo.triplet = listen_entry->obj->sockinfo.triplet;
 }
 
 struct syscallentry syscall_accept = {

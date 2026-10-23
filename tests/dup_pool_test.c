@@ -21,6 +21,11 @@
  * pooled fds the kernel no longer has.  One that only marks close-on-exec
  * retires nothing.  Its sanitiser never leaves a protected fd in the set
  * the call closes.
+ *
+ * An accepted socket (accept, accept4 and socketcall's SYS_ACCEPT and
+ * SYS_ACCEPT4) is published as a local socket that carries the triplet of
+ * the listener the connection came in on, when the child's global snapshot
+ * holds the listener as a socket.
  */
 
 #include <errno.h>
@@ -41,6 +46,7 @@
 #include "fd.h"			/* lowest_protected_fd_in_range */
 #include "fd-event.h"		/* notify_child_fd_closed */
 #include "kcov-shared.h"	/* kcov_shm */
+#include "net.h"		/* TRINITY_PF_MAX */
 #include "objects.h"
 #include "publish_resource.h"
 #include "rnd.h"		/* rnd_seed */
@@ -48,8 +54,10 @@
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
+#include "unblocker.h"		/* accept_unblocker_fire */
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
+#include "kernel/socket.h"	/* SOCK_NONBLOCK */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
@@ -183,6 +191,24 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	return NULL;
 }
 
+/* The child's snapshot of the global pool, as accept asks it about the
+ * listener it took the connection on. */
+struct fd_hash_entry *fd_hash_lookup(int fd)
+{
+	static struct fd_hash_entry entry;
+	unsigned int i;
+
+	for (i = 0; i < POOL_MAX; i++) {
+		if (!pool[i].used || pool[i].local || pool[i].fd != fd)
+			continue;
+		entry.fd = fd;
+		entry.type = pool[i].obj.obj_type;
+		entry.obj = &pool[i].obj;
+		return &entry;
+	}
+	return NULL;
+}
+
 /* Drops every local object at @fd, as the real one does, so a handler
  * that retires after it publishes loses the object it just made. */
 void remove_local_objects_by_fd(int fd)
@@ -248,6 +274,21 @@ unsigned int get_pid(void)
 {
 	BUG("fd pool: a handler asked for a pid");
 	return 0;
+}
+
+/* The accept and socketcall sanitisers reach these two; the cases run the
+ * post handlers. */
+void accept_unblocker_fire(int fd, const struct socketinfo *si)
+{
+	(void) fd;
+	(void) si;
+	BUG("fd pool: a handler fired the accept unblocker");
+}
+
+struct socketinfo *get_rand_socketinfo(void)
+{
+	BUG("fd pool: a handler asked for a random socket");
+	return NULL;
 }
 
 /* What the fakes saw, from the last call on. */
@@ -1551,6 +1592,142 @@ static void close_range_validator_holds_the_vetted_range(void)
 	entry.post(&rec);
 }
 
+/* The socket a producer published at @fd: local, with the triplet
+ * { @family, @type, @protocol }. */
+static bool is_socket_with(int fd, unsigned int family, unsigned int type,
+			   unsigned int protocol)
+{
+	struct pool_entry *e = pool_find(fd, OBJ_FD_SOCKET);
+
+	return e != NULL && e->local && pool_count(fd) == 1 &&
+	       e->obj.sockinfo.triplet.family == family &&
+	       e->obj.sockinfo.triplet.type == type &&
+	       e->obj.sockinfo.triplet.protocol == protocol;
+}
+
+/* Run an accept or accept4 post handler on a call that took a connection
+ * on @listener and returned @retval. */
+static void run_accept(const struct syscallentry *entry, int listener,
+		       unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = (unsigned long) listener;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EAGAIN : 0;
+
+	forget_calls();
+	entry->post(&rec);
+}
+
+/* The multiplexer's args block: four words are all any call here uses.
+ * post_socketcall() hands it to deferred_freeptr(), which turns away a block
+ * zmalloc_tracked() did not make, with one line on stderr, so it is still
+ * ours to free. */
+static void run_socketcall(unsigned long call, unsigned long a0,
+			   unsigned long a1, unsigned long a2,
+			   unsigned long a3, unsigned long retval)
+{
+	static struct syscallrecord rec;
+	unsigned long *args = calloc(6, sizeof(*args));
+
+	if (args == NULL)
+		BUG("fd pool: cannot allocate a socketcall args block");
+	args[0] = a0;
+	args[1] = a1;
+	args[2] = a2;
+	args[3] = a3;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = call;
+	rec.a2 = (unsigned long) args;
+	rec.post_state = (unsigned long) args;
+	rec.retval = retval;
+
+	forget_calls();
+	syscall_socketcall.post(&rec);
+	free(args);
+}
+
+/* An accepted socket inherits the triplet of the listener it came
+ * from, when the child's global snapshot has the listener as a socket. */
+static void accept_inherits_the_listeners_triplet(void)
+{
+	const struct syscallentry *entries[] = {
+		&syscall_accept, &syscall_accept4,
+	};
+	unsigned int i;
+
+	for (i = 0; i < 2; i++) {
+		const char *name = entries[i]->name;
+		struct pool_entry *e;
+
+		reset();
+		pool_add(false, SRC, OBJ_FD_SOCKET);
+		pool_find(SRC, OBJ_FD_SOCKET)->obj.sockinfo.triplet =
+			(struct socket_triplet) { 2, 1, 6 };
+		run_accept(entries[i], SRC, NEW);
+		check("an accepted socket did not inherit the listener's triplet",
+		      name, is_socket_with(NEW, 2, 1, 6) && published == 1);
+		check("the listener was disturbed by an accept", name,
+		      pool_find(SRC, OBJ_FD_SOCKET) != NULL);
+
+		/* A listener the snapshot does not hold, or does not hold as
+		 * a socket, passes nothing on; the socket is pooled all the
+		 * same. */
+		reset();
+		run_accept(entries[i], SRC, NEW);
+		check("a socket from an untracked listener was not pooled bare",
+		      name, is_socket_with(NEW, 0, 0, 0) && published == 1);
+
+		/* The pipe's own fields sit where a socket's triplet would,
+		 * so a copy taken from it would not come out zero. */
+		reset();
+		pool_add(false, SRC, OBJ_FD_PIPE);
+		pool_find(SRC, OBJ_FD_PIPE)->obj.pipeobj.fd = SRC;
+		pool_find(SRC, OBJ_FD_PIPE)->obj.pipeobj.flags = 7;
+		run_accept(entries[i], SRC, NEW);
+		e = pool_find(NEW, OBJ_FD_SOCKET);
+		check("a socket accepted on a pipe's number took the pipe's fields",
+		      name, e != NULL && e->local &&
+		      e->obj.sockinfo.triplet.family == 0 &&
+		      e->obj.sockinfo.triplet.type == 0 &&
+		      e->obj.sockinfo.triplet.protocol == 0);
+
+		reset();
+		pool_add(false, SRC, OBJ_FD_SOCKET);
+		run_accept(entries[i], SRC, (unsigned long) -1L);
+		check("an accept that failed published something", name,
+		      published == 0);
+	}
+}
+
+/* socketcall() reaches the same publish through its own switch. */
+static void socketcall_accepts_like_the_calls_it_carries(void)
+{
+	reset();
+	pool_add(false, SRC, OBJ_FD_SOCKET);
+	pool_find(SRC, OBJ_FD_SOCKET)->obj.sockinfo.triplet =
+		(struct socket_triplet) { 10, 2, 17 };
+	run_socketcall(5 /* SYS_ACCEPT */, SRC, 0, 0, 0, NEW);
+	check("socketcall(SYS_ACCEPT) did not inherit the listener's triplet",
+	      "socketcall", is_socket_with(NEW, 10, 2, 17) && published == 1);
+
+	reset();
+	pool_add(false, SRC, OBJ_FD_SOCKET);
+	pool_find(SRC, OBJ_FD_SOCKET)->obj.sockinfo.triplet =
+		(struct socket_triplet) { 10, 2, 17 };
+	run_socketcall(18 /* SYS_ACCEPT4 */, SRC, 0, 0, 0, NEW);
+	check("socketcall(SYS_ACCEPT4) did not inherit the listener's triplet",
+	      "socketcall", is_socket_with(NEW, 10, 2, 17) && published == 1);
+
+	reset();
+	run_socketcall(5 /* SYS_ACCEPT */, SRC, 0, 0, 0, (unsigned long) -1L);
+	check("a socketcall(SYS_ACCEPT) that failed published something",
+	      "socketcall", published == 0);
+}
+
 void dup_pool_self_check(void);
 void dup_pool_self_check(void)
 {
@@ -1599,6 +1776,8 @@ void dup_pool_self_check(void)
 		if (!sandbox_was_open[i])
 			close(SANDBOX_BASE + (int) i);
 	}
+	accept_inherits_the_listeners_triplet();
+	socketcall_accepts_like_the_calls_it_carries();
 
 	fake_find_object_by_fd = NULL;
 	fake_this_child = NULL;

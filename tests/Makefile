@@ -403,6 +403,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/close.c \
 		   $(TOP)/syscalls/pidfd/pidfd_getfd.c \
 		   $(TOP)/fds/fds-dup.c
 
+# syscalls/socket/accept.c and socketcall.c bring the accept entries and
+# syscall_socketcall, whose post handlers dup_pool_test.c drives the same
+# way.
+PARENT_SRCS	+= $(TOP)/syscalls/socket/accept.c \
+		   $(TOP)/syscalls/socket/socketcall.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
