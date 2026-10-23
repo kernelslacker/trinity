@@ -1,21 +1,9 @@
 /*
- * KCOV CMP periodic dump orchestrator.
- *
- * Owns the single public entry point kcov_cmp_stats_periodic_dump(),
- * called from main/loop.c's run_periodic_surfaces() tick.  Loads the
- * current shm/parent_stats snapshot, arms the first-window state,
- * checks the elapsed-time gate, computes per-window deltas, gates the
- * emit on any-delta, then fans out to the render helpers in the
- * sibling stats/kcov/cmp/ TUs (base, redqueen, pool, hyp, childop,
- * cohort, diag) and commits the previous-window snapshot.
- *
- * The window state is gathered into struct cmp_window (the counters the
- * dump differences) and struct cmp_levels (the values it prints as they
- * stand), both local to this TU.  The plain rate lines are listed in the
- * rate-row tables; the rest of the fan-out is the render helpers in their
- * per-domain siblings declared in stats/kcov/cmp/internal.h, plus the
- * burst-drain and callsite blocks, which no sibling owns: static helpers
- * above the entry point that take their counters as explicit arguments.
+ * KCOV CMP periodic dump orchestrator: kcov_cmp_stats_periodic_dump(),
+ * called from run_periodic_surfaces() in main/loop.c, owns the previous-
+ * window state, the elapsed-time and any-delta gates and the fan-out to the
+ * render helpers in the sibling stats/kcov/cmp/ files, which nothing else
+ * calls.  The burst-drain and callsite blocks no sibling owns are static here.
  */
 
 #include <errno.h>

@@ -1,11 +1,7 @@
 /*
- * Steady periodic diagnostic reporting.
- *
- * Owns the modes block (cumulative PC/CMP child population mix), the
- * KCOV CMP DIAG first-failure-wins errno block, and the KCOV PC DIAG
- * first-failure-wins errno + retry counters block.  Separated from the
- * experiment/cohort rows so steady periodic diagnostics have a home
- * that doesn't move when a new cohort renderer lands.
+ * Steady periodic diagnostic reporting: the modes block (cumulative PC/CMP
+ * child population mix), the KCOV CMP DIAG first-failure-wins errno block,
+ * and the KCOV PC DIAG first-failure-wins errno + retry counters block.
  */
 
 #include <errno.h>

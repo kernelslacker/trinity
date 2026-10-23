@@ -1,14 +1,8 @@
 /*
- * Typed hypothesis SHADOW stats render lane.
- *
- * Owns the umbrella cmp_hyp shadow-stats block (flat lifecycle
- * counters delta-gated) plus the per-kind / consume / picker / state-
- * transition / outcome-partition breakouts it delegates to.  All
- * counters read RELAXED from kcov_shm->cmp_hyp_lifecycle and
- * kcov_shm->cmp_hyp_results; render is gated on any-delta so a quiet
- * run stays silent.  Called only from kcov_cmp_stats_periodic_dump()
- * in stats/kcov/cmp/periodic.c (the umbrella entry) or from within
- * this TU (the delegated breakouts).
+ * Typed hypothesis SHADOW stats render lane: the umbrella cmp_hyp
+ * shadow-stats block (flat lifecycle counters) and the per-kind / consume /
+ * picker / state-transition / outcome-partition breakouts it delegates to.
+ * Rendered only when a counter moved, so a quiet run stays silent.
  */
 
 #include <errno.h>

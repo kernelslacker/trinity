@@ -1,11 +1,7 @@
 /*
- * RedQueen and reexec periodic reporting.
- *
- * Owns the RedQueen per-syscall reexec top-N table plus the flat per-slot
- * attribution histograms, and the reexec skip-reason breakdown row set.
- * Both are called only from kcov_cmp_stats_periodic_dump() in
- * stats/kcov/cmp/periodic.c and kept out of the raw cmp-hint pool renderer
- * so RedQueen-shaped questions have one home.
+ * RedQueen and reexec periodic reporting: the per-syscall reexec top-N
+ * table, the flat per-slot attribution histograms, and the reexec
+ * skip-reason breakdown.
  */
 
 #include <errno.h>

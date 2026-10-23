@@ -1,15 +1,8 @@
 /*
- * Typed hypothesis pool-grid render lane.
- *
- * Walks hyp_pools[nr][do32] to expose live pool occupancy: per-syscall
- * saturation top-N (with per-kind fill breakdown) and the per-entry
- * outcome aggregates (corpus_save_wins / destructive_skips /
- * context_skips) that have no kcov_shm scalar twin.  Read-side only;
- * counters are RELAXED against lockless observe / scrub bumps and
- * every count is clamped to CMP_HYP_PER_SYSCALL / CMP_HYP_PER_KIND so
- * a torn load cannot drive a downstream divide or fixed-width column
- * past its cap.  Called only from kcov_cmp_stats_periodic_dump() in
- * stats/kcov/cmp/periodic.c.
+ * Typed hypothesis pool-grid render lane: walks hyp_pools[nr][do32] to show
+ * live pool occupancy (per-syscall saturation top-N with the per-kind fill)
+ * and the per-entry outcome aggregates that have no kcov_shm scalar twin.
+ * Read-side only.
  */
 
 #include <errno.h>

@@ -1,14 +1,8 @@
 /*
- * Typed hypothesis SHADOW would-* render lane.
- *
- * Owns the pure-observation "would" evaluators: would-pick from the
- * cmp_hints_try_get_ex() ladder, and would-promote / would-demote
- * from cmp_hyp_credit_outcome().  These bump on the shadow path only
- * -- h->state is unchanged -- so a delta reads as "would the live
- * state machine have fired here".  Both blocks are any-delta gated so
- * the section stays quiet until credit / pick sites start firing.
- * Called only from kcov_cmp_stats_periodic_dump() in
- * stats/kcov/cmp/periodic.c.
+ * Typed hypothesis SHADOW would-* render lane: would-pick from the
+ * cmp_hints_try_get_ex() ladder, and would-promote / would-demote from
+ * cmp_hyp_credit_outcome().  They bump on the shadow path only (h->state is
+ * unchanged), so a delta reads as "would the live state machine have fired".
  */
 
 #include <errno.h>

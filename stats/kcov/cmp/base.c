@@ -1,18 +1,8 @@
 /*
- * Scalar CMP pipeline rows and shared rate-line helper.
- *
- * kcov_cmp_rate_line() is the shared periodic "name +delta (rate/s, total)"
- * emitter used by every render block in stats/kcov/cmp/.  Zero-delta rows
- * stay silent so unarmed windows and idle counters never appear in the dump.
- * Keep the format string identical: this is an output-contract row consumed
- * by grep-safe scans over stats.log.
- *
- * kcov_cmp_observability_block_render() renders the per-window scalar
- * CMP-rich syscalls table.  kcov_cmp_render_wild_write_delta() renders the
- * wild-write corruption-channel rows.  Both are called only from
- * kcov_cmp_stats_periodic_dump() in stats/kcov/cmp/periodic.c and stay in
- * this TU because they carry the shared kcov_cmp_rate_line() dependency and
- * the top-N scalar layout for the base CMP pipeline.
+ * Scalar CMP pipeline rows and the shared rate-line helper: the per-window
+ * scalar CMP-rich syscalls table, the wild-write corruption-channel rows
+ * and kcov_cmp_rate_line(), which every render block in stats/kcov/cmp/
+ * uses.
  */
 
 #include <errno.h>
@@ -36,6 +26,11 @@
 
 #include "stats/kcov/cmp/internal.h"
 
+/*
+ * The shared "name +delta (rate/s, total)" row.  Zero-delta rows stay silent
+ * so unarmed windows and idle counters never appear in the dump.  Keep the
+ * format string identical: scans over stats.log grep for it.
+ */
 void kcov_cmp_rate_line(long elapsed, const char *name,
 			unsigned long delta, unsigned long total)
 {

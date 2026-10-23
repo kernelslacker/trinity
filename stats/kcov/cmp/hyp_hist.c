@@ -1,14 +1,9 @@
 /*
- * Typed hypothesis SHADOW outcome-histogram render lane.
- *
- * Owns the two per-outcome histograms that are lock-step with a
- * per-hypothesis credit path: the 8-band score-bucket census fed by
- * cmp_hyp_credit_outcome() and the per-probe-class emission census
- * fed at the out_bump label in cmp_hyp_derive_value() (cmp_hints.c).
- * Both read RELAXED from kcov_shm->cmp_hyp_results and are any-delta
- * gated so the section stays quiet until credit / derive sites
- * fire.  Called only from kcov_cmp_stats_periodic_dump() in
- * stats/kcov/cmp/periodic.c.
+ * Typed hypothesis SHADOW outcome-histogram render lane: the 8-band
+ * score-bucket census fed by cmp_hyp_credit_outcome() and the
+ * per-probe-class emission census fed by cmp_hyp_derive_value()
+ * (cmp_hints/hyp-derive.c).  Both render only once a credit or derive site
+ * has fired.
  */
 
 #include <errno.h>

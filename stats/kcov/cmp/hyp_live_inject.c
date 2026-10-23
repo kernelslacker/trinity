@@ -1,17 +1,8 @@
 /*
- * Typed hypothesis LIVE inject render lane.
- *
- * Owns the fleet-level view of the conservative live-inject arm from
- * cmp_hints_try_get_ex(): the (gate_passed, injected, no_pick) triad
- * with its per-kind partition, the per-reason gate-close breakdown
- * from cmp_hyp_try_live_inject(), and the BOUNDARY-arm scorecard
- * that reads the boundary-kind shadow counters together in one
- * render.  All read RELAXED from kcov_shm->cmp_hyp_lifecycle and
- * kcov_shm->cmp_hyp_results; the live-inject umbrella renders every
- * window (no delta gate) so "fired with zero wins" is
- * distinguishable from "never fired", while the reasons block and
- * BOUNDARY scorecard stay any-delta gated.  Called only from
- * kcov_cmp_stats_periodic_dump() in stats/kcov/cmp/periodic.c.
+ * Typed hypothesis LIVE inject render lane: the fleet-level view of the
+ * conservative live-inject arm of cmp_hints_try_get_ex() (the gate_passed /
+ * injected / no_pick triad with its per-kind partition, the per-reason
+ * gate-close breakdown and the BOUNDARY-arm scorecard).
  */
 
 #include <errno.h>

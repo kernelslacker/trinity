@@ -1,13 +1,9 @@
 /*
- * Cross-subsystem A/B and sidecar periodic reporting.
- *
- * Owns the experiment/cohort renderers that share the "population-
- * normalised delta with per-arm cohort split" row shape: A/B baseline
- * inject denom, handle_arg_op prop_ring, frontier cold-weight blend,
- * adaptive remote-KCOV, per-arg ownership sidecar, and structure-aware
- * picker cohort.  Grouping them here makes the cross-subsystem
- * dependencies obvious and keeps the shared cohort/sidecar row shape
- * out of the core KCOV base render code.
+ * Cross-subsystem A/B and sidecar periodic reporting: the renderers that
+ * share the "population-normalised delta with per-arm cohort split" row
+ * shape (baseline inject denom, handle_arg_op prop_ring, frontier
+ * cold-weight blend, adaptive remote-KCOV, per-arg ownership sidecar,
+ * structure-aware picker cohort).
  */
 
 #include <errno.h>
