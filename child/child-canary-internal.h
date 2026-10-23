@@ -1,6 +1,6 @@
 /*
- * child-canary-internal.h -- private interface between the four child-canary-*.c
- * translation units (policy, state, picker, report).
+ * child-canary-internal.h -- private interface between the child-canary-*.c
+ * translation units.
  *
  * The public API is in include/child-api.h; nothing outside child/child-canary-*.c
  * should include this header.

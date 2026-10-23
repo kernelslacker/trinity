@@ -26,7 +26,7 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-canary-liveness.c | Pid-liveness probes + three-stage slot teardown (`kill_canary_slot_children`): SIGTERM → grace window → SIGKILL. |
 | child-canary-grace.c | Grace-window scheduling + init: `canary_queue_init` (priority-shuffle, CONFIG_BLOCKED stamping, first-op staging) + `canary_queue_on_child_respawn` (two-stage commit hook). |
 | child-canary-picker.c | Canary picker (`pick_next_canary`) + `~1-s` tick loop (`canary_queue_tick`), including early-bail SETUP_BROKEN and wedge-stall demotes and the plateau-edge log. |
-| child-canary-policy.c | Canary static policy tables: config-blocked terminals, risky-defer skip set, pid-heavy drain set, and the op → setup-failure reason hint table (the first-pass order is a per-epoch shuffle, not a table). |
+| child-canary-policy.c | Canary static policy: config-blocked terminals, risky-defer skip set, pid-heavy drain set (`fork_pressure_should_suppress()`), and the setup-failure / blocked reason labels (the first-pass order is a per-epoch shuffle, not a table). |
 | child-canary-report.c | Canary summary/log emitters (`canary_queue_summary`, `canary_queue_on_crash`) + the read-only public queries (`canary_slot_active`, `canary_active_op`, `canary_op_is_promoted`) called on every fork. |
 | child-sentinel.c | Deterministic-divergence sentinel: flags when a child's execution diverges from the expected deterministic path (a state-corruption tell). |
 | child-capdrop-oracle.c | Post-capdrop assertion: verifies the child actually dropped to an empty capability set (fuzzing must never run privileged). |

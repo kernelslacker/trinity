@@ -1,23 +1,9 @@
 /*
- * child-canary-grace.c -- Grace-window scheduling, init, and the
- * two-stage commit respawn hook for the dormant-childop canary queue.
- *
- * Owns:
- *   - canary_priority_shuffle[]: per-epoch random permutation backing
- *     store for the default priority list (no --canary-seed).
- *   - canary_queue_init(): full queue initialisation called once at
- *     parent startup; builds the priority list, marks config-blocked
- *     and risky-defer ops, synthesises PROMOTED state for ops already
- *     active at boot, then stages the first canary.
- *   - canary_queue_on_child_respawn(): two-stage commit hook called by
- *     spawn_child() before assign_dedicated_alt_op(); flips
- *     canary_active_op_cell from the pending op so the freshly-forked
- *     child sees the new op rather than the previous canary.
- *
- * All other canary state lives in child-canary-state.c,
- * child-canary-stats.c, child-canary-liveness.c, child-canary-picker.c,
- * child-canary-policy.c, and child-canary-report.c; all share
- * child-canary-internal.h.
+ * Startup and respawn side of the dormant-childop canary queue:
+ * canary_queue_init() builds the priority list and stages the first
+ * canary; canary_queue_on_child_respawn() is the second stage of the
+ * two-stage commit that flips canary_active_op_cell (see
+ * child-canary-internal.h).
  */
 #include <stdbool.h>
 #include <string.h>

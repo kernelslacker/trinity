@@ -1,17 +1,9 @@
 /*
- * child-canary-report.c -- Reporting, per-tick summaries, and public
- * queries into the dormant-childop canary queue's active op.
- *
- * Owns:
- *   - the recently-promoted ring rendered by the 60-s summary line,
- *   - the summary's own throttle timestamp,
- *   - the crash-and-respawn observation surface (canary_queue_on_crash),
- *   - the read-only public queries (canary_slot_active, canary_active_op,
- *     canary_op_is_promoted) that live-time consumers (spawn_child,
- *     assign_dedicated_alt_op) call on every fork.
- *
- * State transitions (enter / leave / commit-respawn) live in
- * child-canary-state.c; this TU only observes.
+ * Reporting side of the dormant-childop canary queue: the 60-s summary,
+ * canary_queue_on_crash(), and the read-only queries (canary_slot_active(),
+ * canary_active_op(), canary_op_is_promoted()) that spawn_child() and
+ * assign_dedicated_alt_op() call on every fork.  Transitions live in
+ * child-canary-state.c.
  */
 #include <dlfcn.h>
 #include <signal.h>

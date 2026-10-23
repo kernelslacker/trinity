@@ -1,13 +1,7 @@
 /*
- * Alt-op string names, external-linkage lookup, the outer-bracket
- * eligibility gate, and the op_dispatch[] indirect-call table.  Pure
- * static metadata carved out of child-altop.c so make -j can compile
- * each half of the split in parallel.
- *
- * Function declarations for the many child-op entry points threaded
- * into op_dispatch[] arrive via child.h; the include set matches
- * child-altop.c's so the dispatch initialiser sees the same set of
- * prototypes it always did.
+ * Alt-op name lookup, the outer-KCOV-bracket eligibility gate and the
+ * op_dispatch[] indirect-call table.  Pure metadata, driven by
+ * include/childop.def.
  */
 
 

@@ -1,24 +1,9 @@
 /*
- * child-canary-picker.c -- Candidate selection, tick loop, and
- * parked-slot recovery for the dormant-childop canary queue.
- *
- * Owns:
- *   - the two picker cursors (priority-seed and FIFO fallback),
- *   - the resolved priority-seed list pointer and its --canary-seed
- *     widened-storage backing,
- *   - the plateau-active edge-log latch,
- *   - pick_next_canary() (called by the state TU's init and by this
- *     TU's retry_parked_slot / stage_next_or_park tails),
- *   - retry_parked_slot / stage_next_or_park / close_window_or_park:
- *     picker-local tick helpers,
- *   - canary_queue_tick(), the ~1-s dispatcher that folds in the
- *     early-bail SETUP_BROKEN and wedge-stall demotes before delegating
- *     the full-window close to close_window_and_decide() in the state
- *     TU.
- *
- * State transitions themselves live in child-canary-state.c; this TU
- * only decides *when* to close a window, then calls the state TU's
- * exit hooks with the resolved outcome.
+ * Candidate selection, the ~1-s tick loop and parked-slot recovery of
+ * the dormant-childop canary queue.  canary_queue_tick() folds in the
+ * early-bail SETUP_BROKEN and wedge-stall demotes and hands the
+ * full-window close to close_window_and_decide(): this file decides
+ * *when* a window closes, child-canary-state.c owns the transitions.
  */
 #include <stdbool.h>
 #include <time.h>

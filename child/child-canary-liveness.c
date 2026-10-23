@@ -1,15 +1,8 @@
 /*
- * child-canary-liveness.c -- Pid-liveness probes and three-stage slot
- * teardown for the dormant-childop canary promotion queue.
- *
- * Owns kill_canary_slot_children(): SIGTERM → grace window → SIGKILL
- * sequence used by enter_canarying() to flush the previous canary slot
- * child before staging a new op.
- *
- * All other canary state lives in child-canary-state.c,
- * child-canary-stats.c, child-canary-picker.c, child-canary-policy.c,
- * child-canary-report.c, and child-canary-grace.c; all share
- * child-canary-internal.h.
+ * Slot teardown for the dormant-childop canary queue:
+ * kill_canary_slot_children() runs the SIGTERM, grace window, SIGKILL
+ * sequence that flushes the canary slot children when a new op is
+ * staged or the slots are parked.
  */
 #include <errno.h>
 #include <signal.h>

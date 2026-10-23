@@ -1,14 +1,8 @@
 /*
- * Per-op outcome snapshotting, the per-window outcome dump and the
- * ranked score-dump tables emitted at shutdown.  Split out of
- * child-altop.c so the shadow-only score derivation compiles
- * separately from the picker/dormancy machinery and the alt-op
- * dispatch table.
- *
- * Every function here is telemetry-only: no scheduler / canary picker
- * / promotion / demotion path reads the numbers this file produces.
- * The score-row helpers stay file-static since they exist purely to
- * factor childop_score_dump's rendering; no other TU consumes them.
+ * Per-op outcome snapshot, per-window outcome dump and the ranked
+ * score-dump tables emitted at shutdown.  Telemetry-only: no scheduler,
+ * canary picker, promotion or demotion path reads the numbers this file
+ * produces.
  */
 
 

@@ -1,19 +1,7 @@
 /*
- * child-canary-stats.c -- Shared counter-read helpers for the dormant-
- * childop canary promotion queue.
- *
- * Owns the four helpers that abstract over shm / kcov_shm counter
- * reads used across multiple canary TUs:
- *   monotonic_seconds()      -- CLOCK_MONOTONIC wall-clock accessor
- *   window_iters_resolved()  -- effective window length with plateau
- *                               acceleration applied
- *   edges_for_op()           -- per-op clean-edge counter reader
- *   invocations_for_op()     -- per-op invocation counter reader
- *
- * All other canary state lives in child-canary-state.c,
- * child-canary-liveness.c, child-canary-picker.c, child-canary-policy.c,
- * child-canary-report.c, and child-canary-grace.c; all share
- * child-canary-internal.h.
+ * Counter-read helpers shared by the dormant-childop canary queue's
+ * files: a monotonic clock, the effective window length (halved during
+ * a plateau), and the per-op clean-edge and invocation counters.
  */
 #include <stdbool.h>
 #include <time.h>

@@ -1,14 +1,9 @@
 /*
- * Adaptive per-op budget multiplier and the decaying-recency edge/wall
- * ring for the childop invocations.  Split out of child-altop.c so the
- * budget-feedback and window-rotate paths compile independently of the
- * static tables the picker consumes.
- *
- * adapt_budget() is invoked from the per-iteration hot path in
- * child.c whenever the outer KCOV bracket fires; the decay-ring
- * producers are invoked from the same iteration under the is_alt_op
- * gate; childop_window_advance() is driven from the 600 s periodic
- * dump tick.  All producer atomics stay RELAXED as before.
+ * Adaptive per-op budget multiplier (adapt_budget()) and the decaying-
+ * recency edge/wall ring for childop invocations
+ * (childop_decay_record_*(), childop_window_advance()).  All producer
+ * atomics are RELAXED; the races tolerated are described at
+ * adapt_budget() and in include/childop-outcome.h.
  */
 
 

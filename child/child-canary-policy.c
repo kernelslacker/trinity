@@ -1,12 +1,8 @@
 /*
- * child-canary-policy.c -- Static policy tables and eligibility helpers
- * for the dormant-childop canary queue.
- *
- * Owns the operator-visible input to the picker order: config-blocked
- * terminals, risky-defer skip set, pid-heavy drain set, and the op ->
- * setup-failure reason hint table.  These are the only
- * places the queue's classification of an op is source-declared; every
- * other TU reads them via child-canary-internal.h.
+ * Static policy for the dormant-childop canary queue: the config-blocked
+ * and risky-defer op sets, the pid-heavy set behind
+ * fork_pressure_should_suppress(), and the reason-label helpers.  The
+ * other child-canary-*.c files read these through child-canary-internal.h.
  */
 #include <stdbool.h>
 #include <time.h>

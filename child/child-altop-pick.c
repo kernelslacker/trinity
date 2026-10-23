@@ -1,15 +1,7 @@
 /*
- * Alt-op picker, dedicated-child rotation, and the dormant-op gate
- * that drives the canary queue's observability.  Split out of the
- * former child-altop.c so make -j can compile the picker/dormancy
- * tables concurrently with the alt_op_name/op_dispatch metadata
- * (child-altop-table.c), the adaptive-budget/decay ring
- * (child-altop-budget.c), and the outcome/score dump
- * (child-altop-score.c).
- *
- * pick_op_type sheds its `static` linkage at the TU split --
- * child_process() in child.c calls it on the hot per-iteration path.
- * See include/child-internal.h for the extern declarations.
+ * Alt-op picker (pick_op_type()), dedicated-child rotation
+ * (assign_dedicated_alt_op()) and the dormant-op gate the canary queue
+ * flips (dormant_op_set(), dormant_op_is_active()).
  */
 
 
