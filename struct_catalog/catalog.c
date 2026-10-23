@@ -10,11 +10,9 @@
  */
 
 #include <stddef.h>
-#include <signal.h>
 #include <sys/time.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
-#include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
@@ -29,16 +27,10 @@
 #include <linux/netfilter.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
-#include <linux/landlock.h>
-#include <linux/mman.h>
 #include <linux/mount.h>
-#include <linux/fs.h>
-#include <linux/quota.h>
-#include <linux/dqblk_xfs.h>
 #include <linux/userfaultfd.h>
 #include <fcntl.h>
 #include <string.h>
-#include <time.h>
 
 #include "config.h"
 /*
@@ -94,9 +86,6 @@
 #define XDP_USE_NEED_WAKEUP	(1 << 3)
 #endif
 #endif
-#ifdef USE_XATTR_ARGS
-#include <linux/xattr.h>
-#endif
 #ifdef USE_SCTP
 #include <linux/sctp.h>
 #endif
@@ -128,53 +117,8 @@
 #include "utils.h"
 
 #include "kernel/l2tp.h"
-#include "kernel/nsfs.h"
 /* FIELD / FIELDX initialiser macros live in struct_catalog-internal.h
  * so the per-family leaf TUs under struct_catalog/ can reuse them. */
-
-/*
- * struct open_how / RESOLVE_* may not be present in every host's
- * <linux/openat2.h>.  The field table lives in struct_catalog/fcntl.c,
- * but the spine's struct_catalog[] entry takes sizeof(struct open_how),
- * so the type definition must also be visible here.  The ifndef guard
- * hands off to the host header when it is present; both TUs land on a
- * layout-identical definition either way.
- */
-#ifndef RESOLVE_NO_XDEV
-struct open_how {
-	__u64 flags;
-	__u64 mode;
-	__u64 resolve;
-};
-#define RESOLVE_NO_XDEV		0x01
-#define RESOLVE_NO_MAGICLINKS	0x02
-#define RESOLVE_NO_SYMLINKS	0x04
-#define RESOLVE_BENEATH		0x08
-#define RESOLVE_IN_ROOT		0x10
-#define RESOLVE_CACHED		0x20
-#else
-/*
- * Host <linux/openat2.h> supplied the struct.  Assert its size matches
- * the 3-u64 fallback above so a future uapi bump that grows the struct
- * trips at compile time rather than silently diverging from the shim
- * in struct_catalog/fcntl.c.
- */
-_Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
-	       "struct open_how head drifted from trinity fallback; update both fallback copies");
-#endif
-
-/* ------------------------------------------------------------------ */
-/* struct ns_id_req (listns)                                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * struct ns_id_req comes from include/kernel/nsfs.h (included above),
- * which is the single definition shared with the listns sanitiser and
- * the leaf table in struct_catalog/mount.c.  The spine needs the type
- * visible for sizeof(struct ns_id_req) on its catalog entry; the leaf
- * TU needs it for the FIELD() offsetof / sizeof initialisers.  Both
- * now agree by construction rather than by three hand-kept copies.
- */
 
 /* ------------------------------------------------------------------ */
 /* The catalog itself                                                   */
@@ -235,32 +179,11 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_size	= sizeof(((struct sockaddr_storage *) 0)->
 						 ss_family),
 	},
-	[SC_LANDLOCK_RULESET_ATTR] = {
-		.name		= "landlock_ruleset_attr",
-		.struct_size	= sizeof(struct landlock_ruleset_attr),
-		.fields		= landlock_ruleset_attr_fields,
-		.num_fields	= ARRAY_SIZE(landlock_ruleset_attr_fields),
-	},
-	[SC_MNT_ID_REQ] = {
-		.name		= "mnt_id_req",
-		.struct_size	= sizeof(struct mnt_id_req),
-		.fields		= mnt_id_req_fields,
-		.num_fields	= ARRAY_SIZE(mnt_id_req_fields),
-	},
 #include "catalog-bpf.inc"
 	/*
 	 * iovec: referenced by msghdr.msg_iov's FT_PTR_ARRAY.elem_struct
 	 * so the pointer pass can resolve sizeof(struct iovec) for
-	 * allocation, and also named at the iovec-array slot of the
-	 * readv / writev / preadv{,2} / pwritev{,2} / vmsplice /
-	 * process_madvise / process_vm_{readv,writev} syscalls via
-	 * syscall_struct_args[] below.  Those slots are ARG_IOVEC /
-	 * ARG_IOVEC_IN (not ARG_STRUCT_PTR_*), so the schema-aware fill
-	 * path never runs against them -- the bespoke alloc_iovec()
-	 * generator owns the live (iov_base, iov_len) layout.  The
-	 * mapping is attribution-only: it lets struct_field_for_cmp()
-	 * steer CMP-learned constants at the named iov_base / iov_len
-	 * slots rather than at a coincidentally-same-width slot.
+	 * allocation.
 	 */
 	[SC_IOVEC] = {
 		.name		= "iovec",
@@ -268,35 +191,11 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= iovec_fields,
 		.num_fields	= ARRAY_SIZE(iovec_fields),
 	},
-	[SC_TIMESPEC] = {
-		.name		= "timespec",
-		.struct_size	= sizeof(struct timespec),
-		.fields		= timespec_fields,
-		.num_fields	= ARRAY_SIZE(timespec_fields),
-	},
-	[SC_CACHESTAT_RANGE] = {
-		.name		= "cachestat_range",
-		.struct_size	= sizeof(struct cachestat_range),
-		.fields		= cachestat_range_fields,
-		.num_fields	= ARRAY_SIZE(cachestat_range_fields),
-	},
 	[SC_MOUNT_ATTR] = {
 		.name		= "mount_attr",
 		.struct_size	= sizeof(struct mount_attr),
 		.fields		= mount_attr_fields,
 		.num_fields	= ARRAY_SIZE(mount_attr_fields),
-	},
-	[SC_POLLFD] = {
-		.name		= "pollfd",
-		.struct_size	= sizeof(struct pollfd),
-		.fields		= pollfd_fields,
-		.num_fields	= ARRAY_SIZE(pollfd_fields),
-	},
-	[SC_OPEN_HOW] = {
-		.name		= "open_how",
-		.struct_size	= sizeof(struct open_how),
-		.fields		= open_how_fields,
-		.num_fields	= ARRAY_SIZE(open_how_fields),
 	},
 	[SC_UTIMBUF] = {
 		.name		= "utimbuf",
@@ -316,70 +215,14 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= timeval_fields,
 		.num_fields	= ARRAY_SIZE(timeval_fields),
 	},
-	[SC_NS_ID_REQ] = {
-		.name		= "ns_id_req",
-		.struct_size	= sizeof(struct ns_id_req),
-		.fields		= ns_id_req_fields,
-		.num_fields	= ARRAY_SIZE(ns_id_req_fields),
-	},
-#ifdef USE_XATTR_ARGS
-	[SC_XATTR_ARGS] = {
-		.name		= "xattr_args",
-		.struct_size	= sizeof(struct xattr_args),
-		.fields		= xattr_args_fields,
-		.num_fields	= ARRAY_SIZE(xattr_args_fields),
-	},
-#endif
-	[SC_FILE_ATTR] = {
-		.name		= "file_attr",
-		.struct_size	= sizeof(struct file_attr),
-		.fields		= file_attr_fields,
-		.num_fields	= ARRAY_SIZE(file_attr_fields),
-	},
-	[SC_LANDLOCK_PATH_BENEATH_ATTR] = {
-		.name		= "landlock_path_beneath_attr",
-		.struct_size	= sizeof(struct landlock_path_beneath_attr),
-		.fields		= landlock_path_beneath_attr_fields,
-		.num_fields	= ARRAY_SIZE(landlock_path_beneath_attr_fields),
-	},
 	[SC_F_OWNER_EX] = {
 		.name		= "f_owner_ex",
 		.struct_size	= sizeof(struct f_owner_ex),
 		.fields		= f_owner_ex_fields,
 		.num_fields	= ARRAY_SIZE(f_owner_ex_fields),
 	},
-	[SC_LANDLOCK_NET_PORT_ATTR] = {
-		.name		= "landlock_net_port_attr",
-		.struct_size	= sizeof(struct landlock_net_port_attr),
-		.fields		= landlock_net_port_attr_fields,
-		.num_fields	= ARRAY_SIZE(landlock_net_port_attr_fields),
-	},
-	[SC_IF_DQBLK] = {
-		.name		= "if_dqblk",
-		.struct_size	= sizeof(struct if_dqblk),
-		.fields		= if_dqblk_fields,
-		.num_fields	= ARRAY_SIZE(if_dqblk_fields),
-	},
-	[SC_IF_DQINFO] = {
-		.name		= "if_dqinfo",
-		.struct_size	= sizeof(struct if_dqinfo),
-		.fields		= if_dqinfo_fields,
-		.num_fields	= ARRAY_SIZE(if_dqinfo_fields),
-	},
 #include "catalog-ptrace_regs.inc"
-	[SC_IOCB] = {
-		.name		= "iocb",
-		.struct_size	= sizeof(struct iocb),
-		.fields		= iocb_fields,
-		.num_fields	= ARRAY_SIZE(iocb_fields),
-	},
 #include "catalog-setsockopt.inc"
-	[SC_SIGSET_T] = {
-		.name		= "sigset_t",
-		.struct_size	= sizeof(sigset_t),
-		.fields		= sigset_t_fields,
-		.num_fields	= ARRAY_SIZE(sigset_t_fields),
-	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
 		.name		= "tcp_repair_opt",
@@ -394,12 +237,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct file_handle),
 		.fields		= file_handle_fields,
 		.num_fields	= ARRAY_SIZE(file_handle_fields),
-	},
-	[SC_FS_DISK_QUOTA] = {
-		.name		= "fs_disk_quota",
-		.struct_size	= sizeof(struct fs_disk_quota),
-		.fields		= fs_disk_quota_fields,
-		.num_fields	= ARRAY_SIZE(fs_disk_quota_fields),
 	},
 	[SC_MMSGHDR] = {
 		.name		= "mmsghdr",

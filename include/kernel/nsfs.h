@@ -6,10 +6,9 @@
  * LISTNS_CURRENT_USER).  Defined locally so trinity builds against
  * older kernel headers that predate the listns syscall.
  *
- * This is the ONLY definition of struct ns_id_req in the tree: the
- * listns sanitiser, the struct-catalog spine and the mount/namespace
- * leaf table all include this header.  Upstream declares the second
- * half inside an anonymous struct; the members and the layout are
+ * This is the ONLY definition of struct ns_id_req in the tree, and the
+ * listns sanitiser includes it.  Upstream declares the second half
+ * inside an anonymous struct; the members and the layout are
  * identical, so the flat form below is ABI-equivalent.
  */
 #include <linux/nsfs.h>

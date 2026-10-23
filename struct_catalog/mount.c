@@ -1,30 +1,22 @@
 /*
- * struct_catalog/mount.c -- mount / namespace struct field tables.
+ * struct_catalog/mount.c -- mount struct field table.
  *
  * Tables are `const` (not `static const`) so the spine's `.fields =`
  * references resolve via the externs in struct_catalog-internal.h.
  * struct_catalog.h and arch.h are #included unconditionally so this TU
  * is never empty when USE_<X> is off.
- *
- * struct ns_id_req comes from include/kernel/nsfs.h, included by this
- * TU and by the spine (which references sizeof(struct ns_id_req) on its
- * catalog entry), so the type stays visible in both without a second
- * hand-kept copy.
  */
 
 #include <stddef.h>
 #include <linux/types.h>
 #include <linux/mount.h>
 #include <linux/fs.h>
-#include <linux/sched.h>
 
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
 
-#include "kernel/sched.h"
 #include "kernel/mount.h"
-#include "kernel/nsfs.h"
 /* ------------------------------------------------------------------ */
 /* struct mount_attr (mount_setattr, open_tree_attr)                   */
 /* ------------------------------------------------------------------ */
@@ -71,46 +63,4 @@ const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N] = {
 	       .mutate_weight = 80),
 	FIELDX(struct mount_attr, userns_fd, FT_FD,
 	       .mutate_weight = 60),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct mnt_id_req (statmount, listmount)                            */
-/* ------------------------------------------------------------------ */
-
-const struct struct_field mnt_id_req_fields[MNT_ID_REQ_FIELDS_N] = {
-	FIELD(struct mnt_id_req, size),
-	FIELD(struct mnt_id_req, mnt_id),
-	FIELD(struct mnt_id_req, param),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct ns_id_req (listns)                                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * struct ns_id_req comes from include/kernel/nsfs.h (included above) --
- * one definition, shared with the listns sanitiser and the catalog
- * spine.  The header carries the size assertion for the case where the
- * host <linux/nsfs.h> supplies the struct itself.
- *
- * ns_type is a bit MASK of namespace types to include, not a single
- * selector (upstream 7.3 respecified it; enum ns_type's members are the
- * CLONE_NEW* bit values).  An out-of-vocab bit makes listns return
- * -EINVAL before any iterator runs, so an FT_RAW splat almost never
- * reaches the namespace lookup paths; mask the field to the eight
- * defined CLONE_NEW* bits so CMP-learned constants attribute against a
- * real selector.  CLONE_NEWTIME's fallback definition lives in
- * include/kernel/mount.h for older kernel headers.
- */
-
-#define NS_ID_REQ_NS_TYPE_MASK \
-	(CLONE_NEWNS   | CLONE_NEWUTS  | CLONE_NEWIPC     | CLONE_NEWUSER | \
-	 CLONE_NEWPID  | CLONE_NEWNET  | CLONE_NEWCGROUP  | CLONE_NEWTIME)
-
-const struct struct_field ns_id_req_fields[NS_ID_REQ_FIELDS_N] = {
-	FIELD(struct ns_id_req, size),
-	FIELDX(struct ns_id_req, ns_type, FT_FLAGS,
-	       .u.flags.mask = NS_ID_REQ_NS_TYPE_MASK),
-	FIELD(struct ns_id_req, ns_id),
-	FIELD(struct ns_id_req, user_ns_id),
 };

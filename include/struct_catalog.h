@@ -331,35 +331,19 @@ enum struct_catalog_idx {
 	SC_PERF_EVENT_ATTR,
 	SC_MSGHDR,
 	SC_SOCKADDR_STORAGE,
-	SC_LANDLOCK_RULESET_ATTR,
-	SC_MNT_ID_REQ,
 #ifdef USE_BPF
 	SC_BPF_ATTR,
 #endif
 	SC_IOVEC,
-	SC_TIMESPEC,
-	SC_CACHESTAT_RANGE,
 	SC_MOUNT_ATTR,
-	SC_POLLFD,
-	SC_OPEN_HOW,
 	SC_UTIMBUF,
 	SC_FLOCK,
 	SC_TIMEVAL,
-	SC_NS_ID_REQ,
-#ifdef USE_XATTR_ARGS
-	SC_XATTR_ARGS,
-#endif
-	SC_FILE_ATTR,
-	SC_LANDLOCK_PATH_BENEATH_ATTR,
 	SC_F_OWNER_EX,
-	SC_LANDLOCK_NET_PORT_ATTR,
-	SC_IF_DQBLK,
-	SC_IF_DQINFO,
 #if defined(__x86_64__) || defined(__aarch64__)
 	SC_PT_REGS,
 	SC_USER_REGS_STRUCT,
 #endif
-	SC_IOCB,
 	/*
 	 * setsockopt optval struct shapes -- first batch (the proof) for
 	 * the two-key (level, optname) discriminator.  Registered against
@@ -400,11 +384,9 @@ enum struct_catalog_idx {
 	SC_SCTP_PRIM,
 #endif
 	SC_FILE_HANDLE,
-	SC_FS_DISK_QUOTA,
 	SC_MMSGHDR,
 	SC_GROUP_SOURCE_REQ,
 	SC_IP_MREQ_SOURCE,
-	SC_SIGSET_T,
 	SC_UFFDIO_RANGE,
 	SC_UFFDIO_API,
 	SC_UFFDIO_REGISTER,

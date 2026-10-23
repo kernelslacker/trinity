@@ -79,7 +79,7 @@ behind `fds-internal.h`, one concern per translation unit.
 - `stats/rotation_event.c` — owns the rotation-events sink fd (`stats_rotation_event_fd()`), the one shielded fd the parent opens and every child inherits; each child parks its copy above `PROTECTED_FD_HIGH_BASE` (60000, `include/fd.h`), like the kcov/taint/fail-nth slots
 - `random_syscall/chain-subst.c` — fd substitution in syscall chains draws from the same typed/random pickers
 - `ioctls/fuse.c`, `ioctls/autofs.c`, `ioctls/seccomp.c`, `net/proto/unix.c`, `net/proto/pppox.c`, `lib/cmsg_build.c` — ioctl/net-specific consumers of fds sourced through this layer
-- `struct_catalog/aio.c`, `struct_catalog/landlock.c`, `struct_catalog/registry.c` — struct-field fd slots populated from typed providers
+- `struct_catalog/mount.c`, `struct_catalog/bpf-*.c` — struct-field fd slots (`FT_FD`), filled by `args/struct_fill.c` from the generic fd pool
 - `persist/minicorpus-field-mutate.c` — corpus replay biases ARG_FD/typed-fd argument reuse (the fd-pool cross-pollination mutator case draws from `get_random_fd()`)
 - `include/fd.h`, `include/files.h`, `include/object-types.h` — provider struct, pool-file helpers, `OBJ_FD_*` objecttype enum
 

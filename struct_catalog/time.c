@@ -8,35 +8,12 @@
  */
 
 #include <stddef.h>
-#include <time.h>
 #include <sys/time.h>
 #include <utime.h>
 
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
-
-/* ------------------------------------------------------------------ */
-/* struct timespec (clock_nanosleep, nanosleep, utimensat)             */
-/* ------------------------------------------------------------------ */
-
-/*
- * tv_nsec is rejected by the kernel for values outside [0, 1e9) before
- * the syscall does any real work, so an FT_RAW splat almost never lands
- * on the wait/update path.  Keep tv_sec as an unbounded FT_RANGE so
- * absolute / past / future buckets stay reachable; pin tv_nsec to the
- * legal nanosecond range so the request actually clears the kernel's
- * input check.  Callers that want UTIME_NOW / UTIME_OMIT (utimensat)
- * still construct those values in their own sanitise callback.
- */
-const struct struct_field timespec_fields[TIMESPEC_FIELDS_N] = {
-	FIELDX(struct timespec, tv_sec, FT_RANGE,
-	       .u.range = { 0, 4000000000UL },
-	       .mutate_weight = 60),
-	FIELDX(struct timespec, tv_nsec, FT_RANGE,
-	       .u.range = { 0, 999999999UL },
-	       .mutate_weight = 60),
-};
 
 /* ------------------------------------------------------------------ */
 /* struct utimbuf (utime)                                              */
@@ -65,30 +42,14 @@ const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N] = {
 };
 
 /* ------------------------------------------------------------------ */
-/* struct timeval (settimeofday, select)                               */
+/* struct timeval (setsockopt SO_RCVTIMEO / SO_SNDTIMEO)               */
 /* ------------------------------------------------------------------ */
 
 /*
- * struct timeval is the (tv_sec, tv_usec) pair the kernel takes at
- * settimeofday's a1 (INPUT wall-clock value) and at select's a5
- * (INOUT timeout).  Both syscalls already carry a bespoke .sanitise
- * that owns the live fill via get_writable_address(): settimeofday
- * biases 70% near-now / 30% random with an explicit invalid-tv_usec
- * leg, and select stamps a deterministic short {0, 10us} timeout.
- * Without a catalog entry the slots were filled but had no schema
- * path of their own, so struct_field_for_cmp() had nothing to hang
- * KCOV-CMP attribution against and learned constants fell at a
- * coincidentally-same-width slot rather than at a named field.
- *
- * Registration is attribution-only, mirroring the in-tree timespec /
- * utimensat handling and the landed utimbuf / flock / sigevent
- * commits: the bespoke sanitisers keep owning the fill -- this only
- * feeds the CMP-attribution path.  tv_sec stays FT_RAW so the
- * near-now / random / wraparound bytes the bespoke fills already
- * produce are preserved; tv_usec is pinned to the legal microsecond
- * range so attribution at the named tv_usec slot lines up with the
- * kernel's timeval_valid() check rather than landing on a
- * coincidentally-same-width neighbour.
+ * tv_usec is pinned to the legal microsecond range: sock_set_timeout()
+ * answers -EDOM to anything outside it before it reads tv_sec.  tv_sec
+ * stays FT_RAW, since the kernel also accepts a negative value (the
+ * timeout becomes zero) and a huge one (no timeout at all).
  */
 const struct struct_field timeval_fields[TIMEVAL_FIELDS_N] = {
 	FIELD(struct timeval, tv_sec),
@@ -96,4 +57,3 @@ const struct struct_field timeval_fields[TIMEVAL_FIELDS_N] = {
 	       .u.range = { 0, 999999UL },
 	       .mutate_weight = 60),
 };
-

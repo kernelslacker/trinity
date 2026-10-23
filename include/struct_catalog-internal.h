@@ -433,34 +433,16 @@ extern const struct struct_field msghdr_fields[MSGHDR_FIELDS_N];
 extern const struct struct_field mmsghdr_fields[MMSGHDR_FIELDS_N];
 
 /*
- * quotactl / quotactl_fd leaf tables defined in struct_catalog/quota.c.
- * The _N constants give the extern decls a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.
- */
-enum {
-	IF_DQBLK_FIELDS_N	= 9,
-	IF_DQINFO_FIELDS_N	= 4,
-	FS_DISK_QUOTA_FIELDS_N	= 22,
-};
-
-extern const struct struct_field if_dqblk_fields[IF_DQBLK_FIELDS_N];
-extern const struct struct_field if_dqinfo_fields[IF_DQINFO_FIELDS_N];
-extern const struct struct_field fs_disk_quota_fields[FS_DISK_QUOTA_FIELDS_N];
-
-/*
  * time-shaped leaf tables defined in struct_catalog/time.c.  The _N
  * constants give the extern decls a complete array type so the spine's
  * ARRAY_SIZE() at the reference site keeps folding to the same constant
  * it did before the carve.
  */
 enum {
-	TIMESPEC_FIELDS_N	= 2,
 	UTIMBUF_FIELDS_N	= 2,
 	TIMEVAL_FIELDS_N	= 2,
 };
 
-extern const struct struct_field timespec_fields[TIMESPEC_FIELDS_N];
 extern const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N];
 extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
 
@@ -482,47 +464,16 @@ extern const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N
 extern const struct union_variant perf_event_attr_variants[PERF_EVENT_ATTR_VARIANTS_N];
 
 /*
- * landlock attr leaf tables defined in struct_catalog/landlock.c.
- * Three FT_FLAGS / FT_RANGE-tagged field arrays cataloging the attr
- * structs passed to landlock_create_ruleset and the two rule_type
- * arms of landlock_add_rule.  Only these arrays are referenced from
- * the spine; the LANDLOCK_ACCESS_FS_MASK / LANDLOCK_ACCESS_NET_MASK
- * / LANDLOCK_SCOPE_MASK helper macros they consume stay file-private
- * to struct_catalog/landlock.c.
- */
-enum {
-	LANDLOCK_RULESET_ATTR_FIELDS_N		= 3,
-	LANDLOCK_PATH_BENEATH_ATTR_FIELDS_N	= 2,
-	LANDLOCK_NET_PORT_ATTR_FIELDS_N		= 2,
-};
-
-extern const struct struct_field landlock_ruleset_attr_fields[LANDLOCK_RULESET_ATTR_FIELDS_N];
-extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH_BENEATH_ATTR_FIELDS_N];
-extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
-
-/*
- * signal-shaped leaf table defined in struct_catalog/signal.c: sigset_t
- * (signalfd / signalfd4).  The _N constant gives the extern decl a
- * complete array type so the spine's ARRAY_SIZE() at the reference site
- * keeps folding to the same constant it did before the carve.
- */
-enum {
-	SIGSET_T_FIELDS_N			= 1,
-};
-
-extern const struct struct_field sigset_t_fields[SIGSET_T_FIELDS_N];
-
-/*
  * fcntl-family leaf tables defined in struct_catalog/fcntl.c.
  * Covers struct flock (fcntl F_*LK / F_OFD_*LK / F_CANCELLK), struct
- * f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX), struct open_how
- * (openat2), and struct file_handle (open_by_handle_at).  Each _N
- * constant gives the extern decl a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the
- * same constant it did before the carve.  flock_l_type_values /
- * flock_l_whence_values / f_owner_ex_type_values are private vocab
- * pools referenced only by their own fcntl field arrays and stay
- * scoped to fcntl.c through this extern surface.
+ * f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX), and struct file_handle
+ * (open_by_handle_at).  Each _N constant gives the extern decl a
+ * complete array type so the spine's ARRAY_SIZE() at the reference
+ * site keeps folding to the same constant it did before the carve.
+ * flock_l_type_values / flock_l_whence_values /
+ * f_owner_ex_type_values are private vocab pools referenced only by
+ * their own fcntl field arrays and stay scoped to fcntl.c through this
+ * extern surface.
  */
 enum {
 	FLOCK_L_TYPE_VALUES_N		= 3,
@@ -530,7 +481,6 @@ enum {
 	FLOCK_FIELDS_N			= 5,
 	F_OWNER_EX_TYPE_VALUES_N	= 3,
 	F_OWNER_EX_FIELDS_N		= 2,
-	OPEN_HOW_FIELDS_N		= 3,
 	FILE_HANDLE_FIELDS_N		= 2,
 };
 
@@ -539,7 +489,6 @@ extern const unsigned long flock_l_whence_values[FLOCK_L_WHENCE_VALUES_N];
 extern const struct struct_field flock_fields[FLOCK_FIELDS_N];
 extern const unsigned long f_owner_ex_type_values[F_OWNER_EX_TYPE_VALUES_N];
 extern const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N];
-extern const struct struct_field open_how_fields[OPEN_HOW_FIELDS_N];
 extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
 
 /*
@@ -556,27 +505,6 @@ enum {
 
 extern const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N];
 extern const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N];
-
-/*
- * aio-shaped leaf tables defined in struct_catalog/aio.c.  Covers
- * struct iocb (io_cancel) with its IOCB_CMD_* opcode vocab.  Each _N
- * constant gives the extern decl a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.  iocb_opcode_values is referenced
- * only by iocb_fields itself but lives at file scope in aio.c so its
- * ARRAY_SIZE() inside the FIELDX initialiser keeps folding -- the
- * extern surface lets the spine's struct_catalog[SC_IOCB].fields
- * reference resolve while iocb_opcode_values stays scoped to aio.c
- * through this extern.  IOCB_FLAGS_MASK / IOCB_RWF_MASK helper
- * macros are private to aio.c.
- */
-enum {
-	IOCB_OPCODE_VALUES_N	= 8,
-	IOCB_FIELDS_N		= 12,
-};
-
-extern const unsigned long iocb_opcode_values[IOCB_OPCODE_VALUES_N];
-extern const struct struct_field iocb_fields[IOCB_FIELDS_N];
 
 /*
  * userfaultfd ioctl arg struct leaf tables defined in struct_catalog/
@@ -607,26 +535,17 @@ extern const struct struct_field uffdio_copy_fields[UFFDIO_COPY_FIELDS_N];
 extern const struct struct_field uffdio_zeropage_fields[UFFDIO_ZEROPAGE_FIELDS_N];
 
 /*
- * mount / namespace leaf tables defined in struct_catalog/mount.c.
- * Covers struct mount_attr (mount_setattr / open_tree_attr), struct
- * mnt_id_req (statmount / listmount), and struct ns_id_req (listns).
- * Each _N constant gives the extern decl a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.  The struct ns_id_req shim lives
- * in include/kernel/nsfs.h, which both struct_catalog/catalog.c and
- * struct_catalog/mount.c include -- the spine needs the type visible
- * for sizeof(struct ns_id_req) on its catalog entry, the leaf TU needs
- * it for the FIELD() offsetof / sizeof initialisers.
+ * mount leaf table defined in struct_catalog/mount.c: struct mount_attr
+ * (mount_setattr / open_tree_attr).  The _N constant gives the extern
+ * decl a complete array type so the spine's ARRAY_SIZE() at the
+ * reference site keeps folding to the same constant it did before the
+ * carve.
  */
 enum {
 	MOUNT_ATTR_FIELDS_N	= 4,
-	MNT_ID_REQ_FIELDS_N	= 3,
-	NS_ID_REQ_FIELDS_N	= 4,
 };
 
 extern const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N];
-extern const struct struct_field mnt_id_req_fields[MNT_ID_REQ_FIELDS_N];
-extern const struct struct_field ns_id_req_fields[NS_ID_REQ_FIELDS_N];
 
 /*
  * TCP leaf tables defined in struct_catalog/tcp.c.  Covers struct
@@ -646,62 +565,32 @@ extern const struct struct_field tcp_repair_opt_fields[TCP_REPAIR_OPT_FIELDS_N];
 #endif /* USE_TCP_REPAIR_OPT */
 
 /*
- * resource-shaped leaf tables defined in struct_catalog/resource.c.
- * Covers struct rlimit (getrlimit) and struct cachestat_range
- * (cachestat).  Each _N constant gives the extern decl a complete
+ * resource leaf table defined in struct_catalog/resource.c: struct
+ * rlimit (getrlimit).  The _N constant gives the extern decl a complete
  * array type so the spine's ARRAY_SIZE() at the reference site keeps
- * folding to the same constant it did before the carve.  Neither
- * table is config-gated -- both structs come from headers trinity
- * already requires.
- */
-enum {
-	RLIMIT_FIELDS_N			= 2,
-	CACHESTAT_RANGE_FIELDS_N	= 2,
-};
-
-extern const struct struct_field rlimit_fields[RLIMIT_FIELDS_N];
-extern const struct struct_field cachestat_range_fields[CACHESTAT_RANGE_FIELDS_N];
-
-/*
- * poll-family leaf tables defined in struct_catalog/poll.c.  Covers
- * struct pollfd (poll / ppoll) and struct epoll_event (epoll_ctl).
- * Each _N constant gives the extern decl a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the
- * same constant it did before the carve.  Neither table is
- * config-gated -- both structs come from headers trinity already
+ * folding to the same constant it did before the carve.  The table is
+ * not config-gated -- the struct comes from headers trinity already
  * requires.
  */
 enum {
-	POLLFD_FIELDS_N		= 3,
+	RLIMIT_FIELDS_N			= 2,
+};
+
+extern const struct struct_field rlimit_fields[RLIMIT_FIELDS_N];
+
+/*
+ * poll leaf table defined in struct_catalog/poll.c: struct epoll_event
+ * (epoll_ctl).  The _N constant gives the extern decl a complete array
+ * type so the spine's ARRAY_SIZE() at the reference site keeps folding
+ * to the same constant it did before the carve.  The table is not
+ * config-gated -- the struct comes from headers trinity already
+ * requires.
+ */
+enum {
 	EPOLL_EVENT_FIELDS_N	= 1,
 };
 
-extern const struct struct_field pollfd_fields[POLLFD_FIELDS_N];
 extern const struct struct_field epoll_event_fields[EPOLL_EVENT_FIELDS_N];
-
-/*
- * xattr / file_attr leaf tables defined in struct_catalog/xattr.c.
- * struct xattr_args is gated on USE_XATTR_ARGS to track the build
- * host's uapi vintage (mirroring the spine reference and the
- * syscalls/xattr/{set,get}xattrat.c guards); struct file_attr is always
- * available via kernel fallback headers so its extern stays unguarded.
- * Each _N constant gives the extern decl a complete array type so
- * the spine's ARRAY_SIZE() at the reference site keeps folding to
- * the same constant it did before the carve.
- */
-#ifdef USE_XATTR_ARGS
-enum {
-	XATTR_ARGS_FIELDS_N	= 3,
-};
-
-extern const struct struct_field xattr_args_fields[XATTR_ARGS_FIELDS_N];
-#endif /* USE_XATTR_ARGS */
-
-enum {
-	FILE_ATTR_FIELDS_N	= 5,
-};
-
-extern const struct struct_field file_attr_fields[FILE_ATTR_FIELDS_N];
 
 /*
  * ptrace register-set leaf tables defined in struct_catalog/ptrace_regs.c.

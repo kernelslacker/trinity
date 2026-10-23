@@ -16,7 +16,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | File | Lines | Role |
 |---|---|---|
 | sockaddr-af.c | 792 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
-| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`), `struct_catalog_lookup()` by name |
+| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), `struct_catalog_lookup()` by name |
 | sctp.c | 587 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
 | perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
 | bpf-link.c | 493 | BPF_LINK_* family field tables: BPF_LINK_UPDATE / BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI, UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP) |
@@ -24,28 +24,23 @@ per-cmd BPF field tables under `bpf-*.c`.
 | registry.c | 343 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
 | bpf-prog.c | 297 | BPF_PROG_* command family field tables |
 | variant.c | 260 | Generic discriminator resolution: `read_rec_arg`, `discrim_key_matches`, `discrim_key2_matches` (shared with registry.c's rec-based lookup), `struct_desc_resolve_variant`, `struct_desc_resolve_nested_variant` |
-| time.c | 231 | timespec, utimbuf, timeval field tables |
-| signal.c | 231 | sigset_t |
-| fcntl.c | 203 | flock, f_owner_ex, open_how, file_handle field tables + fcntl cmd vocab |
+| time.c | 231 | utimbuf, timeval field tables |
+| fcntl.c | 203 | flock, f_owner_ex, file_handle field tables + fcntl cmd vocab |
 | validate.c | 189 | Init-time slot-shape guard: BUGs if a registration row's arg_idx lands on a non-struct-shaped argtype (catches the arg_idx off-by-one class of bug) |
 | sockaddr-mcast.c | 171 | ip_mreqn, ip_mreq_source, ipv6_mreq + well-known multicast-address vocab pools |
-| quota.c | 171 | if_dqblk, if_dqinfo, fs_disk_quota (quotactl/quotactl_fd) |
 | ptrace_regs.c | 171 | Per-arch ptrace register-set structs for PTRACE_{GET,SET}REGS and the iovec-wrapped PTRACE_{GET,SET}REGSET; attribution-only (the sanitiser hand-rolls the iovec / raw pointer itself) |
 | address.c | 158 | FT_ADDRESS reachability walk: `struct_desc_has_address_field()` / `struct_arg_any_has_address_field()` — a bounded recursive scan, through `FT_PTR_STRUCT`/`FT_PTR_ARRAY` targets and every variant, deciding whether a struct can reach an `FT_ADDRESS` field; it feeds the nested-address scrub mask in `args/scrub.c` |
 | bpf-map.c | 155 | BPF_MAP_* command family field tables |
 | sockaddr-sockopt.c | 150 | linger, packet_mreq, group_req, group_source_req |
-| landlock.c | 150 | landlock_ruleset_attr, landlock_path_beneath_attr, landlock_net_port_attr |
 | cmp.c | 146 | `struct_field_for_cmp()` — reservoir-sampled heuristic mapping a KCOV-CMP constant to the most likely field (prefers FT_ENUM/FT_FLAGS/FT_VERSION_MAGIC "gate" fields over same-width FT_RAW) |
-| mount.c | 116 | mount_attr, mnt_id_req, ns_id_req (+ local `ns_id_req` shim for pre-6.8 headers) |
+| mount.c | 116 | mount_attr |
 | socket.c | 118 | iovec, msghdr, mmsghdr |
 | uffdio.c | 102 | userfaultfd ioctl argument structs; attribution-only, and reached by name rather than through the registration table (ioctl args don't resolve that way) |
-| xattr.c | 98 | xattr_args (gated `USE_XATTR_ARGS`), file_attr |
-| aio.c | 95 | iocb + IOCB_CMD_* opcode vocab (io_cancel) |
 | bpf-task-storage.c | 85 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
-| poll.c | 83 | pollfd, epoll_event |
+| poll.c | 83 | epoll_event |
 | bpf-btf.c | 70 | BTF family: BPF_BTF_LOAD and the generic BPF_OBJ_GET_INFO_BY_FD info-query slot |
 | sched.c | 61 | sched_attr, clone_args |
-| resource.c | 48 | rlimit, cachestat_range |
+| resource.c | 48 | rlimit |
 | tcp.c | 33 | tcp_repair_opt (gated `USE_TCP_REPAIR_OPT`) |
 
 `struct_catalog/registry/` holds the per-domain registration arrays that
@@ -53,7 +48,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 
 | File | Lines | Role |
 |---|---|---|
-| registry/fs.c | 503 | Filesystem / VFS rows: file / dir / mount / xattr / quota / poll / io syscalls, the landlock attrs, the fcntl / landlock_add_rule / quotactl / quotactl_fd discriminator-aware rows and their pools, the iovec fanout, and the sigset_t rows on signalfd/ppoll/epoll_pwait |
+| registry/fs.c | 503 | Filesystem / VFS rows: epoll_ctl, open_by_handle_at, utime, mount_setattr / open_tree_attr, and the cmd-discriminated fcntl a3 rows with their pools |
 | registry/net.c | 470 | Network rows: sockaddr / msghdr / mmsghdr on the socket calls, plus the setsockopt / getsockopt (level, optname) two-key rows and their discriminator vocabularies |
 | registry/process.c | 236 | Process rows: clone3, getrlimit, perf_event_open |
 | registry/sched.c | 28 | sched_getattr → sched_attr |
@@ -85,9 +80,8 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
   shift/mask extraction, single value or value-list, optional second key for
   two-key dispatch like `setsockopt(level, optname)`). This selects the
   descriptor; `struct_desc->variants` then selects the field subset *within*
-  it — a slot can use both axes at once (e.g. `landlock_add_rule`'s a3
-  resolves to a different desc per rule_type; `fcntl`'s a3 resolves to
-  `flock` or `f_owner_ex` per cmd).
+  it, so a slot can use both axes at once.  `fcntl`'s a3 resolves to `flock`
+  or `f_owner_ex` per cmd.
 - Each per-family `.c` file is a leaf TU defining `static`→`const` field
   arrays; `struct_catalog-internal.h` centralizes `extern` declarations (with
   compile-time-checked `_N` array-size constants) so `catalog.c`'s
@@ -173,9 +167,9 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
    `struct_desc->variants` picks a *field subset within* an already-chosen
    descriptor (driven by an arg or an in-buffer discriminator like
    `ss_family`). Both can compose on one slot.
-4. **Packed/shifted discriminators.** `discrim_shift`/`discrim_mask` support
-   syscalls that pack a sub-command into part of a word (quotactl's
-   `QCMD(subcmd, type)`), extracting the meaningful bits before matching.
+4. **Packed/shifted discriminators.** `discrim_shift`/`discrim_mask` extract a
+   sub-command packed into part of a word before the match.  No row uses
+   them today.
 5. **Two-key dispatch** (`discrim2_arg_idx`) exists specifically for
    `setsockopt(level, optname)`, where optname values are only unique within
    a level (e.g. `IPV6_TCLASS == IP_TOS == 1`); a single-key match would
@@ -255,13 +249,9 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
    full O(num_fields) scan per call with no caching. Fine at current struct
    sizes (max ~22 fields), but would need revisiting if per-cmd bpf_attr-style
    variants grow substantially larger.
-5. **The catalog is hand-maintained against kernel UAPI headers**, including
-   inline fallback struct definitions (`open_how`, `ns_id_req`) for
-   hosts with older kernel-headers packages. These shims are duplicated
-   between `catalog.c` (for `sizeof()`) and the owning leaf TU (for
-   `offsetof()`), with comments flagging that a future UAPI header bump
-   growing the struct requires updating both copies — an easy place for the
-   two to silently drift if only one side is edited.
+5. **The catalog is hand-maintained against kernel UAPI headers.** A UAPI
+   bump that grows a cataloged struct needs the matching field table updated
+   by hand.
 
 ## Summary
 

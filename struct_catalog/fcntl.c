@@ -10,7 +10,6 @@
 #include <stddef.h>
 #include <fcntl.h>
 #include <unistd.h>
-#include <linux/types.h>
 
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
@@ -105,82 +104,6 @@ const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N] = {
 			    ARRAY_SIZE(f_owner_ex_type_values) },
 	       .mutate_weight = 80),
 	FIELD(struct f_owner_ex, pid),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct open_how (openat2)                                           */
-/* ------------------------------------------------------------------ */
-
-/*
- * struct open_how / RESOLVE_* may not be present in every host's
- * <linux/openat2.h>; mirror the trinity-local fallback already used
- * by syscalls/fs/open.c so this TU compiles on toolchains that pre-date
- * the openat2 uapi.  The ifndef guard hands off to the host header
- * (or to whichever earlier-included TU has already pulled the symbols
- * in) when it is present.
- */
-#ifndef RESOLVE_NO_XDEV
-struct open_how {
-	__u64 flags;
-	__u64 mode;
-	__u64 resolve;
-};
-#define RESOLVE_NO_XDEV		0x01
-#define RESOLVE_NO_MAGICLINKS	0x02
-#define RESOLVE_NO_SYMLINKS	0x04
-#define RESOLVE_BENEATH		0x08
-#define RESOLVE_IN_ROOT		0x10
-#define RESOLVE_CACHED		0x20
-#else
-/*
- * Host <linux/openat2.h> supplied the struct.  Assert its size matches
- * the 3-u64 fallback above so a future uapi bump that grows the struct
- * trips at compile time rather than silently diverging from the shim
- * in struct_catalog/catalog.c.
- */
-_Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
-	       "struct open_how head drifted from trinity fallback; update both fallback copies");
-#endif
-#ifndef OPENAT2_REGULAR
-#define OPENAT2_REGULAR		((__u64)1 << 32)
-#endif
-
-/*
- * openat2 passes struct open_how at a3 with a usize at a4
- * (copy_struct_from_user semantics).  The slot is ARG_ADDRESS rather
- * than ARG_STRUCT_PTR_*, so the schema-aware fill path never runs
- * against it -- the bespoke sanitise_openat2() in syscalls/fs/open.c
- * continues to own the live (flags, mode, resolve) layout, including
- * the O_CREAT / __O_TMPFILE-gated mode write and the curated
- * openat2_resolve_combos[] table that walks the namei RESOLVE_*
- * paths the kernel actually branches on.
- *
- * Registration is attribution-only, mirroring pollfd / sembuf above:
- * struct_field_for_cmp() uses the FT_FLAGS tags to steer KCOV-CMP
- * learned constants at the flags or resolve slot rather than at a
- * coincidentally-same-width slot.  mode stays FT_RAW: the kernel
- * only honours it (masked to S_IALLUGO) when O_CREAT / __O_TMPFILE
- * is set, otherwise a non-zero mode trips the -EINVAL gate before
- * any per-bit CMP fires -- no single-field vocab maps cleanly.
- */
-#define OPEN_HOW_FLAGS_MASK						\
-	(O_ACCMODE | O_CREAT | O_EXCL | O_NOCTTY | O_TRUNC | O_APPEND |	\
-	 O_NONBLOCK | O_DSYNC | O_SYNC | O_ASYNC | O_DIRECTORY |	\
-	 O_NOFOLLOW | O_CLOEXEC | O_DIRECT | O_NOATIME | O_PATH |	\
-	 O_LARGEFILE | O_TMPFILE | OPENAT2_REGULAR)
-
-#define OPEN_HOW_RESOLVE_MASK						\
-	(RESOLVE_NO_XDEV | RESOLVE_NO_MAGICLINKS | RESOLVE_NO_SYMLINKS |\
-	 RESOLVE_BENEATH | RESOLVE_IN_ROOT | RESOLVE_CACHED)
-
-const struct struct_field open_how_fields[OPEN_HOW_FIELDS_N] = {
-	FIELDX(struct open_how, flags, FT_FLAGS,
-	       .u.flags.mask = OPEN_HOW_FLAGS_MASK,
-	       .mutate_weight = 100),
-	FIELD(struct open_how, mode),
-	FIELDX(struct open_how, resolve, FT_FLAGS,
-	       .u.flags.mask = OPEN_HOW_RESOLVE_MASK,
-	       .mutate_weight = 80),
 };
 
 /* ------------------------------------------------------------------ */
