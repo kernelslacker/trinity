@@ -17,6 +17,9 @@
 
 #define DEFERRED_RING_SIZE	64
 
+#define DEFERRED_TTL_MIN	5
+#define DEFERRED_TTL_MAX	50
+
 /*
  * Decrement-and-free runs 1-in-N ticks (N power-of-two -> bitmask);
  * the other N-1 bail before the mprotect bracket.  Effective TTL is
@@ -120,6 +123,10 @@ enum ring_unlock_result {
 	RING_UNLOCK_FAIL,
 };
 
+/*
+ * Generation-arena layout; the design and tuning are described in
+ * deferred-free-gen-arena.c.
+ */
 #define GEN_ARENA_SLOTS			8
 #define GEN_ARENA_ENTRIES		256
 
@@ -191,6 +198,18 @@ extern size_t *alloc_track_sizes;
  */
 bool alloc_track_consume(void *ptr);
 bool tracked_free_checked(void *ptr, enum tracked_free_site site);
+
+/*
+ * Generation arena, defined in deferred-free-gen-arena.c.  _tick() seals and
+ * retires aged generations; _push() files an evicted pointer and returns
+ * false under arena pressure, in which case the caller leaks it; _flush()
+ * drains every generation at child exit; _contains() says whether a
+ * generation still holds @ptr.
+ */
+void gen_arena_tick(void);
+bool gen_arena_push(void *ptr);
+void gen_arena_flush(void);
+bool gen_arena_contains(void *ptr);
 
 /* Reads vm.max_map_count once, in the parent, for the enqueue VMA cap. */
 void deferred_free_read_max_map_count(void);
