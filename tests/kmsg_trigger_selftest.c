@@ -29,7 +29,8 @@ static const char TRIGGER_OLD[] = "WARNING: CPU:";
  * Concrete verbatim kernel banner specimens.
  *
  * OLD format (pre-v6.19): __warn() emitted "WARNING: CPU: <n> PID: <n> at ..."
- * NEW format (v6.19+, upstream: 28ea295f941e): "WARNING: <file>:<line> at <sym>, CPU#<n>: <comm>/<pid>"
+ * NEW format (v6.19+): "WARNING: <file>:<line> at <sym>, CPU#<n>: <comm>/<pid>",
+ * or, when __warn() has no file, "WARNING: at <sym>, CPU#<n>: <comm>/<pid>"
  *
  * These are the strings that would appear in the /dev/kmsg record body
  * after the sequence-number/timestamp prefix is stripped.
@@ -43,9 +44,10 @@ static const char BANNER_OLD_FORMAT[] =
 static const char BANNER_NEW_FORMAT[] =
 	"WARNING: mm/slub.c:3521 at kmem_cache_alloc+0x0/0x200, CPU#3: kworker/3:1/42";
 
-/* Second new-format specimen: bare function name with no module path */
+/* Second new-format specimen: the file-less form __warn() prints when it
+ * has no file */
 static const char BANNER_NEW_FORMAT_2[] =
-	"WARNING: some_func+0x0/0x10, CPU#0: comm/123";
+	"WARNING: at some_func+0x0/0x10, CPU#0: comm/123";
 
 /* Lockdep variant — must match the current trigger */
 static const char BANNER_LOCKDEP[] =
