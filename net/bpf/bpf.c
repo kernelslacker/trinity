@@ -101,6 +101,10 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 	AUDIT_ARCH_X86_64,
 };
 
+#ifndef AUDIT_ARCH_RISCV64
+#define AUDIT_ARCH_RISCV64	(243 | 0x80000000 | 0x40000000)
+#endif
+
 #if defined(__i386__)
 # define TRUE_REG_SYSCALL	REG_EAX
 # define TRUE_ARCH		AUDIT_ARCH_I386
@@ -113,6 +117,9 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 #elif defined(__arm__)
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		AUDIT_ARCH_ARM
+#elif defined(__riscv) && __riscv_xlen == 64
+# define TRUE_REG_SYSCALL	syscall_nr
+# define TRUE_ARCH		AUDIT_ARCH_RISCV64
 #else
 # define TRUE_REG_SYSCALL	syscall_nr
 # define TRUE_ARCH		(rnd_u32())

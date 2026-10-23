@@ -61,6 +61,11 @@ static inline unsigned long maps_pick_read_cycles(void)
 
 	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
 	return v;
+#elif defined(__riscv) && __riscv_xlen == 64
+	unsigned long v;
+
+	__asm__ volatile("rdtime %0" : "=r"(v));
+	return v;
 #else
 	return 0UL;
 #endif

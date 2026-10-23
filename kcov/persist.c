@@ -1287,6 +1287,8 @@ const char *kcov_bitmap_default_path(void)
 	arch = "aarch64";
 #elif defined(__arm__)
 	arch = "arm";
+#elif defined(__riscv) && __riscv_xlen == 64
+	arch = "riscv64";
 #else
 	arch = "unknown";
 #endif

@@ -13,3 +13,6 @@
 #ifdef __aarch64__
 #include "syscalls-aarch64.h"
 #endif
+#if defined(__riscv) && __riscv_xlen == 64
+#include "syscalls-riscv64.h"
+#endif
