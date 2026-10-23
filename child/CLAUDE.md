@@ -2,7 +2,7 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (24 files + internal header, ~7,804 LOC)
+## Files (25 files + internal header, ~8,117 LOC)
 
 | File | Role |
 |---|---|
@@ -14,7 +14,8 @@ Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop t
 | child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
 | child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
 | child-init-freeze.c | Initial sibling-childdata + shared-region `mprotect(PROT_READ)` sweeps, parent rendezvous, per-child object-pool bring-up, optional CPU pin. |
-| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty, the userns-admin lane entry (`maybe_enter_userns_admin_lane()`, a no-op while no active syscall entry sets `userns_admin_lane`), oracle anchor capture, rlimit / umask sweep. |
+| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty, the userns-admin lane entry (`maybe_enter_userns_admin_lane()`, a no-op while no active syscall entry sets `userns_admin_lane`), oracle anchor capture, rlimit / umask sweep. After a successful `unshare(CLONE_NEWPID)` it starts the namespace's idle init (`child-pidns-init.c`) once the credentials are final, so later forks keep landing in a live namespace. |
+| child-pidns-init.c | `start_pidns_init()`: the idle init that holds pid 1 of a pid namespace the child unshared, so the namespace outlives the child's first fork into it. No exit signal and its own process group keep it out of most of the child's waits, and `validate_arg_coupling()` makes the rest, a wait for any child with `__WALL`/`__WCLONE`, WNOHANG while `pidns_init_pid` is set; default signal dispositions leave it deaf to fuzzed signals bar SIGKILL/SIGSTOP; PDEATHSIG plus the child's pidfd end it with the child. A clone that still fails after a few tries leaves the child without an init, as before there was one. |
 | child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
 | child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()`. |
 | child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()`. |

@@ -54,7 +54,8 @@ if [ -n "$parents" ]; then
 fi
 
 # trinity-subchil is the exec grandchild's "trinity-subchild", cut to
-# the 15 characters a comm holds.
-for pid in $(pgrep "${match[@]}" 'trinity(-main|-kmsg|-c[0-9]+|-subchil)?'); do
+# the 15 characters a comm holds.  trinity-nsinit is the idle init of a
+# child's pid namespace.
+for pid in $(pgrep "${match[@]}" 'trinity(-main|-kmsg|-c[0-9]+|-subchil|-nsinit)?'); do
 	kill -9 "$pid"
 done

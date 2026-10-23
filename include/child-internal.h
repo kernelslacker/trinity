@@ -69,6 +69,11 @@ void init_child_rendezvous_parent(struct childdata *child, int childno);
 void init_child_setup_sandbox(struct childdata *child, int childno);
 bool child_userns_lane_is_active(void);
 
+/* child-pidns-init.c -- the idle init that holds pid 1 of a pid
+ * namespace the child unshared, started by init_child_setup_sandbox
+ * across the TU boundary. */
+pid_t start_pidns_init(void);
+
 /* child-init-runtime.c -- kcov bring-up, uniarch active-syscalls
  * pin, explorer-pool slot flag, the A/B-comparison cohort stamps,
  * heap-bounds re-snapshot, RLIMIT_AS pin, and one-shot

@@ -167,6 +167,16 @@ void divergence_sentinel_tick(struct childdata *child);
 void capdrop_oracle_tick(void);
 void capdrop_oracle_capture_init_ns_anchors(void);
 
+/*
+ * Pid of this child's idle pid namespace init (child-pidns-init.c) while
+ * it runs, else 0.  The init has no exit signal and leads its own process
+ * group, so of the child's fuzzed waits only one for any child that asks
+ * for __WALL or __WCLONE can see it, and that one would block on the live
+ * init until the alarm.  validate_arg_coupling() makes such a wait
+ * WNOHANG while this is set.
+ */
+extern pid_t pidns_init_pid;
+
 void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);

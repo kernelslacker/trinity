@@ -220,6 +220,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   parser, help and doc text, including the `!= 0` guard form, an
   unbalanced brace in a string and in a char literal, a slash pair that
   is not a value list, and a tracked-versus-untracked file listing.
+- `pidns-init-wiring`: in `child/child-init-sandbox.c`,
+  `start_pidns_init()` has to come after `drop_privs()` and the
+  `capset()` drop.  The kernel checks the parent-death signal like a
+  `kill()` from the dying child, so an idle pid namespace init forked
+  any earlier would stay root and miss it from a child running as
+  nobody.  Comments are stripped before the lines are compared.
 - `post-state-deref`: every `.post` handler that dereferences a
   pointer read from `rec->post_state` must first gate it with
   `looks_like_corrupted_ptr()` or a `*_POST_STATE_MAGIC` cookie

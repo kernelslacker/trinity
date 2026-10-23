@@ -820,6 +820,17 @@ struct syscallentry {
 	 * slot (i+1).
 	 */
 	uint8_t sanitiser_owned_mask;
+
+	/*
+	 * Cached identities of the wait family, set at table init so
+	 * validate_arg_coupling() can judge a wait for any child with a
+	 * byte load per dispatch (see pidns_init_pid): wait4 and waitpid
+	 * take the pid in a1 and the options in a3, waitid the idtype in
+	 * a1 and the options in a4.  They fill the struct's tail padding
+	 * rather than grow it.
+	 */
+	bool is_wait4_family;
+	bool is_waitid;
 };
 
 static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entry)

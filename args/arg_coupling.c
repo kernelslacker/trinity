@@ -31,6 +31,7 @@
  */
 #include <fcntl.h>
 #include <sys/uio.h>
+#include <sys/wait.h>
 
 #include "arg_coupling.h"
 #include "child.h"		/* this_child */
@@ -314,6 +315,22 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	if (entry->is_fcntl && (unsigned int) rec->a2 == F_SETSIG &&
 	    !parent_ignores_sigio_as((unsigned long) (int) rec->a3))
 		rec->a3 = 0;
+
+	/*
+	 * A wait for any child that asks for __WALL or __WCLONE finds the
+	 * child's idle pid namespace init and blocks on it until the alarm:
+	 * see pidns_init_pid.  Judged on the final slots for the same
+	 * reason as F_SETSIG above.  The kernel reads the pid, the idtype
+	 * and the options as ints.
+	 */
+	if (pidns_init_pid > 0) {
+		if (entry->is_wait4_family && (int) rec->a1 == -1 &&
+		    ((unsigned int) rec->a3 & (__WALL | __WCLONE)))
+			rec->a3 |= WNOHANG;
+		if (entry->is_waitid && (int) rec->a1 == P_ALL &&
+		    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))
+			rec->a4 |= WNOHANG;
+	}
 
 	/*
 	 * Non-adjacent (address, length) coupled pair: gen_arg_len()

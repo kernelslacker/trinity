@@ -35,7 +35,7 @@ every translation unit lives under one of the directories below.
 | Directory | Role |
 |---|---|
 | [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~8,294 LOC) |
-| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (24 files, ~7,804 LOC) |
+| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (25 files, ~8,117 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,891 LOC) |
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,670 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (364 files, ~66,278 LOC) |
@@ -66,7 +66,7 @@ every translation unit lives under one of the directories below.
 - [main/](main/CLAUDE.md) — process entry (`main/trinity.c`: `main()`, warm-start, the epoch loop) and CLI/tunable parsing (`main/params/`), alongside the parent control plane (fork/reap/watchdog/stats).
 
 ### Child runtime
-- [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (24 files).
+- [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (25 files).
 
 ### Syscall dispatch & results
 - [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (9 files).

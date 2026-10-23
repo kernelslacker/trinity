@@ -4,8 +4,9 @@
  * rotation sink out of the low fd range, optionally dirty FPU and
  * mask signals, per-child unshare()s (with the mnt/net gates on
  * shm->isolation.*_ready), root-only drop_privs(), unconditional
- * capset()-to-empty + cap-drop oracle anchor capture, and the
- * random rlimit / umask sweep in munge_process.
+ * capset()-to-empty + cap-drop oracle anchor capture, the idle init
+ * of a new pid namespace, and the random rlimit / umask sweep in
+ * munge_process.
  *
  * Split out of child-init.c so make -j can compile the sandbox
  * phase concurrently with the clean / freeze / isolate / runtime
@@ -378,10 +379,13 @@ static void munge_process(void)
  *     PID ns (with the no_pidns latch),
  *   - if we started as root, drop_privs() lowers the child to
  *     nobody so subsequent fuzz syscalls run unprivileged,
+ *   - after the capset() drop, fork the idle init of a new PID ns,
  *   - munge_process() applies the random rlimit / umask sweep.
  */
 void init_child_setup_sandbox(struct childdata *child, int childno)
 {
+	bool new_pidns = false;
+
 	/* Wait for all the children to start up.  Mirror the parent-death
 	 * guard from the pids[childno] rendezvous loop above: if the parent
 	 * dies before publishing shm->ready we would otherwise sleep here
@@ -455,6 +459,7 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * doesn't move *us* into the new namespace — it means our next
 	 * fork() creates pid 1 in a fresh pidns.  This exercises kernel
 	 * pidns code paths when EXTRA_FORK syscalls (like execve) run.
+	 * That next fork is the idle init started below.
 	 *
 	 * Skip if we already know it'll fail (EPERM on unprivileged
 	 * kernels without user_namespaces, or missing CONFIG_PID_NS).
@@ -468,6 +473,8 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 		if (unshare(CLONE_NEWPID) == -1) {
 			if (errno == EPERM || errno == EINVAL)
 				__atomic_store_n(&shm->no_pidns, true, __ATOMIC_RELAXED);
+		} else {
+			new_pidns = true;
 		}
 	}
 #endif
@@ -524,6 +531,17 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 				  strerror(saved_errno));
 		}
 	}
+
+	/*
+	 * Start the init of the pid namespace unshared above, now that our
+	 * credentials are final.  The kernel checks the parent-death signal
+	 * like a kill() from us (check_kill_permission()): an init forked
+	 * before drop_privs() would stay root, where the signal from a child
+	 * running as nobody cannot reach it.  Forked after the capset(), it
+	 * holds no capabilities either.
+	 */
+	if (new_pidns)
+		(void)start_pidns_init();
 
 	/*
 	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,

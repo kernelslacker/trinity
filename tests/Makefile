@@ -147,6 +147,7 @@ REAL_SRCS	:= \
 	$(TOP)/fds/fds.c \
 	$(TOP)/fds/fds-registry.c \
 	$(TOP)/dispatch/extrafork-reap.c \
+	$(TOP)/child/child-pidns-init.c \
 	$(TOP)/lib/userns-bootstrap.c \
 	$(TOP)/mm/fault-read.c \
 	$(TOP)/mm/fault-write.c
@@ -333,6 +334,7 @@ FAKE_SRCS	:= \
 	reap_stop_test.c \
 	reap_dead_kids_test.c \
 	extrafork_reap_test.c \
+	pidns_init_test.c \
 	userns_bootstrap_test.c \
 	dispatch_extrafork_test.c \
 	tables_extrafork_test.c \
