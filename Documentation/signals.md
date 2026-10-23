@@ -94,7 +94,7 @@ the handler reads it back from the same fd.
 Don't use `psiginfo()` -- it calls `fmemopen()`, which calls `calloc()`,
 which deadlocks if this signal was raised by glibc's own `abort()`
 while malloc's arena lock is still held by us.  Same family as the
-`libgcc_s`/backtrace deadlock fixed in ea96305aee21, just one frame up.
+`libgcc_s`/backtrace deadlock fixed in ea96305aee21 ("signals: preload libgcc_s to keep backtrace() safe inside SIGABRT handler"), just one frame up.
 
 Hand-roll a signal-safe equivalent: a lookup table covering every
 signal either fault handler is installed for, formatting via the

@@ -159,7 +159,7 @@ update this section to match `ls scripts/check-static/*.sh`.)
   between.  It also flags the mirror defect -- a separator whose emit is
   gone, leaving two separators back to back and a `,,` in the document.
   That is the residue a deleted stats category leaves, so it arrives
-  through the same door the childop burns keep opening.  Both directions
+  whenever a childop and its stats category are deleted together.  Both directions
   carry a fixture and a negative control.  Regression fixture: the pre-fix pre-image of
   `dump_stats_json_netfilter_and_xfrm()` (872757fb803b ("stats/json: fix missing comma before ip6mr_churn in network section")^) is replayed
   inline as a known-bad input and must produce exactly one hit.
