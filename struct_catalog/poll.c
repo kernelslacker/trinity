@@ -22,22 +22,16 @@
 
 /*
  * EPOLL* event-bit vocabulary for epoll_event.events.  EPOLLEXCLUSIVE
- * and EPOLLWAKEUP postdate older glibc vintages; include/kernel/epoll.h declares
- * EPOLLWAKEUP unconditionally and the local #ifdef arm covers
- * EPOLLEXCLUSIVE.  Bits outside the mask either fail the kernel's
- * EP_PRIVATE_BITS check or get silently masked, so a uniform-byte
- * splat almost never produces a useful (op, events) combination.
+ * and EPOLLWAKEUP postdate older glibc vintages; include/kernel/epoll.h
+ * carries fallbacks for both.  Bits outside the mask either fail the
+ * kernel's EP_PRIVATE_BITS check or get silently masked, so a
+ * uniform-byte splat almost never produces a useful (op, events)
+ * combination.
  */
-#ifndef EPOLLEXCLUSIVE
-# define EPOLLEXCLUSIVE_COMPAT	(1u << 28)
-#else
-# define EPOLLEXCLUSIVE_COMPAT	EPOLLEXCLUSIVE
-#endif
-
 #define EPOLL_EVENTS_MASK \
 	(EPOLLIN     | EPOLLOUT    | EPOLLRDHUP   | EPOLLPRI    | \
 	 EPOLLERR    | EPOLLHUP    | EPOLLET      | EPOLLONESHOT | \
-	 EPOLLWAKEUP | EPOLLEXCLUSIVE_COMPAT       | \
+	 EPOLLWAKEUP | EPOLLEXCLUSIVE              | \
 	 EPOLLRDNORM | EPOLLRDBAND | EPOLLWRNORM  | EPOLLWRBAND | \
 	 EPOLLMSG)
 

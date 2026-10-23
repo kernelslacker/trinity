@@ -13,9 +13,6 @@
 #include "utils.h"
 
 #include "kernel/epoll.h"
-#ifndef EPOLLEXCLUSIVE
-#define EPOLLEXCLUSIVE (1 << 28)
-#endif
 
 #ifndef EPOLL_URING_WAKE
 #define EPOLL_URING_WAKE (1U << 27)
