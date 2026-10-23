@@ -1,49 +1,21 @@
 /*
- * Genetlink family grammar: nl802154 (IEEE 802.15.4 / 6LoWPAN
- * control plane).
- *
- * Target: the per-cmd nla_policy walker in net/ieee802154/nl802154.c
- * plus the GET_WPAN_PHY / NEW_INTERFACE / TRIGGER_SCAN / ASSOCIATE /
- * SET_SEC_ * dispatch chains.  Random nlmsg_type ids essentially
- * never matched the runtime-assigned "nl802154" family_id, so these
- * arms stayed cold under generic netlink fuzzing.  Resolving the
- * family once at first NETLINK_GENERIC use lets the message generator
- * address real nl802154 commands whose attribute shapes plausibly
- * survive each per-cmd policy.  On a host without a wpan_phy the
- * dispatcher bails -ENODEV after the full attribute walk -- which is
- * the parser-level coverage this grammar exists to provide.
- *
- * The grammar lists only ids that nl802154_ops[] registers (the
- * security block below needs a Kconfig option).  The enum's other ids
- * have no handler (SET_WPAN_PHY, SET_INTERFACE, DEL_WPAN_PHY) or are
- * kernel-to-user messages (NEW_WPAN_PHY replies, SCAN_EVENT /
- * SCAN_DONE notifications), so the genl core rejects them on input.
- *
- * Flat attribute table: nl802154_policy is itself flat
- * (NL802154_ATTR_MAX+1 slots), so the per-cmd walker validates each
- * child against one global shape.  Signed scalar attrs (TX_POWER,
- * CCA_ED_LEVEL, MAX_FRAME_RETRIES) are emitted as their unsigned
- * same-width counterparts -- wire format identical, kernel reads the
- * bytes through nla_get_s32 / nla_get_s8.  NLA_REJECT attrs
- * (SCAN_PREAMBLE_CODES, SCAN_MEAN_PRF) and reply-only attrs
- * (GENERATION, CHANNELS_SUPPORTED, PAD) are omitted -- both trip
- * -EINVAL before the handler runs.  GENL_ADMIN_PERM commands stay in:
- * they are registered ops, and genl_family_rcv_msg() checks the flag
- * before the policy walker, so only a child with CAP_NET_ADMIN in the
- * initial user namespace exercises the validator through them.
- *
- * Header gating: include/net/nl802154.h is not shipped via uapi;
- * include/kernel/nl802154.h vendors every referenced NL802154_CMD_ *
- * / NL802154_ATTR_ * id as an #ifndef shim mirroring the (ABI-stable)
- * kernel enum ordering.  The family registers unconditionally and
- * runtime CTRL_CMD_GETFAMILY decides whether the running kernel
- * actually carries it.
+ * Genetlink family grammar: nl802154 (IEEE 802.15.4 / 6LoWPAN control
+ * plane), targeting nl802154_policy and nl802154_ops[] in
+ * net/ieee802154/nl802154.c.  Only ids that nl802154_ops[] registers are
+ * listed; every one but GET_WPAN_PHY, GET_INTERFACE and LIST_ASSOCIATIONS
+ * is GENL_ADMIN_PERM.
  */
 
 #include "kernel/nl802154.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * The enum's other ids have no handler (SET_WPAN_PHY, SET_INTERFACE,
+ * DEL_WPAN_PHY) or are kernel-to-user messages (NEW_WPAN_PHY replies,
+ * SCAN_EVENT / SCAN_DONE notifications), so the genl core rejects them
+ * on input.
+ */
 static const struct genl_cmd_grammar nl802154_cmds[] = {
 	{ NL802154_CMD_GET_WPAN_PHY,		"NL802154_CMD_GET_WPAN_PHY" },
 	{ NL802154_CMD_GET_INTERFACE,		"NL802154_CMD_GET_INTERFACE" },
@@ -94,7 +66,11 @@ static const struct genl_cmd_grammar nl802154_cmds[] = {
  * every command's input-side validator without per-command
  * namespacing.  String lengths mirror the kernel's .len bounds:
  * IFNAMSIZ-1 == 15 for IFNAME, and the WPAN_PHY_NAME bound is
- * 20-1 == 19 (the upstream policy literally encodes "20-1").
+ * 20-1 == 19 (the upstream policy literally encodes "20-1").  The
+ * NLA_REJECT attrs (SCAN_PREAMBLE_CODES, SCAN_MEAN_PRF) are omitted
+ * because the policy fails them with -EINVAL before the handler runs;
+ * the reply-only attrs (GENERATION, CHANNELS_SUPPORTED, PAD) have no
+ * policy entry and are omitted too.
  */
 static const struct nla_attr_spec nl802154_attrs[] = {
 	{ NL802154_ATTR_WPAN_PHY,		NLA_KIND_U32,    4 },

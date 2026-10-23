@@ -1,32 +1,8 @@
 /*
- * Genetlink family grammar: mptcp_pm.
- *
- * The MPTCP path manager netlink family is the userspace control
- * plane for adding / removing endpoint addresses, querying limits,
- * and steering subflow creation on multipath-TCP sockets.  It was
- * added in 5.6 alongside the rest of the MPTCP stack and has
- * accreted command coverage steadily since (SET_FLAGS, ANNOUNCE,
- * REMOVE, SUBFLOW_CREATE/DESTROY) — every release tends to ship a
- * new attribute or command, and the per-cmd nla_policy tables in
- * net/mptcp/pm_netlink.c + pm_userspace.c are exactly the kind of
- * shallow validators that benefit from spec-driven fuzzing.
- *
- * Command set covers the full in-kernel opset: the address-table half
- * (ADD_ADDR / DEL_ADDR / GET_ADDR / FLUSH_ADDRS) plus the limits
- * accessors (SET_LIMITS / GET_LIMITS) plus the userspace-pm ops that
- * accreted on top (SET_FLAGS / ANNOUNCE / REMOVE / SUBFLOW_CREATE /
- * SUBFLOW_DESTROY).  These all dispatch through mptcp_pm_genl_ops[]
- * with the shared MPTCP_PM_ATTR_ADDR nested outer (carrying
- * MPTCP_PM_ADDR_ATTR_FAMILY / ADDR4 / ADDR6 / PORT children) plus
- * MPTCP_PM_ATTR_TOKEN / LOC_ID / ADDR_REMOTE for the subflow ops, so
- * the existing single-attr table exercises the cross-cutting address
- * parser and the connection-identifier scalars for every command.
- *
- * Header gating mirrors the ethtool family: <linux/mptcp_pm.h> is
- * a YNL-generated UAPI header that only exists from kernel 6.11
- * onward (older kernels carried the same constants in <linux/mptcp.h>).
- * Wrap the family in __has_include so older build hosts silently
- * drop it instead of failing the build.
+ * Genetlink family grammar: mptcp_pm (MPTCP path manager), targeting the
+ * generated policies and ops in net/mptcp/mptcp_pm_gen.c and the handlers
+ * in net/mptcp/pm_netlink.c.  Every op but GET_ADDR and GET_LIMITS is
+ * GENL_UNS_ADMIN_PERM.
  */
 
 #if __has_include(<linux/mptcp_pm.h>)

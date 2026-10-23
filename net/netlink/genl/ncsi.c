@@ -1,38 +1,7 @@
 /*
- * Genetlink family grammar: NCSI (Network Controller Sideband Interface).
- *
- * The NCSI subsystem (net/ncsi/) exposes its userspace control plane
- * through a single generic-netlink family ("NCSI") with six user-callable
- * commands: NCSI_CMD_PKG_INFO (the only command with a .dumpit handler),
- * NCSI_CMD_SET_INTERFACE / NCSI_CMD_CLEAR_INTERFACE (preferred
- * package/channel selection), NCSI_CMD_SEND_CMD (the raw NC-SI
- * passthrough that carries a binary NCSI_ATTR_DATA payload of up to
- * 2048 bytes — the most interesting fuzz target on this family), and
- * NCSI_CMD_SET_PACKAGE_MASK / NCSI_CMD_SET_CHANNEL_MASK (whitelist
- * configuration, optionally toggling multi-mode via NCSI_ATTR_MULTI_FLAG).
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "NCSI", so the per-cmd nla_policy walker in
- * net/ncsi/ncsi-netlink.c plus the NC-SI command passthrough path have
- * been routinely cold under generic netlink fuzzing; resolving the
- * family at first NETLINK_GENERIC use lets the message generator
- * address real NCSI messages whose attribute shapes plausibly survive
- * the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this family's
- * commands.  NCSI uses a single flat NCSI_ATTR_* namespace.  The
- * remaining seven attrs cover the IFINDEX scoping selector, the
- * package/channel id selectors, the raw NC-SI command payload (DATA),
- * the multi-mode toggle flag, and the package/channel whitelist masks.
- *
- * Header gating mirrors the team / hsr / fou / psample families:
- * <linux/ncsi.h> is the upstream UAPI header carrying every NCSI_CMD_*
- * and NCSI_ATTR_* enum referenced below.  Build hosts lacking the
- * header silently drop the family from the registry instead of failing
- * the build.  Per-symbol #ifndef shims fill in every NCSI_ATTR_* /
- * NCSI_CMD_* on build hosts whose stale uapi predates the
- * PACKAGE_MASK / CHANNEL_MASK additions.
+ * Genetlink family grammar: NCSI (Network Controller Sideband Interface),
+ * targeting ncsi_genl_policy in net/ncsi/ncsi-netlink.c.  Every op but
+ * PKG_INFO is GENL_ADMIN_PERM.  One flat NCSI_ATTR_* namespace.
  */
 
 #if __has_include(<linux/ncsi.h>)

@@ -1,29 +1,8 @@
 /*
- * Genetlink family grammar: nfc (Near-Field Communication).
- *
- * The nfc subsystem exposes its userspace control plane through a
- * single generic-netlink family ("nfc") with nineteen user-callable
- * commands covering device enumeration / power control, polling and
- * target activation, the LLCP parameter / service-discovery surface,
- * secure-element enable / disable / APDU exchange, firmware download,
- * and the vendor-specific passthrough.  The eleven NFC_EVENT_* ids in
- * <linux/nfc.h> are kernel->user notifications and are intentionally
- * omitted: net/nfc/netlink.c never dispatches them from genl_ops, so
- * sending one is a guaranteed -EOPNOTSUPP at the family demuxer.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "nfc", so net/nfc/netlink.c's nfc_genl_policy walker
- * plus the per-command setup paths have been routinely cold under
- * generic netlink fuzzing; resolving the family at first
- * NETLINK_GENERIC use lets the message generator address real nfc
- * messages whose attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the nbd / fou / l2tp model, a single flat nla_attr_spec table
- * lists every id used by this family's commands.  The kernel policy
- * declares a subset of NFC_ATTR_* — the unlisted ids are response-side
- * payloads emitted by GET_DEVICE / GET_TARGET / GET_SE; listing them
- * here exercises the validator's "ignore on input" branch the same way
- * the fou / l2tp grammars do.
+ * Genetlink family grammar: nfc (Near-Field Communication), targeting
+ * nfc_genl_policy and the ops in net/nfc/netlink.c.  Every nfc_genl_ops
+ * command is listed; the NFC_EVENT_* ids are kernel-to-userspace
+ * notifications, not ops, and are omitted.
  */
 
 #if __has_include(<linux/nfc.h>)

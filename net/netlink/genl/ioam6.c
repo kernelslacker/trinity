@@ -1,44 +1,7 @@
 /*
- * Genetlink family grammar: ioam6 (IPv6 In-situ OAM, RFC 9197).
- *
- * The IOAM6 module exposes its userspace control plane through a
- * single generic-netlink family ("IOAM6") with seven user-callable
- * commands split into two object classes: the IOAM namespaces
- * (ADD_NAMESPACE / DEL_NAMESPACE / DUMP_NAMESPACES) and the schemas
- * carrying their option data (ADD_SCHEMA / DEL_SCHEMA / DUMP_SCHEMAS),
- * plus NS_SET_SCHEMA which binds a schema to an existing namespace.
- * Add/Del primarily gate on the per-object id (NS_ID for the
- * namespace half, SC_ID for the schema half); ADD_NAMESPACE also
- * carries the IOAM data scalars (NS_DATA u32 / NS_DATA_WIDE u64) and
- * ADD_SCHEMA carries the variable-length SC_DATA binary blob plus the
- * SC_NONE flag attribute used by NS_SET_SCHEMA to drop a schema
- * binding back to "no schema".
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "IOAM6", so the per-cmd nla_policy walker plus the
- * namespace / schema mutation paths in net/ipv6/ioam6.c have been
- * routinely cold under generic netlink fuzzing; resolving the family
- * at first NETLINK_GENERIC use lets the message generator address
- * real ioam6 messages whose attribute shapes plausibly survive the
- * per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample / ila
- * model, a single flat nla_attr_spec table lists every id used by
- * this family's commands.  IOAM6 uses a single flat IOAM6_ATTR_*
- * namespace (no nested containers), so the table is one of the
- * simpler grammars: an NS_ID u16 selector, an SC_ID u32 selector,
- * the NS_DATA / NS_DATA_WIDE u32 / u64 option-data scalars, the
- * SC_DATA variable-length binary blob (capped at
- * IOAM6_MAX_SCHEMA_DATA_LEN by the kernel policy), the SC_NONE flag,
- * and the PAD u64-alignment partner.
- *
- * Header gating mirrors the psample / fou / hsr / ila families:
- * <linux/ioam6_genl.h> is the upstream UAPI header carrying every
- * IOAM6_CMD_* and IOAM6_ATTR_* enum referenced below.  Build hosts
- * lacking the header silently drop the family from the registry
- * instead of failing the build.  Per-symbol #ifndef shims fill in
- * IOAM6_ATTR_* / IOAM6_CMD_* on build hosts whose stale uapi predates
- * the namespace-vs-schema attribute split.
+ * Genetlink family grammar: ioam6 (IPv6 In-situ OAM, RFC 9197), targeting
+ * net/ipv6/ioam6.c.  All seven ops are GENL_ADMIN_PERM.  One flat
+ * IOAM6_ATTR_* namespace, no nested containers.
  */
 
 #if __has_include(<linux/ioam6_genl.h>)

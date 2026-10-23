@@ -1,63 +1,23 @@
 /*
- * Genetlink family grammar: NetLabel (four families).
- *
- * NetLabel is the kernel's security-label distribution layer for
- * network protocols, exposing four generic-netlink families:
- *
- *   "NLBL_MGMT"     — domain/protocol map management (ADD / REMOVE /
- *                     LISTALL / ADDDEF / REMOVEDEF / LISTDEF /
- *                     PROTOCOLS / VERSION).  Drives the per-netns
- *                     domain hash table in net/netlabel/netlabel_domainhash.c.
- *   "NLBL_CIPSOv4"  — CIPSOv4 DOI table management (ADD / REMOVE /
- *                     LIST / LISTALL).  ADD walks deeply nested MLS
- *                     level + category mapping tables (TAGLST,
- *                     MLSLVLLST -> MLSLVL -> MLSLVLLOC/REM,
- *                     MLSCATLST -> MLSCAT -> MLSCATLOC/REM).
- *   "NLBL_UNLBL"    — unlabeled-packet policy (ACCEPT / LIST plus
- *                     STATICADD/REMOVE/LIST and the *_DEF triple).
- *                     Static labels carry an IFACE NUL-string + SECCTX
- *                     binary blob plus an IPv4/IPv6 selector.
- *   "NLBL_CALIPSO"  — CALIPSO (CIPSO-over-IPv6) DOI management
- *                     (ADD / REMOVE / LIST / LISTALL).
- *
- * Every netlbl message exercises the LSM hook chain on the kernel
- * side: netlbl_audit_start -> the per-family parser -> SELinux's /
- * SMACK's netlbl_secattr operations -> the netlbl_domhsh /
- * netlbl_unlhsh / cipso_v4_doi / calipso_doi state machines.  The
- * domhsh and unlhsh tables are RCU-protected linked lists with their
- * own ADD / REMOVE refcount dances; the DOI tables are refcounted
- * through cipso_v4_doi_putdef / calipso_doi_putdef.  Random
- * nlmsg_type IDs essentially never matched any of these families'
- * runtime-assigned family_ids, so this entire surface area has been
- * cold under generic netlink fuzzing — controller-resolved family_id
- * dispatching makes the per-cmd policy parsers and the post-parse
- * LSM-secattr handlers reachable for the first time.
- *
- * Per the wireguard / tipc / l2tp model, each family carries a single
- * flat nla_attr_spec table listing every NLBL_*_A_* id reachable from
- * any of its commands' policies.  Numeric collisions across families
- * are harmless (each family's table only ever drives that family's
- * messages).
- *
- * Header gating: NetLabel does not ship a UAPI header.  Its constants
- * live in net/netlabel/netlabel_*.h plus include/net/netlabel.h, all
- * of which are kernel-internal and absent from any sysroot.  Compat
- * fallbacks in include/kernel/netlabel.h (per-symbol #ifndef so a hypothetical
- * future UAPI header would win) carry the NLBL_*_C_* command ids,
- * NLBL_*_A_* attribute ids, the four NLBL_*_GENL_NAME family-name
- * strings, and NETLBL_PROTO_VERSION.  No #include is therefore
- * required at the family-file level — the spec walker references the
- * symbols and include/kernel/netlabel.h provides them unconditionally.
- *
- * Family-name strings match include/net/netlabel.h exactly (including
- * the lowercase 'v' in "NLBL_CIPSOv4" and the truncation in
- * "NLBL_UNLBL"), since the controller dump compares byte-for-byte.
+ * Genetlink family grammar: NetLabel, four families (NLBL_MGMT,
+ * NLBL_CIPSOv4, NLBL_UNLBL, NLBL_CALIPSO), targeting net/netlabel/.  Each
+ * carries its own flat nla_attr_spec table of the NLBL_*_A_* ids that its
+ * commands' policies use.
  */
 
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * NetLabel ships no uapi header: its ids live in kernel-internal headers,
+ * so include/kernel/netlabel.h is their only definition and the families
+ * need no __has_include() guard.  The family-name strings must match
+ * include/net/netlabel.h byte for byte, since the controller dump is
+ * compared with strcmp(): "NLBL_CIPSOv4" has a lowercase v and the
+ * unlabeled family is "NLBL_UNLBL".
+ */
 #include "kernel/netlabel.h"
+
 /* ---- NLBL_MGMT ---- */
 
 static const struct genl_cmd_grammar nlbl_mgmt_cmds[] = {

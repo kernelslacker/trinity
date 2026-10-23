@@ -1,53 +1,6 @@
 /*
- * Genetlink family grammar: l2tp.
- *
- * The L2TPv3 control plane is a single generic-netlink family
- * (L2TP_GENL_NAME = "l2tp") whose nine commands cover the full
- * tunnel/session lifecycle: TUNNEL_CREATE/DELETE/MODIFY/GET and
- * SESSION_CREATE/DELETE/MODIFY/GET, plus a CMD_NOOP slot.  The
- * per-cmd nla_policy parsers live in net/l2tp/l2tp_netlink.c, and
- * the post-parse handlers (l2tp_nl_cmd_tunnel_create / _delete,
- * l2tp_nl_cmd_session_create / _delete, ...) drive a refcounted
- * state machine — l2tp_tunnel_get / l2tp_session_get walk a
- * per-netns IDR with refcount_inc_not_zero, and the create/delete
- * paths flip ->dead and unhash via l2tp_tunnel_delete /
- * l2tp_session_delete.  That refcount + dead-flag dance has been
- * the source of multiple historic UAFs (the l2tp_tunnel_destruct
- * race family; CVE-2020-25670 / -25671 reference-leak on the IPv6
- * setsockopt path; the l2tp_session_get_by_ifname leak), and the
- * netlink path is the cleanest way for a fuzzer to drive create
- * and delete operations interleaved against random tunnel/session
- * IDs.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-
- * assigned family_id for "l2tp", so the parser plus the
- * create/delete dispatchers have been routinely cold under
- * generic netlink fuzzing; the controller-resolved family_id
- * dispatcher addresses real l2tp messages whose attribute shapes
- * plausibly survive the per-cmd policy.  Random CONN_ID /
- * SESSION_ID values cause the post-parse handler to bail with
- * -ENOENT, but that's after the full attribute tree has been
- * walked and refcount lookups have been attempted, so coverage
- * of the parser and the IDR walk is preserved.
- *
- * Per the wireguard / tipc model, a single flat nla_attr_spec
- * table lists every id used by any nest reachable from this
- * family's commands.  L2TP_ATTR_STATS opens a sub-namespace
- * (L2TP_ATTR_TX_PACKETS / TX_BYTES / RX_PACKETS / ...) whose
- * numeric ids collide with outer L2TP_ATTR_* ids — L2TP_ATTR_TX_PACKETS=1
- * vs L2TP_ATTR_PW_TYPE=1, L2TP_ATTR_TX_BYTES=2 vs L2TP_ATTR_ENCAP_TYPE=2,
- * etc.  STATS is a bare NLA_NESTED that the kernel only emits, so on
- * input those ids are checked as the outer attrs that share them.
- *
- * Header gating mirrors the wireguard family: <linux/l2tp.h> is
- * the upstream UAPI header that ships with kernel headers from
- * 2.6.35 onward, but a few attribute ids were appended later
- * (the IPv6 saddr/daddr pair plus UDP_ZERO_CSUM6_TX/RX in 3.16,
- * RX_COOKIE_DISCARDS in 4.4, RX_INVALID and the *_PAD ids in 4.7).
- * Build hosts whose sysroot lacks <linux/l2tp.h> entirely silently
- * drop the family from the registry; build hosts whose header
- * predates one of the late-add attributes pick up the numeric
- * fallback in include/kernel/l2tp.h instead of failing the build.
+ * Genetlink family grammar: l2tp (L2TPv3 tunnels and sessions), targeting
+ * net/l2tp/l2tp_netlink.c.  Every op but NOOP is GENL_UNS_ADMIN_PERM.
  */
 
 #if __has_include(<linux/l2tp.h>)

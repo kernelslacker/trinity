@@ -1,45 +1,8 @@
 /*
- * Genetlink family grammar: NET_DM (drop monitor).
- *
- * The drop_monitor module exposes its userspace control plane through a
- * single generic-netlink family ("NET_DM") that gates the kernel's drop
- * tracing feed.  Userspace issues NET_DM_CMD_START / NET_DM_CMD_STOP to
- * arm and disarm the tracepoints, NET_DM_CMD_CONFIG to set the alert
- * mode plus the truncation / queue-length knobs, NET_DM_CMD_CONFIG_GET
- * to read the current configuration back, and NET_DM_CMD_STATS_GET to
- * fetch the per-mode dropped-packet counters.  The remaining commands
- * (ALERT, PACKET_ALERT, CONFIG_NEW, STATS_NEW) are kernel-to-userspace
- * notification / reply ids; userspace can still issue them but the cmd
- * dispatcher rejects them after running the per-cmd nla_policy walker.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "NET_DM", so the per-cmd nla_policy walker in
- * net/core/drop_monitor.c plus the mode-switch state machine that
- * gates summary-vs-packet alerting have been routinely cold under
- * generic netlink fuzzing; resolving the family at first NETLINK_GENERIC
- * use lets the message generator address real drop_monitor messages
- * whose attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the fou / psample model, a single flat nla_attr_spec table lists
- * every id used by this family's commands.  NET_DM uses a single flat
- * NET_DM_ATTR_* namespace.  The kernel's net_dm_nl_policy table only
- * lists ALERT_MODE / TRUNC_LEN / QUEUE_LEN / SW_DROPS / HW_DROPS, and
- * its strict_start_type of 1 rejects every other attribute as
- * unsupported: the rest of the table, the nested IN_PORT / STATS /
- * HW_STATS / HW_ENTRIES / HW_ENTRY included, are response-side payloads
- * emitted by CONFIG_GET / STATS_GET / PACKET_ALERT.
- *
- * Header gating mirrors the fou / psample families: <linux/net_dropmon.h>
- * is the upstream UAPI header carrying every NET_DM_CMD_* and
- * NET_DM_ATTR_* enum referenced below.  Build hosts lacking the header
- * silently drop the family from the registry instead of failing the
- * build.  Per-symbol #ifndef shims fill in newer NET_DM_ATTR_* on
- * build hosts whose stale uapi predates the packet-mode metadata,
- * hardware-trap, or FLOW_ACTION_COOKIE / REASON additions.
- *
- * The uapi header carries no NET_DM_GENL_NAME macro — the kernel's
- * registration in net/core/drop_monitor.c hardcodes the family name
- * as the literal "NET_DM", so the .name field below does the same.
+ * Genetlink family grammar: NET_DM (drop monitor), targeting
+ * net/core/drop_monitor.c.  START, STOP and CONFIG are GENL_ADMIN_PERM; the
+ * policy lists only ALERT_MODE, TRUNC_LEN, QUEUE_LEN, SW_DROPS and
+ * HW_DROPS and rejects every other attribute as unsupported.
  */
 
 #if __has_include(<linux/net_dropmon.h>)
@@ -48,6 +11,10 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * ALERT, PACKET_ALERT, CONFIG_NEW and STATS_NEW are kernel-to-userspace
+ * ids with no op, so they are not listed.
+ */
 static const struct genl_cmd_grammar net_dm_cmds[] = {
 	{ NET_DM_CMD_START,	"NET_DM_CMD_START" },
 	{ NET_DM_CMD_STOP,	"NET_DM_CMD_STOP" },
@@ -103,6 +70,8 @@ static const struct nla_attr_spec net_dm_attrs[] = {
 };
 
 struct genl_family_grammar fam_net_dm = {
+	/* The uapi header has no NET_DM_GENL_NAME; the kernel registers the
+	 * literal. */
 	.name = "NET_DM",
 	.cmds = net_dm_cmds,
 	.n_cmds = ARRAY_SIZE(net_dm_cmds),

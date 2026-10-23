@@ -1,20 +1,7 @@
 /*
- * Genetlink family grammar: nl80211.
- *
- * nl80211 is the wireless configuration interface — wiphy, virtual
- * interfaces, scans, stations, mesh, regulatory, the lot.  It is one
- * of the largest genetlink families in the kernel (200+ commands,
- * 350+ attributes) and historically one of the buggiest networking
- * subsystems: 15+ public CVEs over the last few years, almost all
- * rooted in incorrect or missing per-attribute validation in deep
- * parser paths (nl80211_set_cqm_rssi, nl80211_set_station,
- * nl80211_join_ibss, etc.).
- *
- * Starter command set is the read-side dump path, which exercises
- * cfg80211_get_wiphy_dev, the per-interface policy tables, and the
- * scan/station object dumpers without needing CAP_NET_ADMIN.  Even
- * that subset reaches a meaningful slice of net/wireless/nl80211.c
- * that the random-id netlink fuzzer never touches.
+ * Genetlink family grammar: nl80211 (cfg80211 wireless configuration),
+ * targeting nl80211_policy and the read-side ops in net/wireless/nl80211.c.
+ * Only the GET commands are listed; GET_KEY alone is GENL_UNS_ADMIN_PERM.
  */
 
 #include <linux/nl80211.h>

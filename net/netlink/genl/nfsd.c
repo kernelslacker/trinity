@@ -1,66 +1,9 @@
 /*
- * Genetlink family grammar: nfsd (kernel NFS server control plane).
- *
- * The nfsd subsystem exposes its userspace control plane through a
- * single generic-netlink family ("nfsd") carrying nineteen commands
- * as of v7.3-rc1.  The original nine (v7.1 and earlier) are:
- * RPC_STATUS_GET (dumpit, per-RPC stats), paired THREADS_SET/GET,
- * VERSION_SET/GET, LISTENER_SET/GET, and POOL_MODE_SET/GET.  Nine
- * commands were added in v7.2 as the netlink replacement for the
- * /proc/net/rpc/{type}/channel text upcalls: CACHE_NOTIFY (multicast
- * event to the exportd group), SVC_EXPORT_GET/SET_REQS and
- * EXPKEY_GET/SET_REQS (cache dump and update pairs), CACHE_FLUSH
- * (cache invalidation), and UNLOCK_IP / UNLOCK_FILESYSTEM /
- * UNLOCK_EXPORT (NLM lock release by address, path, or export).
- * SERVER_STATS_GET was added in v7.3-rc1 as a dumpit-only stats
- * command with no admin-perm requirement.  All user-callable commands
- * that write state, and the SVC_EXPORT / EXPKEY GET_REQS dumps, are
- * GENL_ADMIN_PERM gated; genl_family_rcv_msg() checks that flag
- * before it parses attributes, so a child without CAP_NET_ADMIN in
- * the initial user namespace gets -EPERM and never reaches their
- * nla_policy walkers.  The remaining GET commands carry no admin
- * flag, so penetrating the family demuxer with a real family_id puts
- * those directly in the fuzzer's reach.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "nfsd", so the per-cmd nla_policy walker in
- * fs/nfsd/nfsctl.c plus the threads / version / listener / pool-mode
- * doit handlers have been routinely cold under generic netlink
- * fuzzing; resolving the family at first NETLINK_GENERIC use lets
- * the message generator address real nfsd messages whose attribute
- * shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  nfsd carries many distinct top-level attribute
- * namespaces whose ids all start at 1 with disagreeing nla_kind
- * values (U32 vs NESTED vs NESTED vs NUL_STRING vs U64 vs BINARY).
- * The flat table cannot disambiguate overlapping keys, so following
- * the handshake / dpll / ovpn precedent only the NFSD_A_SERVER_*
- * surface plus the NFSD_A_RPC_STATUS_* response-side namespace
- * (whose ids 5..14 do not collide with any other namespace) are
- * enumerated here: SERVER_* is the only namespace whose ids 1..4
- * carry consistent kinds across every attribute the THREADS_SET
- * parser ingests.  The namespaces that conflict at id 1 and belong
- * in a future per-command namespace extension are documented in the
- * attrs comment below; their cmds are still in the cmds[] table and
- * will start exercising their inner parsers once that extension lands.
- *
- * The family carries a nonzero declared version (NFSD_FAMILY_VERSION
- * = 1) so the default_version member is initialised -- the kernel's
- * dispatcher doesn't gate on the genlmsghdr.version byte today, but
- * matching the declared family version keeps the message generator
- * honest against any future version-gated dispatch.  hdrsize stays 0:
- * nfsd has no family-specific fixed header, attributes follow the
- * genlmsghdr directly.
- *
- * Header gating mirrors the team / hsr / fou / psample families:
- * <linux/nfsd_netlink.h> is the upstream UAPI header carrying every
- * NFSD_CMD_* and NFSD_A_* enum referenced below.  Build hosts lacking
- * the header silently drop the family from the registry instead of
- * failing the build.  Per-symbol #ifndef shims in
- * include/kernel/nfsd_netlink.h fill in any ids missing from a stale
- * uapi.
+ * Genetlink family grammar: nfsd (kernel NFS server control plane),
+ * targeting fs/nfsd/netlink.c and nfsctl.c.  Every op but RPC_STATUS_GET,
+ * SERVER_STATS_GET and the THREADS / VERSION / LISTENER / POOL_MODE
+ * getters is GENL_ADMIN_PERM.  Only the NFSD_A_SERVER_* and
+ * NFSD_A_RPC_STATUS_* namespaces are listed; the attribute table says why.
  */
 
 #if __has_include(<linux/nfsd_netlink.h>)

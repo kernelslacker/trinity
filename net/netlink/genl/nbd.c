@@ -1,43 +1,8 @@
 /*
- * Genetlink family grammar: nbd (Network Block Device).
- *
- * The nbd module exposes its userspace control plane through a single
- * generic-netlink family ("nbd") with four user-callable commands:
- * NBD_CMD_CONNECT, NBD_CMD_DISCONNECT, NBD_CMD_RECONFIGURE, and
- * NBD_CMD_STATUS.  NBD_CMD_LINK_DEAD is the multicast notification the
- * driver sends when a link dies, not an op: the genl core rejects it
- * on input, so the grammar omits it.  CONNECT / RECONFIGURE walk
- * the full attribute policy (INDEX selector, SIZE_BYTES /
- * BLOCK_SIZE_BYTES / TIMEOUT / DEAD_CONN_TIMEOUT u64 scalars, the
- * SERVER_FLAGS / CLIENT_FLAGS u64 bitfields, the BACKEND_IDENTIFIER
- * NUL-terminated string, and the SOCKETS / DEVICE_LIST nested
- * containers); DISCONNECT / STATUS gate primarily on NBD_ATTR_INDEX.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "nbd", so the per-cmd nla_policy walker in
- * drivers/block/nbd.c plus the CONNECT / RECONFIGURE setup paths have
- * been routinely cold under generic netlink fuzzing; resolving the
- * family at first NETLINK_GENERIC use lets the message generator
- * address real nbd messages whose attribute shapes plausibly survive
- * the per-cmd policy.  The handlers gate destructive work on a
- * netlink_capable(skb, CAP_SYS_ADMIN) check inside the handler body,
- * not on a GENL_ADMIN_PERM flag, so the nla_policy walk runs
- * unprivileged and the policy validator is genuinely exercised even
- * from a non-root fuzz child.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  nbd uses a single flat NBD_ATTR_* namespace.
- * BACKEND_IDENTIFIER is a NUL-terminated string identifying the
- * backing store across a RECONFIGURE.
- *
- * Header gating mirrors the team / hsr / fou / psample families:
- * <linux/nbd-netlink.h> is the upstream UAPI header carrying every
- * NBD_CMD_* and NBD_ATTR_* enum referenced below.  Build hosts lacking
- * the header silently drop the family from the registry instead of
- * failing the build.  Per-symbol #ifndef shims fill in the enum ids on
- * build hosts whose stale uapi predates BACKEND_IDENTIFIER /
- * DEVICE_LIST / DEAD_CONN_TIMEOUT.
+ * Genetlink family grammar: nbd (Network Block Device), targeting
+ * nbd_attr_policy and the handlers in drivers/block/nbd.c.  The ops carry
+ * no admin flag: CONNECT, DISCONNECT and RECONFIGURE test CAP_SYS_ADMIN
+ * with netlink_capable() in the handler, after the policy walk.
  */
 
 #if __has_include(<linux/nbd-netlink.h>)
@@ -101,6 +66,7 @@
 #define NBD_ATTR_BACKEND_IDENTIFIER	10
 #endif
 
+/* LINK_DEAD is a multicast notification, not an op, so it is not listed. */
 static const struct genl_cmd_grammar nbd_cmds[] = {
 	{ NBD_CMD_CONNECT,	"NBD_CMD_CONNECT" },
 	{ NBD_CMD_DISCONNECT,	"NBD_CMD_DISCONNECT" },
