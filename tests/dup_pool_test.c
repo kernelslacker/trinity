@@ -2454,6 +2454,9 @@ static void open_result_naming_a_protected_file_is_refused(void)
 	}
 }
 
+/* The calls the O_PATH oracle looked up and could not judge. */
+#define OPENAT_INCONCLUSIVE	(shm->stats.oracle.openat_oracle_inconclusive)
+
 /*
  * openat's O_PATH oracle compares the fd's inode with the path's, but only
  * for a path whose binding held across the call: the sanitiser looks the
@@ -2555,6 +2558,7 @@ static unsigned long post_openat_path(int fd)
  * pools the file either way. */
 static void openat_oracle_compares_the_inode(void)
 {
+	unsigned long inconclusive = OPENAT_INCONCLUSIVE;
 	int fd;
 
 	oracle_files();
@@ -2587,6 +2591,8 @@ static void openat_oracle_compares_the_inode(void)
 	check("a file the oracle flagged was not pooled", "openat",
 	      published == 1 && pool_count(fd) == 1);
 	close(fd);
+	check("a binding that held was counted as inconclusive", "openat",
+	      OPENAT_INCONCLUSIVE == inconclusive);
 	oracle_files_remove();
 }
 
@@ -2596,7 +2602,7 @@ static void openat_oracle_compares_the_inode(void)
 static unsigned long renamed_path_anomalies(bool open_first,
 					    const char *fd_path)
 {
-	unsigned long anomalies;
+	unsigned long anomalies, inconclusive = OPENAT_INCONCLUSIVE;
 	int fd = -1;
 
 	oracle_files();
@@ -2610,6 +2616,8 @@ static unsigned long renamed_path_anomalies(bool open_first,
 	anomalies = post_openat_path(fd);
 	check("a file whose path moved was not pooled", "openat",
 	      published == 1 && pool_count(fd) == 1);
+	check("a path that moved was not counted as inconclusive once",
+	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
 	close(fd);
 	return anomalies;
 }
@@ -2619,6 +2627,7 @@ static unsigned long renamed_path_anomalies(bool open_first,
  * is the kernel's doing, and none is reported. */
 static void openat_oracle_ignores_a_path_that_moved(void)
 {
+	unsigned long inconclusive;
 	char link[64];
 	int afd, bfd, fd, slot;
 
@@ -2633,9 +2642,23 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	check("an fd unlike both lookups of a path that moved was reported",
 	      "openat", renamed_path_anomalies(false, oracle_c) == 0);
 
+	/* The path is gone by the later lookup. */
+	oracle_files();
+	sanitise_openat_path(oracle_a);
+	fd = open_o_path(oracle_a);
+	if (unlink(oracle_a) != 0)
+		BUG("fd pool: cannot unlink the O_PATH oracle's file");
+	inconclusive = OPENAT_INCONCLUSIVE;
+	check("a path unlinked after the open was reported", "openat",
+	      post_openat_path(fd) == 0);
+	check("a path that was unlinked was not counted as inconclusive",
+	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
+	close(fd);
+
 	/* The link names b for the open and a again for the later lookup, so
 	 * the lookups agree and the fd differs from both. */
 	oracle_files();
+	inconclusive = OPENAT_INCONCLUSIVE;
 	afd = open_o_path(oracle_a);
 	bfd = open_o_path(oracle_b);
 	slot = dup(afd);
@@ -2661,6 +2684,8 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	check("an fd on procfs was judged", "openat",
 	      post_openat_path(fd) == 0);
 	close(fd);
+	check("a call that was not judged was counted as inconclusive",
+	      "openat", OPENAT_INCONCLUSIVE == inconclusive);
 	oracle_files_remove();
 }
 
@@ -2670,6 +2695,7 @@ static void openat_oracle_ignores_a_path_that_moved(void)
  * handed an fd the path does not name. */
 static void openat_oracle_needs_the_lookup_of_its_call(void)
 {
+	unsigned long inconclusive = OPENAT_INCONCLUSIVE;
 	int dfd, fd;
 
 	oracle_files();
@@ -2707,6 +2733,8 @@ static void openat_oracle_needs_the_lookup_of_its_call(void)
 	      post_openat_path(fd) == 0);
 	close(fd);
 	close(dfd);
+	check("a call with no lookup was counted as inconclusive", "openat",
+	      OPENAT_INCONCLUSIVE == inconclusive);
 	oracle_files_remove();
 }
 

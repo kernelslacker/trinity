@@ -95,6 +95,7 @@ static const struct stat_field oracle_fields[] = {
 	STAT_FIELD_JSON_SUB(oracle, readlink_oracle_anomalies,               "readlink_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, readlinkat_oracle_anomalies,             "readlinkat_anomalies"),
 	STAT_FIELD_JSON_SUB(oracle, sysfs_oracle_anomalies,                  "sysfs_anomalies"),
+	STAT_FIELD_JSON_SUB(oracle, openat_oracle_inconclusive,              "openat_inconclusive"),
 };
 
 const struct stat_category oracle_category =

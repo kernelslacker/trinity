@@ -119,6 +119,15 @@ struct oracle_stats {
 	unsigned long readlink_oracle_anomalies;
 	unsigned long readlinkat_oracle_anomalies;
 	unsigned long sysfs_oracle_anomalies;
+	/*
+	 * Fired when post_openat() holds a lookup of the call but cannot
+	 * judge the fd, because the path's binding moved between the lookup
+	 * before the call and the one after it.  A non-zero value means
+	 * 'oracle looked and could not tell', distinct from
+	 * fd_oracle_anomalies, which means 'oracle judged and found a
+	 * mismatch'.
+	 */
+	unsigned long openat_oracle_inconclusive;
 };
 
 #endif /* _TRINITY_STATS_SUBSYS_ORACLE_H */

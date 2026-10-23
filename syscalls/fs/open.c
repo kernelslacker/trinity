@@ -220,7 +220,8 @@ struct syscallentry syscall_open = {
  * Oracle: openat(AT_FDCWD, path, O_PATH) must return an fd on the inode the
  * path names.  The open and a later lookup are separate walks, so the path is
  * looked up before the call too: a mismatch counts only when both lookups
- * agree and the fd differs from both.  Symlinks and procfs fds are skipped.
+ * agree and the fd differs from both, and lookups that disagree are
+ * inconclusive.  Symlinks and procfs fds are skipped.
  */
 static void openat_path_oracle(const struct syscallrecord *rec,
 			       const struct openat_post_state *snap,
@@ -241,8 +242,12 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 		return;
 
 	if (lstat((const char *) snap->path, &st_path) != 0 ||
-	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino)
+	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino) {
+		__atomic_add_fetch(
+			&shm->stats.oracle.openat_oracle_inconclusive,
+			1, __ATOMIC_RELAXED);
 		return;
+	}
 
 	if (st_fd->st_dev == snap->dev && st_fd->st_ino == snap->ino)
 		return;

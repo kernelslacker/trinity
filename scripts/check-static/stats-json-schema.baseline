@@ -138,6 +138,7 @@ stats	object
     stats.oracle.readlink_anomalies	u64
     stats.oracle.readlinkat_anomalies	u64
     stats.oracle.sysfs_anomalies	u64
+    stats.oracle.openat_inconclusive	u64
   stats.vfs_writes	object
     stats.vfs_writes.procfs_open_fail	u64
     stats.vfs_writes.procfs_write_fail	u64
