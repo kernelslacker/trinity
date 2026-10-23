@@ -120,9 +120,9 @@ _Static_assert(0 CMP_HYP_PROBE_CLASS_LABEL_LIST(CMP_HYP_PROBE_CLASS_LABEL_ONE) =
 /*
  * SHADOW per-probe-class histogram of cmp_hyp_derive_value()
  * emissions.  Bumped lock-step (RELAXED) at the out_bump label in
- * cmp_hints.c using the class the derivation just produced; *out is
- * unchanged from the pre-census ladder, so the live inject arm
- * receives a byte-identical value.  Render gated on any-delta so
+ * cmp_hints/hyp-derive.c using the class the derivation just produced;
+ * *out is untouched by the census, so the live inject arm receives the
+ * value the derivation computed.  Render gated on any-delta so
  * the section stays quiet until the derivation path fires.  The
  * bound CMP_HYP_PROBE_CLASS_NR matches the on-shm array (see the
  * enum and struct kcov_shared in include/kcov.h); the label list
