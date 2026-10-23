@@ -15,8 +15,9 @@
 /*
  * Fresh-uapi shims for CTA_* ids that build hosts with a stale
  * <linux/netfilter/nfnetlink_conntrack.h> may not yet know.  Values
- * mirror the mainline enum ctattr_type ordering; SECMARK is retained
- * as an obsolete-but-parsed scalar the kernel still validates.
+ * mirror the mainline enum ctattr_type ordering.  SECMARK is obsolete
+ * and ct_nla_policy has no entry for it, so the kernel never validates
+ * it.
  */
 #ifndef CTA_SECMARK
 #define CTA_SECMARK        17
@@ -86,9 +87,10 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
 /*
  * CTA_EXPECT_* attr spec table for NFNL_SUBSYS_CTNETLINK_EXP.  Mirrors
  * exp_nla_policy in nf_conntrack_netlink.c.  CTA_EXPECT_HELP_NAME and
- * CTA_EXPECT_FN are NUL-terminated strings bounded by the kernel-side
- * NF_CT_HELPER_NAME_LEN (16) / 32 respectively; the spec records the
- * non-terminator max.
+ * CTA_EXPECT_FN are NUL-terminated strings; the kernel bounds only
+ * CTA_EXPECT_HELP_NAME (NF_CT_HELPER_NAME_LEN - 1, the non-terminator
+ * max the spec records), so the 31 on CTA_EXPECT_FN is the spec's own
+ * size, not a policy limit.
  */
 static const struct nla_attr_spec ctnetlink_exp_attrs[] = {
 	{ CTA_EXPECT_MASTER,    NLA_KIND_NESTED, 0  },

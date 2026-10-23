@@ -56,7 +56,9 @@ static const struct nla_attr_spec cttimeout_attrs[] = {
 	/* ICMP arm (nf_conntrack_proto_icmp.c icmp_timeout_nla_policy). */
 	{ CTA_TIMEOUT_ICMP_TIMEOUT,          NLA_KIND_U32,    4 },
 
-	/* DCCP arm (nf_conntrack_proto_dccp.c dccp_timeout_nla_policy). */
+	/* DCCP ids: the uapi header still defines them, but a kernel
+	 * without the DCCP tracker answers an L4PROTO of IPPROTO_DCCP
+	 * with -EOPNOTSUPP before parsing any of these. */
 	{ CTA_TIMEOUT_DCCP_REQUEST,          NLA_KIND_U32,    4 },
 	{ CTA_TIMEOUT_DCCP_RESPOND,          NLA_KIND_U32,    4 },
 	{ CTA_TIMEOUT_DCCP_PARTOPEN,         NLA_KIND_U32,    4 },
