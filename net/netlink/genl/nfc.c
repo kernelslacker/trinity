@@ -23,9 +23,7 @@
  * declares a subset of NFC_ATTR_* — the unlisted ids are response-side
  * payloads emitted by GET_DEVICE / GET_TARGET / GET_SE; listing them
  * here exercises the validator's "ignore on input" branch the same way
- * the fou / l2tp grammars do.  LLC_SDP is the one nested container and
- * is emitted as an empty NESTED so nla_validate accepts it without
- * recursing into the per-service NFC_SDP_ATTR_* sub-policy.
+ * the fou / l2tp grammars do.
  */
 
 #if __has_include(<linux/nfc.h>)
@@ -74,6 +72,10 @@ static const struct genl_cmd_grammar nfc_cmds[] = {
  * payloads get a 256-byte ceiling; the bounded TARGET_NFCID1 /
  * TARGET_SENSB_RES / TARGET_SENSF_RES / TARGET_ISO15693_UID / TARGET_ATS
  * binaries use the NFC_*_MAXSIZE constants from the same header.
+ * LLC_SDP is the one nested container, a bare NLA_NESTED in
+ * nfc_genl_policy, so nla_validate does not recurse into it;
+ * LLC_SDREQ parses each child against nfc_sdp_genl_policy (URI, SAP)
+ * once the device has a DEP link up.
  */
 static const struct nla_attr_spec nfc_attrs[] = {
 	{ NFC_ATTR_DEVICE_INDEX,	NLA_KIND_U32,    4 },

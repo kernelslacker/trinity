@@ -37,11 +37,7 @@
  * flat nla_attr_spec table listing every NLBL_*_A_* id reachable from
  * any of its commands' policies.  Numeric collisions across families
  * are harmless (each family's table only ever drives that family's
- * messages); collisions between an outer attr and an inner nest
- * within a single family are equally harmless because the kernel only
- * validates each child against the policy of whichever nest is being
- * walked.  CIPSOv4's MLSLVLLST / MLSCATLST nests rely on this — the
- * inner MLSLVL / MLSCAT NESTED ids reuse outer table id slots.
+ * messages).
  *
  * Header gating: NetLabel does not ship a UAPI header.  Its constants
  * live in net/netlabel/netlabel_*.h plus include/net/netlabel.h, all
@@ -127,9 +123,10 @@ static const struct genl_cmd_grammar nlbl_cipsov4_cmds[] = {
  * list of TAG u8s; MLSLVLLST holds a list of MLSLVL nests, each
  * carrying a (MLSLVLLOC, MLSLVLREM) u32 pair; MLSCATLST holds a list
  * of MLSCAT nests, each carrying a (MLSCATLOC, MLSCATREM) u32 pair.
- * Inner nests' ids overlap with outer ids (MLSLVLLOC=5 vs MLSLVLLST=8
- * etc.) and the kernel only validates each child against the
- * currently-walked nest's policy.
+ * All five nests are bare NLA_NESTED in netlbl_cipsov4_genl_policy; the
+ * ADD handlers re-apply that same policy to each nest with
+ * nla_validate_nested_deprecated(), so the inner and outer ids form one
+ * NLBL_CIPSOV4_A_* namespace and do not overlap.
  */
 static const struct nla_attr_spec nlbl_cipsov4_attrs[] = {
 	{ NLBL_CIPSOV4_A_DOI,		NLA_KIND_U32,    4 },

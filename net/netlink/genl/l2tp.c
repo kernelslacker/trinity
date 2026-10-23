@@ -36,10 +36,8 @@
  * (L2TP_ATTR_TX_PACKETS / TX_BYTES / RX_PACKETS / ...) whose
  * numeric ids collide with outer L2TP_ATTR_* ids — L2TP_ATTR_TX_PACKETS=1
  * vs L2TP_ATTR_PW_TYPE=1, L2TP_ATTR_TX_BYTES=2 vs L2TP_ATTR_ENCAP_TYPE=2,
- * etc.  The kernel only validates each child against the policy
- * of whichever nest is currently being walked, so the collisions
- * are harmless and the single flat table is the same shape
- * wireguard / tipc / mptcp_pm use.
+ * etc.  STATS is a bare NLA_NESTED that the kernel only emits, so on
+ * input those ids are checked as the outer attrs that share them.
  *
  * Header gating mirrors the wireguard family: <linux/l2tp.h> is
  * the upstream UAPI header that ships with kernel headers from
@@ -91,10 +89,9 @@ static const struct genl_cmd_grammar l2tp_cmds[] = {
  * L2TP_ATTR_STATS NESTED that opens the inner counter namespace.
  *
  * Inner L2TP_ATTR_* (under STATS) carries u64 packet/byte/error
- * counters per direction.  The kernel only emits these in the
- * GET responses, so the ids are pure response-side payloads;
- * listing them here exercises the validator's "ignore on input"
- * branch the same way the OVS dp/flow STATS attrs do.
+ * counters per direction.  STATS is a bare NLA_NESTED in l2tp_nl_policy
+ * that the kernel only emits and never parses, so on input these ids
+ * are checked as the outer attributes sharing them.
  *
  * Variable-length sizes:
  *   IFNAME           IFNAMSIZ - 1 (NUL_STRING upper bound)
@@ -139,9 +136,9 @@ static const struct nla_attr_spec l2tp_attrs[] = {
 	{ L2TP_ATTR_UDP_ZERO_CSUM6_RX,		NLA_KIND_FLAG,   0 },
 
 	/* L2TP_ATTR_* (under L2TP_ATTR_STATS) — inner.  IDs intentionally
-	 * overlap with the outer L2TP_ATTR_* namespace; the kernel only
-	 * matches each child against the policy of the currently-walked
-	 * nest, so collisions are harmless. */
+	 * overlap with the outer L2TP_ATTR_* namespace; the kernel never
+	 * walks STATS on input, so a drawn id is checked as the outer
+	 * attribute with that id. */
 	{ L2TP_ATTR_TX_PACKETS,			NLA_KIND_U64,    8 },
 	{ L2TP_ATTR_TX_BYTES,			NLA_KIND_U64,    8 },
 	{ L2TP_ATTR_TX_ERRORS,			NLA_KIND_U64,    8 },

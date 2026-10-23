@@ -18,14 +18,9 @@
  * CAP_NET_ADMIN in the initial user namespace exercises the validator
  * through them.
  *
- * Flat attribute table.  The four nests (DEV / ASSOC / KEYS / STATS)
- * all restart their attribute numbering at 1, so the same numeric id
- * recurs across namespaces -- collisions are harmless because the
- * kernel only validates each child against whichever nest is
- * currently being walked.  RX_KEY / TX_KEY (ASSOC) plus the
- * KEYS-namespace KEY blob and STATS-namespace u64 counters are
- * emitted as empty NLA_KIND_NESTED containers so nla_validate accepts
- * them at the outer level without recursing.  PSP_A_KEYS_KEY is a
+ * Flat attribute table.  The four namespaces (DEV / ASSOC / KEYS /
+ * STATS) all restart their attribute numbering at 1, so the same
+ * numeric id recurs across them.  PSP_A_KEYS_KEY is a
  * variable-length binary blob bounded above at 64 so a single greedy
  * entry can't eat the whole netlink buffer.
  *
@@ -51,12 +46,11 @@ static const struct genl_cmd_grammar psp_cmds[] = {
 
 /*
  * Attribute spec follows the per-nest enums in <linux/psp.h>.
- * Numeric ids intentionally overlap across the four namespaces; the
- * kernel only matches each child against the policy of the currently-
- * walked nest, so collisions are harmless under the team / l2tp /
- * wireguard precedent.  The empty-container NLA_KIND_NESTED entries
- * keep nla_validate from recursing into a sub-policy the flat table
- * cannot describe.
+ * Numeric ids intentionally overlap across the four namespaces, so an
+ * id is checked against whichever per-command policy, or KEYS nest, it
+ * lands in.  Of the two NESTED entries only TX_KEY is in a policy
+ * (psp_tx_assoc_nl_policy, as NLA_POLICY_NESTED(psp_keys_nl_policy));
+ * no policy lists RX_KEY, so the kernel rejects it as unsupported.
  */
 static const struct nla_attr_spec psp_attrs[] = {
 	/* PSP_A_DEV_* -- DEV_GET / DEV_SET selector + reply payload */

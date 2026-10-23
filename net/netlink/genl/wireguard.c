@@ -21,12 +21,6 @@
  * the full attribute tree has been walked, so coverage of the parser
  * (and the radix-tree insert in the SET path) is preserved.
  *
- * Per-namespace attribute IDs collide across the three nests
- * (WGDEVICE_A_IFINDEX = WGPEER_A_PUBLIC_KEY = WGALLOWEDIP_A_FAMILY = 1,
- * etc.) but the kernel only validates each child against the policy of
- * whichever nest is currently being parsed, so the single flat spec
- * table below is the same shape tipc and mptcp_pm use.
- *
  * Header gating mirrors the mptcp_pm family: <linux/wireguard.h> is the
  * upstream UAPI header that ships with kernel headers from 5.6 onward.
  * Older build hosts silently drop the family from the registry instead
@@ -73,9 +67,12 @@ static const struct nla_attr_spec wireguard_attrs[] = {
 	{ WGDEVICE_A_FWMARK,			NLA_KIND_U32,    4 },
 	{ WGDEVICE_A_PEERS,			NLA_KIND_NESTED, 0 },
 
-	/* WGPEER_A_* — inner.  IDs intentionally overlap with WGDEVICE_A_*;
-	 * the kernel only matches each child against the policy of the
-	 * currently-walked nest, so collisions are harmless. */
+	/* WGPEER_A_* — inner.  IDs intentionally overlap with WGDEVICE_A_*
+	 * (WGDEVICE_A_IFINDEX = WGPEER_A_PUBLIC_KEY = WGALLOWEDIP_A_FAMILY
+	 * = 1, etc.).  PEERS and ALLOWEDIPS are NLA_POLICY_NESTED_ARRAY, so
+	 * each child is an array element whose payload is itself validated
+	 * as an inner attribute stream: a flat child drawn from this table
+	 * passes only when its payload is empty or parses as one. */
 	{ WGPEER_A_PUBLIC_KEY,			NLA_KIND_BINARY, WG_KEY_LEN },
 	{ WGPEER_A_PRESHARED_KEY,		NLA_KIND_BINARY, WG_KEY_LEN },
 	{ WGPEER_A_FLAGS,			NLA_KIND_U32,    4 },

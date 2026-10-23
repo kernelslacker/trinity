@@ -42,12 +42,10 @@ static const struct genl_cmd_grammar handshake_cmds[] = {
  * (UNSPEC / UNAUTH / PSK / X509) the kernel emits on the reply.
  * PEER_IDENTITY is a u32 keyring-key serial (multi-attr) the kernel
  * emits on the reply.  CERTIFICATE is a nested HANDSHAKE_A_X509_*
- * container (multi-attr) -- emitted as an empty NLA_KIND_NESTED
- * entry following the psample-TUNNEL / ovpn-PEER precedent so the
- * kernel's nla_validate accepts it at the outer level without
- * recursing into the per-nest sub-policy.  PEERNAME is a string
- * server-name hint emitted on the reply.  KEYRING is a u32 keyring
- * serial the kernel emits on the reply.
+ * container (multi-attr) the kernel emits on the reply; the ACCEPT
+ * request policy ends at HANDLER_CLASS, so it has no sub-policy on
+ * input.  PEERNAME is a string server-name hint emitted on the reply.
+ * KEYRING is a u32 keyring serial the kernel emits on the reply.
  *
  * Most of these are response-side payloads (the ACCEPT request body
  * only carries HANDLER_CLASS); listing them all here exercises the

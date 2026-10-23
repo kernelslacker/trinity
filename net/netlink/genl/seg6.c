@@ -19,15 +19,11 @@
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  SEG6 uses a single flat SEG6_ATTR_* namespace;
- * the one nominally nested attr (SEG6_ATTR_HMACINFO) is emitted as an
- * empty container so the kernel's nla_validate accepts it without
- * recursing into a per-entry sub-policy on the dump-response side.
+ * family's commands.  SEG6 uses a single flat SEG6_ATTR_* namespace.
  * The remaining six attrs are scalar / binary covering the IPv6
  * destination / tunnel-source address (16-byte in6_addr), the
- * destination-prefix length scalar, the HMAC keyid / secret / secret-
- * length / algid quadruple that SETHMAC keys on, and the dump-side
- * HMACINFO container.
+ * destination-prefix length scalar, and the HMAC keyid / secret /
+ * secret-length / algid quadruple that SETHMAC keys on.
  *
  * Header gating mirrors the team / hsr / fou / psample families:
  * <linux/seg6_genl.h> is the upstream UAPI header carrying every
@@ -68,10 +64,9 @@ static const struct genl_cmd_grammar seg6_cmds[] = {
  * binary payload bounded above at SEG6_HMAC_SECRET_LEN (64) so a
  * single greedy blob can't eat the whole netlink buffer; setting
  * SECRETLEN==0 drops the SECRET requirement and triggers the delete
- * path through seg6_hmac_info_del().  HMACINFO is the only nominally
- * nested attr — emitted as an empty container so the kernel's
- * nla_validate accepts it without recursing into a per-entry sub-
- * policy on the DUMPHMAC response side.
+ * path through seg6_hmac_info_del().  HMACINFO is a bare NLA_NESTED in
+ * seg6_genl_policy that the kernel neither parses nor emits: SETHMAC and
+ * the DUMPHMAC replies carry the HMAC fields as flat top-level attrs.
  */
 static const struct nla_attr_spec seg6_attrs[] = {
 	{ SEG6_ATTR_DST,		NLA_KIND_BINARY, 16 },

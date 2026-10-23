@@ -35,10 +35,7 @@
  * pair, the response-side per-direction byte / packet counters, the
  * KEYCONF slot / key-id / cipher-alg / encrypt-dir / decrypt-dir tuple,
  * and the inner KEYDIR cipher-key + nonce-tail payloads — lives inside
- * those nested containers.  Following the psample-TUNNEL precedent the
- * two nested containers are emitted as empty NLA_KIND_NESTED entries
- * so the kernel's nla_validate accepts them at the outer level without
- * recursing into a per-nest sub-policy.
+ * those nested containers.
  *
  * The family carries a nonzero declared version (OVPN_FAMILY_VERSION =
  * 1) so the default_version member is initialised — the kernel's
@@ -95,19 +92,13 @@ static const struct genl_cmd_grammar ovpn_cmds[] = {
 /*
  * Attribute spec follows the top-level OVPN_A_* enum in <linux/ovpn.h>.
  * IFINDEX is a u32 ovpn-device netdev selector that every command keys
- * on.  PEER and KEYCONF are the two nominally nested attrs — emitted
- * as empty containers psample-TUNNEL style so the kernel's
- * nla_validate accepts them at the outer level without recursing into
- * the per-nest sub-policies.  The richer inner content (the per-peer
- * REMOTE_* / LOCAL_* / VPN_* address-and-port set, keepalive pair, and
- * per-direction byte / packet counters under OVPN_A_PEER; the
- * SLOT / KEY_ID / CIPHER_ALG / ENCRYPT_DIR / DECRYPT_DIR tuple and the
- * inner KEYDIR CIPHER_KEY / NONCE_TAIL payloads under OVPN_A_KEYCONF)
- * is described above for the next reader who extends the grammar to
- * recursive nested emission; it is not enumerated in the flat spec
- * table because the OVPN_A_PEER_* / OVPN_A_KEYCONF_* / OVPN_A_KEYDIR_*
- * enums share id 1..N with the top-level OVPN_A_* namespace and a
- * single flat table cannot disambiguate the overlapping keys.
+ * on.  PEER and KEYCONF are the two nested attrs, NLA_POLICY_NESTED in
+ * every doit policy (drivers/net/ovpn/netlink-gen.c), so the kernel
+ * checks the children the generator draws from this table against the
+ * inner OVPN_A_PEER_* / OVPN_A_KEYCONF_* policy by id.  Those enums
+ * and OVPN_A_KEYDIR_* share id 1..N with the top-level OVPN_A_*
+ * namespace and a single flat table cannot disambiguate the
+ * overlapping keys, so they are not enumerated here.
  */
 static const struct nla_attr_spec ovpn_attrs[] = {
 	{ OVPN_A_IFINDEX,	NLA_KIND_U32,    4 },

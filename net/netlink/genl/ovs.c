@@ -14,7 +14,7 @@
  * the kernel: net/openvswitch/flow_netlink.c::ovs_nla_get_match recursively
  * walks OVS_KEY_ATTR_* (~30 packet-header types, several with nested
  * sub-namespaces of their own — OVS_TUNNEL_KEY_ATTR_*, OVS_NSH_KEY_ATTR_*,
- * OVS_VXLAN_EXT_*) and ovs_nla_get_flow_actions walks OVS_ACTION_ATTR_*
+ * OVS_VXLAN_EXT_*) and ovs_nla_copy_actions walks OVS_ACTION_ATTR_*
  * (~25 action types, each with its own optional sub-namespace —
  * OVS_USERSPACE_ATTR_*, OVS_SAMPLE_ATTR_*, OVS_CT_ATTR_* / OVS_NAT_ATTR_*,
  * OVS_CHECK_PKT_LEN_ATTR_*, OVS_DEC_TTL_ATTR_*, OVS_PSAMPLE_ATTR_*).
@@ -151,7 +151,7 @@ static const struct genl_cmd_grammar ovs_flow_cmds[] = {
  * OVS_KEY_ATTR_* recursively (with OVS_KEY_ATTR_TUNNEL nesting
  * OVS_TUNNEL_KEY_ATTR_*, OVS_KEY_ATTR_NSH nesting OVS_NSH_KEY_ATTR_*,
  * OVS_TUNNEL_KEY_ATTR_VXLAN_OPTS nesting OVS_VXLAN_EXT_*) and
- * ovs_nla_get_flow_actions walks OVS_ACTION_ATTR_* (with USERSPACE /
+ * ovs_nla_copy_actions walks OVS_ACTION_ATTR_* (with USERSPACE /
  * SAMPLE / CT (-> NAT) / CHECK_PKT_LEN / DEC_TTL / PSAMPLE / PUSH_NSH
  * each opening a sub-namespace, plus SET / SET_MASKED nesting one
  * OVS_KEY_ATTR_*).  Listing every id used by any of these nests in a
@@ -340,9 +340,10 @@ static const struct genl_cmd_grammar ovs_packet_cmds[] = {
  * OVS_KEY_ATTR_* / OVS_ACTION_ATTR_* sub-namespaces — the same
  * machinery the flow family parses, but reached via a separate per-cmd
  * policy in net/openvswitch/datapath.c::packet_policy.  Listing only
- * the outer OVS_PACKET_ATTR_* here keeps this table small; the inner
- * KEY / ACTIONS payloads borrow their structure from random emit when
- * the spec emitter walks into a NESTED.
+ * the outer OVS_PACKET_ATTR_* here keeps this table small: KEY and
+ * ACTIONS are bare NLA_NESTED in packet_policy, and the generator
+ * fills them with children drawn from this table, not with
+ * OVS_KEY_ATTR_* / OVS_ACTION_ATTR_* ones.
  */
 static const struct nla_attr_spec ovs_packet_attrs[] = {
 	{ OVS_PACKET_ATTR_PACKET,		NLA_KIND_BINARY, 256 },

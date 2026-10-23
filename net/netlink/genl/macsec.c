@@ -105,8 +105,7 @@ static const struct nla_attr_spec macsec_attrs[] = {
 
 	/* MACSEC_SECY_ATTR_* (under MACSEC_ATTR_SECY) — response-only.
 	 * Listed so the validator's ignore-on-input branch is exercised
-	 * the same way the OVS dp/flow STATS attrs and L2TP's inner
-	 * STATS counters are. */
+	 * the same way the OVS dp/flow STATS attrs are. */
 	{ MACSEC_SECY_ATTR_SCI,				NLA_KIND_U64,    8 },
 	{ MACSEC_SECY_ATTR_ENCODING_SA,			NLA_KIND_U8,     1 },
 	{ MACSEC_SECY_ATTR_WINDOW,			NLA_KIND_U32,    4 },

@@ -21,11 +21,10 @@
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample / ila /
  * ioam6 / seg6 model, a single flat nla_attr_spec table lists every id
  * used by this family's commands.  The thermal policy carries six
- * nominally nested container attrs (TZ / TZ_TRIP / TZ_GOV / CDEV /
- * CPU_CAPABILITY / THRESHOLD); each is emitted as an empty NLA_NESTED
- * placeholder so the kernel's nla_validate accepts the message without
- * recursing into a per-sub-policy that we haven't built.  The remaining
- * scalars cover the TZ_ID / TZ_TEMP / TZ_TRIP_{ID,TYPE,TEMP,HYST} /
+ * nested container attrs (TZ / TZ_TRIP / TZ_GOV / CDEV /
+ * CPU_CAPABILITY / THRESHOLD), all bare NLA_NESTED that the kernel only
+ * emits.  The remaining scalars cover the TZ_ID / TZ_TEMP /
+ * TZ_TRIP_{ID,TYPE,TEMP,HYST} /
  * TZ_MODE / TZ_CDEV_WEIGHT / CDEV_{ID,CUR_STATE,MAX_STATE} /
  * CPU_CAPABILITY_{ID,PERFORMANCE,EFFICIENCY} / THRESHOLD_{TEMP,DIRECTION}
  * u32 selectors and the TZ_NAME / TZ_GOV_NAME / CDEV_NAME strings
@@ -113,14 +112,13 @@ static const struct genl_cmd_grammar thermal_cmds[] = {
  * CPU_CAPABILITY_{ID,PERFORMANCE,EFFICIENCY} carry the per-CPU capacity
  * triple the kernel emits on capability-change events; listing them
  * lets the generator round-trip what the kernel may parse back, the
- * same way the OVS dp/flow STATS attrs and the L2TP STATS sub-namespace
- * do.  THRESHOLD_TEMP / THRESHOLD_DIRECTION are the per-threshold
- * scalars THRESHOLD_GET enumerates (TEMP in millicelsius, DIRECTION
- * one of THERMAL_THRESHOLD_WAY_UP / WAY_DOWN).  TZ / TZ_TRIP / TZ_GOV /
- * CDEV / CPU_CAPABILITY / THRESHOLD are the six nominally nested
- * containers — emitted as empty NLA_KIND_NESTED placeholders so the
- * kernel's nla_validate accepts them without recursing into a per-sub-
- * policy on the dump-response side.
+ * same way the OVS dp/flow STATS attrs do.  THRESHOLD_TEMP /
+ * THRESHOLD_DIRECTION are the per-threshold scalars THRESHOLD_GET
+ * enumerates (TEMP in millicelsius, DIRECTION one of
+ * THERMAL_THRESHOLD_WAY_UP / WAY_DOWN).  TZ / TZ_TRIP / TZ_GOV /
+ * CDEV / CPU_CAPABILITY / THRESHOLD are bare NLA_NESTED in
+ * thermal_genl_policy that the kernel only emits in replies: no handler
+ * parses a nest, the ids above are read flat from the top level.
  */
 static const struct nla_attr_spec thermal_attrs[] = {
 	{ THERMAL_GENL_ATTR_TZ,				NLA_KIND_NESTED, 0 },

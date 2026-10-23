@@ -22,15 +22,12 @@
  *
  * Per the fou / psample model, a single flat nla_attr_spec table lists
  * every id used by this family's commands.  NET_DM uses a single flat
- * NET_DM_ATTR_* namespace; the nominally-nested attrs (IN_PORT, STATS,
- * HW_STATS, HW_ENTRIES, HW_ENTRY) are emitted as empty containers so
- * the kernel's nla_validate accepts them without recursing into a
- * per-sub-namespace policy.  The kernel's net_dm_nl_policy table only
- * validates ALERT_MODE / TRUNC_LEN / QUEUE_LEN / SW_DROPS / HW_DROPS
- * on input — the remainder are response-side payloads emitted by
- * CONFIG_GET / STATS_GET / PACKET_ALERT.  Listing them all here
- * exercises the validator's "ignore on input" branch the same way the
- * fou and psample grammars do.
+ * NET_DM_ATTR_* namespace.  The kernel's net_dm_nl_policy table only
+ * lists ALERT_MODE / TRUNC_LEN / QUEUE_LEN / SW_DROPS / HW_DROPS, and
+ * its strict_start_type of 1 rejects every other attribute as
+ * unsupported: the rest of the table, the nested IN_PORT / STATS /
+ * HW_STATS / HW_ENTRIES / HW_ENTRY included, are response-side payloads
+ * emitted by CONFIG_GET / STATS_GET / PACKET_ALERT.
  *
  * Header gating mirrors the fou / psample families: <linux/net_dropmon.h>
  * is the upstream UAPI header carrying every NET_DM_CMD_* and
@@ -76,9 +73,8 @@ static const struct genl_cmd_grammar net_dm_cmds[] = {
  * buffer.  PAD is the alignment partner the kernel emits next to the
  * u64 scalars; it carries no payload, so a 0-byte BINARY entry matches
  * the wire shape.  IN_PORT / STATS / HW_STATS / HW_ENTRIES / HW_ENTRY
- * are nested containers — emitted as empty containers so the kernel's
- * nla_validate accepts them without recursing into the per-sub-
- * namespace policies (NET_DM_ATTR_PORT_*, NET_DM_ATTR_STATS_*).
+ * are nested containers the kernel only emits: net_dm_nl_policy has no
+ * entry for them, so they have no sub-policy on input.
  */
 static const struct nla_attr_spec net_dm_attrs[] = {
 	{ NET_DM_ATTR_ALERT_MODE,		NLA_KIND_U8,     1 },

@@ -27,12 +27,9 @@
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  nbd uses a single flat NBD_ATTR_* namespace;
- * SOCKETS and DEVICE_LIST are emitted as empty NESTED containers so
- * the kernel's nla_validate accepts them without recursing into the
- * per-socket / per-device sub-policies.  BACKEND_IDENTIFIER is a
- * NUL-terminated string identifying the backing store across a
- * RECONFIGURE.
+ * family's commands.  nbd uses a single flat NBD_ATTR_* namespace.
+ * BACKEND_IDENTIFIER is a NUL-terminated string identifying the
+ * backing store across a RECONFIGURE.
  *
  * Header gating mirrors the team / hsr / fou / psample families:
  * <linux/nbd-netlink.h> is the upstream UAPI header carrying every
@@ -118,12 +115,13 @@ static const struct genl_cmd_grammar nbd_cmds[] = {
  * DEAD_CONN_TIMEOUT are u64 scalars carrying the device export size,
  * block size, IO timeout, and dead-connection timeout respectively.
  * SERVER_FLAGS / CLIENT_FLAGS are u64 bitfields negotiated between
- * server / client at CONNECT time.  SOCKETS and DEVICE_LIST are
- * nominally nested containers — emitted here as empty containers so
- * the kernel's nla_validate accepts them without recursing into the
- * per-socket / per-device sub-policies.  BACKEND_IDENTIFIER is a
- * NUL-terminated string identifying the backing store across a
- * RECONFIGURE.
+ * server / client at CONNECT time.  SOCKETS and DEVICE_LIST are bare
+ * NLA_NESTED in nbd_attr_policy, so nla_validate does not recurse into
+ * them.  CONNECT and RECONFIGURE walk SOCKETS in nbd_genl_foreach_sock(),
+ * which wants NBD_SOCK_ITEM children and parses each against
+ * nbd_sock_policy; DEVICE_LIST is only emitted by STATUS, never parsed
+ * on input.  BACKEND_IDENTIFIER is a NUL-terminated string identifying
+ * the backing store across a RECONFIGURE.
  */
 static const struct nla_attr_spec nbd_attrs[] = {
 	{ NBD_ATTR_INDEX,		NLA_KIND_U32,    4 },

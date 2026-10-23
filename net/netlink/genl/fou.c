@@ -56,8 +56,7 @@ static const struct genl_cmd_grammar fou_cmds[] = {
  * fou_nl_policy validates a subset of these on input; the remainder
  * are response-side payloads emitted by FOU_CMD_GET.  Listing them
  * all here exercises the validator's "ignore on input" branch the
- * same way the OVS dp/flow STATS attrs and the L2TP STATS sub-
- * namespace do.
+ * same way the OVS dp/flow STATS attrs do.
  */
 static const struct nla_attr_spec fou_attrs[] = {
 	{ FOU_ATTR_PORT,		NLA_KIND_U16,    2 },

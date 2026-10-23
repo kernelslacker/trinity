@@ -23,12 +23,10 @@
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this
  * family's commands.  tcp_metrics uses a single flat
- * TCP_METRICS_ATTR_* namespace; the one nominally nested attr
- * (TCP_METRICS_ATTR_VALS) is emitted as an empty container so the
- * kernel's nla_validate accepts it without recursing into the
- * per-index sub-policy.  The remaining twelve attrs are scalar /
- * binary covering the IPv4 / IPv6 destination-address key pair, the
- * matching SADDR_IPV4 / SADDR_IPV6 source-address scoping pair, the
+ * TCP_METRICS_ATTR_* namespace.  The twelve attrs besides the nested
+ * VALS are scalar / binary covering the IPv4 / IPv6 destination-address
+ * key pair, the matching SADDR_IPV4 / SADDR_IPV6 source-address scoping
+ * pair, the
  * msecs-age scalar, the TW timestamp pair, the Fast Open MSS / drop
  * count / drop timestamp triple, the Fast Open cookie binary payload,
  * and the response-side PAD alignment partner.
@@ -86,13 +84,13 @@ static const struct genl_cmd_grammar tcp_metrics_cmds[] = {
  * (the latter is a Fast Open SYN-drop counter, the former is the
  * cached MSS).  FOPEN_COOKIE is a 4..16 byte Fast Open cookie
  * binary payload; the kernel walker bounds it implicitly via the
- * NLA-length check inside its nla_policy.  VALS is the one
- * nominally nested attr — emitted as an empty container so the
- * kernel's nla_validate accepts it without recursing into the
- * per-metric-index sub-policy.  PAD is the alignment partner the
- * kernel emits next to the u64 scalars on the response side; it
- * carries no payload, so a 0-byte BINARY entry matches the wire
- * shape.
+ * NLA-length check inside its nla_policy.  VALS is the one nested
+ * attr, which GET replies carry the per-metric values in;
+ * tcp_metrics_nl_policy has no entry for it (the line sits under
+ * #if 0), so it has no sub-policy on input.  PAD is the alignment
+ * partner the kernel emits next to the u64 scalars on the response
+ * side; it carries no payload, so a 0-byte BINARY entry matches the
+ * wire shape.
  */
 static const struct nla_attr_spec tcp_metrics_attrs[] = {
 	{ TCP_METRICS_ATTR_ADDR_IPV4,		NLA_KIND_U32,    4 },

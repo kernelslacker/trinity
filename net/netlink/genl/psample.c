@@ -21,10 +21,9 @@
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou model, a single
  * flat nla_attr_spec table lists every id the family's messages use.
- * psample uses a single flat PSAMPLE_ATTR_* namespace; the one
- * nominally nested attr (PSAMPLE_ATTR_TUNNEL) is emitted as an empty
- * container.  The remaining sixteen attrs are scalar / binary / flag
- * covering the group-id / sample-rate fields, the per-packet metadata
+ * psample uses a single flat PSAMPLE_ATTR_* namespace.  The sixteen
+ * attrs besides the nested TUNNEL are scalar / binary / flag covering
+ * the group-id / sample-rate fields, the per-packet metadata
  * (origsize, group seq, latency, timestamp, proto, in/out ifindex,
  * traffic-class occupancy), the sampled-data and user-cookie binary
  * payloads, and the SAMPLE_PROBABILITY presence-only flag added in
@@ -57,11 +56,10 @@ static const struct genl_cmd_grammar psample_cmds[] = {
  * is the 1..0xffff per-packet sampling divisor).  OUT_TC_OCC,
  * LATENCY, and TIMESTAMP are u64 scalars.  DATA and USER_COOKIE are
  * variable-length binary payloads bounded above so a single greedy
- * blob can't eat the whole netlink buffer.  TUNNEL is the only
- * nominally nested attr — emitted as an empty container.  PAD is the
- * alignment partner the kernel emits next to the u64 scalars; it
- * carries no payload, so a 0-byte BINARY entry matches the wire shape.
- * SAMPLE_PROBABILITY is a presence-only flag.
+ * blob can't eat the whole netlink buffer.  TUNNEL is the only nested
+ * attr.  PAD is the alignment partner the kernel emits next to the u64
+ * scalars; it carries no payload, so a 0-byte BINARY entry matches the
+ * wire shape.  SAMPLE_PROBABILITY is a presence-only flag.
  */
 static const struct nla_attr_spec psample_attrs[] = {
 	{ PSAMPLE_ATTR_IIFINDEX,		NLA_KIND_U16,    2 },

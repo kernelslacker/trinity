@@ -21,13 +21,10 @@
  *
  * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
  * a single flat nla_attr_spec table lists every id used by this family's
- * commands.  NCSI uses a single flat NCSI_ATTR_* namespace; the one
- * nominally nested attr (NCSI_ATTR_PACKAGE_LIST) is emitted as an empty
- * container so the kernel's nla_validate accepts it without recursing
- * into a per-package sub-policy.  The remaining seven attrs cover the
- * IFINDEX scoping selector, the package/channel id selectors, the
- * raw NC-SI command payload (DATA), the multi-mode toggle flag, and
- * the package/channel whitelist masks.
+ * commands.  NCSI uses a single flat NCSI_ATTR_* namespace.  The
+ * remaining seven attrs cover the IFINDEX scoping selector, the
+ * package/channel id selectors, the raw NC-SI command payload (DATA),
+ * the multi-mode toggle flag, and the package/channel whitelist masks.
  *
  * Header gating mirrors the team / hsr / fou / psample families:
  * <linux/ncsi.h> is the upstream UAPI header carrying every NCSI_CMD_*
@@ -65,10 +62,9 @@ static const struct genl_cmd_grammar ncsi_cmds[] = {
  * bounded while still exercising the variable-length copy path that
  * the SEND_CMD handler memcpys into the NC-SI request buffer.
  * MULTI_FLAG is a presence-only flag toggling multi-mode on the
- * SET_PACKAGE_MASK / SET_CHANNEL_MASK commands.  PACKAGE_LIST is
- * NLA_NESTED in the kernel policy — emitted as an empty container so
- * nla_validate accepts it without recursing into a per-package
- * sub-policy.
+ * SET_PACKAGE_MASK / SET_CHANNEL_MASK commands.  PACKAGE_LIST is a
+ * bare NLA_NESTED in the kernel policy that only PKG_INFO replies
+ * carry; nothing parses it on input, so it has no sub-policy.
  */
 static const struct nla_attr_spec ncsi_attrs[] = {
 	{ NCSI_ATTR_IFINDEX,		NLA_KIND_U32,    4 },

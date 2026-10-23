@@ -55,8 +55,7 @@ static const struct genl_cmd_grammar hsr_cmds[] = {
  * validates a subset of these on input; the remainder are response-
  * side payloads emitted by GET_NODE_STATUS / GET_NODE_LIST.  Listing
  * them all here exercises the validator's "ignore on input" branch
- * the same way the OVS dp/flow STATS attrs and the L2TP STATS sub-
- * namespace do.
+ * the same way the OVS dp/flow STATS attrs do.
  */
 static const struct nla_attr_spec hsr_attrs[] = {
 	{ HSR_A_NODE_ADDR,		NLA_KIND_BINARY, ETH_ALEN },

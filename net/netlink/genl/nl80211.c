@@ -33,9 +33,9 @@ static const struct genl_cmd_grammar nl80211_cmds[] = {
 
 /*
  * Attribute spec table: identifying selectors for the read-side
- * commands plus a couple of nested containers (SCAN_FREQUENCIES,
- * SCAN_SSIDS) so the spec-driven nested emitter exercises the
- * scan-trigger validators when they fire on garbage payloads.
+ * commands plus two nested containers (SCAN_FREQUENCIES, SCAN_SSIDS),
+ * bare NLA_NESTED in nl80211_policy that only the scan triggers walk
+ * and the commands listed here never reach.
  *
  * Sizes follow nl80211_policy in net/wireless/nl80211.c:
  *   IFNAME      NUL_STRING, len IFNAMSIZ-1 (15)

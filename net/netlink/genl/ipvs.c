@@ -28,13 +28,7 @@
  * every id used by this family's commands.  The IPVS top-level policy
  * carries three nominally nested container attrs (SERVICE / DEST /
  * DAEMON) plus three u32 timeout scalars (TIMEOUT_TCP, TIMEOUT_TCP_FIN,
- * TIMEOUT_UDP) the GET_CONFIG / SET_CONFIG pair share.  Each container
- * is emitted as an empty NLA_KIND_NESTED placeholder so the kernel's
- * nla_validate accepts the message without recursing into a per-sub-
- * policy that we haven't built — the GET handlers tolerate missing
- * nested content for the dump-shape commands; the IPVS_SVC_ATTR_* /
- * IPVS_DEST_ATTR_* / IPVS_DAEMON_ATTR_* sub-namespaces are needed only
- * for the mutation commands, which are the ones we deliberately skip.
+ * TIMEOUT_UDP) the GET_CONFIG / SET_CONFIG pair share.
  *
  * Header gating mirrors the thermal / psample / ila / fou / hsr / seg6
  * families: <linux/ip_vs.h> is the upstream UAPI header carrying every
@@ -62,16 +56,18 @@ static const struct genl_cmd_grammar ipvs_cmds[] = {
 
 /*
  * Attribute spec follows the IPVS_CMD_ATTR_* enum in <linux/ip_vs.h>.
- * SERVICE / DEST / DAEMON are the three top-level nested containers
- * the per-cmd policy keys on; emitting them as empty NLA_KIND_NESTED
- * placeholders lets the validator accept the message without recursing
- * into the IPVS_SVC_ATTR_* / IPVS_DEST_ATTR_* / IPVS_DAEMON_ATTR_*
- * sub-namespaces the mutation commands require.  TIMEOUT_TCP /
- * TIMEOUT_TCP_FIN / TIMEOUT_UDP are u32 millisecond selectors the
+ * SERVICE / DEST / DAEMON are bare NLA_NESTED in ip_vs_cmd_policy, so
+ * nla_validate does not recurse into them; the handlers parse each with
+ * nla_parse_nested_deprecated() against ip_vs_svc_policy /
+ * ip_vs_dest_policy / ip_vs_daemon_policy.  Of the listed commands only
+ * GET_SERVICE (doit) and GET_DEST (dump) read a nest: SERVICE must name
+ * a service (AF plus a fwmark, or protocol, address and port) or the
+ * doit fails with -EINVAL and the dump is empty.  DEST and DAEMON are
+ * read only by the mutators this table leaves out.  TIMEOUT_TCP /
+ * TIMEOUT_TCP_FIN / TIMEOUT_UDP are u32 second counts the
  * GET_CONFIG path emits on dump and SET_CONFIG validates on input;
  * listing them here exercises the validator's ignore-on-input branch
- * for GET_CONFIG the same way the OVS dp/flow STATS attrs and the
- * L2TP STATS sub-namespace do.
+ * for GET_CONFIG the same way the OVS dp/flow STATS attrs do.
  */
 static const struct nla_attr_spec ipvs_attrs[] = {
 	{ IPVS_CMD_ATTR_SERVICE,	NLA_KIND_NESTED, 0 },

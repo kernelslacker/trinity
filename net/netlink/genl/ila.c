@@ -68,7 +68,7 @@ static const struct genl_cmd_grammar ila_cmds[] = {
  * ila_nl_policy validates a subset of these on input; the remainder
  * are response-side payloads emitted by ILA_CMD_GET.  Listing them all
  * here exercises the validator's "ignore on input" branch the same way
- * the OVS dp/flow STATS attrs and the L2TP STATS sub-namespace do.
+ * the OVS dp/flow STATS attrs do.
  */
 static const struct nla_attr_spec ila_attrs[] = {
 	{ ILA_ATTR_LOCATOR,		NLA_KIND_U64,    8 },
