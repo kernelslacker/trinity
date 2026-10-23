@@ -10,6 +10,7 @@
 #include <poll.h>
 #include <signal.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -18,8 +19,14 @@
 #include "child-internal.h"
 #include "utils.h"	/* waitpid_eintr */
 
-/* Set once the init of the namespace the child forks into has died */
+/* Set once the namespace the child forks into has lost its init: ours
+ * died, or the forks moved to where none of ours holds pid 1 */
 static bool pidns_lost;
+
+/* Where the child's forks land once the sandbox is done with them, as
+ * /proc's (st_dev, st_ino) of that pid namespace; st_ino 0 if unknown. */
+static dev_t fork_ns_dev;
+static ino_t fork_ns_ino;
 
 /*
  * The init's whole life.  The handlers it inherited are the child's and
@@ -114,13 +121,14 @@ pid_t start_pidns_init(void)
 }
 
 /*
- * True once the init of the namespace the child forks into has died:
- * every fork from then on fails, and a dead namespace is worse than
- * none, so the child should make way for a fresh one.  A child that never
- * got an init runs on without one.  The init has no exit signal, hence
- * __WALL.  Every answer but "still running" counts as gone, a ptrace-stop
- * included: only a fuzzed ptrace() of the init brings one, and recycling
- * the child for it costs nothing.
+ * True once the init of the namespace the child forks into has died, or a
+ * fork's ENOMEM showed the forks landing in a namespace with no init of
+ * ours (pidns_note_fork_enomem()): every fork from then on fails, and a
+ * dead namespace is worse than none, so the child should make way for a
+ * fresh one.  A child that never got an init runs on without one.  The
+ * init has no exit signal, hence __WALL.  Every answer but "still
+ * running" counts as gone, a ptrace-stop included: only a fuzzed ptrace()
+ * of the init brings one, and recycling the child for it costs nothing.
  */
 bool pidns_init_lost(void)
 {
@@ -130,4 +138,40 @@ bool pidns_init_lost(void)
 		pidns_lost = true;
 	}
 	return pidns_lost;
+}
+
+/*
+ * Record the pid namespace the child's forks land in once the sandbox is
+ * done with it: the child's own, or the one start_pidns_init() holds pid 1
+ * of.
+ */
+void pidns_note_fork_target(void)
+{
+	struct stat st;
+
+	if (stat("/proc/self/ns/pid_for_children", &st) == 0) {
+		fork_ns_dev = st.st_dev;
+		fork_ns_ino = st.st_ino;
+	}
+}
+
+/*
+ * A fork failed with ENOMEM.  The errno alone cannot tell a namespace with
+ * no init from memory pressure, nor from the fault injection make-it-fail
+ * arms in every child, and recycling on all of those would churn children.
+ * Where the forks land can.  Once a fuzzed unshare(CLONE_NEWPID) or setns()
+ * has moved them elsewhere, no init of ours holds pid 1 there: in a new
+ * namespace it is whatever was forked into it first, and once that has
+ * exited no fork gets in.  Count an ENOMEM there as a lost init, so the
+ * next pidns_init_lost() recycles the child.
+ */
+void pidns_note_fork_enomem(void)
+{
+	struct stat st;
+
+	if (fork_ns_ino == 0 ||
+	    stat("/proc/self/ns/pid_for_children", &st) != 0)
+		return;
+	if (st.st_dev != fork_ns_dev || st.st_ino != fork_ns_ino)
+		pidns_lost = true;
 }

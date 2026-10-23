@@ -4,8 +4,9 @@
  * unshares a user and a pid namespace, standing in for a sandboxed
  * child, starts the init and checks that the namespace stays usable,
  * that the init keeps out of the child's way, its fuzzed waits included,
- * and that pidns_init_lost() notices when it is gone.  Skipped where
- * unprivileged user namespaces are not available.
+ * and that pidns_init_lost() notices when it is gone but not on an ENOMEM
+ * where the sandbox left the forks.  Skipped where unprivileged user
+ * namespaces are not available.
  */
 
 #include <errno.h>
@@ -23,7 +24,7 @@
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
-#include "child-internal.h"	/* start_pidns_init, pidns_init_pid, pidns_init_lost */
+#include "child-internal.h"	/* start_pidns_init, pidns_init_pid, pidns_init_lost, pidns_note_* */
 #include "debug.h"		/* BUG */
 #include "pidstat-probe.h"	/* pidstat_read, pidstat_parse */
 #include "syscall.h"
@@ -300,6 +301,19 @@ static void lost_once_killed(void)
 		BUG("pidns_init: the namespace outlived its init");
 }
 
+/* Where the sandbox left the forks, with the init alive, an ENOMEM is
+ * memory pressure or fault injection and must not recycle the child.
+ * dispatch_extrafork_test.c has the ENOMEM that must. */
+static void kept_on_enomem_at_home(void)
+{
+	if (start_pidns_init() < 0)
+		BUG("pidns_init: the init did not start");
+	pidns_note_fork_target();
+	pidns_note_fork_enomem();
+	if (pidns_init_lost())
+		BUG("pidns_init: ENOMEM where the sandbox left the forks recycled the child");
+}
+
 /* An init that cannot be started leaves the child on its own, as before
  * there was one: a fresh child would only fail the same way.  RLIMIT_NPROC
  * at 0 stops the clone, every retry included, for anyone but root. */
@@ -331,4 +345,5 @@ void pidns_init_self_check(void)
 		printf("(root ignores RLIMIT_NPROC, skipping the failed start) ");
 	else
 		run_in_pidns(degraded_without_start);
+	run_in_pidns(kept_on_enomem_at_home);
 }

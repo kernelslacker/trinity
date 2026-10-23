@@ -538,10 +538,12 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * like a kill() from us (check_kill_permission()): an init forked
 	 * before drop_privs() would stay root, where the signal from a child
 	 * running as nobody cannot reach it.  Forked after the capset(), it
-	 * holds no capabilities either.
+	 * holds no capabilities either.  Then note where our forks land, for
+	 * pidns_note_fork_enomem() to compare against.
 	 */
 	if (new_pidns)
 		(void)start_pidns_init();
+	pidns_note_fork_target();
 
 	/*
 	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,

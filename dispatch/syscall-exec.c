@@ -558,11 +558,11 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
  * publishes AFTER and the return value there.  A dispatch that never gets
  * that far leaves rec->state short of AFTER and is counted as attempted
  * only; attempted less successes and failures is their tally.  They are the
- * fork failing (ENOMEM in a child that unshared CLONE_NEWPID, once the idle
- * init holding pid 1 of the new namespace has died; EAGAIN at the process
- * limit), this function compiled out (ASAN), and a grandchild killed at the
- * timeout or crashed.  --dry-run never comes here: do_syscall() has it
- * synthesize its outcome in the calling child.
+ * fork failing (ENOMEM once the pid namespace the child forks into has lost
+ * its init, until the child recycles itself; EAGAIN at the process limit),
+ * this function compiled out (ASAN), and a grandchild killed at the timeout
+ * or crashed.  --dry-run never comes here: do_syscall() has it synthesize its
+ * outcome in the calling child.
  */
 void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 		  struct childdata *child)
@@ -597,6 +597,8 @@ void do_extrafork(struct syscallrecord *rec, struct syscallentry *entry,
 
 	/* misc failure. */
 	if (extrapid == -1) {
+		if (errno == ENOMEM)
+			pidns_note_fork_enomem();
 		/* Parent already allocated snap in sanitise; post handler will
 		 * not run because state never reaches AFTER. Free snap here. */
 		if (entry->post != NULL)

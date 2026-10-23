@@ -7,22 +7,29 @@
  * sanitisers run in the child, so the fd they open has to be closed there,
  * and only that one.  The coupling validator that runs on the final argument
  * slots must keep an fcntl F_SETSIG from routing a SIGIO the parent would not
- * ignore, whatever rewrote the slots after the sanitiser.
+ * ignore, whatever rewrote the slots after the sanitiser.  A live call whose
+ * fork fails because the child's forks were moved into a pid namespace that
+ * has lost its init has to recycle the child.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
+#include <signal.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "args-internal.h"	/* nested_address_scrub */
 #include "child.h"
+#include "child-internal.h"	/* pidns_note_fork_target, pidns_init_lost */
 #include "debug.h"		/* BUG */
 #include "fd-event.h"		/* fd_event_enqueue */
 #include "kcov.h"
@@ -150,6 +157,62 @@ static void selftest_live(void)
 		BUG("dispatch_extrafork: the grandchild's outcome did not reach the caller's record");
 
 	munmap(child, sizeof(*child));
+#endif
+}
+
+/* How the namespace helper exits when it cannot unshare them. */
+#define NO_USERNS	77
+
+/*
+ * A child holding CAP_SYS_ADMIN in a user namespace can have a fuzzed
+ * unshare(CLONE_NEWPID) move its forks into a new namespace.  The first
+ * fork there becomes its pid 1; once that has exited, the next EXTRA_FORK
+ * call's fork fails with ENOMEM, and the child has to recycle rather than
+ * fuzz on without forks.
+ */
+static void selftest_dead_pidns(void)
+{
+#ifdef __SANITIZE_ADDRESS__
+	printf("(do_extrafork is compiled out under ASAN, skipping the dead pid namespace) ");
+#else
+	pid_t helper = fork();
+	int status;
+
+	if (helper < 0)
+		BUG("dispatch_extrafork: fork failed");
+	if (helper == 0) {
+		struct syscallentry entry = { .name = "probe", .flags = EXTRA_FORK };
+		struct childdata *child;
+		pid_t first;
+
+		/* Don't outlive the test binary if the check aborts. */
+		prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (unshare(CLONE_NEWUSER) != 0)
+			_exit(NO_USERNS);
+		pidns_note_fork_target();
+		if (unshare(CLONE_NEWPID) != 0)
+			_exit(NO_USERNS);
+		first = fork();
+		if (first == 0)
+			_exit(0);
+		if (first < 0 || waitpid_eintr(first, NULL, 0) != first)
+			BUG("dispatch_extrafork: cannot fork pid 1 of the new namespace");
+
+		child = map_child();
+		child->syscall.nr = __NR_getppid;
+		do_syscall(&child->syscall, &entry, &child->kcov, child);
+		if (!pidns_init_lost())
+			BUG("dispatch_extrafork: a fork's ENOMEM in a dead pid namespace kept the child");
+		_exit(0);
+	}
+	if (waitpid_eintr(helper, &status, 0) != helper)
+		BUG("dispatch_extrafork: cannot reap the namespace helper");
+	if (WIFEXITED(status) && WEXITSTATUS(status) == NO_USERNS) {
+		printf("(no unprivileged user namespaces, skipping the dead pid namespace) ");
+		return;
+	}
+	if (!WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		BUG("dispatch_extrafork: the dead pid namespace check failed");
 #endif
 }
 
@@ -344,6 +407,7 @@ void dispatch_extrafork_self_check(void)
 {
 	selftest_dry_run();
 	selftest_live();
+	selftest_dead_pidns();
 	selftest_owned_fds();
 	selftest_fcntl_setsig();
 }

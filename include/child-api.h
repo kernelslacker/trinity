@@ -178,6 +178,13 @@ void capdrop_oracle_capture_init_ns_anchors(void);
  */
 extern pid_t pidns_init_pid;
 
+/*
+ * Tell child-pidns-init.c that one of the child's forks failed with
+ * ENOMEM.  If the forks no longer land in the pid namespace the sandbox
+ * left them in, the child recycles on its next 16-op tick.
+ */
+void pidns_note_fork_enomem(void);
+
 void init_child_mappings(void);
 
 void child_process(struct childdata *child, int childno);
