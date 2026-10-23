@@ -1,13 +1,6 @@
 /*
- * Network struct-catalog registrations.
- *
- * The setsockopt (level, optname) two-key rows and their discriminator
- * vocabularies (SO_LINGER, SO_{RCV,SND}TIMEO, IP_ADD_MEMBERSHIP +
- * siblings, IPV6_*, PACKET_*, MCAST_JOIN / MCAST_SOURCE families, and
- * every cataloged SCTP optval when USE_SCTP is on).
- *
- * The struct_catalog/registry.c composition root wires the array
- * declared here into syscall_struct_arg_groups[].
+ * Network struct-catalog registrations: the setsockopt (level, optname)
+ * two-key rows and their discriminator vocabularies.
  */
 
 #include <stddef.h>

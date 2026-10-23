@@ -1,19 +1,8 @@
 /*
- * Struct-catalog init-only slot-shape validation.
- *
- * Carved out of struct_catalog/catalog.c: this TU owns the init-time
- * guard that catches syscall_struct_args[] rows whose registered
- * struct_desc lands on a slot the syscall's own argtype[] declares
- * as non-struct-shaped.  The dispatcher tolerates such a mismatch at
- * runtime (the desc fires against whatever argtype actually sits at
- * argidx-1, typically ARG_PATHNAME or a scalar length/fd) so nothing
- * aborts at build or runtime -- but the mis-map silently describes the
- * wrong bytes.  The guard turns that into an
- * init-time BUG, called from struct_catalog_init() in registry.c.
- *
- * Validation is init-only with clean inputs (the registration table,
- * the syscall table, argtype metadata), so it's the natural first
- * candidate for a unit-test surface after the split.
+ * Struct-catalog init-only slot-shape validation: BUGs when a
+ * syscall_struct_args[] row's struct_desc lands on an arg slot whose argtype[]
+ * is not struct-shaped.  The dispatcher tolerates the mismatch at runtime,
+ * so nothing else flags the silent mis-map.  Called by struct_catalog_init().
  */
 
 #include <stdbool.h>

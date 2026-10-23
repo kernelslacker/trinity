@@ -1,25 +1,10 @@
 /*
  * struct_catalog/sockaddr-sockopt.c -- setsockopt optval struct field
- * tables (linger / packet_mreq / group_req / group_source_req).
+ * tables (linger / packet_mreq / group_req / group_source_req), reached
+ * through setsockopt's (level, optname) lookup for a schema-aware fill.
  *
  * Tables are `const` (not `static const`) so the spine's designated-init
  * `.fields =` references resolve via the externs in struct_catalog-internal.h.
- *
- * setsockopt optval shapes -- proof batch for the two-key
- * (level, optname) discriminator.  Five shapes already owned by
- * bespoke build_*() functions in
- * syscalls/socket/setsockopt-optval-builders.c, registered here so
- * apply_sockopt_entry()'s explicit-key lookup resolves them and
- * struct_field_fill_schema_aware() takes over the fill.  Bespoke
- * builders stay in code as the miss-fallback for the int / bool /
- * string scalar entries (no struct shape to catalog) and for the
- * higher-leverage shapes that have not been migrated yet (sctp /
- * mptcp / tcp_repair / can_filter[] etc.); coverage on those paths
- * is byte-identical to before until their rows land.
- *
- * Scope of every row in this TU (and in the sockaddr-mcast.c
- * sibling): schema-aware FILL.  The FT_ tags below shape the live
- * values.
  */
 
 #include <stddef.h>

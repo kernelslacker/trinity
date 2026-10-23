@@ -2,9 +2,6 @@
  * Scheduler struct-catalog registrations.
  *
  * sched_getattr onto struct sched_attr.
- *
- * The struct_catalog/registry.c composition root wires the array
- * declared here into syscall_struct_arg_groups[].
  */
 
 #include <stddef.h>

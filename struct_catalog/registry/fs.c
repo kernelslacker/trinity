@@ -4,9 +4,6 @@
  * epoll_ctl, open_by_handle_at, utime and the cmd-discriminated fcntl
  * a3 are struct-pointer slots the generator fills; mount_setattr and
  * open_tree_attr are read only for their ARG_STRUCT_SIZE argument.
- *
- * The struct_catalog/registry.c composition root wires the array
- * declared here into syscall_struct_arg_groups[].
  */
 
 #include <stddef.h>

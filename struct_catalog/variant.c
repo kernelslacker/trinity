@@ -1,30 +1,9 @@
 /*
- * Struct-catalog variant / discriminator resolution.
- *
- * Carved out of struct_catalog/catalog.c: this TU owns the generic
- * helpers that resolve a tagged-union struct_desc down to a single
- * variant.  Two families:
- *
- *   - read_rec_arg / discrim_key_matches / discrim_key2_matches
- *     read one or two syscall args off a live syscallrecord and
- *     match them against a syscall_struct_args[] row's discriminator
- *     keys.  Shared with the (nr, arg) registry lookup path in
- *     struct_catalog/catalog.c (extern via struct_catalog-internal.h)
- *     so the two callers of "resolve a discriminated (nr, arg) or
- *     (name, arg, k1, k2) row" stay byte-identical to the pre-carve
- *     inline copies.
- *
- *   - struct_desc_resolve_variant / struct_desc_resolve_nested_variant
- *     resolve a struct_desc that carries desc->variants[] (or a
- *     variant that carries nested_variants[]) down to the single
- *     variant whose discriminator matches, using either a sibling
- *     syscall arg or a buffer-relative discriminator field.  Callers
- *     use the resolved variant's fields[] instead of the parent
- *     desc's shared prefix.
- *
- * read_discrim stays private to this TU: only the two variant
- * resolvers consume it (the (nr, arg) registry lookup reads args
- * off syscallrecord directly, not off a buffer).
+ * Struct-catalog variant / discriminator resolution: matching a row's
+ * discriminator keys against a live syscallrecord (shared with the (nr, arg)
+ * lookup in registry.c), and resolving a tagged-union struct_desc, or a
+ * variant's nested_variants[], down to the single variant whose discriminator
+ * matches.
  */
 
 #include <stdbool.h>

@@ -1,19 +1,9 @@
 /*
- * Struct-catalog registration composition root + (nr, arg) lookup.
- *
- * Owns the mapping from a fuzzed syscall dispatch to the struct_desc
- * that describes the argument's payload, plus the fast nr-indexed
- * lookup built at init time.  The registration data itself lives in
- * per-domain arrays under struct_catalog/registry/, composed into
- * syscall_struct_arg_groups[] below.
- *
- * The slot_binding pool + desc_by_nr_64/32[] sizing bounds
- * (SLOT_POOL_MAX, DISCRIM_VARIANTS_PER_SLOT_MAX) BUG on overflow
- * rather than silently drop mappings.
- *
- * Two public resolvers:
- *   - struct_arg_lookup: rec-driven (nr, arg) with discriminator match.
- *   - struct_arg_lookup_two_key: explicit (name, arg, k1, k2).
+ * Struct-catalog registration composition root + (nr, arg) lookup: maps a
+ * fuzzed syscall dispatch to the struct_desc describing the argument payload,
+ * through the nr-indexed table built at init.  The registration rows live in
+ * per-domain arrays under struct_catalog/registry/, composed here into
+ * syscall_struct_arg_groups[].
  */
 
 #include <stdbool.h>

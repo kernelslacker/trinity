@@ -5,9 +5,6 @@
  *
  * Tables are `const` (not `static const`) so the spine's designated-init
  * `.fields =` references resolve via the externs in struct_catalog-internal.h.
- *
- * See sockaddr-sockopt.c for the shared "schema-aware FILL only"
- * contract that governs every optval row here.
  */
 
 #include <stddef.h>

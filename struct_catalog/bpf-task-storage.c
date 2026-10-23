@@ -1,16 +1,10 @@
 /*
- * struct_catalog/bpf-task-storage.c -- task / iter / stats / token /
- * raw-tracepoint cmd family field tables carved out of
- * struct_catalog/bpf.c.  Covers the smaller BPF cmd variants that
- * each live in their own named-union member: BPF_TASK_FD_QUERY,
- * BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, and
- * BPF_TOKEN_CREATE.
+ * struct_catalog/bpf-task-storage.c -- task / iter / stats / token cmd tables.
  *
- * Tables are `const` (not `static const`) so the aggregator variant
- * table's designated-init `.fields =` references resolve via the
- * externs in struct_catalog-internal.h.  struct_catalog.h and arch.h
- * are #included unconditionally so this TU is never empty when USE_BPF
- * is off.
+ * Tables are `const` (not `static const`) so the aggregator's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty when USE_BPF is off.
  */
 
 #include <stddef.h>

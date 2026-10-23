@@ -1,12 +1,10 @@
 /*
- * struct_catalog/bpf-prog.c -- BPF_PROG_* command family field tables
- * carved out of struct_catalog/bpf.c.
+ * struct_catalog/bpf-prog.c -- BPF_PROG_* command family field tables.
  *
- * Tables are `const` (not `static const`) so the aggregator variant
- * table's designated-init `.fields =` references resolve via the
- * externs in struct_catalog-internal.h.  struct_catalog.h and arch.h
- * are #included unconditionally so this TU is never empty when USE_BPF
- * is off.
+ * Tables are `const` (not `static const`) so the aggregator's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty when USE_BPF is off.
  */
 
 #include <stddef.h>

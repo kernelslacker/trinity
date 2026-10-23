@@ -1,28 +1,9 @@
 /*
- * Struct-catalog FT_ADDRESS reachability walk.
- *
- * Carved out of struct_catalog/catalog.c: this TU owns the bounded
- * recursive scan that decides whether a struct_desc (or any
- * registration under a syscall name+arg) can reach an FT_ADDRESS
- * field, either directly or via FT_PTR_STRUCT / FT_PTR_ARRAY
- * targets, or via any variant / nested-variant.
- *
- * Single runtime purpose: the nested-address scrub mask
- * (scrub_struct_addresses() in args/scrub.c) uses this to decide
- * whether the per-dispatch scrub needs to run at all.  A conservative
- * OR across every variant is correct here because the mask is
- * consulted before the runtime discriminator is known; the scrub
- * itself resolves the active variant and walks only that variant's
- * fields.  Without the variant walk a variant-only FT_ADDRESS (e.g.
- * perf_event_attr's bp_addr on the BREAKPOINT arm) would silently
- * disable the scrub for any syscall slot that reaches one only
- * through a variant.
- *
- * A runtime selftest in struct_field_mutate_self_check()
- * (selftest_variant_address_walk) BUG()s at init if this helper
- * regresses; the static scripts/check-static/variant-address-walk.sh
- * grep-asserts the desc->variants / var->base / var->nested_variants
- * traversal at source-grep time.
+ * Struct-catalog FT_ADDRESS reachability walk: can a struct_desc, or any
+ * registration under a syscall name + arg, reach an FT_ADDRESS field directly,
+ * through FT_PTR_STRUCT / FT_PTR_ARRAY targets or via any variant?  The answer
+ * feeds the nested-address scrub mask that gates args/scrub.c.  Pinned by
+ * selftest_variant_address_walk and check-static/variant-address-walk.sh.
  */
 
 #include <stdbool.h>
@@ -113,7 +94,7 @@ static bool fields_have_address_field(const struct struct_field *fields,
  * A conservative OR across all variants is correct here because the
  * mask gates whether the per-dispatch scrub runs at all; the runtime
  * scrub then resolves the active variant and walks only those fields
- * (see scrub_struct_addresses() in generate-args.c).  Without the
+ * (see scrub_struct_addresses() in args/scrub.c).  Without the
  * variant walk a variant-only FT_ADDRESS (e.g. perf_event_attr's
  * bp_addr on the BREAKPOINT arm) would silently disable the scrub for
  * any syscall slot that reaches one only through a variant.

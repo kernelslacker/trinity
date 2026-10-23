@@ -1,15 +1,10 @@
 /*
- * struct_catalog/bpf-btf.c -- BTF-family command field tables carved
- * out of struct_catalog/bpf.c.  Covers BPF_BTF_LOAD (the BTF blob
- * upload) and BPF_OBJ_GET_INFO_BY_FD (the generic-fd info-query slot
- * the kernel routes to the prog / map / link / btf info dispatch
- * through the underlying file ops).
+ * struct_catalog/bpf-btf.c -- BPF_BTF_LOAD / OBJ_GET_INFO_BY_FD field tables.
  *
- * Tables are `const` (not `static const`) so the aggregator variant
- * table's designated-init `.fields =` references resolve via the
- * externs in struct_catalog-internal.h.  struct_catalog.h and arch.h
- * are #included unconditionally so this TU is never empty when USE_BPF
- * is off.
+ * Tables are `const` (not `static const`) so the aggregator's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty when USE_BPF is off.
  */
 
 #include <stddef.h>

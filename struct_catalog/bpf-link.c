@@ -1,15 +1,10 @@
 /*
- * struct_catalog/bpf-link.c -- BPF_LINK_* command family field tables
- * carved out of struct_catalog/bpf.c.  Covers BPF_LINK_UPDATE /
- * BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out
- * (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI,
- * UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP).
+ * struct_catalog/bpf-link.c -- BPF_LINK_* field tables (nested LINK_CREATE).
  *
- * Tables are `const` (not `static const`) so the aggregator variant
- * table's designated-init `.fields =` references resolve via the
- * externs in struct_catalog-internal.h.  struct_catalog.h and arch.h
- * are #included unconditionally so this TU is never empty when USE_BPF
- * is off.
+ * Tables are `const` (not `static const`) so the aggregator's designated-init
+ * `.fields =` references resolve via the externs in struct_catalog-internal.h.
+ * struct_catalog.h and arch.h are #included unconditionally so this TU is
+ * never empty when USE_BPF is off.
  */
 
 #include <stddef.h>

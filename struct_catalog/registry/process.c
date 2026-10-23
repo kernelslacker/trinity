@@ -5,9 +5,6 @@
  * ARG_STRUCT_SIZE argument, getrlimit fills an output buffer, and
  * perf_event_open has the pointers nested in its attr scrubbed before
  * the call.
- *
- * The struct_catalog/registry.c composition root wires the array
- * declared here into syscall_struct_arg_groups[].
  */
 
 #include <stddef.h>
