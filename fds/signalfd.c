@@ -16,12 +16,7 @@
 #include "shm.h"
 #include "utils.h"
 
-#ifndef SFD_CLOEXEC
-#define SFD_CLOEXEC 02000000
-#endif
-#ifndef SFD_NONBLOCK
-#define SFD_NONBLOCK 04000
-#endif
+#include "kernel/signalfd.h"
 
 static int do_signalfd4(void)
 {

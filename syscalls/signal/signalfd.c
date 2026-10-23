@@ -7,6 +7,8 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+#include "kernel/signalfd.h"
+
 #define KERNEL_SIGSET_SIZE	8
 
 /*
@@ -92,9 +94,6 @@ struct syscallentry syscall_signalfd = {
  * SYSCALL_DEFINE4(signalfd4, int, ufd, sigset_t __user *, user_mask,
 	 size_t, sizemask, int, flags)
  */
-
-#define SFD_CLOEXEC 02000000
-#define SFD_NONBLOCK 04000
 
 /*
  * Pick an explicit flag combination instead of the single-flag-at-a-
