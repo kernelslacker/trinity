@@ -1,13 +1,9 @@
 /*
- * KCOV diagnostic surfaces: per-site failure formatters (kcov_pc_diag_
- * format, kcov_cmp_diag_format) that the periodic stats dump splices
- * into its output, and the one-shot EBADF chronicle latch
- * (kcov_first_ebadf_trap_drain, kcov_latch_first_ebadf) that captures
- * the in-flight context the first time any child observes EBADF on a
- * PC-enable ioctl.  Carved out of kcov.c so the diagnostic surface
- * has a single home; the enable / lifecycle clusters call
- * kcov_diag_record and kcov_latch_first_ebadf from their error arms
- * via the extern decls in kcov-internal.h.
+ * KCOV diagnostic surfaces: the per-site failure formatters
+ * (kcov_pc_diag_format, kcov_cmp_diag_format) that the periodic stats dump
+ * splices in, and the one-shot EBADF chronicle latch (kcov_latch_first_ebadf,
+ * drained by kcov_first_ebadf_trap_drain) that captures the in-flight context
+ * the first time any child sees EBADF on a PC-enable ioctl.
  */
 
 #include <errno.h>

@@ -1,10 +1,7 @@
 /*
- * KCOV enable / disable ioctls, PC + CMP childop brackets, and the
- * kcov_note_extrafork accounting that sits alongside them.  Carved
- * out of kcov.c so every KCOV_ENABLE / KCOV_DISABLE / KCOV_REMOTE_
- * ENABLE issuing site lives in one translation unit; kcov_recover_fd,
- * kcov_diag_record, and kcov_latch_first_ebadf come in through the
- * externs in kcov-internal.h.
+ * KCOV enable / disable ioctls with their EINTR / EBADF retry loops, the PC +
+ * CMP childop brackets, and the kcov_note_extrafork accounting that sits
+ * alongside them; the init-time probes live in lifecycle.c.
  */
 
 #include <errno.h>

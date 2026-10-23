@@ -2,12 +2,9 @@
  * kcov/transition-hash.c — KASLR canonicalisation for kernel comparison
  * instruction addresses.
  *
- * kcov_canon_cmp_ip() is the single ingress point that CMP-hint
- * consumers use to strip the runtime KASLR base from a comparison-
- * instruction PC before it is stored in the per-syscall pool or the
- * persisted cmp-hints file.  Kept in its own TU, apart from the
- * PC-coverage kcov_canon_pc in collect-internal.h, so every cmp-hint
- * caller goes through one named ingress.
+ * kcov_canon_cmp_ip() is the single ingress CMP-hint consumers use to strip
+ * the runtime KASLR base from a comparison-instruction PC before it is
+ * stored, kept apart from the PC-coverage kcov_canon_pc (collect-internal.h).
  */
 
 #include "kcov-internal.h"	/* kcov_kaslr_base extern, kcov types */

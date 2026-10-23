@@ -1,12 +1,8 @@
 /*
- * KCOV fd lifetime and per-child setup: KASLR-base lookup that turns
- * runtime PCs into build-invariant edge indices, the kcov_init_global
- * bootstrap, all four kcov_init_child_* helpers and their
- * kcov_init_child coordinator, kcov_child_flush_stats,
- * kcov_cleanup_child, and the kcov_recover_fd EBADF re-open path.
- * Carved out of kcov.c so every fd-lifetime invariant lives in one
- * translation unit; the enable / disable arms in kcov/enable.c reach
- * kcov_recover_fd via the extern in kcov-internal.h.
+ * KCOV fd lifetime and per-child setup: the KASLR-base lookup that makes edge
+ * indices build-invariant, kcov_init_global, the kcov_init_child coordinator
+ * and its helpers, kcov_child_flush_stats, kcov_cleanup_child, and the
+ * kcov_recover_fd EBADF re-open path.
  */
 
 #include <errno.h>

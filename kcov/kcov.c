@@ -1,22 +1,7 @@
 /*
- * KCOV coverage collection for coverage-guided fuzzing.
- *
- * Each child tries to open /sys/kernel/debug/kcov at startup. If the
- * kernel supports KCOV, per-thread trace buffers are mmapped and PC
- * tracing is enabled around each syscall. Collected PCs are hashed
- * into a global shared bucket-seen table to track edge coverage with
- * AFL-style hit-count bucketing: a syscall that hits the same edge five
- * times is distinguishable from one that hits it two hundred times, so
- * mutations that nudge loop-trip counts past bucket boundaries register
- * as new coverage.
- *
- * When KCOV_REMOTE_ENABLE is available, a fraction of syscalls use
- * remote mode to also collect coverage from softirqs, threaded IRQ
- * handlers, and kthreads triggered by the syscall — deferred work
- * that per-thread KCOV_ENABLE would miss.
- *
- * If KCOV is not available, everything is silently skipped with no
- * runtime overhead beyond the initial open() attempt per child.
+ * KCOV global state: the kcov_shm pointer, the compile-time check that the
+ * per-childop arrays in struct kcov_shared cover NR_CHILD_OP_TYPES, and the
+ * runtime-tunable KCOV modes with their defaults and rollback rationale.
  */
 
 #include <errno.h>

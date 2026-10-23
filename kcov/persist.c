@@ -1,10 +1,7 @@
 /*
- * KCOV bitmap warm-start persistence, kernel fingerprinting, and the
- * cold parent-side scaffolding around them (streaming SHA-256, snapshot
- * cadence, bucket_seen canary).  Carved out of kcov.c to keep the
- * bitmap file format and its cross-run bookkeeping in one place; the
- * hot per-syscall collection path lives elsewhere in the kcov/
- * subdirectory.
+ * KCOV bitmap warm-start persistence, kernel fingerprinting, and the cold
+ * parent-side scaffolding around them (streaming SHA-256, snapshot cadence,
+ * bucket_seen canary).
  */
 
 #include <errno.h>

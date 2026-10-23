@@ -1,12 +1,8 @@
 /*
  * KCOV coverage-curve fleet reactions: the diagnostic coverage-jump
  * breadcrumb emitted from the tail of kcov_collect(), and the periodic
- * kcov_plateau_check that fires strategy_plateau_response() and snaps
- * the bitmap on plateau entry.  Carved out of kcov.c so "coverage was
- * collected" (kcov/collect.c) is separated from "the fleet responded
- * to the coverage curve"; kcov/collect.c reaches
- * kcov_covjump_breadcrumb_maybe through the extern in
- * kcov-internal.h.
+ * kcov_plateau_check that fires strategy_plateau_response() and snaps the
+ * bitmap on plateau entry.
  */
 
 #include <stdbool.h>

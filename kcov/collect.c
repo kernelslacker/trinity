@@ -1,14 +1,8 @@
 /*
  * KCOV hot-path collection: kcov_collect() PC-walk, per-child dedup,
  * AFL-style hit-count bucketing, shadow transition-pair hashing, and
- * per-syscall/mode/childop counter fan-out.  Supporting helpers
- * (kcov_canon_pc, pc_canon_to_edge, kcov_entry_sentinel,
- * pair_to_transition) live in collect-internal.h.
- *
- * CMP-record dispatch (kcov_collect_cmp) → collect-fanout.c
- * Cold-skip policy (kcov_syscall_cold_skip_pct, kcov_syscall_is_cold)
- * → cold-skip.c
- * CMP-IP KASLR canonicalisation (kcov_canon_cmp_ip) → transition-hash.c
+ * per-syscall/mode/childop counter fan-out.  The canonicalisation and hash
+ * helpers are inline in collect-internal.h; the CMP path is collect-fanout.c.
  */
 
 #include <errno.h>
