@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
  */
 #include <linux/pidfd.h>
+#include "fd.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -21,6 +22,15 @@ static void sanitise_pidfd_getfd(struct syscallrecord *rec)
 }
 #endif
 
+static void post_pidfd_getfd(struct syscallrecord *rec)
+{
+	long fd = (long) rec->retval;
+
+	if (fd >= 0 && fd < (1 << 20) && pool_foreign_fd((int) fd))
+		return;
+	generic_post_close_fd(rec);
+}
+
 struct syscallentry syscall_pidfd_getfd = {
 	.name = "pidfd_getfd",
 	.group = GROUP_PROCESS,
@@ -33,5 +43,5 @@ struct syscallentry syscall_pidfd_getfd = {
 	.sanitise = sanitise_pidfd_getfd,
 	.flags = REEXEC_SANITISE_OK,
 #endif
-	.post = generic_post_close_fd,
+	.post = post_pidfd_getfd,
 };

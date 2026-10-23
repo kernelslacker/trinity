@@ -1,13 +1,18 @@
 /*
  * Self-check for how dup, dup2, dup3 and fcntl(F_DUPFD*) pool the
- * descriptor they return, and for how close and close_range retire what
- * they free.  The post handlers run as shipped against a fake object
- * pool.  A copy joins the pool its source came from, and stays out of
- * every pool when the source is untracked or protected, the call failed,
- * or the type is one publish_resource() does not route.  Whatever object
- * a number held before the call is retired, copy pooled or not, and a
- * retire never closes the number: it names the copy by then.  The close
- * itself is reported once, through notify_child_fd_closed(), as before.
+ * descriptor they return, how pidfd_getfd pools the socket or pipe end it
+ * returns, and how close and close_range retire what they free.  The post
+ * handlers run as shipped against a fake object pool.  A copy joins the
+ * pool its source came from, and stays out of every pool when the source
+ * is untracked or protected, the call failed, or the type is one
+ * publish_resource() does not route.  Whatever object a number held
+ * before the call is retired, copy pooled or not, and a retire never
+ * closes the number: it names the copy by then.  The close itself is
+ * reported once, through notify_child_fd_closed(), as before.
+ *
+ * A pidfd_getfd copy comes from another process, so no pool names its
+ * source: fstat() types it, and a file that is neither a socket nor a
+ * pipe end is not pooled and is closed.
  *
  * A close retires the local objects under its number once the kernel has
  * freed it, which a failed close has too unless it says EBADF.  A
@@ -25,6 +30,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/eventfd.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
@@ -674,6 +682,189 @@ static void fcntl_dupfd_of_an_unrouted_type_stays_open(void)
 
 	close(copy);
 	close(src);
+}
+
+/* Run pidfd_getfd's post handler on a call that returned @retval. */
+static void run_getfd(unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EBADF : 0;
+
+	forget_calls();
+	syscall_pidfd_getfd.post(&rec);
+}
+
+/* A copy of an fd of another process has no source in our pools to take a
+ * type from.  What the kernel says of the number it took does: a socket
+ * is a socket whose triplet it reports, and a fifo is a pipe end, which
+ * end by its access mode.  The copy stays open and pooled. */
+static void getfd_pools_a_socket_or_pipe(void)
+{
+	struct pool_entry *e;
+	int sv[2], pp[2], dgram;
+
+	if (socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0,
+		       sv) != 0)
+		BUG("fd pool: cannot make a socketpair");
+	dgram = socket(AF_UNIX, SOCK_DGRAM, 0);
+	if (dgram < 0)
+		BUG("fd pool: cannot make a unix datagram socket");
+	if (pipe(pp) != 0)
+		BUG("fd pool: cannot make a pipe");
+
+	reset();
+	pool_add(false, 90010, OBJ_FD_EVENTFD);
+	run_getfd(sv[0]);
+	e = pool_find(sv[0], OBJ_FD_SOCKET);
+	check("a socket pidfd_getfd returned was not pooled", "pidfd_getfd",
+	      e != NULL && e->local && pool_count(sv[0]) == 1);
+	check("the pooled socket has the wrong triplet", "pidfd_getfd",
+	      e != NULL && e->obj.sockinfo.triplet.family == AF_UNIX &&
+	      e->obj.sockinfo.triplet.type == SOCK_STREAM &&
+	      e->obj.sockinfo.triplet.protocol == 0);
+	check("a pooled socket was closed", "pidfd_getfd",
+	      fcntl(sv[0], F_GETFD) != -1);
+	check("a pidfd_getfd retired an object at another number",
+	      "pidfd_getfd", pool_find(90010, OBJ_FD_EVENTFD) != NULL);
+
+	run_getfd(dgram);
+	e = pool_find(dgram, OBJ_FD_SOCKET);
+	check("the triplet of a datagram socket was not its own", "pidfd_getfd",
+	      e != NULL && e->obj.sockinfo.triplet.family == AF_UNIX &&
+	      e->obj.sockinfo.triplet.type == SOCK_DGRAM);
+
+	run_getfd(pp[0]);
+	e = pool_find(pp[0], OBJ_FD_PIPE);
+	check("the read end of a pipe was not pooled as a reader",
+	      "pidfd_getfd", e != NULL && e->local && e->obj.pipeobj.reader);
+	check("a pooled pipe end was closed", "pidfd_getfd",
+	      fcntl(pp[0], F_GETFD) != -1);
+
+	run_getfd(pp[1]);
+	e = pool_find(pp[1], OBJ_FD_PIPE);
+	check("the write end of a pipe was pooled as a reader", "pidfd_getfd",
+	      e != NULL && e->local && !e->obj.pipeobj.reader);
+
+	close(sv[0]);
+	close(sv[1]);
+	close(dgram);
+	close(pp[0]);
+	close(pp[1]);
+}
+
+/* A file whose type cannot be told from fstat() is not pooled, and the
+ * copy is closed, as it was before any of this was pooled. */
+static void getfd_closes_what_it_cannot_classify(void)
+{
+	struct stat st;
+	int fds[3], i;
+
+	fds[0] = eventfd(0, 0);
+	fds[1] = open("/dev/null", O_RDONLY);
+	fds[2] = open("/", O_RDONLY | O_DIRECTORY);
+	for (i = 0; i < 3; i++) {
+		if (fds[i] < 0)
+			BUG("fd pool: cannot open a file to classify");
+	}
+	/* The eventfd is the case that matters: its inode is the one every
+	 * anon-inode fd shares, so fstat() cannot tell it from an epoll fd. */
+	if (fstat(fds[0], &st) != 0 || S_ISSOCK(st.st_mode) ||
+	    S_ISFIFO(st.st_mode))
+		BUG("fd pool: an eventfd looks like a socket or a pipe");
+
+	for (i = 0; i < 3; i++) {
+		reset();
+		pool_add(true, fds[i], OBJ_FD_PIPE);
+		run_getfd(fds[i]);
+		check("an fd that cannot be classified was pooled",
+		      "pidfd_getfd", published == 0);
+		check("an fd that cannot be classified was left open",
+		      "pidfd_getfd", fcntl(fds[i], F_GETFD) == -1);
+		check("the stale object under an unclassified fd survived",
+		      "pidfd_getfd", pool_count(fds[i]) == 0);
+	}
+}
+
+/* A number the call handed out can hold an object from before; it goes
+ * before the copy is pooled, and never takes the copy with it. */
+static void getfd_retires_the_old_object(void)
+{
+	int pp[2];
+
+	if (pipe(pp) != 0)
+		BUG("fd pool: cannot make a pipe");
+
+	reset();
+	pool_add(true, pp[0], OBJ_FD_EVENTFD);
+	pool_add(true, pp[0], OBJ_FD_PIPE);
+	run_getfd(pp[0]);
+	check("a stale object under the number pidfd_getfd returned survived",
+	      "pidfd_getfd", pool_find(pp[0], OBJ_FD_EVENTFD) == NULL &&
+	      pool_count(pp[0]) == 1 && published == 1);
+	check("the stale number was not retired exactly once", "pidfd_getfd",
+	      retires == 1 && retired_fd == pp[0]);
+	check("pidfd_getfd reported a close it did not make", "pidfd_getfd",
+	      closes == 0);
+
+	close(pp[0]);
+	close(pp[1]);
+}
+
+/* Nothing is pooled or closed for a call that failed or returned a number
+ * no fd table holds, for a stdio number, or for a number the protected
+ * registry shields, where a new file must not be taken for the one the
+ * registry means. */
+static void getfd_pools_nothing_it_should_not(void)
+{
+	static const unsigned long returns[] = {
+		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+	};
+	int pp[2], saved, i;
+
+	if (pipe(pp) != 0)
+		BUG("fd pool: cannot make a pipe");
+
+	for (i = 0; i < 3; i++) {
+		reset();
+		pool_add(true, pp[0], OBJ_FD_PIPE);
+		run_getfd(returns[i]);
+		check("a pidfd_getfd that returned no fd changed the pool",
+		      "pidfd_getfd", published == 0 && retires == 0 &&
+		      pool_count(pp[0]) == 1);
+		check("a pidfd_getfd that returned no fd closed one",
+		      "pidfd_getfd", fcntl(pp[0], F_GETFD) != -1);
+	}
+
+	reset();
+	fake_child.kcov.fd = pp[0];
+	run_getfd(pp[0]);
+	fake_child.kcov.fd = KCOV_FD;
+	check("a copy on a protected number was pooled", "pidfd_getfd",
+	      published == 0 && pool_count(pp[0]) == 0);
+	check("a copy on a protected number was left open", "pidfd_getfd",
+	      fcntl(pp[0], F_GETFD) == -1);
+	close(pp[1]);
+
+	/* A pipe that lands on number 0, where stdin was, if it was open. */
+	saved = fcntl(0, F_DUPFD_CLOEXEC, 10);
+	close(0);
+	if (pipe(pp) != 0 || pp[0] != 0)
+		BUG("fd pool: cannot make a pipe on fd 0");
+	reset();
+	run_getfd(0);
+	check("a copy on a stdio number was pooled", "pidfd_getfd",
+	      published == 0 && retires == 0 && pool_count(0) == 0);
+	check("a copy on a stdio number was left open", "pidfd_getfd",
+	      fcntl(0, F_GETFD) == -1);
+	close(pp[1]);
+	if (saved >= 0) {
+		if (dup2(saved, 0) != 0)
+			BUG("fd pool: cannot restore stdin");
+		close(saved);
+	}
 }
 
 /* close_range()'s flag bits, as the kernel reads them. */
@@ -1383,6 +1574,10 @@ void dup_pool_self_check(void)
 	fcntl_dupfd_pools_the_copy();
 	fcntl_other_cmds_pool_nothing();
 	fcntl_dupfd_of_an_unrouted_type_stays_open();
+	getfd_pools_a_socket_or_pipe();
+	getfd_closes_what_it_cannot_classify();
+	getfd_retires_the_old_object();
+	getfd_pools_nothing_it_should_not();
 	close_retires_the_fds_objects();
 	a_failed_close_retires_only_what_it_freed();
 	close_range_retires_the_range();

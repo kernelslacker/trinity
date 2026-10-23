@@ -2,7 +2,7 @@
 
 Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, pidfd, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
 
-## Files (44 .c files + 1 internal header, ~9,875 LOC)
+## Files (44 .c files + 1 internal header, ~9,947 LOC)
 
 The registry core is no longer one file: `fds.c` was carved into `fds-*.c`
 behind `fds-internal.h`, one concern per translation unit.
@@ -49,7 +49,7 @@ behind `fds-internal.h`, one concern per translation unit.
 | fds-registry.c | 93 | The constructor-time provider list: `register_fd_provider()`, `fd_provider_name()`, `dump_fd_provider_names()` |
 | fds-internal.h | 66 | Private cross-file interface for the carve-outs — the counters and provider arrays that used to be file-statics in `fds.c`, and the replenish per-tick cap |
 | owned-fd-ring.c | 89 | `owned_fd_ring_record()` and `owned_fd_ring_retire()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded. A retire takes a number out of every provider's ring without closing it: a record retires the number it is given first, and `account_fd_and_group()` retires each number a fuzzed call returns, which `fstat()` cannot do for anon-inode files and dups |
-| fds-dup.c | 44 | `pool_dup_result()` (`include/fd.h`): pools the fd a dup, dup2, dup3 or `fcntl(F_DUPFD*)` returned under the object type of the fd it copied, after retiring the local object its number held |
+| fds-dup.c | 116 | `pool_dup_result()` and `pool_foreign_fd()` (`include/fd.h`): pool the fd a dup, dup2, dup3 or `fcntl(F_DUPFD*)` returned under the object type of the fd it copied, after retiring the local object its number held; and the fd `pidfd_getfd` returned, when `fstat()` says it is a socket or a pipe end |
 | fds-diag.c | 42 | `fd_provider_init_fail()` and the last-init-reason slot `open_fds()` reads back |
 | devfs.c | 34 | `/dev` pool provider (thin wrapper over files.c, pool 0) |
 | procfs.c | 18 | `/proc` pool provider (thin wrapper over files.c, pool 1) |
@@ -75,6 +75,7 @@ behind `fds-internal.h`, one concern per translation unit.
 - `child/child-periodic.c`, `run_fd_provider_child_ops()` — every 128th op, a per-child fd-level action (bind/listen/accept, etc.) via each provider's optional `.child_ops`, skipped under `-c`/`-r`/`-g`
 - `syscalls/fs/dup.c`, `syscalls/fs/ftruncate.c`, `syscalls/fs/fallocate.c`, `syscalls/fs/lseek.c`, `syscalls/fs/llseek.c`, `syscalls/*write*`, `syscalls/fs/splice/copy_file_range.c`, `syscalls/fs/splice/sendfile.c`, `syscalls/fs/splice/splice.c` — consult `fd_is_protected()` / `reroll_protected_fd_arg()` to keep kcov and stderr-capture fds safe from the close/size-changing families
 - `syscalls/fs/dup.c`, `syscalls/fs/fcntl.c` — pool the results of dup, dup2, dup3 and `fcntl(F_DUPFD*)` through `pool_dup_result()` (`fds/fds-dup.c`): the copy joins the `OBJ_LOCAL` pool of the fd it copies (`find_object_by_fd()`, then `publish_resource()`), and the object the returned number held is retired first (`remove_local_objects_by_fd()`); protected fds never enter a pool, on either end
+- `syscalls/pidfd/pidfd_getfd.c` — pools the fd it returns through `pool_foreign_fd()` (`fds/fds-dup.c`) when `fstat()` says it is a socket (its triplet read back with `getsockopt()`) or a pipe end, and closes anything else: an anon-inode fd cannot be typed from `fstat()`
 - `random_syscall/fd-group.c` — `account_fd_and_group()` calls `owned_fd_ring_retire()` for every fd a fuzzed call returns, so a stale ring slot cannot close the new owner of its number; a call that returns the fd it was handed (`dup2(fd, fd)`, `signalfd()` on a signalfd) retires nothing. A bounded walk of the rings, no syscall
 - `syscalls/poll/poll.c`, `syscalls/poll/select.c`, `syscalls/poll/pselect6.c`, `syscalls/poll/epoll_ctl.c` — use `get_pollable_random_fd()` and `fd_poll_can_block()` to build/validate watch sets
 - `kcov/lifecycle.c`, `kcov/diag.c` — own the fds that `fd_is_protected()` shields (`child->kcov.fd`, `child->kcov.cmp_fd`)

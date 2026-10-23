@@ -314,6 +314,16 @@ int fd_relocate_high(int fd);
 void pool_dup_result(int oldfd, int newfd);
 
 /*
+ * Pool @fd, the copy of another process's descriptor that pidfd_getfd
+ * returned, when it can be told to be a socket or a pipe end: the
+ * type has to come from the file itself, so nothing else is pooled.
+ * Returns true when @fd was pooled; false leaves it with the caller, who
+ * closes it.  A stdio or protected number is never pooled.  Child
+ * context only.
+ */
+bool pool_foreign_fd(int fd);
+
+/*
  * Pick from the fd_types whose ->poll handlers park the caller on a
  * real wait queue (pipe / eventfd / timerfd / signalfd / inotify /
  * fanotify / socket).  Used by poll(2)/ppoll(2)/select(2)/pselect6(2)

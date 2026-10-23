@@ -1,8 +1,14 @@
 /*
- * pool_dup_result(): the pool bookkeeping shared by the calls that copy a
- * descriptor, declared in include/fd.h.
+ * The pool bookkeeping for a descriptor that a call copying one returned,
+ * declared in include/fd.h: pool_dup_result() for a copy of one of ours,
+ * pool_foreign_fd() for a copy of another process's.
  */
+#include <fcntl.h>
+#include <stdbool.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
 #include "fd.h"
+#include "net.h"
 #include "objects.h"
 #include "publish_resource.h"
 
@@ -41,4 +47,70 @@ void pool_dup_result(int oldfd, int newfd)
 	obj = publish_resource(type, newfd, NULL);
 	if (obj != NULL && type == OBJ_FD_SOCKET)
 		obj->sockinfo.triplet = src->sockinfo.triplet;
+}
+
+/*
+ * A copy of an fd of another process (pidfd_getfd) has no source in our
+ * pools to take a type from, and a pool needs one.  The kernel says, in
+ * fstat(), for the two kinds of file whose mode names them: a socket,
+ * whose triplet getsockopt() reports, and a pipe end, which end by its
+ * access mode.  Every anon-inode file (eventfd, epoll, timerfd, ...)
+ * shares one inode, so fstat() cannot tell them apart, and naming them
+ * through /proc/self/fd needs a /proc that a fuzzed chroot or mount
+ * namespace may have taken away.  Whatever else it is, it is not pooled,
+ * and the caller still owns it.
+ *
+ * A copy on a stdio or protected number is never pooled.  The number is
+ * free, so a local object still under it is retired first, pooled or not.
+ */
+bool pool_foreign_fd(int fd)
+{
+	static const int sockopts[3] = { SO_DOMAIN, SO_TYPE, SO_PROTOCOL };
+	struct socket_triplet triplet;
+	unsigned int *const field[3] = {
+		&triplet.family, &triplet.type, &triplet.protocol,
+	};
+	struct object *obj;
+	struct stat st;
+	int flags, i;
+
+	if (fd <= 2 || fd_is_protected(fd))
+		return false;
+
+	remove_local_objects_by_fd(fd);
+
+	if (fstat(fd, &st) != 0)
+		return false;
+
+	if (S_ISFIFO(st.st_mode)) {
+		flags = fcntl(fd, F_GETFL);
+		if (flags < 0)
+			return false;
+		obj = publish_resource(OBJ_FD_PIPE, fd, NULL);
+		if (obj == NULL)
+			return false;
+		obj->pipeobj.reader = (flags & O_ACCMODE) == O_RDONLY;
+		return true;
+	}
+
+	if (!S_ISSOCK(st.st_mode))
+		return false;
+
+	for (i = 0; i < 3; i++) {
+		int val;
+		socklen_t len = sizeof(val);
+
+		if (getsockopt(fd, SOL_SOCKET, sockopts[i], &val, &len) != 0 ||
+		    len != sizeof(val) || val < 0)
+			return false;
+		*field[i] = val;
+	}
+	if (triplet.family >= TRINITY_PF_MAX)
+		return false;
+
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return false;
+	obj->sockinfo.triplet = triplet;
+	return true;
 }
