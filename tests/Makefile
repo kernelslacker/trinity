@@ -146,6 +146,7 @@ REAL_SRCS	:= \
 	$(TOP)/utils/pidstat-probe.c \
 	$(TOP)/utils/tmpdir.c \
 	$(TOP)/persist/deferred-free.c \
+	$(TOP)/persist/deferred-free-alloc-track.c \
 	$(TOP)/persist/deferred-free-record.c \
 	$(TOP)/persist/deferred-free-regions.c \
 	$(TOP)/fds/fds-protected.c \

@@ -144,6 +144,17 @@ struct gen_arena_region {
 };
 
 /*
+ * The free paths that go through tracked_free_checked(), so a consume miss
+ * is charged to the counter of the path that made it.
+ */
+enum tracked_free_site {
+	TRACKED_FREE_SITE_RING_EVICT,	/* ring_evict_oldest_safe */
+	TRACKED_FREE_SITE_RING_DRAIN,	/* free_ring_entry */
+	TRACKED_FREE_SITE_IMMEDIATE,	/* tracked_free_now + enqueue immediate-free fallbacks */
+	TRACKED_FREE_SITE_GEN_RETIRE,	/* gen_arena_retire_one -- generation-arena drain */
+};
+
+/*
  * Defined in deferred-free-regions.c, which maps the mprotect-armoured
  * regions (alloc_track's backing, ring_control, the ring, the generation
  * arena) and brackets every mutation of them: *_unlock() opens the RW
@@ -167,12 +178,19 @@ void gen_lock(void);
 void ring_dispose_after_enomem(void);
 
 /*
- * alloc_track storage.  deferred_free_init() maps the backing region and
- * points these into it; the alloc_track code indexes them.
+ * alloc_track storage, defined in deferred-free-alloc-track.c.
+ * deferred_free_init() maps the backing region and points these into it.
  */
 extern void **alloc_track;
 extern void **alloc_track_hash;
 extern size_t *alloc_track_sizes;
+
+/*
+ * Remove @ptr from the side-set; true iff it was live.  tracked_free_checked()
+ * frees only when that succeeds and otherwise charges the miss to @site.
+ */
+bool alloc_track_consume(void *ptr);
+bool tracked_free_checked(void *ptr, enum tracked_free_site site);
 
 /* Reads vm.max_map_count once, in the parent, for the enqueue VMA cap. */
 void deferred_free_read_max_map_count(void);
