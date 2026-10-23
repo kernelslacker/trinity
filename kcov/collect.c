@@ -293,6 +293,61 @@ static void kcov_account_new_edge(struct kcov_child *kc, unsigned int nr,
 	frontier_record_new_edge(nr);
 }
 
+/*
+ * Per-syscall accounting for a call that executed kernel code but set no new
+ * bucket bit.  Runs once per call, after the PC walk.
+ */
+static void kcov_account_warm_known(unsigned int nr, unsigned long call_nr)
+{
+	/* Kernel executed code for this syscall but every PC
+	 * was already in bucket_seen[] (warm-loaded or
+	 * earlier-this-run).  Track separately from
+	 * per_syscall_edges so cold-skip / anti-prior / picker
+	 * consumers can tell a quietly-exercised syscall from
+	 * one that has never fired this run. */
+	__atomic_fetch_add(
+		&kcov_shm->per_syscall.per_syscall_warm_known_hits[nr], 1,
+		__ATOMIC_RELAXED);
+	/* Per-child staging bump for the dump-side run-wide
+	 * warm-known-hits counter.  Same batched-flush model
+	 * as kcov_collect()'s total_calls / remote_calls /
+	 * total_pcs staging; no stamp-role consumer reads
+	 * kcov_shm->per_syscall.total_warm_known_hits, so the staged
+	 * per-child delta is authoritative for the dump path
+	 * -- the shm atomic is not bumped.  The per-syscall
+	 * split above stays on the shm atomic -- it's an nr-
+	 * indexed array, not a cross-child cacheline-bounce
+	 * scalar. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL) {
+			if (kcov_local_stats_plausible(
+				    cc->local_stats))
+				cc->local_stats->total_warm_known_hits++;
+			else
+				log_self_corrupt_culprit(
+					"kcov:local_stats:warm",
+					(unsigned long)cc->local_stats,
+					&cc->syscall);
+		}
+	}
+	/* Lazy-seed last_edge_at[nr] from the warm-known hit
+	 * stream.  Without this seed, a syscall whose entire
+	 * surface is warm-loaded looks indistinguishable from
+	 * one that has never executed -- both have
+	 * last_edge_at[nr] == 0 -- and the cold-skip /
+	 * frontier consumers throttle accordingly.  Use a
+	 * compare-exchange-loop-free pattern: read once, set
+	 * if zero.  Races between concurrent first-warm-hits
+	 * resolve harmlessly to whichever store wins -- both
+	 * carry the same semantic "this syscall is alive". */
+	if (__atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
+			    __ATOMIC_RELAXED) == 0)
+		__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
+				 call_nr, __ATOMIC_RELAXED);
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -601,53 +656,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			kcov_account_new_edge(kc, nr, do32, ctx, edges_this_call,
 					      call_nr);
 		} else if (count > 0) {
-			/* Kernel executed code for this syscall but every PC
-			 * was already in bucket_seen[] (warm-loaded or
-			 * earlier-this-run).  Track separately from
-			 * per_syscall_edges so cold-skip / anti-prior / picker
-			 * consumers can tell a quietly-exercised syscall from
-			 * one that has never fired this run. */
-			__atomic_fetch_add(
-				&kcov_shm->per_syscall.per_syscall_warm_known_hits[nr], 1,
-				__ATOMIC_RELAXED);
-			/* Per-child staging bump for the dump-side run-wide
-			 * warm-known-hits counter.  Same batched-flush model
-			 * as total_calls / remote_calls / total_pcs above;
-			 * no stamp-role consumer reads
-			 * kcov_shm->per_syscall.total_warm_known_hits, so the staged
-			 * per-child delta is authoritative for the dump path
-			 * -- the shm atomic is not bumped.  The per-syscall
-			 * split above stays on the shm atomic -- it's an nr-
-			 * indexed array, not a cross-child cacheline-bounce
-			 * scalar. */
-			{
-				struct childdata *cc = this_child();
-
-				if (cc != NULL) {
-					if (kcov_local_stats_plausible(
-						    cc->local_stats))
-						cc->local_stats->total_warm_known_hits++;
-					else
-						log_self_corrupt_culprit(
-							"kcov:local_stats:warm",
-							(unsigned long)cc->local_stats,
-							&cc->syscall);
-				}
-			}
-			/* Lazy-seed last_edge_at[nr] from the warm-known hit
-			 * stream.  Without this seed, a syscall whose entire
-			 * surface is warm-loaded looks indistinguishable from
-			 * one that has never executed -- both have
-			 * last_edge_at[nr] == 0 -- and the cold-skip /
-			 * frontier consumers throttle accordingly.  Use a
-			 * compare-exchange-loop-free pattern: read once, set
-			 * if zero.  Races between concurrent first-warm-hits
-			 * resolve harmlessly to whichever store wins -- both
-			 * carry the same semantic "this syscall is alive". */
-			if (__atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
-					    __ATOMIC_RELAXED) == 0)
-				__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
-						 call_nr, __ATOMIC_RELAXED);
+			kcov_account_warm_known(nr, call_nr);
 		}
 		/* Per-call totals into the (nr, do32)-indexed diag slot:
 		 * bucket_bits_real mirrors edges_this_call, distinct_pcs is the
