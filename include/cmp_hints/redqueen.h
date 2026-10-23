@@ -20,8 +20,7 @@
  * comparison-instruction address, the same value cmp_hints_collect()
  * routes into the bloom and the per-syscall pool.
  *
- * field_kind selects how the consumer applies the pin for the
- * field-scoped pool.
+ * field_kind selects how the consumer applies the pin.
  * REEXEC_FIELD_NONE is the scalar-slot pin: the consumer splices `value`
  * into rec->a<slot>'s low `size` bytes and preserves its high bits (a
  * full or unknown width overwrites the whole slot outright).  The field
@@ -35,8 +34,8 @@
  * width passes miss, and only on syscalls that actually carry a
  * field-eligible arg, so scalar RedQueen stays cheap.  Today only the
  * ARG_TIMESPEC fixed-layout tv_sec/tv_nsec pair is wired; the xattr
- * namespace vocab and the variable-length / nested buffers land in the
- * follow-up alongside the field-scoped CMP pool.
+ * namespace vocab and the variable-length / nested buffers land in a
+ * follow-up.
  */
 #define MAX_REEXEC_PENDING	8U
 

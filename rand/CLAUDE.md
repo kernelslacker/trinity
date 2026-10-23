@@ -53,7 +53,7 @@ this directory rather than calling libc rand() directly.
 `rand/interesting-numbers.c` and `cmp_hints/` are complementary, non-overlapping sources feeding the same downstream arg slots — no shared code or data structures between them:
 
 - **rand/interesting-numbers.c** is a *static, a-priori* corpus: boundary values baked in from general domain knowledge of C/kernel bug classes (INT_MAX, page_size±1, hugepage sizes, canonical address edges). It is target-agnostic — the same table fires regardless of which kernel or which build is under test, and regardless of what that kernel has ever been observed comparing against.
-- **cmp_hints/** is a *dynamic, observed* corpus: it harvests the actual constants a running kernel compares fuzzer-derived values against (via KCOV_TRACE_CMP), builds per-syscall/per-field pools of those constants, and biases re-injection toward values a specific kernel binary is known to branch on.
+- **cmp_hints/** is a *dynamic, observed* corpus: it harvests the actual constants a running kernel compares fuzzer-derived values against (via KCOV_TRACE_CMP), builds per-syscall pools of those constants, and biases re-injection toward values a specific kernel binary is known to branch on.
 - In practice they stack: `rand32()`/`rand64()` in random.c fold `get_interesting_32bit_value()`/`get_interesting_value()` in as one of several draw arms unconditionally: cmp_hints then separately intercepts arg production (`args/cmp_hint_inject.c`) to override or blend in a live-observed constant when one is available for that syscall/field. Neither directory calls into the other; interesting-numbers.c has zero references from cmp_hints/*.c.
 
 ## Areas of attention

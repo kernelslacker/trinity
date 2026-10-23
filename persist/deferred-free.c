@@ -96,17 +96,17 @@ static size_t alloc_track_bytes;
  * Parallel size storage indexed identically to alloc_track[]: each
  * slot records the allocation extent passed to deferred_alloc_track()
  * at registration time, so a consumer that holds a tracked pointer
- * (cmp_hints field scan today) can recover the real allocation length
- * without re-asking the allocator.  Shares the alloc_track_base
- * mmap'd region so the same mprotect bracket covers it -- a fuzzed
- * value-result syscall that aliases these pages hits the PROT_READ
- * wall instead of silently flipping a recorded size.  Slot index
- * matches alloc_track[]: a consume() that nulls alloc_track[idx]
- * MUST zero alloc_track_sizes[idx] in the same bracket so the size
- * cannot survive its pointer (a stale non-zero size lingering after
- * the slot rotated out would feed a downstream bound check with a
- * length that does not belong to the value the caller actually
- * holds).
+ * (the nested-address scrub and setsockopt today) can recover the
+ * real allocation length without re-asking the allocator.  Shares the
+ * alloc_track_base mmap'd region so the same mprotect bracket covers
+ * it -- a fuzzed value-result syscall that aliases these pages hits
+ * the PROT_READ wall instead of silently flipping a recorded size.
+ * Slot index matches alloc_track[]: a consume() that nulls
+ * alloc_track[idx] MUST zero alloc_track_sizes[idx] in the same
+ * bracket so the size cannot survive its pointer (a stale non-zero
+ * size lingering after the slot rotated out would feed a downstream
+ * bound check with a length that does not belong to the value the
+ * caller actually holds).
  */
 static size_t *alloc_track_sizes;
 
@@ -377,9 +377,9 @@ fallback:
  * the slow path.  Hits proceed to the backward scan below to locate
  * the slot whose ptr matches, then read the parallel sizes array.
  * Backward-from-head walks the recently-inserted entries first;
- * most cmp_hints field scans look up a buffer registered a handful of
- * allocations earlier (sanitiser zmalloc_tracked just before dispatch),
- * so the scan terminates close to head.  Reads run against the
+ * most callers look up a buffer registered a handful of allocations
+ * earlier (sanitiser zmalloc_tracked just before dispatch), so the
+ * scan terminates close to head.  Reads run against the
  * PROT_READ steady state -- no mprotect bracket on this hot path.
  * Returns 0 on miss so the caller can treat "unknown extent" as "do
  * not derive a bound" (the safer direction: a downstream read gated on

@@ -57,10 +57,9 @@ bool alloc_track_lookup(void *ptr) __must_check;
  * deferred_alloc_track() time.  Returns the byte count on hit, 0 on
  * miss (never tracked / consumed / rotated out / inserted with an
  * unknown size).  Callers that need a hard upper bound on a tracked
- * buffer (e.g. cmp_hints field-scan bounding reads against the real
- * sanitiser allocation rather than a catalog struct_size that can
- * overshoot variable-length / over-large descs) gate on a non-zero
- * return and treat 0 as "cannot prove the extent, skip the read".
+ * buffer (e.g. setsockopt bounding a pair-builder write against the
+ * real optval allocation) gate on a non-zero return and treat 0 as
+ * "cannot prove the extent, skip the write".
  */
 size_t alloc_track_lookup_size(void *ptr) __must_check;
 

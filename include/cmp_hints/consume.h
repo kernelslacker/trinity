@@ -1,72 +1,13 @@
 #pragma once
 
+#include <stdint.h>
 #include <sys/types.h>
 
-#include "cmp_hints/pool.h"
-#include "locks.h"
-
 /*
- * Field-scoped attribution pool (narrow MVP).
- *
- * The per-syscall pools above ([nr][do32]) attribute a kernel CMP
- * constant to a *syscall slot* but not to a specific struct field --
- * so a value the kernel compared against, say, clone_args::flags is
- * sprayed back into any broad scalar slot of the same syscall rather
- * than steered to the matching field of the same cataloged struct.
- * Field pools are keyed by (nr, do32, arg_idx, desc, field_idx, size)
- * so a future consumer side can re-inject the constant at the exact
- * field that produced it; this header only carries the recording-path
- * storage.
- *
- * Storage is a fixed-size open-addressed table.  A bounded probe length
- * keeps lookup O(1); probe exhaustion drops the record (advisory pool,
- * no correctness impact) and bumps cmp_field_attribution_pool_full so
- * a saturated table is directly observable in stats.  Buckets are
- * claimed lazily on the first matching record by RELEASE-storing the
- * desc pointer (the occupancy gate); readers ACQUIRE-load desc before
- * reading the rest of the key so a partially-written key is invisible.
- *
- * check_all_locks() walks the per-syscall pools[][2] grid but does NOT
- * yet visit field_pools[].  A child dying while holding a field-pool
- * lock wedges that ONE bucket -- bounded blast radius; the rest of the
- * field table and every per-syscall pool keep working.  The walk will
- * extend once the consumer side (re-injection) lands.
+ * Consume-side types shared by the cmp-hint picker, the credit drain
+ * and the per-child stash: the use-case taxonomy, the callsite and
+ * pool-kind enums, the accept range and the stash entry.
  */
-#define CMP_FIELD_POOL_BUCKETS		256U
-#define CMP_FIELD_POOL_PROBE_MAX	8U
-_Static_assert((CMP_FIELD_POOL_BUCKETS & (CMP_FIELD_POOL_BUCKETS - 1)) == 0,
-	       "CMP_FIELD_POOL_BUCKETS must be a power of two");
-
-struct struct_desc;	/* forward decl; full type in include/struct_catalog.h */
-
-/*
- * Key tuple identifying one field pool.  desc doubles as the bucket
- * occupancy gate: NULL means the bucket is empty and may be claimed; a
- * non-NULL desc is published with RELEASE so a reader that ACQUIRE-loads
- * desc is guaranteed to see the rest of the key.
- */
-struct cmp_field_pool_key {
-	const struct struct_desc *desc;
-	uint16_t nr;
-	uint8_t do32;
-	uint8_t arg_idx;	/* 1-based syscall arg index (1..6) */
-	uint16_t field_idx;	/* index into the resolved fields[] array */
-	uint8_t size;		/* CMP operand width in bytes: 1, 2, 4, or 8 */
-	uint8_t pad;
-};
-
-struct cmp_field_pool {
-	lock_t lock;
-	uint64_t canary_lock_post;
-	unsigned int count;
-	unsigned int generation;
-	uint64_t last_used_stamp;
-	uint64_t canary_pre;
-	struct cmp_hint_entry entries[CMP_HINTS_PER_SYSCALL];
-	uint64_t canary_post;
-	struct cmp_field_pool_key key;
-	bool corrupted;
-};
 
 /*
  * Use-case taxonomy for the cmp-hint consumer.  cmp_hints_try_get_ex()

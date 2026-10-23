@@ -7,8 +7,8 @@
  * Internal-only declarations for symbols shared between the compilation
  * units that make up the CMP-hint learning + conversion core: the thin
  * cmp_hints.c orchestrator plus the cmp_hints/hyp-*.c lanes,
- * cmp_hints/pool.c, cmp_hints/field.c, cmp_hints/collect.c,
- * cmp_hints/get.c, cmp_hints/credit.c, and cmp_hints/persist.c.
+ * cmp_hints/pool.c, cmp_hints/collect.c, cmp_hints/get.c,
+ * cmp_hints/credit.c, and cmp_hints/persist.c.
  *
  * Symbols here were file-static before the TU split.  They are
  * deliberately NOT promoted into the public include/cmp_hints.h --
@@ -69,71 +69,6 @@ static inline uint8_t cmp_hint_age_bucket(uint64_t age)
 		return 5;
 	return 6;
 }
-
-/*
- * Field-pool sticky wild-write gate.  Independent latch from the
- * per-syscall pool corruption gate so a stomp on a field pool is not
- * folded into the per-syscall pool's corruption rate.  Definition in
- * cmp_hints/field.c; the recorder gates its inserts through it.
- */
-bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
-			      unsigned int observed_count);
-
-/*
- * Field-pool bucket hash.  Definition in cmp_hints/field.c; used by
- * the recorder (field.c), the consumer (field.c), the self-check
- * (field.c) and the credit drain (cmp_hints/credit.c) so all four
- * probe the same bucket for a given (desc, nr, do32, arg_idx,
- * field_idx, size) key.
- */
-uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
-			     unsigned int nr, unsigned int do32,
-			     unsigned int arg_idx,
-			     unsigned int field_idx,
-			     unsigned int size);
-
-/*
- * One dispatched struct arg the per-record struct-field scan can walk:
- * the cataloged desc, the dispatch-time buffer, and how many bytes of
- * it a field read may touch (the smaller of the catalog extent and the
- * tracked allocation).
- */
-struct cmp_field_scan_slot {
-	const struct struct_desc *desc;
-	const unsigned char *buf;
-	unsigned long limit;
-	unsigned int arg_idx;	/* 1-based syscall arg index */
-};
-
-/*
- * Resolve the dispatching syscall's walkable ARG_STRUCT_PTR_IN/INOUT
- * args into @slots, once per cmp_hints_collect() call: neither the desc
- * nor the allocation extent depends on the CMP record.  Only called
- * while cmp_struct_scan_enabled (collect.c) is on, and it is off by
- * default.  Returns the number of slots filled.  Definition in
- * cmp_hints/field.c.
- */
-struct syscallrecord;
-struct syscallentry;
-unsigned int cmp_hints_field_scan_resolve(struct syscallrecord *srec,
-					  struct syscallentry *entry,
-					  unsigned int nr, bool do32,
-					  struct cmp_field_scan_slot slots[6]);
-
-/*
- * Per-CMP-record field attribution scan.  Definition in
- * cmp_hints/field.c; called from cmp_hints_collect (collect.c) on
- * every KCOV_CMP_CONST record its boring / sentinel filters keep, but
- * only while cmp_struct_scan_enabled is on.  That gate is off by
- * default, so the scan does not currently run.  Walks the slots
- * cmp_hints_field_scan_resolve() returned against the cataloged field
- * layout and invokes cmp_hints_field_record() on every matching field.
- */
-void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
-				 unsigned int nr_slots,
-				 unsigned int nr, bool do32,
-				 unsigned long arg1, unsigned long arg2,
-				 unsigned int size, unsigned long cmp_ip);
 
 /*
  * Per-child seen-bloom check + set.  Called once per CMP record in

@@ -48,12 +48,6 @@ CFLAGS		+= -Wno-missing-field-initializers
 # g_mprotect_fail_countdown == 0 (the default).
 LDFLAGS		+= -Wl,--wrap=mprotect
 
-# alloc_track lookup counting: cmp_field_scan_test.c wraps
-# alloc_track_lookup_size so it can count the struct-field scans'
-# extent lookups and answer them itself.  The wrapper forwards to the
-# real lookup outside that test.
-LDFLAGS		+= -Wl,--wrap=alloc_track_lookup_size
-
 # malloc and lseek failure injection: kcov_persist_test.c wraps both so
 # it can fail one scratch allocation or one seek of the warm-start
 # loader.  The wrappers forward to the real calls unless armed.
@@ -256,13 +250,11 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/process/personality.c
 LDFLAGS		+= -Wl,--gc-sections
 
-# The CMP-hint collect path, linked for cmp_hints_collect() and the
-# struct-field scan it drives.  Same section-per-function treatment
-# as the parent TUs; cmp_field_scan_test.c fakes the rest of the
-# cmp_hints core it reaches.
+# The CMP-hint collect path, linked for cmp_hints_collect().  Same
+# section-per-function treatment as the parent TUs; cmp_collect_test.c
+# fakes the rest of the cmp_hints core it reaches.
 CMP_SRCS	:= \
-	$(TOP)/cmp_hints/collect.c \
-	$(TOP)/cmp_hints/field.c
+	$(TOP)/cmp_hints/collect.c
 
 # The minicorpus save, replay and warm-start file paths, linked for
 # minicorpus_save_with_reason(), minicorpus_replay(),
@@ -286,7 +278,7 @@ MINICORPUS_SRCS	:= \
 # MINICORPUS_SRCS.  Same section-per-function treatment, so the init and
 # snapshot code and the rest of the chain cluster stay out of the link;
 # chain_corpus_test.c uses the lock and persist envelope fakes from
-# cmp_field_scan_test.c and minicorpus_abi_test.c.
+# cmp_collect_test.c and minicorpus_abi_test.c.
 CHAIN_SRCS	:= \
 	$(TOP)/random_syscall/chain-corpus.c \
 	$(TOP)/random_syscall/chain-persist.c
@@ -296,7 +288,7 @@ CHAIN_SRCS	:= \
 # stale-tmp helpers they use from MINICORPUS_SRCS.  Same
 # section-per-function treatment; kcov_persist_test.c owns
 # kcov_kaslr_base, while kcov_shm and the persist envelope come from
-# cmp_field_scan_test.c and minicorpus_abi_test.c.
+# cmp_collect_test.c and minicorpus_abi_test.c.
 KCOV_PERSIST_SRCS := \
 	$(TOP)/kcov/persist.c
 
@@ -342,7 +334,7 @@ FAKE_SRCS	:= \
 	extrafork_reap_test.c \
 	dispatch_extrafork_test.c \
 	tables_extrafork_test.c \
-	cmp_field_scan_test.c \
+	cmp_collect_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
 	chain_corpus_test.c \

@@ -65,9 +65,9 @@ struct cmp_hint_entry {
 	 * Saturating uint16_t (cap 65535) is enough headroom for the
 	 * shadow window: a per-entry score that high already conclusively
 	 * dominates / loses against unscored peers.  Replaces the 4-byte
-	 * pad slot so cmp_hint_entry stays at 32 bytes -- both the
-	 * per-syscall pools[] grid and the field_pools[] table inherit the
-	 * counters for free without re-laying-out either fixed array.
+	 * pad slot so cmp_hint_entry stays at 32 bytes -- the per-syscall
+	 * pools[] grid inherits the counters for free without re-laying-
+	 * out the fixed array.
 	 *
 	 * Updated lock-free under the same RELAXED atomic discipline as
 	 * the pool's count load: a concurrent eviction on the matching

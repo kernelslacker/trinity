@@ -18,15 +18,10 @@
  * is byte-identical to before until their rows land.
  *
  * Scope of every row in this TU (and in the sockaddr-mcast.c
- * sibling): schema-aware FILL only.  There is NO field-scoped CMP
- * attribution for the setsockopt optval -- the optval slot's argtype
- * is ARG_UNDEFINED, and the field-scoped CMP machinery
- * (cmp_hints_field_scan_record() -> field_pools[]) is gated on
- * ARG_STRUCT_PTR_IN / ARG_STRUCT_PTR_INOUT, so it never visits
- * optval.  The FT_ tags below shape the live values via the schema
- * fill; they do not steer struct_field_for_cmp() at runtime for
- * these rows.  Wiring field-scoped CMP for ARG_UNDEFINED is out of
- * scope here and waits on the broader field-scoped-steering lift.
+ * sibling): schema-aware FILL only.  The optval slot's argtype is
+ * ARG_UNDEFINED, so there is no CMP attribution for it.  The FT_
+ * tags below shape the live values via the schema fill; they do not
+ * steer struct_field_for_cmp() at runtime for these rows.
  */
 
 #include <stddef.h>

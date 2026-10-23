@@ -9,7 +9,7 @@
 #include "cmp_hints/pool.h"
 #include "cmp_hints/redqueen.h"
 #include "cmp_hints/hypothesis.h"
-#include "cmp_hints/field-consumer.h"
+#include "cmp_hints/consume.h"
 #include "cmp_hints/persistence.h"
 
 /*
@@ -47,10 +47,6 @@ struct cmp_hints_shared {
 	 * decremented after release.  check_all_locks may skip the family when
 	 * zero. */
 	unsigned long held_count;
-	/* Field-scoped attribution table.  Bucket occupancy is gated on
-	 * field_pools[i].key.desc; an all-zero memset at init leaves every
-	 * bucket empty until claimed by the first matching CMP record. */
-	struct cmp_field_pool field_pools[CMP_FIELD_POOL_BUCKETS];
 	/* Run-local recent tier.  Memset to zero at
 	 * init alongside the rest of the shm allocation; not persisted by
 	 * cmp_hints_save_file (the save path only writes pools[]). */
@@ -375,36 +371,3 @@ void cmp_hints_maybe_snapshot(void);
  * slots that failed the bounds / size / IP-range validation in the
  * loader and were skipped while the surrounding pool was kept. */
 extern unsigned long cmp_hints_load_rejected_entries;
-
-/*
- * Record a CMP constant attributed to a specific cataloged struct field.
- * Selects (or lazily claims) the bucket keyed by (nr, do32, arg_idx,
- * desc, field_idx, size) and inserts (cmp_ip, val, size) into that
- * pool's entries[] using the same dedup / LRU-eviction discipline as
- * pool_add_locked() for the per-syscall pool.  A field-attribution hit
- * bumps cmp_field_attribution_found; probe-exhaustion (the table is
- * saturated with unrelated keys at all probe positions) bumps
- * cmp_field_attribution_pool_full and silently drops the record --
- * field pools are advisory, never load-bearing.
- *
- * Caller contract: nr < MAX_NR_SYSCALL, arg_idx in 1..6, size in
- * {1,2,4,8}, desc != NULL.  Out-of-range inputs are silently ignored
- * so a hot CMP path that hands a corrupt rec through never destabilises
- * the table.
- */
-void cmp_hints_field_record(unsigned int nr, bool do32, unsigned int arg_idx,
-			    const struct struct_desc *desc,
-			    unsigned int field_idx, unsigned int size,
-			    unsigned long val, unsigned long cmp_ip);
-
-/*
- * One-shot self-check called from cmp_hints_init().  Synthesises an
- * insert against a reserved sentinel-nr key, verifies the bucket gets
- * claimed and the field-attribution counter bumps, then clears the
- * bucket back to empty so the live table starts clean.  Proves the
- * recording path is wired end-to-end at every fresh trinity startup --
- * not just at build time.  BUG()s on failure so a regression surfaces
- * loudly at init rather than hiding behind silent zero counters during
- * a run.
- */
-void cmp_hints_field_record_self_check(void);

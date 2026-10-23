@@ -2,9 +2,7 @@
 
 Static data + lookup layer describing the field-level shape of kernel-facing
 structs (offset, size, semantic tag, constraints). Consumed by `args/` to
-schema-fill, mutate and scrub struct-pointer syscall arguments, and by
-`cmp_hints/field.c` to attribute KCOV-CMP-learned constants to a specific
-struct field rather than a coincidentally-same-width slot. This directory is
+schema-fill, mutate and scrub struct-pointer syscall arguments. This directory is
 pure data-plus-resolution: it contains no fill/mutate logic of its own (that
 lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
 `args/scrub.c`).
@@ -229,10 +227,6 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
 - `args/gen_arg_struct_ptr.c` — the `ARG_STRUCT_PTR_IN/OUT/INOUT` arg
   generator: `struct_arg_lookup()` → `struct_field_fill_schema_aware()` →
   `struct_field_mutate_one()` per dispatch.
-- `cmp_hints/field.c` — calls `struct_arg_lookup()` to resolve the live
-  struct for a dispatch, then walks its fields to match KCOV-CMP constants
-  against specific field offsets (the consumer this catalog was originally
-  built for; see `cmp_hints/CLAUDE.md`).
 - `syscalls/bpf.c` — `struct_catalog_lookup("bpf_attr")` +
   `struct_desc_resolve_variant()` + `struct_field_fill_schema_aware()` in the
   default per-cmd arm, letting most bpf(2) cmds fall through to schema fill
@@ -290,8 +284,7 @@ syscall argument slots with an optional two-axis discriminator system
 (descriptor-selection via sibling args, then field-subset-selection via
 tagged-union variants). The catalog itself does no filling or mutation — it
 is read by `args/` to schema-fill and mutate struct-pointer arguments
-correctly, and by `cmp_hints/field.c` to attribute learned kernel comparison
-constants to the exact field that produced them. Safety is front-loaded into
+correctly. Safety is front-loaded into
 one-time init validation (slot-shape checks, catalog-hole detection,
 capacity BUGs); per-dispatch lookups are O(1) table hits with a short
 discriminator scan.

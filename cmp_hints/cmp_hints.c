@@ -344,26 +344,12 @@ void cmp_hints_init(void)
 			}
 		}
 	}
-	/* Field-pool canaries.  Same triplet (lock_post / pre / post) as the
-	 * per-syscall pools so a wild-write into either family lands in the
-	 * same channel-attributed sentinels. */
-	{
-		unsigned int i;
-		for (i = 0; i < CMP_FIELD_POOL_BUCKETS; i++) {
-			struct cmp_field_pool *pool =
-				&cmp_hints_shm->field_pools[i];
-			pool->canary_lock_post = CMP_HINTS_POOL_CANARY;
-			pool->canary_pre = CMP_HINTS_POOL_CANARY;
-			pool->canary_post = CMP_HINTS_POOL_CANARY;
-		}
-	}
 	output(0, "KCOV: CMP hint pool allocated (%lu KB)\n",
 		(unsigned long) sizeof(struct cmp_hints_shared) / 1024);
 
 	cmp_hints_strip_install(cmp_hints_strip_targets,
 				ARRAY_SIZE(cmp_hints_strip_targets));
 	cmp_hints_strip_no_arg_syscalls();
-	cmp_hints_field_record_self_check();
 }
 
 
