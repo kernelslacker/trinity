@@ -1,37 +1,8 @@
 /*
- * NETLINK_NETFILTER subsystem grammar: nft_compat (NFNL_SUBSYS_NFT_COMPAT).
- *
- * nft_compat is the xtables-over-nft shim: it marshals iptables-style
- * match/target lookups across nfnetlink so nft can resolve revisions
- * and info-blob shapes against the in-kernel xt_match/xt_target
- * registries.  Lives in net/netfilter/nft_compat.c, gated by
- * CONFIG_NFT_COMPAT.  The subsys is registered with
- * nfnetlink_subsystem_register() under subsys_id NFNL_SUBSYS_NFT_COMPAT
- * (11), so messages route through the standard nfnetlink dispatcher
- * — no genl family resolution to do.
- *
- * Without this grammar, Trinity's nfnetlink generator emitted a random
- * nfgenmsg body and never produced any NFTA_COMPAT_* TLVs, so the
- * per-cmd validate gate inside nft_compat.c short-circuited on
- * missing-attribute errors (NAME / REV / TYPE are all required by the
- * GET handler) before the xt_match/xt_target lookup paths ever ran.
- *
- * Command set: a single user-facing command (GET) per the
- * nfnl_nft_compat_cb[] callback table; the kernel exposes no NEW/DEL
- * — this subsys is read-only metadata, but GET is not exempt from the
- * nfnetlink permission test: every message gets -EPERM unless the
- * sender holds CAP_NET_ADMIN over the socket's netns, and that test
- * runs before the policy-validate path, so that path and the
- * underlying xt_request_find_match/xt_request_find_target lookups are
- * only exercised by a child that holds it.
- *
- * Attribute set: NFTA_COMPAT_* from nf_tables_compat.h, sized per
- * nfnl_compat_policy in net/netfilter/nft_compat.c.  NFTA_COMPAT_NAME
- * is NLA_NUL_STRING capped at NFT_COMPAT_NAME_MAX-1 (=31); NFTA_COMPAT_REV
- * and NFTA_COMPAT_TYPE are NLA_U32.  All three are required by the
- * handler — the policy validate gate rejects the message before the
- * lookup if any is absent, so emitting all three reliably reaches the
- * xt_request_find_*() resolvers (where the interesting state lives).
+ * NETLINK_NETFILTER subsystem grammar: nft_compat (NFNL_SUBSYS_NFT_COMPAT),
+ * targeting nfnl_compat_get_rcu() in net/netfilter/nft_compat.c.  The handler
+ * returns -EINVAL unless NAME, REV and TYPE are all present, then resolves
+ * them with xt_find_revision(), loading the xt module by name on a miss.
  */
 
 #include <linux/netfilter/nfnetlink.h>

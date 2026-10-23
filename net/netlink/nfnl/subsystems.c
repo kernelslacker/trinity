@@ -1,19 +1,8 @@
 /*
- * NETLINK_NETFILTER per-subsystem grammar registry.
- *
- * Per-subsystem grammar tables (net/netlink/nfnl/<subsystem>.c) declare
- * their commands and attribute kinds statically; this file exposes
- * lookup helpers used by the netlink message generator to size
- * attributes per the subsystem's nla_policy and to bias nlmsg_type
- * picks toward (subsys, cmd) pairs the kernel's per-subsys
- * nfnl_callback dispatcher accepts.
- *
- * Unlike the generic netlink registry there's no controller dump to
- * resolve dynamic family IDs against — NFNL_SUBSYS_x is a compile-time
- * constant, so the only runtime work is a stamping pass that wires
- * each grammar's call_counter pointer into the shared stats arena.
- * That stamping is idempotent and deferred to first use so the
- * registry file stays free of init-order coupling.
+ * NETLINK_NETFILTER per-subsystem grammar registry: lookup helpers the
+ * message generator uses to size attributes per the subsystem's nla_policy
+ * and to bias nlmsg_type picks toward (subsys, cmd) pairs the nfnetlink
+ * dispatcher accepts.
  */
 
 #include <stddef.h>
@@ -67,10 +56,11 @@ static struct nfnl_subsys_grammar *registry[] = {
  * the per-subsys grammar files) so the subsys files don't have to
  * pull in stats.h — adding a counter for a new subsys is a one-line
  * append below paired with a one-line addition in struct stats_s.
- * Walk the table at first-use time and stamp registry[i]->call_counter
- * for any subsys whose name matches.  Subsystems absent from this
- * table get a NULL call_counter; the bump helper degrades to a no-op
- * for them.
+ * Walk the table at first-use time (idempotent, so the registry has no
+ * init-order coupling with the shared stats arena) and stamp
+ * registry[i]->call_counter for any subsys whose name matches.
+ * Subsystems absent from this table get a NULL call_counter; the bump
+ * helper degrades to a no-op for them.
  */
 static const struct {
 	const char *name;

@@ -1,27 +1,8 @@
 /*
- * NETLINK_NETFILTER subsystem grammar: nftables (NFNL_SUBSYS_NFTABLES).
- *
- * The nftables control plane is an unusually broad surface inside
- * netfilter — net/netfilter/nf_tables_api.c hosts the full NFT_MSG_*
- * matrix across the table / chain / rule / set / setelem / obj /
- * flowtable / gen namespaces, each with its own nla_policy gate.
- * The cmd set below covers every current nf_tables_msg_types entry:
- * the read / write / destroy triples per namespace, the *_RESET
- * dump variants, and the gen readback.  nfnetlink answers every
- * message, the read-side ones included, with -EPERM unless the sender
- * holds CAP_NET_ADMIN over the socket's netns, and does so before the
- * per-attr validate gate runs — so the attr policy paths are only
- * exercised by a child that holds it.
- *
- * The attr table mirrors the per-namespace NFTA_*_* enums for the
- * table / chain / rule / set / setelem / obj / flowtable namespaces.
- * The namespaces share attr-type numbering (NFTA_TABLE_NAME=1,
- * NFTA_CHAIN_TABLE=1, etc), but the per-namespace nla_policy gates
- * strip attrs not in their declared set — the union here is just
- * the permissive emit shape.  Each NESTED entry (HOOK / EXPRESSIONS
- * / KEY / DATA / ...) is emitted as a length-only header — the
- * inner element grammar lives in the kernel's per-namespace policy
- * tables and would need its own nested-grammar registry to do well.
+ * NETLINK_NETFILTER subsystem grammar: nftables (NFNL_SUBSYS_NFTABLES),
+ * targeting net/netfilter/nf_tables_api.c.  nftables_cmds[] lists every
+ * callback in nf_tables_cb[]; the namespaces' attribute ids overlap, so
+ * nftables_attrs[] is one flat union (see the comment on it).
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -215,13 +196,13 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 };
 
 /*
- * NFTA_* attr spec table — covers the table / chain / rule / set /
- * setelem / obj / flowtable top-level namespaces, which are what
- * userspace tooling spends most of its time emitting.  The
- * namespaces share the same attr-type numbering (NFTA_TABLE_NAME=1,
- * NFTA_CHAIN_TABLE=1, etc), but the per-namespace nla_policy gates
- * strip attrs not in their declared set — the union here is just
- * the permissive emit shape.
+ * NFTA_* attrs of the table / chain / rule / set / setelem / obj / flowtable
+ * namespaces.  Their ids overlap (NFTA_TABLE_NAME and NFTA_CHAIN_TABLE are
+ * both 1), so an entry meets whatever slot the picked command's policy has
+ * at that id: nfnetlink's liberal parse skips ids past attr_count and
+ * untyped slots, and length-checks typed ones.  The chain, obj and flowtable
+ * nests are bare NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is
+ * an NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
 	/* NFT_MSG_*TABLE */

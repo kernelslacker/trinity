@@ -1,31 +1,8 @@
 /*
- * NETLINK_NETFILTER subsystem grammar: ctnetlink (NFNL_SUBSYS_CTNETLINK
- * + NFNL_SUBSYS_CTNETLINK_EXP).
- *
- * ctnetlink exposes the conntrack table to userspace via two parallel
- * subsystems: NFNL_SUBSYS_CTNETLINK carries IPCTNL_MSG_CT_* (entries
- * + per-cpu/global stats) and NFNL_SUBSYS_CTNETLINK_EXP carries
- * IPCTNL_MSG_EXP_* (expectation table).  The two sides do NOT share an
- * attribute namespace: nf_conntrack_netlink.c validates CT commands
- * against ct_nla_policy (CTA_*) and EXP commands against
- * exp_nla_policy (CTA_EXPECT_*).  Each subsys needs its own attr table
- * here, otherwise EXP commands get length-rejected on the CTA_* policy
- * before the expectation-table handler ever runs.
- *
- * Command set: read-side variants (GET / GET_STATS / GET_DYING /
- * GET_UNCONFIRMED on CT, GET / GET_STATS on EXP) plus their write-side
- * counterparts (NEW / DELETE).  nfnetlink answers every one of them,
- * the read-side included, with -EPERM unless the sender holds
- * CAP_NET_ADMIN over the socket's netns, and it does so before the
- * per-attr validate gate runs — so the attr policy paths are only
- * exercised by a child that holds it.
- *
- * Attribute set: a curated subset of each namespace the kernel's
- * dispatchers walk in the common cases.  TUPLE_* / MASTER / MASK and
- * PROTOINFO are NESTED — payload zero and lengths are randomized by
- * the spec-driven generator, exercising the nested parser's bounds
- * checks rather than the inner per-tuple fields (those need a separate
- * nested grammar table to do well).
+ * NETLINK_NETFILTER subsystem grammar: ctnetlink (NFNL_SUBSYS_CTNETLINK and
+ * NFNL_SUBSYS_CTNETLINK_EXP), targeting net/netfilter/nf_conntrack_netlink.c.
+ * The two subsystems validate against separate policies (ct_nla_policy with
+ * CTA_*, exp_nla_policy with CTA_EXPECT_*), so each has its own attr table.
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -72,9 +49,9 @@ static const struct nfnl_cmd_grammar ctnetlink_exp_cmds[] = {
 /*
  * CTA_* attr spec table for NFNL_SUBSYS_CTNETLINK (conntrack entries).
  * Mirrors the kernel's ct_nla_policy entries the entry dispatchers gate
- * on.  Lengths follow the kernel's nla_policy maximums; nested entries
- * carry max_len 0 so the generator emits a header + randomized inner
- * payload that the nested parser then walks.
+ * on.  Lengths follow the kernel's nla_policy maximums.  The nests are bare
+ * NLA_NESTED there (max_len 0 here); the handlers parse them against
+ * tuple_nla_policy, help_nla_policy, protoinfo_policy and the like.
  */
 static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_TUPLE_ORIG,     NLA_KIND_NESTED, 0 },

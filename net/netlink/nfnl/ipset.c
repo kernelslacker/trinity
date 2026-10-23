@@ -1,60 +1,8 @@
 /*
- * NETLINK_NETFILTER subsystem grammar: ip_set (NFNL_SUBSYS_IPSET).
- *
- * ip_set is the in-kernel hashtable / bitmap / list set engine that
- * iptables and nftables match against; the net/netfilter/ipset
- * directory hosts 15 IPSET_CMD_* commands across creation / lookup
- * / element ops.
- * The kernel registers the subsystem via nfnetlink_register_subsys()
- * with subsys_id NFNL_SUBSYS_IPSET, so the message is routed by the
- * standard nfnetlink dispatcher — there's no genl family resolution
- * to do, the subsys_id is a compile-time constant.
- *
- * Without this grammar, Trinity's nfnetlink generator emitted a
- * random nfgenmsg body and never produced any IPSET_ATTR_* TLVs, so
- * the per-cmd validate gates inside ip_set_core.c short-circuited
- * on missing-attribute errors before reaching the parser.  The
- * starter cmd set covers the read-side commands (LIST / HEADER /
- * TYPE / GET_BYNAME / GET_BYINDEX) plus the write-side counterparts
- * (CREATE / DESTROY / FLUSH / RENAME / SWAP / ADD / DEL / TEST).
- * nfnetlink answers every message, the read-side ones included, with
- * -EPERM unless the sender holds CAP_NET_ADMIN over the socket's
- * netns, and does so before the per-attr policy gate is walked — so
- * the validate paths are only exercised by a child that holds it.
- *
- * Attribute set: the command-level IPSET_ATTR_* namespace from
- * include/uapi/linux/netfilter/ipset/ip_set.h, sized per the
- * kernel's nla_policy entries in ip_set_core.c
- * (ip_set_create_policy / ip_set_setname_policy / ip_set_dump_policy
- * / ip_set_type_policy / ip_set_protocol_policy /
- * ip_set_index_policy).  Each emitted attribute is sized to what
- * those policies expect: PROTOCOL/REVISION/FAMILY are NLA_U8,
- * SETNAME/TYPENAME are NLA_NUL_STRING capped at IPSET_MAXNAMELEN-1
- * (=31), FLAGS is NLA_U32, INDEX is NLA_U16, DATA is NLA_NESTED.
- *
- * The nested IPSET_ATTR_DATA payload carries the per-set-type CADT
- * (create/add/delete/test) attrs and the create-only sizing attrs —
- * IP / CIDR / PORT / TIMEOUT / PROTO / CADT_FLAGS on the CADT side,
- * HASHSIZE / MAXELEM / NETMASK / MARKMASK / BUCKETSIZE / RESIZE /
- * SIZE / INITVAL on the create-only side.  The kernel-side sub
- * policies live in each set-type module (ip_set_hash_ip.c,
- * ip_set_hash_net.c, ip_set_bitmap_ip.c, ...) and share the CADT id
- * namespace defined in <linux/netfilter/ipset/ip_set.h>.
- *
- * That inner namespace has id collisions with the outer one — e.g.
- * IPSET_ATTR_IP (=1) collides with IPSET_ATTR_PROTOCOL (=1),
- * IPSET_ATTR_PROTO (=7) collides with IPSET_ATTR_DATA (=7) — because
- * the kernel matches every child against the policy of whichever
- * nest is currently being parsed, so per-namespace id reuse is fine.
- * The spec-driven emitter picks entries by index rather than by id,
- * which lets the outer and inner definitions coexist in one flat
- * table (mirrors the pattern established for macsec in
- * net/netlink/genl/macsec.c, which stacks its outer and per-nest
- * definitions into a single spec array for the same reason).  When
- * the emitter picks IPSET_ATTR_DATA it recurses back into this same
- * table for children, so a fraction of DATA payloads land on the
- * CADT/create entries and the rest are outer attrs the per-set-type
- * policy will -EINVAL — both branches walk real parser code.
+ * NETLINK_NETFILTER subsystem grammar: ip_set (NFNL_SUBSYS_IPSET), targeting
+ * net/netfilter/ipset/ip_set_core.c.  IPSET_ATTR_DATA is a bare NLA_NESTED
+ * that the handlers re-parse strictly against the set type's policies, so the
+ * command-level and per-type ids share one flat table (see ipset_attrs[]).
  */
 
 #include <linux/if.h>
@@ -143,30 +91,12 @@ static const struct nfnl_cmd_grammar ipset_cmds[] = {
 };
 
 /*
- * Command-level IPSET_ATTR_* + nested IPSET_ATTR_DATA grammar.
- *
- * The kernel's per-cmd nla_policy gates each draw a different subset
- * out of this namespace; emitting the union is harmless — attrs not
- * declared by a given cmd's policy either get NLA_POLICY_UNSPEC'd
- * (accepted, hand-validated) or rejected with -EINVAL, and either
- * branch exercises real parser code.
- *
- * IPSET_ATTR_SETNAME / IPSET_ATTR_TYPENAME are NLA_NUL_STRING with
- * a hard cap at IPSET_MAXNAMELEN-1 (=31) — anything longer trips the
- * NLA_NUL_STRING length validator before the dispatch helpers ever
- * see the payload.
- *
- * Below the outer block are the CADT / create-only attrs the per-
- * set-type modules validate under IPSET_ATTR_DATA.  Sizes match the
- * NLA_U8 / NLA_U16 / NLA_U32 / NLA_NESTED entries in the per-type
- * policies (see ip_set_hash_ip.c, ip_set_hash_net.c,
- * ip_set_bitmap_ip.c, ...) — IP / IP_TO / BITMASK are NLA_NESTED
- * (inner IPSET_ATTR_IPADDR_IPV4 / IPADDR_IPV6 addr block); PORT /
- * PORT_TO are NLA_U16 (kernel reads big-endian via ntohs, but the
- * on-wire width is what the validator gates on); TIMEOUT /
- * CADT_FLAGS / MARK / MARKMASK / INITVAL / HASHSIZE / MAXELEM /
- * SIZE are NLA_U32; CIDR / PROTO / NETMASK / BUCKETSIZE / RESIZE
- * are NLA_U8.
+ * Command-level ids (1-11, IPSET_ATTR_CMD_MAX) first, then the ids the
+ * set-type policies type inside IPSET_ATTR_DATA.  The ranges overlap
+ * (IPSET_ATTR_IP and IPSET_ATTR_PROTOCOL are both 1, IPSET_ATTR_PROTO and
+ * IPSET_ATTR_DATA both 7), so the emitter picks by position.  The
+ * dispatcher's liberal parse skips ids past a command's attr_count; inside
+ * DATA the strict parse rejects any child the set type's policy lacks.
  */
 static const struct nla_attr_spec ipset_attrs[] = {
 	/* Command level (ip_set_core.c). */

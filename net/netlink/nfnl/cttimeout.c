@@ -1,65 +1,9 @@
 /*
  * NETLINK_NETFILTER subsystem grammar: cttimeout
- * (NFNL_SUBSYS_CTNETLINK_TIMEOUT).
- *
- * nfnetlink_cttimeout is the userspace control plane for the
- * conntrack timeout-policy table — it lets userspace create/look-up/
- * delete named L4 timeout policies that can then be attached to flows
- * via the xt_CT target.  Lives in net/netfilter/nfnetlink_cttimeout.c,
- * gated by CONFIG_NF_CT_NETLINK_TIMEOUT=m.  The subsys is registered
- * with nfnetlink_subsystem_register() under subsys_id
- * NFNL_SUBSYS_CTNETLINK_TIMEOUT (8), so messages route through the
- * standard nfnetlink dispatcher — no genl family resolution to do.
- *
- * Without this grammar, Trinity's nfnetlink generator emitted the
- * cttimeout subsys byte paired with a random cmd + empty/garbage
- * payload, so the per-cmd validate gate inside nfnetlink_cttimeout.c
- * short-circuited on missing-attribute errors (NEW requires
- * CTA_TIMEOUT_NAME + CTA_TIMEOUT_L3PROTO + CTA_TIMEOUT_L4PROTO +
- * CTA_TIMEOUT_DATA; GET/DELETE gate on CTA_TIMEOUT_NAME) before
- * reaching the per-L4 nested parsers.
- *
- * Command set: the three user-facing commands the dispatcher accepts
- * (NEW / GET / DELETE) per the cttimeout_nfnl_cb[] callback table.
- * IPCTNL_MSG_TIMEOUT_DEFAULT_SET / DEFAULT_GET need a registered L4
- * timeout policy and parse against a different attr set, so a fuzzer
- * pointed at them from cold just bounces at the policy-resolution
- * gate; skip them here.  nfnetlink answers every message with -EPERM
- * unless the sender holds CAP_NET_ADMIN over the socket's netns, and
- * does so before the per-attr validate gate runs, so the policy path
- * is only exercised by a child that holds it.
- *
- * Attribute set: the four command-level attributes cttimeout_nla_policy[]
- * accepts, followed by the per-L4 CTA_TIMEOUT_<PROTO>_* namespaces that
- * the kernel walks under CTA_TIMEOUT_DATA:
- *   CTA_TIMEOUT_NAME    NLA_NUL_STRING, len = CTNL_TIMEOUT_NAME_MAX-1
- *   CTA_TIMEOUT_L3PROTO NLA_U16 (kernel reads as be16 via ntohs)
- *   CTA_TIMEOUT_L4PROTO NLA_U8
- *   CTA_TIMEOUT_DATA    NLA_NESTED (per-L4 sub-policy dispatched by
- *                       L4PROTO; children are picked from the same
- *                       flat table below).
- *
- * The per-L4 arms — GENERIC / TCP / UDP / ICMP / DCCP / SCTP / GRE —
- * live in disjoint enums (ctattr_timeout_tcp, ctattr_timeout_udp, ...)
- * and each carries NLA_U32 state-timeout values that the L4 policy
- * validators (tcp_timeout_nla_policy, udp_timeout_nla_policy, ...) gate
- * with .type = NLA_U32.  The kernel reads the payload as be32 via
- * nla_get_be32, but the on-wire length validator is 4 bytes, which is
- * what NLA_KIND_U32 emits.
- *
- * The per-L4 id numbering collides with the outer namespace
- * (CTA_TIMEOUT_TCP_SYN_SENT = 1 shares an id with CTA_TIMEOUT_NAME = 1;
- * CTA_TIMEOUT_UDP_UNREPLIED = 1 shares it too), because the kernel
- * matches every child against the policy of whichever nest is being
- * parsed.  The spec-driven emitter picks entries by index rather than
- * by id, so outer and inner definitions coexist in one flat table —
- * the same pattern net/netlink/nfnl/ipset.c and net/netlink/genl/
- * macsec.c already use for their outer + per-nest attr namespaces.
- *
- * All of the per-L4 arm constants below have been in the uapi header
- * since Linux 4.11 (and most since 3.7), so no #ifndef shims are
- * needed — the oldest build host trinity targets ships a newer uapi
- * than that.
+ * (NFNL_SUBSYS_CTNETLINK_TIMEOUT), targeting
+ * net/netfilter/nfnetlink_cttimeout.c.  CTA_TIMEOUT_DATA is a bare NLA_NESTED
+ * that only NEW and DEFAULT_SET parse, through ctnl_timeout_parse_policy()
+ * against the L4 policy that CTA_TIMEOUT_L4PROTO picks.
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -75,6 +19,11 @@ static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
 	{ IPCTNL_MSG_TIMEOUT_DELETE, "IPCTNL_MSG_TIMEOUT_DELETE" },
 };
 
+/*
+ * The per-L4 ids reuse the outer ones (CTA_TIMEOUT_TCP_SYN_SENT and
+ * CTA_TIMEOUT_NAME are both 1), so one flat table holds both and the emitter
+ * picks by position.
+ */
 static const struct nla_attr_spec cttimeout_attrs[] = {
 	/* Command level (nfnetlink_cttimeout.c). */
 	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING,

@@ -1,39 +1,9 @@
 /*
- * NETLINK_NETFILTER subsystem grammar: ulog (NFNL_SUBSYS_ULOG).
- *
- * nfnetlink_log is the userspace control plane for the iptables/nft
- * NFLOG target -- userspace daemons (ulogd) bind a log group, configure
- * copy mode + flags + buffering, and then read packets out via the
- * NFULNL_MSG_PACKET notification path.  Lives in
- * net/netfilter/nfnetlink_log.c, gated by CONFIG_NETFILTER_NETLINK_LOG.
- * Registered with nfnetlink_subsystem_register() under subsys_id
- * NFNL_SUBSYS_ULOG (4), so messages route through the standard
- * nfnetlink dispatcher.
- *
- * Without this grammar, Trinity's nfnetlink generator emitted the
- * ULOG subsys byte (already biased into nfnl_subsys[]) paired with a
- * random cmd + empty/garbage payload, so the per-cmd validate gate
- * inside nfnetlink_log.c short-circuited at cmd-validate or
- * nla_parse before reaching nfulnl_recv_config().
- *
- * Command set: focus on NFULNL_MSG_CONFIG -- the control-plane verb
- * that carries the rich attribute set.  NFULNL_MSG_PACKET is the
- * kernel->user notification path and not user-callable, so emitting
- * it would just bounce at the dispatcher.
- *
- * Attribute set: the six attributes nfula_cfg_policy[] accepts --
- *   NFULA_CFG_CMD: struct nfulnl_msg_config_cmd (binary, fixed size,
- *     1 byte packed).  The dispatcher branches on .command
- *     (NONE/BIND/UNBIND/PF_BIND/PF_UNBIND) so a length-matching blob
- *     lets every command sub-arm run.
- *   NFULA_CFG_MODE: struct nfulnl_msg_config_mode (binary, fixed,
- *     __attribute__((packed)) -- 6 bytes).  Carries copy_mode + range.
- *   NFULA_CFG_NLBUFSIZ / NFULA_CFG_TIMEOUT / NFULA_CFG_QTHRESH: __u32 each.
- *   NFULA_CFG_FLAGS: __u16.
- * BINARY_FIXED2 pins both ends of the size sweep so every emission
- * passes nla_validate's NLA_UNSPEC .len check and reaches the handler;
- * the bytes themselves stay random so .command, .copy_mode, flag bits
- * and group ids fuzz freely.
+ * NETLINK_NETFILTER subsystem grammar: ulog (NFNL_SUBSYS_ULOG), targeting
+ * nfulnl_recv_config() in net/netfilter/nfnetlink_log.c.  Only
+ * NFULNL_MSG_CONFIG is listed (PACKET is kernel-to-user; its callback is
+ * nfulnl_recv_unsupp()); the command byte of NFULA_CFG_CMD picks BIND,
+ * UNBIND or the PF_BIND / PF_UNBIND logger registration.
  */
 
 #include <linux/netfilter/nfnetlink.h>
@@ -47,6 +17,11 @@ static const struct nfnl_cmd_grammar ulog_cmds[] = {
 	{ NFULNL_MSG_CONFIG, "NFULNL_MSG_CONFIG" },
 };
 
+/*
+ * CMD and MODE are NLA_UNSPEC with a minimum .len in nfula_cfg_policy;
+ * BINARY_FIXED2 at exactly the struct size always clears it, and the random
+ * bytes still fuzz .command and .copy_mode.
+ */
 static const struct nla_attr_spec ulog_attrs[] = {
 	{ NFULA_CFG_CMD, NLA_KIND_BINARY_FIXED2,
 	  sizeof(struct nfulnl_msg_config_cmd),
