@@ -196,6 +196,10 @@
 #define SO_REUSEPORT		15
 #endif
 
+#ifndef SO_PASSSEC
+#define SO_PASSSEC		34
+#endif
+
 #ifndef SO_RXQ_OVFL
 #define SO_RXQ_OVFL		40
 #endif
@@ -506,6 +510,25 @@
 
 #ifndef SOL_UDP
 #define SOL_UDP		17
+#endif
+
+#ifndef SOL_IP
+#define SOL_IP		0
+#endif
+#ifndef SOL_TCP
+#define SOL_TCP		6
+#endif
+#ifndef SOL_IPV6
+#define SOL_IPV6	41
+#endif
+#ifndef SOL_SCTP
+#define SOL_SCTP	132
+#endif
+#ifndef SOL_UDPLITE
+#define SOL_UDPLITE	136
+#endif
+#ifndef SOL_DCCP
+#define SOL_DCCP	269
 #endif
 
 /* linux/socket.h */

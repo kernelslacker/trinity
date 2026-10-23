@@ -6,9 +6,6 @@
 #include "rnd.h"
 
 #include "kernel/socket.h"
-#ifndef SO_PASSSEC
-#define SO_PASSSEC	34
-#endif
 
 static void unix_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
 {

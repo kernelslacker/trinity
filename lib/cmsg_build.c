@@ -40,20 +40,8 @@
 #ifndef SCM_TIMESTAMPING
 #define SCM_TIMESTAMPING	37
 #endif
-#ifndef SO_TXTIME
-#define SO_TXTIME		61
-#endif
 #ifndef SCM_TXTIME
 #define SCM_TXTIME		SO_TXTIME
-#endif
-#ifndef SOL_IP
-#define SOL_IP			0
-#endif
-#ifndef SOL_IPV6
-#define SOL_IPV6		41
-#endif
-#ifndef SOL_TLS
-#define SOL_TLS			282
 #endif
 #ifndef TLS_SET_RECORD_TYPE
 #define TLS_SET_RECORD_TYPE	1

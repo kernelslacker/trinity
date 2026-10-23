@@ -23,18 +23,6 @@
 #include "kernel/in6.h"
 #include "kernel/mptcp.h"
 #include "kernel/udp.h"
-#ifndef SOL_TCP
-#define SOL_TCP 6
-#endif
-#ifndef SOL_SCTP
-#define SOL_SCTP 132
-#endif
-#ifndef SOL_UDPLITE
-#define SOL_UDPLITE 136
-#endif
-#ifndef SOL_DCCP
-#define SOL_DCCP 269
-#endif
 
 struct addrtext {
 	const char *name;
