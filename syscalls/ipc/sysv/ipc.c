@@ -3,7 +3,10 @@
 		  unsigned long, third, void __user *, ptr, long, fifth)
  *
  * Old-style IPC multiplexer.  Maps to semop/semget/semctl/msgsnd/msgrcv/
- * msgget/msgctl/shmat/shmdt/shmget/shmctl via the 'call' argument.
+ * msgget/msgctl/shmat/shmdt/shmget/shmctl via the 'call' argument.  A
+ * SHMAT is held to the result slot the sanitiser builds and, with
+ * SHM_REMAP, to the NULL shmaddr it draws, final slots included
+ * (vet_final_ipc()).
  */
 #include <limits.h>
 #include <linux/ipc.h>
@@ -294,9 +297,24 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * The result slot the sanitiser builds for a SHMAT, for vet_final_ipc():
+ * ksys_ipc() stores the attach address through third, and a rewrite of
+ * third would have it store to memory nobody vetted.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a rewrite
+ * of rec->aN cannot move what the call is held to.  Nothing reads it
+ * after dispatch, and .cleanup releases it.
+ */
+#define IPC_POST_STATE_MAGIC	0x4950435F52414444UL	/* "IPC_RADD" */
+struct ipc_post_state {
+	unsigned long magic;
+	unsigned long raddr;
+};
+
 static void sanitise_ipc_shmat(struct syscallrecord *rec)
 {
 	/* first=shmid, second=shmflg, third=&raddr, ptr=shmaddr */
+	struct ipc_post_state *snap;
 	unsigned long *raddr;
 	unsigned long shmflg = 0;
 
@@ -324,6 +342,20 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 		shmflg |= SHM_EXEC;
 	rec->a3 = shmflg;
 	rec->a5 = 0;				/* shmaddr=NULL, kernel picks */
+
+	/*
+	 * A compat call's kernel stores through the low 32 bits of third
+	 * (compat_ksys_ipc()), which truncate a pool slot above 4 GiB to an
+	 * address nobody vetted.  A negative shmid has do_shmat() refuse the
+	 * call before it attaches, so nothing is stored.
+	 */
+	if (rec->do32bit && rec->a4 > UINT_MAX)
+		rec->a2 = (unsigned long) -1;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = IPC_POST_STATE_MAGIC;
+	snap->raddr = rec->a4;
+	post_state_install(rec, snap);
 }
 
 static void sanitise_ipc_shmdt(struct syscallrecord *rec)
@@ -381,6 +413,47 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 		break;
 	}
 	}
+}
+
+/*
+ * A SHMAT that do_shmat() lets attach has ksys_ipc() store the attach
+ * address through third, and one that carries SHM_REMAP replaces
+ * whatever lies at shmaddr (do_shmat() maps the segment MAP_FIXED
+ * there).  The sanitiser builds third as a writable pool slot and draws
+ * no shmaddr, so a final SHMAT whose third is not that slot, or whose
+ * SHM_REMAP comes with a shmaddr, is a rewrite: chain substitution of
+ * call, second or third, which can turn another call's slots, a buffer
+ * in ptr among them, into such a SHMAT, or a RedQueen pin of any slot,
+ * ptr included.  The generator's slots, which the sanitiser leaves in
+ * place when the writable pool cannot supply the result slot, are
+ * refused the same way, as is any SHMAT with no snapshot of ours.
+ * Refused rather than repaired.  A negative shmid attaches nothing,
+ * do_shmat() refusing it first, and any other call's slots are its own.
+ * Read as ksys_ipc() reads them: call's low 16 bits name the operation
+ * and the next 16 its version, of which 1 refuses SHMAT outright, first
+ * and second are ints, and a compat call's third and ptr are their low
+ * 32 bits.  Shape, then ownership, then magic, as
+ * post_state_claim_owned() orders them.
+ */
+static int vet_final_ipc(struct syscallrecord *rec)
+{
+	struct ipc_post_state *snap =
+		(struct ipc_post_state *) rec->post_state;
+	unsigned int call = (unsigned int) rec->a1;
+	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+
+	if ((call & 0xffff) != SHMAT || (call >> 16) == 1 ||
+	    (int) rec->a2 < 0)
+		return 0;
+
+	if ((!((unsigned int) rec->a3 & SHM_REMAP) || !(rec->a5 & mask)) &&
+	    !is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == IPC_POST_STATE_MAGIC &&
+	    (rec->a4 & mask) == snap->raddr)
+		return 0;
+
+	outputerr("arg-coupling: ipc rejected: a SHMAT stores its result, or remaps, where sanitise did not vet\n");
+	return -1;
 }
 
 static void sanitise_ipc(struct syscallrecord *rec)
@@ -483,6 +556,15 @@ static void post_ipc(struct syscallrecord *rec)
 	}
 }
 
+/* The snapshot was vet_final_ipc()'s alone. */
+static void cleanup_ipc(struct syscallrecord *rec)
+{
+	struct ipc_post_state *snap;
+
+	snap = post_state_claim_owned(rec, IPC_POST_STATE_MAGIC, __func__);
+	post_state_release(rec, snap);
+}
+
 struct syscallentry syscall_ipc = {
 	.name = "ipc",
 	.group = GROUP_IPC,
@@ -492,7 +574,9 @@ struct syscallentry syscall_ipc = {
 	.arg_params[0].list = ARGLIST(ipc_calls),
 	.flags = IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_ipc,
+	.vet_final = vet_final_ipc,
 	.post = post_ipc,
+	.cleanup = cleanup_ipc,
 	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_BORING,
 };

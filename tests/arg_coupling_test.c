@@ -3041,6 +3041,153 @@ static void shmat_remap_held_to_vetted_call(void)
 	fake_map_drawn = NULL;
 }
 
+/* ipc()'s sanitiser draws its sem, msg and shm ids from pools this binary
+ * does not have, and an empty pool hands out 0. */
+int get_random_sysv_sem(void)
+{
+	return 0;
+}
+
+int get_random_sysv_msg(void)
+{
+	return 0;
+}
+
+int get_random_sysv_shm(void)
+{
+	return 0;
+}
+
+/* ipc()'s call numbers for shmat, shmdt and shmget, from <linux/ipc.h>,
+ * which cannot share a file with <sys/shm.h>. */
+enum { IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23 };
+
+/* An ipc() SHMAT call the sanitiser built. */
+static void ipc_shmat_built(bool compat)
+{
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_ipc;
+	rec.do32bit = compat;
+	rec.a1 = IPC_SHMAT;
+	syscall_ipc.sanitise(&rec);
+	if (rec.a4 == 0 || rec.post_state == 0)
+		BUG("ipc: the sanitiser built a SHMAT with no result slot");
+}
+
+/* ipc() reaches shmat's attach through a SHMAT call.  The kernel stores
+ * the attach address through third, which the sanitiser builds as a pool
+ * slot, and SHM_REMAP replaces what lies at ptr, which it never draws, so
+ * a final SHMAT passes only with that third and with no SHM_REMAP over a
+ * shmaddr.  The slots are read as ksys_ipc() reads them: the version in
+ * call's next 16 bits, of which only 1 refuses a SHMAT, an int shmid and
+ * shmflg, and a compat call's third and ptr as their low 32 bits.  A
+ * negative shmid, which attaches nothing, and another call's slots pass,
+ * and so does every call the sanitiser builds, of each kind its ARG_OP
+ * list names; a SHMAT made from another call's slots has no result slot
+ * and does not. */
+static void ipc_shmat_held(void)
+{
+	const struct arglist *calls = &syscall_ipc.arg_params[0].list;
+	static const struct {
+		unsigned long call, shmflg, ptr;
+		int verdict;
+	} cases[] = {
+		{ IPC_SHMAT, SHM_REMAP, POOL_MAP, -1 },
+		{ IPC_SHMAT, SHM_REMAP | SHM_RND, POOL_MAP + 1, -1 },
+		{ IPC_SHMAT | (2UL << 16), SHM_REMAP, POOL_MAP, -1 },
+		{ IPC_SHMAT | (1UL << 32), SHM_REMAP, POOL_MAP, -1 },
+		{ IPC_SHMAT, SHM_REMAP | (1UL << 32), POOL_MAP, -1 },
+		{ IPC_SHMAT, SHM_REMAP, 0, 0 },
+		{ IPC_SHMAT | (1UL << 16), SHM_REMAP, POOL_MAP, 0 },
+		{ IPC_SHMAT | (1UL << 16) | (1UL << 32), SHM_REMAP, POOL_MAP, 0 },
+		{ IPC_SHMAT, (unsigned long) SHM_REMAP << 32, POOL_MAP, 0 },
+		{ IPC_SHMAT, SHM_RND, POOL_MAP, 0 },
+		{ IPC_SHMGET, SHM_REMAP, POOL_MAP, 0 },
+		{ IPC_SHMDT, SHM_REMAP, POOL_MAP, 0 },
+	};
+	unsigned long raddr;
+	unsigned int i;
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		ipc_shmat_built(false);
+		rec.a1 = cases[i].call;
+		rec.a3 = cases[i].shmflg;
+		rec.a5 = cases[i].ptr;
+		if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict) {
+			fprintf(stderr, "ipc: case %u, call 0x%lx shmflg 0x%lx ptr 0x%lx\n",
+				i, cases[i].call, cases[i].shmflg, cases[i].ptr);
+			BUG("ipc: a SHMAT's SHM_REMAP was judged wrongly");
+		}
+		syscall_ipc.cleanup(&rec);
+	}
+
+	ipc_shmat_built(false);
+	raddr = rec.a4;
+	rec.a4 = raddr + sizeof(unsigned long);
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("ipc: a SHMAT storing its result past the slot sanitise built was kept");
+	rec.a4 = POOL_MAP;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("ipc: a SHMAT storing its result at a substituted address was kept");
+	rec.a2 = (unsigned long) -1;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("ipc: a SHMAT that attaches nothing was refused");
+	rec.a2 = 0;
+	rec.a4 = raddr;
+	snapshot_gate_held(&rec, "ipc");
+	syscall_ipc.cleanup(&rec);
+	if (rec.post_state != 0)
+		BUG("ipc: cleanup left the snapshot behind");
+
+	/* A compat call's kernel stores through the low 32 bits of third,
+	 * so where the pool lies past 4 GiB the sanitiser gives up the
+	 * attach, and otherwise the upper halves are no part of the call. */
+	ipc_shmat_built(true);
+	if (rec.a4 > UINT_MAX) {
+		if ((int) rec.a2 >= 0)
+			BUG("ipc: a compat SHMAT kept a shmid for a result slot its third cannot carry");
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("ipc: a compat SHMAT that attaches nothing was refused");
+		rec.a2 = 0;
+		if (validate_arg_coupling(&rec, rec.entry) != -1)
+			BUG("ipc: a compat SHMAT storing through a truncated third was kept");
+	} else {
+		rec.a4 |= 1UL << 32;
+		rec.a3 = SHM_REMAP;
+		rec.a5 = 1UL << 32;
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("ipc: a compat SHMAT was judged on the upper halves of third and ptr");
+		rec.a5 |= 0x10000;
+		if (validate_arg_coupling(&rec, rec.entry) != -1)
+			BUG("ipc: a compat SHMAT remapping at a truncated shmaddr was kept");
+	}
+	syscall_ipc.cleanup(&rec);
+
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_ipc;
+	rec.a1 = IPC_SHMDT;
+	syscall_ipc.sanitise(&rec);
+	rec.a1 = IPC_SHMAT;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("ipc: a SHMAT made from another call's slots was kept");
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ipc;
+		rec.do32bit = (i % 10) == 0;
+		rec.a1 = calls->values[i % calls->num];
+		rec.a3 = rnd_u64();
+		rec.a5 = rnd_u64();
+		syscall_ipc.sanitise(&rec);
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("ipc: a call the sanitiser built was refused");
+		syscall_ipc.cleanup(&rec);
+	}
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -3073,4 +3220,5 @@ void arg_coupling_self_check(void)
 	mincore_held_to_vec();
 	mmap_fixed_held_to_vetted_call();
 	shmat_remap_held_to_vetted_call();
+	ipc_shmat_held();
 }

@@ -480,8 +480,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 
 # syscalls/ipc/sysv/shmat.c brings shmat, whose sanitiser
 # arg_coupling_test.c runs over a fake pool mapping, which the get_map()
-# of post_oracle_test.c hands out, and a SysV segment of the test's own.
-PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c
+# of post_oracle_test.c hands out, and a SysV segment of the test's own,
+# and ipc.c the ipc() multiplexer, whose sanitiser, .vet_final hook and
+# .cleanup it runs with the sysv id pickers faked there.
+PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
+		   $(TOP)/syscalls/ipc/sysv/ipc.c
 
 # syscalls/mm/numa/get_mempolicy.c brings get_mempolicy, whose sanitiser
 # arg_coupling_test.c runs over the fake pool mapping the mm tests use,
