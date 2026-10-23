@@ -123,7 +123,9 @@ void *post_state_claim_owned(struct syscallrecord *rec,
 
 /* The recv sanitisers reach these.  recvmsg's runs here with no socket
  * and every map lookup empty, so its iovec entries come out empty; the
- * others are linked in but never run. */
+ * others are linked in but never run.  get_map() hands out
+ * fake_map_drawn, which a test that wants a mapping picked sets and
+ * clears again. */
 int fd_from_socketinfo(struct socketinfo *si)
 {
 	(void) si;
@@ -131,9 +133,11 @@ int fd_from_socketinfo(struct socketinfo *si)
 	return -1;
 }
 
+struct map *fake_map_drawn;
+
 struct map *get_map(void)
 {
-	return NULL;
+	return fake_map_drawn;
 }
 
 struct map *get_map_with_prot(int required_prot)

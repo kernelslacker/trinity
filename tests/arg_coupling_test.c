@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/shm.h>
 
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
@@ -368,6 +369,126 @@ static struct syscallrecord *mm_call(struct syscallentry *entry)
 	pool_obj.map.prot = PROT_READ | PROT_WRITE;
 	fake_this_child = &mm_child;
 	return mrec;
+}
+
+/* shmat's sanitiser picks its mapping with get_map(), whose stand-in
+ * hands out this. */
+extern struct map *fake_map_drawn;	/* post_oracle_test.c */
+
+/* A SysV segment two pages long for shmat's sanitiser to size, made on
+ * first use and removed at once, so it goes with the test binary; the
+ * attach made here keeps it until then.  -1 with no SysV shared memory. */
+static int shm_test_segment(void)
+{
+	static int shmid = -2;
+	void *attached;
+
+	if (shmid != -2)
+		return shmid;
+	shmid = shmget(IPC_PRIVATE, 2 * page_size, IPC_CREAT | 0600);
+	if (shmid < 0)
+		return shmid;
+	attached = shmat(shmid, NULL, SHM_RDONLY);
+	shmctl(shmid, IPC_RMID, NULL);
+	if (attached == (void *) -1)
+		BUG("shmat: the test's own segment would not attach");
+	return shmid;
+}
+
+/* How many of SANITISER_DRAWS calls that shmat's sanitiser builds for
+ * segment @shmid, each drawn with SHM_REMAP, keep it.  A kept one attaches
+ * at the start of the mapping fake_map_drawn names, and a dropped one
+ * where the kernel picks. */
+static unsigned int shmat_remaps_kept(int shmid, bool compat)
+{
+	unsigned int i, kept = 0;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_shmat;
+		rec.do32bit = compat;
+		rec.a1 = (unsigned long) shmid;
+		rec.a3 = SHM_REMAP;
+		syscall_shmat.sanitise(&rec);
+		if (!(rec.a3 & SHM_REMAP)) {
+			if (rec.a2 != 0)
+				BUG("shmat: a dropped SHM_REMAP left an address an attach can only fail at");
+			continue;
+		}
+		if (fake_map_drawn == NULL ||
+		    rec.a2 != (unsigned long) fake_map_drawn->ptr)
+			BUG("shmat: SHM_REMAP was kept for an address other than the mapping's");
+		kept++;
+	}
+	return kept;
+}
+
+/* shmat attaches at the start of the mapping its sanitiser picked, one call
+ * in five, and never at the page holding the struct map.  It keeps
+ * SHM_REMAP, which replaces what the attach lands on, only for a segment
+ * that fits there whole: not one longer than the mapping, nor one a huge
+ * page the address admits would round past it, nor over a tracked region,
+ * nor where a compat call's 32-bit slot cannot reach, nor one IPC_STAT
+ * cannot size, and with no mapping not at all. */
+static void shmat_remap_held_to_mapping(void)
+{
+	int shmid = shm_test_segment();
+	unsigned int i, at_map = 0;
+
+	if (shmid < 0) {
+		printf("(no SysV shared memory, skipping shmat) ");
+		return;
+	}
+
+	fake_map_drawn = &pool_obj.map;
+	pool_obj.map.ptr = (void *) (POOL_MAP + page_size);
+	pool_obj.map.size = 4 * page_size;
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_shmat;
+		rec.a1 = (unsigned long) shmid;
+		syscall_shmat.sanitise(&rec);
+		if (rec.a2 == (unsigned long) pool_obj.map.ptr)
+			at_map++;
+		else if (rec.a2 != 0)
+			BUG("shmat: an attach was aimed at an address other than the mapping's");
+	}
+	if (at_map < SANITISER_DRAWS / 10 || at_map > SANITISER_DRAWS / 3)
+		BUG("shmat: the attach address lost its split between NULL and the mapping");
+	if (shmat_remaps_kept(shmid, false) == 0)
+		BUG("shmat: SHM_REMAP was never kept for a segment that fits");
+
+	pool_obj.map.size = page_size;
+	if (shmat_remaps_kept(shmid, false) != 0)
+		BUG("shmat: SHM_REMAP was kept for a segment longer than the mapping");
+	pool_obj.map.size = 4 * page_size;
+
+	fake_track_region(POOL_MAP, 8 * page_size);
+	if (shmat_remaps_kept(shmid, false) != 0)
+		BUG("shmat: SHM_REMAP was kept over a tracked region");
+	fake_untrack_regions();
+
+	if (shmat_remaps_kept(shmid, true) != 0)
+		BUG("shmat: SHM_REMAP was kept for a compat call its slot cannot carry");
+	pool_obj.map.ptr = (void *) 0x40001000UL;
+	if (shmat_remaps_kept(shmid, true) == 0)
+		BUG("shmat: SHM_REMAP was never kept for a compat call under 4 GiB");
+
+	/* 2 MiB divides this address, so the segment could be a hugetlb one
+	 * whose 2 MiB pages the attach rounds it up to. */
+	pool_obj.map.ptr = (void *) (POOL_MAP + MB(2));
+	pool_obj.map.size = MB(1);
+	if (shmat_remaps_kept(shmid, false) != 0)
+		BUG("shmat: SHM_REMAP was kept where a huge page the address admits runs past the mapping");
+	pool_obj.map.size = MB(2);
+	if (shmat_remaps_kept(shmid, false) == 0)
+		BUG("shmat: SHM_REMAP was never kept for a mapping a huge page fits");
+
+	if (shmat_remaps_kept(-1, false) != 0)
+		BUG("shmat: SHM_REMAP was kept for a segment IPC_STAT cannot size");
+	fake_map_drawn = NULL;
+	if (shmat_remaps_kept(shmid, false) != 0)
+		BUG("shmat: SHM_REMAP was kept with no mapping picked");
 }
 
 #define LIVE_PKEY	7
@@ -1032,6 +1153,7 @@ static void madvise_held(void)
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
+	shmat_remap_held_to_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
