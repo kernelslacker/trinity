@@ -23,9 +23,17 @@
 static void sanitise_send(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct map *map = (struct map *) rec->a2;
 	size_t size;
 
 	rec->a1 = fd_from_socketinfo(si);
+
+	/* ARG_MMAP hands us a struct map, and the buffer the kernel reads
+	 * what it sends from is the mapping it describes, not the pool
+	 * object. */
+	rec->a2 = 0;
+	if (map != NULL && !looks_like_corrupted_ptr(rec, map))
+		rec->a2 = (unsigned long) map->ptr;
 
 	/* The rest of this function is only used as a fallback, if the per-proto
 	 * send()'s aren't implemented.

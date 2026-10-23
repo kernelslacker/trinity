@@ -20,10 +20,12 @@
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
 #include "child.h"			/* struct childdata */
+#include "cmsg_build.h"			/* pick_cmsg_kind, cmsg_build */
 #include "debug.h"			/* BUG */
 #include "files.h"			/* get_rand_pagecache_fd */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
 #include "maps.h"			/* proc_maps_check */
+#include "net.h"			/* generate_sockaddr */
 #include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
@@ -606,6 +608,57 @@ static void recv_buffer_names_mapping(void)
 				BUG("recv: the count was not held to the mapping");
 			mrec->retval = (unsigned long) -1L;
 			syscall_recv.post(mrec);
+		}
+	}
+	fake_socket_fd_none = false;
+	fake_this_child = NULL;
+}
+
+/* send.c brings sendmsg and sendmmsg along, and an ASAN build keeps them
+ * linked: no test builds their messages. */
+enum cmsg_kind pick_cmsg_kind(unsigned int family)
+{
+	(void) family;
+	BUG("send: a test built a sendmsg message");
+}
+
+int cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
+{
+	(void) m;
+	(void) k;
+	(void) family;
+	BUG("send: a test built a sendmsg message");
+}
+
+void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf)
+{
+	(void) addr;
+	(void) addrlen;
+	(void) pf;
+	BUG("send: a test built a sendmsg message");
+}
+
+/* send's and sendto's shared sanitiser turns the ARG_MMAP handle in the
+ * buffer slot into the start of the mapping it names, which the kernel
+ * reads what it sends from, and never leaves the struct map there; with
+ * no mapping picked there is no buffer. */
+static void send_buffer_names_mapping(void)
+{
+	struct syscallentry *const entries[] = {
+		&syscall_send, &syscall_sendto,
+	};
+	unsigned int e, m;
+
+	fake_socket_fd_none = true;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (m = 0; m < 2; m++) {
+			struct syscallrecord *mrec = mm_call(entries[e]);
+
+			mrec->a1 = 0;
+			mrec->a2 = m ? (unsigned long) &pool_obj.map : 0;
+			entries[e]->sanitise(mrec);
+			if (mrec->a2 != (m ? POOL_MAP : 0))
+				BUG("send: the buffer is not the mapping the ARG_MMAP handle names");
 		}
 	}
 	fake_socket_fd_none = false;
@@ -1278,6 +1331,7 @@ void arg_coupling_self_check(void)
 	shmat_remap_held_to_mapping();
 	get_mempolicy_addr_names_mapping();
 	recv_buffer_names_mapping();
+	send_buffer_names_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
