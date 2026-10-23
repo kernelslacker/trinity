@@ -48,7 +48,7 @@ every translation unit lives under one of the directories below.
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (69 files, ~17,653 LOC) |
 | [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (43 files, ~9,831 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,842 LOC) |
-| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (9 files, ~4,792 LOC) |
+| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (9 files, ~4,747 LOC) |
 | [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~3,970 LOC) |
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (11 files, ~3,166 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/write/verify) (7 files, ~4,316 LOC) |

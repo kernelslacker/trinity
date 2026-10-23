@@ -208,8 +208,9 @@ REAL_SRCS	:= \
 # syscalls/process/personality.c bring syscall_futex_wake,
 # syscall_quotactl, syscall_nice and syscall_personality, whose
 # sanitisers it runs the same way.  args/argtype_table.c brings
-# argtype_table[], whose replay classes corpus_replay_class_test.c
-# checks; fake_arg_gens.c stands in for the generators its rows name.
+# argtype_table[], whose replay classes the corpus predicates read and
+# corpus_replay_class_test.c checks; fake_arg_gens.c stands in for the
+# generators its rows name.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached

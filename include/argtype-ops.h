@@ -11,7 +11,8 @@
 enum corpus_replay {
 	/*
 	 * Nobody classified the argtype: what a row that leaves the field
-	 * out gets.
+	 * out gets.  Treated as REFUSE, so an argtype is never saved and
+	 * replayed raw by omission.
 	 */
 	CORPUS_REPLAY_UNSET = 0,
 
@@ -60,7 +61,8 @@ enum corpus_replay {
  * fd-bias eligibility, and cross-arg length pairing) into one struct
  * per argtype.  The descriptor table is the single source of truth for
  * what each argtype is allowed to do; fill_arg, generic_free_arg and
- * blanket_address_scrub all dispatch off it.
+ * blanket_address_scrub all dispatch off it, and the minicorpus and the
+ * chain corpus read the replay class from it.
  */
 struct argtype_ops {
 	const char *name;
@@ -122,7 +124,7 @@ struct argtype_ops {
 
 	/*
 	 * What the minicorpus and the chain corpus do with a saved value
-	 * of this argtype.  Every row sets it.
+	 * of this argtype.  Every row sets it: an unset row is refused.
 	 */
 	enum corpus_replay replay;
 };

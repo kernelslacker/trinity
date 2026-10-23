@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "argtype-ops.h"
 #include "kcov.h"
 #include "minicorpus.h"
 #include "persist-util.h"
@@ -109,39 +110,22 @@ void minicorpus_ring_unlock(struct corpus_ring *ring)
 }
 
 /*
- * Whether a syscall with an argument of this type is refused whole.
- * These are the argtypes whose values are runtime-relative — replay
- * either feeds the kernel garbage or, for ARG_PID, an active pid that
- * gets signalled.
- *
- *  - ARG_IOVEC / ARG_IOVEC_IN / ARG_PATHNAME / ARG_SOCKADDR / ARG_MMAP:
- *    heap pointers handed out by generic_sanitise().  After
- *    deferred-free eviction they go stale and replay feeds freed memory
- *    to the kernel.
- *
- *  - ARG_PID: a pid valid in the saving run is meaningless in the
- *    replaying run.  Worse, dense trinity pid allocation plus kernel
- *    pid recycling means a stale pid frequently HITS a current trinity
- *    child or the parent — replay of kill / tkill / tgkill /
- *    pidfd_send_signal / rt_sigqueueinfo entries cascade-SIGKILLs the
- *    fleet.
+ * Whether a syscall with an argument of this type is refused whole: the
+ * argtype's row in argtype_table[] says CORPUS_REPLAY_REFUSE, or says
+ * nothing.  An argtype nobody classified is refused rather than saved
+ * and replayed raw, so a new pointer-carrying one cannot slip through
+ * by omission.
  *
  * The chain corpus's replay filter asks this per argtype too, so both
  * corpora refuse the same list.
  */
 bool corpus_argtype_refused(enum argtype type)
 {
-	switch (type) {
-	case ARG_IOVEC:
-	case ARG_IOVEC_IN:
-	case ARG_PATHNAME:
-	case ARG_SOCKADDR:
-	case ARG_MMAP:
-	case ARG_PID:
-		return true;
-	default:
-		return false;
-	}
+	enum corpus_replay replay = CORPUS_REPLAY_UNSET;
+
+	if ((unsigned int) type < argtype_table_size)
+		replay = argtype_table[type].replay;
+	return replay != CORPUS_REPLAY_KEEP && replay != CORPUS_REPLAY_ZERO;
 }
 
 /*
@@ -189,46 +173,17 @@ bool corpus_args_replayable(const struct syscallentry *entry)
 
 /*
  * Whether a saved value of this argtype is stale in the replaying run
- * and must be zeroed, at save and again at load.
- *
- *  - fds: closed or recycled by replay time.  A zero slot is below the
- *    stdio floor, so the mutator draws a fresh fd for it.
- *
- *  - pointers: an address from the saving run.  An ARG_STRUCT_PTR_*
- *    buffer is a heap chunk the deferred-free queue has since released,
- *    and nested_address_scrub() accepts any in-heap address, freed
- *    chunks included.  A writable-pool slot is handed out again once
- *    the pool cursor wraps, so it holds some other call's bytes.  Zero
- *    gives the kernel NULL instead.
- *
- * Ids the kernel validates itself (key serials, timer ids, SysV ids,
- * aio contexts) are kept: a stale one just fails the kernel's lookup.
+ * and must be zeroed, at save and again at load: the argtype's row in
+ * argtype_table[] says CORPUS_REPLAY_ZERO.  enum corpus_replay says
+ * what each class holds and why.
  *
  * The chain corpus zeroes a saved step's slots by the same rule, each
  * step by its own ABI's table (chain_zero_stale_args()).
  */
 bool corpus_argtype_stale_on_replay(enum argtype type)
 {
-	switch (type) {
-	case ARG_ADDRESS:
-	case ARG_NON_NULL_ADDRESS:
-	case ARG_XATTR_NAME:
-	case ARG_FSTYPE_NAME:
-	case ARG_TIMESPEC:
-	case ARG_ITIMERVAL:
-	case ARG_ITIMERSPEC:
-	case ARG_TIMEVAL:
-	case ARG_NODEMASK:
-	case ARG_CPUMASK:
-	case ARG_BUF_SIZED:
-	case ARG_SOCKETINFO:
-	case ARG_STRUCT_PTR_IN:
-	case ARG_STRUCT_PTR_OUT:
-	case ARG_STRUCT_PTR_INOUT:
-		return true;
-	default:
-		return is_fdarg(type);
-	}
+	return (unsigned int) type < argtype_table_size &&
+	       argtype_table[type].replay == CORPUS_REPLAY_ZERO;
 }
 
 bool minicorpus_wp_sweep(unsigned long *bad_addr, uint64_t *bad_val)

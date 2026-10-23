@@ -404,21 +404,23 @@ void minicorpus_save_with_reason(struct syscallrecord *rec,
 bool minicorpus_replay(struct syscallrecord *rec);
 
 /* Whether a syscall's saved args can be replayed at all: false for a call
- * with no arguments and for one with an iovec, pathname, sockaddr, mmap or
- * pid argument.  Save, replay and the warm-start loader refuse what it
- * refuses, so a shadow probe of the save lane gates on it to count the
- * same population. */
+ * with no arguments and for one with an argument corpus_argtype_refused()
+ * names.  Save, replay and the warm-start loader refuse what it refuses,
+ * so a shadow probe of the save lane gates on it to count the same
+ * population. */
 bool corpus_args_replayable(const struct syscallentry *entry);
 
-/* Whether a syscall with an argument of this type is refused whole: its
- * saved value is a heap pointer that goes stale, or a pid that can name
- * a live trinity process.  corpus_args_replayable() asks it per argtype,
- * and so does the chain corpus's replay filter. */
+/* Whether a syscall with an argument of this type is refused whole: the
+ * replay class on its argtype_table[] row is REFUSE (a heap pointer that
+ * goes stale, or a pid that can name a live trinity process) or unset.
+ * corpus_args_replayable() asks it per argtype, and so does the chain
+ * corpus's replay filter. */
 bool corpus_argtype_refused(enum argtype type);
 
 /* Whether a saved value of this argtype is stale in the replaying run:
- * an fd, or a pointer into the saving run's heap or writable pool.  The
- * minicorpus and the chain corpus zero such a slot at save and at load. */
+ * its row's replay class is ZERO (an fd, or a pointer into the saving
+ * run's heap or writable pool).  The minicorpus and the chain corpus
+ * zero such a slot at save and at load. */
 bool corpus_argtype_stale_on_replay(enum argtype type);
 
 /* Whether nr's ring holds an entry saved under @do32bit's ABI.  Both
