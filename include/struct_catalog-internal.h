@@ -501,37 +501,15 @@ extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH
 extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
 
 /*
- * signal-shaped leaf tables defined in struct_catalog/signal.c.
- * Covers struct sigaction (rt_sigaction), stack_t (sigaltstack), the
- * siginfo_t header + its _rt / _kill variant arms (rt_sigqueueinfo /
- * rt_tgsigqueueinfo / pidfd_send_signal), and sigset_t (signalfd /
- * signalfd4).  Each _N constant gives the extern decl a complete array
- * type so the spine's ARRAY_SIZE() at the reference site keeps folding
- * to the same constant it did before the carve.  siginfo_t_si_code_vocab /
- * siginfo_t_kill_discrim_values are private vocab pools referenced
- * only by their own signal field arrays / variant entries and stay
- * scoped to signal.c through this extern surface.
+ * signal-shaped leaf table defined in struct_catalog/signal.c: sigset_t
+ * (signalfd / signalfd4).  The _N constant gives the extern decl a
+ * complete array type so the spine's ARRAY_SIZE() at the reference site
+ * keeps folding to the same constant it did before the carve.
  */
 enum {
-	SIGACTION_FIELDS_N			= 1,
-	STACK_T_FIELDS_N			= 3,
-	SIGINFO_T_SI_CODE_VOCAB_N		= 6,
-	SIGINFO_T_FIELDS_N			= 3,
-	SIGINFO_T_RT_VARIANT_FIELDS_N		= 3,
-	SIGINFO_T_KILL_VARIANT_FIELDS_N		= 2,
-	SIGINFO_T_KILL_DISCRIM_VALUES_N		= 2,
-	SIGINFO_T_VARIANTS_N			= 2,
 	SIGSET_T_FIELDS_N			= 1,
 };
 
-extern const struct struct_field sigaction_fields[SIGACTION_FIELDS_N];
-extern const struct struct_field stack_t_fields[STACK_T_FIELDS_N];
-extern const unsigned long siginfo_t_si_code_vocab[SIGINFO_T_SI_CODE_VOCAB_N];
-extern const struct struct_field siginfo_t_fields[SIGINFO_T_FIELDS_N];
-extern const struct struct_field siginfo_t_rt_variant_fields[SIGINFO_T_RT_VARIANT_FIELDS_N];
-extern const struct struct_field siginfo_t_kill_variant_fields[SIGINFO_T_KILL_VARIANT_FIELDS_N];
-extern const unsigned long siginfo_t_kill_discrim_values[SIGINFO_T_KILL_DISCRIM_VALUES_N];
-extern const struct union_variant siginfo_t_variants[SIGINFO_T_VARIANTS_N];
 extern const struct struct_field sigset_t_fields[SIGSET_T_FIELDS_N];
 
 /*
@@ -599,59 +577,6 @@ enum {
 
 extern const unsigned long iocb_opcode_values[IOCB_OPCODE_VALUES_N];
 extern const struct struct_field iocb_fields[IOCB_FIELDS_N];
-
-/*
- * futex-shaped leaf tables defined in struct_catalog/futex.c.  Covers
- * struct robust_list_head (set_robust_list), struct rseq (rseq), and
- * struct futex_waitv (futex_waitv).  Each _N constant gives the extern
- * decl a complete array type so the spine's ARRAY_SIZE() at the
- * reference site keeps folding to the same constant it did before the
- * carve.
- */
-enum {
-	ROBUST_LIST_HEAD_FIELDS_N	= 3,
-	RSEQ_FIELDS_N			= 6,
-	FUTEX_WAITV_FIELDS_N		= 3,
-};
-
-extern const struct struct_field robust_list_head_fields[ROBUST_LIST_HEAD_FIELDS_N];
-extern const struct struct_field rseq_fields[RSEQ_FIELDS_N];
-extern const struct struct_field futex_waitv_fields[FUTEX_WAITV_FIELDS_N];
-
-/*
- * capability leaf tables defined in struct_catalog/cap.c.  Covers
- * struct __user_cap_header_struct and struct __user_cap_data_struct
- * (capset / capget).  Each _N constant gives the extern decl a complete
- * array type so the spine's ARRAY_SIZE() at the reference site keeps
- * folding to the same constant it did before the carve.
- */
-enum {
-	USER_CAP_HEADER_FIELDS_N	= 2,
-	USER_CAP_DATA_FIELDS_N		= 3,
-};
-
-extern const struct struct_field user_cap_header_fields[USER_CAP_HEADER_FIELDS_N];
-extern const struct struct_field user_cap_data_fields[USER_CAP_DATA_FIELDS_N];
-
-/*
- * keyctl payload leaf tables defined in struct_catalog/keyctl.c.
- * The spine references keyctl_payload_variants by name with
- * ARRAY_SIZE() at the use site, and the variant entries reference the
- * per-cmd field arrays plus the KEYCTL_PKEY_* discriminator-value pool;
- * every one carries an explicit _N constant so a count mismatch fails
- * at the leaf TU as "excess elements" / "too few".
- */
-enum {
-	KEYCTL_DH_PARAMS_FIELDS_N	= 3,
-	KEYCTL_PKEY_PARAMS_FIELDS_N	= 3,
-	KEYCTL_PKEY_OP_CMDS_N		= 4,
-	KEYCTL_PAYLOAD_VARIANTS_N	= 2,
-};
-
-extern const struct struct_field keyctl_dh_params_fields[KEYCTL_DH_PARAMS_FIELDS_N];
-extern const struct struct_field keyctl_pkey_params_fields[KEYCTL_PKEY_PARAMS_FIELDS_N];
-extern const unsigned long keyctl_pkey_op_cmds[KEYCTL_PKEY_OP_CMDS_N];
-extern const struct union_variant keyctl_payload_variants[KEYCTL_PAYLOAD_VARIANTS_N];
 
 /*
  * userfaultfd ioctl arg struct leaf tables defined in struct_catalog/
@@ -722,12 +647,12 @@ extern const struct struct_field tcp_repair_opt_fields[TCP_REPAIR_OPT_FIELDS_N];
 
 /*
  * resource-shaped leaf tables defined in struct_catalog/resource.c.
- * Covers struct rlimit (setrlimit / getrlimit / prlimit64) and struct
- * cachestat_range (cachestat).  Each _N constant gives the extern decl
- * a complete array type so the spine's ARRAY_SIZE() at the reference
- * site keeps folding to the same constant it did before the carve.
- * Neither table is config-gated -- both structs come from headers
- * trinity already requires.
+ * Covers struct rlimit (getrlimit) and struct cachestat_range
+ * (cachestat).  Each _N constant gives the extern decl a complete
+ * array type so the spine's ARRAY_SIZE() at the reference site keeps
+ * folding to the same constant it did before the carve.  Neither
+ * table is config-gated -- both structs come from headers trinity
+ * already requires.
  */
 enum {
 	RLIMIT_FIELDS_N			= 2,
@@ -777,24 +702,6 @@ enum {
 };
 
 extern const struct struct_field file_attr_fields[FILE_ATTR_FIELDS_N];
-
-/*
- * LDT leaf table defined in struct_catalog/ldt.c.  Covers struct
- * user_desc (modify_ldt write_ldt arm, func == 1).  The _N constant
- * gives the extern decl a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.  Gated by X86 to mirror the
- * existing guard on the spine reference and the struct's header
- * availability -- struct user_desc lives in <asm/ldt.h> and the
- * modify_ldt syscall it parameterises is x86-only.
- */
-#ifdef X86
-enum {
-	USER_DESC_FIELDS_N	= 3,
-};
-
-extern const struct struct_field user_desc_fields[USER_DESC_FIELDS_N];
-#endif /* X86 */
 
 /*
  * ptrace register-set leaf tables defined in struct_catalog/ptrace_regs.c.

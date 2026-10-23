@@ -40,9 +40,9 @@
  * CMP attribution on top.
  *
  * value is an embedded __aligned_u64 carrying a userspace pointer --
- * FT_ADDRESS mirrors the rseq_cs / robust_list_head treatment so
- * KCOV-CMP learned address constants attribute against it.  size is
- * a free __u32 the kernel reads as the value-buffer bound (FT_RAW).
+ * FT_ADDRESS lets KCOV-CMP learned address constants attribute against
+ * it.  size is a free __u32 the kernel reads as the value-buffer bound
+ * (FT_RAW).
  * flags carries the XATTR_CREATE / XATTR_REPLACE vocabulary --
  * anything outside the mask is rejected by the VFS before any
  * sub-buffer read, so the mask is the entire useful CMP vocabulary.

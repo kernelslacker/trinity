@@ -26,7 +26,7 @@
 #include "arch.h"
 
 /* ------------------------------------------------------------------ */
-/* struct rlimit (setrlimit, getrlimit, prlimit64)                     */
+/* struct rlimit (getrlimit)                                           */
 /* ------------------------------------------------------------------ */
 
 const struct struct_field rlimit_fields[RLIMIT_FIELDS_N] = {
