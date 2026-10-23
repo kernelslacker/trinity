@@ -1,5 +1,7 @@
 #include <fcntl.h>
+#include <limits.h>
 #include <stddef.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "child.h"
@@ -205,6 +207,29 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	}
 
 	return lowest;
+}
+
+/*
+ * True when @st is the file one of the protected fds holds.  The registry
+ * knows numbers, and a path that reopens a protected file
+ * (/proc/self/fd/N) hands back a number it does not: a write or an ftruncate
+ * on that one tears the stderr capture or the rotation sink as surely as on
+ * the original.  Walks the registry through
+ * lowest_protected_fd_in_range(), so it covers whatever the registry does.
+ */
+bool stat_names_protected_file(const struct stat *st)
+{
+	int fd;
+
+	for (fd = lowest_protected_fd_in_range(0, UINT_MAX); fd >= 0;
+	     fd = lowest_protected_fd_in_range((unsigned int) fd + 1, UINT_MAX)) {
+		struct stat held;
+
+		if (fstat(fd, &held) == 0 && held.st_dev == st->st_dev &&
+		    held.st_ino == st->st_ino)
+			return true;
+	}
+	return false;
 }
 
 /*

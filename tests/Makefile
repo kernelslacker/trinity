@@ -413,6 +413,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/close.c \
 PARENT_SRCS	+= $(TOP)/syscalls/socket/accept.c \
 		   $(TOP)/syscalls/socket/socketcall.c
 
+# syscalls/fs/open.c and creat.c bring the open family, whose post handlers
+# dup_pool_test.c drives against the same pool, and fds/fds-pool.c the
+# capped pool they put a file or directory in.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
+		   $(TOP)/syscalls/fs/creat.c \
+		   $(TOP)/fds/fds-pool.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

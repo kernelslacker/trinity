@@ -5,7 +5,7 @@
  * pool initialiser reaches aborts the test instead of answering, unless
  * a test has installed a hook for it for the duration of the call it
  * drives, as dup_pool_test.c does for the lookup the socketpair post
- * handler makes.
+ * handler makes and the pool head the open post handlers reach.
  */
 
 #include <stdbool.h>
@@ -16,6 +16,7 @@
 #include "objects.h"
 
 struct object *(*fake_find_local_object_by_fd)(enum objecttype type, int fd);
+struct objhead *(*fake_get_objhead)(enum obj_scope scope, enum objecttype type);
 
 struct object *alloc_object(void)
 {
@@ -46,7 +47,8 @@ void register_global_obj_init(struct global_obj_entry *entry)
 
 struct objhead *get_objhead(enum obj_scope scope, enum objecttype type)
 {
-	(void)scope; (void)type;
+	if (fake_get_objhead != NULL)
+		return fake_get_objhead(scope, type);
 	fprintf(stderr, "fake get_objhead called unexpectedly\n");
 	abort();
 }

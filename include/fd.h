@@ -10,6 +10,7 @@
 #include "types.h"
 
 struct epollobj;
+struct stat;
 
 bool open_fds(void);
 
@@ -243,6 +244,13 @@ int get_typed_fd(enum argtype type);
 bool fd_is_protected(int fd);
 
 /*
+ * True when @st, what fstat() said of some fd, names the file one of the
+ * protected fds holds: a path can reopen a protected file under a number
+ * the registry does not know.
+ */
+bool stat_names_protected_file(const struct stat *st);
+
+/*
  * Returns the lowest protected fd inside [lo, hi] (inclusive), or -1
  * if no protected fd lies in the range.  close_range trims its upper
  * bound to (this value - 1) so the kernel-side walk stops short of
@@ -322,6 +330,34 @@ void pool_dup_result(int oldfd, int newfd);
  * context only.
  */
 bool pool_foreign_fd(int fd);
+
+/*
+ * How many files a child keeps pooled from the calls that hand one back
+ * and nothing else owns.  The bound every try_replenish provider keeps on
+ * the fds it mints; like theirs it exceeds the live-fd ring, so the oldest
+ * has long left it when it is closed.
+ */
+#define POOLED_FD_MAX	32
+
+/*
+ * Pool @fd, a descriptor a successful call returned that no provider owns,
+ * so the calls that follow can use it and the pool closes it: at most
+ * POOLED_FD_MAX of them, the oldest closed through the pool's destructor to
+ * make room.  Whatever local object the number held is retired first, pooled
+ * or not.  Returns true when @fd was pooled; false leaves it with the caller,
+ * who closes it.  A stdio or protected number is never pooled.  Child
+ * context only.
+ */
+bool pool_returned_fd(int fd);
+
+/*
+ * Pool @fd, which a successful open, openat, openat2, open_by_handle_at or
+ * creat returned and @st describes, when it is a regular file or a directory:
+ * pool_returned_fd() for those, nothing for a device, a FIFO or a socket,
+ * or for a second name of a protected file.  Same contract: false leaves
+ * @fd with the caller, who closes it.
+ */
+bool pool_open_result(int fd, const struct stat *st);
 
 /*
  * Pick from the fd_types whose ->poll handlers park the caller on a

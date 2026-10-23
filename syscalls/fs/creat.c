@@ -5,7 +5,6 @@
  * returns -1 if an error occurred (in which case, errno is set appropriately).
  */
 #include <sys/stat.h>
-#include <unistd.h>
 #include "pathnames.h"
 #include "random.h"
 #include "rnd.h"
@@ -54,15 +53,6 @@ static void sanitise_creat(struct syscallrecord *rec)
 		rec->a2 |= S_ISVTX;
 }
 
-static void post_creat(struct syscallrecord *rec)
-{
-	int fd = rec->retval;
-
-	if (fd < 0 || fd >= (1 << 20))
-		return;
-	close(fd);
-}
-
 struct syscallentry syscall_creat = {
 	.name = "creat",
 	.num_args = 2,
@@ -79,6 +69,6 @@ struct syscallentry syscall_creat = {
 	 */
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_creat,
-	.post = post_creat,
+	.post = post_open_fd,
 	.group = GROUP_VFS_IO,
 };

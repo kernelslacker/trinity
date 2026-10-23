@@ -26,6 +26,13 @@
  * socketcall multiplexer) publish a local socket carrying a triplet: the
  * call's own for a new socket, the listener's for an accepted one.  Those
  * cases hold the publish as it is whichever way the handlers make it.
+ *
+ * The open family (open, openat, openat2, open_by_handle_at and creat) pools
+ * the regular file or directory a call returned as a local testfile.  A device,
+ * a FIFO, a socket and a second name of a protected file are closed.  The
+ * object the number held is retired first, pooled or not.  The pool holds
+ * POOLED_FD_MAX files and makes room by destroying its oldest object,
+ * never by closing a number itself.  The fstat oracles report a dead fd.
  */
 
 #include <errno.h>
@@ -36,18 +43,21 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/eventfd.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
 #include "child.h"
+#include "csfu.h"		/* build_csfu_struct */
 #include "debug.h"		/* BUG */
 #include "fd.h"			/* lowest_protected_fd_in_range */
 #include "fd-event.h"		/* notify_child_fd_closed */
 #include "kcov-shared.h"	/* kcov_shm */
 #include "net.h"		/* TRINITY_PF_MAX */
 #include "objects.h"
+#include "pathnames.h"		/* get_testfile_path */
 #include "publish_resource.h"
 #include "rnd.h"		/* rnd_seed */
 #include "sanitise.h"		/* get_pid */
@@ -55,6 +65,7 @@
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
 #include "unblocker.h"		/* accept_unblocker_fire */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
 #include "kernel/socket.h"	/* SOCK_NONBLOCK */
@@ -63,6 +74,8 @@ extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
+extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
+					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
 
 /* Numbers no fd table in the test holds, so the post handlers' fstat()
@@ -72,7 +85,7 @@ extern const void *post_state_disowned;	/* post_oracle_test.c */
 #define KCOV_FD		90100
 #define KCOV_CMP_FD	90101
 
-#define POOL_MAX	16
+#define POOL_MAX	64
 #define LOG_MAX		8	/* closes and range closes a case can log */
 #define STALE		0xdeadUL	/* in publish_call_nr: marks an object that predates the call */
 
@@ -99,6 +112,18 @@ static unsigned int range_closes;
 static int closed_lo[LOG_MAX];
 static int closed_hi[LOG_MAX];
 static unsigned int global_removes;
+static unsigned int destroys;
+static int destroyed_fds[POOL_MAX];	/* in the order destroyed */
+static enum obj_scope destroyed_scope;
+static enum objecttype destroyed_type;
+
+/* The slot_version the next object the fake pool stamps gets, as the real
+ * pool's per-type counter does: older objects carry smaller ones. */
+static unsigned int fake_versions;
+
+/* The pool head carries no destructor, as a type whose provider never ran
+ * leaves it. */
+static bool no_destructor;
 
 /* A type publish_resource() does not route: it returns NULL for it. */
 static enum objecttype unrouted;
@@ -127,6 +152,9 @@ static void pool_add(bool local, int fd, enum objecttype type)
 		e->local = local;
 		e->fd = fd;
 		e->obj.obj_type = type;
+		if (type == OBJ_FD_TESTFILE)
+			e->obj.testfileobj.fd = fd;
+		e->obj.slot_version = ++fake_versions;
 		e->obj.publish_call_nr = STALE;
 		return;
 	}
@@ -151,6 +179,18 @@ static unsigned int pool_count(int fd)
 
 	for (i = 0; i < POOL_MAX; i++) {
 		if (pool[i].used && pool[i].fd == fd)
+			n++;
+	}
+	return n;
+}
+
+/* How many local objects of @type the pool holds. */
+static unsigned int pool_local_count(enum objecttype type)
+{
+	unsigned int i, n = 0;
+
+	for (i = 0; i < POOL_MAX; i++) {
+		if (pool[i].used && pool[i].local && pool[i].obj.obj_type == type)
 			n++;
 	}
 	return n;
@@ -186,6 +226,9 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 		e->local = true;
 		e->fd = (int) id;
 		e->obj.obj_type = type;
+		if (type == OBJ_FD_TESTFILE)
+			e->obj.testfileobj.fd = (int) id;
+		e->obj.slot_version = ++fake_versions;
 		published++;
 		return &e->obj;
 	}
@@ -300,6 +343,81 @@ struct socketinfo *get_rand_socketinfo(void)
 	return NULL;
 }
 
+/* The open sanitisers reach these two; the cases run the post handlers. */
+char *get_testfile_path(void)
+{
+	BUG("fd pool: a handler asked for a testfile path");
+	return NULL;
+}
+
+struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
+{
+	(void) desc;
+	BUG("fd pool: a handler built an open_how");
+	return (struct csfu_buf) { 0 };
+}
+
+static void fake_destructor(struct object *obj)
+{
+	(void) obj;
+}
+
+static struct object *head_array[POOL_MAX];
+static struct objhead head_view;
+
+/* The head of the child's local pool of @type, over the objects the fake
+ * pool holds for it: the array in the order they were added, which is
+ * not the order they were made in when a test says so. */
+static struct objhead *fake_pool_head(enum obj_scope scope,
+				      enum objecttype type)
+{
+	unsigned int i, n = 0;
+
+	if (scope != OBJ_LOCAL)
+		return NULL;
+	for (i = 0; i < POOL_MAX; i++) {
+		if (pool[i].used && pool[i].local &&
+		    pool[i].obj.obj_type == type)
+			head_array[n++] = &pool[i].obj;
+	}
+	memset(&head_view, 0, sizeof(head_view));
+	head_view.array = head_array;
+	head_view.num_entries = n;
+	head_view.array_capacity = POOL_MAX;
+	head_view.destroy = no_destructor ? NULL : fake_destructor;
+	return &head_view;
+}
+
+/* Takes the object out of the pool and out of its head, the last slot
+ * into the one it empties, as the real one does before it runs the head's
+ * destructor, and records what it was asked to destroy.  It closes
+ * nothing: the destructor is the real one's to run, and a handler that
+ * closed the number itself would show as a closed fd. */
+void destroy_object(struct object *obj, enum obj_scope scope,
+		    enum objecttype type)
+{
+	unsigned int i;
+
+	destroyed_scope = scope;
+	destroyed_type = type;
+	for (i = 0; i < POOL_MAX; i++) {
+		if (pool[i].used && &pool[i].obj == obj)
+			break;
+	}
+	if (i == POOL_MAX)
+		BUG("fd pool: destroy_object() was given an object outside the pool");
+	destroyed_fds[destroys++] = pool[i].fd;
+	pool[i].used = false;
+
+	for (i = 0; i < head_view.num_entries; i++) {
+		if (head_array[i] != obj)
+			continue;
+		head_array[i] = head_array[--head_view.num_entries];
+		return;
+	}
+	BUG("fd pool: destroy_object() was given an object its head does not hold");
+}
+
 /* What the fakes saw, from the last call on. */
 static void forget_calls(void)
 {
@@ -309,6 +427,7 @@ static void forget_calls(void)
 	range_retires = 0;
 	range_closes = 0;
 	global_removes = 0;
+	destroys = 0;
 }
 
 /* Run @entry's post handler on a call that returned @retval, and check
@@ -338,6 +457,8 @@ static void reset(void)
 {
 	memset(pool, 0, sizeof(pool));
 	unrouted = OBJ_NONE;
+	fake_versions = 0;
+	no_destructor = false;
 }
 
 /* The copy of a socket carries its triplet, as an accepted one does. */
@@ -1888,6 +2009,492 @@ static void socketcall_publishes_like_the_calls_it_carries(void)
 	      "socketcall", published == 0);
 }
 
+enum file_kind { FILE_REG, FILE_DIR, FILE_CHR, FILE_FIFO, FILE_SOCK };
+
+/* The open family, as the dispatcher runs their post handlers. */
+static const struct syscallentry *const open_entries[] = {
+	&syscall_open, &syscall_openat, &syscall_openat2,
+	&syscall_open_by_handle_at, &syscall_creat,
+};
+
+/* The how pointer in openat2's third slot, which its post handler clears
+ * once the call is done. */
+#define OPEN_HOW	0x4f50454eUL
+
+/* A descriptor that names a @kind of file.  *peer gets the other end of a
+ * pipe or socket pair, or -1. */
+static int open_kind(enum file_kind kind, int *peer)
+{
+	int sv[2];
+
+	*peer = -1;
+	switch (kind) {
+	case FILE_REG:
+		return memfd_create("open-pool", 0);
+	case FILE_DIR:
+		return open(".", O_RDONLY | O_DIRECTORY);
+	case FILE_CHR:
+		return open("/dev/null", O_RDONLY);
+	case FILE_FIFO:
+		if (pipe(sv) != 0)
+			return -1;
+		*peer = sv[1];
+		return sv[0];
+	case FILE_SOCK:
+		if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) != 0)
+			return -1;
+		*peer = sv[1];
+		return sv[0];
+	}
+	return -1;
+}
+
+static struct syscallrecord open_rec;
+
+/* Run @entry's post handler on a call that returned @retval. */
+static void run_open(const struct syscallentry *entry, unsigned long retval)
+{
+	memset(&open_rec, 0, sizeof(open_rec));
+	if (entry == &syscall_openat2)
+		open_rec.a3 = OPEN_HOW;
+	open_rec.retval = retval;
+	open_rec.errno_post = (retval == (unsigned long) -1L) ? ENOENT : 0;
+
+	forget_calls();
+	entry->post(&open_rec);
+}
+
+/* A file or a directory the call returned joins the child's pool, and
+ * the descriptor stays open for the calls that follow. */
+static void open_pools_a_file_or_directory(void)
+{
+	static const enum file_kind kinds[] = { FILE_REG, FILE_DIR };
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+
+		for (k = 0; k < ARRAY_SIZE(kinds); k++) {
+			struct pool_entry *e;
+			int peer, fd;
+
+			reset();
+			fd = open_kind(kinds[k], &peer);
+			if (fd < 0)
+				BUG("fd pool: cannot make a descriptor to open");
+			run_open(open_entries[i], (unsigned long) fd);
+			e = pool_find(fd, OBJ_FD_TESTFILE);
+			check("a file or directory the call returned was not pooled",
+			      name, e != NULL && e->local &&
+			      pool_count(fd) == 1 && published == 1);
+			check("a pooled descriptor was closed", name,
+			      fcntl(fd, F_GETFD) != -1);
+			close(fd);
+		}
+	}
+}
+
+/* A device, a FIFO or a socket is closed: whatever a driver does on
+ * open, and a FIFO that blocks, are not the pool's to hold, and a later
+ * write must not reach them. */
+static void open_closes_what_is_neither_a_file_nor_a_directory(void)
+{
+	static const enum file_kind kinds[] = { FILE_CHR, FILE_FIFO, FILE_SOCK };
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+
+		for (k = 0; k < ARRAY_SIZE(kinds); k++) {
+			int peer, fd;
+
+			reset();
+			fd = open_kind(kinds[k], &peer);
+			if (fd < 0)
+				BUG("fd pool: cannot make a descriptor to open");
+			pool_add(true, fd, OBJ_FD_EVENTFD);
+			run_open(open_entries[i], (unsigned long) fd);
+			check("a device, FIFO or socket was pooled", name,
+			      published == 0);
+			check("a device, FIFO or socket was left open", name,
+			      fcntl(fd, F_GETFD) == -1);
+			check("what the number held was not retired", name,
+			      retires == 1 && retired_fd == fd &&
+			      pool_count(fd) == 0);
+			if (peer >= 0)
+				close(peer);
+		}
+	}
+}
+
+/* A call that failed, or returned what no fd table holds, pools and
+ * retires nothing; openat2 clears the how it was handed. */
+static void open_that_failed_pools_nothing(void)
+{
+	static const unsigned long returns[] = {
+		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+	};
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		for (j = 0; j < ARRAY_SIZE(returns); j++) {
+			const char *name = open_entries[i]->name;
+
+			reset();
+			pool_add(true, NEW, OBJ_FD_PIPE);
+			run_open(open_entries[i], returns[j]);
+			check("a call that returned no fd changed the pool", name,
+			      published == 0 && retires == 0 && destroys == 0 &&
+			      pool_count(NEW) == 1 &&
+			      pool_find(NEW, OBJ_FD_PIPE) != NULL);
+			if (open_entries[i] == &syscall_openat2)
+				check("openat2 kept its how after a failed call",
+				      name, open_rec.a3 == 0);
+		}
+	}
+}
+
+/* The number the call returned is free or was just closed, so an object
+ * from before names a file that is gone.  It goes, whether or not the new
+ * file is pooled, and never takes the new object with it. */
+static void open_retires_the_old_object(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+		struct pool_entry *e;
+		int peer, fd;
+
+		/* Another type held the number. */
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		pool_add(true, fd, OBJ_FD_SOCKET);
+		run_open(open_entries[i], (unsigned long) fd);
+		check("the object the number held is still pooled", name,
+		      pool_find(fd, OBJ_FD_SOCKET) == NULL);
+		check("the file was not pooled alone at its number", name,
+		      pool_find(fd, OBJ_FD_TESTFILE) != NULL &&
+		      pool_count(fd) == 1);
+		check("the old object was not retired once", name,
+		      retires == 1 && retired_fd == fd);
+		close(fd);
+
+		/* The same type held it: one object, and a new one. */
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		pool_add(true, fd, OBJ_FD_TESTFILE);
+		run_open(open_entries[i], (unsigned long) fd);
+		e = pool_find(fd, OBJ_FD_TESTFILE);
+		check("a file opened over a pooled one is not one object",
+		      name, pool_count(fd) == 1);
+		check("the old object was kept", name,
+		      e != NULL && e->obj.publish_call_nr != STALE);
+		close(fd);
+	}
+}
+
+/* A number the protected registry shields stays out of the pool, and out
+ * of the retire: it is not this call's to clean up after. */
+static void open_never_pools_a_protected_number(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+		int peer, fd;
+
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		fake_child.fail_nth_fd = fd;
+		run_open(open_entries[i], (unsigned long) fd);
+		fake_child.fail_nth_fd = -1;
+		check("a protected number was pooled", name,
+		      published == 0 && pool_count(fd) == 0);
+		check("a protected number was left open", name,
+		      fcntl(fd, F_GETFD) == -1);
+		check("a protected number was retired", name, retires == 0);
+	}
+}
+
+/* POOLED_FD_MAX files at most, the oldest closed through the pool's
+ * destructor to make room.  The pool lists its newest object first, so a
+ * pick by position finds the wrong one.  A pool already past its cap is
+ * brought back under it. */
+static void open_pool_is_capped_and_evicts_the_oldest(void)
+{
+	int fds[POOLED_FD_MAX + 8];
+	unsigned int i, k, n;
+	int peer, fd;
+
+	for (n = POOLED_FD_MAX - 1; n <= POOLED_FD_MAX + 8; n += 9) {
+		unsigned int excess = n < POOLED_FD_MAX ? 0 :
+				      n - POOLED_FD_MAX + 1;
+
+		reset();
+		for (i = 0; i < n; i++) {
+			fds[i] = open_kind(FILE_REG, &peer);
+			pool_add(true, fds[i], OBJ_FD_TESTFILE);
+			pool_find(fds[i], OBJ_FD_TESTFILE)->obj.slot_version =
+				1000 - i;
+		}
+
+		fd = open_kind(FILE_REG, &peer);
+		run_open(&syscall_openat, (unsigned long) fd);
+
+		check("a pool below its cap lost an object, or one at it kept its excess",
+		      "openat", destroys == excess);
+		for (k = 0; k < destroys && k < n; k++) {
+			check("an object was destroyed before an older one",
+			      "openat", destroyed_fds[k] == fds[n - 1 - k]);
+			check("the handler closed the number the destructor owns",
+			      "openat", fcntl(fds[n - 1 - k], F_GETFD) != -1);
+		}
+		check("a destroy was not of the local testfile pool", "openat",
+		      destroys == 0 || (destroyed_scope == OBJ_LOCAL &&
+					destroyed_type == OBJ_FD_TESTFILE));
+		check("the newest pooled object was destroyed", "openat",
+		      pool_find(fds[0], OBJ_FD_TESTFILE) != NULL);
+		check("the new file was not pooled", "openat",
+		      published == 1 && pool_count(fd) == 1);
+		check("the pool is not at its cap once the file is in", "openat",
+		      pool_local_count(OBJ_FD_TESTFILE) == POOLED_FD_MAX);
+
+		for (i = 0; i < n; i++)
+			close(fds[i]);
+		close(fd);
+	}
+}
+
+/* Only a pooled result makes room: a device the call returned is closed
+ * and the pool stays as it was. */
+static void open_closing_a_device_does_not_evict(void)
+{
+	int fds[POOLED_FD_MAX];
+	unsigned int i;
+	int peer, fd;
+
+	reset();
+	for (i = 0; i < POOLED_FD_MAX; i++) {
+		fds[i] = open_kind(FILE_REG, &peer);
+		pool_add(true, fds[i], OBJ_FD_TESTFILE);
+	}
+	fd = open_kind(FILE_CHR, &peer);
+	run_open(&syscall_open, (unsigned long) fd);
+	check("closing a device evicted a pooled file", "open",
+	      destroys == 0 && published == 0);
+
+	for (i = 0; i < POOLED_FD_MAX; i++)
+		close(fds[i]);
+}
+
+/* A pool head with no destructor cannot close what it owns, so nothing is
+ * pooled in it: the result is closed instead of leaked. */
+static void open_without_a_destructor_closes(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+		int peer, fd;
+
+		reset();
+		no_destructor = true;
+		fd = open_kind(FILE_REG, &peer);
+		run_open(open_entries[i], (unsigned long) fd);
+		check("a file was pooled where nothing can close it", name,
+		      published == 0 && pool_count(fd) == 0);
+		check("a file nothing owns was left open", name,
+		      fcntl(fd, F_GETFD) == -1);
+	}
+}
+
+/* The fstat oracle reports an fd the kernel handed out that points at
+ * nothing; openat2 has none. */
+static void open_oracle_reports_a_dead_fd(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(open_entries); i++) {
+		const char *name = open_entries[i]->name;
+		unsigned long before = shm->stats.oracle.fd_oracle_anomalies;
+
+		reset();
+		run_open(open_entries[i], NEW);
+		check("a returned fd that fstat() cannot see was pooled", name,
+		      published == 0 && pool_count(NEW) == 0);
+		if (open_entries[i] != &syscall_openat2)
+			check("the fstat oracle did not fire", name,
+			      shm->stats.oracle.fd_oracle_anomalies == before + 1);
+	}
+}
+
+/* What fstat() would say of a @mode file nothing else in the test holds. */
+static struct stat stat_of(mode_t mode)
+{
+	struct stat st;
+
+	memset(&st, 0, sizeof(st));
+	st.st_mode = mode | 0600;
+	st.st_dev = 1;
+	st.st_ino = 2;
+	return st;
+}
+
+/* The kinds of file fstat() tells apart: a file or a directory is the
+ * pool's, and nothing else is, whatever the number. */
+static void open_result_is_pooled_by_kind(void)
+{
+	static const struct {
+		mode_t mode;
+		const char *name;
+		bool pooled;
+	} kinds[] = {
+		{ S_IFREG, "a regular file", true },
+		{ S_IFDIR, "a directory", true },
+		{ S_IFCHR, "a character device", false },
+		{ S_IFBLK, "a block device", false },
+		{ S_IFIFO, "a FIFO", false },
+		{ S_IFSOCK, "a socket", false },
+		{ S_IFLNK, "a symlink", false },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(kinds); i++) {
+		struct stat st = stat_of(kinds[i].mode);
+		bool pooled;
+
+		reset();
+		pool_add(true, NEW, OBJ_FD_PIPE);
+		forget_calls();
+		pooled = pool_open_result(NEW, &st);
+		check(kinds[i].pooled ? "a file or directory was refused"
+				      : "a special file was pooled",
+		      kinds[i].name, pooled == kinds[i].pooled);
+		check("the pool does not agree with what was returned",
+		      kinds[i].name, published == (kinds[i].pooled ? 1U : 0U) &&
+		      pool_count(NEW) == (kinds[i].pooled ? 1U : 0U));
+		check("what the number held was not retired", kinds[i].name,
+		      retires == 1 && retired_fd == NEW &&
+		      pool_find(NEW, OBJ_FD_PIPE) == NULL);
+	}
+}
+
+/* stdio and the protected numbers are no pool's, and no call's to retire
+ * under. */
+static void pool_leaves_stdio_and_protected_numbers_alone(void)
+{
+	struct stat st = stat_of(S_IFREG);
+	int peer, fd;
+	unsigned long n;
+
+	for (n = 0; n <= 2; n++) {
+		reset();
+		pool_add(true, (int) n, OBJ_FD_PIPE);
+		forget_calls();
+		check("a stdio number was pooled by an open", "open",
+		      !pool_open_result((int) n, &st));
+		check("a stdio number was pooled", "pool_returned_fd",
+		      !pool_returned_fd((int) n));
+		check("a stdio number's object was retired", "open",
+		      published == 0 && retires == 0 &&
+		      pool_find((int) n, OBJ_FD_PIPE) != NULL);
+	}
+
+	reset();
+	fd = open_kind(FILE_REG, &peer);
+	fake_child.kcov.fd = fd;
+	forget_calls();
+	check("the kcov fd's number was pooled by an open", "open",
+	      !pool_open_result(fd, &st));
+	check("the kcov fd's number was pooled", "pool_returned_fd",
+	      !pool_returned_fd(fd));
+	check("a protected number was retired or published", "open",
+	      published == 0 && retires == 0);
+	fake_child.kcov.fd = KCOV_FD;
+	close(fd);
+}
+
+/* A path can reopen a protected file under a number the registry does
+ * not know; a write or an ftruncate on that one tears the file as surely
+ * as on the original.  Another regular file is pooled. */
+static void open_result_naming_a_protected_file_is_refused(void)
+{
+	int *const slots[] = { &fake_child.fail_nth_fd, &fake_child.tainted_fd };
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(slots); i++) {
+		for (k = 0; k < ARRAY_SIZE(open_entries); k++) {
+			const char *name = open_entries[k]->name;
+			int peer, held, alias, other;
+
+			reset();
+			held = open_kind(FILE_REG, &peer);
+			alias = dup(held);
+			other = open_kind(FILE_REG, &peer);
+			if (held < 0 || alias < 0 || other < 0)
+				BUG("fd pool: cannot make files to open");
+
+			*slots[i] = held;
+			run_open(open_entries[k], (unsigned long) alias);
+			check("a second name of a protected file was pooled",
+			      name, published == 0 && pool_count(alias) == 0);
+			check("a second name of a protected file was left open",
+			      name, fcntl(alias, F_GETFD) == -1);
+
+			run_open(open_entries[k], (unsigned long) other);
+			check("a file that is not protected was refused", name,
+			      published == 1 && pool_count(other) == 1);
+
+			*slots[i] = -1;
+			close(held);
+			close(other);
+		}
+	}
+}
+
+/* openat's O_PATH oracle compares the fd's inode with the path's. */
+static void openat_oracle_compares_the_inode(void)
+{
+	char path[] = "/dev/null";
+	unsigned long before;
+	int fd;
+
+	/* The fd is the file the path names: nothing to report. */
+	reset();
+	fd = open(path, O_PATH);
+	if (fd < 0)
+		BUG("fd pool: cannot open /dev/null with O_PATH");
+	before = shm->stats.oracle.fd_oracle_anomalies;
+	memset(&open_rec, 0, sizeof(open_rec));
+	open_rec.a1 = (unsigned long) AT_FDCWD;
+	open_rec.a2 = (unsigned long) path;
+	open_rec.a3 = O_PATH;
+	open_rec.retval = (unsigned long) fd;
+	forget_calls();
+	syscall_openat.post(&open_rec);
+	check("the O_PATH oracle fired on the file the path names", "openat",
+	      shm->stats.oracle.fd_oracle_anomalies == before);
+
+	/* The fd is another file: the oracle fires, and the file is pooled
+	 * like any other. */
+	reset();
+	fd = open_kind(FILE_REG, &(int){ 0 });
+	before = shm->stats.oracle.fd_oracle_anomalies;
+	memset(&open_rec, 0, sizeof(open_rec));
+	open_rec.a1 = (unsigned long) AT_FDCWD;
+	open_rec.a2 = (unsigned long) path;
+	open_rec.a3 = O_PATH;
+	open_rec.retval = (unsigned long) fd;
+	forget_calls();
+	syscall_openat.post(&open_rec);
+	check("the O_PATH oracle missed an inode mismatch", "openat",
+	      shm->stats.oracle.fd_oracle_anomalies == before + 1);
+	check("a file the oracle flagged was not pooled", "openat",
+	      published == 1 && pool_count(fd) == 1);
+	close(fd);
+}
+
 void dup_pool_self_check(void);
 void dup_pool_self_check(void)
 {
@@ -1901,6 +2508,7 @@ void dup_pool_self_check(void)
 	fake_this_child = &fake_child;
 	fake_find_object_by_fd = fake_lookup;
 	fake_find_local_object_by_fd = fake_find_local;
+	fake_get_objhead = fake_pool_head;
 
 	copy_joins_the_sources_pool();
 	old_object_is_retired();
@@ -1941,7 +2549,21 @@ void dup_pool_self_check(void)
 	socketpair_publishes_each_end();
 	accept_inherits_the_listeners_triplet();
 	socketcall_publishes_like_the_calls_it_carries();
+	open_pools_a_file_or_directory();
+	open_closes_what_is_neither_a_file_nor_a_directory();
+	open_that_failed_pools_nothing();
+	open_retires_the_old_object();
+	open_never_pools_a_protected_number();
+	open_pool_is_capped_and_evicts_the_oldest();
+	open_closing_a_device_does_not_evict();
+	open_without_a_destructor_closes();
+	open_oracle_reports_a_dead_fd();
+	openat_oracle_compares_the_inode();
+	open_result_is_pooled_by_kind();
+	pool_leaves_stdio_and_protected_numbers_alone();
+	open_result_naming_a_protected_file_is_refused();
 
+	fake_get_objhead = NULL;
 	fake_find_local_object_by_fd = NULL;
 	fake_find_object_by_fd = NULL;
 	fake_this_child = NULL;

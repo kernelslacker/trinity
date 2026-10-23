@@ -1086,6 +1086,7 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
+void post_open_fd(struct syscallrecord *rec);
 
 /*
  * Whether a close_range call is still the one its sanitiser vetted: its

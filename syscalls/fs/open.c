@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include "csfu.h"
+#include "fd.h"
 #include "files.h"
 #include "pathnames.h"
 #include "random.h"
@@ -128,13 +129,14 @@ static void sanitise_openat(struct syscallrecord *rec)
 }
 
 /*
- * Close fds returned by open-family syscalls.  These fds point at
- * random filesystem paths and are not part of the curated fd pool
- * (which has its own providers for /dev, /proc, /sys, testfiles).
- * Without this, every successful open/openat/openat2/creat leaks
- * an fd in the child, eventually exhausting the fd table.
+ * Pool the file or directory an open-family call returned, and close
+ * anything else.  The fd points at a random filesystem path, so none of
+ * the providers (/dev, /proc, /sys, testfiles) owns it: left open and
+ * unpooled, every successful call would leak one in the child until its
+ * fd table filled.  pool_open_result() says what the pool takes.  open,
+ * open_by_handle_at and creat share this handler.
  */
-static void post_open(struct syscallrecord *rec)
+void post_open_fd(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 	struct stat st;
@@ -152,9 +154,12 @@ static void post_open(struct syscallrecord *rec)
 		       "fstat failed (errno %d)\n", fd, errno);
 		__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
+		close(fd);
+		return;
 	}
 
-	close(fd);
+	if (!pool_open_result(fd, &st))
+		close(fd);
 }
 
 /*
@@ -169,7 +174,7 @@ struct syscallentry syscall_open = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_open,
-	.post = post_open,
+	.post = post_open_fd,
 	.group = GROUP_VFS_IO,
 };
 
@@ -216,7 +221,8 @@ static void post_openat(struct syscallrecord *rec)
 		}
 	}
 
-	close(fd);
+	if (!pool_open_result(fd, &st_fd))
+		close(fd);
 }
 
 /*
@@ -413,14 +419,14 @@ static void sanitise_openat2(struct syscallrecord *rec)
 static void post_openat2(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
+	struct stat st;
 
 	/*
 	 * Bound the returned fd before close().  -1 is the documented
 	 * failure return.  Any other out-of-range value is the fingerprint
 	 * of a torn / sign-extended retval that would steer close() at a
 	 * foreign fd in our own process; log + bump the corruption counter.
-	 * Mirrors the bound used by post_open / post_openat / post_creat
-	 * siblings.
+	 * Mirrors the bound used by the post_open_fd / post_openat siblings.
 	 */
 	if (fd == -1) {
 		rec->a3 = 0;
@@ -434,7 +440,8 @@ static void post_openat2(struct syscallrecord *rec)
 		return;
 	}
 
-	close(fd);
+	if (fstat(fd, &st) != 0 || !pool_open_result(fd, &st))
+		close(fd);
 	rec->a3 = 0;
 }
 
@@ -486,6 +493,6 @@ struct syscallentry syscall_open_by_handle_at = {
 	.rettype = RET_FD,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_open_by_handle_at,
-	.post = post_open,
+	.post = post_open_fd,
 	.group = GROUP_VFS_IO,
 };
