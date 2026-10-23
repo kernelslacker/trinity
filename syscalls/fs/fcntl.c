@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <stdbool.h>
 #include <fcntl.h>
+#include "fd.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -372,8 +373,9 @@ static void sanitise_fcntl(struct syscallrecord *rec)
 		/* Scalar-only arm: a3 is a fd int.  See REEXEC_OK contract
 		 * in include/syscall.h -- no nested pointer chains, no INOUT /
 		 * output buffers, no shared-buffer relocation, and no bespoke
-		 * deferred-free / post_state oracle.  post_fcntl_dupfd only
-		 * bumps a stats counter on retval, no state pin. */
+		 * deferred-free / post_state oracle.  post_fcntl_dupfd bumps
+		 * a stats counter and pools the copy it returns, as every
+		 * re-exec's own copy is, and pins no state. */
 		rec->flags |= REEXEC_OK;
 		break;
 
@@ -560,11 +562,13 @@ static unsigned long fcntl_flags[] = {
 	F_GETDELEG, F_SETDELEG,
 };
 
-static void post_fcntl_dupfd(unsigned long retval)
+static void post_fcntl_dupfd(unsigned long a1, unsigned long retval)
 {
 	if ((long) retval < 0 || (long) retval >= (1 << 20))
 		return;
 	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
+
+	pool_dup_result((int) a1, (int) retval);
 }
 
 static void post_fcntl_getfd(struct syscallrecord *rec, unsigned long retval)
@@ -737,7 +741,7 @@ static void post_fcntl(struct syscallrecord *rec)
 	switch (a2) {
 	case F_DUPFD:
 	case F_DUPFD_CLOEXEC:
-		post_fcntl_dupfd(retval);
+		post_fcntl_dupfd(a1, retval);
 		break;
 
 	case F_GETFD:

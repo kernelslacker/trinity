@@ -305,6 +305,15 @@ void reroll_protected_fd_arg(unsigned long *slot);
 int fd_relocate_high(int fd);
 
 /*
+ * Pool @newfd, which a successful dup, dup2, dup3 or fcntl(F_DUPFD*)
+ * made from @oldfd, under the object type of @oldfd, so the copy joins
+ * the pool its source came from.  Whatever local object the number held
+ * before is retired first, pooled copy or not.  Child context only: the
+ * pools are the calling child's.
+ */
+void pool_dup_result(int oldfd, int newfd);
+
+/*
  * Pick from the fd_types whose ->poll handlers park the caller on a
  * real wait queue (pipe / eventfd / timerfd / signalfd / inotify /
  * fanotify / socket).  Used by poll(2)/ppoll(2)/select(2)/pselect6(2)

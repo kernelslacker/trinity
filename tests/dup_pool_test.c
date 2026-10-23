@@ -1,13 +1,13 @@
 /*
- * Self-check for how dup, dup2 and dup3 pool the descriptor they return,
- * and for how close and close_range retire what they free.  The post
- * handlers run as shipped against a fake object pool.  A copy joins the
- * pool its source came from, and stays out of every pool when the source
- * is untracked or protected, the call failed, or the type is one
- * publish_resource() does not route.  Whatever object a number held
- * before the call is retired, copy pooled or not, and a retire never
- * closes the number: it names the copy by then.  The close itself is
- * reported once, through notify_child_fd_closed(), as before.
+ * Self-check for how dup, dup2, dup3 and fcntl(F_DUPFD*) pool the
+ * descriptor they return, and for how close and close_range retire what
+ * they free.  The post handlers run as shipped against a fake object
+ * pool.  A copy joins the pool its source came from, and stays out of
+ * every pool when the source is untracked or protected, the call failed,
+ * or the type is one publish_resource() does not route.  Whatever object
+ * a number held before the call is retired, copy pooled or not, and a
+ * retire never closes the number: it names the copy by then.  The close
+ * itself is reported once, through notify_child_fd_closed(), as before.
  *
  * A close retires the local objects under its number once the kernel has
  * freed it, which a failed close has too unless it says EBADF.  A
@@ -36,9 +36,12 @@
 #include "objects.h"
 #include "publish_resource.h"
 #include "rnd.h"		/* rnd_seed */
+#include "sanitise.h"		/* get_pid */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
+
+#include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
@@ -229,6 +232,14 @@ void remove_object_by_fd(int fd)
 {
 	(void) fd;
 	global_removes++;
+}
+
+/* fcntl's sanitiser picks the owner pid for F_SETOWN; only it reaches
+ * this, and these cases run the post handler. */
+unsigned int get_pid(void)
+{
+	BUG("fd pool: a handler asked for a pid");
+	return 0;
 }
 
 /* What the fakes saw, from the last call on. */
@@ -488,6 +499,177 @@ static void unrouted_type_stays_open(void)
 	check("a copy of an unrouted type was pooled", "dup",
 	      pool_count(copy) == 0);
 	check("the copy of an unrouted type was closed", "dup",
+	      fcntl(copy, F_GETFD) != -1);
+
+	close(copy);
+	close(src);
+}
+
+/* Run fcntl's post handler on a call of @cmd on @a1 that returned
+ * @retval, and check that it counts as one dup when a duplicating cmd
+ * worked and none otherwise. */
+static void run_fcntl(unsigned long cmd, unsigned long a1,
+		      unsigned long retval, const char *case_name)
+{
+	static struct syscallrecord rec;
+	unsigned long duped = shm->stats.fd.duped;
+	bool dups = cmd == F_DUPFD || cmd == F_DUPFD_CLOEXEC;
+	bool worked = (long) retval >= 0 && retval < (1UL << 20);
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = a1;
+	rec.a2 = cmd;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EBADF : 0;
+
+	forget_calls();
+	syscall_fcntl.post(&rec);
+
+	check("the dup count did not move by one per duplicating call that worked",
+	      case_name, shm->stats.fd.duped == duped + (dups && worked ? 1 : 0));
+}
+
+/* F_DUPFD and F_DUPFD_CLOEXEC copy a descriptor as dup does: the copy
+ * joins the pool its source came from, and the number it took is retired
+ * first, copy pooled or not. */
+static void fcntl_dupfd_pools_the_copy(void)
+{
+	static const struct {
+		const char *name;
+		unsigned long cmd;
+	} cmds[] = {
+		{ "fcntl(F_DUPFD)", F_DUPFD },
+		{ "fcntl(F_DUPFD_CLOEXEC)", F_DUPFD_CLOEXEC },
+	};
+	static const unsigned long no_fd[] = { (unsigned long) -1L, 1UL << 20 };
+	unsigned int i, j;
+
+	for (i = 0; i < 2; i++) {
+		const char *name = cmds[i].name;
+		struct pool_entry *e;
+
+		reset();
+		pool_add(false, SRC, OBJ_FD_SOCKET);
+		pool_find(SRC, OBJ_FD_SOCKET)->obj.sockinfo.triplet =
+			(struct socket_triplet) { 2, 1, 6 };
+		pool_add(true, 90010, OBJ_FD_EVENTFD);
+		run_fcntl(cmds[i].cmd, SRC, NEW, name);
+		e = pool_find(NEW, OBJ_FD_SOCKET);
+		check("a copy of a global socket is not a local socket", name,
+		      e != NULL && e->local);
+		check("the copy of a socket lost its triplet", name,
+		      e != NULL && e->obj.sockinfo.triplet.family == 2 &&
+		      e->obj.sockinfo.triplet.type == 1 &&
+		      e->obj.sockinfo.triplet.protocol == 6);
+		check("the copy is not the only object at its number", name,
+		      pool_count(NEW) == 1);
+		check("the source left its pool", name,
+		      pool_find(SRC, OBJ_FD_SOCKET) != NULL);
+		check("a retire took an object at another number", name,
+		      pool_find(90010, OBJ_FD_EVENTFD) != NULL);
+
+		/* The type is the source's, not a fixed one. */
+		reset();
+		pool_add(true, SRC, OBJ_FD_EVENTFD);
+		run_fcntl(cmds[i].cmd, SRC, NEW, name);
+		check("a copy of an eventfd is not a local eventfd", name,
+		      pool_find(NEW, OBJ_FD_EVENTFD) != NULL &&
+		      pool_count(NEW) == 1);
+
+		/* The number it took held an object from before. */
+		reset();
+		pool_add(true, SRC, OBJ_FD_TIMERFD);
+		pool_add(true, NEW, OBJ_FD_PIPE);
+		run_fcntl(cmds[i].cmd, SRC, NEW, name);
+		check("a stale object under the F_DUPFD result is still pooled",
+		      name, pool_find(NEW, OBJ_FD_PIPE) == NULL &&
+		      pool_find(NEW, OBJ_FD_TIMERFD) != NULL &&
+		      pool_count(NEW) == 1);
+		check("the stale number was not retired exactly once", name,
+		      retires == 1 && retired_fd == NEW);
+		check("F_DUPFD reported a close it did not make", name,
+		      closes == 0);
+
+		/* The source is not tracked: nothing joins a pool, but the
+		 * number is free all the same. */
+		reset();
+		pool_add(true, NEW, OBJ_FD_PIPE);
+		run_fcntl(cmds[i].cmd, SRC, NEW, name);
+		check("a stale object survived an F_DUPFD of an untracked fd",
+		      name, pool_count(NEW) == 0 && published == 0);
+
+		/* A call that failed, or returned what no fd table holds. */
+		for (j = 0; j < 2; j++) {
+			reset();
+			pool_add(false, SRC, OBJ_FD_SOCKET);
+			pool_add(true, NEW, OBJ_FD_PIPE);
+			run_fcntl(cmds[i].cmd, SRC, no_fd[j], name);
+			check("an F_DUPFD that returned no fd changed the pool",
+			      name, published == 0 && retires == 0 &&
+			      pool_count(NEW) == 1);
+		}
+
+		/* stdio and the protected fds stay out of every pool. */
+		reset();
+		pool_add(false, SRC, OBJ_FD_SOCKET);
+		run_fcntl(cmds[i].cmd, SRC, 1, name);
+		check("an F_DUPFD that landed on stdio was pooled", name,
+		      published == 0 && retires == 0 && pool_count(1) == 0);
+
+		reset();
+		pool_add(false, KCOV_CMP_FD, OBJ_FD_EVENTFD);
+		run_fcntl(cmds[i].cmd, KCOV_CMP_FD, NEW, name);
+		check("an F_DUPFD of the kcov cmp fd was pooled", name,
+		      published == 0 && pool_count(NEW) == 0);
+	}
+}
+
+/* A cmd that is not a dup returns a number that only looks like an fd: a
+ * flags word, a pipe size, an owner pid.  None of them is pooled. */
+static void fcntl_other_cmds_pool_nothing(void)
+{
+	static const struct {
+		const char *name;
+		unsigned long cmd;
+	} cmds[] = {
+		{ "fcntl(F_GETFL)", F_GETFL },
+		{ "fcntl(F_GETPIPE_SZ)", F_GETPIPE_SZ },
+		{ "fcntl(F_GETOWN)", F_GETOWN },
+	};
+	unsigned int i;
+
+	for (i = 0; i < 3; i++) {
+		reset();
+		pool_add(false, SRC, OBJ_FD_SOCKET);
+		pool_add(true, NEW, OBJ_FD_PIPE);
+		run_fcntl(cmds[i].cmd, SRC, NEW, cmds[i].name);
+		check("a cmd that is not a dup pooled or retired something",
+		      cmds[i].name, published == 0 && retires == 0 &&
+		      pool_count(NEW) == 1);
+	}
+}
+
+/* A type publish_resource() cannot route stays unpooled, and the copy
+ * stays open: the handler must not close what it could not pool. */
+static void fcntl_dupfd_of_an_unrouted_type_stays_open(void)
+{
+	int src = open("/dev/null", O_RDONLY);
+	int copy;
+
+	if (src < 0)
+		BUG("fd pool: cannot open /dev/null");
+	copy = fcntl(src, F_DUPFD, 0);
+	if (copy < 0)
+		BUG("fd pool: cannot F_DUPFD /dev/null");
+
+	reset();
+	unrouted = OBJ_FD_SCRATCH_BLOCK;
+	pool_add(false, src, OBJ_FD_SCRATCH_BLOCK);
+	run_fcntl(F_DUPFD, (unsigned long) src, (unsigned long) copy,
+		  "fcntl(F_DUPFD)");
+	check("a copy of an unrouted type was pooled", "fcntl(F_DUPFD)",
+	      pool_count(copy) == 0);
+	check("the copy of an unrouted type was closed", "fcntl(F_DUPFD)",
 	      fcntl(copy, F_GETFD) != -1);
 
 	close(copy);
@@ -1198,6 +1380,9 @@ void dup_pool_self_check(void)
 	stdio_is_not_pooled();
 	protected_fds_are_not_pooled();
 	unrouted_type_stays_open();
+	fcntl_dupfd_pools_the_copy();
+	fcntl_other_cmds_pool_nothing();
+	fcntl_dupfd_of_an_unrouted_type_stays_open();
 	close_retires_the_fds_objects();
 	a_failed_close_retires_only_what_it_freed();
 	close_range_retires_the_range();

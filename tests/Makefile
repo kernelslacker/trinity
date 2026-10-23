@@ -391,12 +391,15 @@ PARENT_SRCS	+= $(wildcard $(TOP)/stats/kcov/cmp/*.c) \
 FAKE_SRCS	+= stats_render_test.c \
 		   stats_render_golden.c
 
-# syscalls/fs/close.c and close_range.c bring syscall_close and
-# syscall_close_range, whose post handlers dup_pool_test.c drives against
-# its fake object pool.  Same section-per-function treatment as the
-# parent TUs above.
+# syscalls/fs/close.c, close_range.c and fcntl.c bring syscall_close,
+# syscall_close_range and syscall_fcntl, whose post handlers
+# dup_pool_test.c drives against its fake object pool, and fds/fds-dup.c
+# the pooling of a copied fd that dup.c and fcntl.c share.  Same
+# section-per-function treatment as the parent TUs above.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/close.c \
-		   $(TOP)/syscalls/fs/close_range.c
+		   $(TOP)/syscalls/fs/close_range.c \
+		   $(TOP)/syscalls/fs/fcntl.c \
+		   $(TOP)/fds/fds-dup.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
