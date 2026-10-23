@@ -2,9 +2,10 @@
  * Self-check for the idle init of a child's new pid namespace
  * (child/child-pidns-init.c).  Each fixture runs in a helper that
  * unshares a user and a pid namespace, standing in for a sandboxed
- * child, starts the init and checks that the namespace stays usable and
- * that the init keeps out of the child's way, its fuzzed waits included.
- * Skipped where unprivileged user namespaces are not available.
+ * child, starts the init and checks that the namespace stays usable,
+ * that the init keeps out of the child's way, its fuzzed waits included,
+ * and that pidns_init_lost() notices when it is gone.  Skipped where
+ * unprivileged user namespaces are not available.
  */
 
 #include <errno.h>
@@ -15,13 +16,14 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
-#include "child-internal.h"	/* start_pidns_init, pidns_init_pid */
+#include "child-internal.h"	/* start_pidns_init, pidns_init_pid, pidns_init_lost */
 #include "debug.h"		/* BUG */
 #include "pidstat-probe.h"	/* pidstat_read, pidstat_parse */
 #include "syscall.h"
@@ -278,6 +280,41 @@ static void dies_with_child(void)
 	close(pfd.fd);
 }
 
+/* SIGKILL from outside the namespace still ends the init, and the
+ * namespace with it; pidns_init_lost() has to say so. */
+static void lost_once_killed(void)
+{
+	pid_t init = start_pidns_init();
+	int i;
+
+	if (init < 0)
+		BUG("pidns_init: the init did not start");
+	if (pidns_init_lost())
+		BUG("pidns_init: a running init was reported lost");
+	kill(init, SIGKILL);
+	for (i = 0; i < 1000 && !pidns_init_lost(); i++)
+		usleep(1000);
+	if (i == 1000)
+		BUG("pidns_init: a killed init was not reported lost");
+	if (fork_and_reap() || errno != ENOMEM)
+		BUG("pidns_init: the namespace outlived its init");
+}
+
+/* An init that cannot be started leaves the child on its own, as before
+ * there was one: a fresh child would only fail the same way.  RLIMIT_NPROC
+ * at 0 stops the clone, every retry included, for anyone but root. */
+static void degraded_without_start(void)
+{
+	const struct rlimit none = { 0, 0 };
+
+	if (setrlimit(RLIMIT_NPROC, &none) != 0)
+		BUG("pidns_init: cannot lower RLIMIT_NPROC");
+	if (start_pidns_init() >= 0)
+		BUG("pidns_init: an init started past RLIMIT_NPROC");
+	if (pidns_init_pid != 0 || pidns_init_lost())
+		BUG("pidns_init: a child whose init never started was sent to recycle");
+}
+
 void pidns_init_self_check(void);
 void pidns_init_self_check(void)
 {
@@ -289,4 +326,9 @@ void pidns_init_self_check(void)
 	run_in_pidns(wildcard_waits_do_not_block);
 	run_in_pidns(survives_fuzzed_signals);
 	dies_with_child();
+	run_in_pidns(lost_once_killed);
+	if (geteuid() == 0)
+		printf("(root ignores RLIMIT_NPROC, skipping the failed start) ");
+	else
+		run_in_pidns(degraded_without_start);
 }

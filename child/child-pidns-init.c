@@ -12,9 +12,14 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "child-internal.h"
+#include "utils.h"	/* waitpid_eintr */
+
+/* Set once the init of the namespace the child forks into has died */
+static bool pidns_lost;
 
 /*
  * The init's whole life.  The handlers it inherited are the child's and
@@ -106,4 +111,23 @@ pid_t start_pidns_init(void)
 	(void)setpgid(pid, pid);
 	pidns_init_pid = pid;
 	return pid;
+}
+
+/*
+ * True once the init of the namespace the child forks into has died:
+ * every fork from then on fails, and a dead namespace is worse than
+ * none, so the child should make way for a fresh one.  A child that never
+ * got an init runs on without one.  The init has no exit signal, hence
+ * __WALL.  Every answer but "still running" counts as gone, a ptrace-stop
+ * included: only a fuzzed ptrace() of the init brings one, and recycling
+ * the child for it costs nothing.
+ */
+bool pidns_init_lost(void)
+{
+	if (pidns_init_pid > 0 &&
+	    waitpid_eintr(pidns_init_pid, NULL, WNOHANG | __WALL) != 0) {
+		pidns_init_pid = 0;
+		pidns_lost = true;
+	}
+	return pidns_lost;
 }

@@ -370,8 +370,18 @@ void child_process(struct childdata *child, int childno)
 		 * every iter, not just the 5% alt-op path. */
 		const bool tick16 = ((child->op_nr & 15) == 0);
 
-		if (tick16)
+		if (tick16) {
 			periodic_work(child, child->op_nr);
+
+			/* Every fork lands in the pid namespace we may have
+			 * unshared, and fails once its init is gone; a fresh
+			 * child gets a live one. */
+			if (pidns_init_lost()) {
+				debugf("child %d: pid namespace init lost, exiting.\n",
+				       childno);
+				goto out;
+			}
+		}
 
 		/* Per-child storm-containment gate: once every
 		 * LOCAL_STORM_CHECK_PERIOD iterations, score the three

@@ -225,7 +225,8 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `capset()` drop.  The kernel checks the parent-death signal like a
   `kill()` from the dying child, so an idle pid namespace init forked
   any earlier would stay root and miss it from a child running as
-  nobody.  Comments are stripped before the lines are compared.
+  nobody.  `child/child.c` also has to poll `pidns_init_lost()`, or a
+  child fuzzes on in a dead namespace.  Comments are stripped first.
 - `post-state-deref`: every `.post` handler that dereferences a
   pointer read from `rec->post_state` must first gate it with
   `looks_like_corrupted_ptr()` or a `*_POST_STATE_MAGIC` cookie

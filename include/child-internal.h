@@ -71,8 +71,10 @@ bool child_userns_lane_is_active(void);
 
 /* child-pidns-init.c -- the idle init that holds pid 1 of a pid
  * namespace the child unshared, started by init_child_setup_sandbox
- * across the TU boundary. */
+ * across the TU boundary; the child_process() loop polls
+ * pidns_init_lost() and recycles the child once the init is gone. */
 pid_t start_pidns_init(void);
+bool pidns_init_lost(void);
 
 /* child-init-runtime.c -- kcov bring-up, uniarch active-syscalls
  * pin, explorer-pool slot flag, the A/B-comparison cohort stamps,
