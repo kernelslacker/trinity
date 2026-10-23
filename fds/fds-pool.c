@@ -1,10 +1,12 @@
 /*
  * The per-child pool of the files a call hands back that no provider owns,
  * declared in include/fd.h: pool_returned_fd() for any call, pool_open_result()
- * for what a path open may put in it.  The pool's cap lives here.
+ * for what a path open may put in it.  The pool's cap lives here, beside
+ * pool_typed_fd() for a producer whose result has a type of its own.
  */
 #include <stdbool.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include "child-api.h"
 #include "fd.h"
 #include "objects.h"
@@ -79,6 +81,30 @@ bool pool_returned_fd(int fd)
 	remove_local_objects_by_fd(fd);
 
 	return pool_capped(fd);
+}
+
+/*
+ * Pool @fd under @type, the producer's own type, with the same rules as
+ * pool_returned_fd() but no cap: these pools are not the open family's
+ * shared one.  A head without a destructor would leave @fd with nobody,
+ * so a refusal past the stdio and protected check closes it.
+ */
+struct object *pool_typed_fd(enum objecttype type, int fd)
+{
+	struct objhead *head;
+	struct object *obj = NULL;
+
+	if (fd <= 2 || fd_is_protected(fd))
+		return NULL;
+
+	remove_local_objects_by_fd(fd);
+
+	head = get_objhead(OBJ_LOCAL, type);
+	if (head != NULL && head->destroy != NULL)
+		obj = publish_resource(type, fd, NULL);
+	if (obj == NULL)
+		close(fd);
+	return obj;
 }
 
 /*

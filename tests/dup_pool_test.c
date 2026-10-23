@@ -2,7 +2,7 @@
  * Self-check for how the post handlers pool and retire the descriptors a
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
- * pidfs namespace getters, close and close_range.  Whatever object a number
+ * pidfs namespace getters, the typed producers, close and close_range.  Whatever object a number
  * held is retired, copy pooled or not, and a retire never closes the number.
  */
 
@@ -2474,6 +2474,94 @@ static void openat_oracle_compares_the_inode(void)
 	close(fd);
 }
 
+/* A typed producer's fd joins the pool of its own type, alone at its
+ * number, and stays open. */
+static void typed_fd_is_pooled_under_its_type(void)
+{
+	struct pool_entry *e;
+	struct object *obj;
+	int fd;
+
+	reset();
+	fd = eventfd(0, 0);
+	if (fd < 0)
+		BUG("fd pool: cannot make a descriptor to pool");
+	pool_add(true, fd, OBJ_FD_TESTFILE);
+	forget_calls();
+	obj = pool_typed_fd(OBJ_FD_MOUNT, fd);
+	e = pool_find(fd, OBJ_FD_MOUNT);
+	check("the fd was not pooled under its type", "pool_typed_fd",
+	      obj != NULL && e != NULL && obj == &e->obj && published == 1);
+	check("the object the number held was not retired", "pool_typed_fd",
+	      retires == 1 && retired_fd == fd && pool_count(fd) == 1);
+	check("a pooled fd was closed", "pool_typed_fd",
+	      fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
+/* A stdio or protected number is no new fd: neither pooled, retired nor
+ * closed. */
+static void typed_fd_leaves_stdio_and_protected_numbers_alone(void)
+{
+	int n, fd;
+
+	for (n = 0; n <= 2; n++) {
+		reset();
+		pool_add(true, n, OBJ_FD_PIPE);
+		forget_calls();
+		check("a stdio number was pooled", "pool_typed_fd",
+		      pool_typed_fd(OBJ_FD_MOUNT, n) == NULL);
+		check("a stdio number was retired or published",
+		      "pool_typed_fd", published == 0 && retires == 0 &&
+		      pool_find(n, OBJ_FD_PIPE) != NULL);
+	}
+
+	reset();
+	fd = eventfd(0, 0);
+	if (fd < 0)
+		BUG("fd pool: cannot make a descriptor to protect");
+	fake_child.kcov.fd = fd;
+	forget_calls();
+	check("the kcov fd's number was pooled", "pool_typed_fd",
+	      pool_typed_fd(OBJ_FD_FS_CTX, fd) == NULL);
+	check("a protected number was retired or published", "pool_typed_fd",
+	      published == 0 && retires == 0);
+	check("a protected number was closed", "pool_typed_fd",
+	      fcntl(fd, F_GETFD) != -1);
+	fake_child.kcov.fd = KCOV_FD;
+	close(fd);
+}
+
+/* An fd the pool cannot own, with no destructor to close it through or
+ * a type publish_resource() does not route, is closed, not leaked. */
+static void typed_fd_the_pool_cannot_own_is_closed(void)
+{
+	int fd;
+
+	reset();
+	no_destructor = true;
+	fd = eventfd(0, 0);
+	if (fd < 0)
+		BUG("fd pool: cannot make a descriptor to pool");
+	forget_calls();
+	check("an fd was pooled where nothing can close it", "pool_typed_fd",
+	      pool_typed_fd(OBJ_FD_EPOLL, fd) == NULL &&
+	      published == 0 && pool_count(fd) == 0);
+	check("an fd nothing owns was left open", "pool_typed_fd",
+	      fcntl(fd, F_GETFD) == -1);
+
+	reset();
+	unrouted = OBJ_FD_MOUNT;
+	fd = eventfd(0, 0);
+	if (fd < 0)
+		BUG("fd pool: cannot make a descriptor to pool");
+	forget_calls();
+	check("an unrouted type was pooled", "pool_typed_fd",
+	      pool_typed_fd(OBJ_FD_MOUNT, fd) == NULL && pool_count(fd) == 0);
+	check("an fd of an unrouted type was left open", "pool_typed_fd",
+	      fcntl(fd, F_GETFD) == -1);
+}
+
 #define NS_GETTERS_MAX	16
 
 /* The requests of the pidfs namespace getters, from the pidfd group's
@@ -2910,6 +2998,9 @@ void dup_pool_self_check(void)
 	open_result_is_pooled_by_kind();
 	pool_leaves_stdio_and_protected_numbers_alone();
 	open_result_naming_a_protected_file_is_refused();
+	typed_fd_is_pooled_under_its_type();
+	typed_fd_leaves_stdio_and_protected_numbers_alone();
+	typed_fd_the_pool_cannot_own_is_closed();
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];
 		ioctl_pools_the_ns_fd_a_getter_returned();

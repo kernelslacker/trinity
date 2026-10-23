@@ -50,7 +50,7 @@ directory.  Headers are named separately in each directory's notes file, and
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,086 LOC) |
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~20,306 LOC) |
 | [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (69 files, ~17,619 LOC) |
-| [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (45 files, ~9,958 LOC) |
+| [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (45 files, ~9,983 LOC) |
 | [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,806 LOC) |
 | [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (13 files, ~4,645 LOC) |
 | [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~3,773 LOC) |
@@ -62,7 +62,7 @@ directory.  Headers are named separately in each directory's notes file, and
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (73 files, ~16,494 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (8 files, ~1,721 LOC) |
 | [utils/](utils/CLAUDE.md) | General-purpose runtime support (34 files, ~10,754 LOC) |
-| `tests/` | Unit-test binary (`make test-bin` / `test-asan` / `test-ndebug`): PURE modules linked against fake shm and RNG providers, no fuzzer process (56 files, ~20,366 LOC) |
+| `tests/` | Unit-test binary (`make test-bin` / `test-asan` / `test-ndebug`): PURE modules linked against fake shm and RNG providers, no fuzzer process (56 files, ~20,459 LOC) |
 
 ## Core runtime, grouped by concern
 

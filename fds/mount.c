@@ -9,7 +9,6 @@
 #include "kernel/mount.h"
 #include "syscall-gate.h"
 #include "objects.h"
-#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -93,17 +92,19 @@ static int get_rand_mount_fd(void)
 	return -1;
 }
 
+/*
+ * A refused fd is coerced to -1UL so register_returned_fd() does not
+ * pool a number pool_typed_fd() closed or left to its owner.
+ */
 void post_mount_fd(struct syscallrecord *rec)
 {
-	int fd = rec->retval;
+	long fd = (long) rec->retval;
 
-	if ((long)rec->retval < 0)
-		return;
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	if (publish_resource(OBJ_FD_MOUNT, fd, NULL) == NULL)
-		close(fd);
+	if (pool_typed_fd(OBJ_FD_MOUNT, (int) fd) == NULL)
+		rec->retval = -1UL;
 }
 
 static const struct fd_provider mount_fd_provider = {

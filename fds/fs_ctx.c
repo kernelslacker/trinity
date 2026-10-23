@@ -8,7 +8,6 @@
 #include "kernel/mount.h"
 #include "syscall-gate.h"
 #include "objects.h"
-#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -113,17 +112,16 @@ static int get_rand_fs_ctx_fd(void)
 	return -1;
 }
 
+/* Same refusal contract as post_mount_fd(). */
 void post_fs_ctx_fd(struct syscallrecord *rec)
 {
-	int fd = rec->retval;
+	long fd = (long) rec->retval;
 
-	if ((long)rec->retval < 0)
-		return;
 	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	if (publish_resource(OBJ_FD_FS_CTX, fd, NULL) == NULL)
-		close(fd);
+	if (pool_typed_fd(OBJ_FD_FS_CTX, (int) fd) == NULL)
+		rec->retval = -1UL;
 }
 
 static const struct fd_provider fs_ctx_fd_provider = {

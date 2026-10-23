@@ -2,7 +2,7 @@
 
 Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, pidfd, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
 
-## Files (45 .c files + 1 internal header, ~9,958 LOC)
+## Files (45 .c files + 1 internal header, ~9,983 LOC)
 
 The registry core spans `fds.c` and the `fds-*.c` files behind
 `fds-internal.h`, one concern per translation unit.
@@ -41,16 +41,16 @@ The registry core spans `fds.c` and the `fds-*.c` files behind
 | drm.c | 164 | DRM device fd provider |
 | pidfd.c | 159 | pidfd provider (`pidfd_open`) |
 | dev_template.c | 145 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
-| fs_ctx.c | 137 | `fsopen`/`fsconfig` filesystem-context fd provider |
+| fs_ctx.c | 135 | `fsopen`/`fsconfig` filesystem-context fd provider |
 | fds-init.c | 127 | `open_fds()` — randomized init sweep, `active_providers[]` build, enabled/initialized and per-pool-size startup logging |
-| mount.c | 117 | mount fd provider (`open_tree`/`fsmount`/`move_mount`) |
+| mount.c | 118 | mount fd provider (`open_tree`/`fsmount`/`move_mount`) |
 | iommufd.c | 115 | IOMMUFD provider (`#ifdef USE_IOMMUFD`) |
 | fds-param.c | 95 | `--enable-fds` / `--disable-fds` parsing (`process_fds_param`) |
 | fds-registry.c | 93 | The constructor-time provider list: `register_fd_provider()`, `fd_provider_name()`, `dump_fd_provider_names()` |
 | fds-internal.h | 66 | Private cross-file interface of the registry translation units — the counters and provider arrays they share, and the replenish per-tick cap |
 | owned-fd-ring.c | 89 | `owned_fd_ring_record()` and `owned_fd_ring_retire()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded. A retire takes a number out of every provider's ring without closing it: a record retires the number it is given first, and `account_fd_and_group()` retires each number a fuzzed call returns, which `fstat()` cannot do for anon-inode files and dups |
 | fds-dup.c | 116 | `pool_dup_result()` and `pool_foreign_fd()` (`include/fd.h`): pool the fd a dup, dup2, dup3 or `fcntl(F_DUPFD*)` returned under the object type of the fd it copied, after retiring the local object its number held; and the fd `pidfd_getfd` returned, when `fstat()` says it is a socket or a pipe end |
-| fds-pool.c | 109 | `pool_returned_fd()` and `pool_open_result()` (`include/fd.h`): the child's capped pool of the files a call hands back that no provider owns (an open result, the fd an ioctl cmd returns), as local `OBJ_FD_TESTFILE` objects. At most `POOLED_FD_MAX` of them: a full pool destroys its oldest object (smallest `slot_version`) through the head's destructor to make room, and a head with no destructor takes nothing. An open result qualifies only as a regular file or a directory that is not a second name of a protected file |
+| fds-pool.c | 135 | `pool_returned_fd()`, `pool_open_result()` and `pool_typed_fd()` (`include/fd.h`): the child's capped pool of the files a call hands back that no provider owns (an open result, the fd an ioctl cmd returns), as local `OBJ_FD_TESTFILE` objects. At most `POOLED_FD_MAX` of them: a full pool destroys its oldest object (smallest `slot_version`) through the head's destructor to make room, and a head with no destructor takes nothing. An open result qualifies only as a regular file or a directory that is not a second name of a protected file. `pool_typed_fd()` is the same retire-then-publish, uncapped, under a typed producer's own type; what it refuses past stdio and protected numbers it closes |
 | fds-diag.c | 42 | `fd_provider_init_fail()` and the last-init-reason slot `open_fds()` reads back |
 | devfs.c | 34 | `/dev` pool provider (thin wrapper over files.c, pool 0) |
 | procfs.c | 18 | `/proc` pool provider (thin wrapper over files.c, pool 1) |
@@ -78,6 +78,7 @@ The registry core spans `fds.c` and the `fds-*.c` files behind
 - `syscalls/fs/dup.c`, `syscalls/fs/fcntl.c` — pool the results of dup, dup2, dup3 and `fcntl(F_DUPFD*)` through `pool_dup_result()` (`fds/fds-dup.c`): the copy joins the `OBJ_LOCAL` pool of the fd it copies (`find_object_by_fd()`, then `publish_resource()`), and the object the returned number held is retired first (`remove_local_objects_by_fd()`); protected fds never enter a pool, on either end
 - `syscalls/pidfd/pidfd_getfd.c` — pools the fd it returns through `pool_foreign_fd()` (`fds/fds-dup.c`) when `fstat()` says it is a socket (its triplet read back with `getsockopt()`) or a pipe end, and closes anything else: an anon-inode fd cannot be typed from `fstat()`
 - `syscalls/fs/open.c`, `syscalls/fs/creat.c` — open, openat, openat2, open_by_handle_at and creat pool what they return through `pool_open_result()` (`fds/fds-pool.c`) when `fstat()` says it is a regular file or a directory, and close anything else: a device, a FIFO and a socket stay closed, as does a second name of a protected file. The object the number held is retired first, and a child keeps at most `POOLED_FD_MAX` of them, so a run of successful opens cannot fill the fd table
+- `fds/mount.c`, `fds/fs_ctx.c` — `post_mount_fd()` (open_tree, open_tree_attr, fsmount) and `post_fs_ctx_fd()` (fsopen, fspick) pool their fd through `pool_typed_fd()` as `OBJ_FD_MOUNT` / `OBJ_FD_FS_CTX`, and coerce a refused one's retval to -1 so `register_returned_fd()` does not pool it
 - `syscalls/ioctl.c` — `post_ioctl()` pools the nsfs fd a pidfs namespace getter returns through `pool_returned_fd()` (`fds/fds-pool.c`), and closes it when the pool will not take it. It leaves a number alone unless the cmd is a getter (`pidfd_ns_getter()`) and `fstatfs()` says nsfs, and never closes a stdio or protected number
 - `random_syscall/fd-group.c` — `account_fd_and_group()` calls `owned_fd_ring_retire()` for every fd a fuzzed call returns, so a stale ring slot cannot close the new owner of its number; a call that returns the fd it was handed (`dup2(fd, fd)`, `signalfd()` on a signalfd) retires nothing. A bounded walk of the rings, no syscall
 - `syscalls/poll/poll.c`, `syscalls/poll/select.c`, `syscalls/poll/pselect6.c`, `syscalls/poll/epoll_ctl.c` — use `get_pollable_random_fd()` and `fd_poll_can_block()` to build/validate watch sets

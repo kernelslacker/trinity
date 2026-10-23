@@ -10,6 +10,7 @@
 #include "types.h"
 
 struct epollobj;
+struct object;
 struct stat;
 
 bool open_fds(void);
@@ -363,6 +364,18 @@ bool pool_returned_fd(int fd);
  * always a new fd.
  */
 bool pool_open_result(int fd, const struct stat *st);
+
+/*
+ * Pool @fd, the new fd a successful call of @type's producer returned,
+ * as a local object of @type, retiring whatever local object the number
+ * held first.  Returns the object, for the caller to fill in the fields
+ * its type carries, or NULL.  NULL for a stdio or protected number
+ * leaves it open and unretired, as pool_returned_fd() does; any other
+ * NULL (no destructor to close it through, no memory, a type
+ * publish_resource() does not route) has closed @fd.  Either way the
+ * number is not the caller's to register.  Child context only.
+ */
+struct object *pool_typed_fd(enum objecttype type, int fd);
 
 /*
  * Pick from the fd_types whose ->poll handlers park the caller on a
