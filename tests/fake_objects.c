@@ -2,7 +2,10 @@
  * Object pool and name pool stand-ins for the sanitisers that
  * sanitiser_owned_mask_test.c runs.  Both pools are empty, so a
  * sanitiser takes its empty-pool arm.  What only a post handler or a
- * pool initialiser reaches aborts the test instead of answering.
+ * pool initialiser reaches aborts the test instead of answering, unless
+ * a test has installed a hook for it for the duration of the call it
+ * drives, as dup_pool_test.c does for the lookup the socketpair post
+ * handler makes.
  */
 
 #include <stdbool.h>
@@ -11,6 +14,8 @@
 
 #include "name-pool.h"
 #include "objects.h"
+
+struct object *(*fake_find_local_object_by_fd)(enum objecttype type, int fd);
 
 struct object *alloc_object(void)
 {
@@ -27,7 +32,8 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 
 struct object *find_local_object_by_fd(enum objecttype type, int fd)
 {
-	(void)type; (void)fd;
+	if (fake_find_local_object_by_fd != NULL)
+		return fake_find_local_object_by_fd(type, fd);
 	fprintf(stderr, "fake find_local_object_by_fd called unexpectedly\n");
 	abort();
 }

@@ -143,7 +143,7 @@ static void register_sock_fd(int fd, unsigned long family,
 			     unsigned long type, unsigned long protocol)
 {
 	const struct netproto *proto;
-	struct object *new;
+	struct object *obj;
 
 	if (family >= TRINITY_PF_MAX) {
 		close(fd);
@@ -155,12 +155,12 @@ static void register_sock_fd(int fd, unsigned long family,
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
 
-	new = alloc_object();
-	new->sockinfo.fd = fd;
-	new->sockinfo.triplet.family = family;
-	new->sockinfo.triplet.type = type;
-	new->sockinfo.triplet.protocol = protocol;
-	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return;
+	obj->sockinfo.triplet.family = family;
+	obj->sockinfo.triplet.type = type;
+	obj->sockinfo.triplet.protocol = protocol;
 }
 
 static void register_accepted_fd(int fd, int listener_fd)

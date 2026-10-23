@@ -5,6 +5,7 @@
 #include "net.h"
 #include "objects.h"
 #include "output-poison.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "sanitise.h"
 #include "deferred-free.h"
@@ -35,19 +36,19 @@ static const unsigned long af_unix_types[] = {
 
 static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 {
-	struct object *new;
+	struct object *obj;
 
 	if (fd <= 2 || fd >= (1 << 20))
 		return;
 	if (find_local_object_by_fd(OBJ_FD_SOCKET, fd) != NULL)
 		return;
 
-	new = alloc_object();
-	new->sockinfo.fd = fd;
-	new->sockinfo.triplet.family = rec->a1;
-	new->sockinfo.triplet.type = rec->a2;
-	new->sockinfo.triplet.protocol = rec->a3;
-	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return;
+	obj->sockinfo.triplet.family = rec->a1;
+	obj->sockinfo.triplet.type = rec->a2;
+	obj->sockinfo.triplet.protocol = rec->a3;
 }
 
 /*

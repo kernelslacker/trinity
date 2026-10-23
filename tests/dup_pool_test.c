@@ -22,10 +22,10 @@
  * retires nothing.  Its sanitiser never leaves a protected fd in the set
  * the call closes.
  *
- * An accepted socket (accept, accept4 and socketcall's SYS_ACCEPT and
- * SYS_ACCEPT4) is published as a local socket that carries the triplet of
- * the listener the connection came in on, when the child's global snapshot
- * holds the listener as a socket.
+ * The socket producers (socket, socketpair, accept, accept4 and the
+ * socketcall multiplexer) publish a local socket carrying a triplet: the
+ * call's own for a new socket, the listener's for an accepted one.  Those
+ * cases hold the publish as it is whichever way the handlers make it.
  */
 
 #include <errno.h>
@@ -61,6 +61,8 @@
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
+extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
+						       int fd);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
 
 /* Numbers no fd table in the test holds, so the post handlers' fstat()
@@ -189,6 +191,13 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 	}
 	BUG("fd pool: the fake pool is full");
 	return NULL;
+}
+
+static struct object *fake_find_local(enum objecttype type, int fd)
+{
+	struct pool_entry *e = pool_find(fd, type);
+
+	return e != NULL && e->local ? &e->obj : NULL;
 }
 
 /* The child's snapshot of the global pool, as accept asks it about the
@@ -1605,6 +1614,56 @@ static bool is_socket_with(int fd, unsigned int family, unsigned int type,
 	       e->obj.sockinfo.triplet.protocol == protocol;
 }
 
+static void run_socket(unsigned long family, unsigned long type,
+		       unsigned long protocol, unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = family;
+	rec.a2 = type;
+	rec.a3 = protocol;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EAFNOSUPPORT : 0;
+
+	forget_calls();
+	syscall_socket.post(&rec);
+}
+
+/* The snapshot syscalls/socket/socketpair.c installs and its post handler
+ * reads back. */
+struct socketpair_snap {
+	unsigned long magic;
+	uint64_t poison_seed;
+};
+#define SOCKETPAIR_SNAP_MAGIC	0x534F434B5F4D4147UL
+
+/* Run socketpair's post handler on a call for the triplet that returned
+ * @retval and wrote @sv. */
+static void run_socketpair(unsigned long family, unsigned long type,
+			   unsigned long protocol, int *sv,
+			   unsigned long retval)
+{
+	static struct syscallrecord rec;
+	struct socketpair_snap *snap = calloc(1, sizeof(*snap));
+
+	if (snap == NULL)
+		BUG("fd pool: cannot allocate a socketpair snapshot");
+	snap->magic = SOCKETPAIR_SNAP_MAGIC;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = family;
+	rec.a2 = type;
+	rec.a3 = protocol;
+	rec.a4 = (unsigned long) sv;
+	rec.post_state = (unsigned long) snap;
+	rec.retval = retval;
+
+	forget_calls();
+	syscall_socketpair.ret_objtype_via_post(&rec);
+	free(snap);
+}
+
 /* Run an accept or accept4 post handler on a call that took a connection
  * on @listener and returned @retval. */
 static void run_accept(const struct syscallentry *entry, int listener,
@@ -1648,6 +1707,71 @@ static void run_socketcall(unsigned long call, unsigned long a0,
 	forget_calls();
 	syscall_socketcall.post(&rec);
 	free(args);
+}
+
+/* socket() publishes the fd it returned as a local socket with the
+ * triplet it was called with, flags and all, and leaves it open. */
+static void socket_publishes_a_local_socket(void)
+{
+	int fd = open("/dev/null", O_RDONLY);
+
+	if (fd < 0)
+		BUG("fd pool: cannot open /dev/null");
+
+	reset();
+	pool_add(true, 90010, OBJ_FD_EVENTFD);
+	run_socket(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, NEW);
+	check("a new socket is not the local socket the call made", "socket",
+	      is_socket_with(NEW, AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0) &&
+	      published == 1);
+	check("a socket() retired an object at another number", "socket",
+	      pool_find(90010, OBJ_FD_EVENTFD) != NULL && retires == 0);
+
+	reset();
+	run_socket(AF_UNIX, SOCK_DGRAM, 0, (unsigned long) -1L);
+	check("a socket() that failed published something", "socket",
+	      published == 0);
+
+	/* A family no protocol table covers: the fd is closed unpooled. */
+	reset();
+	run_socket(TRINITY_PF_MAX, SOCK_STREAM, 0, (unsigned long) fd);
+	check("a socket of an unknown family was pooled", "socket",
+	      published == 0 && pool_count(fd) == 0);
+	check("a socket of an unknown family was left open", "socket",
+	      fcntl(fd, F_GETFD) == -1);
+}
+
+/* socketpair() publishes each end it wrote back, as a local socket with
+ * the call's triplet, unless the number could not be a pooled fd or the
+ * pool already tracks it. */
+static void socketpair_publishes_each_end(void)
+{
+	int sv[2] = { NEW, NEW + 1 };
+	int stdio[2] = { 1, 1 << 20 };
+
+	reset();
+	run_socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv, 0);
+	check("socketpair did not publish both ends as local sockets",
+	      "socketpair", published == 2 &&
+	      is_socket_with(NEW, AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0) &&
+	      is_socket_with(NEW + 1, AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0));
+
+	reset();
+	pool_add(true, NEW, OBJ_FD_SOCKET);
+	run_socketpair(AF_UNIX, SOCK_STREAM, 0, sv, 0);
+	check("socketpair published an end the pool already had",
+	      "socketpair", published == 1 && pool_count(NEW) == 1 &&
+	      is_socket_with(NEW + 1, AF_UNIX, SOCK_STREAM, 0));
+
+	reset();
+	run_socketpair(AF_UNIX, SOCK_STREAM, 0, stdio, 0);
+	check("socketpair published a stdio or out-of-range number",
+	      "socketpair", published == 0);
+
+	reset();
+	run_socketpair(AF_UNIX, SOCK_STREAM, 0, sv, (unsigned long) -1L);
+	check("a socketpair that failed published something", "socketpair",
+	      published == 0);
 }
 
 /* An accepted socket inherits the triplet of the listener it came
@@ -1703,9 +1827,45 @@ static void accept_inherits_the_listeners_triplet(void)
 	}
 }
 
-/* socketcall() reaches the same publish through its own switch. */
-static void socketcall_accepts_like_the_calls_it_carries(void)
+/* socketcall() reaches the same publishes through its own switch. */
+static void socketcall_publishes_like_the_calls_it_carries(void)
 {
+	int sv[2] = { NEW, NEW + 1 };
+	int fd = open("/dev/null", O_RDONLY);
+
+	if (fd < 0)
+		BUG("fd pool: cannot open /dev/null");
+
+	reset();
+	run_socketcall(1 /* SYS_SOCKET */, AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC,
+		       0, 0, NEW);
+	check("socketcall(SYS_SOCKET) did not publish a local socket",
+	      "socketcall",
+	      is_socket_with(NEW, AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0) &&
+	      published == 1);
+
+	reset();
+	run_socketcall(1 /* SYS_SOCKET */, TRINITY_PF_MAX, SOCK_STREAM, 0, 0,
+		       (unsigned long) fd);
+	check("socketcall(SYS_SOCKET) pooled a socket of an unknown family",
+	      "socketcall", published == 0 && pool_count(fd) == 0);
+	check("socketcall(SYS_SOCKET) left a socket of an unknown family open",
+	      "socketcall", fcntl(fd, F_GETFD) == -1);
+
+	reset();
+	run_socketcall(1 /* SYS_SOCKET */, AF_UNIX, SOCK_STREAM, 0, 0,
+		       (unsigned long) -1L);
+	check("a socketcall(SYS_SOCKET) that failed published something",
+	      "socketcall", published == 0);
+
+	reset();
+	run_socketcall(8 /* SYS_SOCKETPAIR */, AF_UNIX, SOCK_STREAM, 0,
+		       (unsigned long) sv, 0);
+	check("socketcall(SYS_SOCKETPAIR) did not publish both ends",
+	      "socketcall", published == 2 &&
+	      is_socket_with(NEW, AF_UNIX, SOCK_STREAM, 0) &&
+	      is_socket_with(NEW + 1, AF_UNIX, SOCK_STREAM, 0));
+
 	reset();
 	pool_add(false, SRC, OBJ_FD_SOCKET);
 	pool_find(SRC, OBJ_FD_SOCKET)->obj.sockinfo.triplet =
@@ -1740,6 +1900,7 @@ void dup_pool_self_check(void)
 	fake_child.fail_nth_fd = -1;
 	fake_this_child = &fake_child;
 	fake_find_object_by_fd = fake_lookup;
+	fake_find_local_object_by_fd = fake_find_local;
 
 	copy_joins_the_sources_pool();
 	old_object_is_retired();
@@ -1776,9 +1937,12 @@ void dup_pool_self_check(void)
 		if (!sandbox_was_open[i])
 			close(SANDBOX_BASE + (int) i);
 	}
+	socket_publishes_a_local_socket();
+	socketpair_publishes_each_end();
 	accept_inherits_the_listeners_triplet();
-	socketcall_accepts_like_the_calls_it_carries();
+	socketcall_publishes_like_the_calls_it_carries();
 
+	fake_find_local_object_by_fd = NULL;
 	fake_find_object_by_fd = NULL;
 	fake_this_child = NULL;
 

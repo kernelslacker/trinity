@@ -16,6 +16,7 @@
 #include "params.h"
 #include "pids.h"
 #include "domains.h"
+#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -287,7 +288,7 @@ static void sanitise_socket(struct syscallrecord *rec)
 static void post_socket(struct syscallrecord *rec)
 {
 	const struct netproto *proto;
-	struct object *new;
+	struct object *obj;
 	unsigned long family = rec->a1;
 	int fd = rec->retval;
 
@@ -304,12 +305,12 @@ static void post_socket(struct syscallrecord *rec)
 		if (proto->socket_setup != NULL)
 			proto->socket_setup(fd);
 
-	new = alloc_object();
-	new->sockinfo.fd = fd;
-	new->sockinfo.triplet.family = family;
-	new->sockinfo.triplet.type = rec->a2;
-	new->sockinfo.triplet.protocol = rec->a3;
-	add_object(new, OBJ_LOCAL, OBJ_FD_SOCKET);
+	obj = publish_resource(OBJ_FD_SOCKET, fd, NULL);
+	if (obj == NULL)
+		return;
+	obj->sockinfo.triplet.family = family;
+	obj->sockinfo.triplet.type = rec->a2;
+	obj->sockinfo.triplet.protocol = rec->a3;
 }
 
 struct syscallentry syscall_socket = {
