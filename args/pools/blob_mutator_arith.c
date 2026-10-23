@@ -1,5 +1,5 @@
 /*
- * Arithmetic / length-oriented HAVOC arms.  Moved from blob_mutator.c.
+ * Arithmetic / length-oriented HAVOC arms.
  * See args/pools/blob_mutator-internal.h for the shared contract.
  */
 #include <stdbool.h>

@@ -1,30 +1,9 @@
 /*
- * Per-(nr, do32) opaque-blob content corpus.
- *
- * See include/blob_corpus.h for the per-mode contract.  This TU is
- * the storage backend; the parse / wire-up sites are
- *   - blob_fill()                      (args/pools/blob_mutator.c)
- *   - minicorpus_save_with_reason()    (persist/minicorpus-save.c)
- *   - generate_syscall_args()          (args/generate-args.c)
- *   - init_shm_publish_and_subsystems()(utils/shm.c)
- *
- * Storage: a single fixed-capacity flat table of BLOB_CORPUS_SLOTS
- * entries, each holding up to BLOB_CORPUS_MAX_LEN bytes plus a
- * (nr, do32) key.  A per-table lock serialises stores and evictions;
- * lookups take a read-only snapshot under the same lock (short scan,
- * bounded memcpy).
- *
- * Eviction: FIFO via a monotonic write cursor.  A same-key store
- * overwrites the existing slot (last-writer-wins) so a productive
- * key doesn't burn multiple slots; a new-key store lands in the next
- * cursor slot, evicting the oldest entry there.  No LRU, no scoring
- * -- the productivity gate is on the CALLER (minicorpus_save_with_
- * reason() only promotes when its own admission filter passed) so a
- * scoring pass here would be redundant.
- *
- * RNG discipline: none.  This module makes no random draws -- the
- * pick is deterministic (first same-key match) so a fixed-seed dry
- * run remains reproducible across the corpus retrieval path.
+ * Per-(nr, do32) opaque-blob content corpus, the storage backend for
+ * include/blob_corpus.h.  One fixed-capacity table behind a per-table lock;
+ * lookups copy out a snapshot under it.  No random draws: the pick is
+ * deterministic (first same-key match), so a fixed-seed dry run stays
+ * reproducible.  Store and eviction policy: blob_corpus_promote_pending().
  */
 #include <stdbool.h>
 #include <stddef.h>
@@ -168,6 +147,14 @@ void blob_corpus_stash_pending(unsigned int nr, bool do32,
 	slot->used = 1u;
 }
 
+/*
+ * Store the pending stashes into the shared table under the table lock.  A
+ * same-key store overwrites the existing slot (last-writer-wins) so a
+ * productive key does not burn several slots; a new key takes a free slot,
+ * else the FIFO cursor evicts one.  No LRU or scoring: the productivity gate
+ * is on the caller, minicorpus_save_with_reason(), which only promotes after
+ * its own admission filter passed.
+ */
 void blob_corpus_promote_pending(void)
 {
 	unsigned int i;

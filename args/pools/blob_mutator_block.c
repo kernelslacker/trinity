@@ -1,5 +1,5 @@
 /*
- * Block-scoped HAVOC arms.  Moved from blob_mutator.c.
+ * Block-scoped HAVOC arms.
  * See args/pools/blob_mutator-internal.h for the shared contract and
  * the BLOB_HAVOC_BLOCK_MAX cap on the per-arm run length.
  */

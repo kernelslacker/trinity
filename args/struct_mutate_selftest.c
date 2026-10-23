@@ -1,25 +1,9 @@
 /*
- * Startup self-checks for args/struct_mutate.c's per-tag primitives
- * and the collector's skip-list / variant-scope / depth-cap
- * invariants, plus the variant-aware FT_ADDRESS reachability walk in
- * struct_catalog/address.c.
- *
- * Carved out of args/struct_mutate.c: for years the selftest lived
- * at the tail of the same TU because trinity had no separate
- * unit-test binary and every asserted invariant had to be checked at
- * process start (from utils/shm.c) or not at all.  With the tests/
- * test-bin seam in place the selftest is also driven by the test
- * binary with a fixed RNG seed under ASAN; production still calls
- * struct_field_mutate_self_check() at parent init (same one-shot
- * call from init_shm_publish_and_subsystems() as before).
- *
- * Each primitive is exercised with a hand-built struct_field over a
- * sandbox buffer (i.e. zero coupling to the production catalog) so
- * the assertions don't depend on catalog field choices that may
- * shift.  Iteration counts are large enough that reject-sampling
- * primitives (FT_ENUM / FT_VOCAB) get many independent draws; rng
- * coverage of sub-byte cases (FT_RAW bit picks, FT_RANGE direction)
- * is hit by the same loop count without needing a separate sweep.
+ * Startup self-checks for args/struct_mutate.c's per-tag primitives and the
+ * collector's skip-list / variant-scope / depth-cap invariants, plus the
+ * variant-aware FT_ADDRESS reachability walk in struct_catalog/address.c.
+ * Run at parent init and from the tests/ binary (fixed RNG seed); every check
+ * uses hand-built fields over a sandbox buffer, not the production catalog.
  */
 
 #include <stdbool.h>
@@ -34,6 +18,11 @@
 #include "struct_mutate-internal.h"
 #include "syscall.h"
 
+/*
+ * Large enough that the reject-sampling primitives (FT_ENUM / FT_VOCAB) get
+ * many independent draws, and that the sub-byte cases (FT_RAW bit picks,
+ * FT_RANGE direction) are hit by the same loop without a separate sweep.
+ */
 #define STRUCT_MUTATE_SELFTEST_ITERS	256U
 
 static void selftest_flags(void)

@@ -1,7 +1,7 @@
 /*
- * Helpers for the blob-mutator engine.  Moved from blob_mutator.c:
- * position picker, splat-form value transforms, and the well-known
- * static-magic table the CMPDICT arm layers before its learned pull.
+ * Helpers for the blob-mutator engine: position picker, splat-form value
+ * transforms, and the well-known static-magic table the CMPDICT arm layers
+ * before its learned pull.
  * See args/pools/blob_mutator-internal.h for the shared contract.
  */
 #include <stdbool.h>

@@ -4,8 +4,7 @@
  * Internal contract shared across the blob-mutator TU family in
  * args/pools/blob_mutator*.c.  Public callers use include/blob_mutator.h;
  * everything here is engine-internal (arm functions, splat helpers,
- * static-magic table) split out of the original single blob_mutator.c
- * for readability.
+ * static-magic table).
  */
 
 #include <stdbool.h>

@@ -1,5 +1,5 @@
 /*
- * Byte + bit flipper HAVOC arms.  Moved from blob_mutator.c.
+ * Byte + bit flipper HAVOC arms.
  * See args/pools/blob_mutator-internal.h for the shared contract.
  */
 #include <stdbool.h>

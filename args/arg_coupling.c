@@ -1,43 +1,9 @@
 /*
- * Cross-arg lengths-match validator and repair pass.
- *
- * Some syscalls express a buffer with a (pointer, count) pair whose
- * kernel-side coherence the per-argument generators do not enforce.
- * The random walk therefore produces routine incoherence: a NULL base
- * with a positive length (the kernel rejects at its earliest EFAULT
- * step) or a length that overshoots the writable extent of the base
- * (the kernel rejects at copy_from_user()/import time before any
- * interesting syscall body runs).  Both burn a syscall round-trip and
- * a kcov enable/disable pair to rediscover the same import guard over
- * and over.
- *
- * The entry point runs after .sanitise and before dispatch, on the
- * final argument-slot values.  Two dispositions per detected pair:
- *
- *   - NULL base with a positive length -> synthesise the same early-
- *     EINVAL reject shape the epoll rule takes.  A NULL base cannot
- *     be made coherent, so REPAIR does not apply.
- *
- *   - Non-NULL base with length > writable_extent(base) ->
- *     probabilistically clamp the length down to the extent in place,
- *     reusing the shared_region_size_for() lookup the per-slot ARG_LEN
- *     generator uses for the adjacent case.  A fraction of over-extent
- *     shapes is intentionally left uncorrected so the kernel's own
- *     import guard stays on the coverage surface.
- *
- * Some per-syscall rules ride on the same final values, for what a
- * sanitiser got right and a later rewrite (chain substitution, a RedQueen
- * pin) can undo: an fcntl F_SETSIG signal, a wait that would block on a
- * child's pid namespace init, an madvise range that reaches trinity's
- * own regions and a byte count the sanitiser sized to its buffer (read,
- * pread64, getrandom, the xattr value and list getters, mq_timedreceive)
- * that would run the write past it into them are repaired in place, and
- * a close_range whose slots no longer match the range its sanitiser
- * vetted is refused.
- *
- * Callers see three counters: STATS_FIELD_VALIDATOR_REJECTED (via the
- * -1 return), STATS_FIELD_ARG_CONSTRAINT_REPAIRED (per clamp), and
- * STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT (per skipped clamp).
+ * Cross-arg validator and repair pass (contract: include/arg_coupling.h).
+ * Runs on the final slot values, after .sanitise, chain substitution and any
+ * RedQueen pin, so it judges what the kernel will read: (address, length)
+ * coherence, then the per-syscall rules for fcntl F_SETSIG, waits on a pid
+ * namespace init, close_range, madvise and buf_count_slot byte counts.
  */
 #include <fcntl.h>
 #include <sys/uio.h>

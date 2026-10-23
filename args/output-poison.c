@@ -1,23 +1,9 @@
 /*
- * Poison / check helpers for ARG_STRUCT_PTR_OUT buffers.
- *
- * Sanitise-side: stamp a deterministic byte pattern into the buffer the
- * kernel is about to write into.  Post-side: re-read the buffer and
- * report whether every byte still equals the original pattern.  An
- * unchanged buffer after a "success" return means the kernel claimed
- * the call succeeded without copying any output -- a class of bug the
- * downstream oracles can also catch through field-level divergence,
- * but only after paying for a re-issue of the syscall.  This check is
- * O(struct size) and surfaces the same bug class without re-entering
- * the kernel.
- *
- * Pattern is the 8 bytes of `seed` repeated across the buffer (byte i
- * is seed >> ((i & 7) * 8)).  Generated once in poison_output_struct
- * (rnd_u64() when the caller passes seed == 0), returned to the caller
- * so it can stash the value next to the other post-handler state, and
- * fed back in to check_output_struct from the post handler.  The
- * helpers do not log, exit, or otherwise change control flow -- the
- * caller decides what to do with the result.
+ * Poison / check helpers for ARG_STRUCT_PTR_OUT buffers (contract:
+ * include/output-poison.h).  Sanitise stamps a seed-derived pattern; the post
+ * handler re-reads it, so a "success" that wrote no output shows up at
+ * O(struct size) without re-issuing the syscall.  The helpers never log, exit
+ * or change control flow: the caller decides what to do with the result.
  */
 #include "output-poison.h"
 #include "rnd.h"

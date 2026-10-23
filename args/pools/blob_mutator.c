@@ -1,33 +1,9 @@
 /*
  * --blob-mutator: content-authoring lane for opaque ARG_BUF_SIZED args.
- *
- * See include/blob_mutator.h for the per-mode contract.  This TU is
- * the engine implementation -- the parse / wire-up sites are in
- * params.c and generate-args.c.
- *
- * RNG discipline: every random draw routes through rnd_u32 /
- * rnd_modulo_u32 (Lemire-debiased, splitmix64-backed) declared in
- * include/rnd.h.  libc rand() is forbidden on this path -- enforced
- * by scripts/check-static/no-libc-rand.sh.
- *
- * OFF (engine-level off, no write), FILL (generate_rand_bytes into
- * the owned buffer), HAVOC (FILL plus a bounded byte-mutation pass:
- * bit-flip / byte-flip / set-interesting at the four recorded cmp
- * widths {1,2,4,8} / ±1..±35 arithmetic on a byte/word/dword field /
- * prefix-len stamp of a plausible length/size at offset 0 /
- * memset a bounded run to 0x00 or 0xff / self-splice copy a bounded
- * region over another / swap two non-overlapping bounded regions,
- * capped at BLOB_HAVOC_MAX_OPS ops per invocation regardless of arm
- * cost), CMPDICT (HAVOC plus a bounded buffer-redqueen
- * pass capped at BLOB_CMPDICT_MAX_INSERTS: each iteration coin-flips
- * between a built-in well-known-magic table and the learned per-nr
- * cmp-hint pool via cmp_hints_try_get_sized -- which returns both
- * the constant AND the operand width the kernel's cmp instruction
- * recorded, so a learned magic is splatted at the width the kernel
- * actually compares against -- then applies one of four splat forms
- * -- plain little-endian in the majority, plus three transform arms
- * {big-endian, value+1, value-1} for endian and boundary coverage --
- * and writes the result into the buffer at a random offset).
+ * This TU is the engine behind the OFF / FILL / HAVOC / CMPDICT ladder
+ * described in include/blob_mutator.h.  Every random draw goes through
+ * include/rnd.h; libc rand() is banned tree-wide by
+ * scripts/check-static/no-libc-rand.sh.
  */
 #include <stdbool.h>
 #include <stddef.h>
