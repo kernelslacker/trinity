@@ -9,6 +9,7 @@
 #include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
+#include "maps.h"
 #include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
@@ -65,6 +66,7 @@ struct get_mempolicy_post_state {
 
 static void sanitise_get_mempolicy(struct syscallrecord *rec)
 {
+	struct map *map = (struct map *) rec->a4;
 	unsigned long maxnode = rec->a3;
 	unsigned long nmask_bytes;
 #ifdef HAVE_SYS_GET_MEMPOLICY
@@ -84,6 +86,18 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 	if (nmask_bytes == 0)
 		nmask_bytes = sizeof(long);
 	avoid_shared_buffer_out(&rec->a2, nmask_bytes);
+
+	/*
+	 * ARG_MMAP leaves a struct map in addr.  The kernel reads addr only
+	 * under MPOL_F_ADDR, as an address in the VMA whose policy it
+	 * reports; MPOL_F_MEMS_ALLOWED ignores it, and any other call
+	 * refuses a non-zero one (do_get_mempolicy()).  So it gets the
+	 * start of the mapping under MPOL_F_ADDR and 0 otherwise.
+	 */
+	rec->a4 = 0;
+	if ((rec->a5 & MPOL_F_ADDR) && map != NULL &&
+	    !looks_like_corrupted_ptr(rec, map))
+		rec->a4 = (unsigned long) map->ptr;
 
 #ifdef HAVE_SYS_GET_MEMPOLICY
 	/*

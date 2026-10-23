@@ -467,6 +467,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 # of post_oracle_test.c hands out, and a SysV segment of the test's own.
 PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c
 
+# syscalls/mm/numa/get_mempolicy.c brings get_mempolicy, whose sanitiser
+# arg_coupling_test.c runs over the fake pool mapping the mm tests use.
+PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c
+
 # syscalls/mm/mprotect.c, munmap.c and madvise.c bring mprotect,
 # pkey_mprotect, munmap and madvise, whose sanitisers arg_coupling_test.c
 # runs over a fake pool mapping, and mm/maps-arg.c the

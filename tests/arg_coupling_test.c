@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
+#include <linux/mempolicy.h>
 
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
@@ -489,6 +490,40 @@ static void shmat_remap_held_to_mapping(void)
 	fake_map_drawn = NULL;
 	if (shmat_remaps_kept(shmid, false) != 0)
 		BUG("shmat: SHM_REMAP was kept with no mapping picked");
+}
+
+/* get_mempolicy's sanitiser turns the ARG_MMAP handle in addr into the
+ * start of the mapping it names when the flags carry MPOL_F_ADDR, the one
+ * flag the kernel reads addr under, and into 0 otherwise, since
+ * do_get_mempolicy() refuses any other address without it.  Never into
+ * the struct map, nor anything with no mapping picked. */
+static void get_mempolicy_addr_names_mapping(void)
+{
+	static const unsigned long flags[] = {
+		0, MPOL_F_ADDR, MPOL_F_NODE, MPOL_F_NODE | MPOL_F_ADDR,
+		MPOL_F_MEMS_ALLOWED,
+	};
+	unsigned int i, m;
+
+	for (m = 0; m < 2; m++) {
+		for (i = 0; i < ARRAY_SIZE(flags); i++) {
+			struct syscallrecord *mrec = mm_call(&syscall_get_mempolicy);
+			unsigned long want = 0;
+
+			mrec->a1 = 0;
+			mrec->a3 = 64;
+			mrec->a4 = m ? (unsigned long) &pool_obj.map : 0;
+			mrec->a5 = flags[i];
+			if (m && (flags[i] & MPOL_F_ADDR))
+				want = POOL_MAP;
+			syscall_get_mempolicy.sanitise(mrec);
+			if (mrec->a4 != want)
+				BUG("get_mempolicy: addr is not the mapping's start under MPOL_F_ADDR, nor 0 without it");
+			mrec->retval = (unsigned long) -1L;
+			syscall_get_mempolicy.post(mrec);
+		}
+	}
+	fake_this_child = NULL;
 }
 
 #define LIVE_PKEY	7
@@ -1154,6 +1189,7 @@ void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
 	shmat_remap_held_to_mapping();
+	get_mempolicy_addr_names_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
