@@ -2454,46 +2454,293 @@ static void open_result_naming_a_protected_file_is_refused(void)
 	}
 }
 
-/* openat's O_PATH oracle compares the fd's inode with the path's. */
-static void openat_oracle_compares_the_inode(void)
+/*
+ * openat's O_PATH oracle compares the fd's inode with the path's, but only
+ * for a path whose binding held across the call: the sanitiser looks the
+ * path up just before it, the handler looks it up again just after, and an
+ * fd that differs from two lookups that agree is an anomaly.  The fd comes
+ * from one walk of the path and a lookup is another, so a path that moved
+ * between them, or a call that is not the one the sanitiser looked at,
+ * says nothing about the kernel.
+ */
+static const char oracle_template[] = "/tmp/trinity-openat-oracle-test.XXXXXX";
+static char oracle_dir[sizeof(oracle_template)];
+static char oracle_a[sizeof(oracle_template) + 2];
+static char oracle_b[sizeof(oracle_template) + 2];
+static char oracle_c[sizeof(oracle_template) + 2];
+
+/* Three files at @oracle_a, @oracle_b and @oracle_c, in a directory of
+ * their own: three inodes. */
+static void oracle_files(void)
 {
-	char path[] = "/dev/null";
-	unsigned long before;
+	const char *const paths[] = { oracle_a, oracle_b, oracle_c };
+	unsigned int i;
 	int fd;
 
-	/* The fd is the file the path names: nothing to report. */
-	reset();
-	fd = open(path, O_PATH);
-	if (fd < 0)
-		BUG("fd pool: cannot open /dev/null with O_PATH");
-	before = shm->stats.oracle.fd_oracle_anomalies;
-	memset(&open_rec, 0, sizeof(open_rec));
-	open_rec.a1 = (unsigned long) AT_FDCWD;
-	open_rec.a2 = (unsigned long) path;
-	open_rec.a3 = O_PATH;
-	open_rec.retval = (unsigned long) fd;
-	forget_calls();
-	syscall_openat.post(&open_rec);
-	check("the O_PATH oracle fired on the file the path names", "openat",
-	      shm->stats.oracle.fd_oracle_anomalies == before);
+	if (oracle_a[0] == '\0') {
+		memcpy(oracle_dir, oracle_template, sizeof(oracle_template));
+		if (mkdtemp(oracle_dir) == NULL)
+			BUG("fd pool: no scratch directory for the oracle");
+		snprintf(oracle_a, sizeof(oracle_a), "%s/a", oracle_dir);
+		snprintf(oracle_b, sizeof(oracle_b), "%s/b", oracle_dir);
+		snprintf(oracle_c, sizeof(oracle_c), "%s/c", oracle_dir);
+	}
+	for (i = 0; i < ARRAY_SIZE(paths); i++) {
+		unlink(paths[i]);
+		fd = open(paths[i], O_CREAT | O_WRONLY, 0600);
+		if (fd < 0)
+			BUG("fd pool: cannot make an oracle file");
+		close(fd);
+	}
+}
 
-	/* The fd is another file: the oracle fires, and the file is pooled
-	 * like any other. */
-	reset();
-	fd = open_kind(FILE_REG, &(int){ 0 });
-	before = shm->stats.oracle.fd_oracle_anomalies;
+static void oracle_files_remove(void)
+{
+	unlink(oracle_a);
+	unlink(oracle_b);
+	unlink(oracle_c);
+	rmdir(oracle_dir);
+	oracle_a[0] = '\0';
+}
+
+static int open_o_path(const char *path)
+{
+	int fd = open(path, O_PATH);
+
+	if (fd < 0)
+		BUG("fd pool: cannot open a path with O_PATH");
+	return fd;
+}
+
+/* openat's sanitiser over open_rec.  Every case needs it to leave a1 and a2
+ * as they were set, which holds while the stand-in for get_testfile_path()
+ * in arg_coupling_test.c returns NULL: one that returned a path would have
+ * the sanitiser repoint the call, and the cases would judge another file. */
+static void sanitise_openat_rec(void)
+{
+	unsigned long a1 = open_rec.a1, a2 = open_rec.a2;
+
+	syscall_openat.sanitise(&open_rec);
+	if (open_rec.a1 != a1 || open_rec.a2 != a2)
+		BUG("fd pool: openat's sanitiser repointed the call");
+}
+
+/* That sanitiser over (AT_FDCWD, @path), with O_PATH and whatever flags it
+ * ORs in, none of which keeps the oracle off a path that is no symlink.
+ * The call is left in open_rec. */
+static void sanitise_openat_path(const char *path)
+{
 	memset(&open_rec, 0, sizeof(open_rec));
 	open_rec.a1 = (unsigned long) AT_FDCWD;
 	open_rec.a2 = (unsigned long) path;
 	open_rec.a3 = O_PATH;
+	sanitise_openat_rec();
+}
+
+/* Run openat's post handler on open_rec as a call that returned @fd, and
+ * count the anomalies it reported. */
+static unsigned long post_openat_path(int fd)
+{
+	unsigned long before = shm->stats.oracle.fd_oracle_anomalies;
+
 	open_rec.retval = (unsigned long) fd;
+	reset();
 	forget_calls();
 	syscall_openat.post(&open_rec);
+	return shm->stats.oracle.fd_oracle_anomalies - before;
+}
+
+/* The fd is the file the path names, or another file with the path
+ * holding still: the oracle clears the first and fires on the second, and
+ * pools the file either way. */
+static void openat_oracle_compares_the_inode(void)
+{
+	int fd;
+
+	oracle_files();
+	sanitise_openat_path(oracle_a);
+	fd = open_o_path(oracle_a);
+	check("the O_PATH oracle fired on the file the path names", "openat",
+	      post_openat_path(fd) == 0);
+	check("a file the oracle cleared was not pooled", "openat",
+	      published == 1 && pool_count(fd) == 1);
+	close(fd);
+
+	/* O_NOFOLLOW changes only what a trailing symlink opens, so a call
+	 * on a regular file is judged with it as well. */
+	oracle_files();
+	memset(&open_rec, 0, sizeof(open_rec));
+	open_rec.a1 = (unsigned long) AT_FDCWD;
+	open_rec.a2 = (unsigned long) oracle_a;
+	open_rec.a3 = O_PATH | O_NOFOLLOW;
+	sanitise_openat_rec();
+	fd = open_o_path(oracle_b);
+	check("the O_PATH oracle did not judge an O_NOFOLLOW call", "openat",
+	      post_openat_path(fd) == 1);
+	close(fd);
+
+	oracle_files();
+	sanitise_openat_path(oracle_a);
+	fd = open_o_path(oracle_b);
 	check("the O_PATH oracle missed an inode mismatch", "openat",
-	      shm->stats.oracle.fd_oracle_anomalies == before + 1);
+	      post_openat_path(fd) == 1);
 	check("a file the oracle flagged was not pooled", "openat",
 	      published == 1 && pool_count(fd) == 1);
 	close(fd);
+	oracle_files_remove();
+}
+
+/* The sanitiser looks @oracle_a up, @oracle_b is renamed over it, and the
+ * open returns an fd on @fd_path, opened before the rename when @open_first
+ * and after it when not.  Returns the anomalies the post handler counted. */
+static unsigned long renamed_path_anomalies(bool open_first,
+					    const char *fd_path)
+{
+	unsigned long anomalies;
+	int fd = -1;
+
+	oracle_files();
+	sanitise_openat_path(oracle_a);
+	if (open_first)
+		fd = open_o_path(fd_path);
+	if (rename(oracle_b, oracle_a) != 0)
+		BUG("fd pool: cannot rename over the O_PATH oracle's file");
+	if (!open_first)
+		fd = open_o_path(fd_path);
+	anomalies = post_openat_path(fd);
+	check("a file whose path moved was not pooled", "openat",
+	      published == 1 && pool_count(fd) == 1);
+	close(fd);
+	return anomalies;
+}
+
+/* A path that moved, a procfs magic link that names another file for the
+ * open than for the lookups either side of it, and an fd on procfs: none
+ * is the kernel's doing, and none is reported. */
+static void openat_oracle_ignores_a_path_that_moved(void)
+{
+	char link[64];
+	int afd, bfd, fd, slot;
+
+	/* After the open the fd keeps the old inode and the later lookup
+	 * finds the new one; before it, the fd and the later lookup agree
+	 * and the sanitiser's lookup is the stale one; and an fd that is
+	 * neither file leaves nothing to say the binding held. */
+	check("a path renamed over after the open was reported", "openat",
+	      renamed_path_anomalies(true, oracle_a) == 0);
+	check("a path renamed over before the open was reported", "openat",
+	      renamed_path_anomalies(false, oracle_a) == 0);
+	check("an fd unlike both lookups of a path that moved was reported",
+	      "openat", renamed_path_anomalies(false, oracle_c) == 0);
+
+	/* The link names b for the open and a again for the later lookup, so
+	 * the lookups agree and the fd differs from both. */
+	oracle_files();
+	afd = open_o_path(oracle_a);
+	bfd = open_o_path(oracle_b);
+	slot = dup(afd);
+	if (slot < 0)
+		BUG("fd pool: cannot dup an fd for the O_PATH oracle");
+	snprintf(link, sizeof(link), "/proc/self/fd/%d", slot);
+	sanitise_openat_path(link);
+	if (dup2(bfd, slot) < 0)
+		BUG("fd pool: cannot move a magic link");
+	fd = open_o_path(link);
+	if (dup2(afd, slot) < 0)
+		BUG("fd pool: cannot move a magic link back");
+	check("a magic link that moved and came back was reported", "openat",
+	      post_openat_path(fd) == 0);
+	close(fd);
+	close(slot);
+	close(afd);
+	close(bfd);
+
+	/* The same two lookups of a file on procfs, an fd on another. */
+	sanitise_openat_path("/proc/self/status");
+	fd = open_o_path("/proc/self/cmdline");
+	check("an fd on procfs was judged", "openat",
+	      post_openat_path(fd) == 0);
+	close(fd);
+	oracle_files_remove();
+}
+
+/* A call the oracle has no lookup for is not judged: one the sanitiser
+ * never saw, one a chain substitution or a RedQueen pin rewrote after it,
+ * and one relative to a directory fd, a shape it never looks at.  Each is
+ * handed an fd the path does not name. */
+static void openat_oracle_needs_the_lookup_of_its_call(void)
+{
+	int dfd, fd;
+
+	oracle_files();
+	memset(&open_rec, 0, sizeof(open_rec));
+	open_rec.a1 = (unsigned long) AT_FDCWD;
+	open_rec.a2 = (unsigned long) oracle_a;
+	open_rec.a3 = O_PATH;
+	fd = open_o_path(oracle_b);
+	check("a call the sanitiser did not look at was judged", "openat",
+	      post_openat_path(fd) == 0);
+	close(fd);
+
+	sanitise_openat_path(oracle_a);
+	open_rec.a2 = (unsigned long) oracle_b;
+	fd = open_o_path(oracle_b);
+	check("a call whose path changed after the lookup was judged",
+	      "openat", post_openat_path(fd) == 0);
+	close(fd);
+
+	sanitise_openat_path(oracle_a);
+	open_rec.a3 ^= O_CLOEXEC;
+	fd = open_o_path(oracle_b);
+	check("a call whose flags changed after the lookup was judged",
+	      "openat", post_openat_path(fd) == 0);
+	close(fd);
+
+	dfd = open_o_path(oracle_dir);
+	memset(&open_rec, 0, sizeof(open_rec));
+	open_rec.a1 = (unsigned long) dfd;
+	open_rec.a2 = (unsigned long) oracle_a;
+	open_rec.a3 = O_PATH;
+	sanitise_openat_rec();
+	fd = open_o_path(oracle_b);
+	check("a call relative to a directory fd was judged", "openat",
+	      post_openat_path(fd) == 0);
+	close(fd);
+	close(dfd);
+	oracle_files_remove();
+}
+
+/* The lookup the sanitiser keeps is released by the post handler on every
+ * path through it, and by .cleanup when .post never ran, and a call that
+ * failed the fstat oracle is still counted by it. */
+static void openat_releases_the_lookup_it_took(void)
+{
+	oracle_files();
+
+	sanitise_openat_path(oracle_a);
+	check("the sanitiser kept no lookup of a path the oracle judges",
+	      "openat", open_rec.post_state != 0);
+	post_openat_path(-1);
+	check("a failed call left the lookup in the record", "openat",
+	      open_rec.post_state == 0);
+
+	sanitise_openat_path(oracle_a);
+	check("the fstat oracle did not fire on a call that was looked up",
+	      "openat", post_openat_path(NEW) == 1);
+	check("a call the fstat oracle flagged left the lookup in the record",
+	      "openat", open_rec.post_state == 0);
+
+	sanitise_openat_path(oracle_a);
+	check("the sanitiser kept no lookup of a path the oracle judges",
+	      "openat", open_rec.post_state != 0);
+	check("openat has no cleanup for a lookup its post handler never saw",
+	      "openat", syscall_openat.cleanup != NULL);
+	if (syscall_openat.cleanup != NULL) {
+		syscall_openat.cleanup(&open_rec);
+		check("the cleanup left the lookup in the record", "openat",
+		      open_rec.post_state == 0);
+	}
+	oracle_files_remove();
 }
 
 /* A typed producer's fd joins the pool of its own type, alone at its
@@ -3139,6 +3386,9 @@ void dup_pool_self_check(void)
 	open_without_a_destructor_closes();
 	open_oracle_reports_a_dead_fd();
 	openat_oracle_compares_the_inode();
+	openat_oracle_ignores_a_path_that_moved();
+	openat_oracle_needs_the_lookup_of_its_call();
+	openat_releases_the_lookup_it_took();
 	open_result_is_pooled_by_kind();
 	pool_leaves_stdio_and_protected_numbers_alone();
 	retfd_registration_skips_protected_numbers();

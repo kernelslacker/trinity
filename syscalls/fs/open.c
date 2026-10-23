@@ -1,7 +1,9 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/magic.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 #include "csfu.h"
 #include "fd.h"
@@ -77,8 +79,23 @@ static void sanitise_open(struct syscallrecord *rec)
 		rec->a3 = 0666;
 }
 
+/*
+ * What sanitise_openat() saw for the oracle in post_openat(): the inode the
+ * path named before the call, and the (dfd, path, flags) of that call.
+ */
+#define OPENAT_POST_STATE_MAGIC	0x4F504154UL	/* "OPAT" */
+struct openat_post_state {
+	unsigned long magic;
+	unsigned long dfd;
+	unsigned long path;
+	unsigned long flags;
+	dev_t dev;
+	ino_t ino;
+};
+
 static void sanitise_openat(struct syscallrecord *rec)
 {
+	struct stat st;
 	unsigned long flags;
 
 	/*
@@ -126,6 +143,27 @@ static void sanitise_openat(struct syscallrecord *rec)
 
 	if (rec->a3 & O_TMPFILE)
 		rec->a4 = 0666;
+
+	/*
+	 * Look the path up for the oracle in post_openat(), for the shape it
+	 * judges.  A symlink is left out: a procfs magic link can move and
+	 * come back between two lookups, and its fd is the target's, which
+	 * fstatfs() cannot place.  O_NOFOLLOW changes only what a trailing
+	 * symlink opens, so any other path is judged with it or without.
+	 */
+	if ((rec->a3 & O_PATH) &&
+	    (int) rec->a1 == AT_FDCWD && rec->a2 != 0 &&
+	    lstat((const char *) rec->a2, &st) == 0 && !S_ISLNK(st.st_mode)) {
+		struct openat_post_state *snap = zmalloc_tracked(sizeof(*snap));
+
+		snap->magic = OPENAT_POST_STATE_MAGIC;
+		snap->dfd = rec->a1;
+		snap->path = rec->a2;
+		snap->flags = rec->a3;
+		snap->dev = st.st_dev;
+		snap->ino = st.st_ino;
+		post_state_install(rec, snap);
+	}
 }
 
 /*
@@ -179,21 +217,58 @@ struct syscallentry syscall_open = {
 };
 
 /*
- * Oracle: openat(AT_FDCWD, path, O_PATH) must produce an fd whose inode
- * matches stat(path).  A mismatch means the kernel wired the fd to the wrong
- * file-struct — silent corruption that KASAN won't catch.  Skip when
- * O_NOFOLLOW is also set: symlink fds diverge from their stat targets and
- * would generate false positives.
+ * Oracle: openat(AT_FDCWD, path, O_PATH) must return an fd on the inode the
+ * path names.  The open and a later lookup are separate walks, so the path is
+ * looked up before the call too: a mismatch counts only when both lookups
+ * agree and the fd differs from both.  Symlinks and procfs fds are skipped.
  */
+static void openat_path_oracle(const struct syscallrecord *rec,
+			       const struct openat_post_state *snap,
+			       int fd, const struct stat *st_fd)
+{
+	struct stat st_path;
+	struct statfs sfs;
+
+	/*
+	 * A slot a chain substitution or a RedQueen pin rewrote after the
+	 * sanitiser makes this another call.
+	 */
+	if (rec->a1 != snap->dfd || rec->a2 != snap->path ||
+	    rec->a3 != snap->flags)
+		return;
+
+	if (fstatfs(fd, &sfs) == 0 && sfs.f_type == PROC_SUPER_MAGIC)
+		return;
+
+	if (lstat((const char *) snap->path, &st_path) != 0 ||
+	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino)
+		return;
+
+	if (st_fd->st_dev == snap->dev && st_fd->st_ino == snap->ino)
+		return;
+
+	output(0, "fd oracle: openat(%s, O_PATH) inode mismatch "
+	       "fd=(%lu:%lu) path=(%lu:%lu)\n",
+	       (const char *) snap->path,
+	       (unsigned long) st_fd->st_dev,
+	       (unsigned long) st_fd->st_ino,
+	       (unsigned long) st_path.st_dev,
+	       (unsigned long) st_path.st_ino);
+	__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
+}
+
 static void post_openat(struct syscallrecord *rec)
 {
+	struct openat_post_state *snap;
 	int fd = rec->retval;
-	const char *path = (const char *) rec->a2;
-	unsigned long flags = rec->a3;
-	struct stat st_fd, st_path;
+	struct stat st_fd;
+
+	/* Claimed first so every exit releases it, a failed call's too. */
+	snap = post_state_claim_owned(rec, OPENAT_POST_STATE_MAGIC, __func__);
 
 	if (fd < 0 || fd >= (1 << 20))
-		return;
+		goto out;
 
 	if (fstat(fd, &st_fd) != 0) {
 		output(0, "fd oracle: openat returned fd %d but "
@@ -201,28 +276,26 @@ static void post_openat(struct syscallrecord *rec)
 		__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 		close(fd);
-		return;
+		goto out;
 	}
 
-	if ((flags & O_PATH) && !(flags & O_NOFOLLOW) &&
-	    (int) rec->a1 == AT_FDCWD && path != NULL) {
-		if (stat(path, &st_path) == 0 &&
-		    (st_fd.st_dev != st_path.st_dev ||
-		     st_fd.st_ino != st_path.st_ino)) {
-			output(0, "fd oracle: openat(%s, O_PATH) inode mismatch "
-			       "fd=(%lu:%lu) path=(%lu:%lu)\n",
-			       path,
-			       (unsigned long) st_fd.st_dev,
-			       (unsigned long) st_fd.st_ino,
-			       (unsigned long) st_path.st_dev,
-			       (unsigned long) st_path.st_ino);
-			__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
-					   __ATOMIC_RELAXED);
-		}
-	}
+	if (snap != NULL)
+		openat_path_oracle(rec, snap, fd, &st_fd);
 
 	if (!pool_open_result(fd, &st_fd))
 		close(fd);
+
+out:
+	post_state_release(rec, snap);
+}
+
+/*
+ * The backstop for a call that never reaches .post; a no-op once .post has
+ * released it.
+ */
+static void cleanup_openat(struct syscallrecord *rec)
+{
+	post_state_release(rec, (void *) rec->post_state);
 }
 
 /*
@@ -238,6 +311,7 @@ struct syscallentry syscall_openat = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_openat,
 	.post = post_openat,
+	.cleanup = cleanup_openat,
 	.group = GROUP_VFS_IO,
 };
 
