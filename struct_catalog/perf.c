@@ -29,20 +29,13 @@
  * syscalls/perf/perf_event_open.c hand-rolls a coherent (type, config)
  * tuple via pick_perf_tuple() and fills rec->a1 with its own buffer;
  * a1 is in the entry's sanitiser_owned_mask, so generic_sanitise()
- * never runs the schema-aware fill for it.  The catalog therefore
- * exists for two forward-infra purposes:
- *
- *   1. type-scoped CMP attribution.  struct_field_for_cmp() prefers
- *      a same-width FT_ENUM / FT_FLAGS / FT_VERSION_MAGIC slot over
- *      an FT_RAW one, so a learned constant (KCOV CMP) lands on the
- *      named gate (type, size, sample_type, ...) rather than a
- *      coincidentally-same-width opaque slot.  No live consumer is
- *      wired today; this awaits the cmp_hints recording-path lift.
- *   2. per-type variant infra.  Only type-independent shared fields
- *      are annotated here; per-PERF_TYPE_* sub-variants for
- *      config / bp_* / config1 / config2 land once the buffer-
- *      discriminator is wired and `type` (offset 0) becomes the
- *      desc-level discriminator.
+ * never runs the schema-aware fill for it.  The descriptor is read by
+ * the nested-address scrub, which walks it for FT_ADDRESS fields, and
+ * carries the per-type variant infra.  Only type-independent shared
+ * fields are annotated here; per-PERF_TYPE_* sub-variants for
+ * config / bp_* / config1 / config2 land once the buffer-
+ * discriminator is wired and `type` (offset 0) becomes the
+ * desc-level discriminator.
  *
  * Bit-field flag group at offset 40 (disabled..sigtrap, ~36 single-
  * bit flags + precise_ip:2 + __reserved_1:26) is annotated below via
@@ -71,7 +64,7 @@ static const unsigned long perf_type_values[] = {
  * PERF_ATTR_SIZE_VER* and zero-pads to its own sizeof; non-version
  * values bounce on -E2BIG / -EINVAL.  Mirrors perf_event_attr_known_
  * sizes[] in syscalls/perf/perf_event_open.c so the hand-rolled csfu and
- * the schema-aware CMP attribution share the same vocabulary.
+ * the catalog share the same vocabulary.
  */
 static const unsigned long perf_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER0,
@@ -88,8 +81,7 @@ static const unsigned long perf_attr_known_sizes[] = {
 
 /*
  * sample_type (offset 24): PERF_SAMPLE_* bits 0..24.  The kernel
- * branches heavily on these in the overflow/sample path -- attributing
- * a learned constant to this field's vocab is high signal.
+ * branches heavily on these in the overflow/sample path.
  */
 #define PERF_SAMPLE_MASK ( \
 	PERF_SAMPLE_IP            | PERF_SAMPLE_TID             | \
@@ -187,8 +179,8 @@ static const unsigned long clockid_values[] = {
  * bits 32..37 (cgroup, text_poke, build_id, inherit_thread,
  * remove_on_exec, sigtrap) on 32-bit builds.  Acceptable: trinity's
  * primary target is 64-bit, the schema never fills the live buffer
- * regardless, and the truncation only narrows the CMP-attribution
- * vocab on 32-bit -- never produces an invalid value.
+ * regardless, and the truncation only narrows the flag vocabulary on
+ * 32-bit -- never produces an invalid value.
  */
 #define PERF_ATTR_FLAG_MASK ( \
 	(1ULL << 0)  | (1ULL << 1)  | (1ULL << 2)  | (1ULL << 3)  | \
@@ -320,9 +312,8 @@ const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N] = {
  *
  * The schema-aware fill never runs for perf_event_open regardless (its
  * sanitiser owns rec->a1 and fills it with the hand-rolled csfu buffer),
- * so these variants are forward infra for type-scoped CMP attribution
- * via struct_field_for_cmp() once the cmp_hints recording path
- * acquires a consumer.
+ * so at runtime these variants are read only by the nested-address
+ * scrub.
  */
 
 /*
@@ -394,9 +385,8 @@ static const struct struct_field perf_event_attr_software_variant_fields[] = {
  * This mirrors random_cache_config() in
  * syscalls/perf/perf_event_open-config-picker.c (the same {L1D, L1I,
  * LL, DTLB, ITLB, BPU, NODE} * {READ, WRITE, PREFETCH} * {ACCESS,
- * MISS} cross-product) so the hand-rolled csfu path and the
- * schema-aware CMP attribution share the same packed-config
- * vocabulary.  Out-of-range sub-field probes (cache_id=7, op_id=3,
+ * MISS} cross-product) so the hand-rolled csfu path and the catalog
+ * share the same packed-config vocabulary.  Out-of-range sub-field probes (cache_id=7, op_id=3,
  * ...) are intentionally not in the curated set; the hand-rolled path
  * covers them already via its RAND_BYTE() arms, and adding them here
  * would defeat the validator-passing intent of an FT_ENUM draw.
@@ -441,7 +431,7 @@ static const struct struct_field perf_event_attr_hw_cache_variant_fields[] = {
  * PERF_TYPE_BREAKPOINT: config is ignored; bp_type / bp_addr / bp_len
  * carry the breakpoint shape.  Mirrors setup_breakpoints() in
  * syscalls/perf/perf_event_open-config-picker.c so the hand-rolled csfu
- * path and the schema-aware CMP attribution agree on the vocabulary:
+ * path and the catalog agree on the vocabulary:
  *
  *   bp_type -> HW_BREAKPOINT_{EMPTY, R, W, RW, X, INVALID}
  *   bp_addr -> watchable address (FT_ADDRESS plants get_address())
@@ -521,9 +511,8 @@ static const struct struct_field perf_event_attr_breakpoint_variant_fields[] = {
  * portable enum; the shared fields[]' FT_RAW config survives
  * unchanged, and the variant stays declared with NULL fields[] /
  * num_fields=0 so the resolver still returns a named variant
- * (rather than NULL == "unknown type") for future CMP-attribution
- * scoping.  config1 / config2 may also carry vendor-specific
- * extension bytes -- also FT_RAW.
+ * (rather than NULL == "unknown type").  config1 / config2 may also
+ * carry vendor-specific extension bytes -- also FT_RAW.
  */
 
 static const struct struct_field perf_event_attr_tracepoint_variant_fields[] = {

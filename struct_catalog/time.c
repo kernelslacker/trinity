@@ -21,20 +21,15 @@
 
 /*
  * utime(const char *filename, const struct utimbuf __user *times) passes
- * the utimbuf at a2.  utime has no bespoke .sanitise -- argtype[1] was
- * ARG_ADDRESS, so the times buffer was filled as an undifferentiated
- * address slot with no schema path of its own.  Flipping argtype[1] to
- * ARG_STRUCT_PTR_IN routes the slot through the schema-aware fill so it
- * lands on a dedicated sized buffer, and the catalog entry below names
- * the (actime, modtime) layout for CMP attribution.
+ * the utimbuf at a2.  utime has no bespoke .sanitise; argtype[1] is
+ * ARG_STRUCT_PTR_IN, so the slot goes through the schema-aware fill and
+ * lands on a dedicated sized buffer.
  *
- * Both members are time_t and currently FT_RAW: the bytes match the
- * historical random splat -- the win is the dedicated sized buffer and
- * letting struct_field_for_cmp attribute KCOV CMP constants at the named
- * actime / modtime fields rather than at a coincidentally-same-width
- * slot.  No FT_TIME tag exists in the catalog vocabulary today; adding
- * one is deferred until a precedent for time_t-shaped semantic tagging
- * lands across the other timespec / timeval consumers.
+ * Both members are time_t and FT_RAW: the bytes match the historical
+ * random splat -- the win is the dedicated sized buffer.  No FT_TIME tag
+ * exists in the catalog vocabulary today; adding one is deferred until a
+ * precedent for time_t-shaped semantic tagging lands across the other
+ * time consumers.
  */
 const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N] = {
 	FIELD(struct utimbuf, actime),

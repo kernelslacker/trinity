@@ -33,8 +33,7 @@
  * max_init_timeo bounded to a millisecond window matching the SCTP RTO
  * envelope.  Bespoke build_sctp_initmsg() zero-fills as a miss-fallback;
  * the schema fill above produces values inside the kernel's accept
- * window.  Schema-aware FILL only -- no field-scoped CMP attribution
- * for setsockopt optval (see section header).
+ * window.
  */
 const struct struct_field sctp_initmsg_fields[SCTP_INITMSG_FIELDS_N] = {
 	FIELDX(struct sctp_initmsg, sinit_num_ostreams, FT_RANGE,

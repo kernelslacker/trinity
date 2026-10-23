@@ -166,9 +166,9 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 	} else if (desc->buffer_discrim_size != 0) {
 		/*
 		 * Buffer-relative discriminator: the just-filled buffer
-		 * carries the discriminator value at a fixed offset.  CMP
-		 * and other pre-fill callers pass buf == NULL and short-
-		 * circuit here.
+		 * carries the discriminator value at a fixed offset.
+		 * Pre-fill callers pass buf == NULL and short-circuit
+		 * here.
 		 */
 		if (buf == NULL)
 			return NULL;

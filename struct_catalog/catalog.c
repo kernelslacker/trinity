@@ -1,12 +1,7 @@
 /*
- * Struct catalog and offset mapping for CMP-guided struct filling.
- *
- * Provides a static catalog of known struct types (with per-field offset
- * and size), a table mapping syscall args to those struct types, and a
- * fast nr-indexed lookup built at init time.
- *
- * The field-for-CMP heuristic uses value magnitude to narrow which field
- * a kernel CMP constant was most likely comparing against.
+ * Struct catalog: a static catalog of known struct types (with per-field
+ * offset and size) and the by-name lookup over it.  The (syscall, arg)
+ * mapping and the nr-indexed lookup live in struct_catalog/registry.c.
  */
 
 #include <stddef.h>
@@ -27,7 +22,6 @@
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/mount.h>
-#include <linux/userfaultfd.h>
 #include <fcntl.h>
 #include <string.h>
 
@@ -96,17 +90,6 @@
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
-#if defined(__x86_64__) || defined(__aarch64__)
-/*
- * struct pt_regs (x86_64) / struct user_pt_regs (aarch64) live in
- * <asm/ptrace.h>; struct user_regs_struct lives in <sys/user.h> on
- * both arches.  The spine needs the types visible for sizeof() on
- * its catalog entries; the leaf TU under struct_catalog/ptrace_regs.c
- * pulls the same headers for FIELD() offsetof / sizeof initialisers.
- */
-#include <asm/ptrace.h>
-#include <sys/user.h>
-#endif
 #include "debug.h"
 #include "perf.h"		/* random_tracepoint_config -- FT_PICKER for TRACEPOINT.config */
 #include "perf_event.h"
@@ -203,7 +186,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= f_owner_ex_fields,
 		.num_fields	= ARRAY_SIZE(f_owner_ex_fields),
 	},
-#include "catalog-ptrace_regs.inc"
 #include "catalog-setsockopt.inc"
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
@@ -220,7 +202,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= file_handle_fields,
 		.num_fields	= ARRAY_SIZE(file_handle_fields),
 	},
-#include "catalog-uffdio.inc"
 };
 
 /*

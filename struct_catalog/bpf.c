@@ -148,8 +148,7 @@ const struct struct_field bpf_attr_OBJ_fields[] = {
 /*
  * GET_ID variant covers BPF_*_GET_NEXT_ID and BPF_*_GET_FD_BY_ID.
  * The id-shaped fields stay FT_RAW because the kernel iterates
- * IDs linearly and a random u32 typically misses; CMP-hint
- * attribution still scopes here once the cmd matches.
+ * IDs linearly and a random u32 typically misses.
  * fd_by_id_token_fd is an FT_FD slot honoured on the BY_ID arms; it
  * was added to union bpf_attr in 6.13, so its field entry (and the
  * BTF_GET_FD_BY_ID effective_size that reaches for it below) is gated

@@ -44,11 +44,9 @@ static const unsigned long mount_attr_propagation_values[] = {
  * attr_clr / propagation / userns_fd buckets and respect the kernel's
  * mutually-exclusive ATIME-mode and propagation rules.  Those sanitisers
  * own rec->a4 (sanitiser_owned_mask), so gen_arg_struct_ptr_in's schema-
- * aware fill never runs for it and the registration here is
- * attribution-only -- struct_field_for_cmp() uses the FT_FLAGS /
- * FT_ENUM / FT_FD tags to steer KCOV-CMP learned constants at the
- * right field rather than at a coincidentally-same-width slot.  The
- * bespoke fill stays live; this entry never displaces it.
+ * aware fill never runs for it and the descriptor is read only for the
+ * paired size.  The bespoke fill stays live; this entry never displaces
+ * it.
  */
 const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N] = {
 	FIELDX(struct mount_attr, attr_set, FT_FLAGS,

@@ -22,6 +22,7 @@
 
 #include "config.h"
 
+#include "arch.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "debug.h"
@@ -88,13 +89,13 @@ struct slot_binding {
 /*
  * Slot-binding pool.  A registered row takes at most one cell per arch
  * table, and rows for the same (nr, arg) slot share it, so twice the
- * row count bounds the pool on any arch.  The ~165 rows cover ~120
- * distinct (syscall, arg) slots, ~240 cells, and the pool holds about
- * twice that.  struct_catalog_init() BUG()s up front when twice the
- * rows no longer fits, so an overgrown table fails on every arch
- * rather than on whichever resolves enough names to overflow it, and
- * BUG()s again if a registration overflows the pool or the per-slot
- * variant cap, rather than silently dropping mappings.
+ * row count bounds the pool on any arch.  The ~40 rows cover 11
+ * distinct (syscall, arg) slots, at most 22 cells, far under the pool
+ * size.  struct_catalog_init() BUG()s up front when twice the rows no
+ * longer fits, so an overgrown table fails on every arch rather than
+ * on whichever resolves enough names to overflow it, and BUG()s again
+ * if a registration overflows the pool or the per-slot variant cap,
+ * rather than silently dropping mappings.
  */
 #define SLOT_POOL_MAX			512
 

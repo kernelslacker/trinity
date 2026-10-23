@@ -1,15 +1,11 @@
 /*
- * Struct catalog and offset mapping for CMP-guided struct filling.
- *
- * When KCOV CMP tracing reveals a constant that the kernel compared
- * against a struct field, we want to know which field was involved so
- * that future mutations can target that specific field.
+ * Struct catalog: the field-level layout of the kernel structs a
+ * syscall argument points at.
  *
  * This module provides:
  *   - A static catalog of known struct types with field offset/size data.
  *   - A table mapping (syscall name, arg index) -> struct type.
  *   - A fast nr->desc lookup built at init time.
- *   - struct_field_for_cmp(): guess which field a CMP value belongs to.
  */
 
 #pragma once
@@ -18,7 +14,6 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <linux/aio_abi.h>
-#include "arch.h"		/* X86 / ARM / ... for arch-gated enum members */
 #include "syscall.h"
 
 /*
@@ -338,10 +333,6 @@ enum struct_catalog_idx {
 	SC_FLOCK,
 	SC_TIMEVAL,
 	SC_F_OWNER_EX,
-#if defined(__x86_64__) || defined(__aarch64__)
-	SC_PT_REGS,
-	SC_USER_REGS_STRUCT,
-#endif
 	/*
 	 * setsockopt optval struct shapes -- first batch (the proof) for
 	 * the two-key (level, optname) discriminator.  Registered against
@@ -384,11 +375,6 @@ enum struct_catalog_idx {
 	SC_FILE_HANDLE,
 	SC_GROUP_SOURCE_REQ,
 	SC_IP_MREQ_SOURCE,
-	SC_UFFDIO_RANGE,
-	SC_UFFDIO_API,
-	SC_UFFDIO_REGISTER,
-	SC_UFFDIO_COPY,
-	SC_UFFDIO_ZEROPAGE,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };
@@ -471,26 +457,6 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 						    unsigned long k2);
 
 /*
- * Given a CMP hint value and a struct descriptor, return the index of
- * a field whose size can naturally contain the value, or -1 if no
- * field matches.  Used to associate a kernel CMP constant with the
- * struct field most likely being compared.  When desc carries a
- * tagged-union variant set and rec is non-NULL, the candidate pool is
- * scoped to the live variant resolved from rec; otherwise the full
- * desc->fields[] is sampled.  Passing rec == NULL preserves the
- * pre-variant behaviour for non-union structs.
- *
- * Field reference: the returned index addresses either the resolved
- * variant's fields[] (when scoped) or desc->fields[] (when not).
- * Callers that want to read the field directly must mirror the same
- * lookup; an opaque-index API would force the same walk on the read
- * side without any reuse benefit.
- */
-struct syscallrecord;
-int struct_field_for_cmp(const struct struct_desc *desc,
-			 struct syscallrecord *rec, unsigned long val);
-
-/*
  * Resolve which union_variant applies to a given (desc, rec, buf) tuple.
  * Two discriminator sources are supported, in priority order:
  *
@@ -500,8 +466,8 @@ int struct_field_for_cmp(const struct struct_desc *desc,
  *     buf + desc->buffer_discrim_offset at the indicated width.  Used
  *     when the live discriminator was just written into the buffer by
  *     the scalar pass (e.g. sockaddr_storage's ss_family).  buf must
- *     be non-NULL on this path; pass NULL to opt out (e.g. from CMP
- *     paths that run before the next fill).
+ *     be non-NULL on this path; pass NULL to opt out (callers that
+ *     resolve before the buffer is filled).
  *
  * Returns NULL when desc carries no variants, when the active
  * discriminator source is unreadable, or when the discriminator value

@@ -18,10 +18,8 @@
  * is byte-identical to before until their rows land.
  *
  * Scope of every row in this TU (and in the sockaddr-mcast.c
- * sibling): schema-aware FILL only.  The optval slot's argtype is
- * ARG_UNDEFINED, so there is no CMP attribution for it.  The FT_
- * tags below shape the live values via the schema fill; they do not
- * steer struct_field_for_cmp() at runtime for these rows.
+ * sibling): schema-aware FILL.  The FT_ tags below shape the live
+ * values.
  */
 
 #include <stddef.h>
@@ -51,9 +49,7 @@
  * (kernel masks to 0/1); l_linger is a small positive lingertime in
  * seconds (bespoke build_linger() drew 0..59).  Both pin cleanly to
  * FT_RANGE so the schema fill produces values inside the legal window
- * the bespoke builder did.  Schema-aware FILL only: per the section
- * header above, the setsockopt optval gets no field-scoped CMP
- * attribution.
+ * the bespoke builder did.
  */
 const struct struct_field linger_fields[] = {
 	FIELDX(struct linger, l_onoff, FT_RANGE,

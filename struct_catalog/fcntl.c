@@ -22,29 +22,20 @@
 
 /*
  * fcntl's lock-pointer arg (F_GETLK / F_SETLK / F_SETLKW and the
- * F_OFD_* variants) carries a struct flock at a3.  The bespoke
- * sanitise_fcntl() keeps owning the live fill via build_flock(): it
+ * F_OFD_* variants) carries a struct flock at a3.  The get cmds
+ * (F_GETLK, F_OFD_GETLK) pass the generated buffer to the kernel; for
+ * the set cmds sanitise_fcntl() builds its own via build_flock(): it
  * picks an l_type / l_whence vocab member, a bounded l_start and
- * l_len, and zeroes l_pid (F_OFD_SETLK requires it).
+ * l_len, and zeroes l_pid (F_OFD_SETLK requires it).  The FT_ENUM tags
+ * draw l_type (a 3-valued vocab the kernel branches on in
+ * posix_lock_inode) and l_whence (a 3-valued vocab the kernel uses to
+ * resolve the start offset) from their legal sets.
  *
- * Attribution-only registration, mirroring the mq_notify / sigevent
- * pattern: struct_field_for_cmp() uses the FT_ENUM tags to steer
- * KCOV-CMP learned constants at l_type (a 3-valued vocab the kernel
- * branches on in posix_lock_inode) and l_whence (a 3-valued vocab the
- * kernel uses to resolve the start offset), and FT_RAW on l_start /
- * l_len / l_pid keeps attribution at the named range / pid slots
- * rather than at a coincidentally-same-width slot.  Without the
- * registration the slot fell through with no schema-aware attribution
- * even though the bespoke sanitiser already produced a plausible
- * payload, so per-field CMP steering at l_type / l_whence had nothing
- * to hang against.
- *
- * Resolution to this descriptor is now gated on the F_*LK / F_OFD_*LK
- * / F_CANCELLK cmds via the discriminator-aware syscall_struct_args[]
- * entry below; for non-lock cmds the kernel doesn't read a struct
- * flock at a3 (it reads an fd or an integer flag word that sanitise_
- * fcntl writes through rec->a3), so attribution at the flock fields
- * would be meaningless.
+ * Resolution to this descriptor is gated on the F_*LK / F_OFD_*LK /
+ * F_CANCELLK cmds via the discriminator-aware syscall_struct_args[]
+ * entry; for non-lock cmds the kernel doesn't read a struct flock at
+ * a3 (it reads an fd or an integer flag word that sanitise_fcntl
+ * writes through rec->a3).
  */
 const unsigned long flock_l_type_values[FLOCK_L_TYPE_VALUES_N] = {
 	F_RDLCK, F_WRLCK, F_UNLCK,
@@ -74,25 +65,18 @@ const struct struct_field flock_fields[FLOCK_FIELDS_N] = {
 
 /*
  * fcntl's a3 for F_GETOWN_EX / F_SETOWN_EX is a pointer to struct
- * f_owner_ex.  The bespoke sanitise_fcntl() keeps owning the live
- * fill: it allocates the buffer via get_writable_struct(), picks
- * type from {F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP}, and stamps
- * get_pid() into pid before overwriting rec->a3.
+ * f_owner_ex.  F_GETOWN_EX writes it, so the generated buffer is only
+ * a sized output slot; for F_SETOWN_EX sanitise_fcntl() allocates its
+ * own via get_writable_struct(), picks type from {F_OWNER_TID,
+ * F_OWNER_PID, F_OWNER_PGRP}, and stamps get_pid() into pid before
+ * overwriting rec->a3.  The FT_ENUM tag draws type (a 3-valued vocab
+ * the kernel branches on in f_setown_ex) from its legal set; pid
+ * stays FT_RAW, an opaque process / thread id.
  *
- * Attribution-only registration, same shape as the struct flock
- * entry above: struct_field_for_cmp() uses the FT_ENUM tag on type
- * (a 3-valued vocab the kernel branches on in f_setown_ex) to steer
- * KCOV-CMP learned constants at the named slot rather than at a
- * coincidentally-same-width slot.  pid stays FT_RAW: the bespoke
- * sanitiser stamps a getpid()-shaped value and the kernel treats it
- * as an opaque process / thread id with no vocab to attribute
- * against.
- *
- * Resolution to this descriptor is gated on cmd ∈ {F_GETOWN_EX,
+ * Resolution to this descriptor is gated on cmd in {F_GETOWN_EX,
  * F_SETOWN_EX} via the discriminator-aware syscall_struct_args[]
- * entry below; this is the first proof of the new mechanism.  Same
- * (name, arg_idx) -> different desc by sibling-arg value -- the
- * existing single-desc table couldn't represent it.
+ * entry: same (name, arg_idx) -> different desc by sibling-arg value,
+ * which the single-desc table couldn't represent.
  */
 const unsigned long f_owner_ex_type_values[F_OWNER_EX_TYPE_VALUES_N] = {
 	F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP,
@@ -114,9 +98,7 @@ const struct struct_field f_owner_ex_fields[F_OWNER_EX_FIELDS_N] = {
  * open_by_handle_at's a2 is a struct file_handle followed by a
  * variable-length opaque f_handle[] payload.  Catalog the two leading
  * scalar fields so the schema-aware fill produces coherent
- * (handle_bytes, handle_type) values and KCOV-CMP learned constants
- * land at the named slot rather than at a coincidentally-same-width
- * offset in the surrounding opaque buffer.  The flexible tail is
+ * (handle_bytes, handle_type) values.  The flexible tail is
  * intentionally omitted: a fuzzed handle_bytes greater than the sized
  * buffer exercises the kernel's bounds check.
  */

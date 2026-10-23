@@ -489,34 +489,6 @@ extern const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N];
 extern const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N];
 
 /*
- * userfaultfd ioctl arg struct leaf tables defined in struct_catalog/
- * uffdio.c.  Covers the flat u64-heavy structs UFFDIO_* ioctls read
- * at the ioctl arg slot: struct uffdio_range (UFFDIO_WAKE /
- * UNREGISTER + the embedded range in the others), struct uffdio_api
- * (UFFDIO_API), struct uffdio_register (UFFDIO_REGISTER), struct
- * uffdio_copy (UFFDIO_COPY), and struct uffdio_zeropage
- * (UFFDIO_ZEROPAGE).  Attribution-only registrations: ioctls do not
- * resolve through syscall_struct_args[], and the bespoke sanitisers
- * in ioctls/userfaultfd.c keep owning every live fill.  Each _N
- * constant gives the extern decl a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the
- * same constant.
- */
-enum {
-	UFFDIO_RANGE_FIELDS_N		= 2,
-	UFFDIO_API_FIELDS_N		= 3,
-	UFFDIO_REGISTER_FIELDS_N	= 3,
-	UFFDIO_COPY_FIELDS_N		= 5,
-	UFFDIO_ZEROPAGE_FIELDS_N	= 3,
-};
-
-extern const struct struct_field uffdio_range_fields[UFFDIO_RANGE_FIELDS_N];
-extern const struct struct_field uffdio_api_fields[UFFDIO_API_FIELDS_N];
-extern const struct struct_field uffdio_register_fields[UFFDIO_REGISTER_FIELDS_N];
-extern const struct struct_field uffdio_copy_fields[UFFDIO_COPY_FIELDS_N];
-extern const struct struct_field uffdio_zeropage_fields[UFFDIO_ZEROPAGE_FIELDS_N];
-
-/*
  * mount leaf table defined in struct_catalog/mount.c: struct mount_attr
  * (mount_setattr / open_tree_attr).  The _N constant gives the extern
  * decl a complete array type so the spine's ARRAY_SIZE() at the
@@ -573,33 +545,3 @@ enum {
 };
 
 extern const struct struct_field epoll_event_fields[EPOLL_EVENT_FIELDS_N];
-
-/*
- * ptrace register-set leaf tables defined in struct_catalog/ptrace_regs.c.
- * Covers the per-arch pt_regs / user_regs_struct shapes that
- * PTRACE_{GET,SET}REGS and PTRACE_{GET,SET}REGSET carry.  Gated by the
- * same arch-macro pair as the SC_PT_REGS / SC_USER_REGS_STRUCT enum
- * slots and the central-array entries -- builds on arches outside the
- * covered set (i386, ppc, s390, ...) stay byte-identical.  The _N
- * constants are per-arch because the register-frame shape differs
- * between x86_64 (21-slot pt_regs, 27-slot user_regs_struct) and
- * aarch64 (4-slot regs[]+sp+pc+pstate); both externs still resolve
- * against a complete array type so the spine's ARRAY_SIZE() at the
- * reference site keeps folding.
- */
-#if defined(__x86_64__)
-enum {
-	PT_REGS_FIELDS_N		= 21,
-	USER_REGS_STRUCT_FIELDS_N	= 27,
-};
-#elif defined(__aarch64__)
-enum {
-	PT_REGS_FIELDS_N		= 4,
-	USER_REGS_STRUCT_FIELDS_N	= 4,
-};
-#endif
-
-#if defined(__x86_64__) || defined(__aarch64__)
-extern const struct struct_field pt_regs_fields[PT_REGS_FIELDS_N];
-extern const struct struct_field user_regs_struct_fields[USER_REGS_STRUCT_FIELDS_N];
-#endif

@@ -4,40 +4,24 @@ Long-form design rationale lifted out of `struct_catalog/registry.c`.
 The C file keeps per-entry one-liners and regression-guard invariants
 inline; the essays below explain the mechanisms those entries lean on.
 
-## Attribution-only registration
-
-Recurring pattern across most `syscall_struct_args[]` rows below: the
-entry does **not** switch the schema-aware fill path onto the slot
-(that path is gated on `argtype[N] == ARG_STRUCT_PTR_*`). The bespoke
-sanitiser in `syscalls/<foo>.c` remains the sole writer of `rec->aN`,
-and the catalog row exists only so that `struct_field_for_cmp()` can
-name the specific struct field a KCOV-CMP-learned constant fell out
-of, rather than attributing that constant to a coincidentally-same-
-width slot.
-
-"Not mapped here on purpose" comments elsewhere in the file mark
-sibling arg slots that carry the same struct on a kernel-written
-output path -- registering an OUTPUT slot would steer learned
-constants at bytes the kernel wrote rather than bytes we stamped.
-
 ## fcntl a3 -- cmd-discriminated struct pointer
 
 `fcntl(int fd, int cmd, ... arg)`: a3's type depends on the cmd in a2
 -- the first proof of the discriminator-aware `syscall_struct_args[]`
-mechanism. Two attribution-only variants (bespoke `sanitise_fcntl()`
-owns the live fill):
+mechanism. Two variants, each filled by `gen_arg_struct_ptr_inout`:
 
 - `struct flock` for `F_GETLK` / `F_SETLK` / `F_SETLKW`, the
   `F_OFD_*` variants, `F_CANCELLK` (and the LK64 variants on archs
-  where `F_GETLK64 != F_GETLK`). `build_flock()` picks an
+  where `F_GETLK64 != F_GETLK`). The get cmds keep the generated
+  buffer; for the set cmds `build_flock()` picks an
   `l_type` / `l_whence` vocab member, a bounded `l_start` and
-  `l_len`, and zeroes `l_pid`. `struct_field_for_cmp()` steers
-  CMP-learned constants at the named `l_type` / `l_whence` slots.
+  `l_len`, and zeroes `l_pid`.
 
-- `struct f_owner_ex` for `F_GETOWN_EX` / `F_SETOWN_EX`. The bespoke
-  arm picks type from `{F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP}` and
-  stamps `get_pid()` into `pid`; `struct_field_for_cmp()` steers
-  CMP-learned constants at the named `type` slot.
+- `struct f_owner_ex` for `F_GETOWN_EX` / `F_SETOWN_EX`. F_GETOWN_EX
+  writes the buffer, so the generated one is only a sized output slot;
+  for F_SETOWN_EX the bespoke arm picks type from
+  `{F_OWNER_TID, F_OWNER_PID, F_OWNER_PGRP}` and stamps `get_pid()`
+  into `pid`.
 
 cmds that don't carry a struct at a3 (`F_DUPFD`, `F_GETFD`,
 `F_SETFL`, `F_*OWN`, `F_*SIG`, `F_*LEASE`, `F_*PIPE_SZ`,

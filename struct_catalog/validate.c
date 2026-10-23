@@ -7,8 +7,8 @@
  * as non-struct-shaped.  The dispatcher tolerates such a mismatch at
  * runtime (the desc fires against whatever argtype actually sits at
  * argidx-1, typically ARG_PATHNAME or a scalar length/fd) so nothing
- * aborts at build or runtime -- but the mis-map silently steers CMP
- * attribution at the wrong bytes.  The guard turns that into an
+ * aborts at build or runtime -- but the mis-map silently describes the
+ * wrong bytes.  The guard turns that into an
  * init-time BUG, called from struct_catalog_init() in registry.c.
  *
  * Validation is init-only with clean inputs (the registration table,
@@ -19,6 +19,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+#include "arch.h"
 #include "argtype-ops.h"
 #include "debug.h"
 #include "struct_catalog.h"
@@ -41,17 +42,10 @@
  * carry the registered struct:
  *
  *   - ARG_STRUCT_PTR_IN / OUT / INOUT  (schema-aware fill, primary user)
- *   - ARG_ADDRESS / ARG_NON_NULL_ADDRESS  (bespoke .sanitise owns the
- *     live fill, attribution-only catalog row for CMP steering)
- *   - ARG_IOVEC / ARG_IOVEC_IN  (alloc_iovec() owns the live fill;
- *     catalog row is attribution-only for the iov_base / iov_len CMP
- *     names, see the SC_IOVEC comment above the catalog slot)
- *   - ARG_SOCKADDR  (bespoke sockaddr generator owns the live fill;
- *     attribution-only catalog row for sa_family / port CMP names)
- *   - ARG_TIMESPEC / ARG_ITIMERSPEC / ARG_TIMEVAL / ARG_ITIMERVAL
- *     (time-shaped pointer slots; catalog row carries the named
- *     tv_sec / tv_nsec / tv_usec CMP attributions while the per-argtype
- *     filler owns the live struct contents)
+ *   - ARG_ADDRESS / ARG_NON_NULL_ADDRESS, ARG_IOVEC / ARG_IOVEC_IN,
+ *     ARG_SOCKADDR, ARG_TIMESPEC / ARG_ITIMERSPEC / ARG_TIMEVAL /
+ *     ARG_ITIMERVAL  (pointer slots whose bespoke .sanitise or
+ *     per-argtype filler owns the live fill)
  *   - ARG_UNDEFINED  (the syscall has not fully classified its
  *     argtypes -- the bespoke .sanitise owns the fill regardless;
  *     this case is permissive on purpose so the guard does not block
