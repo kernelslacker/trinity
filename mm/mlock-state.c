@@ -1,22 +1,9 @@
 /*
- * Per-child memlock accounting and recently-locked ring shared by the
- * mlock and munlock sanitisers.
- *
- * The mlock/munlock sanitisers used to call common_set_mmap_ptr_len()
- * and stop, leaving rec->a1 pinned to map->ptr and rec->a2 at
- * rnd_modulo_u32(map->size) & PAGE_MASK.  Single-page, full-map, and
- * over-end probes never got drawn; munlock had no way to bias its
- * (start, len) toward an actually-locked window so the unlock path
- * almost always picked an unlocked range and returned EINVAL; and on
- * multi-MB INITIAL_ANON mappings the random pick frequently exceeded
- * RLIMIT_MEMLOCK, surrendering the rest of the fuzz wave to EAGAIN.
- *
- * State here partitions the (start, len) input space into named
- * buckets and tracks how much of the memlock cap has been consumed so
- * the in-bounds buckets stay under the limit.  static __thread keeps
- * the running total per-child even when a childop spawns a helper
- * thread inside the child (plain static would be per-process and the
- * worker thread would race the spawning child's accounting).
+ * Per-child memlock accounting and recently-locked ring shared by the mlock
+ * and munlock sanitisers.  A blind (start, len) draw overruns RLIMIT_MEMLOCK
+ * on large mappings and rarely names a range that is actually locked; the
+ * length and start buckets, the budget clamp and the ring keep both
+ * realistic.
  */
 #include <limits.h>
 #include <stdbool.h>
@@ -28,6 +15,8 @@
 #include "mlock-state.h"
 #include "rnd.h"
 
+/* Thread-local so a helper thread in the child gets its own accounting
+ * instead of racing the child's running total. */
 static __thread bool memlock_initialised;
 static __thread unsigned long memlock_budget;
 static __thread unsigned long memlock_used;

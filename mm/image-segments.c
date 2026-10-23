@@ -1,36 +1,9 @@
 /*
- * Register every writable PT_LOAD segment of trinity's loaded image
- * (main exe + every loaded DSO -- libc, libpthread, libdl, ld-linux,
- * libasan when built with `make asan`, the vDSO if it ever grows a
- * writable segment) with shared_regions[] so range_overlaps_shared()
- * refuses fuzzed mmap/munmap/mremap/madvise/mprotect calls that target
- * trinity's own .data, .bss, .got, .got.plt, etc.
- *
- * Read-only segments (text, .rodata) don't need protection: a fuzzed
- * mprotect that strips R+X just causes a SIGSEGV on the next
- * instruction fetch, which the existing fault handler catches and
- * post-mortems.  Writable segments are the real exposure -- a fuzzed
- * munmap of trinity's BSS would silently knock out static state
- * (shared_regions[] itself, deferred-free's ring pointer, every other
- * static), and the fuzzer would keep running on top of zero pages until
- * the next deref crashed in some unrelated code path -- a residual-
- * cores nightmare.  This is the same class of bug as the deferred-free
- * ring[] BSS exposure that the recent ring-to-mmap migration closed,
- * generalised to every other static.
- *
- * Use dl_iterate_phdr() to enumerate every loaded object's program
- * headers.  For each PT_LOAD with PF_W set, register
- *     base = info->dlpi_addr + p_vaddr
- *     len  = p_memsz       (memsz, not filesz -- BSS is the part of
- *                          the writable PT_LOAD that lives in memsz
- *                          beyond filesz, and BSS is exactly what we
- *                          most need to protect)
- * via track_shared_region().  Must run before fork_children() so every
- * child inherits the populated table via the COW post-fork copy.
- *
- * Only enumerates objects loaded at the call site -- a later dlopen()
- * (trinity does not currently do this) would not be tracked.  If trinity
- * ever grows runtime DSO loading, re-call this from the dlopen path.
+ * Register every writable PT_LOAD segment of trinity's loaded image (main exe
+ * and every DSO) with shared_regions[], so range_overlaps_shared() refuses
+ * fuzzed mmap/munmap/mremap/madvise/mprotect calls that target trinity's own
+ * .data and .bss.  Runs once, before fork_children(), so every child inherits
+ * the populated table.
  */
 
 #include <link.h>
@@ -68,12 +41,19 @@ static int phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
 
 		if (ph->p_type != PT_LOAD)
 			continue;
+		/* Read-only segments need no protection: a fuzzed mprotect
+		 * that strips R+X only faults on the next instruction fetch,
+		 * which the fault handler catches.  Writable ones are the
+		 * exposure: a fuzzed munmap of the BSS would silently zero
+		 * static state, shared_regions[] included. */
 		if ((ph->p_flags & PF_W) == 0)
 			continue;
 		if (ph->p_memsz == 0)
 			continue;
 
 		base = (unsigned long)info->dlpi_addr + ph->p_vaddr;
+		/* memsz, not filesz: the BSS is the part of a writable
+		 * segment beyond filesz, and the part most worth protecting. */
 		len  = (unsigned long)ph->p_memsz;
 
 		track_shared_region(base, len);
@@ -93,6 +73,7 @@ static int phdr_callback(struct dl_phdr_info *info, size_t size, void *data)
 	return 0;
 }
 
+/* Covers the objects loaded at the call; one dlopen()ed later is not tracked. */
 void register_loaded_image_segments(void)
 {
 	struct phdr_walk_state st = { 0, 0 };

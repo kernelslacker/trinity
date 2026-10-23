@@ -1,15 +1,8 @@
 /*
- * Helpers for the MAP_HUGE_* / MFD_HUGE_* / SHM_HUGE_* size-encoding
- * bitfield.
- *
- * The kernel packs a 6-bit log2 page-size shift into bits 26..31 of the
- * flags word for mmap(MAP_HUGETLB), memfd_create(MFD_HUGETLB), and
- * shmget(SHM_HUGETLB).  All three syscalls share the same encoding
- * (HUGETLB_FLAG_ENCODE_SHIFT == 26).  These helpers probe
- * /sys/kernel/mm/hugepages/ for the page sizes the host actually
- * supports, plus the transparent-hugepage PMD size and the hugetlbfs
- * pool counts, then hand back a randomly picked shift already moved
- * into the correct bit positions.
+ * Size-encoding helper for the MAP_HUGE_* / MFD_HUGE_* / SHM_HUGE_* flags: all
+ * three put a 6-bit log2 page-size shift in bits 26..31
+ * (HUGETLB_FLAG_ENCODE_SHIFT).  pick_random_huge_size_encoding() picks one of
+ * the sizes /sys/kernel/mm/hugepages/ reports, plus the THP PMD size.
  */
 
 #include <dirent.h>
