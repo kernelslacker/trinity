@@ -197,6 +197,102 @@ static unsigned long kcov_note_trace_truncated(unsigned int nr, bool do32)
 	return count;
 }
 
+/*
+ * Per-syscall accounting for a call that set a new bucket bit.  Reached only
+ * on such a call, so it stays out of kcov_collect()'s straight-line path.
+ * ctx is the picker-context stamp kcov_collect() derived for this call.
+ */
+static void kcov_account_new_edge(struct kcov_child *kc, unsigned int nr,
+				  bool do32, unsigned int ctx,
+				  unsigned long edges_this_call,
+				  unsigned long call_nr)
+{
+	/* Mirror the per_syscall_edges call-count + raw-edge
+	 * split into the local/remote slots so the
+	 * mode-keyed yield ratio (edge_calls / pc_calls and
+	 * edge_count / pc_calls) is directly readable. */
+	if (kc->remote_mode) {
+		__atomic_fetch_add(
+			&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
+			1, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
+			edges_this_call, __ATOMIC_RELAXED);
+	} else {
+		__atomic_fetch_add(
+			&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
+			1, __ATOMIC_RELAXED);
+		__atomic_fetch_add(
+			&kcov_shm->pc_ctx.local_pc_edge_count[nr],
+			edges_this_call, __ATOMIC_RELAXED);
+	}
+	/* per_syscall_edges bumps by 1 (call-count semantics --
+	 * see the comment on the field in include/kcov.h).  The
+	 * real bucket-edge count is surfaced via kcov_collect()'s
+	 * new_edge_count out-param.  Sibling of the calls bump in
+	 * kcov_collect(), keyed by the same picker-context stamp. */
+	/* Per-child staging bump for per_syscall_edges[nr][ctx][do32].
+	 * Sibling of kcov_collect()'s per_syscall_calls bump, same
+	 * staging + batched-flush model and the same ctx <
+	 * PICKER_NCTX bounds check for the scribble-recovery
+	 * gate. */
+	{
+		struct childdata *cceg = this_child();
+
+		if (cceg != NULL &&
+		    kcov_local_stats_plausible(cceg->local_stats) &&
+		    ctx < PICKER_NCTX) {
+			cceg->local_stats->per_syscall_edges[nr][ctx][do32 ? 1 : 0]++;
+		}
+	}
+	/* SHADOW-only Phase-1 remote-context split of the clean
+	 * per-thread signal above.  kcov_enable_remote()'s
+	 * KCOV_REMOTE_ENABLE puts the task in KCOV_MODE_REMOTE and
+	 * merges coverage copied from remote kernel contexts
+	 * (kthreads / softirqs / threaded IRQ handlers) into this
+	 * task's trace_buf; a found_new credited under remote_mode
+	 * may therefore correspond to kernel work not causally
+	 * bound to this syscall's own dispatch.  Recording the
+	 * remote-mode subset here lets the attribution-confidence
+	 * dump surface the local-only clean signal as
+	 * (per_syscall_edges - per_syscall_edges_clean_remote)
+	 * without changing any live selection or scoring code. */
+	if (kc->remote_mode)
+		__atomic_fetch_add(
+			&kcov_shm->per_syscall.per_syscall_edges_clean_remote[nr],
+			1, __ATOMIC_RELAXED);
+	__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
+		call_nr, __ATOMIC_RELAXED);
+	/* if this call had a cmp_hint
+	 * injected into its arg surface (latched in
+	 * generate-args.c via credit_cmp_hint_injection),
+	 * credit the resulting PC-edge win to the cmp-hint
+	 * pipeline at the per-syscall granularity.  The
+	 * cmp_hint_injected_this_call latch is owner-only
+	 * written by the child generator path that ran just
+	 * before this dispatch, so reading it here is a
+	 * plain field access -- no atomics needed on the
+	 * latch itself.  Parent-context this_child()==NULL
+	 * is handled the same way the prior credit path is:
+	 * the helper either set the flag (child) or did
+	 * nothing (parent), and a NULL child here means no
+	 * latch was set so no PC-win is credited. */
+	{
+		struct childdata *cc = this_child();
+
+		if (cc != NULL &&
+		    cc->cmp_hint_injected_this_call)
+			__atomic_fetch_add(
+				&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[nr],
+				1, __ATOMIC_RELAXED);
+	}
+	/* Bump the per-syscall frontier-edge ring so the
+	 * coverage-frontier picker (when active) can bias
+	 * selection toward syscalls currently producing fresh
+	 * coverage. */
+	frontier_record_new_edge(nr);
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -502,90 +598,8 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 			__atomic_fetch_add(&kcov_shm->pc_ctx.local_pc_calls[nr],
 				1, __ATOMIC_RELAXED);
 		if (found_new) {
-			/* Mirror the per_syscall_edges call-count + raw-edge
-			 * split above into the local/remote slots so the
-			 * mode-keyed yield ratio (edge_calls / pc_calls and
-			 * edge_count / pc_calls) is directly readable. */
-			if (kc->remote_mode) {
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.remote_pc_edge_calls[nr],
-					1, __ATOMIC_RELAXED);
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.remote_pc_edge_count[nr],
-					edges_this_call, __ATOMIC_RELAXED);
-			} else {
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.local_pc_edge_calls[nr],
-					1, __ATOMIC_RELAXED);
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.local_pc_edge_count[nr],
-					edges_this_call, __ATOMIC_RELAXED);
-			}
-			/* per_syscall_edges bumps by 1 (call-count semantics --
-			 * see the comment on the field in include/kcov.h).  The
-			 * real bucket-edge count is surfaced via the
-			 * new_edge_count out-param below.  Sibling of the calls
-			 * bump above, keyed by the same picker-context stamp. */
-			/* Per-child staging bump for per_syscall_edges[nr][ctx][do32].
-			 * Sibling of the per_syscall_calls bump above, same
-			 * staging + batched-flush model and the same ctx <
-			 * PICKER_NCTX bounds check for the scribble-recovery
-			 * gate. */
-			{
-				struct childdata *cceg = this_child();
-
-				if (cceg != NULL &&
-				    kcov_local_stats_plausible(cceg->local_stats) &&
-				    ctx < PICKER_NCTX) {
-					cceg->local_stats->per_syscall_edges[nr][ctx][do32 ? 1 : 0]++;
-				}
-			}
-			/* SHADOW-only Phase-1 remote-context split of the clean
-			 * per-thread signal above.  kcov_enable_remote()'s
-			 * KCOV_REMOTE_ENABLE puts the task in KCOV_MODE_REMOTE and
-			 * merges coverage copied from remote kernel contexts
-			 * (kthreads / softirqs / threaded IRQ handlers) into this
-			 * task's trace_buf; a found_new credited under remote_mode
-			 * may therefore correspond to kernel work not causally
-			 * bound to this syscall's own dispatch.  Recording the
-			 * remote-mode subset here lets the attribution-confidence
-			 * dump surface the local-only clean signal as
-			 * (per_syscall_edges - per_syscall_edges_clean_remote)
-			 * without changing any live selection or scoring code. */
-			if (kc->remote_mode)
-				__atomic_fetch_add(
-					&kcov_shm->per_syscall.per_syscall_edges_clean_remote[nr],
-					1, __ATOMIC_RELAXED);
-			__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
-				call_nr, __ATOMIC_RELAXED);
-			/* if this call had a cmp_hint
-			 * injected into its arg surface (latched in
-			 * generate-args.c via credit_cmp_hint_injection),
-			 * credit the resulting PC-edge win to the cmp-hint
-			 * pipeline at the per-syscall granularity.  The
-			 * cmp_hint_injected_this_call latch is owner-only
-			 * written by the child generator path that ran just
-			 * before this dispatch, so reading it here is a
-			 * plain field access -- no atomics needed on the
-			 * latch itself.  Parent-context this_child()==NULL
-			 * is handled the same way the prior credit path is:
-			 * the helper either set the flag (child) or did
-			 * nothing (parent), and a NULL child here means no
-			 * latch was set so no PC-win is credited. */
-			{
-				struct childdata *cc = this_child();
-
-				if (cc != NULL &&
-				    cc->cmp_hint_injected_this_call)
-					__atomic_fetch_add(
-						&kcov_shm->cmp_hint_ps.per_syscall_cmp_hint_pc_wins[nr],
-						1, __ATOMIC_RELAXED);
-			}
-			/* Bump the per-syscall frontier-edge ring so the
-			 * coverage-frontier picker (when active) can bias
-			 * selection toward syscalls currently producing fresh
-			 * coverage. */
-			frontier_record_new_edge(nr);
+			kcov_account_new_edge(kc, nr, do32, ctx, edges_this_call,
+					      call_nr);
 		} else if (count > 0) {
 			/* Kernel executed code for this syscall but every PC
 			 * was already in bucket_seen[] (warm-loaded or
