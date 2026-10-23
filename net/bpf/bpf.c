@@ -41,10 +41,6 @@
 #define syscall_nr	(offsetof(struct seccomp_data, nr))
 #define arch_nr		(offsetof(struct seccomp_data, arch))
 
-#ifndef SECCOMP_MODE_FILTER
-#define SECCOMP_MODE_FILTER	2
-#endif
-
 static const uint16_t bpf_class_vars[] = {
 	BPF_LD, BPF_LDX, BPF_ST, BPF_STX, BPF_ALU, BPF_JMP, BPF_RET, BPF_MISC,
 };
@@ -78,24 +74,6 @@ static const uint16_t bpf_ret_vars[] = {
 static const uint16_t bpf_misc_vars[] = {
 	BPF_TAX, BPF_TXA,
 };
-
-#ifndef SECCOMP_RET_KILL
-#define SECCOMP_RET_KILL	0x00000000U
-#define SECCOMP_RET_TRAP	0x00030000U
-#define SECCOMP_RET_ALLOW	0x7fff0000U
-#endif
-#ifndef SECCOMP_RET_KILL_PROCESS
-#define SECCOMP_RET_KILL_PROCESS 0x80000000U
-#endif
-#ifndef SECCOMP_RET_ERRNO
-#define SECCOMP_RET_ERRNO	0x00050000U
-#endif
-#ifndef SECCOMP_RET_TRACE
-#define SECCOMP_RET_TRACE	0x7ff00000U
-#endif
-#ifndef SECCOMP_RET_LOG
-#define SECCOMP_RET_LOG		0x7ffc0000U
-#endif
 
 static const uint32_t bpf_seccomp_ret_k_vars[] = {
 	SECCOMP_RET_KILL, SECCOMP_RET_KILL_PROCESS,

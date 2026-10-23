@@ -20,9 +20,6 @@
 #include "utils.h"
 
 #include "kernel/seccomp.h"
-#ifndef SECCOMP_FILTER_FLAG_NEW_LISTENER
-#define SECCOMP_FILTER_FLAG_NEW_LISTENER (1UL << 3)
-#endif
 
 /*
  * Build a minimal BPF program that returns SECCOMP_RET_USER_NOTIF for
