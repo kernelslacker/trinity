@@ -1,39 +1,7 @@
 /*
- * Genetlink family grammar: ila (Identifier Locator Addressing).
- *
- * The Identifier Locator Addressing module (RFC 8060 SIR / ILA) exposes
- * its userspace control plane through a single generic-netlink family
- * ("ila") with four user-callable commands: ILA_CMD_ADD, ILA_CMD_DEL,
- * ILA_CMD_GET, and ILA_CMD_FLUSH.  ADD and DEL primarily gate on
- * ILA_ATTR_LOCATOR / ILA_ATTR_LOCATOR_MATCH (the SIR-side selector and
- * the translation-table key), ILA_ATTR_IDENTIFIER (the locator-side
- * value to splice in), and the per-entry policy attrs (CSUM_MODE,
- * IDENT_TYPE, HOOK_TYPE, DIR); GET enumerates configured entries and
- * FLUSH purges the per-net translation table.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "ila", so the per-cmd nla_policy walker plus the
- * ADD / DEL / FLUSH translation-table mutation paths in
- * net/ipv6/ila/ila_xlat.c have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real ila messages whose attribute
- * shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  ila uses a single flat ILA_ATTR_* namespace (no
- * nested containers), so the table is one of the simpler grammars:
- * three u64 selectors covering the LOCATOR / IDENTIFIER / LOCATOR_MATCH
- * triple, an IFINDEX scoping selector, the DIR bitmask, the PAD
- * alignment partner, and three u8 policy selectors (CSUM_MODE,
- * IDENT_TYPE, HOOK_TYPE).
- *
- * Header gating mirrors the psample / fou / hsr families: <linux/ila.h>
- * is the upstream UAPI header carrying every ILA_CMD_* and ILA_ATTR_*
- * enum referenced below.  Build hosts lacking the header silently drop
- * the family from the registry instead of failing the build.  Per-symbol
- * #ifndef shims fill in newer ILA_ATTR_* / ILA_CMD_* on build hosts
- * whose stale uapi predates the IDENT_TYPE / HOOK_TYPE additions.
+ * Genetlink family grammar: ila (Identifier Locator Addressing), targeting
+ * net/ipv6/ila/ila_main.c and ila_xlat.c.  One flat ILA_ATTR_* namespace;
+ * ADD, DEL and FLUSH are GENL_ADMIN_PERM, GET is not.
  */
 
 #if __has_include(<linux/ila.h>)

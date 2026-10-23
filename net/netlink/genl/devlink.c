@@ -1,19 +1,8 @@
 /*
- * Genetlink family grammar: devlink.
- *
- * devlink is the configuration interface for hardware switches, NICs,
- * and bus-level devices.  It carries ~80 commands and ~190 attribute
- * types behind the "devlink" generic netlink family.  Even a small
- * grammar reaches a substantial slice of net/devlink/ that the
- * random-id netlink fuzzer never touches: the family's nla_policy
- * gate validates the BUS_NAME / DEV_NAME pair and dispatches into
- * dev.c, port.c, sb.c, and the param/region/info/health subsystems.
- *
- * Starter command set covers the dump-able read-side variants
- * (DEVLINK_CMD_*_GET) for the four most-trafficked subgroups: device
- * itself, ports, params, and regions.  Write-side commands (NEW/SET/
- * DEL) require admin perms in most cases and are left for a follow-up
- * once the read paths are stably exercised.
+ * Genetlink family grammar: devlink (hardware switch, NIC and bus-device
+ * configuration), targeting net/devlink/.  Only the unprivileged *_GET
+ * commands are listed, keyed on the BUS_NAME / DEV_NAME pair; the
+ * NEW / SET / DEL writers are GENL_ADMIN_PERM.
  */
 
 #include <linux/devlink.h>

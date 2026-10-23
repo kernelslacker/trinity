@@ -1,20 +1,8 @@
 /*
- * Generic netlink runtime family resolver and registry.
- *
- * Per-family grammar tables (net/netlink/genl/<family>.c) declare their
- * commands and attribute kinds statically; this file walks that
- * registry on first use, asks the kernel for each family's
- * dynamically-assigned family_id and the doit/dumpit shape of its ops
- * via CTRL_CMD_GETFAMILY/NLM_F_DUMP, and exposes lookup helpers used
- * by the netlink message generator to send structurally-valid
- * messages addressed to specific families.
- *
- * A registered family's cmds[] + attrs[] table is what unlocks fuzz
- * coverage of that family's per-command parsers: the kernel's family
- * demuxer accepts the family_id and the message lands directly in the
- * family's command dispatch table where bugs actually live, instead of
- * bouncing off an unknown-family fast-reject as the legacy random-id
- * path does.
+ * Generic netlink runtime family resolver and registry: walks the grammars
+ * in net/netlink/genl/<family>.c on first use, resolves each family's
+ * family_id and the doit/dumpit shape of its ops with CTRL_CMD_GETFAMILY /
+ * NLM_F_DUMP, and exposes the lookup helpers the message generator uses.
  */
 
 #include <errno.h>

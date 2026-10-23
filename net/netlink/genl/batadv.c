@@ -1,54 +1,7 @@
 /*
- * Genetlink family grammar: batadv (B.A.T.M.A.N. Advanced mesh routing).
- *
- * The batman-adv module exposes its userspace control plane through a
- * single generic-netlink family ("batadv") covering mesh / hardif /
- * vlan attribute query+set, originator / neighbour / gateway / TT /
- * BLA / DAT / multicast table dumps, the throughput-meter session
- * pair (TP_METER + TP_METER_CANCEL), and a routing-algo enumeration.
- * None of the commands carry GENL_ADMIN_PERM, but 15 of the 18 ops (the
- * table dumps, the routing-algo enumeration, TP_METER, TP_METER_CANCEL
- * and the SET_* commands) carry GENL_UNS_ADMIN_PERM, which
- * genl_family_rcv_msg() tests with netlink_ns_capable() against the
- * user namespace of the socket's netns before it parses attributes.  A
- * child in the initial netns without CAP_NET_ADMIN gets -EPERM and
- * never reaches their per-cmd nla_policy walker or the SET_MESH /
- * SET_HARDIF / SET_VLAN write paths in net/batman-adv/netlink.c; a
- * child that holds CAP_NET_ADMIN in the user namespace owning its own
- * netns does, and then penetrating the family demuxer with a real
- * family_id puts every parser, the per-mesh getter dispatcher, and the
- * SET_* setter chains directly in its reach.  Only GET_MESH, GET_HARDIF
- * and GET_VLAN carry no flag.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "batadv", so the per-cmd policy walker plus the per-mesh
- * getter dispatch and the SET_* setter chains have been routinely cold
- * under generic netlink fuzzing; resolving the family at first
- * NETLINK_GENERIC use lets the message generator address real batadv
- * messages whose attribute shapes plausibly survive the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample model,
- * a single flat nla_attr_spec table lists every id used by this
- * family's commands.  batadv uses a single flat BATADV_ATTR_* namespace
- * (no nested containers): the rich attribute set covers the mesh /
- * hardif / vlan IFINDEX+IFNAME+ADDRESS triples, the TT / BLA / DAT /
- * multicast table rows, the gateway / neighbour / originator metadata,
- * the throughput-meter result triple (RESULT/TEST_TIME/BYTES/COOKIE),
- * the per-mesh tunables propagated by SET_MESH (aggregated OGMs, AP
- * isolation, bonding, BLA, DAT, fragmentation, gateway bandwidth +
- * mode + selection class, hop penalty, log level, multicast force-
- * flood + fanout, network coding, OGM + ELP intervals, throughput
- * override), and a handful of presence-only flags (ACTIVE, FLAG_BEST,
- * BLA_OWN).
- *
- * Header gating mirrors the team / hsr / fou / psample families:
- * <linux/batman_adv.h> is the upstream UAPI header carrying every
- * BATADV_CMD_* and BATADV_ATTR_* enum referenced below.  Build hosts
- * lacking the header silently drop the family from the registry
- * instead of failing the build.  Per-symbol #ifndef shims fill in
- * newer BATADV_ATTR_* / BATADV_CMD_* on build hosts whose stale uapi
- * predates the per-mesh tunable additions, the VLAN GET/SET pair, or
- * the MULTICAST_FORCEFLOOD / MULTICAST_FANOUT attrs.
+ * Genetlink family grammar: batadv (B.A.T.M.A.N. Advanced mesh routing),
+ * targeting net/batman-adv/netlink.c.  Every op but GET_MESH, GET_HARDIF
+ * and GET_VLAN is GENL_UNS_ADMIN_PERM.  One flat BATADV_ATTR_* namespace.
  */
 
 #if __has_include(<linux/batman_adv.h>)

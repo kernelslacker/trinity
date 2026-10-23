@@ -1,39 +1,8 @@
 /*
- * Genetlink family grammar: legacy IEEE 802.15.4 MAC control plane
- * ("802.15.4 MAC"), distinct from the modern nl802154 family in
- * nl802154.c.  The two coexist in the kernel and
- * share no command or attribute namespace: nl802154 owns the modern
- * wpan_phy / scan / coordinator surface; this legacy family owns the
- * original IFACE add/del, ASSOCIATE / SCAN / START request path, MAC
- * tuning, and link-layer security key / device / level configuration.
- *
- * Target: the per-cmd nla_policy walker in
- * net/ieee802154/{nl-mac.c,nl-phy.c,nl_policy.c} plus the LLSEC_ *
- * add/del/list dispatch chains.  Random nlmsg_type ids essentially
- * never matched the runtime-assigned "802.15.4 MAC" family_id, so
- * these arms stayed cold; resolving the family once at first
- * NETLINK_GENERIC use lets the generator address real messages whose
- * attribute shapes plausibly survive the shared input-side policy.
- *
- * Flat attribute table over the global IEEE802154_ATTR_ * enum.
- * Encoding rules that matter for validate-time acceptance: signed
- * scalar attrs (TXPOWER, FRAME_RETRIES, CCA_ED_LEVEL) go on the wire
- * as their unsigned same-width counterparts (identical bytes; handler
- * reads through nla_get_s8 / nla_get_s32).  HW_ADDR and the extended
- * LLSEC key-source variants are declared NLA_HW_ADDR (aliased to
- * NLA_U64), so they emit as eight-byte U64.  Fixed-length binary
- * attrs (ED_LIST 27, CHANNEL_PAGE_LIST 128, LLSEC_KEY_BYTES 16,
- * LLSEC_KEY_USAGE_COMMANDS 32) use NLA_KIND_BINARY within the
- * kernel's .len bound.  IEEE802154_ATTR_SEC / _PAD have no policy
- * entry -- emitted as zero-length binary so the wire shape stays
- * well-formed.
- *
- * Header gating: include/linux/nl802154.h is kernel-internal (not
- * shipped via uapi).  include/kernel/ieee802154.h vendors every
- * referenced IEEE802154_CMD_ * / IEEE802154_ATTR_ * id as an #ifndef
- * shim mirroring the (ABI-stable since 2.6.32) kernel enum ordering.
- * The family registers unconditionally; runtime CTRL_CMD_GETFAMILY
- * decides whether CONFIG_IEEE802154 is on and the module loaded.
+ * Genetlink family grammar: legacy IEEE 802.15.4 MAC ("802.15.4 MAC"),
+ * distinct from nl802154.c, targeting net/ieee802154/nl-mac.c, nl-phy.c and
+ * nl_policy.c.  One flat IEEE802154_ATTR_* table covers the IFACE,
+ * ASSOCIATE / SCAN / START, MAC-tuning and LLSEC commands.
  */
 
 #include "kernel/ieee802154.h"

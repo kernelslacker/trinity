@@ -1,35 +1,7 @@
 /*
- * Genetlink family grammar: fou (Foo-over-UDP).
- *
- * The Foo-over-UDP module exposes its userspace control plane through
- * a single generic-netlink family ("fou") with three user-callable
- * commands: FOU_CMD_ADD, FOU_CMD_DEL, and FOU_CMD_GET.  ADD and DEL
- * primarily gate on FOU_ATTR_PORT (the UDP receive port), FOU_ATTR_AF
- * (address family), and FOU_ATTR_IPPROTO (the inner-protocol selector,
- * IPPROTO_GUE or IPPROTO_UDP); GET enumerates configured ports.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "fou", so the per-cmd nla_policy walker in
- * net/ipv{4,6}/fou_*.c plus the listener add/delete code paths have
- * been routinely cold under generic netlink fuzzing; resolving the
- * family at first NETLINK_GENERIC use lets the message generator
- * address real fou messages whose attribute shapes plausibly survive
- * the per-cmd policy.
- *
- * Per the wireguard / tipc / l2tp / team / hsr model, a single flat
- * nla_attr_spec table lists every id used by this family's commands.
- * fou uses a single flat FOU_ATTR_* namespace (no nested containers),
- * so the table is simpler than the team / l2tp grammars: eleven
- * scalar / binary attrs covering the port and address-family selectors,
- * the peer / local IPv4 / IPv6 endpoint pair, the encap-type selector,
- * and the optional REMCSUM_NOPARTIAL flag and IFINDEX scoping attrs.
- *
- * Header gating mirrors the team / hsr families: <linux/fou.h> is the
- * upstream UAPI header carrying every FOU_CMD_* and FOU_ATTR_* enum
- * referenced below.  Build hosts lacking the header silently drop the
- * family from the registry instead of failing the build.  Per-symbol
- * #ifndef shims fill in newer FOU_ATTR_* on build hosts whose stale
- * uapi predates REMCSUM_NOPARTIAL / IFINDEX / the peer-side attrs.
+ * Genetlink family grammar: fou (Foo-over-UDP), targeting net/ipv4/fou_nl.c
+ * and fou_core.c.  One flat FOU_ATTR_* namespace; ADD and DEL (both
+ * GENL_ADMIN_PERM) key on PORT, AF and IPPROTO, GET lists the ports.
  */
 
 #if __has_include(<linux/fou.h>)

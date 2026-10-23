@@ -1,20 +1,7 @@
 /*
- * Genetlink family grammar: ethtool.
- *
- * The ethtool-netlink interface (introduced in 5.6) replaced the
- * legacy SIOCETHTOOL ioctl with a generic netlink family.  It carries
- * 60+ command pairs (each a *_GET / *_SET / *_NTF triple) and a
- * per-message attr namespace stitched together by a shared HEADER
- * sub-attr (ETHTOOL_A_HEADER_DEV_INDEX / DEV_NAME) that drives the
- * net_device lookup before per-message validation runs.
- *
- * Starter command set targets the read-side dump path for the
- * configuration objects most commonly poked by userspace tooling:
- * link state, ring buffers, channels, coalesce, and feature bits.
- * These all dispatch through ethnl_default_doit() / ethnl_default_dump()
- * after the shared header parser, so the same grammar lights up
- * net/ethtool/{linkinfo,linkstate,rings,channels,coalesce,features}.c
- * in one shot.
+ * Genetlink family grammar: ethtool, targeting net/ethtool/netlink.c and
+ * the per-command files beside it.  Only the read-side commands are listed;
+ * each is keyed on the nested *_HEADER attribute that names the net_device.
  */
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)

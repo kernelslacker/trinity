@@ -1,53 +1,7 @@
 /*
- * Genetlink family grammar: cifs (SMB Witness Service upcall).
- *
- * The cifs client (fs/smb/client/netlink.c) exposes its userspace
- * witness-daemon upcall through a single generic-netlink family
- * ("cifs") with one user-callable .doit command,
- * CIFS_GENL_CMD_SWN_NOTIFY: the witness daemon delivers a SWN
- * notification (resource state change / client- or share-move /
- * IP-change) back to the kernel after the in-kernel SWN client has
- * issued a SWN_REGISTER as a multicast event.  REGISTER / UNREGISTER
- * are kernel-to-userspace events, not driveable .doit ids, so listing
- * only SWN_NOTIFY keeps the message generator on the cmd that lands in
- * a real dispatcher instead of bouncing off -EOPNOTSUPP at the family
- * demuxer.
- *
- * Random nlmsg_type ids essentially never matched the runtime-assigned
- * family_id for "cifs", so the per-cmd nla_policy walker plus the
- * cifs_swn_notify dispatcher have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real cifs messages whose attribute
- * shapes plausibly survive the per-cmd policy.  cifs_swn_notify gates
- * on the SWN_REGISTRATION_ID matching an in-kernel registration before
- * doing real work, but the nla_policy walk plus the sockaddr_storage
- * copy-in for SWN_IP_NOTIFY is reached regardless of whether a live
- * cifs SWN registration exists on the running kernel.
- *
- * Per the wireguard / tipc / l2tp / team / hsr / fou / psample / nbd
- * model, a single flat nla_attr_spec table lists every id the kernel's
- * cifs_genl_policy gates on: SWN_REGISTRATION_ID / SWN_NOTIFICATION_TYPE
- * / SWN_RESOURCE_STATE are u32 scalars; SWN_NET_NAME / SWN_SHARE_NAME /
- * SWN_USER_NAME / SWN_PASSWORD / SWN_DOMAIN_NAME / SWN_RESOURCE_NAME
- * are NLA_STRING (the kernel doesn't bound them in the policy; cap at
- * 64 here to keep the generator's string picker focused).  SWN_IP is a
- * raw struct sockaddr_storage blob (the policy gates on
- * .len = sizeof(struct sockaddr_storage)).  The five _NOTIFY / KRB_AUTH
- * ids are NLA_FLAG (payload-less presence bits).
- *
- * default_version mirrors the declared CIFS_GENL_VERSION (1) so the
- * generator's wire format matches the kernel's declared family
- * version.  hdrsize stays 0: cifs has no family-specific fixed header,
- * attributes follow the genlmsghdr directly.
- *
- * Header gating mirrors the team / hsr / fou / psample / nbd / ncsi
- * families: <linux/cifs/cifs_netlink.h> (note the cifs/ subdir — the
- * uapi header is shipped under linux/cifs/, not linux/) is the upstream
- * UAPI header carrying every CIFS_GENL_CMD_* / CIFS_GENL_ATTR_* enum
- * referenced below.  Build hosts lacking the header silently drop the
- * family from the registry instead of failing the build.  Per-symbol
- * #ifndef shims fill in the enum ids on build hosts whose stale uapi
- * predates this family.
+ * Genetlink family grammar: cifs (SMB Witness Service upcall), targeting
+ * fs/smb/client/netlink.c.  The ops table lists only SWN_NOTIFY, which is
+ * GENL_ADMIN_PERM; REGISTER / UNREGISTER are events the kernel multicasts.
  */
 
 #if __has_include(<linux/cifs/cifs_netlink.h>)
@@ -119,7 +73,7 @@ static const struct genl_cmd_grammar cifs_cmds[] = {
  * Attribute spec mirrors cifs_genl_policy in fs/smb/client/netlink.c.
  * SWN_IP is the sockaddr_storage blob the policy gates on by length
  * (.len = sizeof(struct sockaddr_storage) = 128); emit it as a binary
- * payload of that exact upper bound.  The five FLAG entries
+ * payload of that exact upper bound.  The four FLAG entries
  * (_NOTIFY / KRB_AUTH) are payload-less presence bits.  Strings are
  * unbounded in the kernel policy; cap at 64 here to keep the
  * generator's string picker focused on plausible witness names.

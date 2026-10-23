@@ -1,66 +1,10 @@
 /*
- * Genetlink family grammar: dpll (Digital PLL subsystem).
- *
- * The dpll subsystem exposes its userspace control plane through a
- * single generic-netlink family ("dpll") covering device enumeration
- * (DEVICE_ID_GET / DEVICE_GET), per-device configuration (DEVICE_SET),
- * pin enumeration (PIN_ID_GET / PIN_GET), and per-pin configuration
- * (PIN_SET).  All six user-callable commands carry GENL_ADMIN_PERM
- * (CAP_NET_ADMIN gated), and genl_family_rcv_msg() checks that flag
- * before it parses attributes, so a child without CAP_NET_ADMIN in
- * the initial user namespace gets -EPERM and never reaches the
- * per-cmd nla_policy walker or the device / pin lookup paths; a child
- * that holds it reaches every per-cmd parser once the message carries
- * a real family_id.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "dpll", so the per-cmd policy walker plus the device
- * and pin dispatch chains have been routinely cold under generic
- * netlink fuzzing; resolving the family at first NETLINK_GENERIC use
- * lets the message generator address real dpll messages whose
- * attribute shapes plausibly survive the per-cmd policy.
- *
- * The six *_NTF notification command ids (DEVICE_CREATE_NTF,
- * DEVICE_DELETE_NTF, DEVICE_CHANGE_NTF, PIN_CREATE_NTF, PIN_DELETE_NTF,
- * PIN_CHANGE_NTF) are kernel-to-userspace only -- the kernel ops table
- * does not list a .doit or .dumpit handler for them, so the dispatcher
- * rejects them on input.  Listing them in the grammar would only burn
- * fuzz budget on a guaranteed -EOPNOTSUPP fast-reject, so they are
- * omitted.
- *
- * The family is split_ops with two distinct attribute namespaces --
- * the device-level DPLL_A_* enum and the per-pin DPLL_A_PIN_* enum --
- * whose id values overlap starting at 1.  The flat nla_attr_spec
- * table the registry consumes cannot disambiguate overlapping keys, so
- * following the ovpn precedent only the device-level DPLL_A_* surface
- * is enumerated here; the DPLL_A_PIN_* table belongs in a future
- * grammar extension that carries a per-command attribute namespace.
- *
- * The family carries a nonzero declared version
- * (DPLL_FAMILY_VERSION = 1) so the default_version member is
- * initialised -- the kernel's dispatcher doesn't gate on the
- * genlmsghdr.version byte today, but matching the declared family
- * version keeps the message generator honest against any future
- * version-gated dispatch.  hdrsize stays 0: dpll has no family-
- * specific fixed header, attributes follow the genlmsghdr directly.
- *
- * Header gating mirrors the ovpn / nbd families: the family is compiled
- * only when <linux/dpll.h> is present, so a build host lacking the
- * header entirely silently drops the family from the registry instead
- * of failing the build.  A host that ships an *older* revision of the
- * header still passes the __has_include gate, so kernel/dpll.h is
- * pulled in its place -- it includes <linux/dpll.h> and backfills the
- * post-6.7 DPLL_A_* appends the spec table references
- * (LOCK_STATUS_ERROR / CLOCK_QUALITY_LEVEL / PHASE_OFFSET_MONITOR) so
- * the build survives on distro kernels that predate them.
- *
- * arch.h is included unconditionally above the __has_include guard so
- * the translation unit is never empty even on build hosts whose uapi
- * lacks <linux/dpll.h> -- the toolchain emits no compile-unit-empty
- * warning and the registry-side ifdef'd extern stays consistent with
- * the absent strong symbol.
+ * Genetlink family grammar: dpll (Digital PLL subsystem), targeting
+ * drivers/dpll/dpll_nl.c and dpll_netlink.c.  All six ops are
+ * GENL_ADMIN_PERM; only the device-level DPLL_A_* namespace is listed.
  */
 
+/* Keeps the TU non-empty when the guard below drops the family. */
 #include "arch.h"
 
 #if __has_include(<linux/dpll.h>)

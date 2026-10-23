@@ -1,36 +1,8 @@
 /*
- * Genetlink family grammar: hsr (NET_HSR / High-availability Seamless
- * Redundancy, IEC 62439-3).
- *
- * The HSR/PRP driver's generic-netlink family ("HSR") accepts two
- * commands from userspace: HSR_C_GET_NODE_STATUS and
- * HSR_C_GET_NODE_LIST.  The other four ids are kernel-to-user messages
- * the genl core rejects on input (RING_ERROR / NODE_DOWN notifications,
- * SET_NODE_STATUS / SET_NODE_LIST replies), so the grammar omits them.
- * Both need HSR_A_IFINDEX to name an HSR master; without one they
- * answer -EINVAL after the full attribute walk completes — that's the
- * parser-level coverage spec-driven fuzzing exists to provide.
- *
- * Random nlmsg_type IDs essentially never matched the runtime-assigned
- * family_id for "HSR", so the per-cmd nla_policy walker in
- * net/hsr/hsr_netlink.c plus the node-table lookup paths have been
- * routinely cold under generic netlink fuzzing; resolving the family
- * at first NETLINK_GENERIC use lets the message generator address real
- * hsr messages whose attribute shapes plausibly survive the per-cmd
- * policy.
- *
- * Per the wireguard / tipc / l2tp / team model, a single flat
- * nla_attr_spec table lists every id used by this family's commands.
- * HSR uses a single flat HSR_A_* namespace (no nested containers), so
- * the table is simpler than the team / l2tp grammars: ten scalar /
- * binary attrs covering the IFINDEX selector, the per-port age and
- * sequence counters, and the MAC address pair plus per-port ifindex
- * triple emitted by the GET_NODE_STATUS / GET_NODE_LIST responses.
- *
- * Header gating mirrors the team / l2tp families: <linux/hsr_netlink.h>
- * is the upstream UAPI header carrying every HSR_C_* and HSR_A_* enum
- * referenced below.  Build hosts lacking the header silently drop the
- * family from the registry instead of failing the build.
+ * Genetlink family grammar: hsr (High-availability Seamless Redundancy,
+ * IEC 62439-3), targeting net/hsr/hsr_netlink.c.  Only GET_NODE_STATUS and
+ * GET_NODE_LIST are ops; both need HSR_A_IFINDEX to name an HSR master.
+ * One flat HSR_A_* namespace.
  */
 
 #if __has_include(<linux/hsr_netlink.h>)
@@ -41,6 +13,10 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * RING_ERROR and NODE_DOWN are notifications, and SET_NODE_STATUS /
+ * SET_NODE_LIST label the replies; none is an op, so they are not listed.
+ */
 static const struct genl_cmd_grammar hsr_cmds[] = {
 	{ HSR_C_GET_NODE_STATUS,	"HSR_C_GET_NODE_STATUS" },
 	{ HSR_C_GET_NODE_LIST,		"HSR_C_GET_NODE_LIST" },
