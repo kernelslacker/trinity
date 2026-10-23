@@ -64,11 +64,33 @@
 #define FAN_MARK_MNTNS		0x00000110
 #endif
 
+/* FID-based reporting flags (5.1+); guard in case headers already define them. */
+#ifndef FAN_REPORT_TID
+#define FAN_REPORT_TID		0x00000100
+#endif
 #ifndef FAN_REPORT_FID
 #define FAN_REPORT_FID		0x00000200
 #endif
+#ifndef FAN_REPORT_DIR_FID
+#define FAN_REPORT_DIR_FID	0x00000400
+#endif
+#ifndef FAN_REPORT_NAME
+#define FAN_REPORT_NAME		0x00000800
+#endif
+#ifndef FAN_REPORT_TARGET_FID
+#define FAN_REPORT_TARGET_FID	0x00001000
+#endif
+#ifndef FAN_REPORT_PIDFD
+#define FAN_REPORT_PIDFD	0x00000080
+#endif
+#ifndef FAN_REPORT_FD_ERROR
+#define FAN_REPORT_FD_ERROR	0x00002000
+#endif
 #ifndef FAN_REPORT_MNT
 #define FAN_REPORT_MNT		0x00004000
+#endif
+#ifndef FAN_ENABLE_AUDIT
+#define FAN_ENABLE_AUDIT	0x00000040
 #endif
 #ifndef FAN_CLASS_NOTIF
 #define FAN_CLASS_NOTIF		0x00000000
