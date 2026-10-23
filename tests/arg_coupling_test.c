@@ -489,6 +489,41 @@ static void vet_final_from_the_dispatched_entry(void)
 	fake_untrack_regions();
 }
 
+/* epoll_wait, epoll_pwait and epoll_pwait2 refuse a positive maxevents with
+ * no events buffer, and leave a maxevents of 0 or below, or a buffer, to
+ * the kernel, which reads maxevents as an int: a slot whose low 32 bits are
+ * 0 is no positive maxevents, and one whose low 32 bits are 1 is. */
+static void epoll_wait_events_held(void)
+{
+	struct syscallentry *const entries[] = {
+		&syscall_epoll_wait, &syscall_epoll_pwait, &syscall_epoll_pwait2,
+	};
+	static const struct {
+		unsigned long events, maxevents;
+		int verdict;
+	} cases[] = {
+		{ 0, 8, -1 },
+		{ 0, 1, -1 },
+		{ 0, 0, 0 },
+		{ 0, (unsigned long) -1L, 0 },
+		{ 0, 1UL << 32, 0 },
+		{ 0, 0xffffffff00000001UL, -1 },
+		{ REGION, 8, 0 },
+	};
+	unsigned int e, i;
+
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (i = 0; i < ARRAY_SIZE(cases); i++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.entry = entries[e];
+			rec.a2 = cases[i].events;
+			rec.a3 = cases[i].maxevents;
+			if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict)
+				BUG("epoll_wait: an events buffer and maxevents were judged wrongly");
+		}
+	}
+}
+
 /* A pool mapping for the mm sanitisers to pick, away from every region a
  * test tracks; ARG_MMAP leaves its struct map in a1.
  * common_set_mmap_ptr_len() works on this_child()'s record, so the calls
@@ -1608,6 +1643,7 @@ void arg_coupling_self_check(void)
 	count_held_inside_buffer();
 	vet_final_asked_first();
 	vet_final_from_the_dispatched_entry();
+	epoll_wait_events_held();
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	munmap_range_held_to_mapping();

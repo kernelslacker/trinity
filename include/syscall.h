@@ -717,14 +717,6 @@ struct syscallentry {
 	bool is_execve;
 
 	/*
-	 * Cached membership flag for the epoll_wait family
-	 * (epoll_wait / epoll_pwait / epoll_pwait2), set at table init
-	 * so validate_arg_coupling() can short-circuit non-members with
-	 * a single byte load instead of three strcmps per dispatch.
-	 */
-	bool is_epoll_wait_family;
-
-	/*
 	 * Cached identity of fcntl, set at table init so
 	 * validate_arg_coupling() can judge its (cmd, arg) pair with a
 	 * single byte load per dispatch.  The i386 fcntl64 slot shares
@@ -1110,6 +1102,13 @@ void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
 void post_open_fd(struct syscallrecord *rec);
+
+/*
+ * The .vet_final hook epoll_wait shares with epoll_pwait and epoll_pwait2,
+ * which take the events buffer and maxevents in the same slots.  Defined
+ * in syscalls/poll/epoll_wait.c.
+ */
+int vet_final_epoll_wait(struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

@@ -172,6 +172,28 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
 }
 
 /*
+ * The events buffer (a2) has to be non-NULL whenever maxevents (a3) is
+ * positive: ep_send_events() dereferences it once maxevents is, so a NULL
+ * buffer is an EFAULT at copy_to_user time that exercises no interesting
+ * eventpoll path, and the call is refused.  maxevents <= 0 is a sanitise
+ * bucket that keeps the early EINVAL reject warm, and is left alone.
+ * maxevents is judged as the int the kernel reads (do_epoll_wait()).
+ * epoll_pwait and epoll_pwait2 take the two in the same slots and share
+ * this.
+ */
+int vet_final_epoll_wait(struct syscallrecord *rec)
+{
+	int maxevents = (int) rec->a3;
+
+	if (maxevents > 0 && rec->a2 == 0) {
+		outputerr("arg-coupling: %s rejected: maxevents=%d but events=NULL\n",
+			  rec->entry->name, maxevents);
+		return -1;
+	}
+	return 0;
+}
+
+/*
  * Kernel ABI: epoll_wait(2) on success returns the count of ready file
  * descriptors copied into the user events array — a value in [0, maxevents]
  * computed by ep_send_events() walking fs/eventpoll.c's ready list. Failure
@@ -247,6 +269,7 @@ struct syscallentry syscall_epoll_wait = {
 	.argtype = { [0] = ARG_FD_EPOLL, [1] = ARG_NON_NULL_ADDRESS, [2] = ARG_LEN },
 	.argname = { [0] = "epfd", [1] = "events", [2] = "maxevents", [3] = "timeout" },
 	.sanitise = sanitise_epoll_wait,
+	.vet_final = vet_final_epoll_wait,
 	.post = post_epoll_wait,
 	.rettype = RET_BORING,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,

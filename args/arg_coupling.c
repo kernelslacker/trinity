@@ -307,27 +307,6 @@ int validate_arg_coupling(struct syscallrecord *rec,
 		return -1;
 
 	/*
-	 * epoll_wait / epoll_pwait / epoll_pwait2: the events output
-	 * buffer (a2) must be non-NULL whenever maxevents (a3) is > 0.
-	 * The kernel's ep_send_events() unconditionally dereferences the
-	 * events pointer once maxevents is positive, so a NULL buffer
-	 * with maxevents > 0 is rejected as EFAULT at copy_to_user time
-	 * without exercising any interesting eventpoll path.  Skip the
-	 * dispatch.  maxevents <= 0 is a legitimate sanitise bucket that
-	 * exercises the early EINVAL reject; leave those alone.
-	 *
-	 * The family-membership test reads the cached is_epoll_wait_family
-	 * byte stamped at table init.
-	 */
-	if (entry->is_epoll_wait_family) {
-		if ((long) rec->a3 > 0 && rec->a2 == 0) {
-			outputerr("arg-coupling: %s rejected: maxevents=%ld but events=NULL\n",
-				  entry->name, (long) rec->a3);
-			return -1;
-		}
-	}
-
-	/*
 	 * fcntl F_SETSIG: routes an O_ASYNC fd's SIGIO to the signal in
 	 * a3, and the fd's owner can be the parent, which has to ignore
 	 * that signal (parent_ignores_sigio_as()).  sanitise_fcntl() draws
