@@ -32,37 +32,6 @@
 
 #include "kernel/fcntl.h"
 
-#ifndef PERF_ATTR_SIZE_VER0
-#define PERF_ATTR_SIZE_VER0	64
-#endif
-#ifndef PERF_ATTR_SIZE_VER1
-#define PERF_ATTR_SIZE_VER1	72
-#endif
-#ifndef PERF_ATTR_SIZE_VER2
-#define PERF_ATTR_SIZE_VER2	80
-#endif
-#ifndef PERF_ATTR_SIZE_VER3
-#define PERF_ATTR_SIZE_VER3	96
-#endif
-#ifndef PERF_ATTR_SIZE_VER4
-#define PERF_ATTR_SIZE_VER4	104
-#endif
-#ifndef PERF_ATTR_SIZE_VER5
-#define PERF_ATTR_SIZE_VER5	112
-#endif
-#ifndef PERF_ATTR_SIZE_VER6
-#define PERF_ATTR_SIZE_VER6	120
-#endif
-#ifndef PERF_ATTR_SIZE_VER7
-#define PERF_ATTR_SIZE_VER7	128
-#endif
-#ifndef PERF_ATTR_SIZE_VER8
-#define PERF_ATTR_SIZE_VER8	136
-#endif
-#ifndef PERF_ATTR_SIZE_VER9
-#define PERF_ATTR_SIZE_VER9	144
-#endif
-
 /*
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
  * accepts a perf_event_open call whose attr->size matches any prior
