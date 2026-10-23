@@ -2,7 +2,10 @@
  * SYSCALL_DEFINE3(close_range, unsigned int, fd, unsigned int, max_fd,
  *                 unsigned int, flags)
  *
- * Closes every fd in [fd, max_fd]; errors closing one fd are ignored.
+ * Closes [fd, max_fd] (EXCEPT: all outside it; CLOEXEC_ONLY: only fds that
+ * are close-on-exec).  No protected fd may be in the set the kernel closes:
+ * the sanitiser narrows or widens the range, and validate_arg_coupling()
+ * refuses a call rewritten after sanitise.
  */
 #include <errno.h>
 #include <fcntl.h>
