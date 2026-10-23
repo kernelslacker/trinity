@@ -57,6 +57,7 @@
  * policy will -EINVAL — both branches walk real parser code.
  */
 
+#include <linux/if.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/ipset/ip_set.h>
 
@@ -121,9 +122,6 @@
 /* Inner IPSET_ATTR_IPADDR nested block. */
 #ifndef IPSET_ATTR_IPADDR_IPV6
 #define IPSET_ATTR_IPADDR_IPV6	2
-#endif
-#ifndef IFNAMSIZ
-#define IFNAMSIZ		16
 #endif
 
 static const struct nfnl_cmd_grammar ipset_cmds[] = {
