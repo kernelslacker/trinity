@@ -5,22 +5,22 @@ fuzzer window runs under, learns from edge-discovery yield via a discounted UCB1
 coverage plateaus and classifies their cause, and drives targeted interventions (forced-random
 rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of stalls.
 
-## Files (11 files + internal header, ~4,261 LOC)
+## Files (11 files + internal header, ~4,188 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| strategy.c | 515 | Glue + plateau-intervention dispatch: `--strategy` parsing, arm/mode name tables, `select_next_strategy()` (bandit vs. intervention dispatch), rescue-classifier-driven `amplified_intervention_arm()`, PIM rotation (`select_plateau_intervention_strategy`) |
-| strategy-bandit.c | 565 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
-| strategy-frontier.c | 661 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_recent_count()`, errno-plateau decay predicate, topology-pair (setup-op → productive-event) shadow ring, context-regular suppression shadow |
-| strategy-frontier-cool.c | 394 | Saturation and barren-demote cooldown helpers, split from strategy-frontier.c |
-| strategy-frontier-window.c | 208 | Per-syscall frontier-edge ring window advance (`frontier_window_advance()`), split from strategy-frontier.c |
-| strategy-frontier-bitmap.c | 154 | Producer-observer bitmap backing the spare-lane classifier, split from strategy-frontier.c |
-| strategy-frontier-spare.c | 117 | Spare-lane classifier (`frontier_spare_lane_decide()`) shared by the cooldown helpers, split from strategy-frontier.c |
+| strategy.c | 466 | Glue + plateau-intervention dispatch: `--strategy` parsing, arm/mode name tables, `select_next_strategy()` (bandit vs. intervention dispatch), rescue-classifier-driven `amplified_intervention_arm()`, PIM rotation (`select_plateau_intervention_strategy`) |
+| strategy-bandit.c | 559 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
+| strategy-frontier.c | 659 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_recent_count()`, errno-plateau decay predicate, topology-pair (setup-op → productive-event) shadow ring, context-regular suppression shadow |
+| strategy-frontier-cool.c | 389 | Saturation and barren-demote cooldown helpers |
+| strategy-frontier-window.c | 207 | Per-syscall frontier-edge ring window advance (`frontier_window_advance()`) |
+| strategy-frontier-bitmap.c | 153 | Producer-observer bitmap backing the spare-lane classifier |
+| strategy-frontier-spare.c | 116 | Spare-lane classifier (`frontier_spare_lane_decide()`) shared by the cooldown helpers |
 | strategy-frontier-internal.h | 20 | Declarations private to the `strategy-frontier*.c` cluster |
-| strategy-plateau.c | 845 | Plateau-intervention machinery: hypothesis classifier (5 rules: CMP-rising/PC-flat, childop-dominant, remote-dominant, frontier-cold, single-group-dominant), anti-prior accept-weight computation, "wall-lever" shadow suppression, snapshot/delta helpers |
-| strategy-cmp-novelty.c | 186 | Per-syscall CMP-constant novelty bloom filter (`bandit_cmp_observe()`): two-hash 1024-bit bloom per (syscall, arch) with lazy window-based decay, feeds bandit CMP-reward term |
-| strategy-rescue.c | 87 | Random-rescue classifier: `classify_random_rescue()` attributes a plateau-forced STRATEGY_RANDOM win to a class (COLD_SKIP, CMP_DERIVED, or UNKNOWN; 3 placeholder classes not yet wired) |
-| strategy-stats-dump.c | 529 | End-of-run operator summary: picker mode, plateau-forced cohort, intervention-mode distribution, rescue-class distribution, explorer-vs-bandit "edge race", per-arm pulls/reward/exposure/reason/chaos breakdowns |
+| strategy-plateau.c | 843 | Plateau-intervention machinery: hypothesis classifier (5 rules: CMP-rising/PC-flat, childop-dominant, remote-dominant, frontier-cold, single-group-dominant), anti-prior accept-weight computation, "wall-lever" shadow suppression, snapshot/delta helpers |
+| strategy-cmp-novelty.c | 184 | Per-syscall CMP-constant novelty bloom filter (`bandit_cmp_observe()`): two-hash 1024-bit bloom per (syscall, arch) with lazy window-based decay, feeds bandit CMP-reward term |
+| strategy-rescue.c | 85 | Random-rescue classifier: `classify_random_rescue()` attributes a plateau-forced STRATEGY_RANDOM win to a class (COLD_SKIP, CMP_DERIVED, or UNKNOWN; 3 placeholder classes not yet wired) |
+| strategy-stats-dump.c | 527 | End-of-run operator summary: picker mode, plateau-forced cohort, intervention-mode distribution, rescue-class distribution, explorer-vs-bandit "edge race", per-arm pulls/reward/exposure/reason/chaos breakdowns |
 
 ## Key design decisions
 
@@ -94,7 +94,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
   `frontier_satcool_spare()`, and reads `plateau_anti_prior_accept()` / `plateau_rescue_bias_active_for()`.
 - `random_syscall/dispatch-step.c` — calls `maybe_rotate_strategy()` once per dispatch step;
   `classify_random_rescue()` is invoked from the rescue-attribution block
-  (`random_syscall/per-syscall-edges.c:359`) after a plateau-forced call lands a new edge.
+  (`random_syscall/per-syscall-edges.c:344`) after a plateau-forced call lands a new edge.
 - `kcov/plateau.c` — `kcov_plateau_check()` calls `strategy_plateau_response()` on the plateau
   rising edge (arms the hypothesis-entry snapshot, forces an immediate rotation) and reads
   `strategy_plateau_hypothesis_current/name()` for its own stats line.
@@ -125,13 +125,13 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
 
 ## Areas of attention
 
-1. **The frontier cluster is the largest concern here (5 files, ~1,530 LOC)** doing at least 4
+1. **The frontier cluster is the largest concern here (5 files, ~1,524 LOC)** doing at least 4
    distinct jobs: the decay-ring producer/consumer (strategy-frontier.c), the errno-plateau
    predicate, two near-duplicate shadow discriminators (`frontier_satcool_spare` /
    `frontier_live_cool_spare`, both wrapping the shared `frontier_spare_lane_decide()` in
    strategy-frontier-spare.c), and the topology-pair shadow ring. The shared lane-decide
-   function is good reuse; the per-concern split that strategy.c/strategy-bandit.c/
-   strategy-plateau.c went through has now been applied here too.
+   function is good reuse, and the cluster is split per concern like strategy.c,
+   strategy-bandit.c and strategy-plateau.c.
 2. **Heavy load-bearing comments over terse code** — nearly every function carries multi-
    paragraph rationale (ordering/race justification, historical bug postmortems e.g. the
    frontier underflow story in `frontier_window_advance()`, strategy-frontier-window.c). This is valuable but means the

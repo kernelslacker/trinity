@@ -2,7 +2,7 @@
 
 Largest directory in the codebase: 364 `.c` files (14 directly here, 343
 grouped into 28 by-family subdirectories, 7 arch-specific under `x86/`),
-plus 6 headers, ~66,300 LOC in `.c` files alone. One file per Linux syscall
+plus 6 headers, ~65,800 LOC in `.c` files alone. One file per Linux syscall
 Trinity fuzzes (`accept.c`, `access.c`, `acct.c`, ... `write.c`), each defining a
 single `struct syscallentry syscall_<name>` descriptor consumed by
 `tables/` at init time. This directory has no control flow of its own — it
@@ -18,7 +18,7 @@ Files are grouped by family into subdirectories — `fs/` (84), `process/`
 directly in `syscalls/`. Do not enumerate all 364 files individually — they
 follow one of two shapes:
 
-**Bulk (233 of the 357 non-arch files are under 200 LOC): pure descriptor pattern.**
+**Bulk (235 of the 357 non-arch files are under 200 LOC): pure descriptor pattern.**
 A `struct syscallentry syscall_X = { ... }` initializer with `.name`,
 `.num_args`, `.argtype[6]`, `.argname[6]`, `.group`, `.rettype`, optional
 `.flags`, and optionally a `static void sanitise_X(struct syscallrecord *rec)`
@@ -31,29 +31,31 @@ wired via `.sanitise`. Examples at the simple end:
 
 84 of the 357 non-arch files have no `.sanitise` at all (pure table-driven
 generic arg generation off `argtype[]`); 273 define at least one
-`static void sanitise_X()`; 208 define a `.post` handler; only 15 define
+`static void sanitise_X()`; 209 define a `.post` handler; only 15 define
 `.cleanup`, 3 explicitly call `generic_sanitise`.
 
 **Outliers: syscalls with substantial standalone logic (>400 LOC).** By line
-count: `process/prctl.c` (1325),
-`socket/setsockopt.c` (992, + `setsockopt-internal.h`),
-`perf/perf_event_open-pmu-discovery.c` (860),
-`io_uring/io_uring_register-payloads.c` (852), `socket/recv.c` (852),
-`fs/fcntl.c` (819), `xattr/listxattr.c` (789), `socket/send.c` (775),
-`fs/stat/stat.c` (749), `bpf.c` (708, gated `#ifdef USE_BPF`),
-`keyctl/keyctl.c` (656), `mm/mmap.c` (576),
-`concurrency/futex.c` (571), `fs/mount/mount.c` (567),
+count: `process/prctl.c` (1324),
+`socket/setsockopt.c` (930, + `setsockopt-internal.h`),
+`perf/perf_event_open-pmu-discovery.c` (856),
+`io_uring/io_uring_register-payloads.c` (851), `socket/recv.c` (845),
+`fs/fcntl.c` (805), `xattr/listxattr.c` (789), `socket/send.c` (768),
+`fs/stat/stat.c` (743), `keyctl/keyctl.c` (655),
+`bpf.c` (609, gated `#ifdef USE_BPF`),
+`concurrency/futex.c` (570), `fs/mount/mount.c` (567),
+`mm/mmap.c` (565),
 `io_uring/io_uring_register.c` (562, + `io_uring_register-internal.h`),
-`fs/mount/statmount.c` (544), `fs/stat/statfs.c` (541),
-`ipc/sysv/ipc.c` (498), `timer/timer_create.c` (492),
-`fs/open.c` (498), `fs/readlink.c` (484), `process/execve.c` (477),
-`fs/stat/file_getattr.c` (470), `fs/stat/newfstat.c` (466),
-`socket/getpeername.c` (463), `keyctl/add_key.c` (460),
-`xattr/listxattrat.c` (448), `fs/stat/fstatfs.c` (447),
+`fs/mount/statmount.c` (543), `fs/stat/statfs.c` (541),
+`fs/close_range.c` (523), `ipc/sysv/ipc.c` (498),
+`fs/open.c` (498), `timer/timer_create.c` (492),
+`fs/readlink.c` (484), `process/execve.c` (473),
+`fs/stat/file_getattr.c` (469), `fs/stat/newfstat.c` (466),
+`socket/getpeername.c` (463), `keyctl/add_key.c` (455),
+`fs/stat/fstatfs.c` (447), `xattr/listxattrat.c` (446),
 `socket/getsockname.c` (446), `process/prlimit64.c` (441),
 `fs/mount/listmount.c` (432), `fs/write.c` (426),
 `signal/sigaction.c` (423), `sched/sched_getattr.c` (412),
-`process/ptrace.c` (410), `xattr/getxattr.c` (405). These carry their own
+`process/ptrace.c` (410), `xattr/getxattr.c` (403). These carry their own
 static tables (opcode lists, sockopt validity matrices, PMU sysfs
 enumeration), multi-op dispatch switches, and often a `.post`/`.cleanup`
 pair managing a heap allocation stashed in `rec->post_state`.
@@ -78,7 +80,7 @@ top of each header as private to that pair of TUs).
 ## Key design decisions
 
 1. **The descriptor is the whole contract.** `struct syscallentry` (defined
-   once in `include/syscall.h:549`, not here) is what every file in this
+   once in `include/syscall.h:547`, not here) is what every file in this
    directory populates: `.argtype[6]` (an `enum argtype` — `ARG_FD`,
    `ARG_PATHNAME`, `ARG_STRUCT_PTR_IN/OUT/INOUT`, `ARG_LIST`, `ARG_RANGE`,
    typed-fd variants like `ARG_FD_BPF_MAP`, etc.) drives generic argument
@@ -169,7 +171,8 @@ top of each header as private to that pair of TUs).
 - `include/syscalls-*.h` (one per arch, e.g. `syscalls-x86_64.h`) — compile-time
   `struct syscalltable[]` literals of `{ .entry = &syscall_X }` built from the
   `extern` declarations in `syscalls.h`; selected via `include/arch-syscalls.h`.
-- `random_syscall/dispatch-step.c`, `random_syscall/pickers.c` — runtime consumers
+- `random_syscall/pick-common.c` and the `pick-*.c` arms,
+  `random_syscall/dispatch-step.c` — runtime consumers
   that pick a syscall number and call `get_syscall_entry()` (in `tables/`) to
   resolve the descriptor defined here, then dispatch `.sanitise` →
   kernel call → `.post` → `.cleanup`.
@@ -193,14 +196,14 @@ top of each header as private to that pair of TUs).
 ## Areas of attention
 
 1. **Security-sensitive descriptors carry the most custom logic.**
-   `process/execve.c` (477 lines) fabricates argv/envp arrays with a
+   `process/execve.c` (473 lines) fabricates argv/envp arrays with a
    post-state snapshot to survive sibling-stomp between syscall return and
    post handling; `process/ptrace.c` (410 lines) tracks a 34-request
    allocation matrix (only 6 of 34 `PTRACE_*` ops allocate a freeable
    buffer) behind a magic-cookie-guarded `post_state`; `keyctl/keyctl.c`
-   (656 lines) and its sibling `add_key.c`/`request_key.c` share a live
+   (655 lines) and its sibling `add_key.c`/`request_key.c` share a live
    key-serial object pool whose destructor issues a real
-   `KEYCTL_INVALIDATE` at pool teardown; `bpf.c` (708 lines, `#ifdef
+   `KEYCTL_INVALIDATE` at pool teardown; `bpf.c` (609 lines, `#ifdef
    USE_BPF`) builds both classic and eBPF programs and drives
    `BPF_PROG_LOAD`/`BPF_MAP_CREATE`-shaped `union bpf_attr` payloads.
    `fs/mount/mount.c` (567 lines) maintains its own sacrificial-mount-path pool
@@ -210,7 +213,7 @@ top of each header as private to that pair of TUs).
    `cleanup_sacrificial_mount_paths()`, and a bounded-copy
    `pick_sacrificial_target()` —
    mount namespace/target confusion is an ongoing area of care here.
-2. **The largest files (`process/prctl.c`, `socket/setsockopt.c`,
+2. **Several of the largest files (`process/prctl.c`, `socket/setsockopt.c`,
    `perf/perf_event_open-pmu-discovery.c`,
    `io_uring/io_uring_register-payloads.c`, `fs/fcntl.c`) each exceed 800
    LOC and embed their own opcode/option dispatch tables** (`sockopt_table[]` in
