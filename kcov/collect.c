@@ -411,6 +411,52 @@ static void kcov_account_transitions(struct kcov_child *kc, unsigned int nr,
 				TOPO_PAIR_REASON_TRANSITION);
 }
 
+/*
+ * Per-childop accounting for a collection taken inside a childop bracket,
+ * where nr is a synthetic number at or above CHILDOP_KCOV_NR_BASE rather than
+ * a syscall.  Only those brackets reach it.
+ */
+static void kcov_account_childop(struct kcov_child *kc, unsigned int nr,
+				 bool found_new, unsigned long edges_this_call)
+{
+	/* per-childop mirror
+	 * of kcov_collect()'s per-syscall local/remote PC split.  Indexed
+	 * by op = nr - CHILDOP_KCOV_NR_BASE; bounds-clamped against
+	 * KCOV_CHILDOP_NR_MAX (the in-tree _Static_assert pins
+	 * NR_CHILD_OP_TYPES below the bound, but the guard stays
+	 * paranoid since nr is composed from a child_op_type value
+	 * outside this file). */
+	unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
+
+	if (op < KCOV_CHILDOP_NR_MAX) {
+		if (kc->remote_mode)
+			__atomic_fetch_add(
+				&kcov_shm->pc_ctx.childop_remote_pc_calls[op],
+				1, __ATOMIC_RELAXED);
+		else
+			__atomic_fetch_add(
+				&kcov_shm->pc_ctx.childop_local_pc_calls[op],
+				1, __ATOMIC_RELAXED);
+		if (found_new) {
+			if (kc->remote_mode) {
+				__atomic_fetch_add(
+					&kcov_shm->pc_ctx.childop_remote_pc_edge_calls[op],
+					1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&kcov_shm->pc_ctx.childop_remote_pc_edge_count[op],
+					edges_this_call, __ATOMIC_RELAXED);
+			} else {
+				__atomic_fetch_add(
+					&kcov_shm->pc_ctx.childop_local_pc_edge_calls[op],
+					1, __ATOMIC_RELAXED);
+				__atomic_fetch_add(
+					&kcov_shm->pc_ctx.childop_local_pc_edge_count[op],
+					edges_this_call, __ATOMIC_RELAXED);
+			}
+		}
+	}
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -738,42 +784,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		if (transitions_this_call > 0)
 			kcov_account_transitions(kc, nr, transitions_this_call);
 	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
-		/* per-childop mirror
-		 * of the per-syscall local/remote PC split above.  Indexed
-		 * by op = nr - CHILDOP_KCOV_NR_BASE; bounds-clamped against
-		 * KCOV_CHILDOP_NR_MAX (the in-tree _Static_assert pins
-		 * NR_CHILD_OP_TYPES below the bound, but the guard stays
-		 * paranoid since nr is composed from a child_op_type value
-		 * outside this file). */
-		unsigned long op = nr - CHILDOP_KCOV_NR_BASE;
-
-		if (op < KCOV_CHILDOP_NR_MAX) {
-			if (kc->remote_mode)
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.childop_remote_pc_calls[op],
-					1, __ATOMIC_RELAXED);
-			else
-				__atomic_fetch_add(
-					&kcov_shm->pc_ctx.childop_local_pc_calls[op],
-					1, __ATOMIC_RELAXED);
-			if (found_new) {
-				if (kc->remote_mode) {
-					__atomic_fetch_add(
-						&kcov_shm->pc_ctx.childop_remote_pc_edge_calls[op],
-						1, __ATOMIC_RELAXED);
-					__atomic_fetch_add(
-						&kcov_shm->pc_ctx.childop_remote_pc_edge_count[op],
-						edges_this_call, __ATOMIC_RELAXED);
-				} else {
-					__atomic_fetch_add(
-						&kcov_shm->pc_ctx.childop_local_pc_edge_calls[op],
-						1, __ATOMIC_RELAXED);
-					__atomic_fetch_add(
-						&kcov_shm->pc_ctx.childop_local_pc_edge_count[op],
-						edges_this_call, __ATOMIC_RELAXED);
-				}
-			}
-		}
+		kcov_account_childop(kc, nr, found_new, edges_this_call);
 	}
 
 	if (new_edge_count != NULL)
