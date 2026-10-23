@@ -152,6 +152,193 @@ classify_strategy_return_class(const struct syscallrecord *rec)
 }
 
 /*
+ * CMP RedQueen greedy re-exec tail.  Fires after the
+ * parent call's handle_syscall_ret has settled so .post / .cleanup
+ * are done before the re-exec dispatch reuses rec.  A single
+ * insertion point in dispatch_step so all callers
+ * (random_syscall_step, replay_syscall_step, sequence-chain step)
+ * inherit re-exec coverage automatically.
+ *
+ * Gates (ALL must pass):
+ *   - !in_reexec     -- recursion guard; otherwise we'd self-reinforce
+ *     a runaway loop.
+ *   - redqueen_enabled -- A/B-comparison stamp.
+ *   - kcov.mode == KCOV_MODE_CMP -- PC-mode children produce no
+ *     attribution.  Defensive: redqueen_enabled is only stamped
+ *     true on CMP-mode children today, but the gate keeps the
+ *     dispatch invariant local to this site.
+ *   - !in_chain_mid_step -- chains save their step sequence for
+ *     replay; a mid-chain re-exec is not part of that contract
+ *     and would double-count the step against the chain depth.
+ *   - new_cmp > 0 -- the parent must have produced at least one
+ *     bloom-novel CMP record.  A call that only re-harvested
+ *     known constants adds no information for re-exec.
+ *   - reexec_pending_count > 0 -- attribution scan in the parent's
+ *     cmp_hints_collect actually found a slot match.
+ *   - rate gate: ONE_IN(REDQUEEN_REEXEC_GATE_DENOM) baseline,
+ *     always-on while the plateau detector classifies the run as
+ *     CMP_RISING_PC_FLAT.  Combines low-cost steady-state lift
+ *     with full intensification under the diagnostic this re-exec
+ *     was designed to break.
+ */
+static void redqueen_reexec_tail(struct childdata *child,
+				 unsigned long new_cmp)
+{
+	/* Per-call gate disposition bucketing (PHASE 0 measurement-
+	 * correctness): every dispatch_step that reaches this tail
+	 * bumps EXACTLY ONE counter, partitioning the gap between
+	 * reexec_attribution_found and reexec_attempts.  The
+	 * evaluation order below mirrors the original short-circuited
+	 * compound `if`; gate_skipped holds the counter address for
+	 * the first failing gate (NULL == all gates cleared, the
+	 * re-exec actually fired).  Behaviour is unchanged -- the
+	 * reexec call site and rate-gate semantics are identical to
+	 * the prior code; only the accounting around it is new. */
+	unsigned long *gate_skipped = NULL;
+	bool gate_passed = false;
+	bool plateau_burst = false;
+
+	if (child->in_reexec) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_in_reexec
+			: NULL;
+	} else if (!child->redqueen_enabled) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_disabled
+			: NULL;
+	} else if (child->kcov.mode != KCOV_MODE_CMP) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_mode
+			: NULL;
+	} else if (child->in_chain_mid_step) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_chain_mid
+			: NULL;
+	} else if (new_cmp == 0) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp
+			: NULL;
+	} else if (child->reexec_pending_count == 0) {
+		gate_skipped = (kcov_shm != NULL)
+			? &kcov_shm->reexec_gate.reexec_gate_skip_no_pending
+			: NULL;
+	} else {
+		/* All boolean gates cleared; the rate gate
+		 * (ONE_IN(N) baseline plus always-on during a
+		 * CMP_RISING_PC_FLAT plateau) decides between
+		 * gate_pass and the rate-skip bucket. */
+		if (kcov_shm != NULL &&
+		    __atomic_load_n(&kcov_shm->plateau.plateau_active,
+				    __ATOMIC_RELAXED)) {
+			int h = __atomic_load_n(
+				&shm->plateau_current_hypothesis,
+				__ATOMIC_RELAXED);
+
+			if (h == PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
+				plateau_burst = true;
+		}
+
+		if (plateau_burst ||
+		    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
+			/* Drain ALL staged reexec_pending entries
+			 * for this parent dispatch (bounded by the
+			 * producer-side MAX_REEXEC_PENDING cap).
+			 * Each entry was independently
+			 * attribution-scanned by cmp_hints_collect
+			 * from the parent's CMP records, so each is
+			 * an equally valid re-exec candidate; the
+			 * prior single-drain rule discarded
+			 * (count - 1) entries per dispatch even
+			 * though every discarded entry had already
+			 * cleared the parent's full outer-gate
+			 * sequence (in_reexec, redqueen_enabled,
+			 * kcov_mode, chain_mid, new_cmp, rate gate
+			 * / plateau_burst).
+			 *
+			 * Per-entry safety is enforced inside
+			 * redqueen_reexec_step (destructive-syscall
+			 * denylist, validate_specific_syscall_silent,
+			 * p->slot bounds, REDQUEEN_REEXEC_WINDOW_CAP);
+			 * the window cap naturally bounds the
+			 * per-window total attempts even when
+			 * multiple drains fire per parent dispatch.
+			 *
+			 * in_reexec brackets the whole drain so each
+			 * inner dispatch_step short-circuits at the
+			 * outer in_reexec gate and cannot recurse
+			 * into this drain.
+			 *
+			 * The --redqueen-pending-pick A/B flag is
+			 * a no-op for this code path now (every
+			 * staged entry is drained regardless of
+			 * pick order); the per-pending-index
+			 * success counters
+			 * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[])
+			 * still get bumped inside
+			 * redqueen_reexec_step at the entry's true
+			 * index, so per-slot/per-index lift remains
+			 * directly readable.  MAX_REEXEC_PENDING
+			 * clamp on the loop bound is defence in
+			 * depth against a corrupted count reaching
+			 * the array index.
+			 *
+			 * plateau_burst && burst_drain_arm_b:
+			 * measure-arm burst-drain cap.  Arm B trims
+			 * the drain to the first
+			 * REDQUEEN_REEXEC_BURST_DRAIN entries and
+			 * breaks the loop on a helper FAIL (the per-
+			 * window ceiling hit, the destructive /
+			 * validate-silent / bad-slot gates, or any
+			 * future FAIL surface inside
+			 * redqueen_reexec_step).  Arm A (control)
+			 * keeps draining to MAX_REEXEC_PENDING with
+			 * no early break so the two arms measure
+			 * "surgical top-K drain during plateau" vs
+			 * "greedy drain-all during plateau" on
+			 * distinct-edge lift per attempt (see the
+			 * per-arm counter block below the drain). */
+			unsigned int count = child->reexec_pending_count;
+			unsigned int i;
+			bool burst_drain_arm =
+				plateau_burst && child->burst_drain_arm_b;
+
+			if (count > MAX_REEXEC_PENDING)
+				count = MAX_REEXEC_PENDING;
+			if (burst_drain_arm &&
+			    count > REDQUEEN_REEXEC_BURST_DRAIN)
+				count = REDQUEEN_REEXEC_BURST_DRAIN;
+
+			child->in_reexec = true;
+			for (i = 0; i < count; i++) {
+				struct reexec_pending p =
+					child->reexec_pending[i];
+				bool fired;
+
+				fired = redqueen_reexec_step(child, &p, i);
+				if (burst_drain_arm && !fired)
+					break;
+			}
+			child->in_reexec = false;
+			gate_passed = true;
+		} else {
+			gate_skipped = (kcov_shm != NULL)
+				? &kcov_shm->reexec_gate.reexec_gate_skip_rate
+				: NULL;
+		}
+	}
+
+	if (kcov_shm != NULL) {
+		if (gate_passed)
+			__atomic_fetch_add(
+				&kcov_shm->reexec_gate.reexec_gate_pass,
+				1UL, __ATOMIC_RELAXED);
+		else if (gate_skipped != NULL)
+			__atomic_fetch_add(gate_skipped,
+					   1UL, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * Dispatch a fully-prepared syscallrecord and run the per-call
  * post-dispatch bookkeeping: kcov collection / cmp-hint collection,
  * edge-pair recording, mutator-attribution commit, mini-corpus save,
@@ -678,190 +865,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		}
 	}
 
-	/*
-	 * CMP RedQueen greedy re-exec tail.  Fires after the
-	 * parent call's handle_syscall_ret has settled so .post / .cleanup
-	 * are done before the re-exec dispatch reuses rec.  A single
-	 * insertion point in dispatch_step so all callers
-	 * (random_syscall_step, replay_syscall_step, sequence-chain step)
-	 * inherit re-exec coverage automatically.
-	 *
-	 * Gates (ALL must pass):
-	 *   - !in_reexec     -- recursion guard; otherwise we'd self-reinforce
-	 *     a runaway loop.
-	 *   - redqueen_enabled -- A/B-comparison stamp.
-	 *   - kcov.mode == KCOV_MODE_CMP -- PC-mode children produce no
-	 *     attribution.  Defensive: redqueen_enabled is only stamped
-	 *     true on CMP-mode children today, but the gate keeps the
-	 *     dispatch invariant local to this site.
-	 *   - !in_chain_mid_step -- chains save their step sequence for
-	 *     replay; a mid-chain re-exec is not part of that contract
-	 *     and would double-count the step against the chain depth.
-	 *   - new_cmp > 0 -- the parent must have produced at least one
-	 *     bloom-novel CMP record.  A call that only re-harvested
-	 *     known constants adds no information for re-exec.
-	 *   - reexec_pending_count > 0 -- attribution scan in the parent's
-	 *     cmp_hints_collect actually found a slot match.
-	 *   - rate gate: ONE_IN(REDQUEEN_REEXEC_GATE_DENOM) baseline,
-	 *     always-on while the plateau detector classifies the run as
-	 *     CMP_RISING_PC_FLAT.  Combines low-cost steady-state lift
-	 *     with full intensification under the diagnostic this re-exec
-	 *     was designed to break.
-	 */
-	{
-		/* Per-call gate disposition bucketing (PHASE 0 measurement-
-		 * correctness): every dispatch_step that reaches this tail
-		 * bumps EXACTLY ONE counter, partitioning the gap between
-		 * reexec_attribution_found and reexec_attempts.  The
-		 * evaluation order below mirrors the original short-circuited
-		 * compound `if`; gate_skipped holds the counter address for
-		 * the first failing gate (NULL == all gates cleared, the
-		 * re-exec actually fired).  Behaviour is unchanged -- the
-		 * reexec call site and rate-gate semantics are identical to
-		 * the prior code; only the accounting around it is new. */
-		unsigned long *gate_skipped = NULL;
-		bool gate_passed = false;
-		bool plateau_burst = false;
-
-		if (child->in_reexec) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_in_reexec
-				: NULL;
-		} else if (!child->redqueen_enabled) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_disabled
-				: NULL;
-		} else if (child->kcov.mode != KCOV_MODE_CMP) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_mode
-				: NULL;
-		} else if (child->in_chain_mid_step) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_chain_mid
-				: NULL;
-		} else if (new_cmp == 0) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp
-				: NULL;
-		} else if (child->reexec_pending_count == 0) {
-			gate_skipped = (kcov_shm != NULL)
-				? &kcov_shm->reexec_gate.reexec_gate_skip_no_pending
-				: NULL;
-		} else {
-			/* All boolean gates cleared; the rate gate
-			 * (ONE_IN(N) baseline plus always-on during a
-			 * CMP_RISING_PC_FLAT plateau) decides between
-			 * gate_pass and the rate-skip bucket. */
-			if (kcov_shm != NULL &&
-			    __atomic_load_n(&kcov_shm->plateau.plateau_active,
-					    __ATOMIC_RELAXED)) {
-				int h = __atomic_load_n(
-					&shm->plateau_current_hypothesis,
-					__ATOMIC_RELAXED);
-
-				if (h == PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
-					plateau_burst = true;
-			}
-
-			if (plateau_burst ||
-			    ONE_IN(REDQUEEN_REEXEC_GATE_DENOM)) {
-				/* Drain ALL staged reexec_pending entries
-				 * for this parent dispatch (bounded by the
-				 * producer-side MAX_REEXEC_PENDING cap).
-				 * Each entry was independently
-				 * attribution-scanned by cmp_hints_collect
-				 * from the parent's CMP records, so each is
-				 * an equally valid re-exec candidate; the
-				 * prior single-drain rule discarded
-				 * (count - 1) entries per dispatch even
-				 * though every discarded entry had already
-				 * cleared the parent's full outer-gate
-				 * sequence (in_reexec, redqueen_enabled,
-				 * kcov_mode, chain_mid, new_cmp, rate gate
-				 * / plateau_burst).
-				 *
-				 * Per-entry safety is enforced inside
-				 * redqueen_reexec_step (destructive-syscall
-				 * denylist, validate_specific_syscall_silent,
-				 * p->slot bounds, REDQUEEN_REEXEC_WINDOW_CAP);
-				 * the window cap naturally bounds the
-				 * per-window total attempts even when
-				 * multiple drains fire per parent dispatch.
-				 *
-				 * in_reexec brackets the whole drain so each
-				 * inner dispatch_step short-circuits at the
-				 * outer in_reexec gate and cannot recurse
-				 * into this drain.
-				 *
-				 * The --redqueen-pending-pick A/B flag is
-				 * a no-op for this code path now (every
-				 * staged entry is drained regardless of
-				 * pick order); the per-pending-index
-				 * success counters
-				 * (kcov_shm->reexec_pending_hist.reexec_pending_pick_success[])
-				 * still get bumped inside
-				 * redqueen_reexec_step at the entry's true
-				 * index, so per-slot/per-index lift remains
-				 * directly readable.  MAX_REEXEC_PENDING
-				 * clamp on the loop bound is defence in
-				 * depth against a corrupted count reaching
-				 * the array index.
-				 *
-				 * plateau_burst && burst_drain_arm_b:
-				 * measure-arm burst-drain cap.  Arm B trims
-				 * the drain to the first
-				 * REDQUEEN_REEXEC_BURST_DRAIN entries and
-				 * breaks the loop on a helper FAIL (the per-
-				 * window ceiling hit, the destructive /
-				 * validate-silent / bad-slot gates, or any
-				 * future FAIL surface inside
-				 * redqueen_reexec_step).  Arm A (control)
-				 * keeps draining to MAX_REEXEC_PENDING with
-				 * no early break so the two arms measure
-				 * "surgical top-K drain during plateau" vs
-				 * "greedy drain-all during plateau" on
-				 * distinct-edge lift per attempt (see the
-				 * per-arm counter block below the drain). */
-				unsigned int count = child->reexec_pending_count;
-				unsigned int i;
-				bool burst_drain_arm =
-					plateau_burst && child->burst_drain_arm_b;
-
-				if (count > MAX_REEXEC_PENDING)
-					count = MAX_REEXEC_PENDING;
-				if (burst_drain_arm &&
-				    count > REDQUEEN_REEXEC_BURST_DRAIN)
-					count = REDQUEEN_REEXEC_BURST_DRAIN;
-
-				child->in_reexec = true;
-				for (i = 0; i < count; i++) {
-					struct reexec_pending p =
-						child->reexec_pending[i];
-					bool fired;
-
-					fired = redqueen_reexec_step(child, &p, i);
-					if (burst_drain_arm && !fired)
-						break;
-				}
-				child->in_reexec = false;
-				gate_passed = true;
-			} else {
-				gate_skipped = (kcov_shm != NULL)
-					? &kcov_shm->reexec_gate.reexec_gate_skip_rate
-					: NULL;
-			}
-		}
-
-		if (kcov_shm != NULL) {
-			if (gate_passed)
-				__atomic_fetch_add(
-					&kcov_shm->reexec_gate.reexec_gate_pass,
-					1UL, __ATOMIC_RELAXED);
-			else if (gate_skipped != NULL)
-				__atomic_fetch_add(gate_skipped,
-						   1UL, __ATOMIC_RELAXED);
-		}
-	}
+	redqueen_reexec_tail(child, new_cmp);
 
 	/* Per-call attribution scratch is single-use: drained or not, the
 	 * next call starts with a clean slate so a stale slot from the
