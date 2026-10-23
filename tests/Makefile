@@ -30,10 +30,11 @@
 TOP		:= ..
 CC		?= gcc
 CFLAGS		?= -g -O2
+CONFIG_H	:= $(TOP)/config.h
 
 CFLAGS		+= -std=gnu11 -Wall -Wextra
-CFLAGS		+= -I$(TOP) -I$(TOP)/include
-CFLAGS		+= -include $(TOP)/config.h
+CFLAGS		+= -I$(dir $(CONFIG_H)) -I$(TOP) -I$(TOP)/include
+CFLAGS		+= -include $(CONFIG_H)
 CFLAGS		+= -D_GNU_SOURCE -D__linux__
 # Match the top-level Makefile's warning knobs on the PURE modules we
 # reuse so the test link surfaces the same diagnostics production does.
@@ -41,6 +42,9 @@ CFLAGS		+= -Wformat=2 -Winit-self -Wnested-externs -Wpacked -Wshadow
 CFLAGS		+= -Wundef -Wwrite-strings -Wno-format-nonliteral
 CFLAGS		+= -Wstrict-prototypes -Wmissing-prototypes -fsigned-char
 CFLAGS		+= -Wno-missing-field-initializers
+ifneq ($(SYSROOT),)
+CFLAGS		+= --sysroot=$(SYSROOT)
+endif
 
 # mprotect failure injection: wrap mprotect so fixture 7 can fail
 # individual seal calls without touching production code.  The wrapper
@@ -422,7 +426,7 @@ NETLINK_OBJS	:= $(patsubst $(TOP)/%.c,$(BUILDDIR)/real/%.o,$(NETLINK_SRCS))
 FAKE_OBJS	:= $(patsubst %.c,$(BUILDDIR)/%.o,$(FAKE_SRCS))
 TEST_OBJS	:= $(REAL_OBJS) $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(NETLINK_OBJS) $(FAKE_OBJS)
 
-.PHONY: all test test-asan test-ndebug clean
+.PHONY: all test test-asan test-ndebug clean objs
 
 all: $(TEST_BIN)
 	./$(TEST_BIN)
@@ -435,6 +439,11 @@ test-asan:
 
 test-ndebug:
 	$(MAKE) NDEBUG=1
+
+# Compile every object, link nothing and run nothing.  The top-level
+# `make uapi-check` builds them this way, with its own BUILDDIR,
+# CONFIG_H and SYSROOT.
+objs: $(TEST_OBJS)
 
 $(TEST_BIN): $(TEST_OBJS)
 	$(CC) $(CFLAGS) $(LDFLAGS) -o $@ $(TEST_OBJS)

@@ -25,3 +25,4 @@ rotation-events-*.jsonl
 __pycache__/
 dmesg.log
 tests/test-bin-*
+build-uapi/

@@ -7,6 +7,18 @@
   (or need to test prescence of a header file), add it to configure. This should
   be a last resort, in most cases an #ifndef addition to kernel fallback headers will be enough.
 
+  `make uapi-check KERNEL_SRC=<kernel git tree>` finds what such a build would trip over
+  before anyone has to.  It installs the uapi headers of an older kernel tag from that
+  tree into a sysroot cached under $XDG_CACHE_HOME/trinity-uapi (or $HOME/.cache), reruns
+  configure against it and compiles trinity and the test-binary objects in build-uapi/<tag>.
+  The kernel tree is only read, nothing is linked and nothing is run.  The first run takes
+  under a minute and leaves about 10MB in the cache; later runs reuse it.
+
+  The tag defaults to v6.12 (override with UAPI_TAG=).  It is the 2024 longterm release,
+  still maintained, and the uapi base of Debian 13 and RHEL 10.  The longterm releases
+  before it are maintained too, but the tree does not carry the fallbacks they would need:
+  against v6.6 dozens of files fail to compile, and more against each older release.
+
   This means of course that trinity will be trying to run new syscalls on older kernels
   that don't implement them, but it will only call them once. After the first -ENOSYS,
   it gets marked as "Don't run this again".  It also allows us to run and test newer

@@ -9,8 +9,15 @@ CC := gcc
 endif
 CC := $(CROSS_COMPILE)$(CC)
 
+# Where objects land and which config.h every compile includes.
+# `make uapi-check` points both at a build directory of its own.  The
+# config.h directory leads the include path, so a file that names
+# "config.h" itself gets the same one.
+OBJDIR :=
+CONFIG_H := config.h
+
 CFLAGS ?= -g -O2 -D_FORTIFY_SOURCE=2
-CFLAGS += -Wall -Wextra -I. -Iinclude/ -include config.h -Wimplicit -D_GNU_SOURCE -D__linux__
+CFLAGS += -Wall -Wextra -I$(dir $(CONFIG_H)) -I. -Iinclude/ -include $(CONFIG_H) -Wimplicit -D_GNU_SOURCE -D__linux__
 
 CCSTD := $(shell if $(CC) -std=gnu11 -S -o /dev/null -xc /dev/null >/dev/null 2>&1; then echo "-std=gnu11"; else echo "-std=gnu99"; fi)
 CFLAGS += $(CCSTD)
@@ -95,7 +102,7 @@ debug: trinity
 # would make every object out of date on every make.
 .PHONY: check-config
 check-config:
-	@if [ ! -f config.h ]; then  echo "[1;31mRun ./configure first.[0m" >&2; exit 1; fi
+	@if [ ! -f $(CONFIG_H) ]; then  echo "[1;31mRun ./configure first.[0m" >&2; exit 1; fi
 
 # PURE-module test binary integration paths (arch-program #10).
 #
@@ -227,11 +234,11 @@ SRCS		:= $(sort $(wildcard args/*.c)) \
 		   $(sort $(wildcard utils/*.c)) \
 		   $(sort $(SYSCALLS_ARCH))
 
-OBJS		:= $(SRCS:%.c=%.o)
+OBJS		:= $(SRCS:%.c=$(OBJDIR)%.o)
 
 DEPDIR= .deps
 
--include $(SRCS:%.c=$(DEPDIR)/%.d)
+-include $(SRCS:%.c=$(OBJDIR)$(DEPDIR)/%.d)
 
 $(VERSION_H): scripts/gen-versionh.sh Makefile $(wildcard .git)
 	@scripts/gen-versionh.sh
@@ -242,9 +249,9 @@ trinity: $(OBJS)
 
 # -MP gives each header an empty rule, so a deleted or renamed one does
 # not break the next build.
-%.o : %.c | check-config $(VERSION_H)
-	@mkdir -p $(DEPDIR)/$(*D)
-	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MP -MF $(DEPDIR)/$*.d -o $@ -c $<
+$(OBJDIR)%.o : %.c | check-config $(VERSION_H)
+	@mkdir -p $(OBJDIR)$(DEPDIR)/$(*D) $(@D)
+	$(QUIET_CC)$(CC) $(CFLAGS) -MMD -MP -MF $(OBJDIR)$(DEPDIR)/$*.d -o $@ -c $<
 
 clean:
 	@rm -f $(OBJS)
@@ -254,6 +261,7 @@ clean:
 	@$(MAKE) --no-print-directory -C tests clean
 	@rm -f tags tags.json
 	@rm -rf $(DEPDIR)/*
+	@rm -rf build-uapi
 	@rm -rf trinity-coverity.tar.xz cov-int
 	@rm -f $(VERSION_H)
 	@find . -name '__pycache__' -type d -prune -exec rm -rf {} +
@@ -291,6 +299,37 @@ check-static:
 # acceptable.
 check-runtime: trinity
 	@./scripts/check-runtime-json-output.sh
+
+# `make uapi-check KERNEL_SRC=<kernel git tree>` compiles the tree and
+# the test-binary objects against the uapi headers of an older kernel, to
+# catch a symbol the build host's newer headers supply that no fallback
+# covers; Documentation/HACKING.txt says why UAPI_TAG defaults to v6.12.
+# scripts/uapi-sysroot.sh installs the tag's headers from KERNEL_SRC,
+# never writing to it, into a sysroot cached under
+# $XDG_CACHE_HOME/trinity-uapi ($HOME/.cache/trinity-uapi when that is
+# unset).  configure and the objects run in build-uapi/<tag>, apart from
+# the main build.  Nothing is linked and nothing is run.  A CFLAGS taken
+# from the environment comes back from make fully expanded, naming the
+# tree's own config.h, so configure and the sub-makes start without it.
+UAPI_TAG	?= v6.12
+UAPI_SYSROOT	:= $(or $(XDG_CACHE_HOME),$(HOME)/.cache)/trinity-uapi/$(UAPI_TAG)
+UAPI_BUILD	:= $(CURDIR)/build-uapi/$(UAPI_TAG)
+UAPI_JOBS	= $(if $(findstring -j,$(MAKEFLAGS)),,-j$(NR_CPUS))
+
+.PHONY: uapi-check uapi-objs
+uapi-check:
+	@if [ -z "$(KERNEL_SRC)" ]; then echo "usage: make uapi-check KERNEL_SRC=<kernel git tree> [UAPI_TAG=$(UAPI_TAG)]" >&2; exit 1; fi
+	@CC="$(CC)" scripts/uapi-sysroot.sh "$(KERNEL_SRC)" "$(UAPI_TAG)" "$(UAPI_SYSROOT)"
+	@mkdir -p $(UAPI_BUILD)
+	@cd $(UAPI_BUILD) && env -u CFLAGS CC="$(CC)" SYSROOT="$(UAPI_SYSROOT)" \
+		$(CURDIR)/configure > configure.log
+	@env -u CFLAGS $(MAKE) --no-print-directory $(UAPI_JOBS) OBJDIR=$(UAPI_BUILD)/ \
+		CONFIG_H=$(UAPI_BUILD)/config.h SYSROOT="$(UAPI_SYSROOT)" uapi-objs
+	@env -u CFLAGS $(MAKE) -s --no-print-directory $(UAPI_JOBS) -C tests BUILDDIR=$(UAPI_BUILD)/tests \
+		CONFIG_H=$(UAPI_BUILD)/config.h SYSROOT="$(UAPI_SYSROOT)" objs
+	@echo "uapi-check: trinity and test objects compile against $(UAPI_TAG) uapi headers"
+
+uapi-objs: $(OBJS)
 
 coverity:
 	@rm -rf cov-int trinity-coverity.tar.xz
