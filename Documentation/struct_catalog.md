@@ -141,45 +141,6 @@ constants against bytes the kernel wrote. Subcmds outside the SET
 pools match no variant and resolve to NULL; the fallback path is
 unchanged.
 
-## seccomp / prctl -- cBPF install (sock_fprog)
-
-Two syscall entry points install the same cBPF program shape:
-
-- `seccomp(unsigned int op, unsigned int flags, void *args)`: a3 is
-  a `struct sock_fprog` pointer only on `SECCOMP_SET_MODE_FILTER`.
-  Other ops point a3 at different shapes (`uint32_t *` for
-  `SECCOMP_GET_ACTION_AVAIL`, a `seccomp_notif_sizes`-sized scratch
-  buffer for `SECCOMP_GET_NOTIF_SIZES`) or leave it unused
-  (`SECCOMP_SET_MODE_STRICT`).
-
-- `prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER, sock_fprog *, ...)`:
-  arg3 points at a `struct sock_fprog` the kernel reads to load the
-  classic BPF program (the cBPF arm; `PR_SET_SECCOMP` with arg2 ==
-  `SECCOMP_MODE_STRICT` ignores arg3, and other option values do not
-  touch a sock_fprog at all -- those dispatches match no variant
-  and resolve to NULL). Registered as a two-key row (option at a1
-  == `PR_SET_SECCOMP`, mode at a2 == `SECCOMP_MODE_FILTER`).
-
-Both are attribution-only. The bespoke `sanitise_seccomp()` and
-`sanitise_prctl_option()` PR_SET_SECCOMP arm own the live fill via
-`bpf_gen_seccomp()`, which builds a Markov-chain cBPF program the
-kernel verifier will load; an `FT_RAW` splat across `sock_filter[]`
-insn words could not. `argtype` for the args slot is `ARG_ADDRESS` /
-`ARG_UNDEFINED` respectively, not `ARG_STRUCT_PTR_*`, so the
-schema-aware fill path never overwrites `rec->a3` -- the bespoke
-fill stays the sole writer.
-
-`struct_field_for_cmp()` steers CMP-learned constants at the named
-`len` / `filter` slots (and at the cataloged `sock_filter`
-elem_struct's `code` / `jt` / `jf` / `k` slots).
-
-**setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...)** is the
-`SO_ATTACH_FILTER` arm of the (level, optname) two-key family the
-proof batch below exercises. It stays bespoke because the BPF arm
-REPLACES the optval allocation wholesale rather than fills it (see
-`socket_setsockopt()` `SO_ATTACH_FILTER` branch), so a schema-fill
-row would race the `bpf_gen_filter()` replacement.
-
 ## setsockopt / getsockopt optval -- two-key (level, optname) rows
 
 `setsockopt(fd, level, optname, optval, optlen)` optval -- a4.
@@ -204,6 +165,11 @@ miss-fallback for the int / bool / string scalar `sockopt_table[]`
 entries (no struct shape, no row to register) and for the
 higher-leverage shapes (sctp / mptcp / tcp_repair / can_filter[]
 etc.) that follow this proof.
+
+`setsockopt(fd, SOL_SOCKET, SO_ATTACH_FILTER, ...)` stays bespoke: the
+BPF arm REPLACES the optval allocation wholesale rather than fills it
+(see the `SO_ATTACH_FILTER` branch of `socket_setsockopt()`), so a
+schema-fill row would race the `bpf_gen_filter()` replacement.
 
 `getsockopt(fd, level, optname, optval, optlen)` optval -- a4.
 

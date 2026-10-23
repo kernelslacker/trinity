@@ -8,7 +8,6 @@
  */
 
 #include <stddef.h>
-#include <sched.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 
@@ -18,7 +17,7 @@
 
 #include "kernel/sched.h"
 /* ------------------------------------------------------------------ */
-/* struct sched_attr (sched_setattr, sched_getattr)                    */
+/* struct sched_attr (sched_getattr)                                   */
 /* ------------------------------------------------------------------ */
 
 const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N] = {
@@ -50,12 +49,4 @@ const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N] = {
 	FIELD(struct clone_args, set_tid),
 	FIELD(struct clone_args, set_tid_size),
 	FIELD(struct clone_args, cgroup),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct sched_param (sched_setparam, sched_setscheduler)              */
-/* ------------------------------------------------------------------ */
-
-const struct struct_field sched_param_fields[SCHED_PARAM_FIELDS_N] = {
-	FIELD(struct sched_param, sched_priority),
 };

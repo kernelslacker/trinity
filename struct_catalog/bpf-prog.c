@@ -61,9 +61,7 @@
  * license / func_info_* / line_info_* / core_relos / fd_array and
  * the signature/keyring fields stay FT_RAW: a schema-driven random
  * splat in those slots would just bounce at copy_from_user / parser
- * boundaries.  bpf_insn keeps its 8-byte catalog entry below for KCOV-
- * compare attribution on code/imm even though FILL no longer reaches
- * it via FT_PTR_ARRAY.
+ * boundaries.
  *
  * The attach_prog_fd / attach_btf_obj_fd anonymous union picks
  * attach_prog_fd as the canonical slot (more common arm); the
@@ -278,20 +276,5 @@ const struct struct_field bpf_attr_PROG_STREAM_READ_fields[BPF_ATTR_PROG_STREAM_
 	FIELDX(union bpf_attr, prog_stream_read.prog_fd, FT_FD),
 };
 #endif
-
-/*
- * bpf_insn registration -- retained as an 8-byte CMP-attribution shape
- * so a learned KCOV-compare constant on code / off / imm can be
- * attributed back to the right field by struct_field_for_cmp().
- * PROG_LOAD's insns FILL now flows through FT_BPF_PROGRAM (which calls
- * net/bpf/ebpf.c's generator) rather than splatting random bpf_insn
- * elements via FT_PTR_ARRAY, but the per-field shape is still the
- * vocabulary the CMP-hint path reasons over.
- */
-const struct struct_field bpf_insn_fields[BPF_INSN_FIELDS_N] = {
-	FIELD(struct bpf_insn, code),
-	FIELD(struct bpf_insn, off),
-	FIELD(struct bpf_insn, imm),
-};
 
 #endif /* USE_BPF */

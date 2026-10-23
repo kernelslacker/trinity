@@ -106,8 +106,7 @@ shared struct-of-callbacks pattern).
   references — sockaddr/optval *scalar* generation lives in net/,
   *struct-shaped* optval generation lives in struct_catalog/.
 - `syscalls/bpf-prog.c`, `syscalls/process/seccomp.c`,
-  `syscalls/socket/setsockopt.c`, `struct_catalog/bpf_classic.c`,
-  `struct_catalog/bpf-prog.c`, `struct_catalog/registry/bpf.c`,
+  `syscalls/socket/setsockopt.c`, `struct_catalog/bpf-prog.c`,
   `args/struct_fill.c` — the consumers of the classic-BPF/eBPF generators
   (bpf/bpf.c + the bpf/ebpf*.c cluster), by symbol: filter programs
   attach via seccomp, `SO_ATTACH_FILTER` and `BPF_PROG_LOAD`.

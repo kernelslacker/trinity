@@ -28,5 +28,5 @@ behind `ebpf-internal.h`.
 - **eBPF tiering is deliberate** — valid-program synthesis, boundary synthesis, and pure chaos are one generator split one tier per TU; the "is this still verifier-valid" logic and the "deliberately break this" logic are siblings behind the same internal header, sharing the liveness, helper-descriptor and map-fd machinery.
 
 ## Interactions
-- Consumers, all by symbol (link-safe): `syscalls/bpf-prog.c` (`bpf_gen_filter`, `ebpf_gen_program`), `syscalls/process/seccomp.c` (`bpf_gen_seccomp`), `syscalls/socket/setsockopt.c` (`bpf_gen_filter`), and the struct-mutation path through `struct_catalog/bpf_classic.c`, `struct_catalog/bpf-prog.c`, `struct_catalog/registry/bpf.c` and `args/struct_fill.c` (`ebpf_gen_program_into`).
+- Consumers, all by symbol (link-safe): `syscalls/bpf-prog.c` (`bpf_gen_filter`, `ebpf_gen_program`), `syscalls/process/seccomp.c` (`bpf_gen_seccomp`), `syscalls/socket/setsockopt.c` (`bpf_gen_filter`), and the struct-mutation path through `struct_catalog/bpf-prog.c` and `args/struct_fill.c` (`ebpf_gen_program_into`).
 - `net/proto/xdp.c` uses `xdp-umem-track.c`.

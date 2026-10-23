@@ -17,7 +17,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 |---|---|---|
 | sockaddr-af.c | 792 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
 | catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`), `struct_catalog_lookup()` by name |
-| io_uring_register.c | 695 | io_uring_setup params fields + `io_uring_register_variants[]` (one variant per IORING_REGISTER_* opcode) |
 | sctp.c | 587 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
 | perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
 | bpf-link.c | 493 | BPF_LINK_* family field tables: BPF_LINK_UPDATE / BPF_LINK_DETACH plus the nested LINK_CREATE sub-variant fan-out (BASE, ITER, PERF_EVENT, TRACING, TRACING_MULTI, KPROBE_MULTI, UPROBE_MULTI, NETFILTER, TCX, NETKIT, CGROUP) |
@@ -43,12 +42,11 @@ per-cmd BPF field tables under `bpf-*.c`.
 | futex.c | 115 | robust_list_head, rseq, futex_waitv |
 | uffdio.c | 102 | userfaultfd ioctl argument structs; attribution-only, and reached by name rather than through the registration table (ioctl args don't resolve that way) |
 | xattr.c | 98 | xattr_args (gated `USE_XATTR_ARGS`), file_attr |
-| bpf_classic.c | 95 | sock_filter (cBPF insn word), sock_fprog (seccomp/setsockopt/prctl cBPF install) |
 | aio.c | 95 | iocb + IOCB_CMD_* opcode vocab (io_cancel) |
 | bpf-task-storage.c | 85 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
 | poll.c | 83 | pollfd, epoll_event |
 | bpf-btf.c | 70 | BTF family: BPF_BTF_LOAD and the generic BPF_OBJ_GET_INFO_BY_FD info-query slot |
-| sched.c | 61 | sched_attr, clone_args, sched_param |
+| sched.c | 61 | sched_attr, clone_args |
 | resource.c | 48 | rlimit, cachestat_range |
 | ldt.c | 45 | user_desc (modify_ldt write arm, X86-only) |
 | cap.c | 35 | user_cap_header, user_cap_data |
@@ -62,9 +60,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | registry/fs.c | 503 | Filesystem / VFS rows: file / dir / mount / xattr / quota / poll / io syscalls, the landlock attrs, the fcntl / landlock_add_rule / quotactl / quotactl_fd discriminator-aware rows and their pools, the iovec fanout, and the sigset_t rows on signalfd/ppoll/epoll_pwait |
 | registry/net.c | 470 | Network rows: sockaddr / msghdr / mmsghdr on the socket calls, plus the setsockopt / getsockopt (level, optname) two-key rows and their discriminator vocabularies |
 | registry/process.c | 236 | Process / signal / rlimit / futex rows: clone3, rlimits, perf_event_open, the sigaction / siginfo / sigaltstack / sigqueue rows, capset / capget, keyctl, rseq, set_robust_list, process_vm_{read,write}v, the futex family, and (X86) modify_ldt |
-| registry/bpf.c | 75 | BPF / seccomp rows: the bpf(2) attr union, `seccomp(SECCOMP_SET_MODE_FILTER)`, and its `prctl(PR_SET_SECCOMP)` legacy sibling |
-| registry/sched.c | 28 | sched_setattr / sched_getattr → sched_attr; sched_setparam / sched_setscheduler → sched_param |
-| registry/io_uring.c | 25 | io_uring setup and register paths only — io_uring_enter's opcode-dispatched SQE bodies resolve through their own opcode table |
+| registry/sched.c | 28 | sched_getattr → sched_attr |
 
 `catalog.c` additionally `#include`s five `catalog-*.inc` fragments (~278 LOC) —
 blocks of `struct_catalog[]` designated initializers for the bpf, ptrace_regs,
@@ -126,8 +122,8 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
    `struct_field_for_cmp()` can name the right field for CMP steering instead
    of guessing off width alone. An `ARG_STRUCT_PTR_IN` row is
    attribution-only too when the entry lists the slot in
-   `.sanitiser_owned_mask` (clone3, io_uring_setup, mount_setattr,
-   open_tree_attr, perf_event_open, sched_setattr): `generic_sanitise()`
+   `.sanitiser_owned_mask` (clone3, mount_setattr, open_tree_attr,
+   perf_event_open): `generic_sanitise()`
    never runs the schema fill for it, and the sanitiser's own buffer goes to
    the kernel.
 3. `struct_catalog_init()` (called after `select_syscall_tables()`) walks

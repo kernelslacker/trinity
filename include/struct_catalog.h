@@ -326,7 +326,6 @@ struct syscall_struct_arg {
 enum struct_catalog_idx {
 	SC_SCHED_ATTR,
 	SC_CLONE_ARGS,
-	SC_IO_URING_PARAMS,
 	SC_RLIMIT,
 	SC_EPOLL_EVENT,
 	SC_PERF_EVENT_ATTR,
@@ -340,11 +339,8 @@ enum struct_catalog_idx {
 	SC_FUTEX_WAITV,
 	SC_STACK_T,
 	SC_SIGINFO_T,
-	SC_SCHED_PARAM,
-	SC_IO_URING_REGISTER_ARGS,
 #ifdef USE_BPF
 	SC_BPF_ATTR,
-	SC_BPF_INSN,
 #endif
 	SC_IOVEC,
 	SC_TIMESPEC,
@@ -374,8 +370,6 @@ enum struct_catalog_idx {
 	SC_PT_REGS,
 	SC_USER_REGS_STRUCT,
 #endif
-	SC_SOCK_FILTER,
-	SC_SOCK_FPROG,
 	SC_IOCB,
 	/*
 	 * setsockopt optval struct shapes -- first batch (the proof) for

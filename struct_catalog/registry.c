@@ -40,17 +40,13 @@
  * (syscall_name, arg_idx) plus any discriminator keys, so re-ordering
  * groups here is safe: no two rows across groups share the same key.
  */
-extern const struct syscall_struct_arg struct_catalog_registry_io_uring[];
 extern const struct syscall_struct_arg struct_catalog_registry_sched[];
-extern const struct syscall_struct_arg struct_catalog_registry_bpf[];
 extern const struct syscall_struct_arg struct_catalog_registry_net[];
 extern const struct syscall_struct_arg struct_catalog_registry_fs[];
 extern const struct syscall_struct_arg struct_catalog_registry_process[];
 
 const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
-	{ struct_catalog_registry_io_uring },
 	{ struct_catalog_registry_sched },
-	{ struct_catalog_registry_bpf },
 	{ struct_catalog_registry_net },
 	{ struct_catalog_registry_fs },
 	{ struct_catalog_registry_process },

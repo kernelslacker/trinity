@@ -18,11 +18,9 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
-#include <sched.h>
 #include <utime.h>
 #include <netinet/in.h>
 #include <sys/prctl.h>
-#include <linux/filter.h>
 #include <linux/netlink.h>
 #include <linux/if_arp.h>
 #include <linux/if_ether.h>
@@ -34,7 +32,6 @@
 #include <linux/rseq.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
-#include <linux/io_uring.h>
 #include <linux/landlock.h>
 #include <linux/mman.h>
 #include <linux/mount.h>
@@ -240,12 +237,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= clone_args_fields,
 		.num_fields	= ARRAY_SIZE(clone_args_fields),
 	},
-	[SC_IO_URING_PARAMS] = {
-		.name		= "io_uring_params",
-		.struct_size	= sizeof(struct io_uring_params),
-		.fields		= io_uring_params_fields,
-		.num_fields	= ARRAY_SIZE(io_uring_params_fields),
-	},
 	[SC_RLIMIT] = {
 		.name		= "rlimit",
 		.struct_size	= sizeof(struct rlimit),
@@ -338,41 +329,6 @@ const struct struct_desc struct_catalog[] = {
 		.num_variants		= ARRAY_SIZE(siginfo_t_variants),
 		.buffer_discrim_offset	= offsetof(siginfo_t, si_code),
 		.buffer_discrim_size	= sizeof(((siginfo_t *) 0)->si_code),
-	},
-	[SC_SCHED_PARAM] = {
-		.name		= "sched_param",
-		.struct_size	= sizeof(struct sched_param),
-		.fields		= sched_param_fields,
-		.num_fields	= ARRAY_SIZE(sched_param_fields),
-	},
-	/*
-	 * io_uring_register tagged-union infra entry.  Each opcode (in
-	 * rec->a2) presents a different per-cmd struct shape at *rec->a3;
-	 * the variant table dispatches by opcode.  Shared prefix is empty:
-	 * register opcodes are fully self-contained per-cmd structs with
-	 * no truly-common fields.  Variants are populated per-opcode; not
-	 * all opcodes are covered yet.
-	 *
-	 * struct_size is set to the largest projected variant
-	 * (io_uring_sync_cancel_reg @ 64 bytes) so the buffer fed to the
-	 * fill path is never too small for any single-struct opcode.
-	 *
-	 * No live consumer wires this entry today: io_uring_register's
-	 * arg slot is ARG_ADDRESS (not ARG_STRUCT_PTR_*) and the existing
-	 * sanitise_io_uring_register hand-rolls every opcode's payload.
-	 * The entry is forward infra for opcode-scoped CMP attribution
-	 * (struct_field_for_cmp pending a cmp_hints caller) and a future
-	 * ARG_ADDRESS-mapped fill consumer.  The bpf catalog landed the
-	 * same way: variant data first, sanitise caller after.
-	 */
-	[SC_IO_URING_REGISTER_ARGS] = {
-		.name			= "io_uring_register_args",
-		.struct_size		= 64,
-		.fields			= NULL,
-		.num_fields		= 0,
-		.discrim_arg_idx	= 2,	/* opcode in rec->a2 */
-		.variants		= io_uring_register_variants,
-		.num_variants		= ARRAY_SIZE(io_uring_register_variants),
 	},
 #include "catalog-bpf.inc"
 	/*
@@ -514,18 +470,6 @@ const struct struct_desc struct_catalog[] = {
 	},
 #endif
 #include "catalog-ptrace_regs.inc"
-	[SC_SOCK_FILTER] = {
-		.name		= "sock_filter",
-		.struct_size	= sizeof(struct sock_filter),
-		.fields		= sock_filter_fields,
-		.num_fields	= ARRAY_SIZE(sock_filter_fields),
-	},
-	[SC_SOCK_FPROG] = {
-		.name		= "sock_fprog",
-		.struct_size	= sizeof(struct sock_fprog),
-		.fields		= sock_fprog_fields,
-		.num_fields	= ARRAY_SIZE(sock_fprog_fields),
-	},
 	[SC_IOCB] = {
 		.name		= "iocb",
 		.struct_size	= sizeof(struct iocb),

@@ -140,8 +140,8 @@ extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
 
 #ifdef USE_BPF
 /*
- * BPF leaf tables.  bpf_attr_variants and bpf_insn_fields live in the
- * facade struct_catalog/bpf.c and are consumed from the spine in
+ * BPF leaf tables.  bpf_attr_variants lives in the facade
+ * struct_catalog/bpf.c and is consumed from the spine in
  * struct_catalog.c via ARRAY_SIZE() at the use site; every other
  * table listed below lives in a per-family leaf TU
  * (struct_catalog/bpf-map.c, bpf-prog.c, bpf-link.c, bpf-btf.c,
@@ -167,7 +167,6 @@ enum {
 #else
 	BPF_ATTR_VARIANTS_N	= 37,
 #endif
-	BPF_INSN_FIELDS_N		= 3,
 
 	BPF_ATTR_MAP_CREATE_FIELDS_N	= 16,
 	BPF_ATTR_MAP_ELEM_FIELDS_N	= 4,
@@ -259,7 +258,6 @@ extern const unsigned long bpf_attach_types_uprobe_multi[];
 extern const char *const bpf_attr_link_create_uprobe_multi_arrays[];
 extern const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[];
 extern const struct union_variant bpf_attr_LINK_CREATE_nested[BPF_ATTR_LINK_CREATE_NESTED_N];
-extern const struct struct_field bpf_insn_fields[BPF_INSN_FIELDS_N];
 extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
 #endif /* USE_BPF */
 
@@ -418,86 +416,21 @@ extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS
 
 /*
  * socket-family leaf tables defined in struct_catalog/socket.c.
- * Covers struct iovec (msg_iov array element, also referenced from
- * the io_uring_register variant table below), struct msghdr (sendmsg /
+ * Covers struct iovec (msg_iov array element), struct msghdr (sendmsg /
  * recvmsg), and struct mmsghdr (sendmmsg / recvmmsg).  Each _N constant
  * gives the extern decl a complete array type so the spine's
  * ARRAY_SIZE() at the reference site keeps folding to the same constant
- * it did before the carve.  iovec_fields is shared with
- * struct_catalog/io_uring_register.c (via its IOVEC_FIELDS_N extern
- * below), so the count constant stays in the io_uring block to preserve
- * the existing declaration order.
+ * it did before the carve.
  */
 enum {
+	IOVEC_FIELDS_N			= 2,
 	MSGHDR_FIELDS_N			= 7,
 	MMSGHDR_FIELDS_N		= 2,
 };
 
+extern const struct struct_field iovec_fields[IOVEC_FIELDS_N];
 extern const struct struct_field msghdr_fields[MSGHDR_FIELDS_N];
 extern const struct struct_field mmsghdr_fields[MMSGHDR_FIELDS_N];
-
-/*
- * io_uring_setup / io_uring_register leaf tables defined in
- * struct_catalog/io_uring_register.c.  The _N constants give the
- * extern decls a complete array type so the spine's ARRAY_SIZE() at
- * the reference site keeps folding to the same constant it did before
- * the carve.  iovec_fields lives in struct_catalog/socket.c (referenced
- * by several non-io_uring spine entries too); the io_uring_register
- * variant table here references it via the same extern, so promoting
- * iovec_fields to external linkage is enough to keep the variant
- * .fields = iovec_fields initialiser resolving.
- */
-enum {
-	IOVEC_FIELDS_N					= 2,
-	IO_URING_PARAMS_FIELDS_N			= 7,
-	IO_URING_REGISTER_EVENTFD_FIELDS_N		= 1,
-	IO_URING_REGISTER_FILES_UPDATE_FIELDS_N		= 3,
-	IO_URING_REGISTER_FILE_ALLOC_RANGE_FIELDS_N	= 3,
-	IO_URING_REGISTER_PBUF_RING_FIELDS_N		= 5,
-	IO_URING_REGISTER_SYNC_CANCEL_FIELDS_N		= 4,
-	IO_URING_RESTRICTION_OPCODES_N			= 4,
-	IO_URING_REGISTER_RESTRICTION_FIELDS_N		= 4,
-	IO_URING_NAPI_OPCODES_N				= 3,
-	IO_URING_NAPI_TRACKING_STRATEGIES_N		= 3,
-#ifdef USE_IO_URING_NAPI_OP
-	IO_URING_REGISTER_NAPI_FIELDS_N			= 6,
-#else
-	IO_URING_REGISTER_NAPI_FIELDS_N			= 4,
-#endif
-	IO_URING_CLOCK_IDS_N				= 2,
-	IO_URING_REGISTER_CLOCK_FIELDS_N		= 2,
-#ifdef USE_IO_URING_CLONE_BUFFERS_OFF
-	IO_URING_REGISTER_CLONE_BUFFERS_FIELDS_N	= 6,
-#else
-	IO_URING_REGISTER_CLONE_BUFFERS_FIELDS_N	= 3,
-#endif
-	IO_URING_REGISTER_PBUF_STATUS_FIELDS_N		= 3,
-	IO_URING_REGISTER_RSRC_REGISTER_FIELDS_N	= 5,
-	IO_URING_REGISTER_RSRC_UPDATE2_FIELDS_N		= 6,
-	IO_URING_REGISTER_PROBE_FIELDS_N		= 4,
-	IO_URING_REGISTER_VARIANTS_N			= 24,
-};
-
-extern const struct struct_field iovec_fields[IOVEC_FIELDS_N];
-extern const struct struct_field io_uring_params_fields[IO_URING_PARAMS_FIELDS_N];
-extern const struct struct_field io_uring_register_eventfd_fields[IO_URING_REGISTER_EVENTFD_FIELDS_N];
-extern const struct struct_field io_uring_register_files_update_fields[IO_URING_REGISTER_FILES_UPDATE_FIELDS_N];
-extern const struct struct_field io_uring_register_file_alloc_range_fields[IO_URING_REGISTER_FILE_ALLOC_RANGE_FIELDS_N];
-extern const struct struct_field io_uring_register_pbuf_ring_fields[IO_URING_REGISTER_PBUF_RING_FIELDS_N];
-extern const struct struct_field io_uring_register_sync_cancel_fields[IO_URING_REGISTER_SYNC_CANCEL_FIELDS_N];
-extern const unsigned long io_uring_restriction_opcodes[IO_URING_RESTRICTION_OPCODES_N];
-extern const struct struct_field io_uring_register_restriction_fields[IO_URING_REGISTER_RESTRICTION_FIELDS_N];
-extern const unsigned long io_uring_napi_opcodes[IO_URING_NAPI_OPCODES_N];
-extern const unsigned long io_uring_napi_tracking_strategies[IO_URING_NAPI_TRACKING_STRATEGIES_N];
-extern const struct struct_field io_uring_register_napi_fields[IO_URING_REGISTER_NAPI_FIELDS_N];
-extern const unsigned long io_uring_clock_ids[IO_URING_CLOCK_IDS_N];
-extern const struct struct_field io_uring_register_clock_fields[IO_URING_REGISTER_CLOCK_FIELDS_N];
-extern const struct struct_field io_uring_register_clone_buffers_fields[IO_URING_REGISTER_CLONE_BUFFERS_FIELDS_N];
-extern const struct struct_field io_uring_register_pbuf_status_fields[IO_URING_REGISTER_PBUF_STATUS_FIELDS_N];
-extern const struct struct_field io_uring_register_rsrc_register_fields[IO_URING_REGISTER_RSRC_REGISTER_FIELDS_N];
-extern const struct struct_field io_uring_register_rsrc_update2_fields[IO_URING_REGISTER_RSRC_UPDATE2_FIELDS_N];
-extern const struct struct_field io_uring_register_probe_fields[IO_URING_REGISTER_PROBE_FIELDS_N];
-extern const struct union_variant io_uring_register_variants[IO_URING_REGISTER_VARIANTS_N];
 
 /*
  * quotactl / quotactl_fd leaf tables defined in struct_catalog/quota.c.
@@ -633,8 +566,7 @@ extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
 
 /*
  * sched-shaped leaf tables defined in struct_catalog/sched.c.  Covers
- * struct sched_attr (sched_setattr / sched_getattr), struct clone_args
- * (clone3), and struct sched_param (sched_setparam / sched_setscheduler).
+ * struct sched_attr (sched_getattr) and struct clone_args (clone3).
  * Each _N constant gives the extern decl a complete array type so the
  * spine's ARRAY_SIZE() at the reference site keeps folding to the same
  * constant it did before the carve.
@@ -642,12 +574,10 @@ extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
 enum {
 	SCHED_ATTR_FIELDS_N	= 10,
 	CLONE_ARGS_FIELDS_N	= 11,
-	SCHED_PARAM_FIELDS_N	= 1,
 };
 
 extern const struct struct_field sched_attr_fields[SCHED_ATTR_FIELDS_N];
 extern const struct struct_field clone_args_fields[CLONE_ARGS_FIELDS_N];
-extern const struct struct_field sched_param_fields[SCHED_PARAM_FIELDS_N];
 
 /*
  * aio-shaped leaf tables defined in struct_catalog/aio.c.  Covers
@@ -702,27 +632,6 @@ enum {
 
 extern const struct struct_field user_cap_header_fields[USER_CAP_HEADER_FIELDS_N];
 extern const struct struct_field user_cap_data_fields[USER_CAP_DATA_FIELDS_N];
-
-/*
- * Classic-BPF leaf tables defined in struct_catalog/bpf_classic.c.
- * Covers struct sock_filter (the cBPF instruction word, referenced by
- * sock_fprog.filter via FT_PTR_ARRAY.elem_struct) and struct sock_fprog
- * (seccomp SET_MODE_FILTER, setsockopt(SO_ATTACH_FILTER), prctl(PR_SET_
- * SECCOMP)).  The two ship in the same TU because sock_fprog names
- * sock_filter as its element-struct: the pointer-fill pass dereferences
- * that name through the catalog to size the sub-array, so the element
- * descriptor has to be co-located with the container.  Each _N constant
- * gives the extern decl a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same constant
- * it did before the carve.
- */
-enum {
-	SOCK_FILTER_FIELDS_N	= 4,
-	SOCK_FPROG_FIELDS_N	= 2,
-};
-
-extern const struct struct_field sock_filter_fields[SOCK_FILTER_FIELDS_N];
-extern const struct struct_field sock_fprog_fields[SOCK_FPROG_FIELDS_N];
 
 /*
  * keyctl payload leaf tables defined in struct_catalog/keyctl.c.
