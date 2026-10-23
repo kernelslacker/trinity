@@ -1,12 +1,8 @@
 /*
- * Core (non-network) JSON section emitters for --stats-json.
- * Covers fault-injection, fd-lifecycle, oracle, basic
- * subsystems (vfs / memory-pressure / numa / netlink families /
- * tracefs / bpf), iouring / zombie, corruption / audit, and
- * fs-lifecycle / futex-storm.  The basic-subsystem, fault-injection,
- * corruption and shared-buffer descriptor tables live here rather
- * than under stats/categories/ because they are still JSON-only
- * consumers.
+ * Core (non-network) JSON section emitters for --stats-json.  The
+ * basic-subsystem, fault-injection, corruption and shared-buffer descriptor
+ * tables live here rather than under stats/categories/ because they are
+ * still JSON-only consumers.
  */
 
 #include <stdio.h>

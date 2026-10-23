@@ -1,16 +1,9 @@
 /*
- * Durable per-rotation-block intervention event stream (see
- * include/rotation_event.h).
- *
- * Opens one JSONL sink in the parent before fork() so every child
- * inherits the same O_APPEND file description; the CAS-winning child
- * of maybe_rotate_strategy() writes a single record per closed window
- * via lib/jsonl.c's writev()-based emit path.  No parent-side aggregate
- * is maintained -- the records are the surface.
- *
- * OBSERVATION-ONLY: byte-identical under fixed seed in a non-saturated
- * regime.  Emission does not touch shm state, does not sample the RNG,
- * and only reads counters the caller already loaded on the close path.
+ * Durable per-rotation-window event stream (include/rotation_event.h): one
+ * JSONL record per closed window from the CAS-winning child of
+ * maybe_rotate_strategy(), written through lib/jsonl.c to a sink the parent
+ * opens before fork().  OBSERVATION-ONLY: byte-identical under fixed seed in
+ * a non-saturated regime; no shm writes, no RNG, only already-loaded counters.
  */
 
 #include <errno.h>

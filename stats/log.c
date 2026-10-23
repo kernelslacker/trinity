@@ -1,19 +1,7 @@
 /*
- * --stats-log-file and --stats-timeseries backing.
- *
- * Carved verbatim out of stats.c.  Contains the two file-handle
- * lifecycles and their write-path helpers: stats_log_open,
- * stats_log_close, stats_log_write, and stats_log_drop_in_child for
- * the human-readable dump log; stats_timeseries_open,
- * stats_timeseries_close, stats_timeseries_emit_window, and
- * stats_timeseries_drop_in_child for the per-window per-syscall JSONL
- * timeseries.  The file-static state (stats_log_fp,
- * stats_timeseries_fp, and the prev-window edges snapshot
- * stats_ts_prev_per_syscall_edges) stays private to this TU -- only
- * this cluster's helpers ever touch it.
- *
- * All the exported entry points here are already declared in
- * include/stats.h so nothing new is added to stats-internal.h.
+ * --stats-log-file and --stats timeseries backing: the open / close / write
+ * path of the human-readable dump log (stats_log_*) and of the per-window
+ * per-syscall JSONL timeseries (stats_timeseries_*).
  */
 
 #include <errno.h>

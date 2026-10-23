@@ -1,21 +1,9 @@
 /*
- * KCOV diag counter dumps + minicorpus mutation-attribution canary.
- *
- * Carved verbatim out of stats.c.  Contains
- * minicorpus_mut_attrib_canary_check (the mid-run parent-side
- * cross-check that scans the MUT_NUM_OPS attribution counters for
- * accidental double-attribution or missed wins), the descriptor-
- * driven per-syscall KCOV diagnostic block emitter
- * kcov_diag_emit_block, and the truncation top-N walker
- * kcov_diag_emit_truncation_topn.  kcov_diag_load is the shared
- * per-slot loader those two emitters use.
- *
- * Every exported entry point is already declared in an existing
- * header (minicorpus_mut_attrib_canary_check in include/minicorpus.h;
- * the two kcov_diag_emit_* in stats-internal.h) so no additions to
- * stats-internal.h are needed for this cluster.  kcov_diag_load
- * stays file-static -- its only callers are the two emit helpers
- * in this same TU.
+ * KCOV diag counter dumps and the minicorpus mutation-attribution canary:
+ * minicorpus_mut_attrib_canary_check() is the mid-run parent-side check that
+ * a mutator's wins never exceed its trials (an inversion means double
+ * attribution or a scribbled counter); kcov_diag_emit_block() and
+ * kcov_diag_emit_truncation_topn() emit the per-syscall KCOV diagnostics.
  */
 
 #include <errno.h>

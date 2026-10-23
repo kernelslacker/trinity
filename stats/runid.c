@@ -1,21 +1,8 @@
 /*
- * Run-identity provenance + own-start deltas.
- *
- * Carved verbatim out of stats.c.  Contains stats_runid_snapshot_
- * start (captures the post-warm-load / pre-fuzz-loop baseline that
- * anchors every own-start delta at shutdown), stats_runid_render
- * (the end-of-run provenance / carrier / delta block plus knob
- * manifest), the struct run_start_baseline that carries the
- * snapshot, and the file-static run_start instance itself.  The
- * assorted runid_* helpers -- the CLOCK_MONOTONIC seconds reader,
- * the corpus-entry counter, the kallsyms + boot_id readers, the
- * warm/cold classifier, the twelve knob-name accessors, the
- * knob_append writer, and the knob_manifest_render walker -- all
- * live only inside this cluster and stay file-static.
- *
- * The two exported entry points (stats_runid_snapshot_start and
- * stats_runid_render) are already declared in include/stats.h so
- * nothing new is added to stats-internal.h.
+ * Run-identity provenance and own-start deltas: stats_runid_snapshot_start()
+ * captures the post-warm-load, pre-fuzz-loop baseline that anchors every
+ * own-start delta, and stats_runid_render() prints the end-of-run
+ * provenance / carrier / delta block and the knob manifest.
  */
 
 #include <errno.h>

@@ -1,22 +1,8 @@
 /*
- * corrupt_ptr attribution + reject dumps.
- *
- * Carved verbatim out of stats.c.  Contains the render helpers for
- * the wild-write attribution surface: the per-syscall
- * range_overlaps_shared() top-offenders table
- * (dump_range_overlaps_shared_top_offenders), the burst detector
- * (corrupt_ptr_spike_check), the per-handler + per-callsite
- * attribution rings for post_handler_corrupt_ptr
- * (corrupt_ptr_attr_dump) plus its supporting comparators and shard
- * mergers, and the per-callsite deferred-free reject dump
- * (deferred_free_reject_pc_dump) with its own merger.
- *
- * dump_range_overlaps_shared_top_offenders, corrupt_ptr_attr_dump and
- * deferred_free_reject_pc_dump are called from the stats.c core /
- * periodic dump respectively so they are non-static + externed via
- * stats-internal.h; the qsort comparators, shard mergers, and the
- * corrupt_ptr_pc_dump_for row emitter stay static -- their only
- * callers are the three top-level dumps in this same TU.
+ * Corrupt-pointer attribution and reject dumps: the range_overlaps_shared()
+ * top-offender table, the burst detector corrupt_ptr_spike_check(), the
+ * per-handler and per-callsite attribution rings for
+ * post_handler_corrupt_ptr, and the per-callsite deferred-free reject dump.
  */
 
 #include <errno.h>

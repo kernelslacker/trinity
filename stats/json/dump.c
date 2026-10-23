@@ -1,10 +1,8 @@
 /*
- * Top-level orchestration for --stats-json.  dump_stats_json()
- * stitches together the section-emitter helpers under stats/json/
- * into a single JSON document on stdout.  This file owns the
- * root object braces, the "stats":{...} wrapper, and the section
- * order; individual sections live in their own files (common,
- * syscalls, kcov, minicorpus, cmp-hints, core, network, tail).
+ * Top-level orchestration for --stats-json.  dump_stats_json() stitches the
+ * section emitters under stats/json/ into one JSON document on stdout; this
+ * file owns the root object braces, the "stats":{...} wrapper and the
+ * section order.
  */
 
 #include <stdio.h>
