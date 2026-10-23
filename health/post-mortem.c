@@ -23,14 +23,7 @@
 #include "post-mortem.h"
 #include "utils.h"
 
-/* From <sys/klog.h>; redeclared so a missing or stripped header
- * (some embedded toolchains) doesn't break the build. */
-#ifndef SYSLOG_ACTION_READ_ALL
-#define SYSLOG_ACTION_READ_ALL 3
-#endif
-#ifndef SYSLOG_ACTION_SIZE_BUFFER
-#define SYSLOG_ACTION_SIZE_BUFFER 10
-#endif
+#include "kernel/syslog.h"
 
 struct ring_entry {
 	unsigned int child_idx;
