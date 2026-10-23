@@ -35,7 +35,7 @@ Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.
 | per-syscall-edges.c | 420 | `account_reexec_ab_cohort`, `account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` — per-dispatch cohort denominators and per-syscall edge attribution |
 | warm-reserve.c | 292 | `account_warm_reserve` (SHADOW deep-but-warm probe) and `account_cold_overflow_would_save` (SHADOW cold/corpus-absent overflow-tail probe) |
 | remote-adaptive.c | 254 | `remote_adaptive_decide()`: adaptive KCOV_REMOTE disposition, consulted before the raw call to override the static `remote_mode` |
-| fd-group.c | 165 | `account_fd_and_group()`: fd-leak counters, live-fd ring push, the `group_bias`-gated `last_group` stamp, and the F-RSEQ group-pin damper state machine |
+| fd-group.c | 178 | `account_fd_and_group()`: fd-leak counters, the owned-fd ring retire for a returned number, live-fd ring push, the `group_bias`-gated `last_group` stamp, and the F-RSEQ group-pin damper state machine |
 | strategy-accounting-internal.h | 51 | Cross-file declarations private to the accounting cluster |
 
 Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
@@ -106,7 +106,7 @@ Bias and replay paths both set `child->strategy_at_pick = -1` so their novelty d
 - **`account_cold_overflow_would_save`**: SHADOW measurement of syscalls that would benefit from corpus save under CMP-plateau conditions but currently don't get one.  It counts only calls the save lane could admit (no sanitise callback, `corpus_args_replayable()`), and its corpus-absent side asks `minicorpus_ring_has_abi()` for the record's ABI, since the two ABIs share a ring.
 - **`account_pc_edge_only`**: PC-edge-exclusive bookkeeping — minicorpus snapshot cadence, per-strategy edge-reward attribution, and random-rescue classification during forced-plateau windows.
 - **`account_transition_reward`**: per-strategy transition-edge (new PC-ordering, not new PC) reward, capped per-call to prevent one pathological trace from dominating the bandit's window delta.
-- **`account_fd_and_group`**: fd-leak counters, live-fd ring push for arg-generation reuse, and the F-RSEQ group-pin damper's streak/coverage-watermark bookkeeping.
+- **`account_fd_and_group`**: fd-leak counters, the owned-fd ring retire for a returned number (`owned_fd_ring_retire()`, fds/owned-fd-ring.c), live-fd ring push for arg-generation reuse, and the F-RSEQ group-pin damper's streak/coverage-watermark bookkeeping.
 
 Nearly everything in the accounting cluster is dual-mode: a SHADOW/observability half that always runs and bumps counters, and a much smaller live-behavior-changing half gated behind a mode enum and a per-child A/B arm flag, so new selection logic can be measured on real fleets before it's allowed to touch the picker's output distribution.
 

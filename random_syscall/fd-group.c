@@ -1,9 +1,10 @@
 /*
  * Per-child fd + group bookkeeping ran at the tail of dispatch_step:
- * fd leak counters, live-fd ring push for arg-generation reuse, the
- * group_bias-gated last_group stamp, and the F-RSEQ group-pin damper
- * state machine (group-change streak reset, streak bump, fd-warm
- * bump, coverage watermark advance).
+ * fd leak counters, the owned-fd ring retire for a returned number,
+ * live-fd ring push for arg-generation reuse, the group_bias-gated
+ * last_group stamp, and the F-RSEQ group-pin damper state machine
+ * (group-change streak reset, streak bump, fd-warm bump, coverage
+ * watermark advance).
  *
  * The sibling seams (rotation, remote-adaptive decide, per-syscall edge
  * accounting, warm-cold reserve) live in their own TUs under
@@ -31,6 +32,7 @@
 #include "kcov.h"
 #include "locks.h"
 #include "minicorpus.h"
+#include "owned-fd-ring.h"
 #include "params.h"
 #include "pids.h"
 #include "pre_crash_ring.h"
@@ -54,14 +56,14 @@
 #include "utils.h"
 
 /* FD leak tracking (count successful fd-creating and fd-closing
- * syscalls per child for leak diagnosis), the live-fd ring push for
- * preferential reuse in arg generation, the group_bias-gated
- * last_group stamp, and the F-RSEQ group-pin damper per-child
- * bookkeeping (group-change streak reset, streak bump, fd-warm
- * bump, coverage watermark advance).  All pieces are per-call
- * child-state updates that key off the just-completed syscall's
- * entry / rec and touch no shared region, so they collapse into
- * one helper at the end of the dispatch_step bookkeeping tail.
+ * syscalls per child for leak diagnosis), the owned-fd ring retire,
+ * the live-fd ring push for preferential reuse in arg generation,
+ * the group_bias-gated last_group stamp, and the F-RSEQ group-pin
+ * damper per-child bookkeeping (group-change streak reset, streak
+ * bump, fd-warm bump, coverage watermark advance).  All pieces are
+ * per-call child-state updates that key off the just-completed
+ * syscall's entry / rec and touch no shared region, so they collapse
+ * into one helper at the end of the dispatch_step bookkeeping tail.
  *
  * found_local_coverage is the dispatch-step coverage signal the
  * watermark advance keys on: true when this call landed at least
@@ -89,6 +91,17 @@ void account_fd_and_group(struct childdata *child,
 			child->fd_created++;
 			if (entry->group < NR_GROUPS)
 				child->fd_created_by_group[entry->group]++;
+			/* The kernel only hands out a free number, so a slot an
+			 * owned-fd ring still holds for it is stale, and fstat()
+			 * cannot tell a dup or an fd hooked onto the shared anon
+			 * inode from the file the slot recorded.  Retire it before
+			 * its ring wraps onto the new owner.  A call that returns
+			 * the fd it was handed (dup2(fd, fd), signalfd() on a
+			 * signalfd) opened nothing: that slot is still its
+			 * provider's. */
+			if ((int)rec->retval != (int)rec->a1 ||
+			    !is_fdarg(entry->argtype[0]))
+				owned_fd_ring_retire((int)rec->retval);
 			/* Track returned fd for preferential reuse in arg generation. */
 			if ((int)rec->retval > 2)
 				child_fd_ring_push(&child->live_fds, (int)rec->retval);

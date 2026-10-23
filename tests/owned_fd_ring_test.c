@@ -4,18 +4,46 @@
  * recorded.  A fuzzed close() frees the number and the next fd-creating
  * call hands it to an unrelated file, which the ring must leave open.
  * owned_fd_ring_retire() takes a number out of every ring without closing
- * it, and leaves the other slots as they were.
+ * it, and leaves the other slots as they were.  account_fd_and_group() runs
+ * as shipped and retires the number of every fd a call returns, except one
+ * the call was handed itself.
  * Pipes stand in for provider fds: each has an inode of its own, and the
  * two ends of one pipe share it, which models a number that fstat() cannot
  * tell from the one that was recorded.
  */
 
 #include <fcntl.h>
+#include <stdbool.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "owned-fd-ring.h"
+#include "params.h"		/* group_bias */
+#include "random_syscall/strategy-accounting-internal.h"	/* account_fd_and_group */
+#include "strategy.h"		/* frontier_group_antilock_mode */
+#include "syscall.h"		/* struct syscallentry, struct syscallrecord */
+#include "syscalls/syscalls.h"	/* syscall_dup, syscall_dup2 */
+#include "utils-macros.h"	/* ARRAY_SIZE */
+
+/*
+ * What account_fd_and_group() reaches besides the rings, none of it under
+ * test: the two knobs it reads stay off, and the live-fd push is counted.
+ */
+bool group_bias;
+enum frontier_group_antilock_mode frontier_group_antilock_mode;
+
+static unsigned int pushes;
+static int pushed_fd;
+
+void child_fd_ring_push(struct child_fd_ring *ring, int fd)
+{
+	(void) ring;
+	pushes++;
+	pushed_fd = fd;
+}
 
 /* Record @n fresh dups of @src, saving their numbers in @out for cleanup. */
 static void record_fresh(struct owned_fd_ring *ring, int src, int *out,
@@ -53,6 +81,106 @@ static int own_and_close(struct owned_fd_ring *ring, int src)
 	if (close(owned) < 0)
 		BUG("owned fd ring: close failed");
 	return owned;
+}
+
+/* Wrap @ring, and say whether @fd is still open once it has. */
+static bool open_after_wrap(struct owned_fd_ring *ring, int src, int fd)
+{
+	int fresh[MAX_OWNED_FDS];
+	bool still_open;
+
+	record_fresh(ring, src, fresh, MAX_OWNED_FDS);
+	still_open = fcntl(fd, F_GETFD) >= 0;
+	close_all(fresh, MAX_OWNED_FDS);
+	return still_open;
+}
+
+/* Account a call that returned @retval, given @a1 and @a2 as its arguments. */
+static void account(struct syscallentry *entry, int a1, int a2, int retval)
+{
+	static struct syscallrecord rec;
+	static struct childdata child;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = (unsigned long) a1;
+	rec.a2 = (unsigned long) a2;
+	rec.retval = (unsigned long) retval;
+	pushes = 0;
+	account_fd_and_group(&child, entry, &rec, false);
+}
+
+/*
+ * A call that returns an fd retires the slots naming it, so a stale slot
+ * cannot close the new owner when its ring wraps: a dup() handed a number its
+ * ring still lists, and a dup2() that put another file under a listed one.
+ * A call that hands back the fd it was given opened nothing, and a return
+ * value that is not an fd names nothing: the slot stays, and the ring closes
+ * the fd as it would have.
+ */
+static void account_self_check(const int *a, const int *b)
+{
+	static struct owned_fd_ring dup_ring, dup2_ring, same_ring, typed_ring,
+				    bytes_ring;
+	/* signalfd() on an existing signalfd answers with the fd it was given. */
+	static struct syscallentry typed_operand = {
+		.rettype = RET_FD,
+		.argtype = { [0] = ARG_FD_SIGNALFD },
+	};
+	/* A read(): a byte count that can equal an fd number. */
+	static struct syscallentry byte_count = {
+		.rettype = RET_NUM_BYTES,
+		.argtype = { [0] = ARG_FD },
+	};
+	const struct {
+		struct owned_fd_ring *ring;
+		struct syscallentry *entry;
+		bool a1_owned, a2_owned;
+		const char *bug;
+	} keeps[] = {
+		{ &same_ring, &syscall_dup2, true, true,
+		  "owned fd ring: dup2(fd, fd) retired a live slot" },
+		{ &typed_ring, &typed_operand, true, false,
+		  "owned fd ring: returning a typed fd operand retired a live slot" },
+		{ &bytes_ring, &byte_count, false, false,
+		  "owned fd ring: a return value that is not an fd retired a slot" },
+	};
+	unsigned int i;
+	int owned;
+
+	owned = own_and_close(&dup_ring, a[1]);
+	if (dup2(a[0], owned) != owned)
+		BUG("owned fd ring: cannot recycle the fd number");
+	account(&syscall_dup, a[0], 0, owned);
+	if (pushes != 1 || pushed_fd != owned)
+		BUG("owned fd ring: a returned fd skipped the live-fd push");
+	if (!open_after_wrap(&dup_ring, b[1], owned))
+		BUG("owned fd ring: a stale slot closed an fd a call returned");
+	close(owned);
+
+	owned = dup(a[1]);
+	if (owned < 0)
+		BUG("owned fd ring: dup failed");
+	owned_fd_ring_record(&dup2_ring, owned);
+	if (dup2(a[0], owned) != owned)
+		BUG("owned fd ring: cannot put another file under the fd");
+	account(&syscall_dup2, a[0], owned, owned);
+	if (!open_after_wrap(&dup2_ring, b[1], owned))
+		BUG("owned fd ring: a slot closed the file dup2() put under its number");
+	close(owned);
+
+	for (i = 0; i < ARRAY_SIZE(keeps); i++) {
+		owned = dup(a[1]);
+		if (owned < 0)
+			BUG("owned fd ring: dup failed");
+		owned_fd_ring_record(keeps[i].ring, owned);
+		account(keeps[i].entry, keeps[i].a1_owned ? owned : a[0],
+			keeps[i].a2_owned ? owned : 0, owned);
+		if (keeps[i].entry->rettype == RET_FD &&
+		    (pushes != 1 || pushed_fd != owned))
+			BUG("owned fd ring: a returned fd skipped the live-fd push");
+		if (open_after_wrap(keeps[i].ring, b[1], owned))
+			BUG(keeps[i].bug);
+	}
 }
 
 void owned_fd_ring_self_check(void);
@@ -190,6 +318,8 @@ void owned_fd_ring_self_check(void)
 		BUG("owned fd ring: retiring a number kept another slot's fd");
 	close_all(fresh, MAX_OWNED_FDS);
 	close(owned);
+
+	account_self_check(a, b);
 
 	close(a[0]);
 	close(a[1]);
