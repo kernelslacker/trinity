@@ -42,7 +42,7 @@ directory.  Headers are named separately in each directory's notes file, and
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (25 files, ~7,693 LOC) |
 | [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,860 LOC) |
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,642 LOC) |
-| [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (366 files, ~65,868 LOC) |
+| [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (366 files, ~65,882 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~2,051 LOC) |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,813 LOC) |
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~2,974 LOC) |

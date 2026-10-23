@@ -4,32 +4,35 @@
  * On success, returns a nonnegative file descriptor.
  * On error, -1 is returned, and errno is set to indicate the error.
  */
+#include "fd.h"
 #include "kernel/epoll.h"
 #include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "tables.h"
 
+/*
+ * A refused fd is coerced to -1UL so register_returned_fd() does not
+ * pool a number pool_typed_fd() closed or left to its owner.
+ */
 static void post_epoll_create(struct syscallrecord *rec)
 {
-	struct object *new;
-	struct epollobj *eo;
-	int fd = rec->retval;
+	struct object *obj;
+	long fd = (long) rec->retval;
 
-	if ((long)rec->retval < 0)
+	if (fd < 0 || fd >= (1 << 20))
 		return;
 
-	new = alloc_object();
-	eo = &new->epollobj;
-	eo->fd = fd;
-	if (current_entry_is_epoll_create1()) {
-		eo->create1 = true;
-		eo->flags = rec->a1;
-	} else {
-		eo->create1 = false;
-		eo->flags = 0;
+	obj = pool_typed_fd(OBJ_FD_EPOLL, (int) fd);
+	if (obj == NULL) {
+		rec->retval = -1UL;
+		return;
 	}
-	add_object(new, OBJ_LOCAL, OBJ_FD_EPOLL);
+
+	if (current_entry_is_epoll_create1()) {
+		obj->epollobj.create1 = true;
+		obj->epollobj.flags = (int) get_arg_snapshot(rec, 1);
+	}
 }
 
 /*
@@ -134,6 +137,7 @@ struct syscallentry syscall_epoll_create1 = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_EPOLL,
 	.post = post_epoll_create,
+	.arg_snapshot_mask = 1u << 0,
 	.group = GROUP_VFS_IO,
 	.flags = REEXEC_SANITISE_OK,
 };

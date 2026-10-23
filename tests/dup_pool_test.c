@@ -2,7 +2,8 @@
  * Self-check for how the post handlers pool and retire the descriptors a
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
- * pidfs namespace getters, the typed producers, close and close_range.  Whatever object a number
+ * pidfs namespace getters, the typed producers and epoll_create, close and
+ * close_range.  Whatever object a number
  * held is retired, copy pooled or not, and a retire never closes the number.
  */
 
@@ -13,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
@@ -2562,6 +2564,89 @@ static void typed_fd_the_pool_cannot_own_is_closed(void)
 	      fcntl(fd, F_GETFD) == -1);
 }
 
+/* Run @entry's post handler, as the current call, on a return of @retval
+ * with @flags in a1 and its snapshot. */
+static unsigned long run_epoll_create(struct syscallentry *entry,
+				      unsigned long flags,
+				      unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = flags;
+	rec.arg_shadow[0] = flags;
+	rec.arg_snapshot_mask = entry->arg_snapshot_mask;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EINVAL : 0;
+
+	fake_child.syscall.entry = entry;
+	forget_calls();
+	entry->post(&rec);
+	fake_child.syscall.entry = NULL;
+	return rec.retval;
+}
+
+/* epoll_create and epoll_create1 pool their fd as a local epoll object
+ * that says which call made it, with what flags. */
+static void epoll_create_pools_an_epoll_object(void)
+{
+	struct syscallentry *entries[] = {
+		&syscall_epoll_create, &syscall_epoll_create1,
+	};
+	unsigned int i;
+
+	syscall_epoll_create1.is_epoll_create1 = true;
+	for (i = 0; i < ARRAY_SIZE(entries); i++) {
+		const char *name = entries[i]->name;
+		bool create1 = entries[i] == &syscall_epoll_create1;
+		struct pool_entry *e;
+		unsigned long ret;
+		int fd;
+
+		reset();
+		fd = eventfd(0, 0);
+		if (fd < 0)
+			BUG("fd pool: cannot make a descriptor to pool");
+		pool_add(true, fd, OBJ_FD_TESTFILE);
+		ret = run_epoll_create(entries[i], create1 ? EPOLL_CLOEXEC : 7,
+				       (unsigned long) fd);
+		e = pool_find(fd, OBJ_FD_EPOLL);
+		check("the fd was not pooled as an epoll object", name,
+		      e != NULL && e->local && pool_count(fd) == 1 &&
+		      published == 1 && retires == 1);
+		check("the object does not say which call made it", name,
+		      e != NULL && e->obj.epollobj.create1 == create1 &&
+		      e->obj.epollobj.flags ==
+				(create1 ? EPOLL_CLOEXEC : 0));
+		check("a pooled fd's return was coerced", name,
+		      ret == (unsigned long) fd);
+		check("a pooled fd was closed", name,
+		      fcntl(fd, F_GETFD) != -1);
+		close(fd);
+
+		/* A failed call pools nothing. */
+		reset();
+		ret = run_epoll_create(entries[i], 0, (unsigned long) -1L);
+		check("a failed call pooled or retired something", name,
+		      published == 0 && retires == 0 &&
+		      ret == (unsigned long) -1L);
+
+		/* A refused fd is closed, and its return coerced so the
+		 * generic registrar does not pool the number. */
+		reset();
+		no_destructor = true;
+		fd = eventfd(0, 0);
+		if (fd < 0)
+			BUG("fd pool: cannot make a descriptor to pool");
+		ret = run_epoll_create(entries[i], 0, (unsigned long) fd);
+		check("a refused fd was pooled or left open", name,
+		      published == 0 && fcntl(fd, F_GETFD) == -1);
+		check("a refused fd's return was not coerced", name,
+		      ret == (unsigned long) -1L);
+	}
+	syscall_epoll_create1.is_epoll_create1 = false;
+}
+
 #define NS_GETTERS_MAX	16
 
 /* The requests of the pidfs namespace getters, from the pidfd group's
@@ -3001,6 +3086,7 @@ void dup_pool_self_check(void)
 	typed_fd_is_pooled_under_its_type();
 	typed_fd_leaves_stdio_and_protected_numbers_alone();
 	typed_fd_the_pool_cannot_own_is_closed();
+	epoll_create_pools_an_epoll_object();
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];
 		ioctl_pools_the_ns_fd_a_getter_returned();
