@@ -57,16 +57,6 @@ if [ -r "$BASELINE" ]; then
 	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$BASELINE")
 fi
 
-ORDER_BASELINE="$ROOT/scripts/check-static/post-state-deref-order.baseline"
-declare -A ORDER_GRANDFATHERED=()
-if [ -r "$ORDER_BASELINE" ]; then
-	while IFS= read -r entry; do
-		[ -z "$entry" ] && continue
-		case "$entry" in \#*) continue ;; esac
-		ORDER_GRANDFATHERED["$entry"]=1
-	done < <(sed -e 's/#.*$//' -e 's/[[:space:]]*$//' "$ORDER_BASELINE")
-fi
-
 # Collect every post-handler symbol referenced from any
 # `.post = NAME,` assignment in syscalls/.  The handler definition
 # may live in the same file or a sibling, so we treat the set as a
@@ -277,11 +267,7 @@ while IFS=' ' read -r kind key; do
 			fi
 			;;
 		ORDER)
-			if [ -n "${ORDER_GRANDFATHERED[$key]+x}" ]; then
-				:
-			else
-				order_violations+=("$key")
-			fi
+			order_violations+=("$key")
 			;;
 	esac
 done < "$RESULTS_FILE"
