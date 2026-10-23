@@ -1,14 +1,9 @@
 /*
- * MPTCP (multipath TCP) per-protocol fuzzing helpers.
- *
- * Reachable via socket(AF_INET[6], SOCK_STREAM, IPPROTO_MPTCP).  In current
- * kernels, SOL_MPTCP options (MPTCP_INFO et al.) are getsockopt-only --
- * mptcp_setsockopt() at SOL_MPTCP returns -EOPNOTSUPP.  We still emit the
- * option grammar here because do_setsockopt() is shared between the
- * setsockopt and getsockopt sanitisers (see syscalls/socket/getsockopt.c),
- * so this grammar exercises the SOL_MPTCP getsockopt dispatch path on
- * real MPTCP sockets.  Path-management lives behind the mptcp_pm
- * genetlink family and is intentionally not handled here.
+ * MPTCP per-protocol fuzzing helpers: SOL_MPTCP optnames for sockets from
+ * socket(AF_INET[6], SOCK_STREAM, IPPROTO_MPTCP).  SOL_MPTCP is
+ * getsockopt-only (the kernel's mptcp_setsockopt() answers -ENOPROTOOPT);
+ * do_setsockopt() also feeds the getsockopt sanitiser, so this grammar
+ * reaches mptcp_getsockopt().  Path management is the mptcp_pm genl family.
  */
 
 #include <sys/socket.h>
