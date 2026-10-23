@@ -14,6 +14,17 @@
 #define SOL_XDP			283
 #endif
 
+/*
+ * sockaddr_xdp.sxdp_flags bits that arrived after the rest of the
+ * AF_XDP uapi: a header can carry sockaddr_xdp and still lack them.
+ */
+#ifndef XDP_USE_NEED_WAKEUP
+#define XDP_USE_NEED_WAKEUP	(1 << 3)
+#endif
+#ifndef XDP_USE_SG
+#define XDP_USE_SG		(1 << 4)
+#endif
+
 #ifndef XDP_UMEM_REG
 #define XDP_UMEM_REG		4
 #endif

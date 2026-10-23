@@ -66,19 +66,7 @@
 #include <linux/if_alg.h>
 #endif
 #ifdef USE_XDP
-#include <linux/if_xdp.h>
-/*
- * XDP_USE_NEED_WAKEUP landed in 5.4 (commit 77cd0d7b3f25); older
- * toolchain headers won't carry it even when the rest of the
- * sockaddr_xdp definitions are present.  Fall back to the upstream
- * bit value so the FT_FLAGS mask stays the same on either side.
- */
-#ifndef XDP_USE_NEED_WAKEUP
-#define XDP_USE_NEED_WAKEUP	(1 << 3)
-#endif
-#ifndef XDP_USE_SG
-#define XDP_USE_SG		(1 << 4)
-#endif
+#include "kernel/if_xdp.h"
 #endif
 
 #include "struct_catalog.h"

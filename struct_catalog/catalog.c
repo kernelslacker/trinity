@@ -68,16 +68,7 @@
 #include <linux/mctp.h>
 #endif
 #ifdef USE_XDP
-#include <linux/if_xdp.h>
-/*
- * XDP_USE_NEED_WAKEUP landed in 5.4 (commit 77cd0d7b3f25); older
- * toolchain headers won't carry it even when the rest of the
- * sockaddr_xdp definitions are present.  Fall back to the upstream
- * bit value so the FT_FLAGS mask stays the same on either side.
- */
-#ifndef XDP_USE_NEED_WAKEUP
-#define XDP_USE_NEED_WAKEUP	(1 << 3)
-#endif
+#include "kernel/if_xdp.h"
 #endif
 #ifdef USE_SCTP
 #include <linux/sctp.h>
