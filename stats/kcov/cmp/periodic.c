@@ -9,11 +9,13 @@
  * sibling stats/kcov/cmp/ TUs (base, redqueen, pool, hyp, childop,
  * cohort, diag) and commits the previous-window snapshot.
  *
- * All static previous-window state and per-counter locals stay local
- * to this TU, and the render helpers live in their per-domain siblings
- * declared in stats/kcov/cmp/internal.h.  The burst-drain and callsite
- * blocks, which no sibling owns, are static helpers above the entry
- * point and take their counters as explicit arguments.
+ * The window state is gathered into struct cmp_window (the counters the
+ * dump differences) and struct cmp_levels (the values it prints as they
+ * stand), both local to this TU.  The render helpers live in their
+ * per-domain siblings declared in stats/kcov/cmp/internal.h; the
+ * burst-drain and callsite blocks, which no sibling owns, are static
+ * helpers above the entry point and take their counters as explicit
+ * arguments.
  */
 
 #include <errno.h>
@@ -179,6 +181,211 @@ static void kcov_cmp_render_prop_injected_callsite(bool any_prop_callsite_delta,
 }
 
 /*
+ * The counters the dump differences from one window to the next.  The
+ * current snapshot, the previous one and the delta share this shape, so
+ * arming and committing a window are struct copies.
+ */
+struct cmp_window {
+	unsigned long records, truncated, bloom_skipped, strip_skipped, unique;
+	unsigned long try_get_attempts, try_get_returned, injected, prop_injected;
+	unsigned long chaos_suppressed;
+	unsigned long count_oob, canary_lock_post, canary_pre, canary_post;
+	unsigned long reexec_attempts, reexec_attempts_with_new_cmp;
+	unsigned long reexec_attribution_found, reexec_attribution_ambiguous;
+	unsigned long reexec_attribution_width_match;
+	unsigned long reexec_new_cmps_total, reexec_new_edges_total;
+	unsigned long reexec_attempts_by_arm[2];
+	unsigned long reexec_new_cmps_by_arm[2];
+	unsigned long reexec_new_edges_by_arm[2];
+	unsigned long reexec_skipped_destructive, reexec_skipped_validate_silent;
+	unsigned long reexec_window_cap_hit, reexec_pending_dropped;
+	unsigned long reexec_gate_skip_in_reexec, reexec_gate_skip_disabled;
+	unsigned long reexec_gate_skip_mode, reexec_gate_skip_chain_mid;
+	unsigned long reexec_gate_skip_no_new_cmp, reexec_gate_skip_no_pending;
+	unsigned long reexec_gate_skip_rate, reexec_gate_pass;
+	unsigned long cmp_parent_calls_enabled, cmp_parent_calls_control;
+	unsigned long cmp_parent_new_cmps_enabled, cmp_parent_new_cmps_control;
+	unsigned long cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
+	unsigned long cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
+	unsigned long cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
+	unsigned long prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
+	unsigned long save_reject_nonconst, save_reject_uninteresting;
+	unsigned long save_reject_sentinel, save_reject_dup, save_reject_cap;
+	unsigned long cmp_hints_consumed, cmp_hint_wins, cmp_hint_misses;
+	unsigned long cmp_hint_cmp_novelty_wins;
+	unsigned long cmp_hint_stash_overflow, cmp_hint_credit_entry_evicted;
+	unsigned long cmp_recent_inserts, cmp_recent_evicts;
+	unsigned long cmp_recent_would_pick, cmp_recent_would_miss;
+	unsigned long cmp_recent_live_picks;
+	unsigned long cmp_inject_arm_a_baseline_fires;
+	unsigned long cmp_inject_arm_b_baseline_fires;
+	unsigned long cmp_inject_denom_diverged;
+	unsigned long prop_ring_argop_arm_b_fires;
+	unsigned long frontier_blend_samples;
+	unsigned long remote_adaptive_samples;
+	unsigned long mut_structured_shadow_divergences;
+};
+
+/*
+ * Values the dump prints as they stand, with no window delta: the A/B
+ * cohort populations and the shadow totals that sit under a cohort row.
+ */
+struct cmp_levels {
+	unsigned int  cmp_inject_arm_a_children, cmp_inject_arm_b_children;
+	unsigned int  prop_ring_argop_arm_a_children, prop_ring_argop_arm_b_children;
+	unsigned int  frontier_blend_arm_a_children, frontier_blend_arm_b_children;
+	unsigned int  remote_adaptive_arm_a_children, remote_adaptive_arm_b_children;
+	unsigned int  mut_structured_arm_a_children, mut_structured_arm_b_children;
+	unsigned long remote_adaptive_would_demote, remote_adaptive_would_promote;
+	unsigned long remote_adaptive_would_force, remote_adaptive_would_gate_promote;
+	unsigned long remote_adaptive_agree;
+	unsigned long arg_meta_addr_with_meta, arg_meta_addr_without_meta;
+	unsigned long arg_meta_argtype_stale;
+	unsigned long arg_meta_scrub_would_destroy_in;
+	unsigned long arg_meta_scrub_would_preserve_out;
+	unsigned long blanket_address_scrub_slots_walked;
+	unsigned long mut_structured_shadow_samples;
+};
+
+static void cmp_window_snapshot(struct cmp_window *cur, struct cmp_levels *lvl)
+{
+	cur->records       = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,   __ATOMIC_RELAXED);
+	cur->truncated     = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,     __ATOMIC_RELAXED);
+	cur->bloom_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
+	cur->strip_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_strip_skipped, __ATOMIC_RELAXED);
+	cur->unique        = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts, __ATOMIC_RELAXED);
+	/* Source from parent_stats: cmp_hints_try_get_ex() now enqueues
+	 * +1 per attempt/return via the per-child stats_ring; the kcov_shm
+	 * scalars are gone, removing a fuzzer-visible wild-write target. */
+	cur->try_get_attempts = parent_stats.cmp_hints_try_get_attempts;
+	cur->try_get_returned = parent_stats.cmp_hints_try_get_returned;
+	cur->injected         = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,         __ATOMIC_RELAXED);
+	cur->prop_injected    = __atomic_load_n(&kcov_shm->hints_flat.propagation_injected,       __ATOMIC_RELAXED);
+	cur->chaos_suppressed = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
+	cur->count_oob        = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_count_oob,               __ATOMIC_RELAXED);
+	cur->canary_lock_post = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
+	cur->canary_pre       = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
+	cur->canary_post      = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
+	cur->reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attempts,                __ATOMIC_RELAXED);
+	cur->reexec_attempts_with_new_cmp   = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attempts_with_new_cmp,   __ATOMIC_RELAXED);
+	cur->reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_found,       __ATOMIC_RELAXED);
+	cur->reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
+	cur->reexec_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_width_match, __ATOMIC_RELAXED);
+	cur->reexec_new_cmps_total          = __atomic_load_n(&kcov_shm->reexec_flat.reexec_new_cmps_total,          __ATOMIC_RELAXED);
+	cur->reexec_new_edges_total         = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_total,         __ATOMIC_RELAXED);
+	cur->reexec_attempts_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_attempts_by_arm[0],      __ATOMIC_RELAXED);
+	cur->reexec_attempts_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_attempts_by_arm[1],      __ATOMIC_RELAXED);
+	cur->reexec_new_cmps_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_cmps_by_arm[0],      __ATOMIC_RELAXED);
+	cur->reexec_new_cmps_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_cmps_by_arm[1],      __ATOMIC_RELAXED);
+	cur->reexec_new_edges_by_arm[0]     = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_by_arm[0],     __ATOMIC_RELAXED);
+	cur->reexec_new_edges_by_arm[1]     = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_by_arm[1],     __ATOMIC_RELAXED);
+	cur->reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive,     __ATOMIC_RELAXED);
+	cur->reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
+	cur->reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit,          __ATOMIC_RELAXED);
+	cur->reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_hist.reexec_pending_dropped,         __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_in_reexec     = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_in_reexec,     __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_disabled      = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_disabled,      __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_mode          = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_mode,          __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_chain_mid     = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_chain_mid,     __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_no_new_cmp    = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp,    __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_no_pending    = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_pending,    __ATOMIC_RELAXED);
+	cur->reexec_gate_skip_rate          = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_rate,          __ATOMIC_RELAXED);
+	cur->reexec_gate_pass               = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_pass,               __ATOMIC_RELAXED);
+	cur->cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
+	cur->cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control,       __ATOMIC_RELAXED);
+	cur->cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
+	cur->cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
+	cur->save_reject_nonconst      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
+	cur->save_reject_uninteresting = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
+	cur->save_reject_sentinel      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
+	cur->save_reject_dup           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
+	cur->save_reject_cap           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
+	{
+		unsigned int cs;
+		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
+			cur->cmp_hint_callsite[cs] = __atomic_load_n(
+				&kcov_shm->hint_callsite.cmp_hint_callsite_injected[cs],
+				__ATOMIC_RELAXED);
+	}
+	{
+		unsigned int cs;
+		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
+			cur->cmp_hint_callsite_pc_wins[cs] = __atomic_load_n(
+				&kcov_shm->hint_callsite.cmp_hint_callsite_pc_wins[cs],
+				__ATOMIC_RELAXED);
+			cur->cmp_hint_callsite_misses[cs] = __atomic_load_n(
+				&kcov_shm->hint_callsite.cmp_hint_callsite_misses[cs],
+				__ATOMIC_RELAXED);
+		}
+	}
+	{
+		unsigned int cs;
+		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
+			cur->prop_injected_callsite[cs] = __atomic_load_n(
+				&kcov_shm->hints_flat.propagation_injected_callsite[cs],
+				__ATOMIC_RELAXED);
+	}
+	cur->cmp_hints_consumed             = __atomic_load_n(&kcov_shm->hint_flat.cmp_hints_consumed,             __ATOMIC_RELAXED);
+	cur->cmp_hint_wins                  = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_wins,                  __ATOMIC_RELAXED);
+	cur->cmp_hint_misses                = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_misses,                __ATOMIC_RELAXED);
+	cur->cmp_hint_cmp_novelty_wins      = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_cmp_novelty_wins,      __ATOMIC_RELAXED);
+	cur->cmp_hint_stash_overflow        = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_stash_overflow,        __ATOMIC_RELAXED);
+	cur->cmp_hint_credit_entry_evicted  = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,  __ATOMIC_RELAXED);
+	cur->cmp_recent_inserts             = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_inserts,             __ATOMIC_RELAXED);
+	cur->cmp_recent_evicts              = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_evicts,              __ATOMIC_RELAXED);
+	cur->cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_pick,          __ATOMIC_RELAXED);
+	cur->cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_miss,          __ATOMIC_RELAXED);
+	cur->cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_live_picks,          __ATOMIC_RELAXED);
+	cur->cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
+	cur->cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
+	cur->cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
+	lvl->cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
+	lvl->cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
+	cur->prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
+	lvl->prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
+	lvl->prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
+	/* frontier_blend_samples lives in shm->stats (bumped per fire from
+	 * both arms in lock-step), the cohort children counters live in
+	 * kcov_shm (bumped once per child).  Read both here so the cohort
+	 * dump row can be delta-gated on the fire counter, matching the
+	 * prop_ring_argop template. */
+	cur->frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier.plateau.blend_samples,         __ATOMIC_RELAXED);
+	lvl->frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
+	lvl->frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
+	cur->remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive.samples,        __ATOMIC_RELAXED);
+	lvl->remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive.would_demote,   __ATOMIC_RELAXED);
+	lvl->remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive.would_promote,  __ATOMIC_RELAXED);
+	lvl->remote_adaptive_would_force     = __atomic_load_n(&shm->stats.remote_adaptive.would_force,    __ATOMIC_RELAXED);
+	lvl->remote_adaptive_would_gate_promote = __atomic_load_n(&shm->stats.remote_adaptive.would_gate_promote, __ATOMIC_RELAXED);
+	lvl->remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive.agree,          __ATOMIC_RELAXED);
+	lvl->remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
+	lvl->remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
+	lvl->arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg.meta_addr_with_meta,            __ATOMIC_RELAXED);
+	lvl->arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg.meta_addr_without_meta,         __ATOMIC_RELAXED);
+	lvl->arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg.meta_argtype_stale,             __ATOMIC_RELAXED);
+	lvl->arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg.meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
+	lvl->arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg.meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
+	lvl->blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.arg.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
+	/* SHADOW structure-aware picker A/B cohort + divergence counters live
+	 * in minicorpus_shm rather than kcov_shm because the picker is a
+	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
+	 * degenerate run with kcov on but minicorpus unmapped does not chase
+	 * a NULL pointer; the dump row's delta gate keeps a zero from
+	 * polluting the kcov-cmp window output. */
+	if (minicorpus_shm != NULL) {
+		lvl->mut_structured_shadow_samples     = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_samples,     __ATOMIC_RELAXED);
+		cur->mut_structured_shadow_divergences = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_divergences, __ATOMIC_RELAXED);
+		lvl->mut_structured_arm_a_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_a_children,     __ATOMIC_RELAXED);
+		lvl->mut_structured_arm_b_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_b_children,     __ATOMIC_RELAXED);
+	} else {
+		lvl->mut_structured_shadow_samples     = 0;
+		cur->mut_structured_shadow_divergences = 0;
+		lvl->mut_structured_arm_a_children     = 0;
+		lvl->mut_structured_arm_b_children     = 0;
+	}
+}
+
+/*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as periodic_counter_rates_dump.  Without this the cmp counters
  * are only visible from dump_stats() (run shutdown) and the JSON dump
@@ -196,180 +403,12 @@ static void kcov_cmp_render_prop_injected_callsite(bool any_prop_callsite_delta,
  */
 void __cold kcov_cmp_stats_periodic_dump(void)
 {
-	static unsigned long prev_records;
-	static unsigned long prev_truncated;
-	static unsigned long prev_bloom_skipped;
-	static unsigned long prev_strip_skipped;
-	static unsigned long prev_unique;
-	static unsigned long prev_try_get_attempts;
-	static unsigned long prev_try_get_returned;
-	static unsigned long prev_injected;
-	static unsigned long prev_prop_injected;
-	static unsigned long prev_chaos_suppressed;
-	static unsigned long prev_count_oob;
-	static unsigned long prev_canary_lock_post;
-	static unsigned long prev_canary_pre;
-	static unsigned long prev_canary_post;
-	static unsigned long prev_reexec_attempts;
-	static unsigned long prev_reexec_attempts_with_new_cmp;
-	static unsigned long prev_reexec_attribution_found;
-	static unsigned long prev_reexec_attribution_ambiguous;
-	static unsigned long prev_reexec_attribution_width_match;
-	static unsigned long prev_reexec_new_cmps_total;
-	static unsigned long prev_reexec_new_edges_total;
-	static unsigned long prev_reexec_attempts_by_arm[2];
-	static unsigned long prev_reexec_new_cmps_by_arm[2];
-	static unsigned long prev_reexec_new_edges_by_arm[2];
-	static unsigned long prev_reexec_skipped_destructive;
-	static unsigned long prev_reexec_skipped_validate_silent;
-	static unsigned long prev_reexec_window_cap_hit;
-	static unsigned long prev_reexec_pending_dropped;
-	static unsigned long prev_reexec_gate_skip_in_reexec;
-	static unsigned long prev_reexec_gate_skip_disabled;
-	static unsigned long prev_reexec_gate_skip_mode;
-	static unsigned long prev_reexec_gate_skip_chain_mid;
-	static unsigned long prev_reexec_gate_skip_no_new_cmp;
-	static unsigned long prev_reexec_gate_skip_no_pending;
-	static unsigned long prev_reexec_gate_skip_rate;
-	static unsigned long prev_reexec_gate_pass;
-	static unsigned long prev_cmp_parent_calls_enabled;
-	static unsigned long prev_cmp_parent_calls_control;
-	static unsigned long prev_cmp_parent_new_cmps_enabled;
-	static unsigned long prev_cmp_parent_new_cmps_control;
-	static unsigned long prev_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
-	static unsigned long prev_cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
-	static unsigned long prev_cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
-	static unsigned long prev_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
-	static unsigned long prev_save_reject_nonconst;
-	static unsigned long prev_save_reject_uninteresting;
-	static unsigned long prev_save_reject_sentinel;
-	static unsigned long prev_save_reject_dup;
-	static unsigned long prev_save_reject_cap;
-	static unsigned long prev_cmp_hints_consumed;
-	static unsigned long prev_cmp_hint_wins;
-	static unsigned long prev_cmp_hint_misses;
-	static unsigned long prev_cmp_hint_cmp_novelty_wins;
-	static unsigned long prev_cmp_hint_stash_overflow;
-	static unsigned long prev_cmp_hint_credit_entry_evicted;
-	static unsigned long prev_cmp_recent_inserts;
-	static unsigned long prev_cmp_recent_evicts;
-	static unsigned long prev_cmp_recent_would_pick;
-	static unsigned long prev_cmp_recent_would_miss;
-	static unsigned long prev_cmp_recent_live_picks;
-	static unsigned long prev_cmp_inject_arm_a_baseline_fires;
-	static unsigned long prev_cmp_inject_arm_b_baseline_fires;
-	static unsigned long prev_cmp_inject_denom_diverged;
-	static unsigned long prev_prop_ring_argop_arm_b_fires;
-	static unsigned long prev_frontier_blend_samples;
-	static unsigned long prev_remote_adaptive_samples;
-	static unsigned long prev_mut_structured_shadow_divergences;
+	static struct cmp_window prev;
 	static struct timespec last_dump;
+	struct cmp_window cur, delta;
+	struct cmp_levels lvl;
 	struct timespec now;
 	long elapsed;
-	unsigned long cur_records, cur_truncated, cur_bloom_skipped, cur_unique;
-	unsigned long cur_strip_skipped;
-	unsigned long cur_try_get_attempts, cur_try_get_returned, cur_injected;
-	unsigned long cur_prop_injected;
-	unsigned long cur_chaos_suppressed;
-	unsigned long cur_count_oob, cur_canary_lock_post, cur_canary_pre, cur_canary_post;
-	unsigned long cur_reexec_attempts, cur_reexec_attribution_found;
-	unsigned long cur_reexec_attempts_with_new_cmp;
-	unsigned long cur_reexec_attribution_ambiguous, cur_reexec_new_cmps_total;
-	unsigned long cur_reexec_new_edges_total;
-	unsigned long cur_reexec_attempts_by_arm[2];
-	unsigned long cur_reexec_new_cmps_by_arm[2];
-	unsigned long cur_reexec_new_edges_by_arm[2];
-	unsigned long cur_reexec_attribution_width_match;
-	unsigned long cur_reexec_skipped_destructive, cur_reexec_skipped_validate_silent;
-	unsigned long cur_reexec_window_cap_hit;
-	unsigned long cur_reexec_pending_dropped;
-	unsigned long cur_reexec_gate_skip_in_reexec;
-	unsigned long cur_reexec_gate_skip_disabled;
-	unsigned long cur_reexec_gate_skip_mode;
-	unsigned long cur_reexec_gate_skip_chain_mid;
-	unsigned long cur_reexec_gate_skip_no_new_cmp;
-	unsigned long cur_reexec_gate_skip_no_pending;
-	unsigned long cur_reexec_gate_skip_rate;
-	unsigned long cur_reexec_gate_pass;
-	unsigned long cur_cmp_parent_calls_enabled, cur_cmp_parent_calls_control;
-	unsigned long cur_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_control;
-	unsigned long cur_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
-	unsigned long cur_cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
-	unsigned long cur_cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
-	unsigned long cur_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
-	unsigned long cur_save_reject_nonconst, cur_save_reject_uninteresting;
-	unsigned long cur_save_reject_sentinel, cur_save_reject_dup, cur_save_reject_cap;
-	unsigned long delta_save_reject_nonconst, delta_save_reject_uninteresting;
-	unsigned long delta_save_reject_sentinel, delta_save_reject_dup, delta_save_reject_cap;
-	unsigned long delta_records, delta_truncated, delta_bloom_skipped, delta_unique;
-	unsigned long delta_strip_skipped;
-	unsigned long delta_try_get_attempts, delta_try_get_returned, delta_injected;
-	unsigned long delta_prop_injected;
-	unsigned long delta_chaos_suppressed;
-	unsigned long delta_count_oob, delta_canary_lock_post, delta_canary_pre, delta_canary_post;
-	unsigned long delta_reexec_attempts, delta_reexec_attribution_found;
-	unsigned long delta_reexec_attempts_with_new_cmp;
-	unsigned long delta_reexec_attribution_ambiguous, delta_reexec_new_cmps_total;
-	unsigned long delta_reexec_new_edges_total;
-	unsigned long delta_reexec_attempts_by_arm[2];
-	unsigned long delta_reexec_new_cmps_by_arm[2];
-	unsigned long delta_reexec_new_edges_by_arm[2];
-	unsigned long delta_reexec_attribution_width_match;
-	unsigned long delta_reexec_skipped_destructive, delta_reexec_skipped_validate_silent;
-	unsigned long delta_reexec_window_cap_hit;
-	unsigned long delta_reexec_pending_dropped;
-	unsigned long delta_reexec_gate_skip_in_reexec;
-	unsigned long delta_reexec_gate_skip_disabled;
-	unsigned long delta_reexec_gate_skip_mode;
-	unsigned long delta_reexec_gate_skip_chain_mid;
-	unsigned long delta_reexec_gate_skip_no_new_cmp;
-	unsigned long delta_reexec_gate_skip_no_pending;
-	unsigned long delta_reexec_gate_skip_rate;
-	unsigned long delta_reexec_gate_pass;
-	unsigned long delta_cmp_parent_calls_enabled, delta_cmp_parent_calls_control;
-	unsigned long delta_cmp_parent_new_cmps_enabled, delta_cmp_parent_new_cmps_control;
-	unsigned long delta_cmp_hint_callsite[CMP_HINT_CALLSITE_NR];
-	unsigned long delta_cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
-	unsigned long delta_cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
-	unsigned long delta_prop_injected_callsite[PROP_INJECTED_CALLSITE_NR];
-	unsigned long cur_cmp_hints_consumed, cur_cmp_hint_wins, cur_cmp_hint_misses;
-	unsigned long cur_cmp_hint_cmp_novelty_wins;
-	unsigned long cur_cmp_hint_stash_overflow, cur_cmp_hint_credit_entry_evicted;
-	unsigned long cur_cmp_recent_inserts, cur_cmp_recent_evicts;
-	unsigned long cur_cmp_recent_would_pick, cur_cmp_recent_would_miss;
-	unsigned long cur_cmp_recent_live_picks;
-	unsigned long delta_cmp_hints_consumed, delta_cmp_hint_wins, delta_cmp_hint_misses;
-	unsigned long delta_cmp_hint_cmp_novelty_wins;
-	unsigned long delta_cmp_hint_stash_overflow, delta_cmp_hint_credit_entry_evicted;
-	unsigned long delta_cmp_recent_inserts, delta_cmp_recent_evicts;
-	unsigned long delta_cmp_recent_would_pick, delta_cmp_recent_would_miss;
-	unsigned long delta_cmp_recent_live_picks;
-	unsigned long cur_cmp_inject_arm_a_baseline_fires, cur_cmp_inject_arm_b_baseline_fires;
-	unsigned long cur_cmp_inject_denom_diverged;
-	unsigned long delta_cmp_inject_arm_a_baseline_fires, delta_cmp_inject_arm_b_baseline_fires;
-	unsigned long delta_cmp_inject_denom_diverged;
-	unsigned int  cur_cmp_inject_arm_a_children, cur_cmp_inject_arm_b_children;
-	unsigned long cur_prop_ring_argop_arm_b_fires, delta_prop_ring_argop_arm_b_fires;
-	unsigned int  cur_prop_ring_argop_arm_a_children, cur_prop_ring_argop_arm_b_children;
-	unsigned long cur_frontier_blend_samples, delta_frontier_blend_samples;
-	unsigned int  cur_frontier_blend_arm_a_children, cur_frontier_blend_arm_b_children;
-	unsigned long cur_remote_adaptive_samples, delta_remote_adaptive_samples;
-	unsigned long cur_remote_adaptive_would_demote;
-	unsigned long cur_remote_adaptive_would_promote;
-	unsigned long cur_remote_adaptive_would_force;
-	unsigned long cur_remote_adaptive_would_gate_promote;
-	unsigned long cur_remote_adaptive_agree;
-	unsigned long cur_arg_meta_addr_with_meta;
-	unsigned long cur_arg_meta_addr_without_meta;
-	unsigned long cur_arg_meta_argtype_stale;
-	unsigned long cur_arg_meta_scrub_would_destroy_in;
-	unsigned long cur_arg_meta_scrub_would_preserve_out;
-	unsigned long cur_blanket_address_scrub_slots_walked;
-	unsigned int  cur_remote_adaptive_arm_a_children, cur_remote_adaptive_arm_b_children;
-	unsigned long cur_mut_structured_shadow_samples;
-	unsigned long cur_mut_structured_shadow_divergences;
-	unsigned long delta_mut_structured_shadow_divergences;
-	unsigned int  cur_mut_structured_arm_a_children, cur_mut_structured_arm_b_children;
 	bool any_callsite_delta = false;
 	bool any_callsite_wins_delta = false;
 	bool any_prop_callsite_delta = false;
@@ -378,228 +417,14 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 		return;
 
 	clock_gettime(CLOCK_MONOTONIC, &now);
-
-	cur_records       = __atomic_load_n(&kcov_shm->cmp_records.cmp_records_collected,   __ATOMIC_RELAXED);
-	cur_truncated     = __atomic_load_n(&kcov_shm->cmp_records.cmp_trace_truncated,     __ATOMIC_RELAXED);
-	cur_bloom_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_bloom_skipped, __ATOMIC_RELAXED);
-	cur_strip_skipped = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_strip_skipped, __ATOMIC_RELAXED);
-	cur_unique        = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_unique_inserts, __ATOMIC_RELAXED);
-	/* Source from parent_stats: cmp_hints_try_get_ex() now enqueues
-	 * +1 per attempt/return via the per-child stats_ring; the kcov_shm
-	 * scalars are gone, removing a fuzzer-visible wild-write target. */
-	cur_try_get_attempts = parent_stats.cmp_hints_try_get_attempts;
-	cur_try_get_returned = parent_stats.cmp_hints_try_get_returned;
-	cur_injected         = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_injected,         __ATOMIC_RELAXED);
-	cur_prop_injected    = __atomic_load_n(&kcov_shm->hints_flat.propagation_injected,       __ATOMIC_RELAXED);
-	cur_chaos_suppressed = __atomic_load_n(&kcov_shm->hints_flat.cmp_hints_chaos_suppressed, __ATOMIC_RELAXED);
-	cur_count_oob        = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_count_oob,               __ATOMIC_RELAXED);
-	cur_canary_lock_post = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_lock_post_corrupt, __ATOMIC_RELAXED);
-	cur_canary_pre       = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_pre_corrupt,      __ATOMIC_RELAXED);
-	cur_canary_post      = __atomic_load_n(&kcov_shm->hints_canary.cmp_hints_canary_post_corrupt,     __ATOMIC_RELAXED);
-	cur_reexec_attempts                = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attempts,                __ATOMIC_RELAXED);
-	cur_reexec_attempts_with_new_cmp   = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attempts_with_new_cmp,   __ATOMIC_RELAXED);
-	cur_reexec_attribution_found       = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_found,       __ATOMIC_RELAXED);
-	cur_reexec_attribution_ambiguous   = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_ambiguous,   __ATOMIC_RELAXED);
-	cur_reexec_attribution_width_match = __atomic_load_n(&kcov_shm->reexec_flat.reexec_attribution_width_match, __ATOMIC_RELAXED);
-	cur_reexec_new_cmps_total          = __atomic_load_n(&kcov_shm->reexec_flat.reexec_new_cmps_total,          __ATOMIC_RELAXED);
-	cur_reexec_new_edges_total         = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_total,         __ATOMIC_RELAXED);
-	cur_reexec_attempts_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_attempts_by_arm[0],      __ATOMIC_RELAXED);
-	cur_reexec_attempts_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_attempts_by_arm[1],      __ATOMIC_RELAXED);
-	cur_reexec_new_cmps_by_arm[0]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_cmps_by_arm[0],      __ATOMIC_RELAXED);
-	cur_reexec_new_cmps_by_arm[1]      = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_cmps_by_arm[1],      __ATOMIC_RELAXED);
-	cur_reexec_new_edges_by_arm[0]     = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_by_arm[0],     __ATOMIC_RELAXED);
-	cur_reexec_new_edges_by_arm[1]     = __atomic_load_n(&kcov_shm->reexec_arms.reexec_new_edges_by_arm[1],     __ATOMIC_RELAXED);
-	cur_reexec_skipped_destructive     = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive,     __ATOMIC_RELAXED);
-	cur_reexec_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
-	cur_reexec_window_cap_hit          = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit,          __ATOMIC_RELAXED);
-	cur_reexec_pending_dropped         = __atomic_load_n(&kcov_shm->reexec_pending_hist.reexec_pending_dropped,         __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_in_reexec     = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_in_reexec,     __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_disabled      = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_disabled,      __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_mode          = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_mode,          __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_chain_mid     = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_chain_mid,     __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_no_new_cmp    = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_new_cmp,    __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_no_pending    = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_no_pending,    __ATOMIC_RELAXED);
-	cur_reexec_gate_skip_rate          = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_skip_rate,          __ATOMIC_RELAXED);
-	cur_reexec_gate_pass               = __atomic_load_n(&kcov_shm->reexec_gate.reexec_gate_pass,               __ATOMIC_RELAXED);
-	cur_cmp_parent_calls_enabled       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_enabled,       __ATOMIC_RELAXED);
-	cur_cmp_parent_calls_control       = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control,       __ATOMIC_RELAXED);
-	cur_cmp_parent_new_cmps_enabled    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled,    __ATOMIC_RELAXED);
-	cur_cmp_parent_new_cmps_control    = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_control,    __ATOMIC_RELAXED);
-	cur_save_reject_nonconst      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_nonconst,      __ATOMIC_RELAXED);
-	cur_save_reject_uninteresting = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_uninteresting, __ATOMIC_RELAXED);
-	cur_save_reject_sentinel      = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_sentinel,      __ATOMIC_RELAXED);
-	cur_save_reject_dup           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_dup,           __ATOMIC_RELAXED);
-	cur_save_reject_cap           = __atomic_load_n(&kcov_shm->hint_reject.cmp_hints_save_reject_cap,           __ATOMIC_RELAXED);
-	{
-		unsigned int cs;
-		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++)
-			cur_cmp_hint_callsite[cs] = __atomic_load_n(
-				&kcov_shm->hint_callsite.cmp_hint_callsite_injected[cs],
-				__ATOMIC_RELAXED);
-	}
-	{
-		unsigned int cs;
-		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-			cur_cmp_hint_callsite_pc_wins[cs] = __atomic_load_n(
-				&kcov_shm->hint_callsite.cmp_hint_callsite_pc_wins[cs],
-				__ATOMIC_RELAXED);
-			cur_cmp_hint_callsite_misses[cs] = __atomic_load_n(
-				&kcov_shm->hint_callsite.cmp_hint_callsite_misses[cs],
-				__ATOMIC_RELAXED);
-		}
-	}
-	{
-		unsigned int cs;
-		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
-			cur_prop_injected_callsite[cs] = __atomic_load_n(
-				&kcov_shm->hints_flat.propagation_injected_callsite[cs],
-				__ATOMIC_RELAXED);
-	}
-	cur_cmp_hints_consumed             = __atomic_load_n(&kcov_shm->hint_flat.cmp_hints_consumed,             __ATOMIC_RELAXED);
-	cur_cmp_hint_wins                  = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_wins,                  __ATOMIC_RELAXED);
-	cur_cmp_hint_misses                = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_misses,                __ATOMIC_RELAXED);
-	cur_cmp_hint_cmp_novelty_wins      = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_cmp_novelty_wins,      __ATOMIC_RELAXED);
-	cur_cmp_hint_stash_overflow        = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_stash_overflow,        __ATOMIC_RELAXED);
-	cur_cmp_hint_credit_entry_evicted  = __atomic_load_n(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,  __ATOMIC_RELAXED);
-	cur_cmp_recent_inserts             = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_inserts,             __ATOMIC_RELAXED);
-	cur_cmp_recent_evicts              = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_evicts,              __ATOMIC_RELAXED);
-	cur_cmp_recent_would_pick          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_pick,          __ATOMIC_RELAXED);
-	cur_cmp_recent_would_miss          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_would_miss,          __ATOMIC_RELAXED);
-	cur_cmp_recent_live_picks          = __atomic_load_n(&kcov_shm->cmp_recent.cmp_recent_live_picks,          __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_a_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_baseline_fires, __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_b_baseline_fires = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_baseline_fires, __ATOMIC_RELAXED);
-	cur_cmp_inject_denom_diverged       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_denom_diverged,       __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_a_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_a_children,       __ATOMIC_RELAXED);
-	cur_cmp_inject_arm_b_children       = __atomic_load_n(&kcov_shm->cohorts.cmp_inject_arm_b_children,       __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_b_fires     = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_fires,     __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_a_children,  __ATOMIC_RELAXED);
-	cur_prop_ring_argop_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.prop_ring_argop_arm_b_children,  __ATOMIC_RELAXED);
-	/* frontier_blend_samples lives in shm->stats (bumped per fire from
-	 * both arms in lock-step), the cohort children counters live in
-	 * kcov_shm (bumped once per child).  Read both here so the cohort
-	 * dump row can be delta-gated on the fire counter, matching the
-	 * prop_ring_argop template. */
-	cur_frontier_blend_samples          = __atomic_load_n(&shm->stats.frontier.plateau.blend_samples,         __ATOMIC_RELAXED);
-	cur_frontier_blend_arm_a_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_a_children,   __ATOMIC_RELAXED);
-	cur_frontier_blend_arm_b_children   = __atomic_load_n(&kcov_shm->cohorts.frontier_blend_arm_b_children,   __ATOMIC_RELAXED);
-	cur_remote_adaptive_samples         = __atomic_load_n(&shm->stats.remote_adaptive.samples,        __ATOMIC_RELAXED);
-	cur_remote_adaptive_would_demote    = __atomic_load_n(&shm->stats.remote_adaptive.would_demote,   __ATOMIC_RELAXED);
-	cur_remote_adaptive_would_promote   = __atomic_load_n(&shm->stats.remote_adaptive.would_promote,  __ATOMIC_RELAXED);
-	cur_remote_adaptive_would_force     = __atomic_load_n(&shm->stats.remote_adaptive.would_force,    __ATOMIC_RELAXED);
-	cur_remote_adaptive_would_gate_promote = __atomic_load_n(&shm->stats.remote_adaptive.would_gate_promote, __ATOMIC_RELAXED);
-	cur_remote_adaptive_agree           = __atomic_load_n(&shm->stats.remote_adaptive.agree,          __ATOMIC_RELAXED);
-	cur_remote_adaptive_arm_a_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_a_children,  __ATOMIC_RELAXED);
-	cur_remote_adaptive_arm_b_children  = __atomic_load_n(&kcov_shm->cohorts.remote_adaptive_arm_b_children,  __ATOMIC_RELAXED);
-	cur_arg_meta_addr_with_meta            = __atomic_load_n(&shm->stats.arg.meta_addr_with_meta,            __ATOMIC_RELAXED);
-	cur_arg_meta_addr_without_meta         = __atomic_load_n(&shm->stats.arg.meta_addr_without_meta,         __ATOMIC_RELAXED);
-	cur_arg_meta_argtype_stale             = __atomic_load_n(&shm->stats.arg.meta_argtype_stale,             __ATOMIC_RELAXED);
-	cur_arg_meta_scrub_would_destroy_in    = __atomic_load_n(&shm->stats.arg.meta_scrub_would_destroy_in,    __ATOMIC_RELAXED);
-	cur_arg_meta_scrub_would_preserve_out  = __atomic_load_n(&shm->stats.arg.meta_scrub_would_preserve_out,  __ATOMIC_RELAXED);
-	cur_blanket_address_scrub_slots_walked = __atomic_load_n(&shm->stats.arg.blanket_address_scrub_slots_walked, __ATOMIC_RELAXED);
-	/* SHADOW structure-aware picker A/B cohort + divergence counters live
-	 * in minicorpus_shm rather than kcov_shm because the picker is a
-	 * mutate_arg concern, not a kcov-cmp concern.  Guard the load so a
-	 * degenerate run with kcov on but minicorpus unmapped does not chase
-	 * a NULL pointer; the dump row's delta gate keeps a zero from
-	 * polluting the kcov-cmp window output. */
-	if (minicorpus_shm != NULL) {
-		cur_mut_structured_shadow_samples     = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_samples,     __ATOMIC_RELAXED);
-		cur_mut_structured_shadow_divergences = __atomic_load_n(&minicorpus_shm->mut_structured_shadow_divergences, __ATOMIC_RELAXED);
-		cur_mut_structured_arm_a_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_a_children,     __ATOMIC_RELAXED);
-		cur_mut_structured_arm_b_children     = __atomic_load_n(&minicorpus_shm->mut_structured_arm_b_children,     __ATOMIC_RELAXED);
-	} else {
-		cur_mut_structured_shadow_samples     = 0;
-		cur_mut_structured_shadow_divergences = 0;
-		cur_mut_structured_arm_a_children     = 0;
-		cur_mut_structured_arm_b_children     = 0;
-	}
+	cmp_window_snapshot(&cur, &lvl);
 
 	/* First call: arm the window so any pre-existing counts carried
 	 * over from earlier in the run are not mis-attributed to the
 	 * first window, mirroring periodic_counter_rates_dump. */
 	if (last_dump.tv_sec == 0) {
 		last_dump = now;
-		prev_records       = cur_records;
-		prev_truncated     = cur_truncated;
-		prev_bloom_skipped = cur_bloom_skipped;
-		prev_strip_skipped = cur_strip_skipped;
-		prev_unique        = cur_unique;
-		prev_try_get_attempts = cur_try_get_attempts;
-		prev_try_get_returned = cur_try_get_returned;
-		prev_injected         = cur_injected;
-		prev_prop_injected    = cur_prop_injected;
-		prev_chaos_suppressed = cur_chaos_suppressed;
-		prev_count_oob        = cur_count_oob;
-		prev_canary_lock_post = cur_canary_lock_post;
-		prev_canary_pre       = cur_canary_pre;
-		prev_canary_post      = cur_canary_post;
-		prev_reexec_attempts                = cur_reexec_attempts;
-		prev_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp;
-		prev_reexec_attribution_found       = cur_reexec_attribution_found;
-		prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
-		prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
-		prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
-		prev_reexec_new_edges_total         = cur_reexec_new_edges_total;
-		prev_reexec_attempts_by_arm[0]      = cur_reexec_attempts_by_arm[0];
-		prev_reexec_attempts_by_arm[1]      = cur_reexec_attempts_by_arm[1];
-		prev_reexec_new_cmps_by_arm[0]      = cur_reexec_new_cmps_by_arm[0];
-		prev_reexec_new_cmps_by_arm[1]      = cur_reexec_new_cmps_by_arm[1];
-		prev_reexec_new_edges_by_arm[0]     = cur_reexec_new_edges_by_arm[0];
-		prev_reexec_new_edges_by_arm[1]     = cur_reexec_new_edges_by_arm[1];
-		prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
-		prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
-		prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
-		prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
-		prev_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec;
-		prev_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled;
-		prev_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode;
-		prev_reexec_gate_skip_chain_mid     = cur_reexec_gate_skip_chain_mid;
-		prev_reexec_gate_skip_no_new_cmp    = cur_reexec_gate_skip_no_new_cmp;
-		prev_reexec_gate_skip_no_pending    = cur_reexec_gate_skip_no_pending;
-		prev_reexec_gate_skip_rate          = cur_reexec_gate_skip_rate;
-		prev_reexec_gate_pass               = cur_reexec_gate_pass;
-		prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
-		prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
-		prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
-		prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
-		prev_save_reject_nonconst      = cur_save_reject_nonconst;
-		prev_save_reject_uninteresting = cur_save_reject_uninteresting;
-		prev_save_reject_sentinel      = cur_save_reject_sentinel;
-		prev_save_reject_dup           = cur_save_reject_dup;
-		prev_save_reject_cap           = cur_save_reject_cap;
-		{
-			unsigned int cs;
-			for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-				prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
-				prev_cmp_hint_callsite_pc_wins[cs] =
-					cur_cmp_hint_callsite_pc_wins[cs];
-				prev_cmp_hint_callsite_misses[cs] =
-					cur_cmp_hint_callsite_misses[cs];
-			}
-		}
-		{
-			unsigned int cs;
-			for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
-				prev_prop_injected_callsite[cs] = cur_prop_injected_callsite[cs];
-		}
-		prev_cmp_hints_consumed             = cur_cmp_hints_consumed;
-		prev_cmp_hint_wins                  = cur_cmp_hint_wins;
-		prev_cmp_hint_misses                = cur_cmp_hint_misses;
-		prev_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins;
-		prev_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow;
-		prev_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted;
-		prev_cmp_recent_inserts             = cur_cmp_recent_inserts;
-		prev_cmp_recent_evicts              = cur_cmp_recent_evicts;
-		prev_cmp_recent_would_pick          = cur_cmp_recent_would_pick;
-		prev_cmp_recent_would_miss          = cur_cmp_recent_would_miss;
-		prev_cmp_recent_live_picks          = cur_cmp_recent_live_picks;
-		prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
-		prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
-		prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
-		prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
-		prev_frontier_blend_samples          = cur_frontier_blend_samples;
-		prev_remote_adaptive_samples         = cur_remote_adaptive_samples;
-		prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
+		prev = cur;
 		return;
 	}
 
@@ -607,257 +432,257 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	if (elapsed < DEFENSE_DUMP_INTERVAL_SEC)
 		return;
 
-	delta_records       = sat_sub_ul(cur_records,       prev_records);
-	delta_truncated     = sat_sub_ul(cur_truncated,     prev_truncated);
-	delta_bloom_skipped = sat_sub_ul(cur_bloom_skipped, prev_bloom_skipped);
-	delta_strip_skipped = sat_sub_ul(cur_strip_skipped, prev_strip_skipped);
-	delta_unique        = sat_sub_ul(cur_unique,        prev_unique);
-	delta_try_get_attempts = sat_sub_ul(cur_try_get_attempts, prev_try_get_attempts);
-	delta_try_get_returned = sat_sub_ul(cur_try_get_returned, prev_try_get_returned);
-	delta_injected         = sat_sub_ul(cur_injected,         prev_injected);
-	delta_prop_injected    = sat_sub_ul(cur_prop_injected,    prev_prop_injected);
-	delta_chaos_suppressed = sat_sub_ul(cur_chaos_suppressed, prev_chaos_suppressed);
-	delta_count_oob        = sat_sub_ul(cur_count_oob,        prev_count_oob);
-	delta_canary_lock_post = sat_sub_ul(cur_canary_lock_post, prev_canary_lock_post);
-	delta_canary_pre       = sat_sub_ul(cur_canary_pre,       prev_canary_pre);
-	delta_canary_post      = sat_sub_ul(cur_canary_post,      prev_canary_post);
-	delta_reexec_attempts                = sat_sub_ul(cur_reexec_attempts,                prev_reexec_attempts);
-	delta_reexec_attempts_with_new_cmp   = sat_sub_ul(cur_reexec_attempts_with_new_cmp,   prev_reexec_attempts_with_new_cmp);
-	delta_reexec_attribution_found       = sat_sub_ul(cur_reexec_attribution_found,       prev_reexec_attribution_found);
-	delta_reexec_attribution_ambiguous   = sat_sub_ul(cur_reexec_attribution_ambiguous,   prev_reexec_attribution_ambiguous);
-	delta_reexec_attribution_width_match = sat_sub_ul(cur_reexec_attribution_width_match, prev_reexec_attribution_width_match);
-	delta_reexec_new_cmps_total          = sat_sub_ul(cur_reexec_new_cmps_total,          prev_reexec_new_cmps_total);
-	delta_reexec_new_edges_total         = sat_sub_ul(cur_reexec_new_edges_total,         prev_reexec_new_edges_total);
-	delta_reexec_attempts_by_arm[0]      = sat_sub_ul(cur_reexec_attempts_by_arm[0],      prev_reexec_attempts_by_arm[0]);
-	delta_reexec_attempts_by_arm[1]      = sat_sub_ul(cur_reexec_attempts_by_arm[1],      prev_reexec_attempts_by_arm[1]);
-	delta_reexec_new_cmps_by_arm[0]      = sat_sub_ul(cur_reexec_new_cmps_by_arm[0],      prev_reexec_new_cmps_by_arm[0]);
-	delta_reexec_new_cmps_by_arm[1]      = sat_sub_ul(cur_reexec_new_cmps_by_arm[1],      prev_reexec_new_cmps_by_arm[1]);
-	delta_reexec_new_edges_by_arm[0]     = sat_sub_ul(cur_reexec_new_edges_by_arm[0],     prev_reexec_new_edges_by_arm[0]);
-	delta_reexec_new_edges_by_arm[1]     = sat_sub_ul(cur_reexec_new_edges_by_arm[1],     prev_reexec_new_edges_by_arm[1]);
-	delta_reexec_skipped_destructive     = sat_sub_ul(cur_reexec_skipped_destructive,     prev_reexec_skipped_destructive);
-	delta_reexec_skipped_validate_silent = sat_sub_ul(cur_reexec_skipped_validate_silent, prev_reexec_skipped_validate_silent);
-	delta_reexec_window_cap_hit          = sat_sub_ul(cur_reexec_window_cap_hit,          prev_reexec_window_cap_hit);
-	delta_reexec_pending_dropped         = sat_sub_ul(cur_reexec_pending_dropped,         prev_reexec_pending_dropped);
-	delta_reexec_gate_skip_in_reexec     = sat_sub_ul(cur_reexec_gate_skip_in_reexec,     prev_reexec_gate_skip_in_reexec);
-	delta_reexec_gate_skip_disabled      = sat_sub_ul(cur_reexec_gate_skip_disabled,      prev_reexec_gate_skip_disabled);
-	delta_reexec_gate_skip_mode          = sat_sub_ul(cur_reexec_gate_skip_mode,          prev_reexec_gate_skip_mode);
-	delta_reexec_gate_skip_chain_mid     = sat_sub_ul(cur_reexec_gate_skip_chain_mid,     prev_reexec_gate_skip_chain_mid);
-	delta_reexec_gate_skip_no_new_cmp    = sat_sub_ul(cur_reexec_gate_skip_no_new_cmp,    prev_reexec_gate_skip_no_new_cmp);
-	delta_reexec_gate_skip_no_pending    = sat_sub_ul(cur_reexec_gate_skip_no_pending,    prev_reexec_gate_skip_no_pending);
-	delta_reexec_gate_skip_rate          = sat_sub_ul(cur_reexec_gate_skip_rate,          prev_reexec_gate_skip_rate);
-	delta_reexec_gate_pass               = sat_sub_ul(cur_reexec_gate_pass,               prev_reexec_gate_pass);
-	delta_cmp_parent_calls_enabled       = sat_sub_ul(cur_cmp_parent_calls_enabled,       prev_cmp_parent_calls_enabled);
-	delta_cmp_parent_calls_control       = sat_sub_ul(cur_cmp_parent_calls_control,       prev_cmp_parent_calls_control);
-	delta_cmp_parent_new_cmps_enabled    = sat_sub_ul(cur_cmp_parent_new_cmps_enabled,    prev_cmp_parent_new_cmps_enabled);
-	delta_cmp_parent_new_cmps_control    = sat_sub_ul(cur_cmp_parent_new_cmps_control,    prev_cmp_parent_new_cmps_control);
-	delta_save_reject_nonconst      = sat_sub_ul(cur_save_reject_nonconst,      prev_save_reject_nonconst);
-	delta_save_reject_uninteresting = sat_sub_ul(cur_save_reject_uninteresting, prev_save_reject_uninteresting);
-	delta_save_reject_sentinel      = sat_sub_ul(cur_save_reject_sentinel,      prev_save_reject_sentinel);
-	delta_save_reject_dup           = sat_sub_ul(cur_save_reject_dup,           prev_save_reject_dup);
-	delta_save_reject_cap           = sat_sub_ul(cur_save_reject_cap,           prev_save_reject_cap);
+	delta.records       = sat_sub_ul(cur.records,       prev.records);
+	delta.truncated     = sat_sub_ul(cur.truncated,     prev.truncated);
+	delta.bloom_skipped = sat_sub_ul(cur.bloom_skipped, prev.bloom_skipped);
+	delta.strip_skipped = sat_sub_ul(cur.strip_skipped, prev.strip_skipped);
+	delta.unique        = sat_sub_ul(cur.unique,        prev.unique);
+	delta.try_get_attempts = sat_sub_ul(cur.try_get_attempts, prev.try_get_attempts);
+	delta.try_get_returned = sat_sub_ul(cur.try_get_returned, prev.try_get_returned);
+	delta.injected         = sat_sub_ul(cur.injected,         prev.injected);
+	delta.prop_injected    = sat_sub_ul(cur.prop_injected,    prev.prop_injected);
+	delta.chaos_suppressed = sat_sub_ul(cur.chaos_suppressed, prev.chaos_suppressed);
+	delta.count_oob        = sat_sub_ul(cur.count_oob,        prev.count_oob);
+	delta.canary_lock_post = sat_sub_ul(cur.canary_lock_post, prev.canary_lock_post);
+	delta.canary_pre       = sat_sub_ul(cur.canary_pre,       prev.canary_pre);
+	delta.canary_post      = sat_sub_ul(cur.canary_post,      prev.canary_post);
+	delta.reexec_attempts                = sat_sub_ul(cur.reexec_attempts,                prev.reexec_attempts);
+	delta.reexec_attempts_with_new_cmp   = sat_sub_ul(cur.reexec_attempts_with_new_cmp,   prev.reexec_attempts_with_new_cmp);
+	delta.reexec_attribution_found       = sat_sub_ul(cur.reexec_attribution_found,       prev.reexec_attribution_found);
+	delta.reexec_attribution_ambiguous   = sat_sub_ul(cur.reexec_attribution_ambiguous,   prev.reexec_attribution_ambiguous);
+	delta.reexec_attribution_width_match = sat_sub_ul(cur.reexec_attribution_width_match, prev.reexec_attribution_width_match);
+	delta.reexec_new_cmps_total          = sat_sub_ul(cur.reexec_new_cmps_total,          prev.reexec_new_cmps_total);
+	delta.reexec_new_edges_total         = sat_sub_ul(cur.reexec_new_edges_total,         prev.reexec_new_edges_total);
+	delta.reexec_attempts_by_arm[0]      = sat_sub_ul(cur.reexec_attempts_by_arm[0],      prev.reexec_attempts_by_arm[0]);
+	delta.reexec_attempts_by_arm[1]      = sat_sub_ul(cur.reexec_attempts_by_arm[1],      prev.reexec_attempts_by_arm[1]);
+	delta.reexec_new_cmps_by_arm[0]      = sat_sub_ul(cur.reexec_new_cmps_by_arm[0],      prev.reexec_new_cmps_by_arm[0]);
+	delta.reexec_new_cmps_by_arm[1]      = sat_sub_ul(cur.reexec_new_cmps_by_arm[1],      prev.reexec_new_cmps_by_arm[1]);
+	delta.reexec_new_edges_by_arm[0]     = sat_sub_ul(cur.reexec_new_edges_by_arm[0],     prev.reexec_new_edges_by_arm[0]);
+	delta.reexec_new_edges_by_arm[1]     = sat_sub_ul(cur.reexec_new_edges_by_arm[1],     prev.reexec_new_edges_by_arm[1]);
+	delta.reexec_skipped_destructive     = sat_sub_ul(cur.reexec_skipped_destructive,     prev.reexec_skipped_destructive);
+	delta.reexec_skipped_validate_silent = sat_sub_ul(cur.reexec_skipped_validate_silent, prev.reexec_skipped_validate_silent);
+	delta.reexec_window_cap_hit          = sat_sub_ul(cur.reexec_window_cap_hit,          prev.reexec_window_cap_hit);
+	delta.reexec_pending_dropped         = sat_sub_ul(cur.reexec_pending_dropped,         prev.reexec_pending_dropped);
+	delta.reexec_gate_skip_in_reexec     = sat_sub_ul(cur.reexec_gate_skip_in_reexec,     prev.reexec_gate_skip_in_reexec);
+	delta.reexec_gate_skip_disabled      = sat_sub_ul(cur.reexec_gate_skip_disabled,      prev.reexec_gate_skip_disabled);
+	delta.reexec_gate_skip_mode          = sat_sub_ul(cur.reexec_gate_skip_mode,          prev.reexec_gate_skip_mode);
+	delta.reexec_gate_skip_chain_mid     = sat_sub_ul(cur.reexec_gate_skip_chain_mid,     prev.reexec_gate_skip_chain_mid);
+	delta.reexec_gate_skip_no_new_cmp    = sat_sub_ul(cur.reexec_gate_skip_no_new_cmp,    prev.reexec_gate_skip_no_new_cmp);
+	delta.reexec_gate_skip_no_pending    = sat_sub_ul(cur.reexec_gate_skip_no_pending,    prev.reexec_gate_skip_no_pending);
+	delta.reexec_gate_skip_rate          = sat_sub_ul(cur.reexec_gate_skip_rate,          prev.reexec_gate_skip_rate);
+	delta.reexec_gate_pass               = sat_sub_ul(cur.reexec_gate_pass,               prev.reexec_gate_pass);
+	delta.cmp_parent_calls_enabled       = sat_sub_ul(cur.cmp_parent_calls_enabled,       prev.cmp_parent_calls_enabled);
+	delta.cmp_parent_calls_control       = sat_sub_ul(cur.cmp_parent_calls_control,       prev.cmp_parent_calls_control);
+	delta.cmp_parent_new_cmps_enabled    = sat_sub_ul(cur.cmp_parent_new_cmps_enabled,    prev.cmp_parent_new_cmps_enabled);
+	delta.cmp_parent_new_cmps_control    = sat_sub_ul(cur.cmp_parent_new_cmps_control,    prev.cmp_parent_new_cmps_control);
+	delta.save_reject_nonconst      = sat_sub_ul(cur.save_reject_nonconst,      prev.save_reject_nonconst);
+	delta.save_reject_uninteresting = sat_sub_ul(cur.save_reject_uninteresting, prev.save_reject_uninteresting);
+	delta.save_reject_sentinel      = sat_sub_ul(cur.save_reject_sentinel,      prev.save_reject_sentinel);
+	delta.save_reject_dup           = sat_sub_ul(cur.save_reject_dup,           prev.save_reject_dup);
+	delta.save_reject_cap           = sat_sub_ul(cur.save_reject_cap,           prev.save_reject_cap);
 	{
 		unsigned int cs;
 		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-			delta_cmp_hint_callsite[cs] =
-				sat_sub_ul(cur_cmp_hint_callsite[cs], prev_cmp_hint_callsite[cs]);
-			if (delta_cmp_hint_callsite[cs] != 0)
+			delta.cmp_hint_callsite[cs] =
+				sat_sub_ul(cur.cmp_hint_callsite[cs], prev.cmp_hint_callsite[cs]);
+			if (delta.cmp_hint_callsite[cs] != 0)
 				any_callsite_delta = true;
-			delta_cmp_hint_callsite_pc_wins[cs] =
-				sat_sub_ul(cur_cmp_hint_callsite_pc_wins[cs],
-					   prev_cmp_hint_callsite_pc_wins[cs]);
-			delta_cmp_hint_callsite_misses[cs] =
-				sat_sub_ul(cur_cmp_hint_callsite_misses[cs],
-					   prev_cmp_hint_callsite_misses[cs]);
-			if (delta_cmp_hint_callsite_pc_wins[cs] != 0 ||
-			    delta_cmp_hint_callsite_misses[cs] != 0)
+			delta.cmp_hint_callsite_pc_wins[cs] =
+				sat_sub_ul(cur.cmp_hint_callsite_pc_wins[cs],
+					   prev.cmp_hint_callsite_pc_wins[cs]);
+			delta.cmp_hint_callsite_misses[cs] =
+				sat_sub_ul(cur.cmp_hint_callsite_misses[cs],
+					   prev.cmp_hint_callsite_misses[cs]);
+			if (delta.cmp_hint_callsite_pc_wins[cs] != 0 ||
+			    delta.cmp_hint_callsite_misses[cs] != 0)
 				any_callsite_wins_delta = true;
 		}
 	}
 	{
 		unsigned int cs;
 		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++) {
-			delta_prop_injected_callsite[cs] =
-				sat_sub_ul(cur_prop_injected_callsite[cs], prev_prop_injected_callsite[cs]);
-			if (delta_prop_injected_callsite[cs] != 0)
+			delta.prop_injected_callsite[cs] =
+				sat_sub_ul(cur.prop_injected_callsite[cs], prev.prop_injected_callsite[cs]);
+			if (delta.prop_injected_callsite[cs] != 0)
 				any_prop_callsite_delta = true;
 		}
 	}
-	delta_cmp_hints_consumed             = sat_sub_ul(cur_cmp_hints_consumed,             prev_cmp_hints_consumed);
-	delta_cmp_hint_wins                  = sat_sub_ul(cur_cmp_hint_wins,                  prev_cmp_hint_wins);
-	delta_cmp_hint_misses                = sat_sub_ul(cur_cmp_hint_misses,                prev_cmp_hint_misses);
-	delta_cmp_hint_cmp_novelty_wins      = sat_sub_ul(cur_cmp_hint_cmp_novelty_wins,      prev_cmp_hint_cmp_novelty_wins);
-	delta_cmp_hint_stash_overflow        = sat_sub_ul(cur_cmp_hint_stash_overflow,        prev_cmp_hint_stash_overflow);
-	delta_cmp_hint_credit_entry_evicted  = sat_sub_ul(cur_cmp_hint_credit_entry_evicted,  prev_cmp_hint_credit_entry_evicted);
-	delta_cmp_recent_inserts             = sat_sub_ul(cur_cmp_recent_inserts,             prev_cmp_recent_inserts);
-	delta_cmp_recent_evicts              = sat_sub_ul(cur_cmp_recent_evicts,              prev_cmp_recent_evicts);
-	delta_cmp_recent_would_pick          = sat_sub_ul(cur_cmp_recent_would_pick,          prev_cmp_recent_would_pick);
-	delta_cmp_recent_would_miss          = sat_sub_ul(cur_cmp_recent_would_miss,          prev_cmp_recent_would_miss);
-	delta_cmp_recent_live_picks          = sat_sub_ul(cur_cmp_recent_live_picks,          prev_cmp_recent_live_picks);
-	delta_cmp_inject_arm_a_baseline_fires = sat_sub_ul(cur_cmp_inject_arm_a_baseline_fires, prev_cmp_inject_arm_a_baseline_fires);
-	delta_cmp_inject_arm_b_baseline_fires = sat_sub_ul(cur_cmp_inject_arm_b_baseline_fires, prev_cmp_inject_arm_b_baseline_fires);
-	delta_cmp_inject_denom_diverged       = sat_sub_ul(cur_cmp_inject_denom_diverged,       prev_cmp_inject_denom_diverged);
-	delta_prop_ring_argop_arm_b_fires     = sat_sub_ul(cur_prop_ring_argop_arm_b_fires,     prev_prop_ring_argop_arm_b_fires);
-	delta_frontier_blend_samples          = sat_sub_ul(cur_frontier_blend_samples,          prev_frontier_blend_samples);
-	delta_remote_adaptive_samples         = sat_sub_ul(cur_remote_adaptive_samples,         prev_remote_adaptive_samples);
-	delta_mut_structured_shadow_divergences = sat_sub_ul(cur_mut_structured_shadow_divergences, prev_mut_structured_shadow_divergences);
+	delta.cmp_hints_consumed             = sat_sub_ul(cur.cmp_hints_consumed,             prev.cmp_hints_consumed);
+	delta.cmp_hint_wins                  = sat_sub_ul(cur.cmp_hint_wins,                  prev.cmp_hint_wins);
+	delta.cmp_hint_misses                = sat_sub_ul(cur.cmp_hint_misses,                prev.cmp_hint_misses);
+	delta.cmp_hint_cmp_novelty_wins      = sat_sub_ul(cur.cmp_hint_cmp_novelty_wins,      prev.cmp_hint_cmp_novelty_wins);
+	delta.cmp_hint_stash_overflow        = sat_sub_ul(cur.cmp_hint_stash_overflow,        prev.cmp_hint_stash_overflow);
+	delta.cmp_hint_credit_entry_evicted  = sat_sub_ul(cur.cmp_hint_credit_entry_evicted,  prev.cmp_hint_credit_entry_evicted);
+	delta.cmp_recent_inserts             = sat_sub_ul(cur.cmp_recent_inserts,             prev.cmp_recent_inserts);
+	delta.cmp_recent_evicts              = sat_sub_ul(cur.cmp_recent_evicts,              prev.cmp_recent_evicts);
+	delta.cmp_recent_would_pick          = sat_sub_ul(cur.cmp_recent_would_pick,          prev.cmp_recent_would_pick);
+	delta.cmp_recent_would_miss          = sat_sub_ul(cur.cmp_recent_would_miss,          prev.cmp_recent_would_miss);
+	delta.cmp_recent_live_picks          = sat_sub_ul(cur.cmp_recent_live_picks,          prev.cmp_recent_live_picks);
+	delta.cmp_inject_arm_a_baseline_fires = sat_sub_ul(cur.cmp_inject_arm_a_baseline_fires, prev.cmp_inject_arm_a_baseline_fires);
+	delta.cmp_inject_arm_b_baseline_fires = sat_sub_ul(cur.cmp_inject_arm_b_baseline_fires, prev.cmp_inject_arm_b_baseline_fires);
+	delta.cmp_inject_denom_diverged       = sat_sub_ul(cur.cmp_inject_denom_diverged,       prev.cmp_inject_denom_diverged);
+	delta.prop_ring_argop_arm_b_fires     = sat_sub_ul(cur.prop_ring_argop_arm_b_fires,     prev.prop_ring_argop_arm_b_fires);
+	delta.frontier_blend_samples          = sat_sub_ul(cur.frontier_blend_samples,          prev.frontier_blend_samples);
+	delta.remote_adaptive_samples         = sat_sub_ul(cur.remote_adaptive_samples,         prev.remote_adaptive_samples);
+	delta.mut_structured_shadow_divergences = sat_sub_ul(cur.mut_structured_shadow_divergences, prev.mut_structured_shadow_divergences);
 
-	if ((delta_records | delta_truncated | delta_bloom_skipped | delta_strip_skipped |
-	     delta_unique | delta_try_get_attempts | delta_try_get_returned |
-	     delta_injected | delta_prop_injected |
-	     delta_chaos_suppressed | delta_count_oob |
-	     delta_canary_lock_post |
-	     delta_canary_pre | delta_canary_post |
-	     delta_reexec_attempts | delta_reexec_attempts_with_new_cmp |
-	     delta_reexec_attribution_found |
-	     delta_reexec_attribution_ambiguous | delta_reexec_attribution_width_match |
-	     delta_reexec_new_cmps_total |
-	     delta_reexec_new_edges_total |
-	     delta_reexec_attempts_by_arm[0] | delta_reexec_attempts_by_arm[1] |
-	     delta_reexec_new_cmps_by_arm[0] | delta_reexec_new_cmps_by_arm[1] |
-	     delta_reexec_new_edges_by_arm[0] | delta_reexec_new_edges_by_arm[1] |
-	     delta_reexec_skipped_destructive | delta_reexec_skipped_validate_silent |
-	     delta_reexec_window_cap_hit | delta_reexec_pending_dropped |
-	     delta_reexec_gate_skip_in_reexec | delta_reexec_gate_skip_disabled |
-	     delta_reexec_gate_skip_mode | delta_reexec_gate_skip_chain_mid |
-	     delta_reexec_gate_skip_no_new_cmp | delta_reexec_gate_skip_no_pending |
-	     delta_reexec_gate_skip_rate | delta_reexec_gate_pass |
-	     delta_cmp_parent_calls_enabled | delta_cmp_parent_calls_control |
-	     delta_cmp_parent_new_cmps_enabled | delta_cmp_parent_new_cmps_control |
-	     delta_save_reject_nonconst | delta_save_reject_uninteresting |
-	     delta_save_reject_sentinel | delta_save_reject_dup |
-	     delta_save_reject_cap |
-	     delta_cmp_hints_consumed | delta_cmp_hint_wins | delta_cmp_hint_misses |
-	     delta_cmp_hint_cmp_novelty_wins | delta_cmp_hint_stash_overflow |
-	     delta_cmp_hint_credit_entry_evicted |
-	     delta_cmp_recent_inserts | delta_cmp_recent_evicts |
-	     delta_cmp_recent_would_pick | delta_cmp_recent_would_miss |
-	     delta_cmp_recent_live_picks |
-	     delta_cmp_inject_arm_a_baseline_fires |
-	     delta_cmp_inject_arm_b_baseline_fires |
-	     delta_cmp_inject_denom_diverged |
-	     delta_prop_ring_argop_arm_b_fires |
-	     delta_remote_adaptive_samples |
-	     delta_mut_structured_shadow_divergences) != 0 ||
+	if ((delta.records | delta.truncated | delta.bloom_skipped | delta.strip_skipped |
+	     delta.unique | delta.try_get_attempts | delta.try_get_returned |
+	     delta.injected | delta.prop_injected |
+	     delta.chaos_suppressed | delta.count_oob |
+	     delta.canary_lock_post |
+	     delta.canary_pre | delta.canary_post |
+	     delta.reexec_attempts | delta.reexec_attempts_with_new_cmp |
+	     delta.reexec_attribution_found |
+	     delta.reexec_attribution_ambiguous | delta.reexec_attribution_width_match |
+	     delta.reexec_new_cmps_total |
+	     delta.reexec_new_edges_total |
+	     delta.reexec_attempts_by_arm[0] | delta.reexec_attempts_by_arm[1] |
+	     delta.reexec_new_cmps_by_arm[0] | delta.reexec_new_cmps_by_arm[1] |
+	     delta.reexec_new_edges_by_arm[0] | delta.reexec_new_edges_by_arm[1] |
+	     delta.reexec_skipped_destructive | delta.reexec_skipped_validate_silent |
+	     delta.reexec_window_cap_hit | delta.reexec_pending_dropped |
+	     delta.reexec_gate_skip_in_reexec | delta.reexec_gate_skip_disabled |
+	     delta.reexec_gate_skip_mode | delta.reexec_gate_skip_chain_mid |
+	     delta.reexec_gate_skip_no_new_cmp | delta.reexec_gate_skip_no_pending |
+	     delta.reexec_gate_skip_rate | delta.reexec_gate_pass |
+	     delta.cmp_parent_calls_enabled | delta.cmp_parent_calls_control |
+	     delta.cmp_parent_new_cmps_enabled | delta.cmp_parent_new_cmps_control |
+	     delta.save_reject_nonconst | delta.save_reject_uninteresting |
+	     delta.save_reject_sentinel | delta.save_reject_dup |
+	     delta.save_reject_cap |
+	     delta.cmp_hints_consumed | delta.cmp_hint_wins | delta.cmp_hint_misses |
+	     delta.cmp_hint_cmp_novelty_wins | delta.cmp_hint_stash_overflow |
+	     delta.cmp_hint_credit_entry_evicted |
+	     delta.cmp_recent_inserts | delta.cmp_recent_evicts |
+	     delta.cmp_recent_would_pick | delta.cmp_recent_would_miss |
+	     delta.cmp_recent_live_picks |
+	     delta.cmp_inject_arm_a_baseline_fires |
+	     delta.cmp_inject_arm_b_baseline_fires |
+	     delta.cmp_inject_denom_diverged |
+	     delta.prop_ring_argop_arm_b_fires |
+	     delta.remote_adaptive_samples |
+	     delta.mut_structured_shadow_divergences) != 0 ||
 	    any_callsite_delta || any_callsite_wins_delta ||
 	    any_prop_callsite_delta) {
 		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
 
-		kcov_cmp_rate_line(elapsed, "cmp_records_collected", delta_records, cur_records);
-		kcov_cmp_rate_line(elapsed, "cmp_trace_truncated", delta_truncated, cur_truncated);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_bloom_skipped", delta_bloom_skipped, cur_bloom_skipped);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_strip_skipped", delta_strip_skipped, cur_strip_skipped);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_unique_inserts", delta_unique, cur_unique);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_nonconst", delta_save_reject_nonconst, cur_save_reject_nonconst);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_uninteresting", delta_save_reject_uninteresting, cur_save_reject_uninteresting);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_sentinel", delta_save_reject_sentinel, cur_save_reject_sentinel);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_dup", delta_save_reject_dup, cur_save_reject_dup);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_cap", delta_save_reject_cap, cur_save_reject_cap);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_attempts", delta_try_get_attempts, cur_try_get_attempts);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_returned", delta_try_get_returned, cur_try_get_returned);
-		kcov_cmp_rate_line(elapsed, "cmp_hints_injected", delta_injected, cur_injected);
-		kcov_cmp_rate_line(elapsed, "propagation_injected", delta_prop_injected, cur_prop_injected);
-		if (delta_chaos_suppressed) {
-			unsigned long rate_milli = (delta_chaos_suppressed * 1000UL) / (unsigned long)elapsed;
+		kcov_cmp_rate_line(elapsed, "cmp_records_collected", delta.records, cur.records);
+		kcov_cmp_rate_line(elapsed, "cmp_trace_truncated", delta.truncated, cur.truncated);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_bloom_skipped", delta.bloom_skipped, cur.bloom_skipped);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_strip_skipped", delta.strip_skipped, cur.strip_skipped);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_unique_inserts", delta.unique, cur.unique);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_nonconst", delta.save_reject_nonconst, cur.save_reject_nonconst);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_uninteresting", delta.save_reject_uninteresting, cur.save_reject_uninteresting);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_sentinel", delta.save_reject_sentinel, cur.save_reject_sentinel);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_dup", delta.save_reject_dup, cur.save_reject_dup);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_save_reject_cap", delta.save_reject_cap, cur.save_reject_cap);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_attempts", delta.try_get_attempts, cur.try_get_attempts);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_try_get_returned", delta.try_get_returned, cur.try_get_returned);
+		kcov_cmp_rate_line(elapsed, "cmp_hints_injected", delta.injected, cur.injected);
+		kcov_cmp_rate_line(elapsed, "propagation_injected", delta.prop_injected, cur.prop_injected);
+		if (delta.chaos_suppressed) {
+			unsigned long rate_milli = (delta.chaos_suppressed * 1000UL) / (unsigned long)elapsed;
 			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, chaos_active=%d)\n",
-					"cmp_hints_chaos_suppressed", delta_chaos_suppressed,
-					rate_milli / 1000, rate_milli % 1000, cur_chaos_suppressed,
+					"cmp_hints_chaos_suppressed", delta.chaos_suppressed,
+					rate_milli / 1000, rate_milli % 1000, cur.chaos_suppressed,
 					cmp_hints_chaos_query() ? 1 : 0);
 		}
 		kcov_cmp_render_wild_write_delta(elapsed,
-						 delta_count_oob, cur_count_oob,
-						 delta_canary_lock_post, cur_canary_lock_post,
-						 delta_canary_pre, cur_canary_pre,
-						 delta_canary_post, cur_canary_post);
-		kcov_cmp_rate_line(elapsed, "reexec_attempts", delta_reexec_attempts, cur_reexec_attempts);
-		kcov_cmp_rate_line(elapsed, "reexec_attempts_with_new_cmp", delta_reexec_attempts_with_new_cmp, cur_reexec_attempts_with_new_cmp);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_found", delta_reexec_attribution_found, cur_reexec_attribution_found);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_ambiguous", delta_reexec_attribution_ambiguous, cur_reexec_attribution_ambiguous);
-		kcov_cmp_rate_line(elapsed, "reexec_attribution_width_match", delta_reexec_attribution_width_match, cur_reexec_attribution_width_match);
-		kcov_cmp_rate_line(elapsed, "reexec_new_cmps_total", delta_reexec_new_cmps_total, cur_reexec_new_cmps_total);
-		kcov_cmp_rate_line(elapsed, "reexec_new_edges_total", delta_reexec_new_edges_total, cur_reexec_new_edges_total);
-		kcov_cmp_render_reexec_burst_drain_cohort(delta_reexec_attempts_by_arm,
-							  cur_reexec_attempts_by_arm,
-							  delta_reexec_new_cmps_by_arm,
-							  cur_reexec_new_cmps_by_arm,
-							  delta_reexec_new_edges_by_arm,
-							  cur_reexec_new_edges_by_arm);
-		kcov_cmp_rate_line(elapsed, "reexec_skipped_destructive", delta_reexec_skipped_destructive, cur_reexec_skipped_destructive);
-		kcov_cmp_rate_line(elapsed, "reexec_skipped_validate_silent", delta_reexec_skipped_validate_silent, cur_reexec_skipped_validate_silent);
-		kcov_cmp_rate_line(elapsed, "reexec_window_cap_hit", delta_reexec_window_cap_hit, cur_reexec_window_cap_hit);
-		kcov_cmp_rate_line(elapsed, "reexec_pending_dropped", delta_reexec_pending_dropped, cur_reexec_pending_dropped);
+						 delta.count_oob, cur.count_oob,
+						 delta.canary_lock_post, cur.canary_lock_post,
+						 delta.canary_pre, cur.canary_pre,
+						 delta.canary_post, cur.canary_post);
+		kcov_cmp_rate_line(elapsed, "reexec_attempts", delta.reexec_attempts, cur.reexec_attempts);
+		kcov_cmp_rate_line(elapsed, "reexec_attempts_with_new_cmp", delta.reexec_attempts_with_new_cmp, cur.reexec_attempts_with_new_cmp);
+		kcov_cmp_rate_line(elapsed, "reexec_attribution_found", delta.reexec_attribution_found, cur.reexec_attribution_found);
+		kcov_cmp_rate_line(elapsed, "reexec_attribution_ambiguous", delta.reexec_attribution_ambiguous, cur.reexec_attribution_ambiguous);
+		kcov_cmp_rate_line(elapsed, "reexec_attribution_width_match", delta.reexec_attribution_width_match, cur.reexec_attribution_width_match);
+		kcov_cmp_rate_line(elapsed, "reexec_new_cmps_total", delta.reexec_new_cmps_total, cur.reexec_new_cmps_total);
+		kcov_cmp_rate_line(elapsed, "reexec_new_edges_total", delta.reexec_new_edges_total, cur.reexec_new_edges_total);
+		kcov_cmp_render_reexec_burst_drain_cohort(delta.reexec_attempts_by_arm,
+							  cur.reexec_attempts_by_arm,
+							  delta.reexec_new_cmps_by_arm,
+							  cur.reexec_new_cmps_by_arm,
+							  delta.reexec_new_edges_by_arm,
+							  cur.reexec_new_edges_by_arm);
+		kcov_cmp_rate_line(elapsed, "reexec_skipped_destructive", delta.reexec_skipped_destructive, cur.reexec_skipped_destructive);
+		kcov_cmp_rate_line(elapsed, "reexec_skipped_validate_silent", delta.reexec_skipped_validate_silent, cur.reexec_skipped_validate_silent);
+		kcov_cmp_rate_line(elapsed, "reexec_window_cap_hit", delta.reexec_window_cap_hit, cur.reexec_window_cap_hit);
+		kcov_cmp_rate_line(elapsed, "reexec_pending_dropped", delta.reexec_pending_dropped, cur.reexec_pending_dropped);
 		kcov_cmp_render_reexec_skip_reason_breakdown(elapsed,
-							     delta_reexec_gate_skip_in_reexec, cur_reexec_gate_skip_in_reexec,
-							     delta_reexec_gate_skip_disabled, cur_reexec_gate_skip_disabled,
-							     delta_reexec_gate_skip_mode, cur_reexec_gate_skip_mode,
-							     delta_reexec_gate_skip_chain_mid, cur_reexec_gate_skip_chain_mid,
-							     delta_reexec_gate_skip_no_new_cmp, cur_reexec_gate_skip_no_new_cmp,
-							     delta_reexec_gate_skip_no_pending, cur_reexec_gate_skip_no_pending,
-							     delta_reexec_gate_skip_rate, cur_reexec_gate_skip_rate,
-							     delta_reexec_gate_pass, cur_reexec_gate_pass);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_enabled", delta_cmp_parent_calls_enabled, cur_cmp_parent_calls_enabled);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_control", delta_cmp_parent_calls_control, cur_cmp_parent_calls_control);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_enabled", delta_cmp_parent_new_cmps_enabled, cur_cmp_parent_new_cmps_enabled);
-		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_control", delta_cmp_parent_new_cmps_control, cur_cmp_parent_new_cmps_control);
+							     delta.reexec_gate_skip_in_reexec, cur.reexec_gate_skip_in_reexec,
+							     delta.reexec_gate_skip_disabled, cur.reexec_gate_skip_disabled,
+							     delta.reexec_gate_skip_mode, cur.reexec_gate_skip_mode,
+							     delta.reexec_gate_skip_chain_mid, cur.reexec_gate_skip_chain_mid,
+							     delta.reexec_gate_skip_no_new_cmp, cur.reexec_gate_skip_no_new_cmp,
+							     delta.reexec_gate_skip_no_pending, cur.reexec_gate_skip_no_pending,
+							     delta.reexec_gate_skip_rate, cur.reexec_gate_skip_rate,
+							     delta.reexec_gate_pass, cur.reexec_gate_pass);
+		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_enabled", delta.cmp_parent_calls_enabled, cur.cmp_parent_calls_enabled);
+		kcov_cmp_rate_line(elapsed, "cmp_parent_calls_control", delta.cmp_parent_calls_control, cur.cmp_parent_calls_control);
+		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_enabled", delta.cmp_parent_new_cmps_enabled, cur.cmp_parent_new_cmps_enabled);
+		kcov_cmp_rate_line(elapsed, "cmp_parent_new_cmps_control", delta.cmp_parent_new_cmps_control, cur.cmp_parent_new_cmps_control);
 		kcov_cmp_render_cmp_hint_callsites(any_callsite_delta, any_callsite_wins_delta,
-						   delta_cmp_hint_callsite, cur_cmp_hint_callsite,
-						   delta_cmp_hint_callsite_pc_wins,
-						   cur_cmp_hint_callsite_pc_wins,
-						   delta_cmp_hint_callsite_misses,
-						   cur_cmp_hint_callsite_misses);
+						   delta.cmp_hint_callsite, cur.cmp_hint_callsite,
+						   delta.cmp_hint_callsite_pc_wins,
+						   cur.cmp_hint_callsite_pc_wins,
+						   delta.cmp_hint_callsite_misses,
+						   cur.cmp_hint_callsite_misses);
 		kcov_cmp_render_prop_injected_callsite(any_prop_callsite_delta,
-						       delta_prop_injected_callsite,
-						       cur_prop_injected_callsite);
+						       delta.prop_injected_callsite,
+						       cur.prop_injected_callsite);
 		kcov_cmp_render_per_entry_feedback_scoring(elapsed,
-							   delta_cmp_hints_consumed, cur_cmp_hints_consumed,
-							   delta_cmp_hint_wins, cur_cmp_hint_wins,
-							   delta_cmp_hint_misses, cur_cmp_hint_misses,
-							   delta_cmp_hint_cmp_novelty_wins, cur_cmp_hint_cmp_novelty_wins,
-							   delta_cmp_hint_stash_overflow, cur_cmp_hint_stash_overflow,
-							   delta_cmp_hint_credit_entry_evicted, cur_cmp_hint_credit_entry_evicted);
+							   delta.cmp_hints_consumed, cur.cmp_hints_consumed,
+							   delta.cmp_hint_wins, cur.cmp_hint_wins,
+							   delta.cmp_hint_misses, cur.cmp_hint_misses,
+							   delta.cmp_hint_cmp_novelty_wins, cur.cmp_hint_cmp_novelty_wins,
+							   delta.cmp_hint_stash_overflow, cur.cmp_hint_stash_overflow,
+							   delta.cmp_hint_credit_entry_evicted, cur.cmp_hint_credit_entry_evicted);
 		kcov_cmp_render_recent_cmp_pool_tier(elapsed,
-						     delta_cmp_recent_inserts, cur_cmp_recent_inserts,
-						     delta_cmp_recent_evicts, cur_cmp_recent_evicts,
-						     delta_cmp_recent_would_pick, cur_cmp_recent_would_pick,
-						     delta_cmp_recent_would_miss, cur_cmp_recent_would_miss,
-						     delta_cmp_recent_live_picks, cur_cmp_recent_live_picks);
+						     delta.cmp_recent_inserts, cur.cmp_recent_inserts,
+						     delta.cmp_recent_evicts, cur.cmp_recent_evicts,
+						     delta.cmp_recent_would_pick, cur.cmp_recent_would_pick,
+						     delta.cmp_recent_would_miss, cur.cmp_recent_would_miss,
+						     delta.cmp_recent_live_picks, cur.cmp_recent_live_picks);
 		kcov_cmp_render_ab_baseline_inject_denom(elapsed,
-							 delta_cmp_inject_arm_a_baseline_fires, cur_cmp_inject_arm_a_baseline_fires,
-							 delta_cmp_inject_arm_b_baseline_fires, cur_cmp_inject_arm_b_baseline_fires,
-							 delta_cmp_inject_denom_diverged, cur_cmp_inject_denom_diverged,
-							 cur_cmp_inject_arm_a_children,
-							 cur_cmp_inject_arm_b_children);
+							 delta.cmp_inject_arm_a_baseline_fires, cur.cmp_inject_arm_a_baseline_fires,
+							 delta.cmp_inject_arm_b_baseline_fires, cur.cmp_inject_arm_b_baseline_fires,
+							 delta.cmp_inject_denom_diverged, cur.cmp_inject_denom_diverged,
+							 lvl.cmp_inject_arm_a_children,
+							 lvl.cmp_inject_arm_b_children);
 		kcov_cmp_render_handle_arg_op_prop_ring_cohort(elapsed,
-							       delta_prop_ring_argop_arm_b_fires,
-							       cur_prop_ring_argop_arm_b_fires,
-							       cur_prop_ring_argop_arm_a_children,
-							       cur_prop_ring_argop_arm_b_children);
+							       delta.prop_ring_argop_arm_b_fires,
+							       cur.prop_ring_argop_arm_b_fires,
+							       lvl.prop_ring_argop_arm_a_children,
+							       lvl.prop_ring_argop_arm_b_children);
 		kcov_cmp_render_frontier_cold_weight_blend_cohort(elapsed,
-								  delta_frontier_blend_samples,
-								  cur_frontier_blend_samples,
-								  cur_frontier_blend_arm_a_children,
-								  cur_frontier_blend_arm_b_children);
+								  delta.frontier_blend_samples,
+								  cur.frontier_blend_samples,
+								  lvl.frontier_blend_arm_a_children,
+								  lvl.frontier_blend_arm_b_children);
 		kcov_cmp_render_adaptive_remote_kcov_cohort(elapsed,
-							    delta_remote_adaptive_samples,
-							    cur_remote_adaptive_samples,
-							    cur_remote_adaptive_arm_a_children,
-							    cur_remote_adaptive_arm_b_children,
-							    cur_remote_adaptive_would_demote,
-							    cur_remote_adaptive_would_promote,
-							    cur_remote_adaptive_would_force,
-							    cur_remote_adaptive_would_gate_promote,
-							    cur_remote_adaptive_agree);
-		kcov_cmp_render_per_arg_ownership_sidecar(cur_blanket_address_scrub_slots_walked,
-							  cur_arg_meta_addr_with_meta,
-							  cur_arg_meta_addr_without_meta,
-							  cur_arg_meta_argtype_stale,
-							  cur_arg_meta_scrub_would_destroy_in,
-							  cur_arg_meta_scrub_would_preserve_out);
+							    delta.remote_adaptive_samples,
+							    cur.remote_adaptive_samples,
+							    lvl.remote_adaptive_arm_a_children,
+							    lvl.remote_adaptive_arm_b_children,
+							    lvl.remote_adaptive_would_demote,
+							    lvl.remote_adaptive_would_promote,
+							    lvl.remote_adaptive_would_force,
+							    lvl.remote_adaptive_would_gate_promote,
+							    lvl.remote_adaptive_agree);
+		kcov_cmp_render_per_arg_ownership_sidecar(lvl.blanket_address_scrub_slots_walked,
+							  lvl.arg_meta_addr_with_meta,
+							  lvl.arg_meta_addr_without_meta,
+							  lvl.arg_meta_argtype_stale,
+							  lvl.arg_meta_scrub_would_destroy_in,
+							  lvl.arg_meta_scrub_would_preserve_out);
 		kcov_cmp_render_structure_aware_picker_cohort(elapsed,
-							      delta_mut_structured_shadow_divergences,
-							      cur_mut_structured_shadow_divergences,
-							      cur_mut_structured_shadow_samples,
-							      cur_mut_structured_arm_a_children,
-							      cur_mut_structured_arm_b_children);
+							      delta.mut_structured_shadow_divergences,
+							      cur.mut_structured_shadow_divergences,
+							      lvl.mut_structured_shadow_samples,
+							      lvl.mut_structured_arm_a_children,
+							      lvl.mut_structured_arm_b_children);
 	}
 
 	kcov_cmp_render_hyp_shadow_stats_block(elapsed);
@@ -895,9 +720,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	 * they fire every window regardless of cmp activity.
 	 */
 	output(0, "cmp_hints_chaos_suppressed_cumulative=%lu\n",
-	       cur_chaos_suppressed);
+	       cur.chaos_suppressed);
 	output(0, "propagation_injected_cumulative=%lu\n",
-	       cur_prop_injected);
+	       cur.prop_injected);
 
 	kcov_cmp_render_modes_block();
 
@@ -911,86 +736,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	kcov_cmp_render_pc_win_conversion_split_block(elapsed);
 	kcov_cmp_hyp_saturation_block_render(elapsed);
 
-	prev_records       = cur_records;
-	prev_truncated     = cur_truncated;
-	prev_bloom_skipped = cur_bloom_skipped;
-	prev_strip_skipped = cur_strip_skipped;
-	prev_unique        = cur_unique;
-	prev_try_get_attempts = cur_try_get_attempts;
-	prev_try_get_returned = cur_try_get_returned;
-	prev_injected         = cur_injected;
-	prev_prop_injected    = cur_prop_injected;
-	prev_chaos_suppressed = cur_chaos_suppressed;
-	prev_count_oob        = cur_count_oob;
-	prev_canary_lock_post = cur_canary_lock_post;
-	prev_canary_pre       = cur_canary_pre;
-	prev_canary_post      = cur_canary_post;
-	prev_reexec_attempts                = cur_reexec_attempts;
-	prev_reexec_attempts_with_new_cmp   = cur_reexec_attempts_with_new_cmp;
-	prev_reexec_attribution_found       = cur_reexec_attribution_found;
-	prev_reexec_attribution_ambiguous   = cur_reexec_attribution_ambiguous;
-	prev_reexec_attribution_width_match = cur_reexec_attribution_width_match;
-	prev_reexec_new_cmps_total          = cur_reexec_new_cmps_total;
-	prev_reexec_new_edges_total         = cur_reexec_new_edges_total;
-	prev_reexec_attempts_by_arm[0]      = cur_reexec_attempts_by_arm[0];
-	prev_reexec_attempts_by_arm[1]      = cur_reexec_attempts_by_arm[1];
-	prev_reexec_new_cmps_by_arm[0]      = cur_reexec_new_cmps_by_arm[0];
-	prev_reexec_new_cmps_by_arm[1]      = cur_reexec_new_cmps_by_arm[1];
-	prev_reexec_new_edges_by_arm[0]     = cur_reexec_new_edges_by_arm[0];
-	prev_reexec_new_edges_by_arm[1]     = cur_reexec_new_edges_by_arm[1];
-	{
-		unsigned int cs;
-		for (cs = 0; cs < PROP_INJECTED_CALLSITE_NR; cs++)
-			prev_prop_injected_callsite[cs] = cur_prop_injected_callsite[cs];
-	}
-	prev_reexec_skipped_destructive     = cur_reexec_skipped_destructive;
-	prev_reexec_skipped_validate_silent = cur_reexec_skipped_validate_silent;
-	prev_reexec_window_cap_hit          = cur_reexec_window_cap_hit;
-	prev_reexec_pending_dropped         = cur_reexec_pending_dropped;
-	prev_reexec_gate_skip_in_reexec     = cur_reexec_gate_skip_in_reexec;
-	prev_reexec_gate_skip_disabled      = cur_reexec_gate_skip_disabled;
-	prev_reexec_gate_skip_mode          = cur_reexec_gate_skip_mode;
-	prev_reexec_gate_skip_chain_mid     = cur_reexec_gate_skip_chain_mid;
-	prev_reexec_gate_skip_no_new_cmp    = cur_reexec_gate_skip_no_new_cmp;
-	prev_reexec_gate_skip_no_pending    = cur_reexec_gate_skip_no_pending;
-	prev_reexec_gate_skip_rate          = cur_reexec_gate_skip_rate;
-	prev_reexec_gate_pass               = cur_reexec_gate_pass;
-	prev_cmp_parent_calls_enabled       = cur_cmp_parent_calls_enabled;
-	prev_cmp_parent_calls_control       = cur_cmp_parent_calls_control;
-	prev_cmp_parent_new_cmps_enabled    = cur_cmp_parent_new_cmps_enabled;
-	prev_cmp_parent_new_cmps_control    = cur_cmp_parent_new_cmps_control;
-	prev_save_reject_nonconst      = cur_save_reject_nonconst;
-	prev_save_reject_uninteresting = cur_save_reject_uninteresting;
-	prev_save_reject_sentinel      = cur_save_reject_sentinel;
-	prev_save_reject_dup           = cur_save_reject_dup;
-	prev_save_reject_cap           = cur_save_reject_cap;
-	{
-		unsigned int cs;
-		for (cs = 0; cs < CMP_HINT_CALLSITE_NR; cs++) {
-			prev_cmp_hint_callsite[cs] = cur_cmp_hint_callsite[cs];
-			prev_cmp_hint_callsite_pc_wins[cs] =
-				cur_cmp_hint_callsite_pc_wins[cs];
-			prev_cmp_hint_callsite_misses[cs] =
-				cur_cmp_hint_callsite_misses[cs];
-		}
-	}
-	prev_cmp_hints_consumed             = cur_cmp_hints_consumed;
-	prev_cmp_hint_wins                  = cur_cmp_hint_wins;
-	prev_cmp_hint_misses                = cur_cmp_hint_misses;
-	prev_cmp_hint_cmp_novelty_wins      = cur_cmp_hint_cmp_novelty_wins;
-	prev_cmp_hint_stash_overflow        = cur_cmp_hint_stash_overflow;
-	prev_cmp_hint_credit_entry_evicted  = cur_cmp_hint_credit_entry_evicted;
-	prev_cmp_recent_inserts             = cur_cmp_recent_inserts;
-	prev_cmp_recent_evicts              = cur_cmp_recent_evicts;
-	prev_cmp_recent_would_pick          = cur_cmp_recent_would_pick;
-	prev_cmp_recent_would_miss          = cur_cmp_recent_would_miss;
-	prev_cmp_recent_live_picks          = cur_cmp_recent_live_picks;
-	prev_cmp_inject_arm_a_baseline_fires = cur_cmp_inject_arm_a_baseline_fires;
-	prev_cmp_inject_arm_b_baseline_fires = cur_cmp_inject_arm_b_baseline_fires;
-	prev_cmp_inject_denom_diverged       = cur_cmp_inject_denom_diverged;
-	prev_prop_ring_argop_arm_b_fires     = cur_prop_ring_argop_arm_b_fires;
-	prev_frontier_blend_samples          = cur_frontier_blend_samples;
-	prev_remote_adaptive_samples         = cur_remote_adaptive_samples;
-	prev_mut_structured_shadow_divergences = cur_mut_structured_shadow_divergences;
+	prev = cur;
 	last_dump = now;
 }

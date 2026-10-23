@@ -153,15 +153,13 @@ Two parallel counter stores, by design:
 1. **`stats/kcov/cmp/periodic.c` still owns the time-gated periodic dump
    orchestrator** - previous-window snapshots and any-delta gates live here.
    The render blocks are per-domain siblings (the burst-drain and callsite
-   blocks no sibling owns are static helpers in this file), but the
-   top-level function is still ~800 lines and the widest hunk in the
-   subtree.  What is left is window-state plumbing, not rendering: the
-   `prev_*` statics, the `cur_*` loads, the first-window arm, the `delta_*`
-   computation, the any-delta gate and the commit all read or write the same
-   ~220 `cur_`/`delta_`/`prev_` variables, so none of them can be carved out
-   by moving code alone; shrinking them means gathering the window state
-   into a struct.  Any new top-level periodic counter has to add its
-   declaration, load, arm, delta, render, and commit here.
+   blocks no sibling owns are static helpers in this file).  The window
+   state is two structs: `struct cmp_window` holds every counter the dump
+   differences, and the snapshot, the previous snapshot and the delta are
+   three values of it, so arming and committing a window are struct copies;
+   `struct cmp_levels` holds the values printed as they stand.  Any new
+   top-level periodic counter has to add its member, its load in
+   `cmp_window_snapshot()`, its delta, and its render here.
 2. **The shutdown KCOV block is now a five-way render family** -
    `stats/kcov/dump.c` keeps only the ordering; base, top-N, remote, reexec
    and shadow blocks live in `stats/kcov/dump-<domain>.c` behind
