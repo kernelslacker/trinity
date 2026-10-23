@@ -433,6 +433,8 @@ extern struct syscallentry syscall_listns;
 extern struct syscallentry syscall_rseq_slice_yield;
 extern struct syscallentry syscall_fchroot;
 extern struct syscallentry syscall_uretprobe;
+extern struct syscallentry syscall_riscv_hwprobe;
+extern struct syscallentry syscall_riscv_flush_icache;
 
 
 unsigned int random_fcntl_setfl_flags(void);

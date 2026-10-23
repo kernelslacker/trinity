@@ -142,6 +142,7 @@ SYSCALLS_ARCH	:= $(shell case "$(MACHINE)" in \
 				  syscalls/x86/x86_64/*.c;; \
 		   (i?86*) echo syscalls/x86/*.c \
 				syscalls/x86/i386/*.c;; \
+		   (riscv64*) echo syscalls/riscv/*.c;; \
 		   esac)
 
 VERSION_H	:= include/version.h
