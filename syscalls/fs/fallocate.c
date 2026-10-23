@@ -183,9 +183,8 @@ static void sanitise_fallocate(struct syscallrecord *rec)
  * Modes that mutate or destroy existing file content.  After any of
  * these succeed, every OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE entry whose
  * backing fd matches must be soft-invalidated: get_map_with_prot()
- * would otherwise hand the entry to memory_pressure / iouring_* /
- * madvise_pattern_cycler and the per-page write loop would SIGBUS on
- * the now-unbacked range.
+ * would otherwise hand the entry to a consumer that writes through it
+ * and the per-page write loop would SIGBUS on the now-unbacked range.
  *
  * PUNCH_HOLE / ZERO_RANGE: zero content in place.
  * COLLAPSE_RANGE / INSERT_RANGE: shift surrounding content.

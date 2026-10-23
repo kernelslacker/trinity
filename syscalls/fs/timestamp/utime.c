@@ -10,7 +10,7 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
- * sanitisers (xattr-thrash, flock-thrash, removexattrat, ...) touch;
+ * sanitisers (xattr-thrash, removexattrat, ...) touch;
  * cross-process contention concentrates on the same per-inode
  * i_mutex / timestamp-update path.
  */

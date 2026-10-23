@@ -10,9 +10,9 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
- * sanitisers (chmod, utime, utimensat, xattr-thrash, flock-thrash, ...)
- * touch; cross-process contention concentrates on the same per-inode
- * i_rwsem / vfs_link path.
+ * sanitisers (chmod, utime, utimensat, xattr-thrash, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * vfs_link path.
  */
 #define NR_TESTFILES 4
 

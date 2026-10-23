@@ -235,10 +235,9 @@ static void post_munmap(struct syscallrecord *rec)
 		/*
 		 * Sub-range munmap (19/20 invocations) punches a hole in the
 		 * pool entry but leaves map->ptr / map->size unchanged.  A later
-		 * get_map_with_prot() consumer (memory_pressure / iouring_flood
-		 * / iouring_recipes / madvise_pattern_cycler) would then write
-		 * into the punched-out range and SEGV_MAPERR on the first
-		 * unmapped page.  Mirror the conservative invalidate from
+		 * get_map_with_prot() consumer would then write into the
+		 * punched-out range and SEGV_MAPERR on the first unmapped
+		 * page.  Mirror the conservative invalidate from
 		 * post_mprotect: blanket-disable the entry by clearing
 		 * map->prot so get_map_with_prot(any) skips it.  Middle-of-
 		 * mapping holes can't be expressed in a single (ptr, size)

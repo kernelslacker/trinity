@@ -121,9 +121,9 @@ static void sanitise_madvise(struct syscallrecord *rec)
 	 * to a sub-range of a pool entry, so range_overlaps_shared() never
 	 * fires for it (pool entries aren't tracked in shared_regions[]). The
 	 * map's prot stays PROT_READ|PROT_WRITE, so get_map_with_prot() will
-	 * later hand the same entry to memory_pressure / iouring_* /
-	 * madvise-cycler, which then SEGV on the first per-page write into
-	 * the guarded range. Neutralise the call to keep the pool usable.
+	 * later hand the same entry to a consumer that writes through it,
+	 * which then SEGVs on the first per-page write into the guarded
+	 * range. Neutralise the call to keep the pool usable.
 	 * GUARD_INSTALL no longer has its own bucket; this check fires only
 	 * when the long-tail ARG_OP draw lands on MADV_GUARD_INSTALL.
 	 * Consequence: make_pte_marker(PTE_MARKER_GUARD) is unreachable from
@@ -162,10 +162,9 @@ static void sanitise_madvise(struct syscallrecord *rec)
  * destroy backing pages out from under a still-mapped VMA.  After any
  * of these succeed, the OBJ_MMAP pool entry overlapping the affected
  * range can still be picked by get_map_with_prot() and handed to a
- * consumer (memory_pressure / iouring_* / madvise_pattern_cycler) that
- * writes through it -- which then SIGBUS / SEGV on the punched-out
- * pages.  Soft-invalidate the overlap via map->prot=0 (mirrors
- * post_munmap's sub-range branch and post_mprotect).
+ * consumer that writes through it -- which then SIGBUS / SEGV on the
+ * punched-out pages.  Soft-invalidate the overlap via map->prot=0
+ * (mirrors post_munmap's sub-range branch and post_mprotect).
  *
  * The non-destructive advices (NORMAL / RANDOM / SEQUENTIAL /
  * WILLNEED / COLD / PAGEOUT / COLLAPSE / HUGEPAGE / NOHUGEPAGE /

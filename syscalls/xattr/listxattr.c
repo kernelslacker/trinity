@@ -143,8 +143,8 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
  * private stack buffer for the re-call (NOT the snapshot's list -- a
  * sibling could mutate the user buffer itself mid-syscall and forge a
  * clean compare).  Drop the sample if the re-call returns <= 0 (fd was
- * closed by a sibling close-racer -- benign EBADF; or all xattrs
- * removed -- benign 0) or if it returns a different length (sibling
+ * closed by a sibling -- benign EBADF; or all xattrs removed -- benign
+ * 0) or if it returns a different length (sibling
  * fsetxattr/fremovexattr changed the name set -- benign size-class
  * drift).  Compare exactly snap_len bytes with memcmp; do not
  * early-return on first divergence so a multi-byte tear surfaces in a
@@ -507,8 +507,8 @@ struct syscallentry syscall_listxattr = {
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer touches
- * (xattr-thrash, flock-thrash, fremovexattr, lremovexattr); cross-
- * process contention concentrates on the same per-inode i_xattrs rwsem.
+ * (xattr-thrash, fremovexattr, lremovexattr); cross-process contention
+ * concentrates on the same per-inode i_xattrs rwsem.
  */
 #define LLISTXATTR_NR_TESTFILES	4
 

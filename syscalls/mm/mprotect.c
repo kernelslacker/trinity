@@ -23,13 +23,13 @@
  * mprotect ignores the field.
  *
  * A stomped rec->a3 caches the wrong prot bits into map->prot and a
- * later get_map_with_prot() consumer (memory_pressure / iouring_* /
- * madvise_pattern_cycler) trusts the lie and SEGV_ACCERRs on the first
- * un-upgraded page or, mirror-image, skips a mapping that is still
- * writable.  A stomped rec->a1/rec->a2 retargets the proc-maps oracle
- * at an address window the syscall never operated on -- forging either
- * a clean compare against an unrelated /proc/self/maps slice or an
- * "mprotect did not land" anomaly that never happened.
+ * later get_map_with_prot() consumer trusts the lie and SEGV_ACCERRs
+ * on the first un-upgraded page or, mirror-image, skips a mapping that
+ * is still writable.  A stomped rec->a1/rec->a2 retargets the
+ * proc-maps oracle at an address window the syscall never operated on
+ * -- forging either a clean compare against an unrelated
+ * /proc/self/maps slice or an "mprotect did not land" anomaly that
+ * never happened.
  *
  * map is snapshotted for the same heap-shape-spoofing defence the
  * munmap and mremap post handlers already document:

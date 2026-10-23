@@ -47,7 +47,7 @@ struct lgetxattr_post_state {
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer touches
- * (xattr-thrash, flock-thrash, fremovexattr, lremovexattr, llistxattr);
+ * (xattr-thrash, fremovexattr, lremovexattr, llistxattr);
  * cross-process contention concentrates on the same per-inode i_xattrs
  * rwsem.
  */

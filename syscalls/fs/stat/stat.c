@@ -23,7 +23,7 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
- * sanitisers (chmod, utime, xattr-thrash, flock-thrash, ...) touch;
+ * sanitisers (chmod, utime, xattr-thrash, ...) touch;
  * cross-process contention concentrates on the same per-inode i_rwsem /
  * getattr path.
  */

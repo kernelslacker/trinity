@@ -24,8 +24,8 @@ static const char planted_xattr_name[] = "user.trinity_plant";
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer
- * (xattr-thrash, flock-thrash, fremovexattr) touches; cross-process
- * contention concentrates on the same per-inode i_xattrs rwsem.
+ * (xattr-thrash, fremovexattr) touches; cross-process contention
+ * concentrates on the same per-inode i_xattrs rwsem.
  */
 #define NR_TESTFILES 4
 

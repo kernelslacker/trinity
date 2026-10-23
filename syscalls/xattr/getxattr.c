@@ -48,9 +48,9 @@ struct getxattr_post_state {
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer touches
- * (xattr-thrash, flock-thrash, fremovexattr, lremovexattr, llistxattr,
- * lgetxattr); cross-process contention concentrates on the same
- * per-inode i_xattrs rwsem.
+ * (xattr-thrash, fremovexattr, lremovexattr, llistxattr, lgetxattr);
+ * cross-process contention concentrates on the same per-inode i_xattrs
+ * rwsem.
  */
 #define GETXATTR_NR_TESTFILES	4
 

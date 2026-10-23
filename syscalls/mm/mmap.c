@@ -242,7 +242,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
  * misaligned address indicates the kernel handed back a value
  * that cannot be a real VMA base — feeding it into the object
  * pool would cache a bogus map->ptr that later munmap /
- * mprotect / memory-pressure consumers walk into.
+ * mprotect / pool consumers walk into.
  */
 static bool post_mmap_oracle_aligned(char *p)
 {

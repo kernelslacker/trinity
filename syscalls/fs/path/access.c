@@ -14,9 +14,9 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
- * sanitisers (chmod, chown, utime, utimensat, xattr-thrash,
- * flock-thrash, ...) touch; cross-process contention concentrates on
- * the same per-inode i_rwsem / inode_permission / ->permission path.
+ * sanitisers (chmod, chown, utime, utimensat, xattr-thrash, ...) touch;
+ * cross-process contention concentrates on the same per-inode i_rwsem /
+ * inode_permission / ->permission path.
  */
 #define NR_TESTFILES 4
 

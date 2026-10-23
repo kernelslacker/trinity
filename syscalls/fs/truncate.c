@@ -13,9 +13,9 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
- * sanitisers (access, chmod, chown, utime, utimensat, xattr-thrash,
- * flock-thrash, ...) touch; cross-process contention concentrates on
- * the same per-inode i_rwsem / notify_change / setattr path.
+ * sanitisers (access, chmod, chown, utime, utimensat, xattr-thrash, ...)
+ * touch; cross-process contention concentrates on the same per-inode
+ * i_rwsem / notify_change / setattr path.
  */
 #define NR_TESTFILES 4
 
@@ -121,8 +121,8 @@ static void post_truncate(struct syscallrecord *rec)
 	 * shrink poisons the shared writable arg pool fleet-wide.
 	 * Soft-invalidate every OBJ_MMAP_TESTFILE entry backed by an fd
 	 * open against the matching basename so get_map_with_prot()
-	 * cannot hand the entry to the next consumer (memory_pressure /
-	 * iouring_* / madvise_pattern_cycler) until the pool refills.
+	 * cannot hand the entry to the next consumer until the pool
+	 * refills.
 	 *
 	 * Mirror post_ftruncate's policy of invalidating unconditionally
 	 * on success rather than gating on shrink-vs-grow: a grow is

@@ -237,8 +237,8 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
  * before re-issuing, with a fresh private stack buffer for the re-call
  * (NOT the snapshot's value -- a sibling could mutate the user buffer
  * itself mid-syscall and forge a clean compare).  Drop the sample if
- * the re-call returns <= 0 (fd was closed by a sibling close-racer --
- * benign EBADF; or xattr removed -- benign ENOATTR) or if it returns a
+ * the re-call returns <= 0 (fd was closed by a sibling -- benign
+ * EBADF; or xattr removed -- benign ENOATTR) or if it returns a
  * different length (sibling fsetxattr changed the value -- benign
  * size-class drift).  Compare exactly snap_len bytes with memcmp; do
  * not early-return on first divergence so a multi-byte tear surfaces

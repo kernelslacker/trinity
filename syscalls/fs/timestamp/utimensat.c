@@ -15,8 +15,8 @@
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer
- * (xattr-family pins, flock-thrash, ...) touches; cross-process
- * contention concentrates on the same set of real inodes.
+ * (xattr-family pins, ...) touches; cross-process contention
+ * concentrates on the same set of real inodes.
  */
 #define NR_TESTFILES 4
 

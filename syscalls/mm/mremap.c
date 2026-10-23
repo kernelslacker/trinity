@@ -59,11 +59,10 @@ static const unsigned long mremap_invalid_combos[] = {
  * a kernel-written user buffer; it writes the kernel's returned address
  * and the requested new length back into trinity's map bookkeeping.
  * The snap exists to defend the bookkeeping write itself: a stomped
- * new_len would cache the wrong size into map->size and let later
- * memory_pressure / iouring_* / madvise_pattern_cycler consumers walk
- * off the actual mapping; a stomped map slot points the same write at
- * an unrelated heap allocation that the existing corruption guard
- * cannot tell apart from a real-but-wrong map pointer.
+ * new_len would cache the wrong size into map->size and let later pool
+ * consumers walk off the actual mapping; a stomped map slot points the
+ * same write at an unrelated heap allocation that the existing
+ * corruption guard cannot tell apart from a real-but-wrong map pointer.
  */
 #define MREMAP_POST_STATE_MAGIC	0x4D52454D5F4D4147UL	/* "MREM_MAG" */
 struct mremap_post_state {
