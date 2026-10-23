@@ -8,7 +8,7 @@ struct no_domains_stats {
 	 * open_sockets().  A non-zero value tells the operator how many
 	 * random-syscall socket() picks per cycle the kernel build can
 	 * never reach -- and confirms the auto-skip ran (vs. the user
-	 * supplying --exclude-domains by hand). */
+	 * supplying --no_domain by hand). */
 	unsigned long runtime_skipped;
 };
 

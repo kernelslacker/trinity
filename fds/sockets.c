@@ -31,7 +31,7 @@ unsigned int nr_sockets = 0;
 /* Per-family successful add_socket() count.  Bumped from open_socket()
  * during generate_sockets(); read once after the pool is built so PFs
  * that produced zero usable sockets can be latched into no_domains[]
- * the same way --exclude-domains= would have done. */
+ * the same way --no_domain= would have done. */
 static unsigned int per_pf_added[TRINITY_PF_MAX];
 
 
