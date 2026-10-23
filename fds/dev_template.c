@@ -1,18 +1,9 @@
 /*
- * dev_template fd provider — probes a small static table of
- * high-value character devices at startup and publishes successful
- * opens into OBJ_FD_DEV_TEMPLATE.
- *
- * The probe runs once in the parent during open_fds() (pre-fork), so
- * children inherit the fds via the normal fork-copies-fd path.  Per-
- * child re-opens would be wasted work for these devices: their open
- * has no per-fd state that disappears across fork (/dev/userfaultfd and
- * /dev/fuse defer per-fd state to subsequent ioctls the ioctl fuzzer
- * hits on its own).
- *
- * Entries that fail to open log their gate label at output level 1
- * so the startup banner names what was missing rather than just
- * "open: ENOENT".
+ * dev_template fd provider: probes a small static table of high-value
+ * character devices once in the parent during open_fds() (pre-fork) and
+ * publishes the successful opens into OBJ_FD_DEV_TEMPLATE, so children
+ * inherit the fds.  Entries that fail to open log their gate label at output
+ * level 1, so the startup banner names what was missing.
  */
 
 #include <errno.h>
@@ -52,6 +43,12 @@ static void dev_template_dump(struct object *obj, enum obj_scope scope)
 		fo->fd, fo->filename, fo->flags, scope);
 }
 
+/*
+ * Runs once in the parent during open_fds(), pre-fork, so children inherit
+ * the fds.  A per-child re-open would be wasted work: these opens carry no
+ * per-fd state that is lost across fork (/dev/userfaultfd and /dev/fuse
+ * defer theirs to later ioctls).
+ */
 static int init_dev_templates(void)
 {
 	struct objhead *head;

@@ -1,31 +1,9 @@
 /*
- * Canary file pool — fd_provider that exposes a small set of
- * trinity-owned files whose byte content is deterministic across
- * the (file_idx, offset) product.
- *
- * Init steps (run inside the .init callback during open_fds()):
- *   1. mkdir tmp/canary/ inside trinity's working tmp dir.
- *   2. Create NR_CANARY_FILES files with varied sizes:
- *        2 small  (4 KiB)
- *        3 medium (64 KiB)
- *        2 large  (1 MiB)
- *        1 odd    (5000 bytes — non-page-aligned, drives the
- *                  partial-tail code paths)
- *   3. Fill each file with the deterministic
- *      canary_expected_byte() pattern via a clean buffered loop.
- *   4. Reopen each O_RDONLY and publish as an OBJ_FD_CANARY object,
- *      tagged with OBJ_FLAG_NO_WRITE so future write-side fd
- *      filtering can skip these.  The O_RDONLY open is the actual
- *      backstop today — every kernel write/splice-out/sendfile-out/
- *      copy_file_range-out/ftruncate/fallocate against an O_RDONLY
- *      fd returns EBADF before reaching any data path.
- *
- * The verifier childop pagecache_canary_check
- * (childops/mm/pagecache-canary-check.c) consumes this pool; see its
- * top comment for the read-side coverage matrix.
- *
- * This is the Phase 1 baseline.  Phase 2 (directed splice/copy-fail/
- * crypto setup childops aimed at the canary pool) lands separately.
+ * Canary file pool: an fd_provider exposing NR_CANARY_FILES trinity-owned
+ * files, created at init under the tmp dir and published read-only, whose
+ * bytes are deterministic at every (file_idx, offset).  The verifier childop
+ * pagecache_canary_check (childops/mm/pagecache-canary-check.c) consumes it;
+ * the O_RDONLY / OBJ_FLAG_NO_WRITE rationale is in include/canary.h.
  */
 
 #include <errno.h>

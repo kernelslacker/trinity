@@ -1,38 +1,9 @@
 /*
- * scratch_block fd provider -- box-safety chokepoint for fuzzed block
- * I/O on top of the parent-side mount-namespace spine.
- *
- * Gates on shm->isolation.mnt_ready (the latch
- * setup_startup_isolation() raises after a successful unshare(CLONE_
- * NEWNS) + MS_REC|MS_PRIVATE remount of '/').  When live, opens
- * /dev/loop-control, calls LOOP_CTL_GET_FREE / LOOP_CONFIGURE over a
- * scratch image file of randomized power-of-two size, runs
- * `mkfs.ext4 -F -q <dev>` (best-effort: degrades to a loop-only entry
- * when mkfs.ext4 is absent or fails), and mounts the result under a
- * private subtree inside trinity's tmp/.  A tmpfs slot is added
- * unconditionally (default: tmpfs always; ext4 when both the
- * loop side and mkfs.ext4 succeed).
- *
- * The published entries in shm->isolation.scratch_block[] are the
- * ONLY block fds + device paths a child can draw.  Every loop number
- * came out of the kernel's own LOOP_CTL_GET_FREE allocation, so a
- * host disk node cannot enter the pool by construction; the
- * parent-held loop_fd keeps the binding alive across child
- * fuzz-closes; and the consuming childops gate at runtime on
- * scratch_block_ready + an entry with loop_num >= 0, falling back to
- * today's tmpfs/ramfs path when the pool is absent.
- *
- * Parent-teardown via atexit() (mirror self_cgroup_cleanup):
- * unmount + LOOP_CLR_FD on every published entry, close the
- * parent-held loop fd, unlink the backing image, rmdir the scratch
- * subtree.  Best-effort and idempotent throughout -- partial teardown
- * is harmless because the parent's private mount namespace is
- * destroyed with the process and every loop is bound with
- * LO_FLAGS_AUTOCLEAR, so the kernel unbinds it on the last close.
- *
- * btrfs/xfs/vfat scratch entries are deferred (a follow-up); the
- * pool layout has SCRATCH_BLOCK_MAX headroom so adding them later
- * does not re-touch shm.
+ * scratch_block fd provider -- box-safety chokepoint for fuzzed block I/O,
+ * built on the parent-side mount-namespace spine and gated on
+ * shm->isolation.mnt_ready.  The published shm->isolation.scratch_block[]
+ * entries are the only block fds and device paths a child can draw, and each
+ * loop number comes from LOOP_CTL_GET_FREE, so no host disk node can enter.
  */
 
 #include <errno.h>

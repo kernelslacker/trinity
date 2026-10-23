@@ -1,27 +1,8 @@
 /*
- * Page-cache-backed fd pool.
- *
- * Independent provider: walks the global fileindex (already populated by
- * generate_filelist()) and opens regular files that live on whitelisted
- * cache-backed filesystems.  Files on procfs/sysfs/cgroupfs etc. are
- * deliberately excluded — those backing stores don't engage the page
- * cache code paths the consumer (splice substitution) is trying to
- * exercise.
- *
- * When the fileindex scan yields zero pagecache-backed regular files
- * (the default run walks /dev,/proc,/sys and finds none), a small
- * private RO scratch corpus is self-seeded so consumers biased toward
- * this pool still hit a real page-cache substrate rather than silently
- * falling back to a random fd.  Mirrors the sibling write-side pool in
- * fds/writeable-pagecache.c: create fresh under trinity's tmp dir,
- * ftruncate to a size ladder, reopen O_RDONLY, unlink in the
- * destructor.  The "trinity-pcro-" basename prefix is reserved for
- * this pool's private use.
- *
- * A parallel small index array of "interesting" objects (currently:
- * setuid binaries) is maintained alongside the per-objhead pool so
- * get_rand_pagecache_fd() can bias picks towards them without scanning
- * the full pool on every call.
+ * Page-cache-backed fd pool: opens regular files from the global fileindex
+ * that live on whitelisted cache-backed filesystems, self-seeding a small
+ * private read-only scratch corpus when the scan finds none.  A side index of
+ * setuid binaries lets get_rand_pagecache_fd() bias picks toward them.
  */
 
 #include <errno.h>
@@ -63,7 +44,8 @@
  * offset picks by file size sees a spread across the page-cache /
  * readahead code paths (single-page hit, cross-page span, readahead
  * window, and past-EOF pick).  Filenames are trinity-owned scratch
- * under the run's tmp dir; the destructor closes and unlinks them.
+ * under the run's tmp dir, with the "trinity-pcro-" basename prefix
+ * reserved for this pool; the destructor closes and unlinks them.
  */
 static const size_t pagecache_selfseed_sizes[NR_PAGECACHE_SELFSEED_FDS] = {
 	4096,
@@ -80,6 +62,11 @@ static const size_t pagecache_selfseed_sizes[NR_PAGECACHE_SELFSEED_FDS] = {
 static unsigned int setuid_indices[NR_PAGECACHE_SETUID];
 static unsigned int nr_setuid;
 
+/*
+ * Whitelist of cache-backed filesystems.  procfs, sysfs, cgroupfs and the
+ * like are excluded: their backing stores don't engage the page-cache code
+ * paths the consumer (splice substitution) is trying to exercise.
+ */
 static bool fs_is_pagecache_backed(int fd)
 {
 	struct statfs sfs;
@@ -280,6 +267,11 @@ static int init_pagecache_fds(void)
 		unsigned int seeded;
 		int seed_errno;
 
+		/* The default run walks /dev, /proc and /sys and finds no
+		 * regular file on a cache-backed filesystem.  Self-seed a
+		 * private read-only scratch corpus so consumers biased toward
+		 * this pool still hit a real page-cache substrate rather than
+		 * silently falling back to a random fd. */
 		output(1, "init_pagecache_fds: fileindex scan yielded no pagecache-backed regular files after %u attempts, self-seeding scratch corpus\n",
 			attempts);
 

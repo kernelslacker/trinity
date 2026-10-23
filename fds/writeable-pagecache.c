@@ -1,29 +1,9 @@
 /*
- * Writeable page-cache scratch fd pool.
- *
- * Independent provider that publishes a small pool of trinity-owned
- * scratch files opened O_RDWR so positioned-write sanitisers
- * (pwrite64/pwritev/pwritev2 and future writer paths that need a
- * seekable destination) have a real source of seekable, writable,
- * page-cache-backed fds to draw from.  The existing OBJ_FD_PAGECACHE
- * pool opens its picks O_RDONLY by construction, so a fuzzed write
- * routed through one of those fds returns EBADF in the VFS prologue
- * and never reaches generic_file_write_iter / per-fs ->write_iter;
- * this pool fills that gap on the write side, mirroring the role
- * the read-side OBJ_FD_PAGECACHE pool already plays for pread/preadv.
- *
- * Safety invariant: every file backing this pool is created fresh
- * under trinity's tmp dir at init time, lives only for the run, and
- * has no shared meaning with any other pool.  In particular this
- * pool is DELIBERATELY scribble-able and MUST NEVER overlap the
- * canary pool — canary's content-verification oracle assumes its
- * files are never written by fuzzed syscalls, and a basename
- * collision would turn a positioned-write hit into a canary false
- * alarm.  The "trinity-writepc-" basename prefix is reserved for
- * this pool's private use.  Open flags are plain O_RDWR; the buffered
- * page-cache write path is the whole point, so no O_DIRECT / O_DSYNC
- * / O_SYNC — the testfile pool already varies through those modes
- * for the broader filesystem coverage matrix.
+ * Writeable page-cache scratch fd pool: trinity-owned files opened O_RDWR for
+ * the positioned-write sanitisers (pwrite64/pwritev/pwritev2).  The read-side
+ * OBJ_FD_PAGECACHE pool is O_RDONLY, so a write through it fails EBADF in the
+ * VFS prologue and never reaches ->write_iter; this pool fills that gap.
+ * Deliberately scribble-able: it must never overlap the canary pool.
  */
 
 #include <errno.h>
@@ -96,14 +76,19 @@ static bool writeable_pagecache_create_one(unsigned int idx)
 		return false;
 
 	/*
-	 * Reserved basename prefix.  Keep this in sync with the safety
-	 * invariant in the file header — any rename here also has to
-	 * stay disjoint from canary/<idx> and every other trinity-owned
-	 * scratch path.
+	 * Reserved basename prefix.  This pool is deliberately scribble-able
+	 * and must never overlap the canary pool: the canary oracle assumes
+	 * its files are never written by fuzzed syscalls, so a basename
+	 * collision would turn a positioned-write hit into a canary false
+	 * alarm.  Any rename here has to stay disjoint from canary/<idx> and
+	 * every other trinity-owned scratch path.
 	 */
 	snprintf(filename, 64, "trinity-writepc-%u", idx);
 	(void)unlink(filename);
 
+	/* Plain O_RDWR: the buffered page-cache write path is the point, so no
+	 * O_DIRECT / O_DSYNC / O_SYNC; the testfile pool already varies
+	 * through those modes. */
 	fd = open(filename, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
 	if (fd < 0) {
 		free_shared_str(filename);

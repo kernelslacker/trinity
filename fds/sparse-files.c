@@ -1,14 +1,9 @@
 /*
- * Sparse file fd provider.
- *
- * Builds a small pool of files extended with ftruncate() to several
- * pages, with a single page of real data written at a deterministic
- * offset.  The result is a file whose inode has at least one data
- * extent surrounded by holes -- the input shape SEEK_DATA / SEEK_HOLE
- * need to actually exercise the per-fs sparse-walk code paths
- * (iomap_seek_data / iomap_seek_hole, ext4 / btrfs / xfs / f2fs custom
- * implementations).  Dense files built by testfiles.c are rejected
- * with -ENXIO before reaching that code.
+ * Sparse file fd provider: a small pool of files extended with ftruncate() to
+ * several pages, with a single byte of real data at a deterministic page
+ * offset, so the inode has a data extent surrounded by holes -- the shape
+ * SEEK_DATA / SEEK_HOLE need to reach the per-fs sparse-walk code
+ * (iomap_seek_{data,hole} for ext4 and xfs; btrfs and f2fs have their own).
  */
 
 #include <errno.h>

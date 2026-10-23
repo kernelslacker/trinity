@@ -1,17 +1,9 @@
-/* memfd_secret FD provider.
- *
- * memfd_secret(2) returns an fd to an anonymous "secret" memory area
- * backed by mm/secretmem.c.  Pages mapped from this fd are removed
- * from the kernel direct map, so the kernel surface is distinct from
- * regular memfd_create(2) (mm/memfd.c + tmpfs/shmem) — different fops,
- * different fault path, different write/seal semantics.  Worth tracking
- * separately so syscalls that take an fd (mmap, ftruncate, fcntl seals,
- * read/write, splice, sendfile, etc.) can be aimed at it directly.
- *
- * The syscall is unprivileged but the kernel may have it disabled
- * (CONFIG_SECRETMEM=n, or secretmem.enable_secretmem=0 boot param) —
- * init returns false in that case and the provider is dropped, the
- * same way other optional providers degrade.
+/*
+ * memfd_secret FD provider.  memfd_secret(2) returns an fd to anonymous
+ * "secret" memory (mm/secretmem.c) whose pages leave the kernel direct map:
+ * a different surface from memfd_create(2), with its own fops, fault path and
+ * write/seal semantics.  Where it fails ENOSYS (no CONFIG_SECRETMEM, boot
+ * param secretmem.enable=0, no direct-map editing) the provider is dropped.
  */
 
 #include <errno.h>
