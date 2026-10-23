@@ -12,12 +12,7 @@
 #include "sanitise.h"
 #include "utils.h"
 
-#ifndef LANDLOCK_CREATE_RULESET_VERSION
-#define LANDLOCK_CREATE_RULESET_VERSION			(1U << 0)
-#endif
-#ifndef LANDLOCK_CREATE_RULESET_ERRATA
-#define LANDLOCK_CREATE_RULESET_ERRATA			(1U << 1)
-#endif
+#include "kernel/landlock.h"
 
 static unsigned long landlock_create_ruleset_flags[] = {
 	LANDLOCK_CREATE_RULESET_VERSION,

@@ -19,6 +19,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/landlock.h"
 /*
  * Latched per-process: landlock_create_ruleset returned an errno that
  * won't change for the life of the process (CONFIG_LANDLOCK=n,
@@ -93,10 +94,6 @@ static void arm_landlock(int ruleset_fd)
 #define LANDLOCK_ATTR_SIZE_V1  (sizeof(__u64))
 #define LANDLOCK_ATTR_SIZE_V4  (sizeof(__u64) * 2)
 #define LANDLOCK_ATTR_SIZE_V5  (sizeof(struct landlock_ruleset_attr))
-
-#ifndef LANDLOCK_CREATE_RULESET_VERSION
-#define LANDLOCK_CREATE_RULESET_VERSION (1U << 0)
-#endif
 
 static int open_landlock_fd(void)
 {
