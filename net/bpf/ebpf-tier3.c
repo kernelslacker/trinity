@@ -1,11 +1,6 @@
 /*
- * Tier 3 chaos generator for the eBPF program generator.
- *
- * Tier 3 (chaos): random corruption — invalid opcodes, backward
- * jumps, OOB registers, malformed 128-bit loads, atomic-imm family
- * probes.  No attempt at validity — pure chaos designed to crash,
- * confuse, or find bugs in the verifier itself.  Split out of
- * net/bpf/ebpf.c as its own translation unit.
+ * Tier 3 (chaos) of the eBPF program generator: random corruption with no
+ * attempt at validity, aimed at crashing or confusing the verifier itself.
  */
 #include <stdint.h>
 #include <linux/bpf.h>

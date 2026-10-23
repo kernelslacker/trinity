@@ -1,13 +1,7 @@
 /*
  * eBPF program generator for fuzzing the kernel's BPF verifier and JIT.
- *
- * Three tiers of generation:
- *   Tier 1 (valid): Programs the verifier should accept — forward-only jumps,
- *     register liveness, bounded stack access, valid helper calls, proper exit.
- *   Tier 2 (boundary): Programs that probe verifier edge cases — near-limit
- *     complexity, unchecked map lookups, ALU overflow, pointer arithmetic.
- *   Tier 3 (chaos): Random corruption — invalid opcodes, backward jumps,
- *     OOB registers, malformed 128-bit loads.
+ * Picks one of three tiers (valid, boundary, chaos), each in its own TU
+ * behind ebpf-internal.h, and fills a caller-supplied instruction buffer.
  */
 #include <stdint.h>
 #include <linux/bpf.h>

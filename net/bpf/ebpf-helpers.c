@@ -1,10 +1,6 @@
 /*
- * Helper descriptor tables and helper picker for the eBPF program
- * generator.  Split out of net/bpf/ebpf.c so the tier1/tier2 emitters
- * can share the descriptor selection without pulling in the whole
- * generator TU.  Descriptor tables and their construction macros stay
- * private to this TU; only the getter, the insn-cost helper and the
- * satisfiability picker are exported through ebpf-internal.h.
+ * Helper descriptor tables and picker for the eBPF program generator, shared
+ * by the tier 1 and tier 2 emitters.
  */
 #include <stdint.h>
 #include <linux/bpf.h>

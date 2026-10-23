@@ -1,12 +1,8 @@
 /*
- * Tier 2 boundary-probing sub-strategies and gen_tier2() dispatch for
- * the eBPF program generator.
- *
- * Tier 2 (boundary): structurally valid programs that push verifier
- * limits — spill/fill storms, long ALU chains, jump ladders, mixed
- * ALU32/ALU64, JMP32 variations, and a dedicated helper-call probe.
- * Split out of net/bpf/ebpf.c as its own translation unit; shares the
- * tier1 helper-call and map-value-deref emitters via ebpf-internal.h.
+ * Tier 2 (boundary) of the eBPF program generator: structurally valid
+ * programs that push verifier limits, one random sub-strategy per program
+ * (gen_tier2()).  Reuses tier 1's helper-call and map-value-deref emitters
+ * through ebpf-internal.h.
  */
 #include <stdint.h>
 #include <linux/bpf.h>
