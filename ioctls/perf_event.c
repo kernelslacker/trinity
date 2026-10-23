@@ -30,13 +30,16 @@ static int perf_event_fd_test(int fd, const struct stat *st __attribute__((unuse
 	unsigned int idx;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
-	if (head == NULL || head->array == NULL)
-		return -1;
-
-	for_each_obj(head, obj, idx) {
-		if (obj->perfobj.fd == fd)
-			return 0;
+	if (head != NULL && head->array != NULL) {
+		for_each_obj(head, obj, idx) {
+			if (obj->perfobj.fd == fd)
+				return 0;
+		}
 	}
+
+	/* The child's own: see fd_class in ioctls.h. */
+	if (find_local_object_by_fd(OBJ_FD_PERF, fd) != NULL)
+		return 0;
 
 	return -1;
 }

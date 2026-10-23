@@ -9,8 +9,9 @@
  * claims and no stray fd is protected.
  *
  * pidfs refuses a namespace getter's non-zero arg, so most of the getters
- * the pidfd group builds carry a zero one.  That group claims the pidfds
- * the child made itself, not only the one the parent opened.
+ * the pidfd group builds carry a zero one.  The groups that name a typed-fd
+ * class claim the fds of it the child made itself, not only the ones the
+ * parent opened.
  */
 
 #include <fcntl.h>
@@ -20,6 +21,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "bpf.h"		/* get_rand_bpf_prog_fd */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
 #include "fd.h"			/* get_typed_fd */
@@ -70,16 +72,22 @@ static const char *const returns_fd[] = {
 };
 
 /*
- * What the linked groups reach beyond the fake registry.  Only the
- * pidfd group's fd_test touches the object pools, and only the claim case
- * calls it, with get_objhead() and find_local_object_by_fd() hooked in
- * fake_objects.c.  Its info sanitiser asks for set_rand_bitmask(), which
- * genl_ops_test.c fakes.
+ * What the linked groups reach beyond the fake registry.  Only the fd_test
+ * of the groups that name a typed-fd class touches the object pools, and
+ * only the claim case calls them, with get_objhead() and
+ * find_local_object_by_fd() hooked in fake_objects.c.  The pidfd group's
+ * info sanitiser asks for set_rand_bitmask(), which genl_ops_test.c
+ * fakes, and the perf group's for a bpf prog fd.
  */
 void __for_each_obj_init(struct objhead *head, struct __for_each_obj_state *s)
 {
 	s->n_snap = head->num_entries;
 	s->array_snap = head->array;
+}
+
+int get_rand_bpf_prog_fd(void)
+{
+	return -1;
 }
 
 u64 rand64(void)
@@ -479,44 +487,107 @@ static void only_the_ns_getters_are_getters(void)
 }
 
 /*
- * The pidfd group claims a pidfd the child made itself (pidfd_open
- * publishes into the child's own pool), as well as the one the parent
- * opened: the namespace getters only succeed on a task the child may
- * ptrace-read, and the parent's pidfd names pid 1.
+ * A group that names a typed-fd class claims the fds of it the child made
+ * itself, which sit in its own pool and which get_typed_fd() never reads,
+ * as well as the ones the parent opened.  The pidfd group needs them: the
+ * namespace getters only succeed on a task the child may ptrace-read, and
+ * the parent's pidfd names pid 1.  The ioctls of the socket, epoll and
+ * perf groups apply to any fd of their class.
+ *
+ * Each class in turn puts one fd in a pool, the parent's or the child's.
+ * The group of that class claims it, the others do not, and none claims
+ * the number next to it.
  */
-#define LOCAL_PIDFD	7
+#define POOLED_FD	7
 
-static struct object local_pidfd;
-static struct objhead empty_head;
+static const struct {
+	enum argtype fd_class;
+	enum objecttype type;
+} fd_classes[] = {
+	{ ARG_FD_PIDFD,  OBJ_FD_PIDFD },
+	{ ARG_FD_SOCKET, OBJ_FD_SOCKET },
+	{ ARG_FD_EPOLL,  OBJ_FD_EPOLL },
+	{ ARG_FD_PERF,   OBJ_FD_PERF },
+};
 
-static struct objhead *empty_pool(enum obj_scope scope, enum objecttype type)
+static enum objecttype pooled_type;
+static bool pooled_in_child;
+static struct object pooled_obj;
+static struct object *pooled_array[] = { &pooled_obj };
+static struct objhead parent_pool = { .array = pooled_array, .num_entries = 1 };
+static struct objhead no_pool;
+
+static struct objhead *the_pools(enum obj_scope scope, enum objecttype type)
 {
-	(void)scope;
-	(void)type;
-	return &empty_head;
+	if (scope == OBJ_GLOBAL && !pooled_in_child && type == pooled_type)
+		return &parent_pool;
+	return &no_pool;
 }
 
-static struct object *pidfd_in_the_local_pool(enum objecttype type, int fd)
+static struct object *the_childs_pool(enum objecttype type, int fd)
 {
-	return type == OBJ_FD_PIDFD && fd == LOCAL_PIDFD ? &local_pidfd : NULL;
+	if (pooled_in_child && type == pooled_type && fd == POOLED_FD)
+		return &pooled_obj;
+	return NULL;
 }
 
-static void pidfd_group_claims_a_local_pidfd(void)
+static void fd_class_groups_claim_the_childs_own_fds(void)
 {
-	const struct ioctl_group *grp = fake_ioctl_group("pidfd");
+	const struct ioctl_group *const *groups;
+	unsigned int ngroups, g, c, classed = 0;
 	struct stat st;
-
-	if (grp == NULL || grp->fd_test == NULL)
-		BUG("ioctl pidfd claim: the pidfd group has no fd_test");
+	int pass;
 
 	memset(&st, 0, sizeof(st));
-	fake_get_objhead = empty_pool;
-	fake_find_local_object_by_fd = pidfd_in_the_local_pool;
+	groups = fake_ioctl_groups(&ngroups);
+	for (g = 0; g < ngroups; g++)
+		if (groups[g]->fd_class != ARG_UNDEFINED &&
+		    groups[g]->fd_test != NULL)
+			classed++;
+	if (classed != ARRAY_SIZE(fd_classes))
+		BUG("ioctl fd claim: the linked groups that name a class are not the ones covered here");
 
-	if (grp->fd_test(LOCAL_PIDFD, &st) != 0)
-		BUG("ioctl pidfd claim: a pidfd in the child's own pool was not claimed");
-	if (grp->fd_test(LOCAL_PIDFD + 1, &st) == 0)
-		BUG("ioctl pidfd claim: an fd in no pool was claimed");
+	fake_get_objhead = the_pools;
+	fake_find_local_object_by_fd = the_childs_pool;
+
+	for (c = 0; c < ARRAY_SIZE(fd_classes); c++) {
+		pooled_type = fd_classes[c].type;
+		memset(&pooled_obj, 0, sizeof(pooled_obj));
+		switch (pooled_type) {
+		case OBJ_FD_PIDFD:	pooled_obj.pidfdobj.fd = POOLED_FD; break;
+		case OBJ_FD_SOCKET:	pooled_obj.sockinfo.fd = POOLED_FD; break;
+		case OBJ_FD_EPOLL:	pooled_obj.epollobj.fd = POOLED_FD; break;
+		case OBJ_FD_PERF:	pooled_obj.perfobj.fd = POOLED_FD; break;
+		default:		BUG("ioctl fd claim: a class the test cannot pool");
+		}
+
+		for (pass = 0; pass < 2; pass++) {
+			pooled_in_child = pass != 0;
+
+			for (g = 0; g < ngroups; g++) {
+				const struct ioctl_group *grp = groups[g];
+				bool want = grp->fd_class == fd_classes[c].fd_class;
+				bool got;
+
+				if (grp->fd_class == ARG_UNDEFINED ||
+				    grp->fd_test == NULL)
+					continue;
+
+				got = grp->fd_test(POOLED_FD, &st) == 0;
+				if (got != want) {
+					fprintf(stderr, "group %s (class %d), fd of class %d in the %s pool: claimed %d, want %d\n",
+						grp->name ? grp->name : "(unnamed)",
+						grp->fd_class,
+						fd_classes[c].fd_class,
+						pooled_in_child ? "child's" : "parent's",
+						got, want);
+					BUG("ioctl fd claim: a group's claim on a pooled fd is wrong");
+				}
+				if (grp->fd_test(POOLED_FD + 1, &st) == 0)
+					BUG("ioctl fd claim: an fd in no pool was claimed");
+			}
+		}
+	}
 
 	fake_find_local_object_by_fd = NULL;
 	fake_get_objhead = NULL;
@@ -533,5 +604,5 @@ void ioctl_sanitise_self_check(void)
 	group_first_pick();
 	ns_getters_get_a_zero_arg();
 	only_the_ns_getters_are_getters();
-	pidfd_group_claims_a_local_pidfd();
+	fd_class_groups_claim_the_childs_own_fds();
 }

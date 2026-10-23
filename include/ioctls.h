@@ -43,7 +43,9 @@ struct ioctl_group {
 	/* Typed-fd class of the fds fd_test claims, or ARG_UNDEFINED.  A
 	 * group that names one, and has an fd_test, can be drawn before the
 	 * fd, and the fd then comes from get_typed_fd() (see
-	 * sanitise_ioctl()). */
+	 * sanitise_ioctl()).  That lookup serves the parent's fds only, but
+	 * the fd pick also hands ioctl() the child's own recent returns,
+	 * which sit in its local pool, so the fd_test claims those too. */
 	enum argtype fd_class;
 };
 

@@ -19,6 +19,10 @@ static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 			return 0;
 	}
 
+	/* The child's own: see fd_class in ioctls.h. */
+	if (find_local_object_by_fd(OBJ_FD_SOCKET, fd) != NULL)
+		return 0;
+
 	return -1;
 }
 
