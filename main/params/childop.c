@@ -107,7 +107,7 @@ bool parse_child_options(int opt, const char *name, char *arg)
 		/* Parse a comma-separated list of childop names
 		 * into canary_seed_override[].  Names match
 		 * alt_op_name() output (e.g.
-		 * "genetlink_fuzzer,bpf_lifecycle").  Unknown
+		 * "xattr_thrash,vsock_transport_churn").  Unknown
 		 * names are fatal -- the operator typed something
 		 * and we owe them a clean error, not a silent
 		 * skip that runs the wrong seed list. */

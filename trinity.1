@@ -209,9 +209,10 @@ let a useless op squat a slot for too long.
 
 .TP
 \fI\-\-canary-seed\fP
-comma-separated list of childop names to override the built-in wave-1
-canary seed list. Names match alt_op_name (e.g.
-'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup.
+comma-separated list of childop names to override the canary picker's
+first-pass order (default: a fresh random order of the eligible ops each
+run). Names match alt_op_name (e.g. 'xattr_thrash,vsock_transport_churn').
+Unknown names abort startup.
 
 .TP
 \fI\-\-no-canary-queue\fP

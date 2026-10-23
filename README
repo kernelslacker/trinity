@@ -183,8 +183,9 @@ garbage named files; just rm -rf tmp afterwards)
    higher windows let a useless op squat a slot for too long.
 
  --canary-seed: comma-separated list of childop names to override the
-   built-in wave-1 canary seed list. Names match alt_op_name (e.g.
-   'genetlink_fuzzer,bpf_lifecycle'). Unknown names abort startup.
+   canary picker's first-pass order (default: a fresh random order of
+   the eligible ops each run). Names match alt_op_name (e.g.
+   'xattr_thrash,vsock_transport_churn'). Unknown names abort startup.
 
  --no-canary-queue: disable the dormant-childop canary queue entirely; the
    dormant gate is consulted as a static compile-time vector and no canary
