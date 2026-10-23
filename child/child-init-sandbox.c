@@ -55,7 +55,7 @@
  * Check whether any active syscall entry requests the userns-admin lane.
  * Returns the first matching entry, or NULL if none does.  Used at child
  * setup time to decide whether to unshare into a private user+net namespace
- * before the capset(empty) drop.
+ * after the capset(empty) drop.
  *
  * Only the shm-level active_syscalls array is consulted because
  * child->active_syscalls is not yet assigned when init_child_setup_sandbox
@@ -113,11 +113,11 @@ static bool child_userns_lane_active;
 /*
  * Enter the userns-admin lane for the current persistent child.
  *
- * Preconditions (verified by caller):
- *   - shm->no_userns_lane is false.
- *   - At least one active syscallentry has userns_admin_lane set.
+ * Precondition (verified by caller): at least one active syscallentry has
+ * userns_admin_lane set.
  *
  * Sequence:
+ *   0. Return at once if shm->no_userns_lane is already latched.
  *   1. Read /proc/sys/user/max_user_namespaces; if the value is <= 0 or
  *      unreadable, latch shm->no_userns_lane and return.
  *   2. Capture euid/egid before the unshare (kernel checks the pre-unshare
@@ -126,8 +126,8 @@ static bool child_userns_lane_active;
  *      On EPERM: latch shm->no_userns_lane and return (policy denial).
  *      On other failure: return without latching (transient, may not recur).
  *   4. Write uid_map, setgroups=deny, gid_map.
- *      Failure here is logged but does not latch; the cap-drop that follows
- *      still fires and the child fuzz loop runs without userns-lane caps.
+ *      Failure here is logged but does not latch; the cap-drop has already
+ *      run and the child fuzz loop runs without userns-lane caps.
  *
  * After a successful return the child holds a full capability set inside its
  * own user namespace.  capset(empty) has already run in the caller; that
@@ -215,8 +215,8 @@ static void maybe_enter_userns_admin_lane(int childno)
 	/*
 	 * Write identity uid/gid maps.  uid_map first, then setgroups=deny
 	 * (required before an unprivileged writer can set gid_map), then
-	 * gid_map.  Failure here is soft: the child continues to the
-	 * capset(empty) drop and fuzz loop without userns-lane caps.
+	 * gid_map.  Failure here is soft: the child continues to the fuzz
+	 * loop without userns-lane caps.
 	 */
 	snprintf(buf, sizeof(buf), "0 %u 1\n", (unsigned int)uid);
 	ret = userns_lane_write_proc("/proc/self/uid_map", buf);
@@ -366,6 +366,8 @@ static void munge_process(void)
  *   - if we started as root, drop_privs() lowers the child to
  *     nobody so subsequent fuzz syscalls run unprivileged,
  *   - after the capset() drop, fork the idle init of a new PID ns,
+ *   - stamp the cap-drop oracle's namespace anchors, then enter the
+ *     userns-admin lane if an active syscall asks for it,
  *   - munge_process() applies the random rlimit / umask sweep.
  */
 void init_child_setup_sandbox(struct childdata *child, int childno)
@@ -553,9 +555,9 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	/*
 	 * Userns-admin lane: runs here, AFTER capset(empty), so that
 	 * unshare(CLONE_NEWUSER) creates a new userns in which create_user_ns()
-	 * sets cap_effective = CAP_FULL_SET unconditionally.  The pre-move
-	 * placement (before capset) caused the new userns to mirror the empty
-	 * effective set, making every ns_capable() check return -EPERM.
+	 * sets cap_effective = CAP_FULL_SET unconditionally.  Placed before
+	 * capset(empty), the drop would strip the new userns's capabilities
+	 * too and every ns_capable() check would return -EPERM.
 	 * capset does not alter euid/egid; the identity idmap write is valid
 	 * here.  Must run after the random namespace unshare block and the
 	 * oracle anchor capture above: the anchors have to name the
