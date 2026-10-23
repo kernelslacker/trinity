@@ -57,9 +57,6 @@ LDFLAGS += -Wl,-z,now
 # __real_rand.
 LDFLAGS += -Wl,--wrap=rand
 
-# barrier_racer uses process-shared pthread barriers
-LDLIBS += -lpthread
-
 # pc_format.c uses dladdr() to resolve PIE-relative offsets
 LDLIBS += -ldl
 
