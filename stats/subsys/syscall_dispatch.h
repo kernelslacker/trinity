@@ -53,8 +53,7 @@ struct syscall_dispatch_stats {
 	 *     regardless of op_type.  Denominator for the child hot-
 	 *     path cost model: total iterations vs completed syscalls
 	 *     vs childop dispatches.  One iteration can represent
-	 *     dozens of kernel calls when it lands on a chatty childop
-	 *     (pipe_thrash averages ~28 pipe2/close per outer alarm),
+	 *     dozens of kernel calls when it lands on a chatty childop,
 	 *     so an iteration count alone cannot price the loop --
 	 *     pairing it with the syscall and childop denominators
 	 *     lets the operator see the true call-per-iteration ratio.

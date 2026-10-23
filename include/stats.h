@@ -335,9 +335,7 @@ struct stats_s {
 
 	/* genetlink registry per-family dispatch counters.  Bumped from
 	 * gen_genl_body() each time the spec-driven dispatcher routes a
-	 * message to a registered family — distinct from the
-	 * genetlink_fuzzer childop counters above (which only see the
-	 * dedicated discovery childop).  Diagnostic-only: reading a non-
+	 * message to a registered family.  Diagnostic-only: reading a non-
 	 * zero count at run end confirms two things at once -- the
 	 * controller dump resolved the family ID, and at least one
 	 * NETLINK_GENERIC syscall picked that family during dispatch.  A

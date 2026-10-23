@@ -5,8 +5,8 @@ struct userns_bootstrap_stats {
 	/* SHADOW per-outcome telemetry for the shared userns_run_in_ns()
 	 * bootstrap helper (lib/userns-bootstrap.c).  The helper return
 	 * value collapses every non-EPERM failure into -EAGAIN, so the
-	 * caller-side accounting in the ~20+ net-ns childops that use this
-	 * helper cannot distinguish a fork() failure from a setgroups write
+	 * caller-side accounting in the childops that use this helper
+	 * cannot distinguish a fork() failure from a setgroups write
 	 * failure from a secondary unshare() rejection from a signalled
 	 * grandchild.  These counters surface the breakdown without
 	 * changing the return contract.
@@ -15,11 +15,7 @@ struct userns_bootstrap_stats {
 	 * grandchild body cannot reach shared stats because every exit path
 	 * runs through _exit().  Each counter is keyed off the grandchild's
 	 * WEXITSTATUS code (or WIFSIGNALED for the signalled slot, or the
-	 * fork()-failure return for the fork_fail slot).  Distinct from the
-	 * pre-existing userns_runs / userns_inner_crashed / userns_unsupported
-	 * counters above, which belong to the dedicated userns_fuzzer
-	 * childop -- the bootstrap helper is a separate call site shared
-	 * across the net-ns childops.
+	 * fork()-failure return for the fork_fail slot).
 	 *
 	 *  runs              total helper invocations that reached fork()
 	 *                    (gate counter for the stats block)

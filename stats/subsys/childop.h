@@ -245,11 +245,10 @@ struct childop_stats {
 	 * races are tolerated and bounded by per-tick child counts.
 	 *
 	 * syscalls_in_childops counts only random_syscall-mediated calls
-	 * issued from inside an alt-op bracket (e.g. sched_cycler's tight
-	 * random_syscall_step() loop).  Childops that call libc / raw syscall()
-	 * directly do not flow through the call-complete enqueue site and
-	 * so are not counted here -- the wall-time and iteration metrics
-	 * cover them. */
+	 * issued from inside an alt-op bracket.  Childops that call libc /
+	 * raw syscall() directly do not flow through the call-complete
+	 * enqueue site and so are not counted here -- the wall-time and
+	 * iteration metrics cover them. */
 	unsigned long walltime_ns;
 	unsigned long wall_ns[NR_CHILD_OP_TYPES];
 
@@ -278,14 +277,12 @@ struct childop_stats {
 	 *
 	 * The existing shm->stats.syscall_dispatch.in_childops counter
 	 * only sees random_syscall-mediated calls made from an alt-op
-	 * body (e.g. sched_cycler's inner random_syscall_step() loop); the
-	 * dominant childop workloads (pipe_thrash, slab_cache_thrash,
-	 * flock_thrash, futex_storm, ...) issue direct libc calls and
-	 * are therefore invisible to that counter.  Without this array
-	 * their iteration count is not a comparable work unit against
-	 * random-syscall picks.  Read by childop_outcome_snapshot() into
-	 * struct childop_outcome's direct_syscalls slot.  RELAXED add-
-	 * fetch: cumulative diagnostic, single-writer-per-child. */
+	 * body; childops that issue direct libc calls are therefore
+	 * invisible to that counter.  Without this array their iteration
+	 * count is not a comparable work unit against random-syscall
+	 * picks.  Read by childop_outcome_snapshot() into struct
+	 * childop_outcome's direct_syscalls slot.  RELAXED add-fetch:
+	 * cumulative diagnostic, single-writer-per-child. */
 	unsigned long direct_syscalls[NR_CHILD_OP_TYPES];
 
 	/* Fleet-total count of direct-syscall tally calls discarded
@@ -369,14 +366,13 @@ struct childop_stats {
 	/* SHADOW-ONLY per-childop stuck-child accounting.  Sister of the
 	 * syscall_wedge_* pair above but keyed by enum child_op_type
 	 * (childdata.op_type captured at latch time) instead of by syscall
-	 * nr.  Wedging on this fleet is dominated by long-lived non-syscall
-	 * childops (flock_thrash, futex_storm, memory_pressure, ...) whose
-	 * inner sites cycle through many syscalls; the per-syscall top-N
-	 * names whichever syscall happened to be in flight at detection,
-	 * which mis-attributes the wedge cost to that syscall instead of to
-	 * the childop that is actually parked.  This array gives the
-	 * shutdown render a second top-N keyed by the childop, so the
-	 * dominant wedgers surface by name.
+	 * nr.  Wedging can be dominated by long-lived non-syscall childops
+	 * whose inner sites cycle through many syscalls; the per-syscall
+	 * top-N names whichever syscall happened to be in flight at
+	 * detection, which mis-attributes the wedge cost to that syscall
+	 * instead of to the childop that is actually parked.  This array
+	 * gives the shutdown render a second top-N keyed by the childop, so
+	 * the dominant wedgers surface by name.
 	 *
 	 *  childop_wedge_count[op]
 	 *      Bumped once per stuck-child detection event, alongside

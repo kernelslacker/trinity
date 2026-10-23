@@ -48,11 +48,8 @@ void dump_stats_json_oracle(void)
 /*
  * Descriptor tables for dump_stats_json_basic_subsystems().
  *
- * The eight categories below were previously emitted by a single
- * hand-written printf with one %lu slot per field and a parallel
- * shm->stats.<field> va-list; adding a counter required three
- * correlated edits.  These tables collapse that to one STAT_FIELD*
- * row per field.
+ * Each category below is one STAT_FIELD* row per field, so adding a
+ * counter is a one-row edit.
  *
  * The JSON walker emits every category unconditionally.  The gate_field
  * argument to STAT_CATEGORY is not stored in the descriptor; text emission
@@ -62,7 +59,7 @@ void dump_stats_json_oracle(void)
  * gate predicate.
  *
  * Where the JSON schema key doesn't match the struct member suffix
- * (vfs_writes, memory_pressure) the row uses STAT_FIELD_JSON to pin
+ * (vfs_writes) the row uses STAT_FIELD_JSON to pin
  * the JSON key; .name still mirrors the struct suffix so the
  * descriptor stays self-consistent.  Those .name values do NOT match
  * the keys the hand-coded text emitter currently uses, so any future

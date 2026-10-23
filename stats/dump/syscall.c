@@ -366,10 +366,9 @@ void dump_stats_top_wedging_syscalls(void)
 
 /*
  * Sister of dump_stats_top_wedging_syscalls() above, keyed by enum
- * child_op_type instead of syscall nr.  Wedging on this fleet is
- * dominated by long-lived non-syscall childops (flock_thrash,
- * futex_storm, memory_pressure, ...) whose inner sites cycle through
- * many syscalls; the per-syscall top-N attributes the wedge cost to
+ * child_op_type instead of syscall nr.  Wedging can be dominated by
+ * long-lived non-syscall childops whose inner sites cycle through many
+ * syscalls; the per-syscall top-N attributes the wedge cost to
  * whichever syscall happened to be in flight at detection, which
  * mis-names the dominant wedgers.  This block surfaces them by the
  * childop that was running when the stall began.

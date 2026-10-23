@@ -338,9 +338,7 @@ static unsigned long stats_ts_prev_per_syscall_cmp_hyp_live_injected[MAX_NR_SYSC
  * but indexed by enum child_op_type -- lets a coverage-window consumer
  * answer "which childop drove this window's edge jump?" for the wide
  * class of windows where per-syscall deltas came back zero because the
- * wins came from alt-op dispatches (recipe_runner / genetlink_fuzzer /
- * futex_storm / af_unix_scm_rights_gc_churn / pagecache_canary_check /
- * perf_chains / fs_lifecycle).  Sized by NR_CHILD_OP_TYPES; parent-
+ * wins came from alt-op dispatches.  Sized by NR_CHILD_OP_TYPES; parent-
  * static like the syscall arrays. */
 static unsigned long stats_ts_prev_childop_edges_discovered[NR_CHILD_OP_TYPES];
 static unsigned long stats_ts_prev_childop_edges_clean[NR_CHILD_OP_TYPES];
