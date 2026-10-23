@@ -1,23 +1,8 @@
 /*
- * Per-syscall edge attribution + per-dispatch cohort denominators.
- * Post-collect bookkeeping ran once per dispatch by dispatch_step:
- *   - account_reexec_ab_cohort:      re-exec A/B cohort denominators
- *                                    (parent CMP call, per-fork arm)
- *   - account_per_syscall_new_edges: per-syscall edge attribution
- *                                    + frontier yield / kill-list
- *                                    feedstock accounting
- *   - account_pc_edge_only:          PC-edge-only bookkeeping
- *                                    (snapshot cadence, per-strategy
- *                                    attribution, random-rescue class)
- *   - account_transition_reward:     per-strategy transition-reward
- *                                    attribution
- *
- * The sibling seams (rotation, remote-adaptive decide, warm-cold
- * reserve, fd+group accounting) live in their own TUs under
- * random_syscall/.
- *
- * All entry points are cross-cluster private and declared in
- * random_syscall/strategy-accounting-internal.h.
+ * Post-collect bookkeeping run once per dispatch by dispatch_step(): the
+ * re-exec A/B cohort denominators, per-syscall edge attribution (with the
+ * frontier yield and kill-list feedstock), the PC-edge-only bookkeeping and
+ * the per-strategy transition reward.
  */
 
 #include <errno.h>

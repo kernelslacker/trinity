@@ -1,15 +1,8 @@
 /*
- * Strategy-window rotation gate: the SR_* rotation logic that decides
- * when a strategy window has expired, atomically claims the switch,
- * feeds the just-finished window into the bandit, selects the next
- * arm, and publishes the switch to the fleet.
- *
- * The sibling seams (remote-adaptive decide, per-syscall edge
- * accounting, warm-cold reserve, fd+group accounting) live in their
- * own TUs under random_syscall/.
- *
- * maybe_rotate_strategy is cross-cluster private and declared in
- * random_syscall/strategy-accounting-internal.h.
+ * Strategy-window rotation gate: maybe_rotate_strategy() decides when a
+ * strategy window has expired, atomically claims the switch, feeds the
+ * finished window into the bandit, selects the next arm and publishes the
+ * switch to the fleet.
  */
 
 #include <errno.h>

@@ -1,17 +1,8 @@
 /*
- * Per-child fd + group bookkeeping ran at the tail of dispatch_step:
- * fd leak counters, the owned-fd ring retire for a returned number,
- * live-fd ring push for arg-generation reuse, the group_bias-gated
- * last_group stamp, and the F-RSEQ group-pin damper state machine
- * (group-change streak reset, streak bump, fd-warm bump, coverage
- * watermark advance).
- *
- * The sibling seams (rotation, remote-adaptive decide, per-syscall edge
- * accounting, warm-cold reserve) live in their own TUs under
- * random_syscall/.
- *
- * account_fd_and_group is cross-cluster private and declared in
- * random_syscall/strategy-accounting-internal.h.
+ * Per-child fd and group bookkeeping at the tail of dispatch_step(), in
+ * account_fd_and_group(): fd-leak counters, the owned-fd ring retire for a
+ * returned number, the live-fd ring push, the group_bias-gated last_group
+ * stamp and the F-RSEQ group-pin damper's streak state.
  */
 
 #include <errno.h>

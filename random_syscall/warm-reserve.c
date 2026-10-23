@@ -1,17 +1,9 @@
 /*
- * SHADOW warm-reserve / cold-overflow probes ridden on the same
- * post-collect seam in dispatch_step: account_warm_reserve fires on
- * novelty-quiet PC-mode calls that ran a deep-but-warm trace, and
- * account_cold_overflow_would_save shadows the CMP-triggered cold /
- * corpus-absent tail that a STAGE B overflow save lane would admit.
- *
- * The sibling seams (rotation, remote-adaptive decide, per-syscall edge
- * accounting, fd+group accounting) live in their own TUs under
- * random_syscall/.
- *
- * account_warm_reserve and account_cold_overflow_would_save are
- * cross-cluster private and declared in
- * random_syscall/strategy-accounting-internal.h.
+ * SHADOW warm-reserve and cold-overflow probes on the post-collect seam in
+ * dispatch_step(): account_warm_reserve() fires on novelty-quiet PC-mode
+ * calls that ran a deep-but-warm trace, account_cold_overflow_would_save()
+ * shadows the CMP-triggered cold / corpus-absent tail that a STAGE B
+ * overflow save lane would admit.
  */
 
 #include <errno.h>

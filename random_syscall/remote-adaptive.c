@@ -1,14 +1,7 @@
 /*
- * Adaptive remote-KCOV mode disposition.  Consulted from dispatch_step
- * before the raw call to override the static remote_mode when lifetime
- * evidence disagrees with the static policy on this syscall.
- *
- * The sibling seams (rotation, per-syscall edge accounting, warm-cold
- * reserve, fd+group accounting) live in their own TUs under
- * random_syscall/.
- *
- * remote_adaptive_decide is cross-cluster private and declared in
- * random_syscall/strategy-accounting-internal.h.
+ * Adaptive remote-KCOV mode disposition: remote_adaptive_decide(), consulted
+ * from dispatch_step() before the raw call, overrides the static remote_mode
+ * when lifetime evidence disagrees with the static policy for this syscall.
  */
 
 #include <errno.h>
