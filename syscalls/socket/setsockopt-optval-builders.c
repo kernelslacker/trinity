@@ -230,12 +230,12 @@ socklen_t build_string_ifname(void *buf)
 
 	/*
 	 * Minority arm draws from the shared NAME_KIND_NETDEV pool so an
-	 * SO_BINDTODEVICE optval can pin to an ifname a concurrent
-	 * childop just planted (altname-thrash, l2tp-ifname-race, ...) --
-	 * exercising the dev-by-name resolve path and the bound-socket
-	 * vs netdev-teardown race the static names never reach.  Majority
-	 * arm keeps the well-known names so existing coverage stays warm;
-	 * empty-pool draws fall through to the same path.
+	 * SO_BINDTODEVICE optval can pin to an ifname an earlier call
+	 * generated -- exercising the dev-by-name resolve path and the
+	 * bound-socket vs netdev-teardown race the static names never
+	 * reach.  Majority arm keeps the well-known names so existing
+	 * coverage stays warm; empty-pool draws fall through to the same
+	 * path.
 	 */
 	if (ONE_IN(2)) {
 		size_t got = name_pool_draw_mutated(NAME_KIND_NETDEV,

@@ -42,8 +42,8 @@ static void pppox_PX_PROTO_OE(struct sockaddr **addr, socklen_t *addrlen)
 		/*
 		 * Minority arm draws the pppoe device name from the shared
 		 * NAME_KIND_NETDEV pool so connect()'s dev_get_by_name()
-		 * resolves a real interface a concurrent childop just
-		 * planted, exercising the register-then-lookup path.
+		 * is handed a name an earlier call generated, exercising
+		 * the register-then-lookup path.
 		 * Majority arm keeps the raw-bytes fill so the existing
 		 * garbage-name coverage stays warm; empty-pool draws fall
 		 * through to the same path.
