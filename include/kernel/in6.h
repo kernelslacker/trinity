@@ -2,6 +2,9 @@
 
 #include <netinet/in.h>
 
+#ifndef IPV6_CHECKSUM
+#define IPV6_CHECKSUM		7
+#endif
 #ifndef IPV6_FLOWINFO
 #define IPV6_FLOWINFO           11
 #endif

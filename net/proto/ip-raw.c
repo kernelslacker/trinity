@@ -4,9 +4,7 @@
 #include "trinity.h"
 #include "rnd.h"
 
-#ifndef IPV6_CHECKSUM
-#define IPV6_CHECKSUM	7
-#endif
+#include "kernel/in6.h"
 
 static const unsigned int raw_opts[] = {
 	ICMP_FILTER, IPV6_CHECKSUM,
