@@ -25,7 +25,7 @@
  * is resolved once in add_object() and threaded through; same for
  * the hoisted is_fd / fd pair used by the leak-close error paths.
  *
- * The alloc-track LRU slot for the live head->array container is
+ * The alloc-track LRU slot for a libc-heap head->array container is
  * refreshed before the grow check so the upcoming
  * deferred_free_enqueue(oldarray) doesn't reject on an alloc_track
  * miss after thousands of intervening zmalloc_tracked calls in
@@ -34,17 +34,18 @@
  * path the indexed-read correctness model relies on.
  *
  * Both scopes use the same allocate-copy-defer-free shape: a fresh
- * zmalloc_tracked container, memcpy the live slots over, publish
- * head->array + array_capacity, bump array_generation, then
- * deferred_free_enqueue(oldarray).  The deferred-free TTL (5-50
- * syscalls, effective 80-800 with DEFERRED_TICK_BATCH) keeps the
- * old chunk readable across any in-flight reader's snapshot
- * through objhead_indexed_read() -- without it, the same process
- * can re-enter the picker during arg-gen, hold a cached
- * head->array snapshot across the grow, and UAF the freed
- * container.  Same hazard shape as the obj-struct deferred-free
- * path: a live container freed underneath a cached reader is a
- * use-after-free.
+ * zmalloc_tracked container (OBJ_LOCAL prefers an arena one), memcpy
+ * the live slots over, publish head->array + array_capacity, bump
+ * array_generation, then deferred_free_enqueue(oldarray), except that
+ * an arena old container is never freed and stays in place.  The
+ * deferred-free TTL (5-50 syscalls, effective 80-800 with
+ * DEFERRED_TICK_BATCH) keeps the old chunk readable across any
+ * in-flight reader's snapshot through objhead_indexed_read() --
+ * without it, the same process can re-enter the picker during
+ * arg-gen, hold a cached head->array snapshot across the grow, and
+ * UAF the freed container.  Same hazard shape as the obj-struct
+ * deferred-free path: a live container freed underneath a cached
+ * reader is a use-after-free.
  *
  * OBJ_GLOBAL needs the same deferral as OBJ_LOCAL even though the
  * writer is single (parent pre-fork only): the parent itself reads
@@ -80,10 +81,15 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 	 * relies on).  Same pattern as the clone_global_mmap_pool
 	 * dedup-skip refresh: any long-lived container must be revived
 	 * with alloc_track_refresh() before it can be deferred-freed.
-	 * Both scopes alloc via zmalloc_tracked so the refresh applies
-	 * uniformly; the NULL guard skips the first grow (empty pool).
+	 * An arena container, the usual OBJ_LOCAL one, is neither tracked
+	 * nor deferred-freed, so its refresh could only scan alloc_track
+	 * and count a consume miss; it is skipped with the extent the
+	 * release below judges it by.  The NULL guard skips the first
+	 * grow (empty pool).
 	 */
-	if (head->array != NULL)
+	if (head->array != NULL &&
+	    !objpool_local_arena_owns(head->array,
+			(unsigned long)cap * sizeof(struct object *)))
 		alloc_track_refresh(head->array);
 
 	if (scope == OBJ_GLOBAL) {
