@@ -1,8 +1,8 @@
 /*
- * Self-check for the struct-field scans cmp_hints_collect() can drive
- * (cmp_hints/field.c, cmp_hints/hyp-len-correlated.c).  They are gated
- * off: a collect must not resolve struct args, walk alloc_track or
- * record anything, and must still hand every record to the hint pool.
+ * Self-check for the struct-field scan cmp_hints_collect() can drive
+ * (cmp_hints/field.c).  It is gated off: a collect must not resolve
+ * struct args, walk alloc_track or record anything, and must still
+ * hand every record to the hint pool.
  */
 
 #include <stdint.h>
@@ -108,16 +108,6 @@ void lock(lock_t *lk)
 void unlock(lock_t *lk)
 {
 	(void) lk;
-}
-
-void pool_lock(struct cmp_hint_pool *pool)
-{
-	(void) pool;
-}
-
-void pool_unlock(struct cmp_hint_pool *pool)
-{
-	(void) pool;
 }
 
 bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
@@ -241,18 +231,6 @@ static void check_flushed(void)
 	}
 }
 
-static const struct cmp_hypothesis *find_len_correlated(void)
-{
-	const struct cmp_hyp_pool *pool = &cmp_hints_shm->hyp_pools[SCAN_NR][0];
-	unsigned int i;
-
-	for (i = 0; i < pool->count && i < CMP_HYP_PER_SYSCALL; i++) {
-		if (pool->entries[i].kind == CMP_HYP_LEN_CORRELATED)
-			return &pool->entries[i];
-	}
-	return NULL;
-}
-
 static const struct cmp_field_pool *find_field_pool(void)
 {
 	unsigned int i;
@@ -266,7 +244,7 @@ static const struct cmp_field_pool *find_field_pool(void)
 
 /* scan_buf is tracked and a third of the records match each of its
  * fields, so an enabled scan would resolve it and record. */
-static void struct_field_scans_gated_off(void)
+static void struct_field_scan_gated_off(void)
 {
 	const struct kcov_cmp_field_attr *fa;
 
@@ -282,10 +260,6 @@ static void struct_field_scans_gated_off(void)
 	    fa->cmp_field_attribution_arg_skipped_short_alloc != 0 ||
 	    find_field_pool() != NULL)
 		BUG("cmp field scan: a gated-off field attribution recorded");
-	if (kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_would_fire != 0 ||
-	    kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc != 0 ||
-	    find_len_correlated() != NULL)
-		BUG("cmp field scan: a gated-off length correlation recorded");
 
 	free_shm();
 }
@@ -293,5 +267,5 @@ static void struct_field_scans_gated_off(void)
 void cmp_field_scan_self_check(void);
 void cmp_field_scan_self_check(void)
 {
-	struct_field_scans_gated_off();
+	struct_field_scan_gated_off();
 }

@@ -93,7 +93,7 @@ uint32_t cmp_field_pool_hash(const struct struct_desc *desc,
 			     unsigned int size);
 
 /*
- * One dispatched struct arg the per-record struct-field scans can walk:
+ * One dispatched struct arg the per-record struct-field scan can walk:
  * the cataloged desc, the dispatch-time buffer, and how many bytes of
  * it a field read may touch (the smaller of the catalog extent and the
  * tracked allocation).
@@ -134,24 +134,6 @@ void cmp_hints_field_scan_record(const struct cmp_field_scan_slot *slots,
 				 unsigned int nr, bool do32,
 				 unsigned long arg1, unsigned long arg2,
 				 unsigned int size, unsigned long cmp_ip);
-
-/*
- * Per-CMP-record SHADOW length-correlation scan.  Definition in
- * cmp_hints/hyp-len-correlated.c; called from cmp_hints_collect
- * (collect.c) alongside the cmp_hints_field_scan_record() field-
- * attribution scan, over the same resolved slots and behind the same
- * cmp_struct_scan_enabled gate, so it does not currently run either.
- * Looks for an FT_LEN_BYTES / FT_LEN_COUNT field whose slot value
- * equals arg2 (runtime operand) and records a SHADOW
- * CMP_HYP_LEN_CORRELATED hypothesis with expected == arg1 (compile-
- * time constant).  Never feeds the picker / inject arm: SHADOW only,
- * byte-identical fuzzing.
- */
-void cmp_hyp_len_correlated_scan_record(const struct cmp_field_scan_slot *slots,
-					unsigned int nr_slots,
-					unsigned int nr, bool do32,
-					unsigned long arg1, unsigned long arg2,
-					unsigned int size, unsigned long cmp_ip);
 
 /*
  * Per-child seen-bloom check + set.  Called once per CMP record in

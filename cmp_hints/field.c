@@ -298,9 +298,9 @@ void cmp_hints_field_record_self_check(void)
 }
 
 /*
- * Charge one deflected slot to the skip counters of both struct-field
- * scans (field attribution and LEN_CORRELATED), which share the
- * resolution in cmp_hints_field_scan_resolve() below.
+ * Charge one deflected slot to the skip counters of the struct-field
+ * scan; used by the resolution in cmp_hints_field_scan_resolve()
+ * below.
  */
 static void cmp_field_scan_skip(bool short_alloc)
 {
@@ -314,14 +314,11 @@ static void cmp_field_scan_skip(bool short_alloc)
 		__atomic_fetch_add(
 			&kcov_shm->cmp_field_attr.cmp_field_attribution_arg_skipped_bad_ptr,
 			1UL, __ATOMIC_RELAXED);
-	__atomic_fetch_add(
-		&kcov_shm->cmp_hyp_shadow.cmp_hyp_len_correlated_bad_desc,
-		1UL, __ATOMIC_RELAXED);
 }
 
 /*
- * Resolve the cataloged INPUT struct args the per-record field scans
- * walk.  Called once per cmp_hints_collect() call: the desc, the
+ * Resolve the cataloged INPUT struct args the per-record field scan
+ * walks.  Called once per cmp_hints_collect() call: the desc, the
  * buffer and its extent are the same for every CMP record of the call,
  * and the alloc_track extent lookup walks every alloc_track slot for a
  * buffer zmalloc_tracked() did not hand out.  A deflected slot is

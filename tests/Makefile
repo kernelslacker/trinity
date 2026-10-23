@@ -257,14 +257,12 @@ PARENT_SRCS	:= \
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect() and the
-# struct-field scans it drives.  Same section-per-function treatment
+# struct-field scan it drives.  Same section-per-function treatment
 # as the parent TUs; cmp_field_scan_test.c fakes the rest of the
 # cmp_hints core it reaches.
 CMP_SRCS	:= \
 	$(TOP)/cmp_hints/collect.c \
-	$(TOP)/cmp_hints/field.c \
-	$(TOP)/cmp_hints/hyp-len-correlated.c \
-	$(TOP)/cmp_hints/hyp-pool.c
+	$(TOP)/cmp_hints/field.c
 
 # The minicorpus save, replay and warm-start file paths, linked for
 # minicorpus_save_with_reason(), minicorpus_replay(),

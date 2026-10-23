@@ -160,12 +160,10 @@ cmp_field_match_timespec(const struct timespec *ts, unsigned long arg2,
 }
 
 /*
- * Default-off gate for the struct-field scans: the field attribution
- * recorder and the LEN_CORRELATED shadow lane.  Neither has a consumer
- * -- no reader looks up the field-pool keys the recorder writes, and
- * the hypothesis picker and credit walk skip LEN_CORRELATED entries --
- * so running them only costs the record loop.  Flip it on with the
- * first live consumer.
+ * Default-off gate for the struct-field scan, the field attribution
+ * recorder.  It has no consumer -- no reader looks up the field-pool
+ * keys it writes -- so running it only costs the record loop.  Flip it
+ * on with the first live consumer.
  */
 static bool cmp_struct_scan_enabled;
 
@@ -240,9 +238,9 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 	 * live dispatched syscall (entry != NULL, dispatch_args_valid).
 	 * Its struct args are resolved once, ahead of the record loop
 	 * (cmp_hints_field_scan_resolve() says why).  nr_field_slots
-	 * stays 0 when the scans are gated off (cmp_struct_scan_enabled),
+	 * stays 0 when the scan is gated off (cmp_struct_scan_enabled),
 	 * the call is parent-context or pre-dispatch, or it has no
-	 * walkable struct arg, and the per-record scans are skipped.
+	 * walkable struct arg, and the per-record scan is skipped.
 	 */
 	struct cmp_field_scan_slot field_slots[6];
 	unsigned int nr_field_slots = 0;
@@ -958,24 +956,6 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 						    nr_field_slots,
 						    nr, do32, arg1, arg2,
 						    size, ip);
-
-		/*
-		 * SHADOW length-correlation scan.  Walks the same per-call
-		 * resolved struct args as the field-attribution scan above
-		 * looking for an FT_LEN_* field whose slot value equals arg2
-		 * (runtime operand), records arg1 (compile-time constant) as
-		 * the expected length in a CMP_HYP_LEN_CORRELATED hyp-pool
-		 * entry keyed by cmp_field_pool_hash.  SHADOW only: neither
-		 * the picker nor struct_fill consumes LEN_CORRELATED entries,
-		 * so the fuzzing byte stream stays byte-identical.  Runs only
-		 * against KCOV_CMP_CONST records (guaranteed by the
-		 * !KCOV_CMP_CONST drop earlier in this loop). */
-		if (nr_field_slots != 0)
-			cmp_hyp_len_correlated_scan_record(field_slots,
-							   nr_field_slots,
-							   nr, do32,
-							   arg1, arg2,
-							   size, ip);
 
 		if (bloom != NULL &&
 		    cmp_hints_bloom_check_and_set(bloom, ip, arg1, size)) {

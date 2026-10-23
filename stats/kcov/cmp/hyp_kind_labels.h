@@ -19,8 +19,7 @@
 	X(CMP_HYP_ENUM_FAMILY,		"enum_family")		\
 	X(CMP_HYP_ALIGNMENT,		"alignment")		\
 	X(CMP_HYP_LENGTH,		"length")		\
-	X(CMP_HYP_FOREIGN_VALUE,	"foreign_value")	\
-	X(CMP_HYP_LEN_CORRELATED,	"len_corr")
+	X(CMP_HYP_FOREIGN_VALUE,	"foreign_value")
 
 #define CMP_HYP_KIND_LABEL_SLOT(kind, label)	[kind] = label,
 #define CMP_HYP_KIND_LABEL_ONE(kind, label)	+ 1
