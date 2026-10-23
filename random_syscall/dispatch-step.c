@@ -152,6 +152,64 @@ classify_strategy_return_class(const struct syscallrecord *rec)
 }
 
 /*
+ * Per-arm completion exposure: bump the arm this call was attributed
+ * to.  Two distinct cases reach here with strategy_at_pick == -1:
+ *
+ *   - Explorer-pool children: set_syscall_nr() leaves the sentinel
+ *     in place and bumps strategy_picks[STRATEGY_RANDOM] directly.
+ *     The completion bump mirrors that pick by crediting RANDOM
+ *     here so picks and completions stay symmetric for the explorer
+ *     contribution.
+ *
+ *   - Replay steps from run_sequence_chain(): replay_syscall_step()
+ *     deliberately clears strategy_at_pick to -1 to avoid crediting
+ *     replay work to whichever arm started the chain.  Replays did
+ *     not bump strategy_picks[] either, so the completion bump must
+ *     skip them to keep picks and completions paired.
+ *
+ * Gate the fallback on child->is_explorer specifically rather than
+ * sap < 0 so the two cases stay separated.  Replay-step visibility
+ * lives in chain_corpus_shm->replay_steps_dispatched.
+ */
+static void bump_arm_completion(struct childdata *child,
+				 const struct syscallrecord *rec)
+{
+	int sap = child->strategy_at_pick;
+	if (sap < 0 && child->is_explorer)
+		sap = STRATEGY_RANDOM;
+	if (sap >= 0 && sap < NR_STRATEGIES) {
+		__atomic_fetch_add(
+			&shm->strategy_completed_calls[sap],
+			1UL, __ATOMIC_RELAXED);
+
+		/* Partition the completion into success / shallow-
+		 * reject / deep-error and bump the matching per-arm
+		 * counter alongside strategy_completed_calls[] above.
+		 * The three ret_* counters sum to strategy_completed_
+		 * calls[] within the usual RELAXED lost-update
+		 * tolerance.  See classify_strategy_return_class()
+		 * for the errno partition. */
+		switch (classify_strategy_return_class(rec)) {
+		case STRATEGY_RET_CLASS_SUCCESS:
+			__atomic_fetch_add(
+				&shm->strategy_ret_success[sap],
+				1UL, __ATOMIC_RELAXED);
+			break;
+		case STRATEGY_RET_CLASS_SHALLOW_REJECT:
+			__atomic_fetch_add(
+				&shm->strategy_ret_shallow_reject[sap],
+				1UL, __ATOMIC_RELAXED);
+			break;
+		case STRATEGY_RET_CLASS_DEEP_ERROR:
+			__atomic_fetch_add(
+				&shm->strategy_ret_deep_error[sap],
+				1UL, __ATOMIC_RELAXED);
+			break;
+		}
+	}
+}
+
+/*
  * CMP RedQueen greedy re-exec tail.  Fires after the
  * parent call's handle_syscall_ret has settled so .post / .cleanup
  * are done before the re-exec dispatch reuses rec.  A single
@@ -811,59 +869,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 		account_fd_and_group(child, entry, rec, found_local_coverage);
 	}
 
-	/* Per-arm completion exposure: bump the arm this call was attributed
-	 * to.  Two distinct cases reach here with strategy_at_pick == -1:
-	 *
-	 *   - Explorer-pool children: set_syscall_nr() leaves the sentinel
-	 *     in place and bumps strategy_picks[STRATEGY_RANDOM] directly.
-	 *     The completion bump mirrors that pick by crediting RANDOM
-	 *     here so picks and completions stay symmetric for the explorer
-	 *     contribution.
-	 *
-	 *   - Replay steps from run_sequence_chain(): replay_syscall_step()
-	 *     deliberately clears strategy_at_pick to -1 to avoid crediting
-	 *     replay work to whichever arm started the chain.  Replays did
-	 *     not bump strategy_picks[] either, so the completion bump must
-	 *     skip them to keep picks and completions paired.
-	 *
-	 * Gate the fallback on child->is_explorer specifically rather than
-	 * sap < 0 so the two cases stay separated.  Replay-step visibility
-	 * lives in chain_corpus_shm->replay_steps_dispatched. */
-	{
-		int sap = child->strategy_at_pick;
-		if (sap < 0 && child->is_explorer)
-			sap = STRATEGY_RANDOM;
-		if (sap >= 0 && sap < NR_STRATEGIES) {
-			__atomic_fetch_add(
-				&shm->strategy_completed_calls[sap],
-				1UL, __ATOMIC_RELAXED);
-
-			/* Partition the completion into success / shallow-
-			 * reject / deep-error and bump the matching per-arm
-			 * counter alongside strategy_completed_calls[] above.
-			 * The three ret_* counters sum to strategy_completed_
-			 * calls[] within the usual RELAXED lost-update
-			 * tolerance.  See classify_strategy_return_class()
-			 * for the errno partition. */
-			switch (classify_strategy_return_class(rec)) {
-			case STRATEGY_RET_CLASS_SUCCESS:
-				__atomic_fetch_add(
-					&shm->strategy_ret_success[sap],
-					1UL, __ATOMIC_RELAXED);
-				break;
-			case STRATEGY_RET_CLASS_SHALLOW_REJECT:
-				__atomic_fetch_add(
-					&shm->strategy_ret_shallow_reject[sap],
-					1UL, __ATOMIC_RELAXED);
-				break;
-			case STRATEGY_RET_CLASS_DEEP_ERROR:
-				__atomic_fetch_add(
-					&shm->strategy_ret_deep_error[sap],
-					1UL, __ATOMIC_RELAXED);
-				break;
-			}
-		}
-	}
+	bump_arm_completion(child, rec);
 
 	redqueen_reexec_tail(child, new_cmp);
 
