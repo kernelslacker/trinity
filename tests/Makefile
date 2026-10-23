@@ -515,11 +515,14 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 
 # syscalls/mm/mremap.c and mincore.c bring mremap and mincore, whose
 # sanitisers and post handlers arg_coupling_test.c runs over the same
-# fake pool mapping, and mm/image-segments.c the image table the test
-# fills from the binary's own segments, which mremap's fixed target is
-# kept off.
+# fake pool mapping, mmap.c mmap and mmap2, whose sanitiser it runs with
+# an empty fd pool, flags drawn from a random subset, and the huge page
+# size and post_mmap()'s dirty walk faked there, and mm/image-segments.c
+# the image table the test fills from the binary's own segments, which
+# mremap's fixed target is kept off.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/mremap.c \
 		   $(TOP)/syscalls/mm/mincore.c \
+		   $(TOP)/syscalls/mm/mmap.c \
 		   $(TOP)/mm/image-segments.c
 
 # syscalls/poll/epoll_wait.c and epoll_pwait.c bring the epoll_wait

@@ -27,6 +27,7 @@
 #include "cmsg_build.h"			/* pick_cmsg_kind, cmsg_build */
 #include "debug.h"			/* BUG */
 #include "files.h"			/* get_rand_pagecache_fd */
+#include "hugepages.h"			/* pick_random_huge_size_encoding */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
 #include "kernel/syslog.h"		/* SYSLOG_ACTION_READ */
 #include "maps.h"			/* proc_maps_check */
@@ -52,6 +53,8 @@ extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
+extern bool fake_random_fd_empty;	/* fake_stubs.c */
+extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 
 /* sanity_check_tables() over one entry, in tests/sanitiser_owned_mask_test.c. */
 int entry_check_status(struct syscallentry *entry);
@@ -2634,6 +2637,239 @@ static void mincore_held_to_vec(void)
 	fake_this_child = NULL;
 }
 
+/* post_mmap() dirties a mapping it made, and no test has it make one. */
+void dirty_mapping(struct map *map)
+{
+	(void) map;
+	BUG("mmap: a test had post_mmap() dirty a mapping");
+}
+
+/* No huge page sizes are known: the kernel's default. */
+unsigned long pick_random_huge_size_encoding(void)
+{
+	return 0;
+}
+
+/* What an mmap() call is redrawn for: a MAP_FIXED that replaces what it
+ * lands on, anonymous or over a file, or a call that replaces nothing. */
+enum mmap_draw {
+	MMAP_DRAW_FIXED_ANON,
+	MMAP_DRAW_FIXED_FILE,
+	MMAP_DRAW_UNFIXED,
+};
+
+/* An mmap() call the sanitiser built, redrawn until it is the one @want
+ * names.  An empty fd pool leaves a file mapping fd 0. */
+static struct syscallrecord *mmap_drawn(struct syscallentry *entry,
+					enum mmap_draw want)
+{
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		bool replaces, hit = false;
+
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		replaces = (mrec->a4 & MAP_FIXED) &&
+			   !(mrec->a4 & MAP_FIXED_NOREPLACE);
+		switch (want) {
+		case MMAP_DRAW_FIXED_ANON:
+			hit = replaces && (mrec->a4 & MAP_ANONYMOUS);
+			break;
+		case MMAP_DRAW_FIXED_FILE:
+			hit = replaces && !(mrec->a4 & MAP_ANONYMOUS);
+			break;
+		case MMAP_DRAW_UNFIXED:
+			hit = !replaces;
+			break;
+		}
+		if (hit)
+			return mrec;
+		entry->cleanup(mrec);
+	}
+	BUG("mmap: the sanitiser never drew the call the case needs");
+}
+
+/* Whatever the sanitiser builds passes, natively and as a compat call. */
+static void mmap_sanitised_call_passes(struct syscallentry *entry)
+{
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(entry);
+
+		mrec->do32bit = (i % 10) == 0;
+		entry->sanitise(mrec);
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mmap: a call the sanitiser built was refused");
+		entry->cleanup(mrec);
+	}
+}
+
+/* A call whose final flags replace what MAP_FIXED lands on is refused
+ * unless it places and sizes that range as the sanitiser vetted it: not at
+ * an address an earlier mmap() returned, not longer, not with other flags,
+ * which may round the length up to a huge page, and over a file not with
+ * another fd.  An anonymous call's fd is no part of it.  MAP_FIXED_NOREPLACE
+ * leaves an occupied range alone and no MAP_FIXED leaves the address a
+ * hint, and either passes, but a MAP_FIXED the sanitiser did not draw is
+ * refused. */
+static void mmap_fixed_held(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec;
+	unsigned long a2, a4, a5;
+
+	mrec = mmap_drawn(entry, MMAP_DRAW_FIXED_FILE);
+	a2 = mrec->a2;
+	a4 = mrec->a4;
+	a5 = mrec->a5;
+	mrec->a1 = POOL_MAP;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a MAP_FIXED at a substituted address was kept");
+	mrec->a1 = 0;
+	mrec->a2 = a2 + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a MAP_FIXED grown past its vetted length was kept");
+	mrec->a2 = a2;
+	mrec->a4 = a4 ^ MAP_HUGETLB;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a MAP_FIXED with flags the sanitiser did not draw was kept");
+	mrec->a4 = a4;
+	mrec->a5 = a5 + 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a MAP_FIXED over another file was kept");
+	mrec->a5 = a5;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: the MAP_FIXED the sanitiser vetted was refused");
+	mrec->a1 = POOL_MAP;
+	mrec->a4 = a4 | MAP_FIXED_NOREPLACE;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: a MAP_FIXED_NOREPLACE was refused");
+	entry->cleanup(mrec);
+
+	mrec = mmap_drawn(entry, MMAP_DRAW_FIXED_ANON);
+	mrec->a5 = 5;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: an anonymous MAP_FIXED was judged on its fd");
+	entry->cleanup(mrec);
+
+	mrec = mmap_drawn(entry, MMAP_DRAW_UNFIXED);
+	a4 = mrec->a4;
+	mrec->a1 = POOL_MAP;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: an address hint was refused");
+	mrec->a4 = (a4 | MAP_FIXED) & ~(unsigned long) MAP_FIXED_NOREPLACE;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a MAP_FIXED the sanitiser did not draw was kept");
+	entry->cleanup(mrec);
+}
+
+/* A compat call's kernel reads the low 32 bits of each slot: a MAP_FIXED
+ * address whose upper half a rewrite changed is still the one the
+ * sanitiser vetted, and a native call's is not. */
+static void mmap_compat_slots_truncated(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mmap_drawn(entry, MMAP_DRAW_FIXED_ANON);
+
+	mrec->do32bit = true;
+	mrec->a1 |= 1UL << 32;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: a compat MAP_FIXED was judged on its address's upper half");
+	mrec->do32bit = false;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mmap: a native MAP_FIXED's rewritten upper half was dropped");
+	entry->cleanup(mrec);
+}
+
+/* Nothing vets a MAP_FIXED without the call's own snapshot: a pid where
+ * the pointer was, one the ownership table does not hold, or one with
+ * another magic.  A call that replaces nothing is held to nothing, and the
+ * sanitiser gives it no snapshot at all. */
+static void mmap_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mmap_drawn(entry, MMAP_DRAW_FIXED_ANON);
+
+	snapshot_gate_held(mrec, entry->name);
+	entry->cleanup(mrec);
+
+	mrec = mmap_drawn(entry, MMAP_DRAW_UNFIXED);
+	if (mrec->post_state != 0)
+		BUG("mmap: a call that replaces nothing was given a snapshot");
+	mrec->post_state = 12345;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mmap: a call that replaces nothing was refused for its snapshot");
+	mrec->post_state = 0;
+	entry->cleanup(mrec);
+}
+
+#if defined(__x86_64__)
+/* A compat call through the i386 table's mmap is old_mmap(): the kernel
+ * copies all six arguments from a struct at a1, as the low 32 bits read
+ * it, so a1 is held to the NULL the sanitiser leaves there whatever the
+ * other slots say, MAP_FIXED or not.  A compat mmap2 takes its arguments
+ * in registers, and a1 without MAP_FIXED is only a hint there. */
+static void mmap_arg_struct_held(struct syscallentry *mmap_entry,
+				 struct syscallentry *mmap2_entry)
+{
+	struct syscallentry *const entries[] = { mmap_entry, mmap2_entry };
+	unsigned int e, i;
+
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		struct syscallrecord *mrec = NULL;
+
+		for (i = 0; i < 1000; i++) {
+			mrec = mm_call(entries[e]);
+			mrec->do32bit = true;
+			entries[e]->sanitise(mrec);
+			if (!(mrec->a4 & MAP_FIXED) ||
+			    (mrec->a4 & MAP_FIXED_NOREPLACE))
+				break;
+			entries[e]->cleanup(mrec);
+		}
+		if (i == 1000)
+			BUG("mmap: the sanitiser never drew a compat call that replaces nothing");
+
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mmap: a compat call the sanitiser built was refused");
+		mrec->a1 = 1UL << 32;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mmap: a compat call was judged on a1's upper half");
+		mrec->a1 = LOW_POOL_MAP;
+		if (validate_arg_coupling(mrec, mrec->entry) != (entries[e]->is_mmap2 ? 0 : -1))
+			BUG("mmap: a1 was held on the wrong ABI");
+		entries[e]->cleanup(mrec);
+	}
+}
+#endif
+
+/* mmap's and mmap2's final MAP_FIXED replaces only the range their shared
+ * sanitiser vetted. */
+static void mmap_fixed_held_to_vetted_call(void)
+{
+	struct syscallentry mmap_entry = syscall_mmap;
+	struct syscallentry mmap2_entry = syscall_mmap2;
+	struct syscallentry *const entries[] = { &mmap_entry, &mmap2_entry };
+	unsigned int e;
+
+	/* As copy_syscall_table() stamps the copy. */
+	mmap2_entry.is_mmap2 = true;
+	fake_random_fd_empty = true;
+	fake_rand_bitmask_draws = true;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		mmap_sanitised_call_passes(entries[e]);
+		mmap_fixed_held(entries[e]);
+		mmap_compat_slots_truncated(entries[e]);
+		mmap_needs_its_snapshot(entries[e]);
+	}
+#if defined(__x86_64__)
+	mmap_arg_struct_held(&mmap_entry, &mmap2_entry);
+#endif
+	fake_rand_bitmask_draws = false;
+	fake_random_fd_empty = false;
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2664,4 +2900,5 @@ void arg_coupling_self_check(void)
 	mremap_post_follows_mapping();
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
+	mmap_fixed_held_to_vetted_call();
 }

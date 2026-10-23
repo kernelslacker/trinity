@@ -116,12 +116,24 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 		ptr[i] = rnd_u32() & 0xff;
 }
 
-/* Only the rtnetlink link builder asks, and this test builds no rtnetlink. */
+/* Asked by the rtnetlink link builder, which this test builds none of,
+ * and by sanitisers other tests run: the pidfd group's info sanitiser,
+ * content with no bits, and mmap's flags draw, whose test sets
+ * fake_rand_bitmask_draws for a random subset of the values. */
+bool fake_rand_bitmask_draws;
+
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 {
-	(void) num;
-	(void) values;
-	return 0;
+	unsigned long mask = 0;
+	unsigned int i;
+
+	if (!fake_rand_bitmask_draws)
+		return 0;
+	for (i = 0; i < num; i++) {
+		if (RAND_BOOL())
+			mask |= values[i];
+	}
+	return mask;
 }
 
 unsigned int gen_cpu_list_string(char *buf, unsigned int buflen)

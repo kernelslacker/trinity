@@ -118,13 +118,19 @@ unsigned int rand32(void)
  * path-coverage gap turns into an obvious failure rather than silent
  * misbehaviour.
  *
- * get_random_fd:       only reachable via FT_FD.
+ * get_random_fd:       only reachable via FT_FD, unless a test that runs a
+ *                      sanitiser drawing from the fd pool sets
+ *                      fake_random_fd_empty, when the pool hands out -1.
  * ebpf_gen_program_into: only reachable via FT_BPF_PROGRAM (USE_BPF).
  * struct_field_fill_schema_aware: only reachable via FT_EMBEDDED_STRUCT.
  * __zmalloc_tracked:  only reachable via pointer-tag passes (Pass 2/3).
  */
+bool fake_random_fd_empty;
+
 int get_random_fd(void)
 {
+	if (fake_random_fd_empty)
+		return -1;
 	fprintf(stderr, "fake get_random_fd called unexpectedly\n");
 	abort();
 }
