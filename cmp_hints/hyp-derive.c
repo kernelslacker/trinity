@@ -465,6 +465,198 @@ static void cmp_hyp_sign_switch_shadow_probe(const struct cmp_hypothesis *picked
 }
 
 /*
+ * CMP_HYP_EXACT arm of cmp_hyp_derive_value().
+ *
+ * Rotate uniformly among {N-1, N, N+1}, mirroring
+ * cmp_hint_apply_transform's CMP_HINT_BOUNDARY case.
+ * Before this rotation the derive always returned the
+ * exemplar unchanged -- the compile-time const the kernel
+ * had already observed -- so every LIVE typed EXACT inject
+ * re-fed the site the byte-identical value that got recorded
+ * there in the first place: the equality gate the const
+ * originally passed still passed, but strict-inequality
+ * gates ("x < N", "x > N", the pattern documented in
+ * derive_boundary() and in include/kcov.h's
+ * cmp_hyp_boundary_* commentary) stayed unsatisfied and
+ * pc_wins was structurally starved on this arm.  The raw
+ * cmp-hint arm applies this same +/-1 rotation at the same
+ * callsites via cmp_hint_apply_transform's CMP_HINT_BOUNDARY
+ * case, so pre-rotation the LIVE typed EXACT arm was a
+ * strict downgrade of the raw arm's conversion (the raw
+ * arm's own comment at the transform notes "the equality
+ * slot -- C unchanged -- is retained in the rotation, so
+ * the worst case is a 3x slowdown on a purely
+ * equality-dominated callsite, while
+ * length-/cap-/extent-dominated syscalls ... get the
+ * boundary edges they were missing").  The rotation restores
+ * parity with the raw arm and lets the strict-inequality
+ * boundary gates convert on the typed arm too.
+ *
+ * Credit attribution: EXACT's find_for_credit arm demands
+ * exemplar == value, so the +/-1 probes do NOT re-resolve
+ * back to this EXACT hypothesis at credit time -- they fall
+ * through to the BOUNDARY arm's +/-2 credit window
+ * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) and get attributed
+ * to whichever BOUNDARY entry the observe path registered
+ * at the same (cmp_ip, width).  Both EXACT and BOUNDARY
+ * co-populate on every observation (see cmp_hyp_observe),
+ * so a fired shifted probe has a home; if the BOUNDARY
+ * slot was reclaimed, per-hypothesis credit misses but the
+ * pc_win itself is still counted in the flat kcov_shm
+ * rollup.  The exemplar arm still re-resolves to this
+ * EXACT hypothesis exactly as before.
+ *
+ * Unsigned wrap at the extremes (N == 0 -> N-1 ==
+ * ULONG_MAX; N == ULONG_MAX -> N+1 == 0) is intentional
+ * and unclamped, matching the raw transform's rationale:
+ * both wrapped values are themselves useful probes
+ * (underflow exercises length-cap validators; overflow
+ * exercises zero-length rejection paths), and the
+ * downstream accept-range gate in cmp_hints_try_get_ex
+ * rejects any that overshoot the caller's bounds and
+ * counts them under
+ * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
+ *
+ * Probe-class histogram: the +/-1 arms bump the shared
+ * CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1 / _PLUS1 buckets by
+ * *probe shape* rather than by originating hypothesis --
+ * a "constant nudged down/up by 1" probe reached the
+ * kernel, which is what a downstream reader wants to
+ * measure.  Splitting these into dedicated
+ * EXACT_MINUS1 / _PLUS1 buckets would need an
+ * include/kcov.h enum extension deferred to a follow-up if
+ * the shared bucket becomes ambiguous in practice.
+ */
+static void derive_exact(const struct cmp_hypothesis *picked,
+			 unsigned long *out,
+			 enum cmp_hyp_probe_class *cls)
+{
+	uint64_t n = picked->exemplar;
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		*out = (unsigned long)(n - 1);
+		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
+		return;
+	case 2:
+		*out = (unsigned long)(n + 1);
+		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
+		return;
+	/* case 1 (and default): N unchanged.  Retains the exact
+	 * equality-gate probe so equality-dominated callsites
+	 * (cmd codes, enum selectors, version magics) keep
+	 * converting on the typed arm. */
+	default:
+		*out = (unsigned long)n;
+		*cls = CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR;
+		return;
+	}
+}
+
+/*
+ * CMP_HYP_BOUNDARY arm of cmp_hyp_derive_value(); false means no value.
+ *
+ * Neighbourhood ladder around the exemplar N: the strict-
+ * inequality boundary EXACT cannot pass (the passing value
+ * for `x < N` is N-1, for `x > N` is N+1) and RANGE refuses
+ * to emit (the comment at RANGE bans lo-1 / hi+1 because the
+ * value-keyed credit walk cannot re-resolve them; the lane
+ * here owns that emission and the BOUNDARY arm of
+ * cmp_hyp_find_for_credit() owns the matching credit walk).
+ *
+ * Bug-pattern guards from the audit batch:
+ *   * unsigned underflow: emit N-1 / N-2 only when N >= 1
+ *     / N >= 2; arg1 is u64, N=0 - 1 would otherwise land at
+ *     ULONG_MAX.
+ *   * width overflow: skip the + arms when N is at the
+ *     width's max (1 << (width*8) - 1) so a u8/u16 boundary
+ *     does not wrap to 0 (or, worse, leak high-bit garbage
+ *     past the operand width that the accept gate would then
+ *     reject anyway).
+ *   * mask the derived value to the operand width so an u8
+ *     boundary at value 255 with the +1 arm gated off still
+ *     yields a well-formed 8-bit value when the sweep arm
+ *     touches it.
+ * The accept-range gate in cmp_hints_try_get_ex (and the
+ * caller's own range check) is the second line of defence:
+ * a derived neighbour past the caller's bounds is rejected
+ * cleanly and counted under
+ * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
+ */
+static bool derive_boundary(const struct cmp_hypothesis *picked,
+			    unsigned long *out,
+			    enum cmp_hyp_probe_class *cls)
+{
+	uint64_t n = picked->exemplar;
+	uint64_t width_mask = (picked->width >= 8)
+		? ~(uint64_t)0
+		: ((uint64_t)1 << (picked->width * 8)) - 1;
+	uint64_t width_max = width_mask;
+	uint64_t cand;
+	bool have_cand = false;
+
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		if (n >= 1) {
+			cand = n - 1;
+			*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
+			have_cand = true;
+			break;
+		}
+		/* N=0: N-1 would underflow.  Fall through to the +1
+		 * arm which is well-defined for N=0 at any width. */
+		/* fallthrough */
+	case 1:
+		if (n < width_max) {
+			cand = n + 1;
+			*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
+			have_cand = true;
+			break;
+		}
+		/* N == width_max: N+1 would overflow the operand
+		 * width.  Fall through to the exemplar arm, which
+		 * always fits. */
+		/* fallthrough */
+	case 2:
+		cand = n;
+		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
+		have_cand = true;
+		break;
+	default:
+		/* Widen-by-one sweep for off-by-one chains.  Random
+		 * direction; the same underflow / overflow guards as
+		 * the +/-1 arms apply at the wider step. */
+		if (rnd_modulo_u32(2) == 0) {
+			if (n >= 2) {
+				cand = n - 2;
+				*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
+				have_cand = true;
+				break;
+			}
+		} else {
+			if (n + 2 > n && n + 2 <= width_max) {
+				cand = n + 2;
+				*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
+				have_cand = true;
+				break;
+			}
+		}
+		/* Both sweep directions strand the value at this
+		 * width.  Fall back to the exemplar so the lane never
+		 * emits "no value" -- the find_for_credit BOUNDARY
+		 * window covers exemplar matches too. */
+		cand = n;
+		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
+		have_cand = true;
+		break;
+	}
+	if (!have_cand)
+		return false;
+	*out = (unsigned long)(cand & width_mask);
+	return true;
+}
+
+/*
  * Derive ONE candidate value from PICKED via the spec's ladder.  Every
  * derived value is constructed so cmp_hyp_find_for_credit() will
  * re-resolve back to a hypothesis at the same (cmp_ip, width) at
@@ -506,89 +698,9 @@ bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 	if (picked == NULL || out == NULL)
 		return false;
 	switch (picked->kind) {
-	case CMP_HYP_EXACT: {
-		/*
-		 * Rotate uniformly among {N-1, N, N+1}, mirroring
-		 * cmp_hint_apply_transform's CMP_HINT_BOUNDARY case.
-		 * Before this rotation the derive always returned the
-		 * exemplar unchanged -- the compile-time const the kernel
-		 * had already observed -- so every LIVE typed EXACT inject
-		 * re-fed the site the byte-identical value that got recorded
-		 * there in the first place: the equality gate the const
-		 * originally passed still passed, but strict-inequality
-		 * gates ("x < N", "x > N", the pattern documented in the
-		 * CMP_HYP_BOUNDARY block below and in include/kcov.h's
-		 * cmp_hyp_boundary_* commentary) stayed unsatisfied and
-		 * pc_wins was structurally starved on this arm.  The raw
-		 * cmp-hint arm applies this same +/-1 rotation at the same
-		 * callsites via cmp_hint_apply_transform's CMP_HINT_BOUNDARY
-		 * case, so pre-rotation the LIVE typed EXACT arm was a
-		 * strict downgrade of the raw arm's conversion (the raw
-		 * arm's own comment at the transform notes "the equality
-		 * slot -- C unchanged -- is retained in the rotation, so
-		 * the worst case is a 3x slowdown on a purely
-		 * equality-dominated callsite, while
-		 * length-/cap-/extent-dominated syscalls ... get the
-		 * boundary edges they were missing").  The rotation restores
-		 * parity with the raw arm and lets the strict-inequality
-		 * boundary gates convert on the typed arm too.
-		 *
-		 * Credit attribution: EXACT's find_for_credit arm demands
-		 * exemplar == value, so the +/-1 probes do NOT re-resolve
-		 * back to this EXACT hypothesis at credit time -- they fall
-		 * through to the BOUNDARY arm's +/-2 credit window
-		 * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) and get attributed
-		 * to whichever BOUNDARY entry the observe path registered
-		 * at the same (cmp_ip, width).  Both EXACT and BOUNDARY
-		 * co-populate on every observation (see cmp_hyp_observe),
-		 * so a fired shifted probe has a home; if the BOUNDARY
-		 * slot was reclaimed, per-hypothesis credit misses but the
-		 * pc_win itself is still counted in the flat kcov_shm
-		 * rollup.  The exemplar arm still re-resolves to this
-		 * EXACT hypothesis exactly as before.
-		 *
-		 * Unsigned wrap at the extremes (N == 0 -> N-1 ==
-		 * ULONG_MAX; N == ULONG_MAX -> N+1 == 0) is intentional
-		 * and unclamped, matching the raw transform's rationale:
-		 * both wrapped values are themselves useful probes
-		 * (underflow exercises length-cap validators; overflow
-		 * exercises zero-length rejection paths), and the
-		 * downstream accept-range gate in cmp_hints_try_get_ex
-		 * rejects any that overshoot the caller's bounds and
-		 * counts them under
-		 * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
-		 *
-		 * Probe-class histogram: the +/-1 arms bump the shared
-		 * CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1 / _PLUS1 buckets by
-		 * *probe shape* rather than by originating hypothesis --
-		 * a "constant nudged down/up by 1" probe reached the
-		 * kernel, which is what a downstream reader wants to
-		 * measure.  Splitting these into dedicated
-		 * EXACT_MINUS1 / _PLUS1 buckets would need an
-		 * include/kcov.h enum extension deferred to a follow-up if
-		 * the shared bucket becomes ambiguous in practice.
-		 */
-		uint64_t n = picked->exemplar;
-
-		switch (rnd_modulo_u32(3)) {
-		case 0:
-			*out = (unsigned long)(n - 1);
-			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
-			goto out_bump;
-		case 2:
-			*out = (unsigned long)(n + 1);
-			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
-			goto out_bump;
-		/* case 1 (and default): N unchanged.  Retains the exact
-		 * equality-gate probe so equality-dominated callsites
-		 * (cmd codes, enum selectors, version magics) keep
-		 * converting on the typed arm. */
-		default:
-			*out = (unsigned long)n;
-			cls = CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR;
-			goto out_bump;
-		}
-	}
+	case CMP_HYP_EXACT:
+		derive_exact(picked, out, &cls);
+		goto out_bump;
 	case CMP_HYP_ENUM_FAMILY:
 		switch (rnd_modulo_u32(3)) {
 		case 0:
@@ -649,103 +761,10 @@ bool cmp_hyp_derive_value(const struct cmp_hypothesis *picked,
 			cls = CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT;
 			goto out_bump;
 		}
-	case CMP_HYP_BOUNDARY: {
-		/*
-		 * Neighbourhood ladder around the exemplar N: the strict-
-		 * inequality boundary EXACT cannot pass (the passing value
-		 * for `x < N` is N-1, for `x > N` is N+1) and RANGE refuses
-		 * to emit (the comment at RANGE bans lo-1 / hi+1 because the
-		 * value-keyed credit walk cannot re-resolve them; the lane
-		 * here owns that emission and the BOUNDARY arm of
-		 * cmp_hyp_find_for_credit() owns the matching credit walk).
-		 *
-		 * Bug-pattern guards from the audit batch:
-		 *   * unsigned underflow: emit N-1 / N-2 only when N >= 1
-		 *     / N >= 2; arg1 is u64, N=0 - 1 would otherwise land at
-		 *     ULONG_MAX.
-		 *   * width overflow: skip the + arms when N is at the
-		 *     width's max (1 << (width*8) - 1) so a u8/u16 boundary
-		 *     does not wrap to 0 (or, worse, leak high-bit garbage
-		 *     past the operand width that the accept gate would then
-		 *     reject anyway).
-		 *   * mask the derived value to the operand width so an u8
-		 *     boundary at value 255 with the +1 arm gated off still
-		 *     yields a well-formed 8-bit value when the sweep arm
-		 *     touches it.
-		 * The accept-range gate in cmp_hints_try_get_ex (and the
-		 * caller's own range check) is the second line of defence:
-		 * a derived neighbour past the caller's bounds is rejected
-		 * cleanly and counted under
-		 * CMP_HYP_LIVE_INJECT_REASON_ACCEPT_REJECT.
-		 */
-		uint64_t n = picked->exemplar;
-		uint64_t width_mask = (picked->width >= 8)
-			? ~(uint64_t)0
-			: ((uint64_t)1 << (picked->width * 8)) - 1;
-		uint64_t width_max = width_mask;
-		uint64_t cand;
-		bool have_cand = false;
-
-		switch (rnd_modulo_u32(4)) {
-		case 0:
-			if (n >= 1) {
-				cand = n - 1;
-				cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
-				have_cand = true;
-				break;
-			}
-			/* N=0: N-1 would underflow.  Fall through to the +1
-			 * arm which is well-defined for N=0 at any width. */
-			/* fallthrough */
-		case 1:
-			if (n < width_max) {
-				cand = n + 1;
-				cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
-				have_cand = true;
-				break;
-			}
-			/* N == width_max: N+1 would overflow the operand
-			 * width.  Fall through to the exemplar arm, which
-			 * always fits. */
-			/* fallthrough */
-		case 2:
-			cand = n;
-			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
-			have_cand = true;
-			break;
-		default:
-			/* Widen-by-one sweep for off-by-one chains.  Random
-			 * direction; the same underflow / overflow guards as
-			 * the +/-1 arms apply at the wider step. */
-			if (rnd_modulo_u32(2) == 0) {
-				if (n >= 2) {
-					cand = n - 2;
-					cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
-					have_cand = true;
-					break;
-				}
-			} else {
-				if (n + 2 > n && n + 2 <= width_max) {
-					cand = n + 2;
-					cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
-					have_cand = true;
-					break;
-				}
-			}
-			/* Both sweep directions strand the value at this
-			 * width.  Fall back to the exemplar so the lane never
-			 * emits "no value" -- the find_for_credit BOUNDARY
-			 * window covers exemplar matches too. */
-			cand = n;
-			cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
-			have_cand = true;
-			break;
-		}
-		if (!have_cand)
+	case CMP_HYP_BOUNDARY:
+		if (!derive_boundary(picked, out, &cls))
 			return false;
-		*out = (unsigned long)(cand & width_mask);
 		goto out_bump;
-	}
 	default:
 		return false;
 	}
