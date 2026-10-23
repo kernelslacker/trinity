@@ -355,8 +355,8 @@ static void account_pool_pick_success(enum objecttype type, int retry_index)
  * to its NULL/EFAULT path on every ARG_ADDRESS slot.
  *
  * Rate-limited to once per MAPS_LOCAL_REFILL_PERIOD exhaustion
- * events per child so the (re-walk-the-global-pool, strdup
- * every name) cost stays bounded.  FILE/TESTFILE are
+ * events per child so the (re-walk-the-global-pool, clone
+ * every entry) cost stays bounded.  FILE/TESTFILE are
  * deliberately not topped up here: their OBJ_GLOBAL sources
  * can also drain (mmap_fd is the only producer for FILE; the
  * testfiles seed runs once at startup for TESTFILE), so the

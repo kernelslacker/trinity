@@ -17,9 +17,7 @@
 
 /*
  * Destructor for OBJ_LOCAL mmap entries (init_child_mappings copies and
- * the children's own runtime mmaps).  The obj struct and the name string
- * both live on the calling process's private heap, so we use the regular
- * libc free path.
+ * the children's own runtime mmaps).
  */
 void map_destructor(struct object *obj)
 {
@@ -75,8 +73,7 @@ void map_destructor(struct object *obj)
 	 * and the GB(4) cap on size (maps-pick.c).  Skip the whole
 	 * untrack+munmap pair on miss
 	 * -- leaking the VA for the rest of the run is strictly safer
-	 * than a wild unmap, and the name-free gate below still runs so
-	 * the proven-ours name buffer is recycled.
+	 * than a wild unmap.
 	 */
 	if (map->owns_vma &&
 	    map->ptr != NULL &&
@@ -86,22 +83,6 @@ void map_destructor(struct object *obj)
 		untrack_shared_region((unsigned long)map->ptr, extent);
 		munmap(map->ptr, extent);
 	}
-	/*
-	 * Free the name via tracked_free_now(), not a bare free().  A bare
-	 * free() releases the buffer to glibc but leaves its pointer in
-	 * df_alloc_track[] -- the alloc_track_lookup() gate only tests
-	 * membership, it does not consume the entry.  A later
-	 * df_alloc_track_consume() (the deferred-free ring drain, or after
-	 * glibc reuses the freed chunk for a new tracked allocation) then
-	 * still returns true and free()s it a second time -- an ASAN
-	 * bad-free in df_tracked_free_checked() on the ring-drain path.
-	 * tracked_free_now() consumes the alloc_track entry as it frees,
-	 * skips ring-owned pointers so the ring's drain stays
-	 * authoritative, and still leaks an unproven (scribbled) name
-	 * because the consume gate rejects any pointer __zmalloc never
-	 * produced -- "release what we own, leak the unproven".
-	 */
-	tracked_free_now(map->name);
 	map->name = NULL;
 }
 
@@ -154,14 +135,14 @@ void map_destructor_shared(struct object *obj)
 		munmap(map->ptr, extent);
 	}
 	/*
-	 * Gate the name free on shared-heap residency.  The local
-	 * destructor uses alloc_track_lookup (libc heap); this variant's
-	 * names live in the shared str heap (alloc_shared_pool,
-	 * registered via shared_regions[]), so range_in_tracked_shared()
-	 * is the matching residency check.  free_shared_str() proves the
-	 * slot live from state recorded at alloc time and leaks a pointer
-	 * it cannot prove, so a scribbled name cannot steer the free and
-	 * no length is derived from the fuzz-reachable payload.
+	 * Gate the name free on shared-heap residency.  Only this variant
+	 * frees a name (the local destructor borrows its names); they live
+	 * in the shared str heap (alloc_shared_pool, registered via
+	 * shared_regions[]), so range_in_tracked_shared() is the matching
+	 * residency check.  free_shared_str() proves the slot live from
+	 * state recorded at alloc time and leaks a pointer it cannot
+	 * prove, so a scribbled name cannot steer the free and no length
+	 * is derived from the fuzz-reachable payload.
 	 */
 	if (map->name != NULL &&
 	    range_in_tracked_shared((unsigned long)map->name, 1))
@@ -229,8 +210,8 @@ void clone_global_mmap_pool(enum objecttype type)
 		 * slot, so a ptr match means we have already cloned this
 		 * global entry on a prior refill.  Without this guard
 		 * each refill appends N copies of every global entry,
-		 * bloating per-child memory (leaked strdup'd names) and
-		 * skewing future uniform draws.
+		 * bloating per-child memory and skewing future uniform
+		 * draws.
 		 *
 		 * A hit keeps the local obj rather than allocating a fresh
 		 * one, so its alloc_track slot only ages.  Refresh it: a
@@ -256,11 +237,7 @@ void clone_global_mmap_pool(enum objecttype type)
 
 		newobj = alloc_object();
 		newobj->map.ptr = m->ptr;
-		newobj->map.name = strdup(m->name);
-		if (!newobj->map.name) {
-			tracked_free_now(newobj);
-			continue;
-		}
+		newobj->map.name = m->name;
 		newobj->map.size = m->size;
 		newobj->map.tracked_size = m->tracked_size;
 		newobj->map.prot = m->prot;
@@ -307,14 +284,14 @@ void init_child_mappings(void)
 	 * OBJ_GLOBAL OBJ_MMAP_* heads are wired to map_destructor_shared
 	 * (setup_initial_mappings for ANON, mmap_fd for FILE/TESTFILE),
 	 * which calls free_shared_str() -- the shared-heap allocator --
-	 * on map->name.  But OBJ_LOCAL entries created by post_mmap and
-	 * by the global-pool clone in this routine allocate map->name
-	 * with libc strdup(), so the inherited destructor would feed a
-	 * libc-malloc'd pointer to free_shared_str() and corrupt the
-	 * shared-heap metadata for every other child.
+	 * on map->name.  But OBJ_LOCAL entries only borrow theirs (the
+	 * global-pool clone in this routine points at the global entry's
+	 * string, post_mmap at a static one), so the inherited destructor
+	 * would free a string the global entry still owns and hand its
+	 * slot back to the shared heap.
 	 *
 	 * Override the inherited destructor on ALL three local mmap
-	 * pools to the libc-allocator destructor.  The ANON path was
+	 * pools to map_destructor, which frees no name.  The ANON path was
 	 * the only one already covered; FILE and TESTFILE were latent
 	 * until the post_munmap pool-type fix landed and started
 	 * routing those entries to destroy_object() with their real
@@ -361,11 +338,7 @@ void init_child_mappings(void)
 
 			newobj = alloc_object();
 			newobj->map.ptr = m->ptr;
-			newobj->map.name = strdup(m->name);
-			if (!newobj->map.name) {
-				tracked_free_now(newobj);
-				continue;
-			}
+			newobj->map.name = m->name;
 			newobj->map.size = m->size;
 			newobj->map.tracked_size = m->tracked_size;
 			newobj->map.prot = m->prot;

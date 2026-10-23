@@ -4,13 +4,15 @@
  * pool readers find the pools a test installs through get_objhead().
  * What only a post handler or a pool initialiser reaches aborts the test,
  * unless a test installs a hook for the call it drives: dup_pool_test.c
- * hooks find_local_object_by_fd() and get_objhead().
+ * hooks find_local_object_by_fd() and get_objhead(), maps_name_test.c
+ * alloc_object() and add_object().
  */
 
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "fake_objects.h"
 #include "name-pool.h"
 #include "objects.h"
 #include "prop_ring.h"
@@ -18,12 +20,32 @@
 
 struct object *(*fake_find_local_object_by_fd)(enum objecttype type, int fd);
 struct objhead *(*fake_get_objhead)(enum obj_scope scope, enum objecttype type);
+struct object *(*fake_alloc_object)(void);
+void (*fake_add_object)(struct object *obj, enum obj_scope scope,
+			enum objecttype type);
 
+/* The real alloc_object() of objects/registry.c, unless a test hooks it. */
+struct object *__real_alloc_object(void);
 struct object *__wrap_alloc_object(void);
 struct object *__wrap_alloc_object(void)
 {
-	fprintf(stderr, "fake alloc_object called unexpectedly\n");
-	abort();
+	if (fake_alloc_object != NULL)
+		return fake_alloc_object();
+	return __real_alloc_object();
+}
+
+/* The real add_object() is not linked: unhooked, this is the fake below. */
+void __real_add_object(struct object *obj, enum obj_scope scope,
+		       enum objecttype type);
+void __wrap_add_object(struct object *obj, enum obj_scope scope,
+		       enum objecttype type);
+void __wrap_add_object(struct object *obj, enum obj_scope scope,
+		       enum objecttype type)
+{
+	if (fake_add_object != NULL)
+		fake_add_object(obj, scope, type);
+	else
+		__real_add_object(obj, scope, type);
 }
 
 void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)

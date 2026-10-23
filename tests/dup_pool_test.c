@@ -2363,7 +2363,7 @@ static void open_result_is_pooled_by_kind(void)
 }
 
 /* A RET_FD retval naming a protected number is not registered; the fake
- * alloc_object() aborts if it is. */
+ * set_object_fd() aborts if it is. */
 static void retfd_registration_skips_protected_numbers(void)
 {
 	struct syscallentry entry = { .name = "retfd" };

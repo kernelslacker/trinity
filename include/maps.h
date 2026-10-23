@@ -13,6 +13,15 @@
 
 struct map {
 	void *ptr;
+	/*
+	 * OBJ_GLOBAL: owns an alloc_shared_str() string, which
+	 * map_destructor_shared() frees.  OBJ_LOCAL: borrows the string of
+	 * the global entry it was cloned from, or a static one, and
+	 * map_destructor() never frees it.  Nothing dereferences a borrowed
+	 * name once add_object() has returned (map_dump() prints it at -vv,
+	 * from add_object()), so the global entry may be destroyed first,
+	 * and nothing writes through one.
+	 */
 	char *name;
 	/*
 	 * size:         consumer-walkable extent (post-clamp).  Fuzzed picks

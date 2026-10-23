@@ -113,11 +113,12 @@ LDFLAGS		+= -Wl,--wrap=fill_arg
 # stand-in a test installs its pools through.
 LDFLAGS		+= -Wl,--wrap=get_objhead
 
-# alloc_object() stand-in: objects/registry.c is linked for the pool
-# readers, and dispatch/syscall-retfd.c calls its alloc_object(), which a
-# protected-fd retval must never reach.  fake_objects.c wraps it with a
-# stand-in that aborts.
-LDFLAGS		+= -Wl,--wrap=alloc_object
+# alloc_object() and add_object() hooks: the pool clones in
+# mm/maps-lifecycle.c would otherwise take their objects from, and put them
+# into, the object registry.  fake_objects.c wraps both; a test sets
+# fake_alloc_object or fake_add_object to take the call, and unset the
+# calls go to the real alloc_object() and to the fake add_object().
+LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +

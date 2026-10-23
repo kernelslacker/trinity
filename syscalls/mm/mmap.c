@@ -13,7 +13,6 @@
 #include "shm.h"
 #include "arch.h"
 #include "utils.h"
-#include "deferred-free.h"
 #include "hugepages.h"
 #include "objects.h"
 #include "random.h"
@@ -409,6 +408,9 @@ static void post_mmap_oracle_proc_maps(char *p, struct syscallrecord *rec)
 	}
 }
 
+/* Every runtime mapping's pool entry borrows this name (see struct map). */
+static char misc_name[] = "misc";
+
 static void post_mmap(struct syscallrecord *rec)
 {
 	char *p;
@@ -425,11 +427,7 @@ static void post_mmap(struct syscallrecord *rec)
 	is_anon = !!(rec->a4 & MAP_ANONYMOUS);
 
 	new = alloc_object();
-	new->map.name = strdup("misc");
-	if (!new->map.name) {
-		tracked_free_now(new);
-		return;
-	}
+	new->map.name = misc_name;
 	new->map.size = rec->a2;
 	/*
 	 * map.size is the consumer-walkable extent and gets clamped below
