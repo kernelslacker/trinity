@@ -16,24 +16,6 @@
 #include "utils.h"
 
 #include "kernel/io_uring.h"
-#ifndef IORING_SETUP_IOPOLL
-#define IORING_SETUP_IOPOLL	(1U << 0)
-#endif
-#ifndef IORING_SETUP_SQPOLL
-#define IORING_SETUP_SQPOLL	(1U << 1)
-#endif
-#ifndef IORING_SETUP_CQSIZE
-#define IORING_SETUP_CQSIZE	(1U << 3)
-#endif
-#ifndef IORING_SETUP_CLAMP
-#define IORING_SETUP_CLAMP	(1U << 4)
-#endif
-#ifndef IORING_SETUP_SINGLE_ISSUER
-#define IORING_SETUP_SINGLE_ISSUER	(1U << 12)
-#endif
-#ifndef IORING_SETUP_DEFER_TASKRUN
-#define IORING_SETUP_DEFER_TASKRUN	(1U << 13)
-#endif
 
 /* Offsets within the mmap'd SQ ring where key fields live. */
 struct trinity_sqring_offsets {

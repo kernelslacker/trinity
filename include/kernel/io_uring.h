@@ -19,6 +19,74 @@
  */
 #include <linux/io_uring.h>
 
+/*
+ * io_uring_setup() flags.  One guard per flag: they landed across many
+ * releases, so a header can carry the early bits without the later ones.
+ */
+#ifndef IORING_SETUP_IOPOLL
+#define IORING_SETUP_IOPOLL		(1U << 0)
+#endif
+#ifndef IORING_SETUP_SQPOLL
+#define IORING_SETUP_SQPOLL		(1U << 1)
+#endif
+#ifndef IORING_SETUP_SQ_AFF
+#define IORING_SETUP_SQ_AFF		(1U << 2)
+#endif
+#ifndef IORING_SETUP_CQSIZE
+#define IORING_SETUP_CQSIZE		(1U << 3)
+#endif
+#ifndef IORING_SETUP_CLAMP
+#define IORING_SETUP_CLAMP		(1U << 4)
+#endif
+#ifndef IORING_SETUP_ATTACH_WQ
+#define IORING_SETUP_ATTACH_WQ		(1U << 5)
+#endif
+#ifndef IORING_SETUP_R_DISABLED
+#define IORING_SETUP_R_DISABLED		(1U << 6)
+#endif
+#ifndef IORING_SETUP_SUBMIT_ALL
+#define IORING_SETUP_SUBMIT_ALL		(1U << 7)
+#endif
+#ifndef IORING_SETUP_COOP_TASKRUN
+#define IORING_SETUP_COOP_TASKRUN	(1U << 8)
+#endif
+#ifndef IORING_SETUP_TASKRUN_FLAG
+#define IORING_SETUP_TASKRUN_FLAG	(1U << 9)
+#endif
+#ifndef IORING_SETUP_SQE128
+#define IORING_SETUP_SQE128		(1U << 10)
+#endif
+#ifndef IORING_SETUP_CQE32
+#define IORING_SETUP_CQE32		(1U << 11)
+#endif
+#ifndef IORING_SETUP_SINGLE_ISSUER
+#define IORING_SETUP_SINGLE_ISSUER	(1U << 12)
+#endif
+#ifndef IORING_SETUP_DEFER_TASKRUN
+#define IORING_SETUP_DEFER_TASKRUN	(1U << 13)
+#endif
+#ifndef IORING_SETUP_NO_MMAP
+#define IORING_SETUP_NO_MMAP		(1U << 14)
+#endif
+#ifndef IORING_SETUP_REGISTERED_FD_ONLY
+#define IORING_SETUP_REGISTERED_FD_ONLY	(1U << 15)
+#endif
+#ifndef IORING_SETUP_NO_SQARRAY
+#define IORING_SETUP_NO_SQARRAY		(1U << 16)
+#endif
+#ifndef IORING_SETUP_HYBRID_IOPOLL
+#define IORING_SETUP_HYBRID_IOPOLL	(1U << 17)
+#endif
+#ifndef IORING_SETUP_CQE_MIXED
+#define IORING_SETUP_CQE_MIXED		(1U << 18)
+#endif
+#ifndef IORING_SETUP_SQE_MIXED
+#define IORING_SETUP_SQE_MIXED		(1U << 19)
+#endif
+#ifndef IORING_SETUP_SQ_REWIND
+#define IORING_SETUP_SQ_REWIND		(1U << 20)
+#endif
+
 /* Opcodes added after our system headers — guard with #ifndef. */
 #ifndef IORING_REGISTER_PBUF_STATUS
 #define IORING_REGISTER_PBUF_STATUS	26
