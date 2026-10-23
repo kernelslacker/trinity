@@ -39,7 +39,7 @@
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_fchdir, syscall_fchroot */
 #include "tmpdir.h"		/* change_tmp_dir */
-#include "utils.h"		/* get_num_fds, shared_region_size_for */
+#include "utils.h"		/* get_num_fds */
 
 /* Owned by main/params/, which the test binary does not link. */
 bool dry_run;
@@ -70,8 +70,9 @@ void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr)
 void validator_rejected_bump(void) { }
 
 /*
- * What validate_arg_coupling() reaches.  Nothing is tracked in the test
- * binary, so no base has an extent to clamp a length to.
+ * What validate_arg_coupling() reaches.  Nothing is tracked unless a test
+ * registers a region with fake_track_region(), so no base has an extent to
+ * clamp a length to here.
  */
 unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 {
@@ -83,12 +84,6 @@ unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
 	case 5: return rec->a5;
 	case 6: return rec->a6;
 	}
-	return 0;
-}
-
-unsigned long shared_region_size_for(unsigned long addr)
-{
-	(void)addr;
 	return 0;
 }
 

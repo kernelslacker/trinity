@@ -7,7 +7,7 @@ Decides what value goes in each of a syscall's up to 6 argument slots, given the
 | File | Lines | Role |
 |---|---|---|
 | output-poison.c | 105 | ARG_STRUCT_PTR_OUT canary: `poison_output_struct()` stamps a seed-derived byte pattern pre-call, `check_output_struct()` detects an untouched buffer post-call |
-| arg_coupling.c | 388 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair, the WNOHANG repair of a wait that would block on a child's pid namespace init, and the refusal of a close_range whose slots no longer match the range its sanitiser vetted |
+| arg_coupling.c | 410 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair, the WNOHANG repair of a wait that would block on a child's pid namespace init, the zeroing of an madvise range that reaches trinity's own regions or the libc heap, and the refusal of a close_range whose slots no longer match the range its sanitiser vetted |
 | valresult.c | 82 | Value-result buffer shaping (getsockopt/recv-style len-io pairs): EXACT/UNDER/OVER/HUGE/ZERO cap distribution |
 | csfu.c | 159 | `copy_struct_from_user()`-shaped struct builder: 5-bucket usize distribution (EXACT/UNDERSIZE/OVERSIZE_ZERO/OVERSIZE_NONZERO/TAIL_MISMATCH) plus in-band size-field fixup |
 | struct_validate.c | 166 | One-shot (first-fill-gated) startup validator: walks every struct_catalog fields[] array checking FT_LEN_* buf_fields siblings agree on FT_PTR_BYTES/ARRAY tag and unit; BUG()s on authoring mistakes. Entry point `struct_field_fill_schema_aware()` also lives here |

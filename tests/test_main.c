@@ -54,6 +54,7 @@ void minicorpus_abi_self_check(void);
 void chain_corpus_self_check(void);
 void corpus_replay_class_self_check(void);
 void redqueen_pin_self_check(void);
+void arg_coupling_self_check(void);
 void asb_relocate_self_check(void);
 void loop_status_self_check(void);
 void ioctl_sanitise_self_check(void);
@@ -260,6 +261,11 @@ int main(int argc, char **argv)
 	printf("  redqueen_pin_self_check ... ");
 	fflush(stdout);
 	redqueen_pin_self_check();
+	printf("OK\n");
+
+	printf("  arg_coupling_self_check ... ");
+	fflush(stdout);
+	arg_coupling_self_check();
 	printf("OK\n");
 
 	printf("  asb_relocate_self_check ... ");

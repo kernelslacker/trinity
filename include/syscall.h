@@ -632,6 +632,14 @@ struct syscallentry {
 	bool is_close_range;
 
 	/*
+	 * Cached identity of madvise, set at table init so
+	 * validate_arg_coupling() can keep its (addr, len) off trinity's
+	 * own regions on the slots the kernel will read.  Next to
+	 * is_close_range, in the same alignment hole.
+	 */
+	bool is_madvise;
+
+	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls

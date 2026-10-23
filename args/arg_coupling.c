@@ -27,9 +27,10 @@
  *
  * Some per-syscall rules ride on the same final values, for what a
  * sanitiser got right and a later rewrite (chain substitution, a RedQueen
- * pin) can undo: an fcntl F_SETSIG signal and a wait that would block on
- * a child's pid namespace init are repaired in place, and a close_range
- * whose slots no longer match the range its sanitiser vetted is refused.
+ * pin) can undo: an fcntl F_SETSIG signal, a wait that would block on a
+ * child's pid namespace init and an madvise range that reaches trinity's
+ * own regions are repaired in place, and a close_range whose slots no
+ * longer match the range its sanitiser vetted is refused.
  *
  * Callers see three counters: STATS_FIELD_VALIDATOR_REJECTED (via the
  * -1 return), STATS_FIELD_ARG_CONSTRAINT_REPAIRED (per clamp), and
@@ -48,6 +49,7 @@
 #include "syscall.h"
 #include "trinity.h"
 #include "utils-mem.h"		/* range_in_tracked_shared, range_readable_user,
+				 * range_overlaps_shared, range_overlaps_libc_heap,
 				 * shared_region_size_for */
 
 /*
@@ -356,6 +358,26 @@ int validate_arg_coupling(struct syscallrecord *rec)
 		outputerr("arg-coupling: %s rejected: the slots are not the range sanitise vetted\n",
 			  entry->name);
 		return -1;
+	}
+
+	/*
+	 * madvise: sanitise_madvise() zeroes an (addr, len) that overlaps
+	 * one of trinity's own regions or the libc heap.  The regions are
+	 * MAP_SHARED anonymous memory, shmem underneath, and MADV_REMOVE
+	 * punches a hole through the backing file of whatever it covers, so
+	 * the pages go for every child that maps them.  A chain
+	 * substitution can put a return value in len and a RedQueen pin a
+	 * kernel constant in either slot, which leaves the kernel reading a
+	 * range nobody vetted.  Repaired as the sanitiser does, on the final
+	 * slots like F_SETSIG above; the advice stays, so a REMOVE that
+	 * lands here reaches the kernel as an empty range.
+	 */
+	if (entry->is_madvise &&
+	    (range_overlaps_shared(rec->a1, rec->a2) ||
+	     range_overlaps_libc_heap(rec->a1, rec->a2))) {
+		rec->a1 = 0;
+		rec->a2 = 0;
+		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
 	}
 
 	/*

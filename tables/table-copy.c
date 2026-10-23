@@ -155,6 +155,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 					   strcmp(copy[m].name, "waitpid") == 0);
 		copy[m].is_waitid = (strcmp(copy[m].name, "waitid") == 0);
 		copy[m].is_close_range = (strcmp(copy[m].name, "close_range") == 0);
+		copy[m].is_madvise = (strcmp(copy[m].name, "madvise") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 		copy[m].address_scrub_mask = compute_address_scrub_mask(&copy[m]);
 		/*

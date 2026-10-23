@@ -202,7 +202,9 @@ REAL_SRCS	:= \
 # __do_syscall() and do_extrafork() it routes to, which
 # dispatch_extrafork_test.c drives with the kcov bracket and the other calls
 # the live path reaches faked.  args/arg_coupling.c brings the coupling
-# validator __do_syscall() runs on the final argument slots.
+# validator __do_syscall() runs on the final argument slots;
+# arg_coupling_test.c drives its per-syscall rules over the regions
+# fake_shm.c is told to track.
 # tables/tables.c brings deactivate_extrafork_syscalls(), which
 # tables_extrafork_test.c drives over fake tables with the deactivation
 # it makes faked.
@@ -376,6 +378,7 @@ FAKE_SRCS	:= \
 	fake_arg_gens.c \
 	corpus_replay_class_test.c \
 	redqueen_pin_test.c \
+	arg_coupling_test.c \
 	asb_relocate_test.c \
 	fake_ioctls.c \
 	loop_status_test.c \

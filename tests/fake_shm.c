@@ -28,6 +28,7 @@
  * exist solely so the seam links and future fixture TUs can be added
  * without mixing link fixes into test logic.
  */
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -86,20 +87,75 @@ void untrack_shared_region(unsigned long addr, unsigned long size)
 	(void)addr; (void)size;
 }
 
-/* What range_overlaps_shared() answers.  Nothing is tracked in the test
- * binary, so it says no unless a test wants a range reported as one. */
+/* What range_overlaps_shared() and shared_region_size_for() answer.
+ * Nothing is tracked in the test binary, so the first says no and the
+ * second 0 unless a test wants a range reported as shared or registers a
+ * region with fake_track_region(). */
 bool fake_overlaps_shared;
+bool fake_overlaps_libc_heap;
 
+static struct {
+	unsigned long addr;
+	unsigned long size;
+} fake_regions[4];
+static unsigned int fake_nr_regions;
+
+void fake_track_region(unsigned long addr, unsigned long size);
+void fake_track_region(unsigned long addr, unsigned long size)
+{
+	if (fake_nr_regions < sizeof(fake_regions) / sizeof(fake_regions[0])) {
+		fake_regions[fake_nr_regions].addr = addr;
+		fake_regions[fake_nr_regions].size = size;
+		fake_nr_regions++;
+	}
+}
+
+void fake_untrack_regions(void);
+void fake_untrack_regions(void)
+{
+	fake_nr_regions = 0;
+}
+
+/* The production test: a wrapped range counts as overlapping, an empty one
+ * only when its address lies strictly inside a region. */
 bool range_overlaps_shared(unsigned long addr, unsigned long len)
 {
-	(void)addr; (void)len;
-	return fake_overlaps_shared;
+	unsigned int i;
+
+	if (fake_overlaps_shared)
+		return true;
+	if (len != 0 && addr > ULONG_MAX - len)
+		return true;
+
+	for (i = 0; i < fake_nr_regions; i++) {
+		unsigned long rstart = fake_regions[i].addr;
+		unsigned long rend = rstart + fake_regions[i].size;
+
+		if (len == 0 ? (addr >= rstart && addr < rend)
+			     : (addr < rend && rstart < addr + len))
+			return true;
+	}
+	return false;
+}
+
+unsigned long shared_region_size_for(unsigned long addr)
+{
+	unsigned int i;
+
+	for (i = 0; i < fake_nr_regions; i++) {
+		unsigned long rstart = fake_regions[i].addr;
+		unsigned long rsize = fake_regions[i].size;
+
+		if (addr >= rstart && addr < rstart + rsize)
+			return rsize - (addr - rstart);
+	}
+	return 0;
 }
 
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
 	(void)addr; (void)len;
-	return false;
+	return fake_overlaps_libc_heap;
 }
 
 bool is_in_glibc_heap(const void *p)
