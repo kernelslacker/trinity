@@ -136,8 +136,9 @@ static struct syscallrecord rec;
 
 /* The entries that set buf_count_slot whose TUs this binary links, with the
  * slot the kernel's own signature puts the count in; the buffer is the slot
- * before it.  getrandom's sanitiser needs the OBJ_MMAP pools, so its shape
- * is built by hand below. */
+ * before it.  getrandom's, recv's and recvfrom's sanitisers take a map
+ * handle there instead: getrandom's shape is built by hand below, and
+ * recv_count_held_inside_buffer() judges the real recv entries. */
 static struct {
 	struct syscallentry *entry;
 	unsigned int slot;
@@ -256,6 +257,39 @@ static void vetted_count_kept(struct syscallentry *entry, unsigned int slot,
 		    *slot_of(slot - 1) != buf || *slot_of(slot) != count)
 			BUG("arg coupling: a count the sanitiser sized was rewritten");
 	}
+}
+
+/* recv and recvfrom fill the buffer their sanitiser makes of the ARG_MMAP
+ * handle with as much as the socket holds, up to the count, so the count
+ * is held inside the buffer's region as getrandom's is: one running from
+ * a tracked region into the next is cut to the region's end, one inside
+ * it is kept, and one from an untracked buffer that reaches a region is
+ * cut to 0.  The rule judges the final slots, so no sanitiser runs. */
+static void recv_count_held_inside_buffer(void)
+{
+	struct syscallentry *const entries[] = {
+		&syscall_recv, &syscall_recvfrom,
+	};
+	const unsigned long tail = 0x800, end = REGION + REGION_SIZE;
+	unsigned int e;
+
+	fake_untrack_regions();
+	fake_track_region(REGION, REGION_SIZE);
+	fake_track_region(end, 0x10000);
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		if (entries[e]->buf_count_slot != 3 ||
+		    entry_check_status(entries[e]) != 0)
+			BUG("recv: the count slot is not named, or sanity_check_tables() refuses it");
+		if (count_after(entries[e], 3, end - tail, 0x7ffff000UL) != tail)
+			BUG("recv: a count running past the buffer's region was kept");
+		if (count_after(entries[e], 3, end - tail, tail) != tail)
+			BUG("recv: a count inside the buffer's region was cut");
+		fake_overlaps_shared = true;
+		if (count_after(entries[e], 3, 0x10000000UL, 0x4000) != 0)
+			BUG("recv: an untracked buffer reaching a region kept its count");
+		fake_overlaps_shared = false;
+	}
+	fake_untrack_regions();
 }
 
 /* The count is cut where the write would leave the buffer's region for
@@ -1240,6 +1274,7 @@ static void madvise_held(void)
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
+	recv_count_held_inside_buffer();
 	shmat_remap_held_to_mapping();
 	get_mempolicy_addr_names_mapping();
 	recv_buffer_names_mapping();

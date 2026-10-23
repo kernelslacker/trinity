@@ -222,6 +222,8 @@ struct syscallentry syscall_recv = {
 	/* size (a3) and flags (a4): the dispatch-time values post_recv()
 	 * bounds the return with. */
 	.arg_snapshot_mask = (1u << 2) | (1u << 3),
+	/* ubuf takes as much as the socket holds, up to size. */
+	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -243,6 +245,7 @@ struct syscallentry syscall_recvfrom = {
 	.post = post_recvfrom,
 	/* size (a3) and flags (a4), as for recv. */
 	.arg_snapshot_mask = (1u << 2) | (1u << 3),
+	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 

@@ -583,8 +583,7 @@ struct syscallentry {
 	/*
 	 * 1-based slot of the byte count of a call that fills the buffer
 	 * in the slot before it with up to that many bytes, whatever the
-	 * source has to give: read and pread64 from /dev/zero, getrandom,
-	 * the xattr value and list getters, mq_timedreceive.  0 for every
+	 * source has to give, as read() from /dev/zero does.  0 for every
 	 * other entry.  The sanitiser sizes the count to the buffer and
 	 * moves the buffer off trinity's regions; validate_arg_coupling()
 	 * keeps a rewritten count from running the write past the buffer
