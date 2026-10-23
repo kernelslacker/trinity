@@ -90,6 +90,11 @@ static const uint32_t bpf_saner_vars[] = {
 	BPF_LD_B, BPF_LD_H, BPF_LD_W, BPF_RET, BPF_ST, BPF_STX,
 };
 
+/* Fallback for headers without AUDIT_ARCH_RISCV64; EM_RISCV is absent there too. */
+#ifndef AUDIT_ARCH_RISCV64
+#define AUDIT_ARCH_RISCV64	(243 | 0x80000000 | 0x40000000)
+#endif
+
 static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 	AUDIT_ARCH_ALPHA, AUDIT_ARCH_ARM, AUDIT_ARCH_ARMEB,
 	AUDIT_ARCH_I386,
@@ -98,12 +103,8 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 	AUDIT_ARCH_PARISC64, AUDIT_ARCH_PPC, AUDIT_ARCH_PPC64, AUDIT_ARCH_S390,
 	AUDIT_ARCH_S390X, AUDIT_ARCH_SH, AUDIT_ARCH_SHEL,
 	AUDIT_ARCH_SPARC, AUDIT_ARCH_SPARC64,
-	AUDIT_ARCH_X86_64,
+	AUDIT_ARCH_X86_64, AUDIT_ARCH_AARCH64, AUDIT_ARCH_RISCV64,
 };
-
-#ifndef AUDIT_ARCH_RISCV64
-#define AUDIT_ARCH_RISCV64	(243 | 0x80000000 | 0x40000000)
-#endif
 
 #if defined(__i386__)
 # define TRUE_REG_SYSCALL	REG_EAX
