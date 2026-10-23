@@ -1,0 +1,74 @@
+# reexec-pointer-write.baseline
+#
+# REEXEC_SANITISE_OK entries whose sanitiser stores a pointer into rec->aN
+# itself (an allocator result or an address-of), listed so a new one is a
+# conscious choice.  Each pointer is fresh per replay: the re-exec runs
+# generate_syscall_args() in full and the inner dispatch_step owns the
+# result (include/syscall.h, above REEXEC_SANITISE_OK).
+#
+# This list only shrinks.  A line fails once its entry stops matching.
+
+syscalls/aio/io_cancel.c:syscall_io_cancel
+syscalls/aio/io_getevents.c:syscall_io_getevents
+syscalls/aio/io_pgetevents.c:syscall_io_pgetevents
+syscalls/aio/io_setup.c:syscall_io_setup
+syscalls/aio/io_submit.c:syscall_io_submit
+syscalls/clock/adjtimex.c:syscall_adjtimex
+syscalls/clock/clock_adjtime.c:syscall_clock_adjtime
+syscalls/clock/settimeofday.c:syscall_settimeofday
+syscalls/clock/stime.c:syscall_stime
+syscalls/concurrency/futex_requeue.c:syscall_futex_requeue
+syscalls/concurrency/futex_wait.c:syscall_futex_wait
+syscalls/concurrency/futex_waitv.c:syscall_futex_waitv
+syscalls/concurrency/rseq.c:syscall_rseq
+syscalls/cred/capget.c:syscall_capget
+syscalls/cred/capset.c:syscall_capset
+syscalls/cred/setgroups.c:syscall_setgroups
+syscalls/fs/mount/listmount.c:syscall_listmount
+syscalls/fs/mount/mount.c:syscall_mount
+syscalls/fs/path/name_to_handle_at.c:syscall_name_to_handle_at
+syscalls/fs/pipe.c:syscall_pipe
+syscalls/fs/pipe.c:syscall_pipe2
+syscalls/fs/read.c:syscall_read
+syscalls/fs/stat/cachestat.c:syscall_cachestat
+syscalls/fs/stat/sysfs.c:syscall_sysfs
+syscalls/fs/timestamp/futimesat.c:syscall_futimesat
+syscalls/fs/timestamp/utimensat.c:syscall_utimensat
+syscalls/ioctl.c:syscall_ioctl
+syscalls/ipc/sysv/semop.c:syscall_semop
+syscalls/ipc/sysv/semtimedop.c:syscall_semtimedop
+syscalls/kexec/kexec_load.c:syscall_kexec_load
+syscalls/keyctl/add_key.c:syscall_add_key
+syscalls/keyctl/request_key.c:syscall_request_key
+syscalls/landlock/landlock_add_rule.c:syscall_landlock_add_rule
+syscalls/lsm/lsm_get_self_attr.c:syscall_lsm_get_self_attr
+syscalls/lsm/lsm_set_self_attr.c:syscall_lsm_set_self_attr
+syscalls/mm/numa/mbind.c:syscall_mbind
+syscalls/mq/mq_getsetattr.c:syscall_mq_getsetattr
+syscalls/mq/mq_notify.c:syscall_mq_notify
+syscalls/mq/mq_open.c:syscall_mq_open
+syscalls/mq/mq_timedreceive.c:syscall_mq_timedreceive
+syscalls/mq/mq_unlink.c:syscall_mq_unlink
+syscalls/poll/poll.c:syscall_ppoll
+syscalls/poll/pselect6.c:syscall_pselect6
+syscalls/poll/select.c:syscall_select
+syscalls/process/listns.c:syscall_listns
+syscalls/process/prlimit64.c:syscall_prlimit64
+syscalls/process/ptrace.c:syscall_ptrace
+syscalls/process/setrlimit.c:syscall_setrlimit
+syscalls/quota/quotactl.c:syscall_quotactl
+syscalls/sched/sched_getaffinity.c:syscall_sched_getaffinity
+syscalls/sched/sched_setparam.c:syscall_sched_setparam
+syscalls/sched/sched_setscheduler.c:syscall_sched_setscheduler
+syscalls/signal/rt_sigqueueinfo.c:syscall_rt_sigqueueinfo
+syscalls/signal/rt_sigtimedwait.c:syscall_rt_sigtimedwait
+syscalls/signal/rt_tgsigqueueinfo.c:syscall_rt_tgsigqueueinfo
+syscalls/signal/sigaltstack.c:syscall_sigaltstack
+syscalls/signal/signalfd.c:syscall_signalfd
+syscalls/signal/signalfd.c:syscall_signalfd4
+syscalls/socket/getpeername.c:syscall_getpeername
+syscalls/socket/getsockname.c:syscall_getsockname
+syscalls/socket/recv.c:syscall_recvfrom
+syscalls/socket/socketpair.c:syscall_socketpair
+syscalls/timer/timer_create.c:syscall_timer_create
+syscalls/timer/timerfd_settime.c:syscall_timerfd_settime

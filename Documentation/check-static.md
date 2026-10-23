@@ -103,6 +103,14 @@ update this section to match `ls scripts/check-static/*.sh`.)
   lines for an entry that is annotated or whose file never sets
   `REEXEC_OK`.
 
+- `reexec-pointer-write`: a `REEXEC_SANITISE_OK` entry whose sanitiser
+  (found by name in the entry's own file) stores a pointer into `rec->aN`
+  -- an allocator result (`get_writable_*`, `get_address`, `zmalloc`...)
+  or an address-of -- must be listed in
+  `scripts/check-static/reexec-pointer-write.baseline`.  The baseline
+  only shrinks.  The scan is textual and line-based, with a self-test on
+  a planted tree.
+
 - `check-stats-reachable`: every scalar in the `struct stats_s` tree -- the
   flat members and every leaf of the nested `stats/subsys/*.h` structs --
   must have a `STAT_FIELD*()` descriptor row, a consumer read (a producer
