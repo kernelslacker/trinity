@@ -1,17 +1,8 @@
 /*
  * Per-child clean-slate helpers: coredump toggles, fault-injection fd
  * setup (make-it-fail, fail-nth), the tainted-mask fd, an FPU dirtier,
- * and the per-slot occupant reset run when a fresh child moves into a
- * childdata slot.  Split out of child-init.c so make -j can compile
- * the reset path concurrently with the sandbox / freeze / runtime
- * setup helpers.
- *
- * set_make_it_fail, open_fail_nth, open_tainted_fd, and use_fpu shed
- * their `static` linkage here so init_child_setup_sandbox (now in
- * child-init-sandbox.c) can reach them across the TU boundary;
- * declarations are in include/child-internal.h.
- * disable_coredumps, read_tainted_mask, and clean_childdata were
- * already exposed via child-internal.h / child-api.h.
+ * and clean_childdata(), the per-slot occupant reset run when a fresh
+ * child moves into a childdata slot.
  */
 
 #include <errno.h>
@@ -130,26 +121,18 @@ void set_make_it_fail(void)
 }
 
 /*
- * Open /proc/self/fail-nth so we can later arm allocation-failure injection
- * for individual syscalls.  Requires CONFIG_FAULT_INJECTION (and typically
- * CONFIG_FAILSLAB / CONFIG_FAIL_PAGE_ALLOC) on the running kernel; the
- * actual failslab=N tunable must be set up out-of-band via debugfs.
- *
- * If the open fails (kernel built without fault injection, perms, etc.)
- * leave fail_nth_fd at -1 so all later code becomes a no-op, and remember
- * the result in shm so siblings stop probing too.
+ * Open /proc/self/fail-nth, the switch that fails the Nth fault-injectable
+ * call of the calling task.  Needs CONFIG_FAULT_INJECTION; the failslab
+ * debugfs knobs are set up out-of-band.  If the open fails, fail_nth_fd
+ * stays -1 and every later use is a no-op.
  */
 void open_fail_nth(struct childdata *child)
 {
 	int fd;
 
-	/* Shared latch: load atomically so a sibling that already proved
-	 * the open() impossible (kernel built without CONFIG_FAULT_INJECTION,
-	 * /proc not mounted, etc.) is observed without relying on tearing-
-	 * free plain reads.  The store is __atomic_store_n rather than
-	 * __atomic_exchange_n because the transition has no observable side
-	 * effect beyond the bool itself -- there is no log to gate on the
-	 * first failer, unlike no_private_ns. */
+	/* Shared latch: once one child finds the open impossible the rest
+	 * stop probing.  A plain store suffices where no_private_ns needs an
+	 * exchange: there is no log to gate on the first failer. */
 	if (__atomic_load_n(&shm->no_fail_nth, __ATOMIC_RELAXED))
 		return;
 
