@@ -152,6 +152,60 @@ classify_strategy_return_class(const struct syscallrecord *rec)
 }
 
 /*
+ * PC mode: per-child kcov fd collects edge coverage, optionally
+ * via KCOV_REMOTE_ENABLE to also pick up softirq / threaded-irq /
+ * kthread coverage triggered by this syscall.  CMP mode: per-child
+ * cmp fd collects comparison-operand records that feed the
+ * cmp_hints pool.  Mode is fixed at child init; remote_mode is
+ * only meaningful in PC mode (KCOV_REMOTE_ENABLE applies to the PC
+ * fd, not the cmp fd).
+ *
+ * Sample rate is per-syscall: calls whose interesting kernel work
+ * is deferred to kthreads / workqueues / softirqs (netlink async
+ * delivery, io_uring workers, BPF attach, mount workqueues, cgroup
+ * migration, namespace setup) are flagged with KCOV_REMOTE_HEAVY
+ * and sampled at the heavier 1-in-KCOV_REMOTE_RATIO_HEAVY rate so
+ * those deferred-work edges don't get stuck cold; everything else
+ * uses the default 1-in-KCOV_REMOTE_RATIO trickle.
+ */
+static void decide_remote_mode(struct childdata *child,
+			       struct syscallentry *entry,
+			       struct syscallrecord *rec)
+{
+	if (child->kcov.mode == KCOV_MODE_PC) {
+		/* When the kernel did not let this child enable KCOV_REMOTE,
+		 * neither the static nor the adaptive policy can flip
+		 * remote_mode true.  Match the historical short-circuit
+		 * (which never invoked ONE_IN in that case) exactly so the
+		 * caller's RNG stream stays byte-identical to the pre-row
+		 * baseline for non-capable children. */
+		if (!child->kcov.remote_capable) {
+			child->kcov.remote_mode = false;
+		} else {
+			unsigned int remote_reciprocal =
+				(entry->flags & KCOV_REMOTE_HEAVY) ?
+					KCOV_REMOTE_RATIO_HEAVY :
+					KCOV_REMOTE_RATIO;
+			bool static_remote = ONE_IN(remote_reciprocal);
+			/* The adaptive helper bumps shadow counters in
+			 * lock-step from both A/B arms so the would-be
+			 * divergence stays observable on Arm A (the control
+			 * cohort) too.  Arm A then discards the adaptive
+			 * disposition and runs the static decision so its
+			 * live remote_mode is byte-identical to the pre-row
+			 * baseline; Arm B substitutes the adaptive
+			 * disposition as the live remote_mode. */
+			bool adaptive_remote = remote_adaptive_decide(
+				rec->nr, entry, static_remote);
+			child->kcov.remote_mode = child->remote_adaptive_arm_b ?
+				adaptive_remote : static_remote;
+		}
+	} else {
+		child->kcov.remote_mode = false;
+	}
+}
+
+/*
  * --blob-ab-mode: within-run A/B attribution.  When this
  * call had a blob_fill() and the flag is on, blob_fill
  * stashed the coin-flipped mode (HAVOC vs CMPDICT) on
@@ -527,52 +581,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	output_syscall_prefix(rec, entry);
 
-	/* PC mode: per-child kcov fd collects edge coverage, optionally
-	 * via KCOV_REMOTE_ENABLE to also pick up softirq / threaded-irq /
-	 * kthread coverage triggered by this syscall.  CMP mode: per-child
-	 * cmp fd collects comparison-operand records that feed the
-	 * cmp_hints pool.  Mode is fixed at child init; remote_mode is
-	 * only meaningful in PC mode (KCOV_REMOTE_ENABLE applies to the PC
-	 * fd, not the cmp fd).
-	 *
-	 * Sample rate is per-syscall: calls whose interesting kernel work
-	 * is deferred to kthreads / workqueues / softirqs (netlink async
-	 * delivery, io_uring workers, BPF attach, mount workqueues, cgroup
-	 * migration, namespace setup) are flagged with KCOV_REMOTE_HEAVY
-	 * and sampled at the heavier 1-in-KCOV_REMOTE_RATIO_HEAVY rate so
-	 * those deferred-work edges don't get stuck cold; everything else
-	 * uses the default 1-in-KCOV_REMOTE_RATIO trickle. */
-	if (child->kcov.mode == KCOV_MODE_PC) {
-		/* When the kernel did not let this child enable KCOV_REMOTE,
-		 * neither the static nor the adaptive policy can flip
-		 * remote_mode true.  Match the historical short-circuit
-		 * (which never invoked ONE_IN in that case) exactly so the
-		 * caller's RNG stream stays byte-identical to the pre-row
-		 * baseline for non-capable children. */
-		if (!child->kcov.remote_capable) {
-			child->kcov.remote_mode = false;
-		} else {
-			unsigned int remote_reciprocal =
-				(entry->flags & KCOV_REMOTE_HEAVY) ?
-					KCOV_REMOTE_RATIO_HEAVY :
-					KCOV_REMOTE_RATIO;
-			bool static_remote = ONE_IN(remote_reciprocal);
-			/* The adaptive helper bumps shadow counters in
-			 * lock-step from both A/B arms so the would-be
-			 * divergence stays observable on Arm A (the control
-			 * cohort) too.  Arm A then discards the adaptive
-			 * disposition and runs the static decision so its
-			 * live remote_mode is byte-identical to the pre-row
-			 * baseline; Arm B substitutes the adaptive
-			 * disposition as the live remote_mode. */
-			bool adaptive_remote = remote_adaptive_decide(
-				rec->nr, entry, static_remote);
-			child->kcov.remote_mode = child->remote_adaptive_arm_b ?
-				adaptive_remote : static_remote;
-		}
-	} else {
-		child->kcov.remote_mode = false;
-	}
+	decide_remote_mode(child, entry, rec);
 
 	/*
 	 * --self-corrupt-canary sentinel snapshot.  Deeper detector for
