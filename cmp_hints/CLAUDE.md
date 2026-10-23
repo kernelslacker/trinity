@@ -2,7 +2,7 @@
 
 Fuzzer intelligence layer for Trinity. Collects constants the kernel compares syscall-derived values against (KCOV_TRACE_CMP), feeds them back into arg generation to bias inputs toward values likely to pass kernel validation gates.
 
-## Files (14 files, ~6,964 LOC)
+## Files (14 files, ~6,966 LOC)
 
 | File | Lines | Role |
 |---|---|---|

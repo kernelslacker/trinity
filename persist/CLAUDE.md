@@ -7,7 +7,7 @@ a secondary feature, distinct from minicorpus's per-syscall arg snapshots, so it
 sits in `random_syscall/` beside `chain-subst.c` as `chain-corpus.c` /
 `chain-persist.c`.
 
-## Files (13 files, ~4,643 LOC)
+## Files (13 files, ~4,645 LOC)
 
 The deferred-free queue — hold a tracked free for a TTL window so a temporally-overlapping later syscall can still touch the buffer, with the bad-free/UAF safety machinery — is split across `deferred-free*.c`, sharing `include/deferred-free-internal.h`:
 

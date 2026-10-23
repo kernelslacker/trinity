@@ -2,7 +2,7 @@
 
 The layer that decides whether what just happened is a *finding* (a real kernel bug) or *noise* (an expected fuzzing side-effect), and assembles the evidence when it's a finding: signal handling + the child signal-mask policy, the pre-crash/breadcrumb rings that reconstruct what led to a fault, the `/dev/kmsg` scraper and taint-bit watch that catch kernel-side trouble, and the post-mortem dump assembly.
 
-## Files (11 .c files + 1 internal header, ~3,769 LOC)
+## Files (11 .c files + 1 internal header, ~3,773 LOC)
 
 | File | Lines | Role |
 |---|---|---|

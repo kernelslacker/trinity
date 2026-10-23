@@ -2,7 +2,7 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~7,858 LOC)
+## Files (18 files + 2 internal headers, ~7,860 LOC)
 
 The picker, the dispatch tail and the post-dispatch attribution helpers are each
 split one concern per translation unit, and the chain executor is the `chain-*.c`

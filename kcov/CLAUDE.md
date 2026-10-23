@@ -2,7 +2,7 @@
 
 Lower layer of Trinity's coverage-guided fuzzing: per-child KCOV fd lifecycle, PC-edge hashing into a shared bitmap, KCOV_ENABLE/DISABLE ioctl management (including remote/childop brackets), plateau detection, EBADF forensics, and warm-start bitmap persistence across runs. This is the substrate `cmp_hints/` (comparison-operand hint mining, documented separately in `cmp_hints/CLAUDE.md`) sits on top of.
 
-## Files (10 files + internal header, ~5,365 LOC)
+## Files (10 files + internal header, ~5,367 LOC)
 
 | File | Lines | Role |
 |---|---|---|

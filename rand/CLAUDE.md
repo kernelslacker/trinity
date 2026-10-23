@@ -7,7 +7,7 @@ content-aware text payload generation. Everything downstream (args/,
 struct_catalog/, mm/, syscalls/, childops/) draws its randomness through
 this directory rather than calling libc rand() directly.
 
-## Files (10 files, ~3,078 LOC)
+## Files (10 files, ~3,086 LOC)
 
 | File | Lines | Role |
 |---|---|---|

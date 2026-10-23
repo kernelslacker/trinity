@@ -2,7 +2,7 @@
 
 Two independent, uncoupled program generators for the socket/seccomp/BPF surface, plus the classic-BPF disassembler and the AF_XDP umem tracker. Distinct from `net/proto/`: those *attach* these programs (socket filters, XDP); this dir *generates* them.
 
-## Files (10 .c files + 2 internal headers, ~2,331 LOC)
+## Files (10 .c files + 2 internal headers, ~2,338 LOC)
 
 The eBPF generator spans `ebpf-*.c`, one tier (and one shared concern)
 per translation unit, behind `ebpf-internal.h`.

@@ -2,7 +2,7 @@
 
 Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects), deliberate page-fault injection (read and write), mlock/memlock accounting, initial-mapping and image-segment bookkeeping, and hugepage size-encoding helpers. This is the layer that hands out addresses/lengths for ARG_ADDRESS/ARG_MMAP args and then actively touches the memory behind them to trigger kernel fault paths.
 
-## Files (11 files + internal header, ~3,128 LOC)
+## Files (11 files + internal header, ~3,133 LOC)
 
 | File | Lines | Role |
 |---|---|---|
