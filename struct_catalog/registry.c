@@ -74,7 +74,8 @@ const struct syscall_struct_arg_group syscall_struct_arg_groups[] = {
 /*
  * Per-slot discriminated variant cap.  setsockopt arg4 accretes one
  * binding per cataloged (level, optname) optval shape, and the SCTP
- * shapes alone are most of what fills it.  Init BUG()s on overflow, so
+ * shapes alone are most of what fills it: 30 today with every optional
+ * family compiled in, against a cap of 64.  Init BUG()s on overflow, so
  * the cap MUST be raised before the rows that need it -- a deferred
  * bump turns the first registration past it into a hard boot failure.
  */
@@ -89,15 +90,16 @@ struct slot_binding {
 /*
  * Slot-binding pool.  A registered row takes at most one cell per arch
  * table, and rows for the same (nr, arg) slot share it, so twice the
- * row count bounds the pool on any arch.  The ~40 rows cover 11
- * distinct (syscall, arg) slots, at most 22 cells, far under the pool
- * size.  struct_catalog_init() BUG()s up front when twice the rows no
- * longer fits, so an overgrown table fails on every arch rather than
- * on whichever resolves enough names to overflow it, and BUG()s again
- * if a registration overflows the pool or the per-slot variant cap,
- * rather than silently dropping mappings.
+ * row count bounds the pool on any arch.  The 41 rows (every optional
+ * family compiled in) cover 11 distinct (syscall, arg) slots: at most
+ * 22 cells, and 82 under the up-front bound.  The pool holds about
+ * twice that bound.  struct_catalog_init() BUG()s up front when twice
+ * the rows no longer fits, so an overgrown table fails on every arch
+ * rather than on whichever resolves enough names to overflow it, and
+ * BUG()s again if a registration overflows the pool or the per-slot
+ * variant cap, rather than silently dropping mappings.
  */
-#define SLOT_POOL_MAX			512
+#define SLOT_POOL_MAX			192
 
 static struct slot_binding slot_pool[SLOT_POOL_MAX];
 static unsigned int slot_pool_used;
@@ -137,9 +139,7 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 
 			if (!read_rec_arg(rec, sa->discrim_arg_idx, &raw))
 				continue;
-			if (!discrim_key_matches(raw, sa->discrim_shift,
-						 sa->discrim_mask,
-						 sa->discrim_value,
+			if (!discrim_key_matches(raw, sa->discrim_value,
 						 sa->discrim_values,
 						 sa->num_discrim_values))
 				continue;
@@ -186,13 +186,11 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
 			continue;
 		if (strcmp(sa->syscall_name, name) != 0)
 			continue;
-		if (!discrim_key_matches(k1, sa->discrim_shift, sa->discrim_mask,
-					 sa->discrim_value, sa->discrim_values,
+		if (!discrim_key_matches(k1, sa->discrim_value,
+					 sa->discrim_values,
 					 sa->num_discrim_values))
 			continue;
-		if (!discrim_key_matches(k2, sa->discrim2_shift,
-					 sa->discrim2_mask,
-					 sa->discrim2_value,
+		if (!discrim_key_matches(k2, sa->discrim2_value,
 					 sa->discrim2_values,
 					 sa->num_discrim2_values))
 			continue;

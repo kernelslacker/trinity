@@ -72,9 +72,9 @@ and sctp slots, each wrapped in its own feature guard.
   dispatch like BPF's LINK_CREATE).
 - **`struct syscall_struct_arg`** (rows in `registry/<domain>.c`): `(syscall_name, 1-based
   arg_idx) → struct_desc*`, with an independent, orthogonal discriminator
-  axis for selecting *which descriptor* a slot resolves to (packed
-  shift/mask extraction, single value or value-list, optional second key for
-  two-key dispatch like `setsockopt(level, optname)`). This selects the
+  axis for selecting *which descriptor* a slot resolves to (single value or
+  value-list, optional second key for two-key dispatch like
+  `setsockopt(level, optname)`). This selects the
   descriptor; `struct_desc->variants` then selects the field subset *within*
   it, so a slot can use both axes at once.  `fcntl`'s a3 resolves to `flock`
   or `f_owner_ex` per cmd.
@@ -114,8 +114,8 @@ and sctp slots, each wrapped in its own feature guard.
    every registration group, resolves each `syscall_name` against the active
    syscall table(s) via `search_syscall_table()`, and populates
    `desc_by_nr_64/32[nr][arg_idx-1]` — a `slot_binding` holding one optional
-   default descriptor plus up to `DISCRIM_VARIANTS_PER_SLOT_MAX` (32)
-   discriminated variants in registration order. Both `SLOT_POOL_MAX` (256)
+   default descriptor plus up to `DISCRIM_VARIANTS_PER_SLOT_MAX` (64)
+   discriminated variants in registration order. Both `SLOT_POOL_MAX` (192)
    and the per-slot cap BUG() on overflow rather than silently dropping
    mappings.
 4. Runtime consumers call `struct_arg_lookup(nr, arg_idx, do32bit, rec)` —
@@ -156,19 +156,16 @@ and sctp slots, each wrapped in its own feature guard.
    `struct_desc->variants` picks a *field subset within* an already-chosen
    descriptor (driven by an arg or an in-buffer discriminator like
    `ss_family`). Both can compose on one slot.
-4. **Packed/shifted discriminators.** `discrim_shift`/`discrim_mask` extract a
-   sub-command packed into part of a word before the match.  No row uses
-   them today.
-5. **Two-key dispatch** (`discrim2_arg_idx`) exists specifically for
+4. **Two-key dispatch** (`discrim2_arg_idx`) exists specifically for
    `setsockopt(level, optname)`, where optname values are only unique within
    a level (e.g. `IPV6_TCLASS == IP_TOS == 1`); a single-key match would
    catastrophically misattribute.
-6. **Hard-fail over silent drop.** Every capacity limit in the registry path
+5. **Hard-fail over silent drop.** Every capacity limit in the registry path
    (`SLOT_POOL_MAX`, `DISCRIM_VARIANTS_PER_SLOT_MAX`, catalog holes, slot-shape
    violations) is a `BUG()` at init, not a graceful degrade — a
    misconfiguration is treated as a build-time-class error surfaced at first
    run rather than a silently wrong fuzzing target.
-7. **Config-driven catalog shape.** Optional kernel features (`USE_BPF`,
+6. **Config-driven catalog shape.** Optional kernel features (`USE_BPF`,
    `USE_SCTP`, `USE_TCP_REPAIR_OPT`, many `USE_<AF>` sockaddr families) gate
    both catalog entries and their `SC_X` enum slots identically, so a disabled feature can't leave a
    dangling reference; `struct_catalog-internal.h` mirrors the same guards on

@@ -38,13 +38,11 @@ struct syscallrecord;
  * struct_catalog/variant.c.  Shared with the (nr, arg) registry
  * lookup in struct_catalog/catalog.c so both callers of "match a
  * discriminated syscall_struct_args[] row against a live rec" run
- * the same shift/mask/values extraction.
+ * the same value/values match.
  */
 bool read_rec_arg(const struct syscallrecord *rec,
 		  unsigned int arg_idx, unsigned long *out);
 bool discrim_key_matches(unsigned long raw,
-			 unsigned int shift,
-			 unsigned long mask,
 			 unsigned long value,
 			 const unsigned long *values,
 			 unsigned int num_values);

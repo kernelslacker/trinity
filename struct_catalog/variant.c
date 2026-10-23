@@ -59,30 +59,25 @@ bool read_rec_arg(const struct syscallrecord *rec,
 }
 
 /*
- * Match one discriminator key against a raw input value.  Applies the
- * packed-discriminator extraction (shift then mask, both zero-default
- * to the identity transform), then matches against value or values[].
- * Folded out so key1 and key2 share the extract+match block.
+ * Match one discriminator key against a raw input value: equal to
+ * value, or to any entry of values[] when a list is given.  Folded out
+ * so key1 and key2 share the match block.
  */
 bool discrim_key_matches(unsigned long raw,
-			 unsigned int shift,
-			 unsigned long mask,
 			 unsigned long value,
 			 const unsigned long *values,
 			 unsigned int num_values)
 {
-	unsigned long effective_mask = mask ? mask : ~0UL;
-	unsigned long extracted = (raw >> shift) & effective_mask;
 	unsigned int j;
 
 	if (values != NULL) {
 		for (j = 0; j < num_values; j++) {
-			if (values[j] == extracted)
+			if (values[j] == raw)
 				return true;
 		}
 		return false;
 	}
-	return value == extracted;
+	return value == raw;
 }
 
 /*
@@ -101,8 +96,8 @@ bool discrim_key2_matches(const struct syscall_struct_arg *sa,
 		return true;
 	if (!read_rec_arg(rec, sa->discrim2_arg_idx, &raw))
 		return false;
-	return discrim_key_matches(raw, sa->discrim2_shift, sa->discrim2_mask,
-				   sa->discrim2_value, sa->discrim2_values,
+	return discrim_key_matches(raw, sa->discrim2_value,
+				   sa->discrim2_values,
 				   sa->num_discrim2_values);
 }
 

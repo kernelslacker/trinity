@@ -252,19 +252,6 @@ struct struct_desc {
  * as before.  At most one default per (name, arg_idx); discriminated
  * variants are walked in registration order, first match wins.
  *
- * Packed discriminators: some syscalls pack the discriminator into a
- * single arg alongside an unrelated subfield (e.g. quotactl's a1 is
- * QCMD(subcmd, type) == (subcmd << 8) | (type & 0xff), so the cmd
- * subfield -- the one that actually selects which struct the kernel
- * reads at a4 -- lives in the high bits).  Optional discrim_shift /
- * discrim_mask extract the meaningful subfield before the match:
- * the lookup tests
- *   ((rec->a<discrim_arg_idx> >> discrim_shift) & effective_mask)
- *      == discrim_value (or any discrim_values[] entry)
- * where effective_mask is discrim_mask when set and ~0UL otherwise.
- * Both fields default to zero, which gives the historical exact-match
- * semantics -- all existing registrations stay byte-identical.
- *
  * This is a DIFFERENT axis from the in-buffer struct_desc->variants
  * resolved by struct_desc_resolve_variant(): variants pick a field
  * subset INSIDE an already-chosen descriptor based on a value WITHIN
@@ -282,29 +269,23 @@ struct syscall_struct_arg {
 	unsigned long		  discrim_value;	/* single-value shortcut */
 	const unsigned long	 *discrim_values;	/* multi-value match-list */
 	unsigned int		  num_discrim_values;
-	unsigned int		  discrim_shift;	/* right-shift applied to the raw arg before match (0 = none) */
-	unsigned long		  discrim_mask;		/* AND-mask applied after the shift (0 = no mask, i.e. all bits) */
 	/*
 	 * Optional second discriminator key (symmetric to the first).
 	 * When discrim2_arg_idx != 0 the entry matches iff BOTH key1 and
 	 * key2 match.  Zero-default keeps every pre-extension registration
 	 * byte-identical: a single-key entry leaves all discrim2_* at 0
-	 * and the lookup skips the second extract+compare entirely.
+	 * and the lookup skips the second read+compare entirely.
 	 *
 	 * Designed for the setsockopt (level, optname) shape -- one sibling
 	 * arg picks a level, a second picks an optname inside that level,
 	 * and optname numbers are scoped to level rather than globally
 	 * unique, so a single-key discriminator on optname alone would
 	 * catastrophically misattribute (IPV6_TCLASS == IP_TOS == 1 etc.).
-	 * shift/mask are kept symmetric so a future packed two-key consumer
-	 * (some ioctl families) does not need a third extension.
 	 */
 	unsigned int		  discrim2_arg_idx;	/* 1-based; 0 = single-key */
 	unsigned long		  discrim2_value;
 	const unsigned long	 *discrim2_values;
 	unsigned int		  num_discrim2_values;
-	unsigned int		  discrim2_shift;
-	unsigned long		  discrim2_mask;
 };
 
 /*
@@ -446,8 +427,8 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
  *
  * Walks syscall_struct_args[] for entries matching (name, arg_idx) and
  * returns the first whose (k1, k2) match the entry's
- * (discrim_value/values, discrim2_value/values) under the same
- * shift/mask logic as struct_arg_lookup().  Entries that carry no
+ * (discrim_value/values, discrim2_value/values), the way
+ * struct_arg_lookup() matches a single key.  Entries that carry no
  * second key (discrim2_arg_idx == 0) are skipped here -- this entry
  * point only resolves genuine two-key rows.  Returns NULL on no match.
  */
