@@ -39,6 +39,8 @@
 #include "utils.h"
 
 #include "kernel/netlink.h"
+#include "kernel/nexthop.h"
+#include "kernel/rtnetlink.h"
 
 /* Newer RTM_* types may be missing from older system headers. */
 #ifndef RTM_DELLINKPROP
@@ -253,10 +255,6 @@ const size_t ifa_attrs_n = ARRAY_SIZE(ifa_attrs);
  * nla_parse and the policy check on the receive side of RTM_DELROUTE,
  * and an attr the fuzzer never emits is a policy slot never tested.
  */
-#ifndef RTA_DEL_REASON
-#define RTA_DEL_REASON			32
-#endif
-
 const unsigned short rta_attrs[] = {
 	RTA_DST, RTA_SRC, RTA_IIF, RTA_OIF, RTA_GATEWAY, RTA_PRIORITY,
 	RTA_PREFSRC, RTA_METRICS, RTA_MULTIPATH, RTA_FLOW, RTA_CACHEINFO,
@@ -370,10 +368,6 @@ const size_t tca_attrs_n = ARRAY_SIZE(tca_attrs);
  * e.g. VXLAN.  Only meaningful alongside NHA_FDB, which the table
  * already carries.
  */
-#ifndef NHA_DST_PORT
-#define NHA_DST_PORT			18
-#endif
-
 const unsigned short nha_attrs[] = {
 	NHA_GROUP, NHA_GROUP_TYPE, NHA_BLACKHOLE, NHA_OIF, NHA_GATEWAY,
 	NHA_ENCAP_TYPE, NHA_ENCAP, NHA_GROUPS, NHA_MASTER, NHA_FDB,

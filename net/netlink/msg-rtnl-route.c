@@ -27,20 +27,8 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
-/*
- * 7.3 attrs the payload switches below fill.  Both are enum MEMBERS
- * upstream, so #ifndef is always true and these #defines shadow the
- * real enum rather than falling back to it -- a wrong number here is
- * wrong on every kernel, not just old ones.  Same shape as the shims in
- * msg-tables.c, which is where the matching attr-table entries live;
- * the uapi-shim gate checks both copies against upstream.
- */
-#ifndef RTA_DEL_REASON
-#define RTA_DEL_REASON			32
-#endif
-#ifndef NHA_DST_PORT
-#define NHA_DST_PORT			18
-#endif
+#include "kernel/nexthop.h"
+#include "kernel/rtnetlink.h"
 
 /* Prototypes for external-linkage generators defined below.  Their
  * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
