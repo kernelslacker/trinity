@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include "child-api.h"	/* pidns_init_pid */
 #include "objects.h"
 #include "output-poison.h"
 #include "sanitise.h"
@@ -162,6 +163,21 @@ out_release:
 	post_state_release(rec, snap);
 }
 
+/*
+ * A waitid(P_ALL) that asks for __WALL or __WCLONE finds the child's idle
+ * pid namespace init and blocks on it until the alarm (see
+ * pidns_init_pid), so while the init runs it is made WNOHANG, and the
+ * call is never refused.  The kernel reads the idtype and the options as
+ * ints.
+ */
+static int vet_final_waitid(struct syscallrecord *rec)
+{
+	if (pidns_init_pid > 0 && (int) rec->a1 == P_ALL &&
+	    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))
+		rec->a4 |= WNOHANG;
+	return 0;
+}
+
 struct syscallentry syscall_waitid = {
 	.name = "waitid",
 	.group = GROUP_PROCESS,
@@ -171,6 +187,7 @@ struct syscallentry syscall_waitid = {
 	.arg_params[0].list = ARGLIST(waitid_which),
 	.arg_params[3].list = ARGLIST(waitid_options),
 	.sanitise = sanitise_waitid,
+	.vet_final = vet_final_waitid,
 	.post = post_waitid,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,

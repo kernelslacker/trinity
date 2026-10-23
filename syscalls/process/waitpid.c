@@ -135,6 +135,7 @@ struct syscallentry syscall_waitpid = {
 	.argname = { [0] = "pid", [1] = "stat_addr", [2] = "options" },
 	.arg_params[2].list = ARGLIST(wait_options),
 	.sanitise = sanitise_waitpid,
+	.vet_final = vet_final_wait4,
 	.post = post_waitpid,
 	.rettype = RET_PID_T,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,

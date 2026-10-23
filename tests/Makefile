@@ -513,6 +513,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 PARENT_SRCS	+= $(TOP)/syscalls/poll/epoll_wait.c \
 		   $(TOP)/syscalls/poll/epoll_pwait.c
 
+# syscalls/process/wait4.c, waitpid.c and waitid.c bring the wait family,
+# whose .vet_final hooks pidns_init_test.c runs through
+# validate_arg_coupling().
+PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
+		   $(TOP)/syscalls/process/waitpid.c \
+		   $(TOP)/syscalls/process/waitid.c
+
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and
 # objects_pool_empty(), and the for_each_obj snapshot.  They read the

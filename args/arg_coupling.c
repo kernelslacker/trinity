@@ -2,11 +2,10 @@
  * Cross-arg validator and repair pass (contract: include/arg_coupling.h).
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: the entry's own
- * .vet_final rule, the rule for waits on a pid namespace init, then
- * buf_count_slot byte counts and (address, length) coherence.
+ * .vet_final rule, then buf_count_slot byte counts, (address, length)
+ * coherence and iovec extents.
  */
 #include <sys/uio.h>
-#include <sys/wait.h>
 
 #include "arg_coupling.h"
 #include "child.h"		/* this_child */
@@ -303,22 +302,6 @@ int validate_arg_coupling(struct syscallrecord *rec,
 	 */
 	if (entry->vet_final != NULL && entry->vet_final(rec) != 0)
 		return -1;
-
-	/*
-	 * A wait for any child that asks for __WALL or __WCLONE finds the
-	 * child's idle pid namespace init and blocks on it until the alarm:
-	 * see pidns_init_pid.  Judged on the final slots, which chain
-	 * substitution and the RedQueen pin rewrite after the sanitiser.
-	 * The kernel reads the pid, the idtype and the options as ints.
-	 */
-	if (pidns_init_pid > 0) {
-		if (entry->is_wait4_family && (int) rec->a1 == -1 &&
-		    ((unsigned int) rec->a3 & (__WALL | __WCLONE)))
-			rec->a3 |= WNOHANG;
-		if (entry->is_waitid && (int) rec->a1 == P_ALL &&
-		    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))
-			rec->a4 |= WNOHANG;
-	}
 
 	/*
 	 * A count the sanitiser sized to its buffer may not run the write

@@ -25,6 +25,7 @@
 #include "debug.h"		/* BUG */
 #include "pidstat-probe.h"	/* pidstat_read, pidstat_parse */
 #include "syscall.h"
+#include "syscalls/syscalls.h"	/* syscall_wait4, syscall_waitpid, syscall_waitid */
 #include "utils.h"		/* ARRAY_SIZE, waitpid_eintr */
 
 /* How a helper exits when it cannot unshare the namespaces. */
@@ -123,10 +124,6 @@ static void hidden_from_wildcard_waits(void)
  * then has to come straight back. */
 static void wildcard_waits_do_not_block(void)
 {
-	struct syscallentry wait4_entry = { .name = "wait4", .num_args = 4,
-					    .is_wait4_family = true };
-	struct syscallentry waitid_entry = { .name = "waitid", .num_args = 5,
-					     .is_waitid = true };
 	static const struct {
 		bool is_waitid;
 		int id;
@@ -154,7 +151,7 @@ static void wildcard_waits_do_not_block(void)
 
 	for (i = 0; i < ARRAY_SIZE(cases); i++) {
 		memset(&rec, 0, sizeof(rec));
-		rec.entry = cases[i].is_waitid ? &waitid_entry : &wait4_entry;
+		rec.entry = cases[i].is_waitid ? &syscall_waitid : &syscall_wait4;
 		rec.a1 = (unsigned long)(long) cases[i].id;
 		options = cases[i].is_waitid ? &rec.a4 : &rec.a3;
 		*options = cases[i].options;
@@ -174,10 +171,18 @@ static void wildcard_waits_do_not_block(void)
 		alarm(0);
 	}
 
+	/* waitpid takes the pid and the options where wait4 does. */
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_waitpid;
+	rec.a1 = (unsigned long) -1L;
+	rec.a3 = __WCLONE;
+	if (validate_arg_coupling(&rec, rec.entry) != 0 || !(rec.a3 & WNOHANG))
+		BUG("pidns_init: a waitpid that finds the init was left to block");
+
 	/* Without an init there is nothing to keep a wait off. */
 	pidns_init_pid = 0;
 	memset(&rec, 0, sizeof(rec));
-	rec.entry = &waitid_entry;
+	rec.entry = &syscall_waitid;
 	rec.a1 = P_ALL;
 	rec.a4 = WEXITED | __WALL;
 	(void)validate_arg_coupling(&rec, rec.entry);

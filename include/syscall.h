@@ -836,17 +836,6 @@ struct syscallentry {
 	 * slot (i+1).
 	 */
 	uint8_t sanitiser_owned_mask;
-
-	/*
-	 * Cached identities of the wait family, set at table init so
-	 * validate_arg_coupling() can judge a wait for any child with a
-	 * byte load per dispatch (see pidns_init_pid): wait4 and waitpid
-	 * take the pid in a1 and the options in a3, waitid the idtype in
-	 * a1 and the options in a4.  They fill the struct's tail padding
-	 * rather than grow it.
-	 */
-	bool is_wait4_family;
-	bool is_waitid;
 };
 
 static inline struct syscall_runtime *syscall_rt(const struct syscallentry *entry)
@@ -1101,6 +1090,12 @@ void post_open_fd(struct syscallrecord *rec);
  * in syscalls/poll/epoll_wait.c.
  */
 int vet_final_epoll_wait(struct syscallrecord *rec);
+
+/*
+ * The .vet_final hook wait4 shares with waitpid, which takes the pid and
+ * the options in the same slots.  Defined in syscalls/process/wait4.c.
+ */
+int vet_final_wait4(struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

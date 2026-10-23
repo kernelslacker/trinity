@@ -145,9 +145,6 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].is_epoll_create1 = (strcmp(copy[m].name, "epoll_create1") == 0);
 		copy[m].is_execve = (strcmp(copy[m].name, "execve") == 0);
 		copy[m].is_pkey_mprotect = (strcmp(copy[m].name, "pkey_mprotect") == 0);
-		copy[m].is_wait4_family = (strcmp(copy[m].name, "wait4") == 0 ||
-					   strcmp(copy[m].name, "waitpid") == 0);
-		copy[m].is_waitid = (strcmp(copy[m].name, "waitid") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 		copy[m].address_scrub_mask = compute_address_scrub_mask(&copy[m]);
 		/*

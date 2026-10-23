@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
+#include "child-api.h"	/* pidns_init_pid */
 #include "output-poison.h"
 #include "sanitise.h"
 #include "shm.h"
@@ -153,6 +154,21 @@ out_release:
 	post_state_release(rec, snap);
 }
 
+/*
+ * A wait for any child that asks for __WALL or __WCLONE finds the child's
+ * idle pid namespace init and blocks on it until the alarm (see
+ * pidns_init_pid), so while the init runs such a wait is made WNOHANG, and
+ * the call is never refused.  The kernel reads the pid and the options as
+ * ints.  waitpid takes the two in the same slots and shares this.
+ */
+int vet_final_wait4(struct syscallrecord *rec)
+{
+	if (pidns_init_pid > 0 && (int) rec->a1 == -1 &&
+	    ((unsigned int) rec->a3 & (__WALL | __WCLONE)))
+		rec->a3 |= WNOHANG;
+	return 0;
+}
+
 struct syscallentry syscall_wait4 = {
 	.name = "wait4",
 	.group = GROUP_PROCESS,
@@ -161,6 +177,7 @@ struct syscallentry syscall_wait4 = {
 	.argname = { [0] = "upid", [1] = "stat_addr", [2] = "options", [3] = "ru" },
 	.arg_params[2].list = ARGLIST(wait_options),
 	.sanitise = sanitise_wait4,
+	.vet_final = vet_final_wait4,
 	.post = post_wait4,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.rettype = RET_PID_T,
