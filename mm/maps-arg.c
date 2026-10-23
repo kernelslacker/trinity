@@ -115,6 +115,52 @@ type_resolved:
 }
 
 /*
+ * The pages a call's (addr, len) slots have the kernel act on.  munmap,
+ * mprotect, madvise and the like refuse an unaligned start and a range
+ * whose page-rounded end wraps, do nothing with a length of 0, and act on
+ * [addr, addr + PAGE_ALIGN(len)) otherwise (do_vmi_munmap(),
+ * do_mprotect_pkey(), check_input_range() and madvise_do_behavior()).
+ * remap_file_pages() rounds the start and the length down to whole pages
+ * instead, refuses a range that is then empty or whose end wraps, and acts
+ * on [addr & PAGE_MASK, that + (len & PAGE_MASK)).  A compat call hands the
+ * kernel the low 32 bits of each slot.
+ */
+bool map_range_pages(unsigned long addr, unsigned long len, bool compat,
+		     bool round_down, struct page_span *pages)
+{
+	if (compat) {
+		addr = (unsigned int) addr;
+		len = (unsigned int) len;
+	}
+
+	if (round_down) {
+		addr &= PAGE_MASK;
+		len &= PAGE_MASK;
+	} else {
+		if ((addr & ~PAGE_MASK) || len > ULONG_MAX - (page_size - 1))
+			return false;
+		len = (len + page_size - 1) & PAGE_MASK;
+	}
+
+	pages->start = addr;
+	pages->end = addr + len;
+	return pages->end > addr;
+}
+
+/*
+ * A mapping made @size bytes long at @base has a VMA that runs on to the
+ * next page boundary, so that is where its pages end.
+ */
+bool page_span_inside(const struct page_span *pages, unsigned long base,
+		      unsigned long size)
+{
+	if (size > ULONG_MAX - (page_size - 1))
+		return false;
+	return pages->start >= base && pages->end >= pages->start &&
+	       pages->end - base <= ((size + page_size - 1) & PAGE_MASK);
+}
+
+/*
  * The munmap, mprotect, pkey_mprotect and madvise sanitisers build their
  * range inside one pool mapping and keep it off trinity's regions, but
  * chain substitution can rewrite a numeric slot, and a RedQueen pin any
@@ -124,25 +170,23 @@ type_resolved:
  * next pool mapping, which stays in the pool with pages its entry no
  * longer describes, or trinity's own regions.
  *
- * All three refuse an unaligned start and a range whose page-rounded end
- * wraps, do nothing with a length of 0, and act on
- * [addr, addr + PAGE_ALIGN(len)) otherwise (check_input_range() and
- * madvise_do_behavior() for madvise); a compat call hands them the low
- * 32 bits of each slot.  A range they act on has to lie inside the
- * mapping the sanitiser picked, as far as the kernel mapped it:
- * tracked_size is the length the VMA was made with and size its
- * walkable part, smaller for a file clamped to its end and larger after
- * an mremap() grow, so the larger of the two, page-rounded.
+ * So the pages the final slots have the kernel act on have to lie inside
+ * the mapping the sanitiser picked, as far as the kernel mapped it:
+ * tracked_size is the length the VMA was made with and size its walkable
+ * part, smaller for a file clamped to its end and larger after an
+ * mremap() grow, so the larger of the two.
  *
  * The mapping comes from the call's own snapshot; with none, only a range
  * the kernel acts on nothing of passes.  A pass moves the snapshot's addr
  * and len to the slots as the kernel reads them, since the post handler
- * reads nothing else.
+ * reads nothing else.  Each slot is read once, so a sibling's write to the
+ * record cannot leave the snapshot holding a range other than the one
+ * judged.
  */
-bool map_range_vet(const struct syscallrecord *rec,
-		   struct map_range *range, bool empty_only)
+bool map_range_vet(const struct syscallrecord *rec, struct map_range *range)
 {
-	unsigned long addr = rec->a1, len = rec->a2, end, extent;
+	unsigned long addr = rec->a1, len = rec->a2;
+	struct page_span pages;
 	const struct map *map;
 
 	if (rec->do32bit) {
@@ -150,26 +194,17 @@ bool map_range_vet(const struct syscallrecord *rec,
 		len = (unsigned int) len;
 	}
 
-	if ((addr & ~PAGE_MASK) || len == 0 ||
-	    len > ULONG_MAX - (page_size - 1))
-		goto vetted;
-	end = addr + ((len + page_size - 1) & PAGE_MASK);
-	if (end <= addr)
-		goto vetted;
+	if (map_range_pages(addr, len, false, false, &pages)) {
+		if (range == NULL)
+			return false;
+		map = range->map;
+		if (is_corrupt_ptr_shape(map) ||
+		    !page_span_inside(&pages, (unsigned long) map->ptr,
+				      map->tracked_size > map->size ?
+				      map->tracked_size : map->size))
+			return false;
+	}
 
-	if (range == NULL || empty_only)
-		return false;
-	map = range->map;
-	if (is_corrupt_ptr_shape(map))
-		return false;
-	extent = map->tracked_size > map->size ? map->tracked_size : map->size;
-	if (extent > ULONG_MAX - (page_size - 1) ||
-	    addr < (unsigned long) map->ptr ||
-	    end - (unsigned long) map->ptr >
-			((extent + page_size - 1) & PAGE_MASK))
-		return false;
-
-vetted:
 	if (range != NULL) {
 		range->addr = addr;
 		range->len = len;

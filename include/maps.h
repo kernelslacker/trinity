@@ -177,6 +177,29 @@ bool addr_in_local_runtime_map(unsigned long addr, unsigned long len) __must_che
  */
 struct map * common_set_mmap_ptr_len(enum objecttype *out_type);
 
+/* The pages [start, end) a call acts on. */
+struct page_span {
+	unsigned long start;
+	unsigned long end;
+};
+
+/*
+ * Fill @pages with the pages a call's (addr, len) slots have the kernel
+ * act on, or return false if it acts on none.  @compat reads each slot's
+ * low 32 bits.  @round_down reads the range as remap_file_pages() does,
+ * rounding the start and the length down, where munmap, mprotect, madvise
+ * and the like refuse an unaligned start.  Pure; see mm/maps-arg.c.
+ */
+bool map_range_pages(unsigned long addr, unsigned long len, bool compat,
+		     bool round_down, struct page_span *pages);
+
+/*
+ * Whether @pages lie inside a mapping made @size bytes long at @base, a
+ * pool mapping or any other: [base, base + PAGE_ALIGN(size)).
+ */
+bool page_span_inside(const struct page_span *pages, unsigned long base,
+		      unsigned long size);
+
 /*
  * The range a munmap, mprotect, pkey_mprotect or madvise sanitiser built
  * inside one pool mapping, as its private post_state snapshot keeps it:
@@ -192,12 +215,10 @@ struct map_range {
 /*
  * Hold the final (addr, len) slots of such a call to @range's mapping,
  * NULL for a call with no snapshot, and on a pass refresh @range to them.
- * @empty_only passes only a range the kernel acts on nothing of.  False
- * refuses the call.  O(1), no pool walk; see mm/maps-arg.c.
+ * False refuses the call.  O(1), no pool walk; see mm/maps-arg.c.
  */
 struct syscallrecord;
-bool map_range_vet(const struct syscallrecord *rec,
-		   struct map_range *range, bool empty_only);
+bool map_range_vet(const struct syscallrecord *rec, struct map_range *range);
 
 void dirty_mapping(struct map *map);
 void dirty_random_mapping(void);

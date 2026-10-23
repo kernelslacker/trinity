@@ -75,7 +75,7 @@ static int vet_final_munmap(struct syscallrecord *rec)
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == MUNMAP_POST_STATE_MAGIC)
 		range = &snap->range;
-	if (map_range_vet(rec, range, false))
+	if (map_range_vet(rec, range))
 		return 0;
 
 	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",

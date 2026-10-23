@@ -68,7 +68,7 @@ static int vet_final_mprotect(struct syscallrecord *rec)
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == MPROTECT_POST_STATE_MAGIC)
 		range = &snap->range;
-	if (!map_range_vet(rec, range, false)) {
+	if (!map_range_vet(rec, range)) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
 			  rec->entry->name);
 		return -1;

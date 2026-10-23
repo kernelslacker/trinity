@@ -118,10 +118,13 @@ static int vet_final_madvise(struct syscallrecord *rec)
 	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
 	unsigned long addr = rec->a1 & mask, len = rec->a2 & mask;
 	struct map_range *range = NULL;
+	struct page_span pages;
 	int advice = (int) rec->a3;
 
 	if (range_overlaps_shared(addr, len) ||
 	    range_overlaps_libc_heap(addr, len)) {
+		addr = 0;
+		len = 0;
 		rec->a1 = 0;
 		rec->a2 = 0;
 		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
@@ -130,7 +133,9 @@ static int vet_final_madvise(struct syscallrecord *rec)
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == MADVISE_POST_STATE_MAGIC)
 		range = &snap->range;
-	if (!map_range_vet(rec, range, advice == MADV_GUARD_INSTALL)) {
+	if ((advice == MADV_GUARD_INSTALL &&
+	     map_range_pages(addr, len, false, false, &pages)) ||
+	    !map_range_vet(rec, range)) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked, or the advice installs guard pages\n",
 			  rec->entry->name);
 		return -1;

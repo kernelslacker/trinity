@@ -1282,6 +1282,61 @@ static void munmap_range_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* The pages a range has the kernel act on, read both ways a kernel reads
+ * one: munmap and its like refuse an unaligned start and round the length
+ * up, remap_file_pages rounds the start and the length down.  Either acts
+ * on nothing for a range that is empty or wraps, and a compat call is read
+ * from the slots' low halves.  A mapping's pages run on to the page
+ * boundary after its length, whatever the mapping. */
+static void range_pages_read_as_the_kernel_does(void)
+{
+	const unsigned long pg = page_size, top = ULONG_MAX - pg + 1;
+	const unsigned long hi = 1UL << 32;
+	const struct {
+		unsigned long addr, len;
+		bool compat, round_down, acts;
+		unsigned long start, end;
+	} cases[] = {
+		{ POOL_MAP, 1, false, false, true, POOL_MAP, POOL_MAP + pg },
+		{ POOL_MAP, pg + 1, false, false, true, POOL_MAP, POOL_MAP + 2 * pg },
+		{ POOL_MAP + 1, pg, false, false, false, 0, 0 },
+		{ POOL_MAP, 0, false, false, false, 0, 0 },
+		{ POOL_MAP, ULONG_MAX, false, false, false, 0, 0 },
+		{ top, 2 * pg, false, false, false, 0, 0 },
+		{ POOL_MAP + 1, 2 * pg - 1, false, true, true, POOL_MAP, POOL_MAP + pg },
+		{ POOL_MAP + 1, pg - 1, false, true, false, 0, 0 },
+		{ top, 2 * pg, false, true, false, 0, 0 },
+		{ hi | LOW_POOL_MAP, hi | pg, true, false, true,
+		  LOW_POOL_MAP, LOW_POOL_MAP + pg },
+		{ hi | (LOW_POOL_MAP + 1), hi | (pg + 1), true, true, true,
+		  LOW_POOL_MAP, LOW_POOL_MAP + pg },
+	};
+	struct page_span pages;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		bool acts = map_range_pages(cases[i].addr, cases[i].len,
+					    cases[i].compat, cases[i].round_down,
+					    &pages);
+
+		if (acts != cases[i].acts ||
+		    (acts && (pages.start != cases[i].start ||
+			      pages.end != cases[i].end)))
+			BUG("maps: a range was not read as the kernel reads it");
+	}
+
+	pages.start = POOL_MAP;
+	pages.end = POOL_MAP + 2 * pg;
+	if (!page_span_inside(&pages, POOL_MAP, 2 * pg) ||
+	    !page_span_inside(&pages, POOL_MAP, pg + 1) ||
+	    !page_span_inside(&pages, POOL_MAP - pg, 3 * pg))
+		BUG("maps: pages inside a mapping were judged outside it");
+	if (page_span_inside(&pages, POOL_MAP, pg) ||
+	    page_span_inside(&pages, POOL_MAP + pg, 2 * pg) ||
+	    page_span_inside(&pages, POOL_MAP, ULONG_MAX))
+		BUG("maps: pages outside a mapping were judged inside it");
+}
+
 /* The mapping's cached prot after a call whose range the sanitiser drew
  * from a mapping with @prot_before, over prot @prot, that was rewritten to
  * the final slots @len, @final_prot and @key, and worked. */
@@ -1602,6 +1657,12 @@ static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
 	    madvise_verdict(madvise_entry, POOL_MAP + 1, page_size, guard) != 0)
 		BUG("madvise: a guard install the kernel acts on nothing of was refused");
 
+	/* Nor one the overlap repair emptied off a tracked region. */
+	fake_track_region(POOL_MAP, POOL_PAGES * page_size);
+	if (madvise_verdict(madvise_entry, POOL_MAP, page_size, guard) != 0)
+		BUG("madvise: a guard install emptied off a region was refused");
+	fake_untrack_regions();
+
 	mrec = mm_call(madvise_entry);
 	mrec->a1 = 0;
 	madvise_entry->sanitise(mrec);
@@ -1647,5 +1708,6 @@ void arg_coupling_self_check(void)
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	munmap_range_held_to_mapping();
+	range_pages_read_as_the_kernel_does();
 	mprotect_range_held_to_mapping();
 }
