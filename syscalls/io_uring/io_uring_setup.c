@@ -12,6 +12,8 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/io_uring.h"
+
 #ifndef IORING_SETUP_IOPOLL
 #define IORING_SETUP_IOPOLL		(1U << 0)
 #define IORING_SETUP_SQPOLL		(1U << 1)
@@ -120,25 +122,6 @@ static unsigned long pick_io_uring_setup_flags(void)
 		return io_uring_setup_valid_combos[rnd_modulo_u32(ARRAY_SIZE(io_uring_setup_valid_combos))];
 	return set_rand_bitmask(ARRAY_SIZE(io_uring_setup_flags), io_uring_setup_flags);
 }
-
-/*
- * struct io_uring_params is defined in <linux/io_uring.h> but we only
- * need the flags field at offset 0x0c and cq_entries at offset 0x08.
- * Use the kernel header if available, otherwise define a minimal version.
- */
-#ifndef IORING_FEAT_SINGLE_MMAP
-struct io_uring_params {
-	__u32 sq_entries;
-	__u32 cq_entries;
-	__u32 flags;
-	__u32 sq_thread_cpu;
-	__u32 sq_thread_idle;
-	__u32 features;
-	__u32 wq_fd;
-	__u32 resv[3];
-	/* sq_off and cq_off follow but are output-only */
-};
-#endif
 
 static void sanitise_io_uring_setup(struct syscallrecord *rec)
 {
