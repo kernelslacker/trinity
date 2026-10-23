@@ -297,13 +297,17 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	 * stats blob, child-data, ... — the original VMA is silently
 	 * replaced by a (possibly shorter) anon/file mapping.  Reads of
 	 * shared bookkeeping past the new mapping's end then SIGBUS.
+	 * Trinity's own image goes the same way: a non-PIE build loads its
+	 * text low enough for a long range from 0 to reach, and only
+	 * mmap_min_addr, which CAP_SYS_RAWIO lifts, stands in between.
 	 * Drop MAP_FIXED and clear the hint so the kernel picks a free
 	 * slot instead.  MAP_FIXED_NOREPLACE returns -EEXIST on overlap
 	 * rather than punching, so leave it alone.
 	 */
 	if ((rec->a4 & MAP_FIXED) &&
 	    (RANGE_OVERLAPS_SHARED_AUDITED("mmap", rec->a1, rec->a2) ||
-	     range_overlaps_libc_heap(rec->a1, rec->a2))) {
+	     range_overlaps_libc_heap(rec->a1, rec->a2) ||
+	     range_overlaps_image(rec->a1, rec->a2))) {
 		rec->a4 &= ~MAP_FIXED;
 		rec->a1 = 0;
 	}

@@ -2872,6 +2872,54 @@ static void mmap_fixed_held_to_vetted_call(void)
 	fake_this_child = NULL;
 }
 
+/* MAP_FIXED unmaps whatever its range covers, so mmap's sanitiser keeps
+ * the range off trinity's own image too: from the address 0 it draws, a
+ * long enough mapping reaches the text a non-PIE build loads low, which a
+ * child with CAP_SYS_RAWIO may map over.  The lengths come from the
+ * sizes production draws, which this binary otherwise leaves zero, and
+ * the image table is the one image_table_covers_the_image() filled.  A
+ * binary loaded past the longest of them, as a PIE one is, leaves nothing
+ * here to check, and the test says so rather than passing. */
+static void mmap_fixed_off_image(void)
+{
+	static const unsigned long sizes[NR_MAPPING_SIZES] = {
+		4096, 64UL * 1024, 256UL * 1024, MB(1), MB(2),
+		MB(4), MB(16), MB(64), GB(1),
+	};
+	struct syscallentry mmap_entry = syscall_mmap;
+	unsigned long saved[NR_MAPPING_SIZES];
+	unsigned int i, kept = 0;
+
+	if (!range_overlaps_image((unsigned long) mmap_fixed_off_image, 1))
+		BUG("mmap: the image table holds none of this binary");
+	if (!range_overlaps_image(0, GB(1))) {
+		printf("(no image segment below 1 GiB, skipping mmap's image check) ");
+		return;
+	}
+
+	memcpy(saved, mapping_sizes, sizeof(saved));
+	memcpy(mapping_sizes, sizes, sizeof(sizes));
+	fake_random_fd_empty = true;
+	fake_rand_bitmask_draws = true;
+	for (i = 0; i < MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(&mmap_entry);
+
+		mmap_entry.sanitise(mrec);
+		if ((mrec->a4 & MAP_FIXED) && !(mrec->a4 & MAP_FIXED_NOREPLACE)) {
+			if (range_overlaps_image(mrec->a1, mrec->a2))
+				BUG("mmap: a MAP_FIXED over trinity's own image was kept");
+			kept++;
+		}
+		mmap_entry.cleanup(mrec);
+	}
+	if (kept == 0)
+		BUG("mmap: the sanitiser never kept a MAP_FIXED");
+	memcpy(mapping_sizes, saved, sizeof(saved));
+	fake_rand_bitmask_draws = false;
+	fake_random_fd_empty = false;
+	fake_this_child = NULL;
+}
+
 /* A shmat call the sanitiser built for segment @shmid over the mapping
  * fake_map_drawn names, redrawn until it keeps SHM_REMAP. */
 static void shmat_remap_drawn(int shmid, bool compat)
@@ -3219,6 +3267,7 @@ void arg_coupling_self_check(void)
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
 	mmap_fixed_held_to_vetted_call();
+	mmap_fixed_off_image();
 	shmat_remap_held_to_vetted_call();
 	ipc_shmat_held();
 }
