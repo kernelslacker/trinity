@@ -4,10 +4,10 @@
  * after the sanitiser (chain substitution, a RedQueen pin) must not leave
  * the kernel a range the sanitiser would have refused.  A buffer-filling
  * count stays inside its buffer, a munmap, mprotect, pkey_mprotect,
- * madvise or set_mempolicy_home_node range inside the pool mapping its
- * sanitiser picked, madvise's (addr, len) off trinity's tracked regions
- * too, a madvise never installs guard pages, and an mseal seals only a
- * mapping its sanitiser made for it.
+ * madvise, set_mempolicy_home_node or remap_file_pages range inside the
+ * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
+ * tracked regions too, a madvise never installs guard pages, and an
+ * mseal seals only a mapping its sanitiser made for it.
  */
 
 #include <errno.h>
@@ -1623,6 +1623,105 @@ static void mseal_seals_only_its_own_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* A remap_file_pages call over the pool mapping, made a MAP_SHARED file
+ * mapping, the one kind the sanitiser remaps, for it to build. */
+static struct syscallrecord *remap_call(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	pool_obj.map.type = MMAPED_FILE;
+	pool_obj.map.fd = 3;
+	pool_obj.map.flags = MAP_SHARED;
+	return mrec;
+}
+
+/* remap_file_pages' hook holds the pages the kernel replaces, read with
+ * the start and the size rounded down, to the mapping the sanitiser
+ * picked: a start pinned outside it, or a size that runs past it, is
+ * refused, even where an unaligned start would make munmap's reading act
+ * on nothing, and a range that rounds back inside, or down to nothing,
+ * passes.  The sanitiser's own ranges pass.  A mapping it will not remap,
+ * and a call it emptied over a tracked region, leave no mapping a rewrite
+ * can put a range back in. */
+static void remap_file_pages_range_held_to_mapping(void)
+{
+	struct syscallentry entry = syscall_remap_file_pages;
+	const unsigned long pg = page_size, whole = POOL_PAGES * pg;
+	const unsigned long end = POOL_MAP + whole;
+	const struct {
+		unsigned long addr, len;
+		int verdict;
+	} cases[] = {
+		{ REGION, pg, -1 },
+		{ POOL_MAP, whole + pg, -1 },
+		{ POOL_MAP, 0x7ffff000UL, -1 },
+		{ POOL_MAP - pg, 2 * pg, -1 },
+		{ end, pg, -1 },
+		{ end - 1, 2 * pg, -1 },
+		{ POOL_MAP + 1, whole + pg, -1 },
+		{ POOL_MAP, whole, 0 },
+		{ end - 1, 2 * pg - 1, 0 },
+		{ POOL_MAP + 1, whole + pg - 1, 0 },
+		{ REGION, pg - 1, 0 },
+		{ 0, 0, 0 },
+	};
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		mrec = remap_call(&entry);
+		entry.sanitise(mrec);
+		mrec->a1 = cases[i].addr;
+		mrec->a2 = cases[i].len;
+		if (validate_arg_coupling(mrec, mrec->entry) != cases[i].verdict)
+			BUG("remap_file_pages: a rewritten range was judged wrongly");
+		entry.cleanup(mrec);
+	}
+
+	/* Over a mapping an mremap() grow left larger than its tracked size
+	 * too; a compat call over the high mapping is built empty rather
+	 * than refused. */
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = remap_call(&entry);
+		if (i & 1)
+			pool_obj.map.size = 2 * whole;
+		mrec->do32bit = (i % 10) == 0;
+		entry.sanitise(mrec);
+		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
+			BUG("remap_file_pages: the sanitiser built a compat range its slots cannot carry");
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("remap_file_pages: a range the sanitiser built was refused");
+		entry.cleanup(mrec);
+	}
+
+	mrec = remap_call(&entry);
+	pool_obj.map.flags = MAP_PRIVATE;
+	entry.sanitise(mrec);
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = pg;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("remap_file_pages: a range was put back in a private mapping");
+	entry.cleanup(mrec);
+
+	fake_untrack_regions();
+	fake_track_region(POOL_MAP, whole);
+	mrec = remap_call(&entry);
+	entry.sanitise(mrec);
+	if (mrec->a1 != 0 || mrec->a2 != 0)
+		BUG("remap_file_pages: a range over a tracked region was kept");
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = pg;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("remap_file_pages: a range was put back over a tracked region");
+	entry.cleanup(mrec);
+	fake_untrack_regions();
+
+	pool_obj.map.type = 0;
+	pool_obj.map.fd = 0;
+	pool_obj.map.flags = 0;
+	fake_this_child = NULL;
+}
+
 /* The mapping's cached prot after a call whose range the sanitiser drew
  * from a mapping with @prot_before, over prot @prot, that was rewritten to
  * the final slots @len, @final_prot and @key, and worked. */
@@ -1997,5 +2096,6 @@ void arg_coupling_self_check(void)
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();
 	mseal_seals_only_its_own_mapping();
+	remap_file_pages_range_held_to_mapping();
 	mprotect_range_held_to_mapping();
 }

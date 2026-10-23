@@ -528,11 +528,14 @@ PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
 
 # syscalls/mm/numa/set_mempolicy_home_node.c brings set_mempolicy_home_node,
 # whose sanitiser and .vet_final hook arg_coupling_test.c runs over the
-# fake pool mapping the munmap tests use.  syscalls/mm/mseal.c brings
-# mseal, whose sanitiser maps a real scratch mapping in the test process
-# and whose hook and cleanup the same test runs.
+# fake pool mapping the munmap tests use, and so does
+# syscalls/mm/remap_file_pages.c for remap_file_pages.
+# syscalls/mm/mseal.c brings mseal, whose sanitiser maps a real scratch
+# mapping in the test process and whose hook and cleanup the same test
+# runs.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c \
-		   $(TOP)/syscalls/mm/mseal.c
+		   $(TOP)/syscalls/mm/mseal.c \
+		   $(TOP)/syscalls/mm/remap_file_pages.c
 
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and
