@@ -1,11 +1,9 @@
 /*
  * internal.h
  *
- * Shared declarations split out of net/bpf/bpf.c so the classic-BPF
- * disassembler (disasm.c) can compile as its own translation
- * unit and live independently of the seccomp/socket-filter generator.
- * This header is private to the two TUs that make up the bpf
- * subsystem — do not include it from anywhere else.
+ * Shared declarations for the classic-BPF disassembler (disasm.c) and
+ * the seccomp/socket-filter generator (bpf.c).  This header is private
+ * to those two TUs — do not include it from anywhere else.
  *
  * The only widened symbol is bpf_disasm_all(): it is invoked from the
  * generators in bpf.c at MAX_LOGLEVEL verbosity and defined in

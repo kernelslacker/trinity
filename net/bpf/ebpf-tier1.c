@@ -3,8 +3,8 @@
  *
  * Tier 1 (valid): programs the verifier should accept — forward-only
  * jumps, register liveness, bounded stack access, valid helper calls,
- * proper exit.  Split out of net/bpf/ebpf.c as its own translation
- * unit; shared with the tier 2 sub-strategies via ebpf-internal.h.
+ * proper exit.  Shared with the tier 2 sub-strategies via
+ * ebpf-internal.h.
  */
 #include <stdint.h>
 #include <linux/bpf.h>

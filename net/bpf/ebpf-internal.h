@@ -1,9 +1,9 @@
 /*
  * ebpf-internal.h
  *
- * Shared declarations for the eBPF program generator split across
- * net/bpf/ebpf*.c translation units.  Private to that fileset — do
- * not include from anywhere else.
+ * Shared declarations for the net/bpf/ebpf*.c translation units of the
+ * eBPF program generator.  Private to that fileset — do not include
+ * from anywhere else.
  */
 
 #ifndef NET_BPF_EBPF_INTERNAL_H

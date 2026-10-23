@@ -1,8 +1,6 @@
 /*
  * Register liveness helpers and stack-offset picker for the eBPF
- * program generator.  Split out of net/bpf/ebpf.c so tier1/tier2
- * emitters can share this liveness bookkeeping without hauling in the
- * whole generator TU.
+ * program generator, shared by the tier1 and tier2 emitters.
  */
 #include <stdint.h>
 #include <linux/bpf.h>

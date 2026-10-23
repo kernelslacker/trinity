@@ -1,9 +1,8 @@
 /*
  * Map-fd substitution and LD_MAP_FD prologue emitter for the eBPF
- * program generator.  Split out of net/bpf/ebpf.c so the substitution
- * decision (which is a small, self-contained policy the tiers do not
- * need to understand) lives alongside the pseudo-insn pair emitter it
- * feeds.
+ * program generator.  The substitution decision is a small,
+ * self-contained policy the tiers do not need to understand; it lives
+ * with the pseudo-insn pair emitter it feeds.
  */
 #include <stdint.h>
 #include <linux/bpf.h>
