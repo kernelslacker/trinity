@@ -24,8 +24,8 @@ static void sanitise_munlockall(struct syscallrecord *rec __unused__)
 	 * munlockall finds a locked vma to walk through; the other half
 	 * preserves the empty-list fast-path arm so both stay exercised.
 	 *
-	 * Coverage-only side effect: a failed plant (EAGAIN under the
-	 * memlock cap, ENOMEM on an unmapped slot left in the pool by a
+	 * Coverage-only side effect: a failed plant (ENOMEM under the
+	 * memlock cap or on an unmapped slot left in the pool by a
 	 * sibling munmap) collapses harmlessly back to the empty-list
 	 * shape we would otherwise have had.
 	 */

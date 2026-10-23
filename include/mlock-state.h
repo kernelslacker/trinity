@@ -7,9 +7,9 @@ struct map;
 /*
  * Per-child memlock budget + recently-locked ring shared between the
  * mlock and munlock sanitisers.  State lives in mm/mlock-state.c as
- * static __thread storage so a childop that dispatches work onto a
- * helper thread (e.g. barrier_racer's process-shared pthread barriers)
- * does not share or race the running total with the spawning child.
+ * static __thread storage so a helper thread in the child gets its own
+ * accounting instead of racing the running total of the spawning
+ * thread.
  *
  * pick_length picks one of four page-aligned length buckets (single
  * page, half map, full map, over-end).  *over_end is set on the
@@ -26,7 +26,7 @@ struct map;
  *
  * clamp_len returns min(requested, RLIMIT_MEMLOCK - cumulative_locked)
  * so a "full map" bucket on a multi-MB INITIAL_ANON cannot blow the
- * cap and surrender the rest of the fuzz wave to EAGAIN.  An
+ * cap and surrender the rest of the fuzz wave to ENOMEM.  An
  * RLIM_INFINITY cap surfaces as ULONG_MAX, short-circuiting the clamp.
  *
  * record_locked is the writer side of an 8-entry recently-locked

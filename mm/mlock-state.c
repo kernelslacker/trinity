@@ -96,7 +96,7 @@ unsigned long mlock_state_clamp_len(unsigned long requested)
 	 * short-circuits before reaching mlock_check_rlimit/account_locked_vm
 	 * -- "high calls, low edges" cold-syscall shape.  Hand back
 	 * page_size so the call lands inside the rlimit accounting path
-	 * (EAGAIN at the cap) and the over-cap reject edges are retained
+	 * (ENOMEM at the cap) and the over-cap reject edges are retained
 	 * instead of every subsequent draw collapsing to len=0.
 	 */
 	if (memlock_used >= memlock_budget)

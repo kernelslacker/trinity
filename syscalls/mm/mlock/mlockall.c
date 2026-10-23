@@ -23,7 +23,7 @@
  * mlockall(MCL_FUTURE) sets VM_LOCKED on every subsequent mmap in this
  * child.  ASAN's allocator extends its shadow region via internal mmap
  * (no MAP_LOCKED of its own), but the inherited VM_LOCKED still routes
- * the new vma through mlock_future_check(); when the locked-page count
+ * the new vma through mlock_future_ok(); when the locked-page count
  * would exceed RLIMIT_MEMLOCK the kernel returns -EAGAIN.  libasan
  * treats shadow-extension failures as fatal and aborts the child with
  * "AddressSanitizer failed to allocate ... (error code: 11)" -- the
