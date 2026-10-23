@@ -271,6 +271,14 @@ void generate_syscall_args(struct syscallrecord *rec)
 	}
 	__atomic_store_n(&rec->state, PREP, __ATOMIC_RELAXED);
 
+	/*
+	 * A sanitiser shared by two entries tells them apart by the entry on
+	 * the record (current_entry_is_*()), and dispatch_step(), which
+	 * stamps it too, runs only once the arguments exist: without this
+	 * the sanitiser below reads the previous call's entry.
+	 */
+	rec->entry = entry;
+
 	/* reset the per-call cmp-hint latch so each new
 	 * call starts with a fresh "no hint injected yet" state.  Any of
 	 * the five argtype-handler callsites below that pulls a hint via

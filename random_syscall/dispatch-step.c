@@ -550,7 +550,9 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Stamp the resolved entry on the rec so .sanitise / .post handlers
 	 * (and helpers like current_entry_is_mmap2()) can reach it without
-	 * re-running get_syscall_entry(nr, do32bit) on every probe. */
+	 * re-running get_syscall_entry(nr, do32bit) on every probe.
+	 * generate_syscall_args() stamped it before the sanitiser ran; a
+	 * replayed call reaches here without passing through it. */
 	rec->entry = entry;
 
 	/* Clear the per-call validator-reject flag.  do_syscall() sets this

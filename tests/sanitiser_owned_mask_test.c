@@ -4,7 +4,8 @@
  * arg_meta_init() must label it ARG_OWNER_SANITISER, and
  * sanity_check_tables() must refuse a mask with no .sanitise behind it
  * or with a bit at or past num_args.  The real entries that set the mask
- * must own what their sanitisers write on every path.
+ * must own what their sanitisers write on every path.  And the sanitiser
+ * generate_syscall_args() runs must find its own entry on the record.
  */
 
 #include <fcntl.h>
@@ -17,8 +18,10 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch */
+#include "blob_corpus.h"	/* blob_corpus_clear_pending */
+#include "cmp_hints.h"		/* cmp_hints_feedback_reset_stash */
 #include "debug.h"		/* BUG */
-#include "sanitise.h"		/* generic_sanitise */
+#include "sanitise.h"		/* generic_sanitise, generate_syscall_args */
 #include "syscall.h"		/* arg_meta_init */
 #include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl, ... */
 #include "tables.h"		/* syscalls, max_nr_syscalls, sanity_check_tables */
@@ -36,6 +39,15 @@ unsigned long __wrap_fill_arg(struct syscallentry *entry,
 	(void)entry; (void)rec;
 	filled |= 1u << (argnum - 1);
 	return 0x1000 + argnum;
+}
+
+/* generate_syscall_args() reaches these. */
+void blob_corpus_clear_pending(void)
+{
+}
+
+void cmp_hints_feedback_reset_stash(void)
+{
 }
 
 /* One owned slot per pass, so a slip in any single slot shows up.  The
@@ -92,6 +104,40 @@ static void owned_slot_labelled(void)
 static void fake_sanitise(struct syscallrecord *rec)
 {
 	(void)rec;
+}
+
+static const struct syscallentry *entry_seen;
+
+static void note_entry(struct syscallrecord *rec)
+{
+	entry_seen = rec->entry;
+}
+
+/* A sanitiser shared by two entries tells them apart by the entry on the
+ * record, which still holds the previous call's until
+ * generate_syscall_args() puts this one's there. */
+static void sanitiser_sees_its_entry(void)
+{
+	static struct syscallrecord rec;
+	struct syscallentry entry = {
+		.name = "entry_probe",
+		.sanitise = note_entry,
+	};
+	struct syscallentry previous = { .name = "previous_call" };
+	struct syscalltable table = { .entry = &entry };
+
+	syscalls = syscalls_32bit = syscalls_64bit = &table;
+	max_nr_syscalls = max_nr_32bit_syscalls = max_nr_64bit_syscalls = 1;
+
+	rec.entry = &previous;
+	generate_syscall_args(&rec);
+
+	/* Back to the empty tables fake_parent.c provides. */
+	syscalls = syscalls_32bit = syscalls_64bit = NULL;
+	max_nr_syscalls = max_nr_32bit_syscalls = max_nr_64bit_syscalls = 0;
+
+	if (entry_seen != &entry)
+		BUG("generate_syscall_args: the sanitiser read another call's entry");
 }
 
 /* sanity_check_tables() exits on a bad entry, so run it over a one-entry
@@ -211,6 +257,7 @@ void sanitiser_owned_mask_self_check(void)
 	owned_slot_labelled();
 	bad_mask_refused();
 	real_entries_own_what_they_write();
+	sanitiser_sees_its_entry();
 }
 
 /* The pass above runs before any suite has made the writable pool, so a

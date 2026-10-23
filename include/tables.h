@@ -150,10 +150,11 @@ bool syscall_is_expensive(unsigned int nr, bool do32);
  * hooks that handle two syscallentries each (mmap/mmap2,
  * sync_file_range/sync_file_range2, inotify_init/inotify_init1,
  * epoll_create/epoll_create1, execve/execveat).  Read the cached entry
- * pointer that dispatch_step() stamps on the rec, NULL-guard for any
- * future caller that fires before dispatch, then return the matching
- * cached flag bit.  Collapses each callsite from a get_syscall_entry()
- * lookup + biarch branch + strcmp to a single dereference + byte load.
+ * pointer that generate_syscall_args() and dispatch_step() stamp on the
+ * rec, NULL-guard for a caller that fires before the child's first
+ * call, then return the matching cached flag bit.  Collapses each
+ * callsite from a get_syscall_entry() lookup + biarch branch + strcmp to
+ * a single dereference + byte load.
  */
 static inline bool current_entry_is_mmap2(void)
 {

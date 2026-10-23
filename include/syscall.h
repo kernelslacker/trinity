@@ -65,14 +65,15 @@ struct syscallrecord {
 	unsigned int nr;
 
 	/*
-	 * Pointer to the resolved syscallentry for this call.  Stamped once
-	 * at the top of dispatch_step() (the only path that drives a real
-	 * syscall through this rec) so the .sanitise / .post handlers and
-	 * their helpers (the per-discriminator current_entry_is_*() flag
-	 * tests) can read the entry directly instead of re-running
-	 * get_syscall_entry(nr, do32bit) -- which is a table lookup plus a
-	 * biarch branch -- on every probe.  NULL outside an in-flight
-	 * dispatch; current_entry_is_*() treats NULL as "not me".
+	 * Pointer to the resolved syscallentry for this call, so the
+	 * .sanitise / .post handlers and their helpers (the per-discriminator
+	 * current_entry_is_*() flag tests) can read the entry directly
+	 * instead of re-running get_syscall_entry(nr, do32bit) -- which is a
+	 * table lookup plus a biarch branch -- on every probe.  Stamped by
+	 * generate_syscall_args() before the sanitiser runs, and at the top
+	 * of dispatch_step(), which a replayed call reaches without
+	 * generating args.  NULL until the child's first call;
+	 * current_entry_is_*() treats NULL as "not me".
 	 */
 	struct syscallentry *entry;
 
