@@ -158,10 +158,10 @@ static bool runid_kallsyms_hex(char *out, size_t outlen)
 
 /* Read /proc/sys/kernel/random/boot_id into a NUL-terminated string
  * (the on-disk value is a 36-char UUID followed by a newline).
- * Returns true on success.  The boot_id is no longer used as a
- * cache-key guard (KCOV bitmap moved to canonicalised PCs at file
- * version 5), but it remains the single most useful "did the kernel
- * reboot between these two runs" anchor for the run-identity block. */
+ * Returns true on success.  The boot_id is not a cache-key guard (the
+ * KCOV bitmap holds canonicalised PCs), but it is the single most
+ * useful "did the kernel reboot between these two runs" anchor for the
+ * run-identity block. */
 static bool runid_read_boot_id(char *out, size_t outlen)
 {
 	int fd;

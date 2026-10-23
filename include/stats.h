@@ -693,7 +693,7 @@ void periodic_counter_rates_dump(void) __cold;
  * split summary line and advances the per-childop decaying recency ring
  * used by dump_stats_childop_decay_recency() at shutdown.  Self-rate-
  * limited on the same DEFENSE_DUMP_INTERVAL_SEC cadence as the sibling
- * periodic surfaces; split out from periodic_counter_rates_dump() so the
+ * periodic surfaces; kept apart from periodic_counter_rates_dump() so the
  * recency-window rotation is not hidden inside a counter-rate function. */
 void childop_periodic_dump_and_advance(void) __cold;
 

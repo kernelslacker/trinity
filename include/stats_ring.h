@@ -107,7 +107,7 @@ enum stats_field {
 	STATS_FIELD_POST_HANDLER_CORRUPT_PTR,
 	/*
 	 * Structural pre-dispatch reject from validate_arg_coupling().
-	 * Split out of STATS_FIELD_POST_HANDLER_CORRUPT_PTR so the
+	 * Counted apart from STATS_FIELD_POST_HANDLER_CORRUPT_PTR so the
 	 * headline counts only genuine scribble-catches: coupling
 	 * rejects fire on perfectly-fine-but-DOA argument shapes the
 	 * kernel would EFAULT at its earliest validation step, not on
@@ -351,9 +351,9 @@ struct stats_aggregate {
 	unsigned long post_handler_corrupt_ptr;
 	/*
 	 * Structural pre-dispatch reject count from validate_arg_coupling().
-	 * Formerly folded into post_handler_corrupt_ptr; split so the
-	 * spike-detector on the headline reacts only to genuine scribble-
-	 * catches.  Drained from STATS_FIELD_VALIDATOR_REJECTED.
+	 * Kept apart from post_handler_corrupt_ptr so the spike-detector
+	 * on the headline reacts only to genuine scribble-catches.  Drained
+	 * from STATS_FIELD_VALIDATOR_REJECTED.
 	 */
 	unsigned long validator_rejected;
 	/*
