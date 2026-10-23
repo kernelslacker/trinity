@@ -175,6 +175,9 @@ REAL_SRCS	:= \
 # (signals-fault-handler.c, signals-async-safe.c).
 # rand/random-address.c and random_syscall/dispatch-step.c bring the
 # writable pool, avoid_shared_buffer_out() and redqueen_pin_field().
+# random_syscall/chain-subst.c brings apply_chain_substitution() and the
+# value mask the RedQueen pin shares with it; redqueen_pin_test.c fakes the
+# type-graph observer the substitution feeds.
 # random_syscall/fd-group.c brings account_fd_and_group(), which
 # owned_fd_ring_test.c runs over the real owned-fd rings; the live-fd
 # ring push and the two knobs it reads are faked there.
@@ -246,6 +249,7 @@ PARENT_SRCS	:= \
 	$(TOP)/health/signals-async-safe.c \
 	$(TOP)/rand/random-address.c \
 	$(TOP)/random_syscall/dispatch-step.c \
+	$(TOP)/random_syscall/chain-subst.c \
 	$(TOP)/random_syscall/fd-group.c \
 	$(TOP)/ioctls/loop.c \
 	$(TOP)/ioctls/pidfd.c \

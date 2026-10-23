@@ -7,7 +7,8 @@
  * regardless of where the args came from.
  *
  * compute_numeric_substitute_mask is public via include/syscall.h;
- * apply_chain_substitution is cross-cluster private (declared in
+ * apply_chain_substitution and rewrite_refused_slots, which the RedQueen
+ * pin shares, are cross-cluster private (declared in
  * include/random-syscall-internal.h); argtype_accepts_numeric_
  * substitute is file-scope static.
  */
@@ -164,6 +165,42 @@ uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry)
 }
 
 /*
+ * Slots of @entry that must not be handed @value once the sanitiser has
+ * run.  A sanitiser keeps trinity's own descriptors out of the fd slots it
+ * fills and the parent's pid out of the pid slots, and a rewrite after it
+ * (the substitution below, the RedQueen pin in dispatch-step.c) is the one
+ * thing that can put either back.  Bit k covers slot k + 1, like
+ * numeric_substitute_mask.  The kernel reads an fd or a pid as an int, so
+ * @value is judged by its low 32 bits.
+ *
+ * The protected fds are the kcov PC/cmp fds, STDERR_FILENO and the stderr
+ * capture memfd.  sanitise_dup2 picks newfd from [256, 4095) and other
+ * ranges that overlap those slots; a successful dup2() to one of them
+ * silently closes the protected fd, and propagating its number into a
+ * downstream close()/close_range()/dup2() arg finishes the job.  A pid
+ * slot that names the parent would make a SIGKILL-class syscall hit
+ * trinity's own main process.
+ */
+uint8_t rewrite_refused_slots(const struct syscallentry *entry,
+			      unsigned long value)
+{
+	bool parent_pid = (pid_t) value == mainpid;
+	bool protected_fd = fd_is_protected((int) value);
+	uint8_t refused = 0;
+	unsigned int i;
+
+	if (!parent_pid && !protected_fd)
+		return 0;
+
+	for (i = 0; i < entry->num_args && i < 6; i++) {
+		if ((parent_pid && entry->argtype[i] == ARG_PID) ||
+		    (protected_fd && is_fdarg(entry->argtype[i])))
+			refused |= (uint8_t)(1u << i);
+	}
+	return refused;
+}
+
+/*
  * Apply Phase 1 retval substitution to rec in place.  Used by both the
  * fresh-args path (random_syscall_step) and the corpus-replay path
  * (replay_syscall_step) so the chain semantics — substituted args reach
@@ -190,34 +227,13 @@ void apply_chain_substitution(struct syscallrecord *rec,
 	mask = entry->numeric_substitute_mask;
 	if (mask == 0)
 		return;
-	if (substitute_retval == (unsigned long)mainpid) {
-		for (i = 0; i < entry->num_args && i < 6; i++) {
-			if (entry->argtype[i] == ARG_PID)
-				mask &= (uint8_t)~(1u << i);
-		}
-		if (mask == 0)
-			return;
-	}
-
 	/*
-	 * Same defence for protected fds (kcov PC/cmp, STDERR_FILENO, the
-	 * stderr capture memfd).  sanitise_dup2 picks newfd from
-	 * [256, 4095) and other ranges that overlap those slots; a
-	 * successful dup2() to one of them silently closes the protected
-	 * fd, and propagating its number into a downstream
-	 * close()/close_range()/dup2() arg via the chain substitute
-	 * finishes the job.  Mask the fd slots when substitute_retval
-	 * names a protected fd so the chain steers the substitute to a
-	 * non-fd slot (or skips this step entirely).
+	 * A slot the value is refused for is no candidate: the chain steers
+	 * the substitute to another slot, or skips this step entirely.
 	 */
-	if (fd_is_protected((int)substitute_retval)) {
-		for (i = 0; i < entry->num_args && i < 6; i++) {
-			if (is_fdarg(entry->argtype[i]))
-				mask &= (uint8_t)~(1u << i);
-		}
-		if (mask == 0)
-			return;
-	}
+	mask &= (uint8_t)~rewrite_refused_slots(entry, substitute_retval);
+	if (mask == 0)
+		return;
 
 	/*
 	 * Pick uniformly from the eligible-slot set: count the active

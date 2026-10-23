@@ -18,6 +18,7 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 
 struct childdata;
 struct syscallrecord;
@@ -117,6 +118,12 @@ void apply_chain_substitution(struct syscallrecord *rec,
 			      bool have_substitute,
 			      unsigned long substitute_retval);
 
+/* The slots of an entry that a rewrite after the sanitiser must not set to
+ * a value: protected fds in fd slots, the parent's pid in pid slots.  Bit k
+ * is slot k + 1.  Shared by chain substitution and the RedQueen pin. */
+uint8_t rewrite_refused_slots(const struct syscallentry *entry,
+			      unsigned long value);
+
 /* strategy-rotate.c, per-syscall-edges.c, warm-reserve.c,
  * remote-adaptive.c, fd-group.c -- strategy-window rotation and
  * per-call reward / cohort attribution.  Called from dispatch-step.c on
@@ -149,5 +156,13 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
  */
 void redqueen_pin_field(struct syscallrecord *rec,
 			const struct reexec_pending *p);
+
+/*
+ * Whether redqueen_reexec_step() refuses the scalar pin @p for @entry;
+ * declared here so tests/redqueen_pin_test.c can reach the judgement
+ * without the re-exec.
+ */
+bool redqueen_pin_refused(const struct syscallentry *entry,
+			  const struct reexec_pending *p);
 
 #endif /* _TRINITY_RANDOM_SYSCALL_INTERNAL_H */

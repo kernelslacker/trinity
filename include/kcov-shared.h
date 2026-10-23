@@ -185,7 +185,8 @@ struct kcov_shared {
 	struct kcov_hyp_flat hyp_flat;
 	/* Per-entry early-FAIL skip counters inside redqueen_reexec_step:
 	 * closes the per-entry skip partition once the per-call gate has
-	 * already passed. */
+	 * already passed.  A scalar pin that redqueen_pin_refused() turns
+	 * away counts as a bad slot. */
 	struct kcov_reexec_step reexec_step;
 	/* Per-kind flat census of typed CMP hypothesis insertions.
 	 * SHADOW telemetry only -- no consumer reads it. */

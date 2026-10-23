@@ -3,18 +3,25 @@
  * pinned only through a well-formed pointer to a struct timespec wholly
  * inside the writable pool, and any other slot is left untouched.
  * range_in_writable_pool() also gets its edge cases checked directly.
+ * The value mask a scalar pin and chain substitution share keeps
+ * protected fds out of fd slots and the parent's pid out of pid slots.
  */
 
 #include <limits.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "cmp_hints/redqueen.h"
 #include "debug.h"			/* BUG */
+#include "fd.h"				/* fd_is_protected */
+#include "pids.h"			/* mainpid */
 #include "random-syscall-internal.h"	/* redqueen_pin_field */
 #include "sanitise.h"			/* writable pool */
 #include "syscall.h"			/* struct syscallrecord */
+#include "type-graph.h"			/* type_graph_observe_consume */
 #include "utils.h"			/* ARRAY_SIZE, is_corrupt_ptr_shape */
 
 #define PIN_VALUE	0x0123456789abcdefUL
@@ -190,6 +197,146 @@ static void bad_pointer_not_written(unsigned long pool_end)
 	free(heap_ts);
 }
 
+/* Stands in for the type-graph consume observer apply_chain_substitution()
+ * feeds; nothing here reads it. */
+void type_graph_observe_consume(unsigned int consumer_nr, bool do32bit,
+				unsigned int consumer_arg,
+				unsigned long substitute_retval)
+{
+	(void) consumer_nr;
+	(void) do32bit;
+	(void) consumer_arg;
+	(void) substitute_retval;
+}
+
+/* Not stderr, and none of the other protected fds is open in this binary. */
+#define INNOCENT_FD	1000UL
+
+/* Slots 1 and 4 take an fd, slot 2 a pid. */
+static struct syscallentry mask_entry = {
+	.name = "value_mask_test",
+	.num_args = 5,
+	.argtype = { ARG_FD, ARG_PID, ARG_LEN, ARG_FD_PIPE, ARG_UNDEFINED },
+};
+
+static bool pin_refused(unsigned int slot, unsigned long value,
+			unsigned int size, enum reexec_field_kind kind)
+{
+	struct reexec_pending p = {
+		.value = value,
+		.size = size,
+		.slot = slot,
+		.field_kind = kind,
+	};
+
+	return redqueen_pin_refused(&mask_entry, &p);
+}
+
+/* A scalar pin may not put a protected fd in an fd slot or the parent's pid
+ * in a pid slot, and judges the number the way the kernel reads it: by its
+ * low 32 bits. */
+static void pin_value_mask(void)
+{
+	const unsigned long parent = (unsigned long) mainpid;
+	static const unsigned int widths[] = { 0, 4, 8 };
+	unsigned int w, slot, size;
+
+	if (fd_is_protected((int) INNOCENT_FD) || fd_is_protected((int) parent))
+		BUG("redqueen pin: the test's innocent numbers are protected");
+
+	for (w = 0; w < ARRAY_SIZE(widths); w++) {
+		size = widths[w];
+
+		for (slot = 1; slot <= 4; slot += 3) {
+			if (!pin_refused(slot, STDERR_FILENO, size, REEXEC_FIELD_NONE))
+				BUG("redqueen pin: stderr was pinned into an fd slot");
+			if (!pin_refused(slot, STDERR_FILENO | (1UL << 40), size,
+					 REEXEC_FIELD_NONE))
+				BUG("redqueen pin: stderr with upper bits was pinned into an fd slot");
+			if (pin_refused(slot, INNOCENT_FD, size, REEXEC_FIELD_NONE))
+				BUG("redqueen pin: an unprotected fd was refused");
+			if (pin_refused(slot, parent, size, REEXEC_FIELD_NONE))
+				BUG("redqueen pin: the parent's pid was refused in an fd slot");
+		}
+
+		if (!pin_refused(2, parent, size, REEXEC_FIELD_NONE))
+			BUG("redqueen pin: the parent's pid was pinned into a pid slot");
+		if (!pin_refused(2, parent | (1UL << 32), size, REEXEC_FIELD_NONE))
+			BUG("redqueen pin: the parent's pid with upper bits was pinned into a pid slot");
+		if (pin_refused(2, 1, size, REEXEC_FIELD_NONE) ||
+		    pin_refused(2, STDERR_FILENO, size, REEXEC_FIELD_NONE))
+			BUG("redqueen pin: a pid that is not the parent's was refused");
+
+		for (slot = 3; slot <= 5; slot += 2) {
+			if (pin_refused(slot, STDERR_FILENO, size, REEXEC_FIELD_NONE) ||
+			    pin_refused(slot, parent, size, REEXEC_FIELD_NONE))
+				BUG("redqueen pin: a slot that is neither fd nor pid was refused");
+		}
+	}
+
+	/* The bytes a narrow compare leaves out come from the regenerated
+	 * argument, so an fd or pid slot cannot be judged. */
+	for (size = 1; size < sizeof(unsigned int); size++) {
+		if (!pin_refused(1, INNOCENT_FD, size, REEXEC_FIELD_NONE) ||
+		    !pin_refused(2, 1, size, REEXEC_FIELD_NONE))
+			BUG("redqueen pin: a narrow pin into an fd or pid slot was not refused");
+		if (pin_refused(3, STDERR_FILENO, size, REEXEC_FIELD_NONE))
+			BUG("redqueen pin: a narrow pin into a length slot was refused");
+	}
+
+	/* A field pin writes inside a struct, and a slot the entry does not
+	 * have is for the caller to turn away. */
+	if (pin_refused(1, STDERR_FILENO, sizeof(long), REEXEC_FIELD_TIMESPEC_SEC))
+		BUG("redqueen pin: a field pin was refused for its slot's argtype");
+	if (pin_refused(0, STDERR_FILENO, sizeof(long), REEXEC_FIELD_NONE) ||
+	    pin_refused(6, STDERR_FILENO, sizeof(long), REEXEC_FIELD_NONE))
+		BUG("redqueen pin: a slot past the entry was judged");
+}
+
+/* Chain substitution asks the same question: a value refused for a slot is
+ * never written there, and still reaches the slots that may hold it. */
+static void substitution_value_mask(void)
+{
+	const unsigned long parent = (unsigned long) mainpid;
+	const unsigned long cases[] = {
+		STDERR_FILENO, parent, parent | (1UL << 32), INNOCENT_FD,
+	};
+	/* a1 fd, a2 pid, a3 length: all three take a number. */
+	struct syscallentry entry = {
+		.name = "substitution_mask_test",
+		.num_args = 3,
+		.argtype = { ARG_FD, ARG_PID, ARG_LEN },
+	};
+	struct syscallrecord sr;
+	unsigned int c, i, wrote_allowed;
+
+	entry.numeric_substitute_mask = compute_numeric_substitute_mask(&entry);
+
+	for (c = 0; c < ARRAY_SIZE(cases); c++) {
+		unsigned long v = cases[c];
+		bool fd_refused = (int) v == STDERR_FILENO;
+		bool pid_refused = (pid_t) v == mainpid;
+
+		wrote_allowed = 0;
+		for (i = 0; i < 4000; i++) {
+			memset(&sr, 0, sizeof(sr));
+			sr.a1 = sr.a2 = sr.a3 = 0x1111;
+
+			apply_chain_substitution(&sr, &entry, true, v);
+
+			if (fd_refused && sr.a1 != 0x1111)
+				BUG("substitution: a protected fd was written into an fd slot");
+			if (pid_refused && sr.a2 != 0x1111)
+				BUG("substitution: the parent's pid was written into a pid slot");
+			if ((!fd_refused && sr.a1 == v) ||
+			    (!pid_refused && sr.a2 == v) || sr.a3 == v)
+				wrote_allowed++;
+		}
+		if (wrote_allowed == 0)
+			BUG("substitution: no value reached a slot that may hold it");
+	}
+}
+
 void redqueen_pin_self_check(void);
 void redqueen_pin_self_check(void)
 {
@@ -211,4 +358,6 @@ void redqueen_pin_self_check(void)
 	pool_buffers_accepted();
 	pool_buffer_pinned();
 	bad_pointer_not_written(base + WRITABLE_POOL_BYTES);
+	pin_value_mask();
+	substitution_value_mask();
 }

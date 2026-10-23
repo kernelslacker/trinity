@@ -883,6 +883,33 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 }
 
 /*
+ * Whether the scalar pin @p would hand the kernel something the sanitiser
+ * kept out of its slot: a protected fd in an fd slot, the parent's pid in a
+ * pid slot (rewrite_refused_slots(), the judgement chain substitution makes
+ * of the same two values).  A narrower compare than the 32 bits the kernel
+ * reads an fd or a pid from pins only the low bytes of the slot and leaves
+ * the rest to the arguments the re-exec regenerates, so what the slot would
+ * hold cannot be judged before they exist.  No compare of an fd or a pid is
+ * that narrow, and such a pin is refused.  A field pin writes through a
+ * pointer and fills no fd or pid slot.
+ */
+bool redqueen_pin_refused(const struct syscallentry *entry,
+			  const struct reexec_pending *p)
+{
+	enum argtype t;
+
+	if (p->field_kind != REEXEC_FIELD_NONE ||
+	    p->slot == 0 || p->slot > entry->num_args || p->slot > 6)
+		return false;
+
+	t = entry->argtype[p->slot - 1];
+	if (p->size > 0 && p->size < sizeof(unsigned int))
+		return is_fdarg(t) || t == ARG_PID;
+
+	return (rewrite_refused_slots(entry, p->value) >> (p->slot - 1)) & 1;
+}
+
+/*
  * Pin a single arg slot to a learned-constant value.  Slot is 1-based
  * (matches the rec->aN naming and reexec_pending::slot encoding); size is
  * the kernel comparison width in bytes and drives the width-preserving
@@ -1068,7 +1095,10 @@ static bool redqueen_reexec_step(struct childdata *child,
 		return FAIL;
 	}
 
-	if (p->slot == 0 || p->slot > entry->num_args) {
+	/* A pin the value mask refuses is skipped as a bad slot: the slot
+	 * cannot take the constant. */
+	if (p->slot == 0 || p->slot > entry->num_args ||
+	    redqueen_pin_refused(entry, p)) {
 		if (kcov_shm != NULL)
 			__atomic_fetch_add(&kcov_shm->reexec_step.reexec_step_skip_bad_slot,
 					   1UL, __ATOMIC_RELAXED);
