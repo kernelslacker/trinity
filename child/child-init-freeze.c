@@ -1,20 +1,8 @@
 /*
- * Per-child freeze phase: mprotect the shared regions this child must
- * not scribble (sibling childdata + pids[] + stats mirror), then
- * rendezvous with the parent, seed the child PRNG, bring up per-child
- * object pools (OBJ_LOCAL list, cloned OBJ_GLOBAL snapshot, mappings,
- * futexes, dirty mapping), and optionally pin the child to a CPU.
- * Split out of child-init.c so make -j can compile the freeze /
- * rendezvous path concurrently with the sandbox / runtime setup
- * helpers.
- *
- * bind_child_to_cpu stays static -- only init_child_rendezvous_parent
- * calls it and both live here.  freeze_sibling_childdata was already
- * exposed via include/child-internal.h (the loop-top catch-up sweep
- * in child.c calls across the TU boundary).  init_child_freeze_shared
- * and init_child_rendezvous_parent shed their static linkage so
- * init_child (in child-init-core.c) can call them; declarations
- * added to include/child-internal.h.
+ * Per-child freeze phase: mprotect(PROT_READ) the shared regions this
+ * child must not scribble (sibling childdata, pids[], the stats mirror),
+ * then rendezvous with the parent, seed the child PRNG, bring up the
+ * per-child object pools and optionally pin the child to a CPU.
  */
 
 #include <errno.h>

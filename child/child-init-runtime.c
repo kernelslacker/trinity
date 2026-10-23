@@ -2,19 +2,8 @@
  * Final per-child runtime configuration: kcov bring-up, uniarch
  * active-syscalls pin, explorer-pool slot flag, the A/B-comparison
  * cohort stamps, then post-setup hygiene (heap-bounds re-snapshot,
- * RLIMIT_AS pin, one-shot disable_coredumps).  Split out of
- * child-init.c so make -j can compile the runtime-config phase
- * concurrently with the clean / freeze / isolate / sandbox setup
- * helpers.
- *
- * The internal step helpers (init_child_runtime_basics,
- * init_child_ab_stamps, init_child_finalize) stay static -- only
- * init_child_runtime_config calls them and all four live here.
- * init_child_runtime_config sheds its static linkage so init_child
- * (in child-init-core.c) can call it across the TU boundary;
- * declaration added to include/child-internal.h.
- * TRINITY_CHILD_AS_CAP_BYTES moves too -- init_child_finalize is
- * the only reader of the macro.
+ * RLIMIT_AS pin, one-shot disable_coredumps).  The ordering constraints
+ * are documented on init_child_finalize().
  */
 
 #include <errno.h>

@@ -1,23 +1,9 @@
 /*
- * Per-child sandbox bring-up: block on shm->ready, arm the fault
- * injectors (via child-init-clean.c helpers), move the inherited
- * rotation sink out of the low fd range, optionally dirty FPU and
- * mask signals, per-child unshare()s (with the mnt/net gates on
- * shm->isolation.*_ready), root-only drop_privs(), unconditional
- * capset()-to-empty + cap-drop oracle anchor capture, the idle init
- * of a new pid namespace, and the random rlimit / umask sweep in
- * munge_process.
- *
- * Split out of child-init.c so make -j can compile the sandbox
- * phase concurrently with the clean / freeze / isolate / runtime
- * setup helpers.
- *
- * munge_process stays static -- only init_child_setup_sandbox calls
- * it and both live here.  init_child_setup_sandbox sheds its static
- * linkage so init_child (in child-init-core.c) can call it;
- * declaration added to include/child-internal.h.
- * set_make_it_fail / open_fail_nth / open_tainted_fd / use_fpu
- * remain declared in include/child-internal.h from the clean.c carve.
+ * Per-child sandbox bring-up, init_child_setup_sandbox() (phases listed on
+ * the function): fault-injector and rotation-sink fd setup, per-child
+ * unshare()s, drop_privs(), the capset()-to-empty drop and the cap-drop
+ * oracle's namespace anchors, the userns-admin lane, the idle init of a new
+ * pid namespace (child-pidns-init.c) and the random rlimit / umask sweep.
  */
 
 #include <errno.h>

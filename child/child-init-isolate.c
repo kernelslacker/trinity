@@ -1,14 +1,8 @@
 /*
- * Per-child stdio + controlling-terminal isolation: redirect fd
- * 0/1/2 to /dev/null, drop the inherited parent-only fds
- * (--stats-log-file, self-cgroup, /proc/<pid>/stat), and setsid()
- * away from the controlling tty.  Split out of child-init.c so make
- * -j can compile the isolation contract concurrently with the freeze
- * / sandbox / runtime setup helpers.
- *
- * init_child_isolate_io sheds its static linkage so init_child
- * (in child-init-core.c) can call it across the TU boundary;
- * declaration added to include/child-internal.h.
+ * Per-child stdio and controlling-terminal isolation: fd 0/1/2 to
+ * /dev/null, drop the inherited parent-only fds (--stats-log-file,
+ * self-cgroup, /proc/<pid>/stat), and setsid() away from the
+ * controlling tty.
  */
 
 #include <errno.h>
