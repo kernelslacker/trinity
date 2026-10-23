@@ -1,8 +1,8 @@
 # syscalls/ — Per-Syscall Descriptor Table
 
-Largest directory in the codebase: 364 `.c` files (14 directly here, 343
-grouped into 28 by-family subdirectories, 7 arch-specific under `x86/`),
-plus 6 headers, ~65,800 LOC in `.c` files alone. One file per Linux syscall
+Largest directory in the codebase: 366 `.c` files (14 directly here, 343
+grouped into 28 by-family subdirectories, 7 arch-specific under `x86/`
+and 2 under `riscv/`), plus 6 headers, ~65,900 LOC in `.c` files alone. One file per Linux syscall
 Trinity fuzzes (`accept.c`, `access.c`, `acct.c`, ... `write.c`), each defining a
 single `struct syscallentry syscall_<name>` descriptor consumed by
 `tables/` at init time. This directory has no control flow of its own — it
@@ -15,7 +15,7 @@ Files are grouped by family into subdirectories — `fs/` (84), `process/`
 (35), `mm/` (26), `signal/` (22), `cred/` (18), `sched/` (18), `socket/`
 (15), `ipc/` (14), `xattr/` (14), `clock/` (11), `concurrency/` (10),
 `poll/` (8), `timer/` (8), plus 15 smaller ones — with 14 files left
-directly in `syscalls/`. Do not enumerate all 364 files individually — they
+directly in `syscalls/`. Do not enumerate all 366 files individually — they
 follow one of two shapes:
 
 **Bulk (235 of the 357 non-arch files are under 200 LOC): pure descriptor pattern.**
@@ -63,7 +63,8 @@ pair managing a heap allocation stashed in `rec->post_state`.
 **Arch-specific subdirectories** (compiled conditionally by `Makefile`'s
 `SYSCALLS_ARCH` variable, keyed off `$(CC) -dumpmachine`):
 `x86/{ioperm,iopl,modify_ldt}.c`, `x86/i386/{vm86,vm86old}.c`,
-`x86/x86_64/{arch_prctl,uretprobe}.c`. Small (12-345 lines), single-syscall,
+`x86/x86_64/{arch_prctl,uretprobe}.c`, `riscv/{riscv_hwprobe,riscv_flush_icache}.c`
+(riscv64 only, guarded by `#if defined(__riscv) && __riscv_xlen == 64`). Small (12-345 lines), single-syscall,
 same descriptor pattern.
 
 **Headers**: `syscalls.h` (438 lines) — `extern struct syscallentry
@@ -235,7 +236,7 @@ top of each header as private to that pair of TUs).
 
 ## Summary
 
-364 files, one `struct syscallentry` per Linux syscall Trinity fuzzes,
+366 files, one `struct syscallentry` per Linux syscall Trinity fuzzes,
 consumed exclusively by `tables/copy_syscall_table()` at startup. The
 overwhelming majority are small declarative descriptors —
 `argtype[]` plus an optional `sanitise_X()`/`post_X()`/`cleanup_X()` triplet
@@ -245,5 +246,5 @@ syscalls with genuinely complex kernel ABIs (`prctl`, `setsockopt`,
 `ptrace`, `keyctl`) carry hundreds to over a thousand lines of dedicated opcode
 tables, dispatch logic, and cross-call state, some split into a second TU
 via a private `-internal.h`. Arch-specific syscalls live in the `x86/`
-subdirectory, compiled in only for the matching target via `Makefile`'s
+and `riscv/` subdirectories, compiled in only for the matching target via `Makefile`'s
 `SYSCALLS_ARCH` glob.
