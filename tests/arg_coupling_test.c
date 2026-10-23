@@ -3,10 +3,10 @@
  * final argument slots to, an entry's own .vet_final rule first: a rewrite
  * after the sanitiser (chain substitution, a RedQueen pin) must not leave
  * the kernel a range the sanitiser would have refused.  A buffer-filling
- * count stays inside its buffer, a munmap, mprotect, pkey_mprotect or
- * madvise range inside the pool mapping its sanitiser picked, madvise's
- * (addr, len) off trinity's tracked regions too, and a madvise never
- * installs guard pages.
+ * count stays inside its buffer, a munmap, mprotect, pkey_mprotect,
+ * madvise or set_mempolicy_home_node range inside the pool mapping its
+ * sanitiser picked, madvise's (addr, len) off trinity's tracked regions
+ * too, and a madvise never installs guard pages.
  */
 
 #include <limits.h>
@@ -1337,6 +1337,84 @@ static void range_pages_read_as_the_kernel_does(void)
 		BUG("maps: pages outside a mapping were judged inside it");
 }
 
+/* set_mempolicy_home_node's sanitiser turns the ARG_MMAP handle into the
+ * picked mapping's address and a length inside it, over a mapping an
+ * mremap() grow left larger than its tracked size too, and its hook holds
+ * the final slots there: a length or an address a rewrite moves out of
+ * the mapping is refused, a range still inside passes, and so does one
+ * the kernel acts on nothing of.  A compat call is built empty over the
+ * high mapping and kept over a low one; a call with no mapping passes
+ * only an empty range. */
+static void home_node_range_held_to_mapping(void)
+{
+	struct syscallentry entry = syscall_set_mempolicy_home_node;
+	const unsigned long pg = page_size, whole = POOL_PAGES * pg;
+	const struct {
+		unsigned long addr, len;
+		int verdict;
+	} cases[] = {
+		{ POOL_MAP, whole + pg, -1 },
+		{ POOL_MAP, 0x7ffff000UL, -1 },
+		{ POOL_MAP - pg, 2 * pg, -1 },
+		{ POOL_MAP + whole, pg, -1 },
+		{ 0x10000000UL, pg, -1 },
+		{ POOL_MAP, whole, 0 },
+		{ POOL_MAP + pg, pg - 1, 0 },
+		{ POOL_MAP + 1, pg, 0 },
+		{ POOL_MAP, 0, 0 },
+		{ POOL_MAP, ~0UL, 0 },
+	};
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mm_call(&entry);
+		if (i & 1)
+			pool_obj.map.size = 2 * whole;
+		mrec->do32bit = (i % 10) == 0;
+		entry.sanitise(mrec);
+		if (mrec->do32bit ? (mrec->a1 != 0 || mrec->a2 != 0) :
+		    (mrec->a1 != POOL_MAP || mrec->a2 >= pool_obj.map.size))
+			BUG("set_mempolicy_home_node: the range was not built in the picked mapping");
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("set_mempolicy_home_node: a range the sanitiser built was refused");
+		entry.cleanup(mrec);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		mrec = mm_call(&entry);
+		entry.sanitise(mrec);
+		mrec->a1 = cases[i].addr;
+		mrec->a2 = cases[i].len;
+		if (validate_arg_coupling(mrec, mrec->entry) != cases[i].verdict)
+			BUG("set_mempolicy_home_node: a rewritten range was judged wrongly");
+		entry.cleanup(mrec);
+	}
+
+	mrec = mm_call(&entry);
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	mrec->do32bit = true;
+	entry.sanitise(mrec);
+	if (mrec->a1 != LOW_POOL_MAP || validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("set_mempolicy_home_node: a compat call over a low mapping was emptied or refused");
+	entry.cleanup(mrec);
+
+	mrec = mm_call(&entry);
+	mrec->a1 = 0;
+	entry.sanitise(mrec);
+	if (mrec->post_state != 0)
+		BUG("set_mempolicy_home_node: the sanitiser left a snapshot with no mapping");
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("set_mempolicy_home_node: a call with no mapping kept a range");
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("set_mempolicy_home_node: an empty call with no mapping was refused");
+
+	fake_this_child = NULL;
+}
+
 /* The mapping's cached prot after a call whose range the sanitiser drew
  * from a mapping with @prot_before, over prot @prot, that was rewritten to
  * the final slots @len, @final_prot and @key, and worked. */
@@ -1709,5 +1787,6 @@ void arg_coupling_self_check(void)
 	keyed_range_drops_cached_prot();
 	munmap_range_held_to_mapping();
 	range_pages_read_as_the_kernel_does();
+	home_node_range_held_to_mapping();
 	mprotect_range_held_to_mapping();
 }

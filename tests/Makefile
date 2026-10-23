@@ -520,6 +520,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
 		   $(TOP)/syscalls/process/waitpid.c \
 		   $(TOP)/syscalls/process/waitid.c
 
+# syscalls/mm/numa/set_mempolicy_home_node.c brings set_mempolicy_home_node,
+# whose sanitiser and .vet_final hook arg_coupling_test.c runs over the
+# fake pool mapping the munmap tests use.
+PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c
+
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and
 # objects_pool_empty(), and the for_each_obj snapshot.  They read the
