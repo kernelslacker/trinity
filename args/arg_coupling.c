@@ -3,8 +3,8 @@
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: (address, length)
  * coherence, then the per-syscall rules for fcntl F_SETSIG, waits on a pid
- * namespace init, close_range, madvise, the munmap range and buf_count_slot
- * byte counts.
+ * namespace init, close_range, madvise, the munmap and mprotect ranges and
+ * buf_count_slot byte counts.
  */
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -395,15 +395,16 @@ int validate_arg_coupling(struct syscallrecord *rec)
 	}
 
 	/*
-	 * munmap: the final range has to stay inside the pool mapping the
-	 * sanitiser picked (see map_range_vet()).  Chain substitution and a
-	 * RedQueen pin rewrite slots after the sanitiser has run, and
-	 * do_vmi_munmap() unmaps every VMA a longer range reaches.  Refused
-	 * like close_range above; a call that passes has its snapshot moved
-	 * to the final slots, so the post handler acts on what the kernel
-	 * was handed.
+	 * munmap, mprotect, pkey_mprotect: the final range has to stay
+	 * inside the pool mapping the sanitiser picked (see map_range_vet()).
+	 * Chain substitution and a RedQueen pin rewrite slots after the
+	 * sanitiser has run, and the kernel unmaps or reprotects every VMA a
+	 * longer range reaches.  Refused like close_range above; a call that
+	 * passes has its snapshot moved to the final slots, so the post
+	 * handler acts on what the kernel was handed.
 	 */
-	if (entry->is_munmap && !munmap_vet_final_slots(rec)) {
+	if ((entry->is_munmap && !munmap_vet_final_slots(rec)) ||
+	    (entry->is_mprotect_family && !mprotect_vet_final_slots(rec))) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
 			  entry->name);
 		return -1;

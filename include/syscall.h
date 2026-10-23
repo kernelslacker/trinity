@@ -668,6 +668,12 @@ struct syscallentry {
 	bool is_munmap;
 
 	/*
+	 * The same for mprotect and pkey_mprotect, which share a sanitiser
+	 * (mprotect_vet_final_slots()).  The last byte of the hole.
+	 */
+	bool is_mprotect_family;
+
+	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls
@@ -1141,6 +1147,12 @@ bool close_range_call_is_vetted(const struct syscallrecord *rec);
  * keeps the snapshot private, for validate_arg_coupling().
  */
 bool munmap_vet_final_slots(const struct syscallrecord *rec);
+
+/*
+ * The same for mprotect and pkey_mprotect; a pass also refreshes the
+ * prot and the key in the snapshot.  Defined in syscalls/mm/mprotect.c.
+ */
+bool mprotect_vet_final_slots(const struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

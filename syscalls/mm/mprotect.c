@@ -1,5 +1,8 @@
 /*
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
+ *
+ * The range stays inside the pool mapping the sanitiser picked, final
+ * slots included (mprotect_vet_final_slots()).
  */
 #include <asm/mman.h>
 #include "arch.h"
@@ -13,7 +16,8 @@
 #include "kernel/mman.h"
 /*
  * Snapshot of the mprotect inputs read by the post handler, captured at
- * sanitise time and consumed by the post handler.  Lives in
+ * sanitise time, moved to the final slots at dispatch
+ * (mprotect_vet_final_slots()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the addr/len/prot/map the post handler
@@ -40,12 +44,34 @@
 #define MPROTECT_POST_STATE_MAGIC	0x4D505254UL	/* "MPRT" */
 struct mprotect_post_state {
 	unsigned long magic;
-	unsigned long addr;
-	unsigned long len;
+	struct map_range range;
 	unsigned long prot;
 	unsigned long pkey;
-	unsigned long map;
 };
+
+/*
+ * validate_arg_coupling() holds the final slots to the mapping with this
+ * (see map_range_vet()).  A pass also moves the prot, and pkey_mprotect's
+ * key, into the snapshot, since post_mprotect caches them into map->prot.
+ * A record with no snapshot of ours passes only a range the kernel acts
+ * on nothing of.  Shape, then ownership, then magic, as
+ * close_range_call_is_vetted() orders them.
+ */
+bool mprotect_vet_final_slots(const struct syscallrecord *rec)
+{
+	struct mprotect_post_state *snap =
+		(struct mprotect_post_state *) rec->post_state;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != MPROTECT_POST_STATE_MAGIC)
+		return map_range_vet(rec, NULL, false);
+	if (!map_range_vet(rec, &snap->range, false))
+		return false;
+	snap->prot = rec->a3;
+	if (rec->entry->is_pkey_mprotect)
+		snap->pkey = rec->a4;
+	return true;
+}
 
 static void sanitise_mprotect(struct syscallrecord *rec)
 {
@@ -64,8 +90,11 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	if (map == NULL)
 		return;
 
+	/* A compat call's range has to fit the 32 bits the kernel reads of
+	 * each slot, or it is emptied as one over trinity's regions is. */
 	if (RANGE_OVERLAPS_SHARED_AUDITED("mprotect", rec->a1, rec->a2) ||
-	    range_overlaps_libc_heap(rec->a1, rec->a2)) {
+	    range_overlaps_libc_heap(rec->a1, rec->a2) ||
+	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
 	}
@@ -107,19 +136,20 @@ static void sanitise_mprotect(struct syscallrecord *rec)
 	 * syscall may have scribbled the slots: a stomped prot caches the
 	 * wrong bits into the cached map->prot invariant, and a stomped
 	 * addr/len mis-aims the proc-maps oracle.  post_state is private
-	 * to the post handler.  post_state_install pairs the rec->post_state
-	 * assign with the ownership-table register so the observable window
-	 * between the two is closed; post_mprotect() will then gate the snap
-	 * through post_state_claim_owned() and prove ownership before
-	 * dereferencing any field.
+	 * to the post handler, and validate_arg_coupling() moves it to the
+	 * slots the kernel is handed.  post_state_install pairs the
+	 * rec->post_state assign with the ownership-table register so the
+	 * observable window between the two is closed; post_mprotect() will
+	 * then gate the snap through post_state_claim_owned() and prove
+	 * ownership before dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = MPROTECT_POST_STATE_MAGIC;
-	snap->addr = rec->a1;
-	snap->len  = rec->a2;
-	snap->prot = rec->a3;
-	snap->pkey = pkey ? rec->a4 : (unsigned long) -1;
-	snap->map  = (unsigned long) map;
+	snap->magic      = MPROTECT_POST_STATE_MAGIC;
+	snap->range.map  = map;
+	snap->range.addr = rec->a1;
+	snap->range.len  = rec->a2;
+	snap->prot       = rec->a3;
+	snap->pkey       = pkey ? rec->a4 : (unsigned long) -1;
 	post_state_install(rec, snap);
 }
 
@@ -141,7 +171,7 @@ static void post_mprotect(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	map = (struct map *) snap->map;
+	map = snap->range.map;
 
 	if (rec->retval != 0 || map == NULL)
 		goto out_free;
@@ -162,7 +192,7 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * the prot or the key: nothing changed, so there is nothing to
 	 * record.
 	 */
-	if (snap->len == 0)
+	if (snap->range.len == 0)
 		goto out_free;
 
 	/*
@@ -194,7 +224,8 @@ static void post_mprotect(struct syscallrecord *rec)
 	 */
 	if ((int) snap->pkey != -1 && (int) snap->pkey != 0)
 		map->prot = 0;
-	else if (snap->addr == (unsigned long)map->ptr && snap->len == map->size)
+	else if (snap->range.addr == (unsigned long)map->ptr &&
+		 snap->range.len == map->size)
 		map->prot = snap->prot;
 	else
 		map->prot &= snap->prot;
@@ -217,11 +248,12 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * change we just applied.  A stale or wrong entry signals that the
 	 * kernel's VMA prot state diverged from what mprotect reported back.
 	 */
-	if (snap->len > 0 && ONE_IN(100)) {
-		if (!proc_maps_check(snap->addr, snap->len, snap->prot, true)) {
+	if (snap->range.len > 0 && ONE_IN(100)) {
+		if (!proc_maps_check(snap->range.addr, snap->range.len,
+				     snap->prot, true)) {
 			output(0, "mmap oracle: mprotect(%lx, %lu, 0x%lx) "
 			       "succeeded but prot not in /proc/self/maps\n",
-			       snap->addr, snap->len, snap->prot);
+			       snap->range.addr, snap->range.len, snap->prot);
 			__atomic_add_fetch(&shm->stats.oracle.mmap_oracle_anomalies, 1,
 					   __ATOMIC_RELAXED);
 		}

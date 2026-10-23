@@ -4,8 +4,8 @@
  * substitution, a RedQueen pin) must not leave the kernel a range the
  * sanitiser would have refused.  madvise's (addr, len) stays off trinity's
  * tracked regions, a buffer-filling count stays inside its buffer, and a
- * munmap range inside the pool mapping its sanitiser picked.  mprotect's
- * sanitiser, which pkey_mprotect shares, runs here too.
+ * munmap, mprotect or pkey_mprotect range inside the pool mapping its
+ * sanitiser picked.
  */
 
 #include <limits.h>
@@ -775,6 +775,105 @@ static void munmap_range_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* The mapping's cached prot after a call whose range the sanitiser drew
+ * from a mapping with @prot_before, over prot @prot, that was rewritten to
+ * the final slots @len, @final_prot and @key, and worked. */
+static int prot_after_rewrite(struct syscallentry *entry, int prot_before,
+			      unsigned long prot, unsigned long len,
+			      unsigned long final_prot, unsigned long key)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	pool_obj.map.prot = prot_before;
+	mrec->a3 = prot;
+	mrec->a4 = ~0UL;
+	entry->sanitise(mrec);
+	mrec->a2 = len;
+	mrec->a3 = final_prot;
+	mrec->a4 = key;
+	if (validate_arg_coupling(mrec) != 0)
+		BUG("mprotect: a range inside the mapping was refused");
+	mrec->retval = 0;
+	entry->post(mrec);
+	return pool_obj.map.prot;
+}
+
+/* mprotect's and pkey_mprotect's final range stays inside the mapping the
+ * sanitiser picked, and the prot and key the post handler caches are the
+ * ones the kernel was handed. */
+static void mprotect_range_held_to_mapping(void)
+{
+	struct syscallentry mprotect_entry = syscall_mprotect;
+	struct syscallentry pkey_entry = syscall_pkey_mprotect;
+	struct syscallentry *const entries[] = { &mprotect_entry, &pkey_entry };
+	const unsigned long whole = POOL_PAGES * page_size;
+	const int rw = PROT_READ | PROT_WRITE;
+	unsigned int e, i;
+
+	/* As copy_syscall_table() stamps the copies. */
+	mprotect_entry.is_mprotect_family = true;
+	pkey_entry.is_mprotect_family = true;
+	pkey_entry.is_pkey_mprotect = true;
+
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		struct syscallentry *entry = entries[e];
+		struct syscallrecord *mrec;
+
+		/* Over a mapping an mremap() grow left larger than its
+		 * tracked size too; a compat call over the high mapping is
+		 * built empty rather than refused. */
+		for (i = 0; i < MM_DRAWS; i++) {
+			mrec = mm_call(entry);
+			if (i & 1)
+				pool_obj.map.size = 2 * POOL_PAGES * page_size;
+			mrec->do32bit = (i % 10) == 0;
+			entry->sanitise(mrec);
+			if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
+				BUG("mprotect: the sanitiser built a compat range its slots cannot carry");
+			if (validate_arg_coupling(mrec) != 0)
+				BUG("mprotect: a range the sanitiser built was refused");
+			mrec->retval = (unsigned long) -1L;
+			entry->post(mrec);
+		}
+
+		/* The sanitiser starts the range at the mapping. */
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		mrec->a2 = whole + page_size;
+		if (validate_arg_coupling(mrec) != -1)
+			BUG("mprotect: a length running past the mapping was kept");
+		mrec->a2 = whole;
+		if (validate_arg_coupling(mrec) != 0)
+			BUG("mprotect: a length covering the mapping was refused");
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+
+		mrec = mm_call(entry);
+		mrec->a1 = 0;
+		entry->sanitise(mrec);
+		mrec->a2 = page_size;
+		if (validate_arg_coupling(mrec) != -1)
+			BUG("mprotect: a call with no mapping kept a range");
+
+		/* Over part of the mapping the cached prot can only lose
+		 * bits, over all of it it takes the new prot. */
+		if (prot_after_rewrite(entry, rw, rw, page_size, PROT_READ,
+				       ~0UL) != PROT_READ)
+			BUG("mprotect: the post handler cached the prot sanitise drew");
+		if (prot_after_rewrite(entry, PROT_READ, PROT_READ, whole, rw,
+				       ~0UL) != rw)
+			BUG("mprotect: the post handler took a whole-mapping call for a part");
+	}
+
+	/* A live key put in pkey_mprotect's slot after the sanitiser leaves
+	 * the cached prot nothing to vouch for. */
+	if (prot_after_rewrite(&pkey_entry, rw, rw, page_size, rw,
+			       LIVE_PKEY) != 0)
+		BUG("pkey_mprotect: the post handler cached a prot over a key it never saw");
+
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -784,4 +883,5 @@ void arg_coupling_self_check(void)
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	munmap_range_held_to_mapping();
+	mprotect_range_held_to_mapping();
 }

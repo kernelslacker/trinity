@@ -156,6 +156,9 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].is_close_range = (strcmp(copy[m].name, "close_range") == 0);
 		copy[m].is_madvise = (strcmp(copy[m].name, "madvise") == 0);
 		copy[m].is_munmap = (strcmp(copy[m].name, "munmap") == 0);
+		copy[m].is_mprotect_family =
+			(strcmp(copy[m].name, "mprotect") == 0 ||
+			 strcmp(copy[m].name, "pkey_mprotect") == 0);
 		copy[m].numeric_substitute_mask = compute_numeric_substitute_mask(&copy[m]);
 		copy[m].address_scrub_mask = compute_address_scrub_mask(&copy[m]);
 		/*
