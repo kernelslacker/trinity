@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
+#include "maps.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"
@@ -21,13 +22,25 @@
 
 static void sanitise_recv(struct syscallrecord *rec)
 {
+	struct map *map = (struct map *) rec->a2;
+
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	/* recv/recvfrom both pass a2 as the user output buffer with length
 	 * a3 — the kernel writes the received bytes there.  ARG_MMAP hands
-	 * us a struct map pointer rather than a real buffer, so the kernel
-	 * scribbles into adjacent heap memory; defensively redirect away
-	 * from any range that overlaps trinity's alloc_shared regions. */
+	 * us a struct map, and the buffer is the mapping it describes, not
+	 * the pool object; it is moved off any range that overlaps
+	 * trinity's alloc_shared regions, which an initial pool mapping is
+	 * one of.  The count is held to the mapping first: the kernel fills
+	 * as much of the buffer as the socket holds, and what lies past the
+	 * mapping is whatever the kernel placed there, which no region
+	 * check covers. */
+	rec->a2 = 0;
+	if (map != NULL && !looks_like_corrupted_ptr(rec, map)) {
+		rec->a2 = (unsigned long) map->ptr;
+		if (rec->a3 > map->size)
+			rec->a3 = map->size;
+	}
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
 }
 
@@ -94,9 +107,7 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	struct recvfrom_post_state *snap;
 	struct valresult_buf vrb;
 
-	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
-
-	avoid_shared_buffer_out(&rec->a2, rec->a3);
+	sanitise_recv(rec);
 
 	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
 	if (addr != NULL)

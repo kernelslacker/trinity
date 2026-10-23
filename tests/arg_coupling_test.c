@@ -526,6 +526,58 @@ static void get_mempolicy_addr_names_mapping(void)
 	fake_this_child = NULL;
 }
 
+extern bool fake_socket_fd_none;	/* post_oracle_test.c */
+
+/* recv's sanitiser, which recvfrom's begins with, turns the ARG_MMAP
+ * handle in the buffer slot into the start of the mapping it names, which
+ * the kernel writes what it receives to, and never leaves the struct map
+ * there: a buffer clear of trinity's regions stays at the mapping, one
+ * over a tracked mapping moves to a pool slot of the count's length, and
+ * with no mapping picked there is no buffer.  The kernel fills as much of
+ * the buffer as the socket holds, so the count is held to the mapping: one
+ * that fits is kept, a longer one cut to the mapping's size, and with no
+ * mapping there is nothing to hold it to.  recvfrom's sanitiser is not run
+ * itself: its value-result buffers go to deferred free, which in this
+ * binary keeps every chunk it is handed. */
+static void recv_buffer_names_mapping(void)
+{
+	const unsigned long size = POOL_PAGES * page_size;
+	const unsigned long counts[] = {
+		page_size, size, size + 1, WRITABLE_POOL_BYTES + 1, 0x7ffff000UL,
+	};
+	unsigned int c, n;
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+	fake_socket_fd_none = true;
+	for (c = 0; c < 3; c++) {
+		for (n = 0; n < ARRAY_SIZE(counts); n++) {
+			struct syscallrecord *mrec = mm_call(&syscall_recv);
+			unsigned long held = counts[n];
+
+			if (c != 2 && held > size)
+				held = size;
+			mrec->a1 = 0;
+			mrec->a2 = c == 2 ? 0 : (unsigned long) &pool_obj.map;
+			mrec->a3 = counts[n];
+			if (c == 1)
+				fake_track_region(POOL_MAP, size);
+			syscall_recv.sanitise(mrec);
+			fake_untrack_regions();
+			if ((c == 0 && mrec->a2 != POOL_MAP) ||
+			    (c == 1 && !range_in_writable_pool(mrec->a2, held)) ||
+			    (c == 2 && mrec->a2 != 0))
+				BUG("recv: the buffer is not the mapping the ARG_MMAP handle names");
+			if (mrec->a3 != held)
+				BUG("recv: the count was not held to the mapping");
+			mrec->retval = (unsigned long) -1L;
+			syscall_recv.post(mrec);
+		}
+	}
+	fake_socket_fd_none = false;
+	fake_this_child = NULL;
+}
+
 #define LIVE_PKEY	7
 
 /* pkey_mprotect shares mprotect's sanitiser, which draws a live key for
@@ -1190,6 +1242,7 @@ void arg_coupling_self_check(void)
 {
 	shmat_remap_held_to_mapping();
 	get_mempolicy_addr_names_mapping();
+	recv_buffer_names_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
