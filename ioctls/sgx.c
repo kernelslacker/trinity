@@ -1,10 +1,6 @@
 /*
  * ioctl fuzzing for Intel SGX kernel driver (isgx)
  * based on intel_sgx: Intel SGX Driver v0.10
- * Feb 25, 2018
- * Add support for SGXv2
- * Feb 26, 2018
- * root@davejingtian.org
  */
 #include <linux/types.h>
 #include <linux/ioctl.h>

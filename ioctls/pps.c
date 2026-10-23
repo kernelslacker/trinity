@@ -1,32 +1,8 @@
-/* /dev/pps[N] PPS (Pulse Per Second) chrdev ioctl fuzzing.
+/* /dev/pps[N] PPS (Pulse Per Second) chrdev ioctl fuzzing; uapi: linux/pps.h.
  *
- * uapi reference:
- *   include/uapi/linux/pps.h
- *
- * The pps core (drivers/pps/pps.c) registers its char-major dynamically
- * via alloc_chrdev_region() with the literal name "pps", so /proc/devices
- * shows it under "Character devices:" and the standard DEV_CHAR + devs[]
- * match path applies.  Per-device nodes are /dev/pps0, /dev/pps1, ...
- *
- * PPS is a passive timestamp consumer; the worst SETPARAMS can do is
- * desynchronise a clock discipliner on this host.  No firmware-update
- * surface, no out-of-band kernel state.  Server SKUs without a PPS
- * source (servers, headless machines) typically don't load pps_core.ko at
- * all and the device node simply won't be present.
- *
- * Note on the _IO* macros: PPS_GETPARAMS et al. encode the type as a
- * pointer (struct pps_kparams *), so _IOC_SIZE() == sizeof(void *) == 8,
- * not sizeof(struct pps_kparams).  The kernel handler dereferences a real
- * struct's worth of memory, so we must back rec->a3 with an actual
- * sizeof(struct ...) buffer via get_writable_struct(); never trust
- * _IOC_SIZE here.
- *
- * PPS_FETCH timeout semantics (drivers/pps/kapi.c::pps_cdev_pps_fetch):
- *   - timeout.sec == 0 && timeout.nsec == 0 -> non-blocking, return now
- *   - timeout.flags & PPS_TIME_INVALID      -> block indefinitely
- *   - otherwise                             -> wait up to timeout
- * Trinity must never block indefinitely, so we always clear
- * PPS_TIME_INVALID and bias hard toward the non-blocking path.
+ * PPS is a passive timestamp consumer: the worst SETPARAMS can do is
+ * desynchronise a clock discipliner on this host, and there is no
+ * firmware-update surface or out-of-band kernel state.
  */
 
 #include <linux/ioctl.h>
@@ -87,6 +63,13 @@ static unsigned int random_pps_mode(void)
 	return mode;
 }
 
+/*
+ * The request numbers encode the arg as a pointer (struct pps_kparams *),
+ * so _IOC_SIZE() is sizeof(void *), not the struct's size.  The handlers
+ * read a full struct, so every sanitiser here backs a3 with a real
+ * sizeof(struct ...) buffer from get_writable_struct() and never trusts
+ * _IOC_SIZE().
+ */
 static void sanitise_getparams(struct syscallrecord *rec)
 {
 	struct pps_kparams *p;
@@ -142,9 +125,12 @@ static void sanitise_fetch(struct syscallrecord *rec)
 		return;
 	memset(f, 0, sizeof(*f));
 
-	/* Bias hard toward non-blocking (sec=0, nsec=0).  Occasionally a
-	 * very short timeout -- single-digit milliseconds at most -- to
-	 * exercise the wait path without hanging the fuzzer. */
+	/* pps_cdev_pps_fetch() in drivers/pps/pps.c: a zero timeout returns
+	 * at once, PPS_TIME_INVALID blocks indefinitely, anything else waits
+	 * up to the timeout.  Trinity must never block indefinitely, so bias
+	 * hard toward non-blocking (sec=0, nsec=0).  Occasionally a very
+	 * short timeout -- single-digit milliseconds at most -- to exercise
+	 * the wait path without hanging the fuzzer. */
 	if ((rnd_modulo_u32(16)) == 0) {
 		f->timeout.sec = 0;
 		f->timeout.nsec = (rnd_modulo_u32(10)) * 1000000;
@@ -216,6 +202,8 @@ static const struct ioctl pps_ioctls[] = {
 	IOCTL(PPS_KC_BIND),
 };
 
+/* The pps core registers a dynamic char major under this literal name
+ * (drivers/pps/pps.c), so /proc/devices lists it; nodes are /dev/pps0, ... */
 static const char *const pps_devs[] = {
 	"pps",
 };

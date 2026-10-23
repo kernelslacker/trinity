@@ -1,8 +1,5 @@
-/* /dev/gpiochipN GPIO character device ioctl fuzzing.
- *
- * Sanitisers cover both the v2 line API (line_request, line_config,
- * line_attribute, line_values) and the deprecated v1 handle/event API
- * still exported by every in-tree driver.
+/* /dev/gpiochipN GPIO character device ioctl fuzzing: the v2 line API plus
+ * the deprecated v1 handle/event API.
  *
  * Gated by fd_test on /dev/gpiochip* — driving these blind on
  * board-management hosts is a brick risk.

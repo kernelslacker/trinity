@@ -1,56 +1,9 @@
 /*
- * EFAULT-probe cache for ioctls whose arg shape can't be inferred
- * from the request number alone.
- *
- * The decoded fast path in ioctl_arg_for_request() handles ioctls
- * defined via the _IO*() macro family — the _IOC_DIR / _IOC_SIZE bits
- * baked into the request tell us pointer-vs-scalar plus the buffer
- * size, and that covers the bulk of trinity's tables.  The remaining
- * surface (legacy raw constants like TCGETS / sockios, plus _IO()-
- * defined ioctls that secretly treat arg as a user pointer) carries no
- * shape information in the request.  For those, learn the shape by
- * actually calling the ioctl with an obviously-bogus arg and watching
- * the errno:
- *
- *   EFAULT                 — kernel tried copy_from_user on arg →
- *                            pointer arg.  ~0UL is well above
- *                            TASK_SIZE_MAX on every supported arch, so
- *                            access_ok() rejects it on the fast path
- *                            and no real fault is taken.
- *   EINVAL/ENOTTY/ENOSYS/0 — kernel treated arg as scalar (or didn't
- *                            recognise the cmd) → scalar arg.
- *   EBADF/ENXIO            — fd doesn't actually back this driver
- *                            after all (the 1-in-100 random-group path
- *                            in sanitise_ioctl pairs an arbitrary fd
- *                            with an unrelated group).  Return
- *                            UNKNOWN so the caller skips caching.
- *   anything else          — inconclusive.  Memoise so we don't keep
- *                            reprobing, but the lookup path treats it
- *                            the same as UNKNOWN — fall through to the
- *                            legacy 50/50 generator.
- *
- * We probe twice with different bogus values.  Only commit to a verdict
- * if both rounds agree; otherwise classify INCONCLUSIVE.  The second
- * value guards against the case where a deferred fault from earlier
- * fuzz activity happens to fold into the first probe and dirty the
- * verdict.
- *
- * The cache is shm-resident.  The kernel's ioctl driver tables are
- * global — a verdict reached by one child applies fleet-wide — so per-
- * child caches would re-pay the side-effecting probe cost on every
- * fork for no benefit.  Open-addressing with linear probe over 4096
- * slots; each slot is one 64-bit atomic encoding both the (group_idx,
- * request) key and the verdict, written lock-free via CAS.  A
- * duplicate insert from a racing child is benign — both children
- * compute the same verdict.
- *
- * Side-effect avoidance: groups whose ioctls allocate kernel state on
- * the dispatch path (before any arg validation) are listed in
- * efault_optout_devs and skip the probe entirely.  The bogus-arg trick
- * still exercises the dispatch path, so a "rejected" probe on those
- * drivers would slowly leak vhost rings / vfio containers / loop
- * devices over a long fuzz run.  Default for every other group is
- * probe-enabled; expanding the opt-out list is one string per entry.
+ * EFAULT-probe cache for ioctls whose request number carries no arg shape
+ * (legacy raw constants, _IO() requests taking a pointer): ioctl the fd with a
+ * bogus arg, classify by errno, and cache the verdict fleet-wide in shm
+ * (classes and capacity: include/efault_cache.h).  Groups whose dispatch path
+ * allocates kernel state before validating args are opted out below.
  */
 
 #include <errno.h>
@@ -233,6 +186,13 @@ static enum ioctl_arg_class probe_one(int fd, unsigned int request,
 		return IOCTL_ARG_SCALAR;
 
 	err = errno;
+	/*
+	 * EFAULT: the kernel tried copy_from_user() on the arg, so it is a
+	 * pointer.  EINVAL/ENOTTY/ENOSYS (or success): it took the arg as a
+	 * scalar or did not recognise the cmd.  Anything else is
+	 * inconclusive, and memoised like a verdict so the cmd is not
+	 * reprobed on every call.
+	 */
 	switch (err) {
 	case EFAULT:
 		return IOCTL_ARG_POINTER;
@@ -242,8 +202,10 @@ static enum ioctl_arg_class probe_one(int fd, unsigned int request,
 		return IOCTL_ARG_SCALAR;
 	case EBADF:
 	case ENXIO:
-		/* fd doesn't actually back this driver — sentinel that the
-		 * caller treats as "don't cache, just defer". */
+		/* fd doesn't actually back this driver (the 1-in-100
+		 * random-group path in sanitise_ioctl pairs an arbitrary fd
+		 * with an unrelated group) — sentinel that the caller treats
+		 * as "don't cache, just defer". */
 		return IOCTL_ARG_UNKNOWN;
 	default:
 		return IOCTL_ARG_INCONCLUSIVE;

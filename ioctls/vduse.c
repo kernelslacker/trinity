@@ -1,14 +1,8 @@
-/* /dev/vduse/{control,$NAME} VDUSE chrdev ioctl fuzzing.
- *
- * VDUSE (vDPA Device in Userspace) lets unprivileged userspace
- * implement vDPA devices.  The control chrdev creates/destroys
- * devices; each created device exposes its own per-device chrdev
- * with the IOTLB / virtqueue / config ioctls.  Both nodes live under
- * /dev/vduse/, so the fd_test below matches that prefix and lets
- * pick_random_ioctl thrash either flavour.
- *
- * The whole file is gated on USE_VDUSE so trees with kernel headers
- * predating linux/vduse.h still build.
+/* /dev/vduse/{control,$NAME} VDUSE (vDPA Device in Userspace) chrdev ioctl
+ * fuzzing.  The control node creates/destroys devices; each device has its own
+ * node with the IOTLB / virtqueue / config ioctls.  Both live under
+ * /dev/vduse/, so fd_test matches that prefix and covers either flavour.
+ * Gated on USE_VDUSE so kernel headers predating linux/vduse.h still build.
  */
 
 #include "config.h"
