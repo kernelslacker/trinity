@@ -83,6 +83,46 @@ void kcov_cmp_render_hyp_score_bucket_block(long elapsed __unused__)
 		prev_hyp_score_bucket[k] = cur_hyp_score_bucket[k];
 }
 /*
+ * Row labels for enum cmp_hyp_probe_class, each the enum name's suffix in
+ * lower case.  One list feeds both the designated table and the label
+ * count, so a class added to the enum without a label, or a label
+ * dropped from the list, fails the build instead of handing NULL to
+ * "%s".  bitmask_andnot_toggle is wider than the 18 columns a row prints
+ * a label in; the field is left alone so the other rows print as they
+ * always have.
+ */
+#define CMP_HYP_PROBE_CLASS_LABEL_LIST(X)						\
+	X(CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR,		"exact_exemplar")		\
+	X(CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR,		"enum_exemplar")		\
+	X(CMP_HYP_PROBE_CLASS_ENUM_LO,			"enum_lo")			\
+	X(CMP_HYP_PROBE_CLASS_ENUM_HI,			"enum_hi")			\
+	X(CMP_HYP_PROBE_CLASS_BITMASK_SINGLE_BIT,	"bitmask_single_bit")		\
+	X(CMP_HYP_PROBE_CLASS_EXEMPLAR_FALLBACK,	"exemplar_fallback")		\
+	X(CMP_HYP_PROBE_CLASS_RANGE_LO,			"range_lo")			\
+	X(CMP_HYP_PROBE_CLASS_RANGE_HI,			"range_hi")			\
+	X(CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT,		"range_midpoint")		\
+	X(CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1,		"boundary_minus1")		\
+	X(CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1,		"boundary_plus1")		\
+	X(CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT,		"boundary_exact")		\
+	X(CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP,		"boundary_sweep")		\
+	X(CMP_HYP_PROBE_CLASS_BITMASK_FULL_OR,		"bitmask_full_or")		\
+	X(CMP_HYP_PROBE_CLASS_BITMASK_ANDNOT_TOGGLE,	"bitmask_andnot_toggle")
+
+#define CMP_HYP_PROBE_CLASS_LABEL_SLOT(cls, label)	[cls] = label,
+#define CMP_HYP_PROBE_CLASS_LABEL_ONE(cls, label)	+ 1
+
+static const char * const cmp_hyp_probe_class_labels[CMP_HYP_PROBE_CLASS_NR] = {
+	CMP_HYP_PROBE_CLASS_LABEL_LIST(CMP_HYP_PROBE_CLASS_LABEL_SLOT)
+};
+
+_Static_assert(0 CMP_HYP_PROBE_CLASS_LABEL_LIST(CMP_HYP_PROBE_CLASS_LABEL_ONE) == CMP_HYP_PROBE_CLASS_NR,
+	       "cmp_hyp_probe_class_labels needs one label per enum cmp_hyp_probe_class");
+
+#undef CMP_HYP_PROBE_CLASS_LABEL_ONE
+#undef CMP_HYP_PROBE_CLASS_LABEL_SLOT
+#undef CMP_HYP_PROBE_CLASS_LABEL_LIST
+
+/*
  * SHADOW per-probe-class histogram of cmp_hyp_derive_value()
  * emissions.  Bumped lock-step (RELAXED) at the out_bump label in
  * cmp_hints.c using the class the derivation just produced; *out is
@@ -90,31 +130,16 @@ void kcov_cmp_render_hyp_score_bucket_block(long elapsed __unused__)
  * receives a byte-identical value.  Render gated on any-delta so
  * the section stays quiet until the derivation path fires.  The
  * bound CMP_HYP_PROBE_CLASS_NR matches the on-shm array (see the
- * enum and struct kcov_shared in include/kcov.h); using designated
- * initialisers on class_labels[] keeps every label pinned to its
- * enum name so a future re-order of the enum cannot silently
- * mislabel a bucket.  Counters are monotonic on the producer side
+ * enum and struct kcov_shared in include/kcov.h); the label list
+ * above pins every label to its enum name so a future re-order of
+ * the enum cannot silently mislabel a bucket.  Counters are
+ * monotonic on the producer side
  * but the snapshot / prev pair is loaded across separate RELAXED
  * reads; guard the delta with cur >= prev so a reordered
  * observation cannot underflow into a multi-GB delta print.
  */
 void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed __unused__)
 {
-	static const char * const class_labels[CMP_HYP_PROBE_CLASS_NR] = {
-		[CMP_HYP_PROBE_CLASS_EXACT_EXEMPLAR]     = "exact_exemplar",
-		[CMP_HYP_PROBE_CLASS_ENUM_EXEMPLAR]      = "enum_exemplar",
-		[CMP_HYP_PROBE_CLASS_ENUM_LO]            = "enum_lo",
-		[CMP_HYP_PROBE_CLASS_ENUM_HI]            = "enum_hi",
-		[CMP_HYP_PROBE_CLASS_BITMASK_SINGLE_BIT] = "bitmask_single_bit",
-		[CMP_HYP_PROBE_CLASS_EXEMPLAR_FALLBACK]  = "exemplar_fallback",
-		[CMP_HYP_PROBE_CLASS_RANGE_LO]           = "range_lo",
-		[CMP_HYP_PROBE_CLASS_RANGE_HI]           = "range_hi",
-		[CMP_HYP_PROBE_CLASS_RANGE_MIDPOINT]     = "range_midpoint",
-		[CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1]    = "boundary_minus1",
-		[CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1]     = "boundary_plus1",
-		[CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT]     = "boundary_exact",
-		[CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP]     = "boundary_sweep",
-	};
 	static unsigned long prev_hyp_probe_class[CMP_HYP_PROBE_CLASS_NR];
 	unsigned long cur_hyp_probe_class[CMP_HYP_PROBE_CLASS_NR];
 	unsigned long any_delta = 0;
@@ -140,7 +165,7 @@ void kcov_cmp_render_hyp_probe_class_hist_block(long elapsed __unused__)
 					prev_hyp_probe_class[k];
 			stats_log_write(
 				"  cmp_hyp_probe_class[%2u %-18s] +%lu  (total %lu)\n",
-				k, class_labels[k],
+				k, cmp_hyp_probe_class_labels[k],
 				delta,
 				cur_hyp_probe_class[k]);
 		}
