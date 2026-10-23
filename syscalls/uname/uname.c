@@ -23,9 +23,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef SYS_uname
-#define SYS_uname __NR_uname
-#endif
+#include "kernel/unistd.h"
 
 /*
  * Snapshot of the one uname input arg plus the poison seed read by the

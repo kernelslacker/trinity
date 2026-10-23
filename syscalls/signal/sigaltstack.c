@@ -17,10 +17,8 @@
 #include "utils.h"
 
 #include "kernel/signal.h"
-#if defined(SYS_sigaltstack) || defined(__NR_sigaltstack)
-#ifndef SYS_sigaltstack
-#define SYS_sigaltstack __NR_sigaltstack
-#endif
+#include "kernel/unistd.h"
+#ifdef SYS_sigaltstack
 #define HAVE_SYS_SIGALTSTACK 1
 #endif
 

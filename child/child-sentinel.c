@@ -45,9 +45,8 @@
 #include "shm.h"
 #include "syscall.h"
 
-#ifndef SYS_uname
-#define SYS_uname __NR_uname
-#endif
+#include "kernel/unistd.h"
+
 #ifndef SYS_sysinfo
 #define SYS_sysinfo __NR_sysinfo
 #endif
