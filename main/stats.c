@@ -447,10 +447,10 @@ static void print_stats_pool_ratio(void)
 void print_stats(void)
 {
 	/*
-	 * Rate reporting, per-window timeseries and shadow_sat sampling
-	 * all key off a delta against `lastcount`.  parent_stats.op_count
-	 * is a per-epoch counter that reset_epoch_state() zeroes; using
-	 * it here would underflow (op_count - lastcount) into a bogus
+	 * Rate reporting and the per-window timeseries both key off a
+	 * delta against `lastcount`.  parent_stats.op_count is a
+	 * per-epoch counter that reset_epoch_state() zeroes; using it
+	 * here would underflow (op_count - lastcount) into a bogus
 	 * multi-gigaop delta on the first tick after an epoch boundary,
 	 * spiking the reported rate and the timeseries yield to garbage.
 	 * The monotonic total_op_count is safe across epochs.
@@ -500,17 +500,6 @@ void print_stats(void)
 			}
 
 			print_stats_pool_ratio();
-
-			/* Shadow soft-saturation score.  Sampled +
-			 * recomputed every window from parent-side counters;
-			 * emits one SHADOW_SAT: out.log line right after the
-			 * pool-ratio line so the operator sees the marginal-
-			 * yield read alongside the KCOV bracket that would
-			 * otherwise show a "healthy" delta on a saturated
-			 * tail.  Also drives the JSONL block emitted below.
-			 * Observation-only: consumed by nothing. */
-			stats_shadow_sat_tick();
-			stats_shadow_sat_emit_out_log();
 
 			/* Per-syscall timeseries side-effect of --stats.
 			 * No-op when --stats was not passed (the file was

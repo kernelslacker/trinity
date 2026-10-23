@@ -312,11 +312,10 @@ struct stats_aggregate {
 	 * NEVER zeroed by reset_epoch_state() -- unlike op_count, which
 	 * is a per-epoch counter.  Consumers that compute deltas across
 	 * epoch boundaries (rate reporting in print_stats, per-window
-	 * timeseries in stats/log.c, shadow soft-saturation sampling in
-	 * stats/shadow_sat.c) MUST read this field rather than op_count to
-	 * avoid an unsigned-subtraction underflow the first tick after the
-	 * epoch reset zeroes op_count while their `lastcount` still holds the
-	 * previous epoch's tail value.
+	 * timeseries in stats/log.c) MUST read this field rather than
+	 * op_count to avoid an unsigned-subtraction underflow the first
+	 * tick after the epoch reset zeroes op_count while their
+	 * `lastcount` still holds the previous epoch's tail value.
 	 */
 	unsigned long total_op_count;
 	/*

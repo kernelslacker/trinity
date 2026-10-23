@@ -724,8 +724,8 @@ bool reset_epoch_state(void)
 	 * avoids reading shared memory and keeps the snapshot immune to
 	 * ring-slot drops (lossless_op_count is never fed via ring slots).
 	 * Neither field is zeroed: they are run-monotonic and rate
-	 * reporting / per-window timeseries / shadow_sat sampling all
-	 * read total_op_count as a monotonic clock across epoch boundaries.
+	 * reporting / per-window timeseries both read total_op_count as a
+	 * monotonic clock across epoch boundaries.
 	 */
 	parent_stats.epoch_start_op_count = parent_stats.total_op_count;
 
