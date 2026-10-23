@@ -1,5 +1,5 @@
 /*
- * Raw syscall execution path carved out of dispatch/syscall.c:
+ * Raw syscall execution path:
  * biarch 32-on-64 dispatch, fail-nth fault injection, in-child
  * watchdog fd eviction, SHADOW noisy-sample bracket, the __do_syscall
  * bracket itself, and the do_extrafork throwaway-grandchild wrapper

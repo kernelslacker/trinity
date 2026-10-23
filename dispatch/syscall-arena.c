@@ -1,5 +1,5 @@
 /*
- * Arena stale/liveness probes carved out of dispatch/syscall.c.
+ * Arena stale/liveness probes.
  */
 
 #include <stddef.h>

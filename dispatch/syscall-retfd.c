@@ -1,5 +1,5 @@
 /*
- * fd return validation and registration carved out of dispatch/syscall.c.
+ * fd return validation and registration.
  */
 
 #include <errno.h>

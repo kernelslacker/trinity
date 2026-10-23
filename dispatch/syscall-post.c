@@ -1,6 +1,6 @@
 /*
  * Generic close-fd hook, post-state / rettype bound validators, and
- * ENOSYS deactivation, carved out of dispatch/syscall.c.
+ * ENOSYS deactivation.
  */
 
 #include <errno.h>

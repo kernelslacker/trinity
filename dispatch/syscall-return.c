@@ -1,7 +1,6 @@
 /*
- * handle_syscall_ret coordinator and its three phase helpers, carved
- * out of dispatch/syscall.c.  Ordering across the phases is preserved
- * exactly: validate -> dispatch -> post.
+ * handle_syscall_ret coordinator and its three phase helpers.  The
+ * phases run in a fixed order: validate -> dispatch -> post.
  */
 
 #include <errno.h>
