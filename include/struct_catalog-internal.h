@@ -1,6 +1,6 @@
 /*
  * Internal scaffolding shared between the struct_catalog spine
- * (struct_catalog.c) and the per-family leaf TUs under struct_catalog/.
+ * (struct_catalog/catalog.c) and the per-family leaf TUs under struct_catalog/.
  *
  * - FIELD / FIELDX initialiser macros used by every cataloged field
  *   table.
@@ -36,7 +36,7 @@ struct syscallrecord;
 /*
  * Variant / discriminator resolution helpers defined in
  * struct_catalog/variant.c.  Shared with the (nr, arg) registry
- * lookup in struct_catalog/catalog.c so both callers of "match a
+ * lookup in struct_catalog/registry.c so both callers of "match a
  * discriminated syscall_struct_args[] row against a live rec" run
  * the same value/values match.
  */
@@ -139,9 +139,9 @@ extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
 #ifdef USE_BPF
 /*
  * BPF leaf tables.  bpf_attr_variants lives in the facade
- * struct_catalog/bpf.c and is consumed from the spine in
- * struct_catalog.c via ARRAY_SIZE() at the use site; every other
- * table listed below lives in a per-family leaf TU
+ * struct_catalog/bpf.c and is consumed from the spine's
+ * struct_catalog/catalog-bpf.inc via ARRAY_SIZE() at the use site;
+ * every other table listed below lives in a per-family leaf TU
  * (struct_catalog/bpf-map.c, bpf-prog.c, bpf-link.c, bpf-btf.c,
  * bpf-task-storage.c) and is threaded into the facade's
  * bpf_attr_variants aggregator by extern reference.  Every table
@@ -152,7 +152,7 @@ extern const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N];
  *
  * bpf_map_types / bpf_prog_types / bpf_attach_types and their
  * _count companions are declared in include/bpf.h (shared with
- * syscalls/bpf.c) and intentionally not duplicated here.
+ * syscalls/bpf-*.c) and intentionally not duplicated here.
  */
 enum {
 	/*
@@ -279,7 +279,7 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
  * ARRAY_SIZE(sockaddr_storage_variants) still folds to the same
  * constant the static-table form did.  USE_* macros come from
- * config.h, which struct_catalog.c and the sockaddr-* TUs include
+ * config.h, which struct_catalog/catalog.c and the sockaddr-* TUs include
  * before this header.
  */
 enum {

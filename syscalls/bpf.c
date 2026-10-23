@@ -60,20 +60,6 @@ void bpf_fill_obj_name(char *name)
  * so the schema-aware fill catalog and this file share them. */
 
 /*
- * bpf_map_types[] now lives in struct_catalog.c so the schema-aware
- * fill's FT_ENUM annotation on union bpf_attr.map_type and the
- * sanitise here share a single vocabulary.  Declared extern in
- * include/bpf.h; consumed below via rnd_modulo_u32 instead of
- * RAND_ARRAY because the array's compile-time size is no longer
- * visible at the call site.
- */
-
-/*
- * bpf_attach_types[] now lives in struct_catalog.c alongside the
- * PROG_ATTACH variant annotation; declared extern in include/bpf.h.
- */
-
-/*
  * Snapshot of the dispatch cmd and the pre-relocation attr pointer the
  * post handler reads, captured at sanitise time and consumed by the
  * post handler.  Two layers of protection here:

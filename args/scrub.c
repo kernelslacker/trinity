@@ -21,7 +21,7 @@
 /*
  * Bounded recursion depth for the nested-address walker.  Real
  * cataloged structs are flat or one level deep (msghdr -> iovec); the
- * cap mirrors STRUCT_ADDRESS_SCAN_MAX_DEPTH in struct_catalog.c so a
+ * cap mirrors STRUCT_ADDRESS_SCAN_MAX_DEPTH in struct_catalog/address.c so a
  * future cyclic catalog entry cannot drive infinite recursion at
  * dispatch time.
  */

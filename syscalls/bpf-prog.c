@@ -48,9 +48,10 @@ static const char *const bpf_raw_tp_names[] = {
 };
 
 /*
- * bpf_prog_types[] also lives in struct_catalog.c alongside the
- * MAP_CREATE / PROG_LOAD variants for the same shared-vocabulary
- * reason as bpf_map_types[].  Declared extern in include/bpf.h.
+ * bpf_prog_types[] is defined in struct_catalog/bpf.c so the FT_ENUM
+ * annotation on union bpf_attr.prog_type (struct_catalog/bpf-prog.c) and
+ * the prog_type draw in bpf_prog_load() share one vocabulary.  Declared
+ * extern in include/bpf.h.
  */
 
 static const char license[] = "GPLv2";

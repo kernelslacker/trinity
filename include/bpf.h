@@ -35,9 +35,10 @@ extern const unsigned int bpf_attach_types_count;
 
 /*
  * Map-type fallback defines for older /usr/include/linux/bpf.h.  Both
- * syscalls/bpf.c (RAND_ARRAY consumer in sanitise) and struct_catalog.c
- * (FT_ENUM annotation in the bpf_attr MAP_CREATE variant) walk the
- * same vocabulary, so the fallback set lives here.
+ * syscalls/bpf-map.c (the map_type draw in sanitise) and
+ * struct_catalog/bpf-map.c (FT_ENUM annotation in the bpf_attr MAP_CREATE
+ * variant) walk the same vocabulary, bpf_map_types[] in
+ * struct_catalog/bpf.c, so the fallback set lives here.
  */
 #ifndef BPF_MAP_TYPE_LRU_HASH
 #define BPF_MAP_TYPE_LRU_HASH 9
