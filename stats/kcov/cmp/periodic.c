@@ -50,7 +50,6 @@
 #include "taint.h"
 #include "trinity.h"
 #include "utils.h"
-#include "version.h"
 
 #include "stats/kcov/cmp/internal.h"
 

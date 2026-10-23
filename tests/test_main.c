@@ -58,6 +58,7 @@ void loop_status_self_check(void);
 void ioctl_sanitise_self_check(void);
 void genl_ops_self_check(void);
 void kcov_persist_self_check(void);
+void stats_render_self_check(void);
 void shutdown_wait_self_check(void);
 void reap_fault_beacon_self_check(void);
 void get_num_fds_self_check(void);
@@ -278,6 +279,11 @@ int main(int argc, char **argv)
 	printf("  kcov_persist_self_check ... ");
 	fflush(stdout);
 	kcov_persist_self_check();
+	printf("OK\n");
+
+	printf("  stats_render_self_check ... ");
+	fflush(stdout);
+	stats_render_self_check();
 	printf("OK\n");
 
 	printf("  shutdown_wait_self_check ... ");

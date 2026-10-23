@@ -357,6 +357,21 @@ FAKE_SRCS	:= \
 	dup_pool_test.c \
 	test_main.c
 
+# The periodic KCOV CMP dump and the core --stats-json emitters, linked for
+# kcov_cmp_stats_periodic_dump() and dump_stats_json_*(), with the render
+# siblings the dump fans out to and the descriptor tables the JSON walks.
+# They join PARENT_SRCS, so they get the same section-per-function
+# treatment and --gc-sections; stats_render_test.c fakes the log sink and
+# the few helpers the siblings reach.
+PARENT_SRCS	+= $(wildcard $(TOP)/stats/kcov/cmp/*.c) \
+		   $(TOP)/stats/json/common.c \
+		   $(TOP)/stats/json/core.c \
+		   $(TOP)/stats/category.c \
+		   $(wildcard $(TOP)/stats/categories/*.c) \
+		   $(wildcard $(TOP)/stats/subsys/*.c)
+FAKE_SRCS	+= stats_render_test.c \
+		   stats_render_golden.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
