@@ -13,18 +13,7 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef LSM_ATTR_CURRENT
-#define LSM_ATTR_CURRENT	100
-#define LSM_ATTR_EXEC		101
-#define LSM_ATTR_FSCREATE	102
-#define LSM_ATTR_KEYCREATE	103
-#define LSM_ATTR_PREV		104
-#define LSM_ATTR_SOCKCREATE	105
-#endif
-
-#ifndef LSM_FLAG_SINGLE
-#define LSM_FLAG_SINGLE		0x0001
-#endif
+#include "kernel/lsm.h"
 
 #if defined(SYS_lsm_get_self_attr) || defined(__NR_lsm_get_self_attr)
 #ifndef SYS_lsm_get_self_attr
