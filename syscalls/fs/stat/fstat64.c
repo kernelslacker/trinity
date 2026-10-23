@@ -145,21 +145,6 @@ struct syscallentry syscall_fstat64 = {
  */
 
 /*
- * statx-only sync-type bits.  The kernel bounces any of these on
- * fstatat64 with -EINVAL before touching the output buffer; used by
- * sanitise_fstatat64 to keep the reject path warm without dominating
- * the success mix.  Values are stable uapi (linux/stat.h) -- defined
- * locally to avoid pulling <linux/fcntl.h> against the glibc <fcntl.h>
- * already included above.
- */
-#ifndef AT_STATX_FORCE_SYNC
-#define AT_STATX_FORCE_SYNC	0x2000
-#endif
-#ifndef AT_STATX_DONT_SYNC
-#define AT_STATX_DONT_SYNC	0x4000
-#endif
-
-/*
  * Curated combinations of the three AT_* bits the kernel accepts for
  * fstatat64: AT_SYMLINK_NOFOLLOW (lstat semantics on the final
  * component), AT_NO_AUTOMOUNT (suppress automount triggering), and

@@ -10,9 +10,6 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
-#ifndef AT_SYMLINK_FOLLOW
-#define AT_SYMLINK_FOLLOW	0x400
-#endif
 
 /*
  * linkat(2) flag space is narrow: AT_SYMLINK_FOLLOW (resolve oldname

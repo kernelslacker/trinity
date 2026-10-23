@@ -6,6 +6,9 @@
 #ifndef AT_SYMLINK_NOFOLLOW
 #define AT_SYMLINK_NOFOLLOW	0x100
 #endif
+#ifndef AT_SYMLINK_FOLLOW
+#define AT_SYMLINK_FOLLOW	0x400
+#endif
 #ifndef AT_RECURSIVE
 #define AT_RECURSIVE		0x8000
 #endif
@@ -28,6 +31,19 @@
 
 #ifndef AT_NO_AUTOMOUNT
 #define AT_NO_AUTOMOUNT 0x800
+#endif
+
+#ifndef AT_STATX_SYNC_TYPE
+#define AT_STATX_SYNC_TYPE	0x6000
+#endif
+#ifndef AT_STATX_SYNC_AS_STAT
+#define AT_STATX_SYNC_AS_STAT	0x0000
+#endif
+#ifndef AT_STATX_FORCE_SYNC
+#define AT_STATX_FORCE_SYNC	0x2000
+#endif
+#ifndef AT_STATX_DONT_SYNC
+#define AT_STATX_DONT_SYNC	0x4000
 #endif
 
 #ifndef F_LINUX_SPECIFIC_BASE

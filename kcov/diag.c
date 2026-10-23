@@ -31,14 +31,6 @@
 #include "trinity.h"		/* output */
 
 #include "kernel/fcntl.h"
-/* F_DUPFD_QUERY may be missing on glibcs that predate it; replicate
- * the include/kernel fallback headers definition locally so the EBADF chronicle-slot
- * classifier can match the cmd without pulling unnecessary headers (which double-
- * defines struct file_attr against linux/fs.h that struct_catalog.h
- * already pulls into this TU via minicorpus.h). */
-#ifndef F_DUPFD_QUERY
-#define F_DUPFD_QUERY (1024 + 3)
-#endif
 
 /*
  * Record a KCOV PC or remote enable/disable failure into the parent-
