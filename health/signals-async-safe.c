@@ -22,7 +22,8 @@
  * main_fault_handler.  Hand-rolled because psiginfo() calls
  * fmemopen -> calloc and deadlocks if the signal was raised by
  * glibc's own abort() with the arena lock held (same family as
- * the libgcc_s/backtrace deadlock fixed in 81143aaeaba6).
+ * the backtrace_symbols_fd deadlock write_backtrace_raw_pcs()
+ * avoids).
  * See Documentation/signals.md.
  */
 void write_siginfo_safely(int sig, const siginfo_t *info, const char *who)
@@ -182,8 +183,8 @@ void write_signal_delivery_state(const void *ctxp)
  * backtrace_symbols_fd inside the handler recursively takes malloc()
  * and deadlocks forever in lll_lock_wait_private, silencing the
  * beacon we depend on to notice the crash.  Same class as the
- * psiginfo() -> fmemopen -> calloc deadlock removed in
- * 81143aaeaba6.
+ * psiginfo() -> fmemopen -> calloc deadlock write_siginfo_safely()
+ * avoids.
  *
  * We emit RAW PCs only, followed by the PIE base they are relative to
  * so the log resolves without a second artifact.

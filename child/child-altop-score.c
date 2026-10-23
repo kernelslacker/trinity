@@ -117,7 +117,7 @@ void childop_outcome_window_dump(void)
  * is a corrupted child->op_type (shm memory corruption from a sibling),
  * NOT a doubly-forked context: fork grandchildren inherit cached_childno,
  * cached_pid, and cached_child unchanged via COW and take the fast path --
- * this_child() (dispatch/pids.c:181-201) never returns NULL inside a
+ * this_child() (dispatch/pids.c) never returns NULL inside a
  * childop body.  A non-zero direct_tally_dropped is a corruption oracle.
  * RELAXED add-fetch -- cumulative diagnostic.
  */

@@ -418,8 +418,7 @@ struct arglist {
 
 /* Per-(syscall,argnum) scoreboard of low-numbered fds (0..255) that have
  * survived a successful call.  Inline 32-byte bitmap so the whole struct
- * stays POD and lives in alloc_shared() memory -- no per-process pointers
- * (see commit e065bf1241a1 for why pointers do not work here). */
+ * stays POD and lives in alloc_shared() memory -- no per-process pointers. */
 #define SUCCESS_FD_SCOREBOARD_BITS	256
 #define SUCCESS_FD_SCOREBOARD_BYTES	(SUCCESS_FD_SCOREBOARD_BITS / 8)
 

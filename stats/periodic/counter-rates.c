@@ -513,10 +513,9 @@ static const struct {
 	 * poisoned-arena write from a sibling).  A non-zero rate is a
 	 * shm corruption signal, not normal accounting noise: fork
 	 * grandchildren take the fast path and this_child() never
-	 * returns NULL inside a childop body (dispatch/pids.c:181-201),
-	 * so the doubly-forked / NULL-this_child() scenario posited in
-	 * 56285eafae0f ("stats: wire direct_tally_dropped counter to reachable reject path")
-	 * does not occur. */
+	 * returns NULL inside a childop body (this_child() in
+	 * dispatch/pids.c), so the doubly-forked / NULL-this_child()
+	 * scenario does not occur. */
 	{ "direct_tally_dropped",
 	  offsetof(struct stats_s, childop.direct_tally_dropped) },
 	{ "pagecache_canary_corrupt_caught",

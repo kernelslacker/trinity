@@ -455,8 +455,8 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  * tracker consumes their entries on the same path as every other
  * sanitise-time allocation -- direct free() on the outer wrapper would
  * bypass the consume step and leave a stale tracker slot to be evicted
- * by LRU, and the inner buffer needs explicit handling because the
- * wrapper-tracking fix in 59474a7b8c23 ("bpf: track the sock_fprog wrapper alloc in bpf_gen_filter") only tagged the outer alloc.
+ * by LRU, and the inner buffer needs explicit handling because freeing
+ * the outer wrapper does not release it.
  *
  * Helper-boundary validation: the .post paths in
  * syscalls/socket/setsockopt.c, syscalls/process/seccomp.c and
