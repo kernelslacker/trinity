@@ -2,8 +2,11 @@
  * SYSCALL_DEFINE3(ioctl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
  */
 #include <linux/ioctl.h>
+#include <linux/magic.h>
 #include <linux/major.h>
 #include <sys/stat.h>
+#include <sys/vfs.h>
+#include <unistd.h>
 #include "arch.h"
 #include "fd.h"
 #include "ioctls.h"
@@ -116,12 +119,50 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 		rec->rettype = RET_NONE;
 }
 
+#ifndef NSFS_MAGIC
+#define NSFS_MAGIC	0x6e736673
+#endif
+
+/*
+ * A pidfs namespace getter returns the nsfd it made, and nothing else owns
+ * it: pool it, so the pool's cap closes it in time.  Left alone, every
+ * getter that succeeds would leak one in the child.  The vfio, vduse and
+ * i915 cmds that publish RET_FD cannot succeed as generated, and stay
+ * unowned.
+ *
+ * rec->rettype is what the sanitiser drew, and the cmd slot is rewritten
+ * after it (a RedQueen pin, a chain substitution), so the return value may
+ * be a plain integer, 0 for most ioctls.  Nothing is pooled or closed unless
+ * the number is verified as the fd a getter made: the cmd is a getter and
+ * the number is a file on nsfs.  A stdio or protected number is no new fd
+ * either, since the kernel only hands out a free one.  What
+ * pool_returned_fd() refuses after that is the getter's and has no owner:
+ * it is closed.
+ */
+static void post_ioctl(struct syscallrecord *rec)
+{
+	struct statfs sfs;
+	int fd = rec->retval;
+
+	if (rec->rettype != RET_FD || !pidfd_ns_getter(rec->a2) ||
+	    (long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+		return;
+
+	if (fd <= 2 || fd_is_protected(fd) ||
+	    fstatfs(fd, &sfs) != 0 || sfs.f_type != NSFS_MAGIC)
+		return;
+
+	if (!pool_returned_fd(fd))
+		close(fd);
+}
+
 struct syscallentry syscall_ioctl = {
 	.name = "ioctl",
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.sanitise = sanitise_ioctl,
+	.post = post_ioctl,
 	.flags = NEED_ALARM | IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

@@ -127,7 +127,33 @@ static int pidfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 			return 0;
 	}
 
+	/*
+	 * The parent's pidfd names pid 1, which a child cannot ptrace-read, so
+	 * the namespace getters can only succeed on one it made itself:
+	 * pidfd_open() publishes those into its own pool.
+	 */
+	if (find_local_object_by_fd(OBJ_FD_PIDFD, fd) != NULL)
+		return 0;
+
 	return -1;
+}
+
+bool pidfd_ns_getter(unsigned long cmd)
+{
+	switch ((unsigned int) cmd) {
+	case PIDFD_GET_CGROUP_NAMESPACE:
+	case PIDFD_GET_IPC_NAMESPACE:
+	case PIDFD_GET_MNT_NAMESPACE:
+	case PIDFD_GET_NET_NAMESPACE:
+	case PIDFD_GET_PID_NAMESPACE:
+	case PIDFD_GET_PID_FOR_CHILDREN_NAMESPACE:
+	case PIDFD_GET_TIME_NAMESPACE:
+	case PIDFD_GET_TIME_FOR_CHILDREN_NAMESPACE:
+	case PIDFD_GET_USER_NAMESPACE:
+	case PIDFD_GET_UTS_NAMESPACE:
+		return true;
+	}
+	return false;
 }
 
 static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
@@ -146,9 +172,17 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 
 	pick_random_ioctl(grp, rec);
 
-	/* A namespace getter returns the new nsfd; PIDFD_GET_INFO returns 0. */
-	if (rec->a2 != PIDFD_GET_INFO) {
+	/*
+	 * A namespace getter returns the new nsfd; PIDFD_GET_INFO returns 0.
+	 * pidfs refuses a getter's non-zero arg with EINVAL once it has the
+	 * task (pidfd_ioctl() in fs/pidfs.c), and the arg the picker made is
+	 * never zero: three calls in four pass zero, so they can succeed, and
+	 * the fourth keeps the picker's arg for the refusal.
+	 */
+	if (pidfd_ns_getter(rec->a2)) {
 		rec->rettype = RET_FD;
+		if (!ONE_IN(4))
+			rec->a3 = 0;
 		return;
 	}
 

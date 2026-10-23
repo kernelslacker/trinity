@@ -59,6 +59,10 @@ const struct ioctl_group *get_random_fd_class_ioctl_group(void);
 
 void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 
+/* Whether @cmd, as the kernel reads it, is one of the pidfs namespace
+ * getters: the cmds whose return value is the nsfd they made. */
+bool pidfd_ns_getter(unsigned long cmd);
+
 void dump_ioctls(void);
 
 #define IOCTL(_request) \

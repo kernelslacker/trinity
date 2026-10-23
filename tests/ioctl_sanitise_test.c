@@ -7,6 +7,10 @@
  * that owns the return value.  One call in sixteen draws the group
  * first and swaps in an fd of its class, when there is one the group
  * claims and no stray fd is protected.
+ *
+ * pidfs refuses a namespace getter's non-zero arg, so most of the getters
+ * the pidfd group builds carry a zero one.  That group claims the pidfds
+ * the child made itself, not only the one the parent opened.
  */
 
 #include <fcntl.h>
@@ -28,6 +32,11 @@
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_ioctl */
 #include "utils-macros.h"	/* ARRAY_SIZE */
+
+extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
+						       int fd);	/* fake_objects.c */
+extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
+					   enum objecttype type);	/* fake_objects.c */
 
 #define ROUNDS		3
 #define PICK_ROUNDS	4000
@@ -62,15 +71,15 @@ static const char *const returns_fd[] = {
 
 /*
  * What the linked groups reach beyond the fake registry.  Only the
- * pidfd group's fd_test touches the object pools, and nothing here
- * calls it; get_objhead() is faked in fake_objects.c.  Its info
- * sanitiser asks for set_rand_bitmask(), which genl_ops_test.c fakes.
+ * pidfd group's fd_test touches the object pools, and only the claim case
+ * calls it, with get_objhead() and find_local_object_by_fd() hooked in
+ * fake_objects.c.  Its info sanitiser asks for set_rand_bitmask(), which
+ * genl_ops_test.c fakes.
  */
 void __for_each_obj_init(struct objhead *head, struct __for_each_obj_state *s)
 {
-	(void)head;
-	(void)s;
-	BUG("ioctl rettype: a group walked an object pool");
+	s->n_snap = head->num_entries;
+	s->array_snap = head->array;
 }
 
 u64 rand64(void)
@@ -369,6 +378,150 @@ static void group_first_pick(void)
 	close(fd);
 }
 
+/*
+ * The namespace getters.  fs/pidfs.c refuses a non-zero arg with EINVAL
+ * once it has the task, so the arg the picker made, which is never zero,
+ * can only reach that refusal.  Most calls pass zero and so can succeed;
+ * the rest keep the picker's arg and exercise the refusal.  PIDFD_GET_INFO
+ * takes a struct.
+ */
+#define ARG_ROUNDS	400
+
+static void ns_getters_get_a_zero_arg(void)
+{
+	static struct syscallrecord rec;
+	const struct ioctl_group *grp = fake_ioctl_group("pidfd");
+	size_t i;
+	int round;
+
+	if (grp == NULL)
+		BUG("ioctl ns arg: the pidfd group is not linked");
+
+	for (i = 0; i < grp->ioctls_cnt; i++) {
+		const struct ioctl *ioc = &grp->ioctls[i];
+		unsigned int zero = 0, junk = 0, other = 0;
+
+		for (round = 0; round < ARG_ROUNDS; round++) {
+			memset(&rec, 0, sizeof(rec));
+			fake_ioctl_request = ioc->request;
+			grp->sanitise(grp, &rec);
+
+			if (rec.a3 == 0)
+				zero++;
+			else if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+				junk++;
+			else
+				other++;
+		}
+
+		if (strcmp(ioc->name, "PIDFD_GET_INFO") == 0) {
+			if (zero != 0 || junk != 0)
+				BUG("ioctl ns arg: PIDFD_GET_INFO lost its struct");
+			continue;
+		}
+
+		if (other != 0) {
+			fprintf(stderr, "%s: %u calls got an arg that is neither 0 nor the picked one\n",
+				ioc->name, other);
+			BUG("ioctl ns arg: a getter's arg was rewritten to something else");
+		}
+		/* Three in four pass zero: 300 of 400, 8.7 deviations wide. */
+		if (zero < ARG_ROUNDS * 5 / 8 || zero > ARG_ROUNDS * 7 / 8 + 25) {
+			fprintf(stderr, "%s: %u of %d calls passed a zero arg\n",
+				ioc->name, zero, ARG_ROUNDS);
+			BUG("ioctl ns arg: a getter does not pass zero three times in four");
+		}
+		if (junk == 0)
+			BUG("ioctl ns arg: a getter never keeps the picked arg, so pidfs's refusal is unreachable");
+	}
+}
+
+/*
+ * What post_ioctl() asks before it owns a return value: the ten getters of
+ * the pidfd group are the cmds whose return value is a namespace file, and
+ * no other cmd of any linked group is.  The kernel reads the cmd as an
+ * unsigned int, so the bits above it do not matter.
+ */
+static void only_the_ns_getters_are_getters(void)
+{
+	const struct ioctl_group *const *groups;
+	unsigned int ngroups, g, getters = 0;
+	size_t i;
+
+	groups = fake_ioctl_groups(&ngroups);
+	for (g = 0; g < ngroups; g++) {
+		const struct ioctl_group *grp = groups[g];
+
+		for (i = 0; i < grp->ioctls_cnt; i++) {
+			const char *name = grp->ioctls[i].name;
+			unsigned long req = grp->ioctls[i].request;
+			bool want = grp->name != NULL &&
+				    strcmp(grp->name, "pidfd") == 0 &&
+				    strncmp(name, "PIDFD_GET_", 10) == 0 &&
+				    strcmp(name, "PIDFD_GET_INFO") != 0;
+
+			if (pidfd_ns_getter(req) != want) {
+				fprintf(stderr, "%s: pidfd_ns_getter() says %d\n",
+					name, !want);
+				BUG("ioctl ns getter: the predicate and the pidfd group disagree");
+			}
+			if (want) {
+				getters++;
+				if (!pidfd_ns_getter(req | (1UL << 40)))
+					BUG("ioctl ns getter: the predicate reads bits the kernel drops");
+			}
+		}
+	}
+	if (getters != 10)
+		BUG("ioctl ns getter: the pidfd group does not have ten getters");
+	if (pidfd_ns_getter(0))
+		BUG("ioctl ns getter: cmd 0 is a getter");
+}
+
+/*
+ * The pidfd group claims a pidfd the child made itself (pidfd_open
+ * publishes into the child's own pool), as well as the one the parent
+ * opened: the namespace getters only succeed on a task the child may
+ * ptrace-read, and the parent's pidfd names pid 1.
+ */
+#define LOCAL_PIDFD	7
+
+static struct object local_pidfd;
+static struct objhead empty_head;
+
+static struct objhead *empty_pool(enum obj_scope scope, enum objecttype type)
+{
+	(void)scope;
+	(void)type;
+	return &empty_head;
+}
+
+static struct object *pidfd_in_the_local_pool(enum objecttype type, int fd)
+{
+	return type == OBJ_FD_PIDFD && fd == LOCAL_PIDFD ? &local_pidfd : NULL;
+}
+
+static void pidfd_group_claims_a_local_pidfd(void)
+{
+	const struct ioctl_group *grp = fake_ioctl_group("pidfd");
+	struct stat st;
+
+	if (grp == NULL || grp->fd_test == NULL)
+		BUG("ioctl pidfd claim: the pidfd group has no fd_test");
+
+	memset(&st, 0, sizeof(st));
+	fake_get_objhead = empty_pool;
+	fake_find_local_object_by_fd = pidfd_in_the_local_pool;
+
+	if (grp->fd_test(LOCAL_PIDFD, &st) != 0)
+		BUG("ioctl pidfd claim: a pidfd in the child's own pool was not claimed");
+	if (grp->fd_test(LOCAL_PIDFD + 1, &st) == 0)
+		BUG("ioctl pidfd claim: an fd in no pool was claimed");
+
+	fake_find_local_object_by_fd = NULL;
+	fake_get_objhead = NULL;
+}
+
 void ioctl_sanitise_self_check(void);
 void ioctl_sanitise_self_check(void)
 {
@@ -378,4 +531,7 @@ void ioctl_sanitise_self_check(void)
 	groups_publish_only_fd_cmds();
 	withdrawn_off_the_fd();
 	group_first_pick();
+	ns_getters_get_a_zero_arg();
+	only_the_ns_getters_are_getters();
+	pidfd_group_claims_a_local_pidfd();
 }

@@ -344,9 +344,13 @@ bool pool_foreign_fd(int fd);
  * so the calls that follow can use it and the pool closes it: at most
  * POOLED_FD_MAX of them, the oldest closed through the pool's destructor to
  * make room.  Whatever local object the number held is retired first, pooled
- * or not.  Returns true when @fd was pooled; false leaves it with the caller,
- * who closes it.  A stdio or protected number is never pooled.  Child
- * context only.
+ * or not.  Returns true when @fd was pooled.  A stdio or protected number is
+ * never pooled and not retired: it names somebody's descriptor, not a new
+ * one.  False leaves @fd with the caller, who may close it only if it has
+ * verified that @fd is the new fd its own call made; once that holds and the
+ * number is not stdio or protected, a refusal (no destructor to close it
+ * through, no memory for the object) leaves exactly that fd with nobody.
+ * Child context only.
  */
 bool pool_returned_fd(int fd);
 
@@ -355,7 +359,8 @@ bool pool_returned_fd(int fd);
  * creat returned and @st describes, when it is a regular file or a directory:
  * pool_returned_fd() for those, nothing for a device, a FIFO or a socket,
  * or for a second name of a protected file.  Same contract: false leaves
- * @fd with the caller, who closes it.
+ * @fd with the caller, who closes it: what a successful open returns is
+ * always a new fd.
  */
 bool pool_open_result(int fd, const struct stat *st);
 
