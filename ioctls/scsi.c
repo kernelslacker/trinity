@@ -13,12 +13,10 @@
 #include "shm.h"
 #include "utils.h"	// ARRAY_SIZE
 
+#include "kernel/sg.h"
+
 #ifndef SCSI_IOCTL_GET_PCI
 #define SCSI_IOCTL_GET_PCI 0x5387
-#endif
-
-#ifndef SG_GET_ACCESS_COUNT
-#define SG_GET_ACCESS_COUNT 0x2289
 #endif
 
 static const struct ioctl scsi_ioctls[] = {

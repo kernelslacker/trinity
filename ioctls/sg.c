@@ -16,6 +16,8 @@
 #include "syscall.h"
 #include "utils.h"
 
+#include "kernel/sg.h"
+
 /*
  * /dev/sg* are real character device nodes.  The sg driver registers
  * its own char-major (typically 21) and shows up in /proc/devices as
@@ -29,18 +31,10 @@
  * the per-fd Sg_fd state machine) that the block-layer pass-through
  * never touches.
  *
- * SG_GET_ACCESS_COUNT (0x2289) is documented in the kernel sg driver
- * but absent from older glibc <scsi/sg.h>; defined locally to keep
- * the build green on stale build hosts.
- *
  * SG_SCSI_RESET is intentionally omitted: with a fuzzed arg it can
  * trivially issue SG_SCSI_RESET_BUS or SG_SCSI_RESET_HOST and brick
  * the test target's SCSI controller.
  */
-
-#ifndef SG_GET_ACCESS_COUNT
-#define SG_GET_ACCESS_COUNT 0x2289
-#endif
 
 static const struct ioctl sg_ioctls[] = {
 #ifdef SG_SET_TIMEOUT
