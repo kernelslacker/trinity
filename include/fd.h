@@ -368,7 +368,8 @@ bool pool_open_result(int fd, const struct stat *st);
 /*
  * Pool @fd, the new fd a successful call of @type's producer returned,
  * as a local object of @type, retiring whatever local object the number
- * held first.  Returns the object, for the caller to fill in the fields
+ * held first.  At most POOLED_FD_MAX per type: the oldest of a full pool
+ * is destroyed through the pool's destructor to make room.  Returns the object, for the caller to fill in the fields
  * its type carries, or NULL.  NULL for a stdio or protected number
  * leaves it open and unretired, as pool_returned_fd() does; any other
  * NULL (no destructor to close it through, no memory, a type

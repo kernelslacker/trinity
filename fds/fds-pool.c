@@ -20,7 +20,7 @@ _Static_assert(POOLED_FD_MAX > CHILD_FD_RING_SIZE,
  * up per pool, and the array is not in that order: a destroy moves the
  * last slot into the one it empties.
  */
-static void destroy_oldest(struct objhead *head)
+static void destroy_oldest(struct objhead *head, enum objecttype type)
 {
 	struct object *oldest = NULL;
 	unsigned int i;
@@ -35,7 +35,22 @@ static void destroy_oldest(struct objhead *head)
 			oldest = obj;
 	}
 	if (oldest != NULL)
-		destroy_object(oldest, OBJ_LOCAL, OBJ_FD_TESTFILE);
+		destroy_object(oldest, OBJ_LOCAL, type);
+}
+
+/*
+ * Bring @head, the local pool of @type, under POOLED_FD_MAX with room for
+ * one more.  A pool already past the cap, which the copies a dup makes join
+ * without one, is brought back under it; the bound keeps a destroy that
+ * leaves its object in place (an inconsistent slot) from looping.
+ */
+static void make_room(struct objhead *head, enum objecttype type)
+{
+	unsigned int tries;
+
+	for (tries = head->num_entries;
+	     tries > 0 && head->num_entries >= POOLED_FD_MAX; tries--)
+		destroy_oldest(head, type);
 }
 
 /*
@@ -46,22 +61,16 @@ static void destroy_oldest(struct objhead *head)
  * provider never ran) cannot close what it owns, and takes nothing.
  *
  * Room is made first, oldest object up, through that destructor and never
- * by a raw close of a number some other object may hold by now.  A pool
- * already past the cap, which the copies a dup makes join without one, is
- * brought back under it; the bound keeps a destroy that leaves its object
- * in place (an inconsistent slot) from looping.
+ * by a raw close of a number some other object may hold by now.
  */
 static bool pool_capped(int fd)
 {
 	struct objhead *head = get_objhead(OBJ_LOCAL, OBJ_FD_TESTFILE);
-	unsigned int tries;
 
 	if (head == NULL || head->destroy == NULL)
 		return false;
 
-	for (tries = head->num_entries;
-	     tries > 0 && head->num_entries >= POOLED_FD_MAX; tries--)
-		destroy_oldest(head);
+	make_room(head, OBJ_FD_TESTFILE);
 
 	return publish_resource(OBJ_FD_TESTFILE, fd, NULL) != NULL;
 }
@@ -85,9 +94,10 @@ bool pool_returned_fd(int fd)
 
 /*
  * Pool @fd under @type, the producer's own type, with the same rules as
- * pool_returned_fd() but no cap: these pools are not the open family's
- * shared one.  A head without a destructor would leave @fd with nobody,
- * so a refusal past the stdio and protected check closes it.
+ * pool_returned_fd(), each type's pool capped at POOLED_FD_MAX on its own,
+ * the oldest destroyed through the destructor to make room.  A head without
+ * a destructor would leave @fd with nobody, so a refusal past the stdio
+ * and protected check closes it.
  */
 struct object *pool_typed_fd(enum objecttype type, int fd)
 {
@@ -100,8 +110,10 @@ struct object *pool_typed_fd(enum objecttype type, int fd)
 	remove_local_objects_by_fd(fd);
 
 	head = get_objhead(OBJ_LOCAL, type);
-	if (head != NULL && head->destroy != NULL)
+	if (head != NULL && head->destroy != NULL) {
+		make_room(head, type);
 		obj = publish_resource(type, fd, NULL);
+	}
 	if (obj == NULL)
 		close(fd);
 	return obj;

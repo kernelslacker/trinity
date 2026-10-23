@@ -2521,6 +2521,45 @@ static void typed_fd_is_pooled_under_its_type(void)
 	close(fd);
 }
 
+/* Each type's pool holds POOLED_FD_MAX at most; a full one destroys its
+ * oldest object, and no other type's pool is touched. */
+static void typed_fd_pool_is_capped_per_type(void)
+{
+	int fds[POOLED_FD_MAX];
+	int other, fd, peer;
+	unsigned int i;
+
+	reset();
+	for (i = 0; i < POOLED_FD_MAX; i++) {
+		fds[i] = open_kind(FILE_REG, &peer);
+		pool_add(true, fds[i], OBJ_FD_MOUNT);
+		pool_find(fds[i], OBJ_FD_MOUNT)->obj.slot_version = 1000 - i;
+	}
+	other = open_kind(FILE_REG, &peer);
+	pool_add(true, other, OBJ_FD_FS_CTX);
+	fd = open_kind(FILE_REG, &peer);
+	forget_calls();
+
+	check("a full typed pool refused a new fd", "pool_typed_fd",
+	      pool_typed_fd(OBJ_FD_MOUNT, fd) != NULL && published == 1);
+	check("a full typed pool did not destroy exactly one object",
+	      "pool_typed_fd", destroys == 1);
+	check("the newest object was destroyed", "pool_typed_fd",
+	      destroyed_fds[0] == fds[POOLED_FD_MAX - 1] &&
+	      pool_find(fds[0], OBJ_FD_MOUNT) != NULL);
+	check("the destroy was not of the local mount pool", "pool_typed_fd",
+	      destroyed_scope == OBJ_LOCAL && destroyed_type == OBJ_FD_MOUNT);
+	check("the pool is not at its cap", "pool_typed_fd",
+	      pool_local_count(OBJ_FD_MOUNT) == POOLED_FD_MAX);
+	check("another type's pool lost an object", "pool_typed_fd",
+	      pool_find(other, OBJ_FD_FS_CTX) != NULL);
+
+	for (i = 0; i < POOLED_FD_MAX; i++)
+		close(fds[i]);
+	close(other);
+	close(fd);
+}
+
 /* A stdio or protected number is no new fd: neither pooled, retired nor
  * closed. */
 static void typed_fd_leaves_stdio_and_protected_numbers_alone(void)
@@ -3106,6 +3145,7 @@ void dup_pool_self_check(void)
 	open_result_naming_a_protected_file_is_refused();
 	typed_fd_is_pooled_under_its_type();
 	typed_fd_leaves_stdio_and_protected_numbers_alone();
+	typed_fd_pool_is_capped_per_type();
 	typed_fd_the_pool_cannot_own_is_closed();
 	epoll_create_pools_an_epoll_object();
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
