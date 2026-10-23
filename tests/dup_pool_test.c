@@ -2504,14 +2504,22 @@ static unsigned int ns_getters(unsigned long cmds[NS_GETTERS_MAX])
 /* A cmd that is not a getter, and was not what the sanitiser drew. */
 #define OTHER_CMD	0x541bUL	/* FIONREAD: returns 0, or a count */
 
-/* Run the ioctl post handler on a call that returned @retval after its
- * sanitiser published @rettype for a call of @cmd. */
-static void run_ioctl(int rettype, unsigned long cmd, unsigned long retval)
+/* The type the call's record carries when the handler runs.  RET_FD is
+ * what a group publishes for a getter; RET_NONE is what the sanitiser
+ * leaves for an fd no group claimed, and what a rewrite of any slot after
+ * it (a RedQueen pin, a chain substitution) falls back to, ioctl having no
+ * static type.  The handler does not read it, so every case runs under
+ * both. */
+static const int ioctl_rettypes[] = { RET_FD, RET_NONE };
+static int ioctl_rettype;
+
+/* Run the ioctl post handler on a call of @cmd that returned @retval. */
+static void run_ioctl(unsigned long cmd, unsigned long retval)
 {
 	static struct syscallrecord rec;
 
 	memset(&rec, 0, sizeof(rec));
-	rec.rettype = rettype;
+	rec.rettype = ioctl_rettype;
 	rec.a2 = cmd;
 	rec.retval = retval;
 	rec.errno_post = (retval == (unsigned long) -1L) ? EACCES : 0;
@@ -2541,14 +2549,13 @@ static void restore_stdio(unsigned int n)
 /* The call returned @retval under @cmd, which is not a new fd, and @fd is
  * the descriptor it could be mistaken for: the handler has nothing to pool
  * and nothing to close, and touches no pool.  @what names the return. */
-static void ioctl_leaves_alone_ret(const char *what, int rettype,
-				   unsigned long cmd, unsigned long retval,
-				   int fd)
+static void ioctl_leaves_alone_ret(const char *what, unsigned long cmd,
+				   unsigned long retval, int fd)
 {
 	char msg[128];
 	bool open_after;
 
-	run_ioctl(rettype, cmd, retval);
+	run_ioctl(cmd, retval);
 	open_after = fcntl(fd, F_GETFD) != -1;
 	snprintf(msg, sizeof(msg), "%s was pooled or retired", what);
 	check(msg, "ioctl", published == 0 && retires == 0 &&
@@ -2558,10 +2565,9 @@ static void ioctl_leaves_alone_ret(const char *what, int rettype,
 }
 
 /* The common case: the return is the number of @fd. */
-static void ioctl_leaves_alone(const char *what, int rettype,
-			       unsigned long cmd, int fd)
+static void ioctl_leaves_alone(const char *what, unsigned long cmd, int fd)
 {
-	ioctl_leaves_alone_ret(what, rettype, cmd, (unsigned long) fd, fd);
+	ioctl_leaves_alone_ret(what, cmd, (unsigned long) fd, fd);
 }
 
 /* The fd a getter returned is pooled like an open result, and stays open;
@@ -2587,7 +2593,7 @@ static void ioctl_pools_the_ns_fd_a_getter_returned(void)
 		if (fd < 0)
 			BUG("fd pool: cannot open a namespace file");
 		pool_add(true, fd, OBJ_FD_SOCKET);
-		run_ioctl(RET_FD, cmds[i], (unsigned long) fd);
+		run_ioctl(cmds[i], (unsigned long) fd);
 		e = pool_find(fd, OBJ_FD_TESTFILE);
 		check("the fd a getter returned was not pooled", "ioctl",
 		      e != NULL && e->local && published == 1);
@@ -2602,16 +2608,15 @@ static void ioctl_pools_the_ns_fd_a_getter_returned(void)
 	}
 }
 
-/* A call that published no fd, that failed, or that returned what no fd
- * table holds owns nothing: what it returned is a value, not a number to
- * close. */
+/* A call that failed, or that returned what no fd table holds, owns
+ * nothing: what it returned is a value, not a number to close. */
 static void ioctl_that_returned_no_fd_owns_nothing(void)
 {
 	unsigned long cmds[NS_GETTERS_MAX];
 	static const unsigned long bad[] = {
 		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
 	};
-	unsigned int i, j;
+	unsigned int i;
 	int peer, fd;
 
 	if (syscall_ioctl.post == NULL)
@@ -2621,7 +2626,7 @@ static void ioctl_that_returned_no_fd_owns_nothing(void)
 	for (i = 0; i < ARRAY_SIZE(bad); i++) {
 		reset();
 		pool_add(true, NEW, OBJ_FD_PIPE);
-		run_ioctl(RET_FD, cmds[0], bad[i]);
+		run_ioctl(cmds[0], bad[i]);
 		check("a call that returned no fd changed the pool", "ioctl",
 		      published == 0 && retires == 0 && destroys == 0 &&
 		      pool_count(NEW) == 1 &&
@@ -2632,26 +2637,15 @@ static void ioctl_that_returned_no_fd_owns_nothing(void)
 	 * truncated to an int it would pass for one. */
 	reset();
 	fd = open_kind(FILE_NSFS, &peer);
-	ioctl_leaves_alone_ret("a return wider than an fd", RET_FD, cmds[0],
+	ioctl_leaves_alone_ret("a return wider than an fd", cmds[0],
 			       (1UL << 32) | (unsigned long) fd, fd);
 	close(fd);
-
-	/* No fd published for the call: the sanitiser withdrew it, or the
-	 * group never claimed the fd. */
-	for (j = 0; j < 2; j++) {
-		reset();
-		fd = open_kind(FILE_NSFS, &peer);
-		ioctl_leaves_alone("the return of a call that published no fd",
-				   j == 0 ? RET_NONE : RET_ZERO_SUCCESS,
-				   cmds[0], fd);
-		close(fd);
-	}
 }
 
-/* The sanitiser published RET_FD for the cmd it drew, and the cmd slot is
- * rewritten after it (a RedQueen pin, a chain substitution): what the
- * kernel ran may be any other ioctl, and what it returned a plain number,
- * 0 for most.  None of it is a new fd, so none of it is pooled or closed,
+/* The cmd slot is rewritten after the sanitiser drew it (a RedQueen pin, a
+ * chain substitution), and the record's type says nothing of what ran:
+ * the kernel may have run any other ioctl, and returned a plain number, 0
+ * for most.  None of it is a new fd, so none of it is pooled or closed,
  * whatever number it names: not a file, not stdio, not a protected fd. */
 static void ioctl_leaves_a_desynced_return_alone(void)
 {
@@ -2681,7 +2675,7 @@ static void ioctl_leaves_a_desynced_return_alone(void)
 			reset();
 			fd = open_kind(kinds[k], &peer);
 			ioctl_leaves_alone("a return under a cmd that is no getter",
-					   RET_FD, other[c], fd);
+					   other[c], fd);
 			close(fd);
 		}
 	}
@@ -2697,7 +2691,7 @@ static void ioctl_leaves_a_desynced_return_alone(void)
 			reset();
 			fd = open_kind(kinds[k], &peer);
 			ioctl_leaves_alone("a return that is not a namespace file",
-					   RET_FD, cmds[c], fd);
+					   cmds[c], fd);
 			close(fd);
 			if (peer >= 0)
 				close(peer);
@@ -2711,7 +2705,7 @@ static void ioctl_leaves_a_desynced_return_alone(void)
 		for (c = 0; c < 2; c++) {
 			reset();
 			save_stdio(k);
-			run_ioctl(RET_FD, c == 0 ? OTHER_CMD : cmds[0], k);
+			run_ioctl(c == 0 ? OTHER_CMD : cmds[0], k);
 			open_after[c] = fcntl((int) k, F_GETFD) != -1;
 			restore_stdio(k);
 			check("a plain return that names stdio was pooled",
@@ -2727,7 +2721,7 @@ static void ioctl_leaves_a_desynced_return_alone(void)
 		fd = open_kind(FILE_REG, &peer);
 		fake_child.fail_nth_fd = fd;
 		ioctl_leaves_alone("a plain return that names a protected fd",
-				   RET_FD, c == 0 ? OTHER_CMD : cmds[0], fd);
+				   c == 0 ? OTHER_CMD : cmds[0], fd);
 		fake_child.fail_nth_fd = -1;
 		close(fd);
 	}
@@ -2751,8 +2745,8 @@ static void ioctl_leaves_a_ns_fd_on_a_number_that_is_not_free(void)
 	reset();
 	fd = open_kind(FILE_NSFS, &peer);
 	fake_child.fail_nth_fd = fd;
-	ioctl_leaves_alone("a namespace file on a protected number", RET_FD,
-			   cmds[0], fd);
+	ioctl_leaves_alone("a namespace file on a protected number", cmds[0],
+			   fd);
 	fake_child.fail_nth_fd = -1;
 	close(fd);
 
@@ -2765,7 +2759,7 @@ static void ioctl_leaves_a_ns_fd_on_a_number_that_is_not_free(void)
 		fd = open_kind(FILE_NSFS, &peer);
 		if (fd != (int) k)
 			BUG("fd pool: the namespace file did not take the stdio number");
-		run_ioctl(RET_FD, cmds[0], k);
+		run_ioctl(cmds[0], k);
 		open_after = fcntl((int) k, F_GETFD) != -1;
 		restore_stdio(k);
 		check("a namespace file on a stdio number was pooled", "ioctl",
@@ -2789,7 +2783,7 @@ static void ioctl_closes_a_ns_fd_the_pool_cannot_take(void)
 	reset();
 	no_destructor = true;
 	fd = open_kind(FILE_NSFS, &peer);
-	run_ioctl(RET_FD, cmds[0], (unsigned long) fd);
+	run_ioctl(cmds[0], (unsigned long) fd);
 	check("an fd was pooled where nothing can close it", "ioctl",
 	      published == 0 && pool_count(fd) == 0);
 	check("an fd nothing owns was left open", "ioctl",
@@ -2822,7 +2816,7 @@ static void ioctl_fds_are_all_pooled_or_closed(void)
 		seen[fd] = true;
 		if (fd > highest)
 			highest = fd;
-		run_ioctl(RET_FD, cmds[i % n], (unsigned long) fd);
+		run_ioctl(cmds[i % n], (unsigned long) fd);
 		destroyed += destroys;
 	}
 
@@ -2916,12 +2910,15 @@ void dup_pool_self_check(void)
 	open_result_is_pooled_by_kind();
 	pool_leaves_stdio_and_protected_numbers_alone();
 	open_result_naming_a_protected_file_is_refused();
-	ioctl_pools_the_ns_fd_a_getter_returned();
-	ioctl_that_returned_no_fd_owns_nothing();
-	ioctl_leaves_a_desynced_return_alone();
-	ioctl_leaves_a_ns_fd_on_a_number_that_is_not_free();
-	ioctl_closes_a_ns_fd_the_pool_cannot_take();
-	ioctl_fds_are_all_pooled_or_closed();
+	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
+		ioctl_rettype = ioctl_rettypes[i];
+		ioctl_pools_the_ns_fd_a_getter_returned();
+		ioctl_that_returned_no_fd_owns_nothing();
+		ioctl_leaves_a_desynced_return_alone();
+		ioctl_leaves_a_ns_fd_on_a_number_that_is_not_free();
+		ioctl_closes_a_ns_fd_the_pool_cannot_take();
+		ioctl_fds_are_all_pooled_or_closed();
+	}
 
 	fake_get_objhead = NULL;
 	fake_find_local_object_by_fd = NULL;

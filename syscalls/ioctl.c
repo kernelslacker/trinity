@@ -130,22 +130,24 @@ static void sanitise_ioctl(struct syscallrecord *rec)
  * i915 cmds that publish RET_FD cannot succeed as generated, and stay
  * unowned.
  *
- * rec->rettype is what the sanitiser drew, and the cmd slot is rewritten
- * after it (a RedQueen pin, a chain substitution), so the return value may
- * be a plain integer, 0 for most ioctls.  Nothing is pooled or closed unless
- * the number is verified as the fd a getter made: the cmd is a getter and
- * the number is a file on nsfs.  A stdio or protected number is no new fd
- * either, since the kernel only hands out a free one.  What
- * pool_returned_fd() refuses after that is the getter's and has no owner:
- * it is closed.
+ * rec->rettype is not consulted.  A rewrite of any slot after the sanitiser
+ * (a RedQueen pin, a chain substitution) resets it to the entry's own,
+ * RET_NONE, and a getter that succeeds after one, a chain step threading a
+ * fresh pidfd into a1 for one, still returns an nsfd nothing else owns.
+ * What keeps a plain integer return, 0 for most ioctls, from being taken for
+ * that fd is the check on the number: nothing is pooled or closed unless it
+ * is verified as the fd a getter made, the cmd being a getter and the number
+ * a file on nsfs.  A stdio or protected number is no new fd either, since
+ * the kernel only hands out a free one.  What pool_returned_fd() refuses
+ * after that is the getter's and has no owner: it is closed.
  */
 static void post_ioctl(struct syscallrecord *rec)
 {
 	struct statfs sfs;
 	int fd = rec->retval;
 
-	if (rec->rettype != RET_FD || !pidfd_ns_getter(rec->a2) ||
-	    (long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+	if (!pidfd_ns_getter(rec->a2) || (long) rec->retval < 0 ||
+	    (long) rec->retval >= (1 << 20))
 		return;
 
 	if (fd <= 2 || fd_is_protected(fd) ||
