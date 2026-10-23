@@ -17,7 +17,7 @@
 #include "shm.h"
 #include "utils.h"
 
-/* Forward declaration — defined in net/netlink/msg-rtnl-payloads.c.
+/* Forward declaration — defined in net/netlink/msg-rtnl-neigh.c.
  * Other gen_rta_* sibling declarations live in msg-internal.h;
  * this one is inline here to keep the rtnl_neightbl wire-up confined
  * to the two TUs that actually need it. */
@@ -143,10 +143,10 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 /*
  * Returns non-zero iff gen_rta_payload() for (rtnl_group, nla_type)
  * emits a nested attribute chain (one or more NLA-headered children)
- * rather than a flat scalar / struct / string payload.  Setting
- * NLA_F_NESTED on a flat payload flips the kernel into the
- * nla_validate_nested arm, which then rejects on the first "nested
- * header" that doesn't fit — so the flag has to track the actual
+ * rather than a flat scalar / struct / string payload.  A strict parse
+ * (NL_VALIDATE_NESTED in validate_nla(), lib/nlattr.c) rejects
+ * NLA_F_NESTED on an attribute whose policy is not nested and rejects
+ * its absence on one that is — so the flag has to track the actual
  * payload shape.
  *
  * Keep this in sync with the structured-payload generators above:
@@ -262,14 +262,11 @@ size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 
 	/*
 	 * Set NLA_F_NESTED only when the payload actually is a nested
-	 * attribute chain.  For structured-but-flat payloads (RTA_DST,
-	 * RTA_OIF, IFLA_MTU, …) the kernel routes on this flag into
-	 * nla_validate_nested and rejects the attr on the first child
-	 * header that doesn't fit, which was dropping a noticeable
-	 * fraction of structured attrs before reaching the family's
-	 * real handler.  Random-byte payloads (structured_len == 0) keep
-	 * the unconditional 1-in-4 OR — bad-attr is intentional novelty
-	 * on that path.
+	 * attribute chain.  A strict parse rejects the flag on a
+	 * structured-but-flat attribute (RTA_DST, RTA_OIF, IFLA_MTU, …)
+	 * before the family's real handler runs.  Random-byte payloads
+	 * (structured_len == 0) keep the unconditional 1-in-4 OR —
+	 * bad-attr is intentional novelty on that path.
 	 */
 	if (ONE_IN(4)) {
 		if (structured_len == 0 ||

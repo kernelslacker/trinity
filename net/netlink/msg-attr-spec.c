@@ -78,8 +78,7 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 /*
  * Emit a single attribute described by a freshly picked spec, treating
  * NESTED as a small binary payload.  Used inside append_specced_nested
- * so children stay one level deep — matches the depth limit set by
- * commit "net/netlink: add nested NLA_F_NESTED attribute support".
+ * so children stay one level deep.
  */
 static size_t append_specced_flat(unsigned char *buf, size_t offset,
 				  size_t buflen,

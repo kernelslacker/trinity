@@ -1,20 +1,18 @@
 /*
  * msg-internal.h
  *
- * Shared declarations split out of net/netlink/msg-core.c to allow the
+ * Shared declarations for the netlink message generator: the
  * descriptor tables (per-protocol message-type lists, per-group
  * rtnetlink attribute lists, per-family nla_attr_spec tables and
- * xfrm family-field offsets) to live in their own translation unit
- * and compile in parallel with the message-emitter logic.  This
- * header is private to the two TUs that make up netlink-msg — do
- * not include it from anywhere else.
+ * xfrm family-field offsets) defined in msg-tables.c, and the entry
+ * points the msg-*.c translation units call across files.  This
+ * header is private to those TUs — do not include it from anywhere
+ * else.
  *
- * The tables in msg-tables.c are deliberately widened from
- * file-static to external linkage so the emitters in msg-core.c
- * can pick from them across the TU boundary.  Each table is paired
- * with a `_n` size constant so the emitters can index into it without
- * needing the full array type that ARRAY_SIZE() requires; the
- * extern declarations only need the element type.
+ * Each table has external linkage and a `_n` size constant so the
+ * emitters can index into it without needing the full array type that
+ * ARRAY_SIZE() requires; the extern declarations only need the
+ * element type.
  *
  * The DCB attribute fallback macros are emitted here because both
  * the table definitions (dcb_attrs, dcb_ieee_attrs) and the emitter
@@ -53,11 +51,9 @@
 #endif
 
 /*
- * Per-message-type family-field offsets within the xfrm body.  The
- * row layout was previously expressed as an anonymous struct literal
- * inside msg-core.c; it is named here so the table can be
- * declared extern and referenced from xfrm_pin_family() across the
- * TU boundary.  Field semantics are unchanged: family_offset is the
+ * Per-message-type family-field offsets within the xfrm body.  The row
+ * type is named so the table can be declared extern and referenced from
+ * xfrm_pin_family() across the TU boundary.  family_offset is the
  * SA / id family byte offset, sel_family_offset is the (optional)
  * selector family byte offset, with ~0u meaning "no selector".
  */
@@ -141,9 +137,10 @@ extern const size_t inet_diag_specs_n;
 
 /*
  * Per-rtnetlink-group attribute payload builders.  Defined in
- * msg-rtnl-payloads.c, dispatched from the gen_rta_payload
- * switch in msg-core.c.  Each generator returns the payload length
- * it wrote into p, or 0 to signal "fall back to a random blob".
+ * msg-rtnl-{route,link,neigh,tc,payloads}.c, dispatched from the
+ * gen_rta_payload switch in msg-attr-random.c.  Each generator returns
+ * the payload length it wrote into p, or 0 to signal "fall back to a
+ * random blob".
  */
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type, unsigned char family);
@@ -225,9 +222,9 @@ unsigned short pick_genl_attr_type(unsigned short nlmsg_type);
  * curated nla_attr_spec table (NETLINK_ROUTE plus anything unknown).
  * append_nlattr() writes one flat nlattr; append_nested_attr_container()
  * wraps 1-3 children in a NLA_F_NESTED outer attr.  Both routes size
- * per-rtnl-group structured payloads via the msg-rtnl-payloads
- * generators when the (rtnl_group, nla_type) pair is known and fall
- * back to a short random blob otherwise.
+ * per-rtnl-group structured payloads via the msg-rtnl-*.c generators
+ * when the (rtnl_group, nla_type) pair is known and fall back to a
+ * short random blob otherwise.
  */
 size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 		     unsigned short nla_type_hint, unsigned char family,

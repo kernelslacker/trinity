@@ -1,15 +1,11 @@
 /*
  * msg-rtnl-common.h
  *
- * Shared helpers used by the per-family rtnetlink payload builders
- * split out of net/netlink/msg-rtnl-payloads.c.  The four helpers
- * (rand_ipv4, rand_ipv6, start_nlattr, build_nested_attrs) previously
- * lived as file-static in msg-rtnl-payloads.c; widening them to
- * external linkage here lets the per-family TUs
- * (msg-rtnl-{route,link,neigh,tc,misc}.c) reuse the same generators
- * across the split without duplicating their bodies.  This header is
- * private to the msg-rtnl-* TUs — do not include it from anywhere
- * else.
+ * Shared helpers (rand_ipv4, rand_ipv6, start_nlattr,
+ * build_nested_attrs) used by the per-family rtnetlink payload
+ * builders in msg-rtnl-{route,link,neigh,tc,payloads}.c, defined in
+ * msg-rtnl-common.c.  This header is private to the msg-rtnl-* TUs —
+ * do not include it from anywhere else.
  */
 
 #ifndef NET_NETLINK_MSG_RTNL_COMMON_H

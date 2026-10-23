@@ -28,7 +28,7 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
-/* Prototype mirrored from the forward declaration in net/netlink/msg-core.c;
+/* Prototype mirrored from the forward declaration in msg-attr-random.c;
  * kept here (rather than in msg-internal.h next to its
  * gen_rta_* siblings) to keep the rtnl_addrlabel wire-up confined to
  * the two TUs that actually need it. */
