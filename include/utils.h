@@ -61,9 +61,8 @@
  * waitpid() in a non-syscall path can return -1/EINTR.  Every reap site
  * needs the wait to either complete or fail terminally; treating EINTR
  * as "done" leaves a child unreaped and, for sites that tear down a
- * shared mapping right after the wait (barrier-racer, futex-storm),
- * leaves a worker that will fault when it next touches the destroyed
- * barrier.
+ * shared mapping right after the wait, leaves a worker that will fault
+ * when it next touches the destroyed mapping.
  *
  * WNOHANG semantics are preserved: the wrapper returns 0 (not block) when
  * no child has exited, because rc == 0 falls out of the loop condition;

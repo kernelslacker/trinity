@@ -680,13 +680,12 @@ void remove_local_objects_in_range(unsigned int lo, unsigned int hi,
 
 /*
  * Cap on the parallel compact live-fd list (shm->fd_live[]) maintained
- * alongside fd_hash[].  The list lets refcount-auditor and other
- * "iterate every live fd" walkers skip the sparse-hash empty-slot
- * scan.  Sized to FD_HASH_SIZE so overflow is impossible by
+ * alongside fd_hash[].  The list lets "iterate every live fd" walkers
+ * skip the sparse-hash empty-slot scan.  Sized to FD_HASH_SIZE so overflow is impossible by
  * construction (fd_hash_insert refuses past FD_HASH_SIZE entries
  * already), but the writer still gates on this cap and silently
- * drops overflow entries from the live list — the auditor is a
- * sampling consumer and tolerates a missed entry.
+ * drops overflow entries from the live list — a walker that misses an
+ * entry just skips that fd.
  */
 #define FD_LIVE_MAX FD_HASH_SIZE
 

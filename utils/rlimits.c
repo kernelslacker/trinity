@@ -29,9 +29,8 @@
  * Raising the hard limit needs CAP_SYS_RESOURCE; the trinity binary
  * gets it via `make setcap`.  Best-effort: if the cap is absent the
  * setrlimit fails EPERM, we log once and continue with the inherited
- * limit.  Trinity must still run without setcap (the mlock_pressure
- * childop's existing ASAN gate keeps coverage workable on the inherited
- * limit).
+ * limit.  Trinity must still run without setcap (the mlockall picker's
+ * existing ASAN gate keeps coverage workable on the inherited limit).
  *
  * Co-located with the soft-cap helpers below despite being a *raise*:
  * this is the single point where the process-tree's MEMLOCK limit is
@@ -104,8 +103,8 @@ void init_rlimits(unsigned int nr_children)
 	 * sized for a dedicated host; on a shared box where the user already
 	 * runs more than nproc_target processes the cap strangles trinity the
 	 * instant it spawns a thread or forks a child (EAGAIN).  The cap is
-	 * here to bound the fork-storm / pidfd-storm childops -- and --dry-run
-	 * gates every childop off and executes no fuzzed clone/fork, so the
+	 * here to bound runaway process creation -- and --dry-run gates
+	 * every childop off and executes no fuzzed clone/fork, so the
 	 * child count is already bounded by the fixed worker pool and the cap
 	 * is pure downside.  Skip it under --dry-run.
 	 */

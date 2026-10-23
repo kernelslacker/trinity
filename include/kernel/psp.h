@@ -54,9 +54,8 @@
  * (the rest of enum psp_cmd plus the PSP_A_DEV_* / PSP_A_ASSOC_*
  * nest-leaf / PSP_A_KEYS_* / PSP_A_STATS_* namespaces).  Supplied as
  * fallbacks for stripped sysroots that omit <linux/psp.h>; existing
- * defines above are left untouched so the psp_key_rotate childop
- * keeps building on hosts whose installed uapi already carried the
- * narrower set. */
+ * defines above are left untouched so hosts whose installed uapi
+ * already carries the narrower set keep building. */
 #ifndef PSP_FAMILY_VERSION
 #define PSP_FAMILY_VERSION		1
 #endif

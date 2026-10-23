@@ -144,14 +144,13 @@ int get_rand_bpf_fd(void)
 
 	/*
 	 * Coin-flip preference for the per-child local pool first.  Map
-	 * fds get added to OBJ_LOCAL by post_bpf (BPF_MAP_CREATE) and by
-	 * the bpf_lifecycle childop, but until now nothing read from
-	 * there — every consumer landed on OBJ_GLOBAL with the static
+	 * fds get added to OBJ_LOCAL by post_bpf (BPF_MAP_CREATE); reading
+	 * only OBJ_GLOBAL would leave every consumer on the static
 	 * provider templates.  Probabilistic preference keeps both pools
 	 * feeding the syscall sanitiser so freshly-created fds with
-	 * partially-mutated map state can race the static templates and
-	 * the lifecycle teardown.  Falls through to global on miss so
-	 * children with empty local pools still see the templates.
+	 * partially-mutated map state can race the static templates.
+	 * Falls through to global on miss so children with empty local
+	 * pools still see the templates.
 	 *
 	 * get_objhead(OBJ_LOCAL, ...) returns NULL outside child context;
 	 * guard the lookup so non-child callers (init, regeneration in
