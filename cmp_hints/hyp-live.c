@@ -1,14 +1,8 @@
 /*
- * SHADOW typed-hypothesis LIVE inject arm.
- *
- * Split out of hyp.c: cmp_hyp_try_live_inject() and its three gating
- * denominators (plateau-amplified channel A, always-on bootstrap
- * channel B, PROMOTED-bypass channel C).  Composes the picker
- * (cmp_hyp_would_pick_locked, in hyp-pick.c) and derive
- * (cmp_hyp_derive_value, in hyp-derive.c) via the shared
- * cmp_hints/hyp-internal.h prototypes; the raw pool's
- * (cmp_ip, value, width) tuple is replaced by (cmp_ip, derived,
- * width) on a successful inject.
+ * SHADOW typed-hypothesis LIVE inject arm: cmp_hyp_try_live_inject() and its
+ * three gating channels (plateau-amplified A, always-on bootstrap B,
+ * PROMOTED-bypass C).  It composes the picker in hyp-pick.c with the derive
+ * ladder in hyp-derive.c.
  */
 
 #include <stdint.h>

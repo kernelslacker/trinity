@@ -1,14 +1,9 @@
 /*
- * Per-syscall cmp-hint consumer.
- *
- * cmp_hints_try_get_ex() is the entry point every generate-args.c
- * consumer routes through.  This cluster owns the
- * two-tier picker (recent ring first during a rising-PC-flat plateau,
- * durable per-syscall pool otherwise), the per-child A/B stamp that
- * gates the uniform-versus-weighted draw, and the weighted draw itself.
- * The typed-hypothesis inject arm and the SHADOW would-pick resolver
- * are pulled in through include/cmp_hints-internal.h from
- * cmp_hints/hyp-live.c and cmp_hints/hyp-pick.c.
+ * Per-syscall cmp-hint consumer: cmp_hints_try_get_ex() is the entry point
+ * the arg generators in args/ pull hints through.  Two-tier picker (recent
+ * ring during a rising-PC-flat plateau, durable pool otherwise) and the
+ * per-child A/B choice between a uniform and a weighted draw; the typed
+ * inject arm and would-pick resolver live in hyp-live.c and hyp-pick.c.
  */
 
 #include <stdint.h>

@@ -1,31 +1,8 @@
 /*
- * KCOV comparison operand collection and hint pool management.
- *
- * Parses KCOV_TRACE_CMP trace buffers to extract constants that the
- * kernel compared syscall-derived values against. These constants
- * are stored in per-syscall in-memory pools and used during argument
- * generation to produce values more likely to pass kernel validation.
- *
- * Buffer format (each record is 4 x u64):
- *   [0] type  - KCOV_CMP_CONST | KCOV_CMP_SIZE(n)
- *   [1] arg1  - first comparison operand
- *   [2] arg2  - second comparison operand
- *   [3] ip    - instruction pointer of the comparison
- *
- * Pool entries are keyed by (cmp_ip, value, size).  Distinguishing on
- * cmp_ip means the same constant compared at two different kernel
- * sites occupies two slots rather than colliding -- the precision
- * matters once a downstream consumer wants to attribute which site a
- * hint came from.  cmp_ip is the canonical (KASLR-stripped) address
- * produced by kcov_canon_cmp_ip(), routed in at the top of the
- * cmp_hints_collect() per-record loop; the bloom hash, the pool dedup
- * key, and the persisted on-disk record all index by the same canonical
- * value, so a KASLR reroll between save and warm-load does not alias
- * every learned constant to a different (cmp_ip, value, size) tuple.
- *
- * When a pool fills, the entry with the lowest last_used generation
- * is evicted (least-recently-inserted), so a fresh constant displaces
- * stale long-tail noise instead of stomping a slot at random.
+ * KCOV_TRACE_CMP hint pool entry point: shared-memory allocation and canary
+ * init, the compiled-in per-syscall collection strip list, and the chaos-
+ * window gate.  Record parsing is in collect.c; dedup and LRU eviction are
+ * in pool.c.
  */
 
 #include <errno.h>

@@ -1,10 +1,7 @@
 /*
- * SHADOW typed-hypothesis observe path.
- *
- * Split out of hyp.c so the EXACT / BITMASK / ENUM_FAMILY / RANGE /
- * BOUNDARY kind-lane inference lives in its own translation unit,
- * separate from credit / pick / derive / live.  Uses the shared
- * pool primitives declared in cmp_hints/hyp-internal.h.
+ * SHADOW typed-hypothesis observe path: the EXACT / BITMASK / ENUM_FAMILY /
+ * RANGE / BOUNDARY kind-lane inference.  Uses the shared pool primitives
+ * declared in cmp_hints/hyp-internal.h.
  */
 
 #include <stdint.h>

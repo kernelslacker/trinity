@@ -1,11 +1,8 @@
 /*
- * SHADOW typed-hypothesis pool primitives: find / alloc / range-identity.
- *
- * Split out of hyp.c so the observe / credit / pick / derive / live lane
- * files can reach the shared allocation and range-identity helpers via
- * cmp_hints/hyp-internal.h.  Every writer runs under the matching
- * durable cmp_hint_pool lock so hyp_pools[nr][do32] is serialised
- * per-(nr, do32) without a second lock of its own.
+ * SHADOW typed-hypothesis pool primitives: find / alloc / range-identity,
+ * shared by the lane files through cmp_hints/hyp-internal.h.  Every writer
+ * runs under the matching durable cmp_hint_pool lock, so hyp_pools[nr][do32]
+ * is serialised per (nr, do32) without a second lock of its own.
  */
 
 #include <stdint.h>

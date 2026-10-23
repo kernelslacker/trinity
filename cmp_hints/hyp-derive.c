@@ -1,16 +1,8 @@
 /*
- * SHADOW typed-hypothesis derive lane.
- *
- * Split out of hyp.c: the per-kind derive ladder
- * (cmp_hyp_derive_value) plus the three SHADOW shadow-only probe
- * classes (pow2 / alignment, bitmask FULL_OR / ANDNOT_TOGGLE, signed
- * / unsigned SIGN-SWITCH) it fans out to on emission.
- *
- * cmp_hyp_derive_value drops static because the live inject arm in
- * hyp-live.c consumes it; declaration lives in
- * cmp_hints/hyp-internal.h.  The shadow probes stay static -- they
- * are only called from cmp_hyp_derive_value at the shared out_bump
- * label.
+ * SHADOW typed-hypothesis derive lane: the per-kind derive ladder
+ * (cmp_hyp_derive_value), which the live inject arm in hyp-live.c also calls,
+ * and the three shadow-only probe classes it fans out to on emission (pow2 /
+ * alignment, bitmask FULL_OR / ANDNOT_TOGGLE, signed / unsigned SIGN-SWITCH).
  */
 
 #include <stdint.h>

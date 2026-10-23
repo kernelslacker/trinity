@@ -1,20 +1,9 @@
 /*
- * KCOV comparison-trace collection.
- *
- * cmp_hints_collect() walks a CMP-mode trace buffer, extracts every
- * (cmp_ip, value, size) tuple worth remembering, and folds them into
- * the per-syscall pool via the batched dedup+flush path in
- * cmp_hints/pool.c.  The scan also drives the greedy RedQueen
- * attribution stash (pending re-exec buffer, including the field-
- * scoped timespec pin) and every per-record diagnostic counter the
- * reporters consume.
- *
- * The two peer helpers in this file -- cmp_hint_apply_transform()
- * and cmp_hints_stash_consumed() -- sit alongside the collector even
- * though the consumer picker calls them; both are the "how do we
- * shape and remember a served value" glue and stay in the same
- * translation unit as the collector that owns the batch discipline
- * they mirror.
+ * KCOV comparison-trace collection: cmp_hints_collect() walks a CMP-mode
+ * trace buffer, folds each (cmp_ip, value, size) tuple into the per-syscall
+ * pool through the batched dedup+flush in pool.c, and drives the RedQueen
+ * attribution stash and per-record counters.  Also holds the picker's glue,
+ * cmp_hint_apply_transform() and cmp_hints_stash_consumed().
  */
 
 #include <errno.h>

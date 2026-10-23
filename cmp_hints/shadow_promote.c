@@ -1,25 +1,9 @@
 /*
- * Shadow-arm promotion evaluator.  MEASURE-ONLY: nothing here writes
- * to a generation path, flips a live_flag, or nudges the pick
- * distribution.  On every stats-tick the evaluator walks a small
- * registry of shadow arms, snapshots each arm's baseline (would-
- * fire) and would-win counters out of kcov_shm, and if the promotion
- * criterion is met emits exactly one line to the stats stream so a
- * human can act on it.
- *
- * Rationale for the registry framing: cmp_hyp_bitmask_shadow_probe()
- * in cmp_hints/hyp-derive.c already increments dedicated would_fire /
- * would_win pairs at the tail of struct kcov_shared for both the
- * FULL_OR and ANDNOT_TOGGLE lanes; those are the "would-win /
- * baseline-style counters" the pilot reuses verbatim.  The registry
- * table stores offsetof() locators into struct kcov_shared, and the
- * evaluator dereferences them via the runtime kcov_shm pointer, so
- * every walker (this evaluator, the surfacing rows in stats/dump.c,
- * and any future consumer) reads exactly the addresses the shadow
- * probe wrote in the child.  A future live counter for an arm is
- * plumbed by giving that arm a non-zero live_win_offset; the pilot
- * lanes have no live counterpart yet, so live_win_offset stays 0
- * for both entries.
+ * Shadow-arm promotion evaluator.  MEASURE-ONLY: nothing here writes to a
+ * generation path, flips a live_flag, or nudges the pick distribution.  On
+ * every stats tick it walks the registry of shadow arms (descriptor design in
+ * include/shadow_promote.h), reads each arm's baseline and would-win counters
+ * from kcov_shm, and emits one line per arm whose promotion criterion is met.
  */
 
 #include <stddef.h>

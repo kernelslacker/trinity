@@ -1,17 +1,8 @@
 /*
- * SHADOW typed-hypothesis picker.
- *
- * Split out of hyp.c: the value-agnostic pool walk
- * (cmp_hyp_would_pick_locked) plus the SHADOW would-pick wrapper
- * invoked by cmp_hints_try_get_ex() on every successful raw-pool
- * pick.  The picker's specificity ordering (EXACT > ENUM_FAMILY >
- * BITMASK > RANGE > BOUNDARY) matches cmp_hyp_find_for_credit; the
- * state-aware preference within each kind (PROMOTED > OBSERVED >
- * DEMOTED via reroll) is documented at the function header below.
- *
- * cmp_hyp_would_pick_locked drops static because the live inject arm
- * in hyp-live.c consumes it; declaration lives in
- * cmp_hints/hyp-internal.h.
+ * SHADOW typed-hypothesis picker: the value-agnostic pool walk
+ * (cmp_hyp_would_pick_locked), which the live inject arm in hyp-live.c also
+ * calls, and the SHADOW would-pick wrapper cmp_hints_try_get_ex() runs on
+ * every successful raw-pool pick.
  */
 
 #include <stdint.h>

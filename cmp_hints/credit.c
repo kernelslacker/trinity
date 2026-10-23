@@ -1,15 +1,9 @@
 /*
- * SHADOW per-entry feedback scoring: credit drain.
- *
- * cmp_hints_stash_consumed() (collect.c) pushes one entry per
- * successful cmp_hints_try_get_ex return onto a small per-child
- * ring.  Exactly one of the drain wrappers below fires per parent
- * dispatch (PC-mode win / PC-mode miss / CMP-mode novelty / typed
- * TRANSITION_WIN / typed CORPUS_SAVE), walks the ring, and credits
- * the matching pool entry's uint16_t wins/misses via a CAS-saturate
- * loop.  The drain re-walks the durable pool at (nr, do32) for a
- * value-keyed match.  Torn reads / concurrent evictions forfeit that
- * stash slot's per-entry score but never mis-index the pool.
+ * SHADOW per-entry feedback scoring: the credit drain.  Each parent dispatch
+ * ends with one drain of the per-child stash cmp_hints_stash_consumed() fills
+ * (PC-mode win or miss, or CMP-mode novelty), which credits the stashed
+ * entries and resets it; the typed TRANSITION_WIN and CORPUS_SAVE drains run
+ * first and walk the stash without resetting it.
  */
 
 #include <stdint.h>
@@ -22,14 +16,6 @@
 #include "tables.h"
 
 /*
- * SHADOW per-entry feedback scoring -- credit drain.
- *
- * Three small helpers feed off the same per-child stash that
- * cmp_hints_try_get_ex pushed entries onto.  Exactly ONE of the three
- * runs per parent dispatch (PC-mode win / PC-mode miss / CMP-mode
- * novelty) -- the dispatch_step caller picks based on the same mode +
- * outcome signals it already computed for the other per-call counters.
- *
  * Saturating per-entry counters use a small CAS-saturate loop on the
  * matching pool entry's uint16_t wins/misses field: the common path
  * is one __atomic_compare_exchange_n on the not-yet-saturated counter

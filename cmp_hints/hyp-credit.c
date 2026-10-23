@@ -1,14 +1,8 @@
 /*
- * SHADOW typed-hypothesis credit path.
- *
- * Split out of hyp.c: the credit-side resolver (cmp_hyp_find_for_credit),
- * the per-outcome field / flat-counter selectors, and both public credit
- * entry points (cmp_hyp_credit_outcome, cmp_hyp_credit_consume).
- *
- * Consumer contract mirrors the observe side: writers (cmp_hyp_observe)
- * run under the matching durable cmp_hint_pool lock; this file reads
- * lock-free with the RELAXED-load discipline every SHADOW reader uses,
- * and the count > cap bail bounds the walk against torn-read corruption.
+ * SHADOW typed-hypothesis credit path: the credit-side resolver
+ * (cmp_hyp_find_for_credit), the per-outcome field and flat-counter
+ * selectors, and the public credit entry points cmp_hyp_credit_outcome and
+ * cmp_hyp_credit_consume.  The pool is read lock-free with RELAXED loads.
  */
 
 #include <stdint.h>
@@ -30,7 +24,9 @@
  * picked constant pre-dates the inference layer or sits in a slot the
  * observer never fired, both of which are unobservable from the credit
  * side.  Same RELAXED-load discipline as the rest of the SHADOW reader
- * path: torn fields tolerate the consumer-side advisory contract.
+ * path: torn fields tolerate the consumer-side advisory contract, and a
+ * count past CMP_HYP_PER_SYSCALL (a torn or scribbled pool) bails before the
+ * walk.
  */
 /*
  * BOUNDARY credit window: |value - exemplar| <= 2 explains values the

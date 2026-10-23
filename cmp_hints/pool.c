@@ -137,11 +137,13 @@ _Static_assert(CMP_HINT_AGE_BUCKETS == 7U,
 
 /*
  * Insert (cmp_ip, val, size) into the entries[] array.  Dedups via linear
- * scan on the full (cmp_ip, value, size) key.  When the pool is full,
- * evicts the entry with the smallest last_used (least-recently-inserted)
- * to make room.  Duplicate hits refresh last_used so an actively-observed
- * constant doesn't get evicted by transient long-tail noise.  Caller must
- * hold pool->lock.
+ * scan on the full (cmp_ip, value, size) key; cmp_ip is part of it so one
+ * constant compared at two kernel sites takes two slots and a hint stays
+ * attributable to its site.  When the pool is full, evicts the entry with
+ * the smallest last_used (least-recently-inserted) to make room, so a fresh
+ * constant displaces stale long-tail noise rather than a random slot.
+ * Duplicate hits refresh last_used so an actively-observed constant doesn't
+ * get evicted by transient long-tail noise.  Caller must hold pool->lock.
  *
  * pool->generation is bumped ONLY on real content changes (fresh insert
  * or evict-replace), never on dedup-refresh.  That keeps the

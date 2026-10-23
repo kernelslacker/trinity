@@ -1,11 +1,10 @@
 /*
  * SHADOW typed-hypothesis: private cross-lane prototypes.
  *
- * hyp.c is being split into per-responsibility lane files
- * (hyp-pool.c, hyp-observe.c, hyp-credit.c, hyp-pick.c,
- * hyp-derive.c, hyp-live.c).  Helpers that one lane file exports to
- * a SIBLING lane -- but NOT to the public cmp_hints.h /
- * cmp_hints-internal.h interface -- live here.
+ * The store is split into one lane file per responsibility (hyp-pool.c,
+ * hyp-observe.c, hyp-credit.c, hyp-pick.c, hyp-derive.c, hyp-live.c).
+ * Helpers that one lane file exports to a SIBLING lane -- but NOT to the
+ * public cmp_hints.h / cmp_hints-internal.h interface -- live here.
  */
 
 #ifndef CMP_HINTS_HYP_INTERNAL_H

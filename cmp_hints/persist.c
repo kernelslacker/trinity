@@ -1,20 +1,9 @@
 /*
- * Warm-start persistence for the cmp-hints pool.
- *
- * CMP records grow slowly (each one requires a kernel-side comparison
- * against a syscall-derived input), so a cold start throws away every
- * learned constant and the first windows after restart inject none.
- * Persisting the pool across runs lets a long-running fuzz session
- * reach steady state immediately on restart.  The on-disk layout is
- * fixed-size (header + MAX_NR_SYSCALL * 2 pool records) so the load
- * path is one contiguous read and the CRC is one contiguous range.
- * Validity is gated on the kallsyms-sha256 fingerprint and the writer's
- * kaslr_base so a rebuilt or shifted kernel forces a cold start rather
- * than serving stale IP-keyed hints.
- *
- * cmp_hints_maybe_snapshot() is the parent-tick mid-run hook; the
- * generation-at-last-save and snapshot-cadence statics live here so
- * only this TU can advance the dirty-bit baseline.
+ * Warm-start persistence for the cmp-hints pool: save and load a fixed-size
+ * snapshot of the per-syscall pools, with cmp_hints_maybe_snapshot() as the
+ * parent-tick mid-run hook.  A load is valid only when the kallsyms-sha256
+ * fingerprint and the writer's kaslr_base match, so a rebuilt or shifted
+ * kernel cold-starts rather than serving stale IP-keyed hints.
  */
 
 #include <errno.h>
