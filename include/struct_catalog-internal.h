@@ -84,8 +84,8 @@ void validate_syscall_struct_args(void);
  * names the array's element count so both the extern declaration here
  * and the definition over there compile against a complete array
  * type -- a mismatched initialiser fails as "excess elements" or
- * "too few" at the leaf TU, and the spine's ARRAY_SIZE() still folds
- * to the same constant it did before the carve.
+ * "too few" at the leaf TU, and the spine's ARRAY_SIZE() folds
+ * to a constant.
  */
 enum {
 	SCTP_INITMSG_FIELDS_N			= 4,
@@ -277,10 +277,9 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  * entry count is configuration-dependent (one entry per #ifdef
  * USE_<AF> arm).
  * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
- * ARRAY_SIZE(sockaddr_storage_variants) still folds to the same
- * constant the static-table form did.  USE_* macros come from
- * config.h, which struct_catalog/catalog.c and the sockaddr-* TUs include
- * before this header.
+ * ARRAY_SIZE(sockaddr_storage_variants) folds to a constant.  USE_*
+ * macros come from config.h, which struct_catalog/catalog.c and the
+ * sockaddr-* TUs include before this header.
  */
 enum {
 	SOCKADDR_STORAGE_FIELDS_N	= 1,
@@ -415,8 +414,7 @@ extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS
 /*
  * time-shaped leaf tables defined in struct_catalog/time.c.  The _N
  * constants give the extern decls a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same constant
- * it did before the carve.
+ * ARRAY_SIZE() at the reference site folds to a constant.
  */
 enum {
 	UTIMBUF_FIELDS_N	= 2,
@@ -429,11 +427,11 @@ extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
 /*
  * perf_event_attr leaf tables defined in struct_catalog/perf.c.  The
  * _N constants give the extern decls a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.  Only the shared field table and
- * the variant array are referenced from the spine; the per-PERF_TYPE_*
- * variant field arrays and their value/vocab pools are file-private to
- * struct_catalog/perf.c and stay static const.
+ * spine's ARRAY_SIZE() at the reference site folds to a constant.
+ * Only the shared field table and the variant array are referenced from
+ * the spine; the per-PERF_TYPE_* variant field arrays and their
+ * value/vocab pools are file-private to struct_catalog/perf.c and stay
+ * static const.
  */
 enum {
 	PERF_EVENT_ATTR_FIELDS_N	= 22,
@@ -449,7 +447,7 @@ extern const struct union_variant perf_event_attr_variants[PERF_EVENT_ATTR_VARIA
  * f_owner_ex (fcntl F_GETOWN_EX / F_SETOWN_EX), and struct file_handle
  * (open_by_handle_at).  Each _N constant gives the extern decl a
  * complete array type so the spine's ARRAY_SIZE() at the reference
- * site keeps folding to the same constant it did before the carve.
+ * site folds to a constant.
  * flock_l_type_values / flock_l_whence_values /
  * f_owner_ex_type_values are private vocab pools referenced only by
  * their own fcntl field arrays and stay scoped to fcntl.c through this
@@ -475,8 +473,7 @@ extern const struct struct_field file_handle_fields[FILE_HANDLE_FIELDS_N];
  * sched-shaped leaf tables defined in struct_catalog/sched.c.  Covers
  * struct sched_attr (sched_getattr) and struct clone_args (clone3).
  * Each _N constant gives the extern decl a complete array type so the
- * spine's ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.
+ * spine's ARRAY_SIZE() at the reference site folds to a constant.
  */
 enum {
 	SCHED_ATTR_FIELDS_N	= 10,
@@ -503,8 +500,8 @@ extern const struct struct_field mount_attr_fields[MOUNT_ATTR_FIELDS_N];
  * TCP leaf tables defined in struct_catalog/tcp.c.  Covers struct
  * tcp_repair_opt (IPPROTO_TCP / TCP_REPAIR_OPTIONS setsockopt optval
  * array element).  The _N constant gives the extern decl a complete
- * array type so the spine's ARRAY_SIZE() at the reference site keeps
- * folding to the same constant it did before the carve.  Gated by
+ * array type so the spine's ARRAY_SIZE() at the reference site folds
+ * to a constant.  Gated by
  * USE_TCP_REPAIR_OPT to mirror the existing guard on the spine
  * reference and the struct's header availability.
  */
@@ -519,8 +516,8 @@ extern const struct struct_field tcp_repair_opt_fields[TCP_REPAIR_OPT_FIELDS_N];
 /*
  * resource leaf table defined in struct_catalog/resource.c: struct
  * rlimit (getrlimit).  The _N constant gives the extern decl a complete
- * array type so the spine's ARRAY_SIZE() at the reference site keeps
- * folding to the same constant it did before the carve.  The table is
+ * array type so the spine's ARRAY_SIZE() at the reference site folds
+ * to a constant.  The table is
  * not config-gated -- the struct comes from headers trinity already
  * requires.
  */
@@ -533,8 +530,8 @@ extern const struct struct_field rlimit_fields[RLIMIT_FIELDS_N];
 /*
  * poll leaf table defined in struct_catalog/poll.c: struct epoll_event
  * (epoll_ctl).  The _N constant gives the extern decl a complete array
- * type so the spine's ARRAY_SIZE() at the reference site keeps folding
- * to the same constant it did before the carve.  The table is not
+ * type so the spine's ARRAY_SIZE() at the reference site folds to a
+ * constant.  The table is not
  * config-gated -- the struct comes from headers trinity already
  * requires.
  */

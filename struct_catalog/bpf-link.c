@@ -39,8 +39,8 @@
  * BPF_PROG_ASSOC_STRUCT_OPS is one of the variants in this tail
  * group per the design doc, but the prog_assoc_struct_ops named
  * struct member is absent from the local uapi vintage; the cmd
- * itself is only available via syscalls/bpf.c's fallback #define.
- * Intentionally skipped.
+ * itself is only available via the fallback #define in
+ * include/kernel/bpf.h.  Intentionally skipped.
  */
 const struct struct_field bpf_attr_LINK_UPDATE_fields[BPF_ATTR_LINK_UPDATE_FIELDS_N] = {
 	FIELDX(union bpf_attr, link_update.link_fd, FT_FD),

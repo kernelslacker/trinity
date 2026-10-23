@@ -10,9 +10,9 @@ int get_rand_bpf_token_fd(void);
 
 /*
  * bpf map / prog / attach type vocabularies.  Defined in the facade
- * struct_catalog/bpf.c so the schema-aware fill's FT_ENUM tags and
- * sanitise_bpf's RAND_ARRAY paths share a single source.  Counts
- * live as their own extern so syscalls/bpf.c keeps a runtime read.
+ * struct_catalog/bpf.c so the schema-aware fill's FT_ENUM tags and the
+ * syscalls/bpf-*.c sanitisers share a single source.  Counts live as
+ * their own extern so the sanitisers keep a runtime read.
  * The _N constants give the extern decls a complete array type so
  * the per-family leaf TUs (struct_catalog/bpf-map.c, bpf-prog.c,
  * bpf-link.c, ...) can fold ARRAY_SIZE() at their FT_ENUM

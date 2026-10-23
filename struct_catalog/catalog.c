@@ -82,7 +82,7 @@
 #include "struct_catalog-internal.h"
 #include "arch.h"
 #include "debug.h"
-#include "perf.h"		/* random_tracepoint_config -- FT_PICKER for TRACEPOINT.config */
+#include "perf.h"
 #include "perf_event.h"
 #include "random.h"
 #include "tables.h"
