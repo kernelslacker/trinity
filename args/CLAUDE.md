@@ -2,12 +2,12 @@
 
 Decides what value goes in each of a syscall's up to 6 argument slots, given the slot's declared `argtype` (ARG_FD, ARG_STRUCT_PTR_IN, ARG_RANGE, ...) and, for struct-shaped slots, the per-field schema pulled from struct_catalog/. Runs once per dispatch from `generate_syscall_args()`, between sanitise-callback selection and the kernel call.
 
-## Files (18 files, ~6,811 LOC)
+## Files (18 files, ~6,837 LOC)
 
 | File | Lines | Role |
 |---|---|---|
 | output-poison.c | 105 | ARG_STRUCT_PTR_OUT canary: `poison_output_struct()` stamps a seed-derived byte pattern pre-call, `check_output_struct()` detects an untouched buffer post-call |
-| arg_coupling.c | 362 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair and the WNOHANG repair of a wait that would block on a child's pid namespace init |
+| arg_coupling.c | 388 | Cross-arg DOA-shape rejection rules, plus the fcntl F_SETSIG signal repair, the WNOHANG repair of a wait that would block on a child's pid namespace init, and the refusal of a close_range whose slots no longer match the range its sanitiser vetted |
 | valresult.c | 82 | Value-result buffer shaping (getsockopt/recv-style len-io pairs): EXACT/UNDER/OVER/HUGE/ZERO cap distribution |
 | csfu.c | 159 | `copy_struct_from_user()`-shaped struct builder: 5-bucket usize distribution (EXACT/UNDERSIZE/OVERSIZE_ZERO/OVERSIZE_NONZERO/TAIL_MISMATCH) plus in-band size-field fixup |
 | struct_validate.c | 166 | One-shot (first-fill-gated) startup validator: walks every struct_catalog fields[] array checking FT_LEN_* buf_fields siblings agree on FT_PTR_BYTES/ARRAY tag and unit; BUG()s on authoring mistakes. Entry point `struct_field_fill_schema_aware()` also lives here |
@@ -59,4 +59,4 @@ Decides what value goes in each of a syscall's up to 6 argument slots, given the
 
 ## Summary
 
-Per-dispatch flow: `generate_syscall_args()` picks sanitise-vs-minicorpus-replay, then `generic_sanitise()` walks each arg slot through `fill_arg()`, which dispatches via `argtype_table[]` to one of ~50 generators. Scalar/address/range/bitmask argtypes generate directly; struct-pointer argtypes (`ARG_STRUCT_PTR_IN/OUT/INOUT`) look up a `struct_catalog` descriptor and run the 3-pass schema-aware filler (struct_fill.c) followed by a 12%-gated single-field mutation (struct_mutate.c). Two defensive passes run after generation: `blanket_address_scrub`/`nested_address_scrub` (scrub.c) redirect any pointer aliasing shared memory or the libc heap, and `validate_arg_coupling` rejects a handful of provably-DOA cross-arg shapes before the kernel is entered. A cross-cutting CMP-hint injection mechanism (cmp_hint_inject.c) lets five generators opportunistically substitute kernel-observed comparison constants for randomly-drawn values, rate-gated by an A/B baseline and plateau-driven amplification shared with the strategy/ and cmp_hints/ subsystems.
+Per-dispatch flow: `generate_syscall_args()` picks sanitise-vs-minicorpus-replay, then `generic_sanitise()` walks each arg slot through `fill_arg()`, which dispatches via `argtype_table[]` to one of ~50 generators. Scalar/address/range/bitmask argtypes generate directly; struct-pointer argtypes (`ARG_STRUCT_PTR_IN/OUT/INOUT`) look up a `struct_catalog` descriptor and run the 3-pass schema-aware filler (struct_fill.c) followed by a 12%-gated single-field mutation (struct_mutate.c). Two defensive passes run after generation: `blanket_address_scrub`/`nested_address_scrub` (scrub.c) redirect any pointer aliasing shared memory or the libc heap, and `validate_arg_coupling` rejects a handful of provably-DOA cross-arg shapes, and a `close_range` that is no longer the call its sanitiser vetted, before the kernel is entered. A cross-cutting CMP-hint injection mechanism (cmp_hint_inject.c) lets five generators opportunistically substitute kernel-observed comparison constants for randomly-drawn values, rate-gated by an A/B baseline and plateau-driven amplification shared with the strategy/ and cmp_hints/ subsystems.

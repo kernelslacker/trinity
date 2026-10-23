@@ -27,6 +27,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "arg_coupling.h"	/* validate_arg_coupling */
 #include "child.h"
 #include "debug.h"		/* BUG */
 #include "fd.h"			/* lowest_protected_fd_in_range */
@@ -41,6 +42,7 @@
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
+extern const void *post_state_disowned;	/* post_oracle_test.c */
 
 /* Numbers no fd table in the test holds, so the post handlers' fstat()
  * oracle finds nothing to compare. */
@@ -972,7 +974,6 @@ static void close_range_sanitiser_spares_protected_fds(void)
 	const unsigned int npresets = sizeof(presets) / sizeof(presets[0]);
 	const unsigned int nflagsets = sizeof(flagsets) / sizeof(flagsets[0]);
 	static struct syscallrecord rec;
-	bool sandbox_was_open[SANDBOX_SLOTS];
 	unsigned int except_calls = 0, plain_calls = 0;
 	unsigned int widened = 0, truncated = 0;
 	unsigned int n, p;
@@ -982,9 +983,6 @@ static void close_range_sanitiser_spares_protected_fds(void)
 	if (lowest_protected_fd_in_range(STDERR_FILENO + 1, KCOV_FD - 1) >= 0)
 		BUG("fd pool: an unexpected fd is protected");
 
-	for (p = 0; p < SANDBOX_SLOTS; p++)
-		sandbox_was_open[p] =
-			fcntl(SANDBOX_BASE + (int) p, F_GETFD) != -1;
 	kcov_shm = calloc(1, sizeof(*kcov_shm));
 	if (kcov_shm == NULL)
 		BUG("fd pool: cannot allocate the kcov diag block");
@@ -1061,15 +1059,131 @@ static void close_range_sanitiser_spares_protected_fds(void)
 out:
 	free(kcov_shm);
 	kcov_shm = NULL;
-	for (p = 0; p < SANDBOX_SLOTS; p++) {
-		if (!sandbox_was_open[p])
-			close(SANDBOX_BASE + (int) p);
+}
+
+/* The sanitiser's snapshot records the triple it vetted, and the guard on
+ * the range only means something if that triple is what reaches the
+ * kernel.  Chain substitution rewrites one slot after the sanitiser, and
+ * all three take a number: a return of 8 in the flags is EXCEPT, a pid in
+ * max_fd runs the range back over the kcov fds.  validate_arg_coupling()
+ * has to pass a call as vetted, judging each slot as the kernel reads it,
+ * refuse any other, and refuse a record whose snapshot cannot vouch for
+ * it: an unvetted range does more harm than one wasted call. */
+static void close_range_validator_holds_the_vetted_range(void)
+{
+	static const struct {
+		unsigned long a1, a2, a3;
+	} presets[] = {
+		{ 90000, 90010, 0 },
+		{ 3, 90100, CR_EXCEPT },
+		{ 90010, 90000, CR_UNSHARE },
+		{ UINT_MAX, UINT_MAX, CR_EXCEPT | CR_CLOEXEC_ONLY },
+		{ 5, 9, CR_CLOEXEC },
+	};
+	const unsigned int npresets = sizeof(presets) / sizeof(presets[0]);
+	struct syscallentry entry = syscall_close_range;
+	struct syscallentry other = { .name = "probe", .num_args = 3 };
+	static struct syscallrecord rec;
+	unsigned long *const slot[3] = { &rec.a1, &rec.a2, &rec.a3 };
+	struct close_range_snap *snap;
+	unsigned long was;
+	unsigned int n, s;
+
+	entry.is_close_range = true;
+	rnd_seed(1);
+
+	/* Whatever the sanitiser draws is a call it vetted. */
+	for (n = 0; n < 500; n++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &entry;
+		rec.a1 = presets[n % npresets].a1;
+		rec.a2 = presets[n % npresets].a2;
+		rec.a3 = presets[n % npresets].a3;
+		entry.sanitise(&rec);
+		check("a call the sanitiser vetted was refused", "close_range",
+		      validate_arg_coupling(&rec) == 0);
+		rec.retval = (unsigned long) -1L;
+		rec.errno_post = EINVAL;
+		entry.post(&rec);
 	}
+
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &entry;
+	rec.a1 = 90000;
+	rec.a2 = 90010;
+	entry.sanitise(&rec);
+	snap = (struct close_range_snap *) rec.post_state;
+
+	/* Each slot, rewritten to what a substitute can be: EXCEPT, a value
+	 * past the base the protected fds sit above, all ones, and the two
+	 * ways an upper half can come along.  Only a rewrite the kernel reads
+	 * differently is refused. */
+	for (s = 0; s < 3; s++) {
+		was = *slot[s];
+		for (n = 0; n < 6; n++) {
+			unsigned long sub;
+			bool changed;
+			char name[64];
+
+			switch (n) {
+			case 0: sub = CR_EXCEPT; break;
+			case 1: sub = PROTECTED_FD_HIGH_BASE + 5; break;
+			case 2: sub = UINT_MAX; break;
+			case 3: sub = was | (1UL << 40); break;
+			case 4: sub = (1UL << 40) | (was ^ 1); break;
+			default: sub = was; break;
+			}
+			changed = (unsigned int) sub != (unsigned int) was;
+			*slot[s] = sub;
+			snprintf(name, sizeof(name), "a%u := %#lx, vetted %#lx",
+				 s + 1, sub, was);
+			check(changed ? "a rewritten slot reached the kernel" :
+			      "a slot the kernel reads as vetted was refused",
+			      name, validate_arg_coupling(&rec) ==
+			      (changed ? -1 : 0));
+			*slot[s] = was;
+		}
+	}
+
+	/* Nothing vouches for the range without its snapshot: none at all,
+	 * a pid where the pointer was, one the ownership table does not
+	 * hold, or one whose magic is not close_range's. */
+	rec.post_state = 0;
+	check("a call with no snapshot was passed", "close_range",
+	      validate_arg_coupling(&rec) == -1);
+	rec.post_state = 12345;
+	check("a call whose snapshot is a pid was passed", "close_range",
+	      validate_arg_coupling(&rec) == -1);
+	rec.post_state = (unsigned long) snap;
+	post_state_disowned = snap;
+	check("a call whose snapshot is not owned was passed", "close_range",
+	      validate_arg_coupling(&rec) == -1);
+	post_state_disowned = NULL;
+	snap->magic ^= 1UL;
+	check("a call whose snapshot has the wrong magic was passed",
+	      "close_range", validate_arg_coupling(&rec) == -1);
+	snap->magic ^= 1UL;
+	check("a call refused for its snapshot was refused once it was whole",
+	      "close_range", validate_arg_coupling(&rec) == 0);
+
+	/* Only close_range is held to a snapshot. */
+	rec.entry = &other;
+	rec.a3 = CR_EXCEPT;
+	check("a syscall other than close_range was refused", "close_range",
+	      validate_arg_coupling(&rec) == 0);
+	rec.entry = &entry;
+
+	rec.retval = (unsigned long) -1L;
+	rec.errno_post = EINVAL;
+	entry.post(&rec);
 }
 
 void dup_pool_self_check(void);
 void dup_pool_self_check(void)
 {
+	bool sandbox_was_open[SANDBOX_SLOTS];
+	unsigned int i;
+
 	fake_child.kcov.fd = KCOV_FD;
 	fake_child.kcov.cmp_fd = KCOV_CMP_FD;
 	fake_child.tainted_fd = -1;
@@ -1093,7 +1207,18 @@ void dup_pool_self_check(void)
 	close_range_to_the_top_walks_the_pool();
 	close_range_guards();
 	close_range_offers_the_flags_it_handles();
+
+	/* The sanitiser opens close_range's sandbox on first use, in this
+	 * process: put the fd table back once both tests are done. */
+	for (i = 0; i < SANDBOX_SLOTS; i++)
+		sandbox_was_open[i] =
+			fcntl(SANDBOX_BASE + (int) i, F_GETFD) != -1;
 	close_range_sanitiser_spares_protected_fds();
+	close_range_validator_holds_the_vetted_range();
+	for (i = 0; i < SANDBOX_SLOTS; i++) {
+		if (!sandbox_was_open[i])
+			close(SANDBOX_BASE + (int) i);
+	}
 
 	fake_find_object_by_fd = NULL;
 	fake_this_child = NULL;

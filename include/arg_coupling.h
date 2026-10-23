@@ -11,6 +11,11 @@ struct syscallrecord;
  * round-trip, and a stats update on a call that cannot exercise any
  * meaningful kernel path.
  *
+ * A syscall whose sanitiser vets its slots is held to them here as well,
+ * since a rewrite after the sanitiser (chain substitution, a RedQueen
+ * pin) can undo the vetting: the final slots are the ones the kernel
+ * reads.
+ *
  * Returns 0 when the rec passes (or no per-syscall rule applies);
  * returns -1 when an inconsistency is detected.  On -1 the caller
  * should skip the dispatch and synthesize a rejection retval so the

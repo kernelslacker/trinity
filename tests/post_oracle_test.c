@@ -81,10 +81,13 @@ bool post_snapshot_or_skip(void *dst, const void *src, size_t len)
 	return true;
 }
 
+/* A snapshot pointer a case says the ownership table does not hold; NULL
+ * leaves every pointer owned. */
+const void *post_state_disowned;
+
 bool post_state_is_owned(const void *p)
 {
-	(void) p;
-	return true;
+	return post_state_disowned == NULL || p != post_state_disowned;
 }
 
 void post_state_register(void *p)

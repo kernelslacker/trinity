@@ -25,6 +25,12 @@
  *     shapes is intentionally left uncorrected so the kernel's own
  *     import guard stays on the coverage surface.
  *
+ * Some per-syscall rules ride on the same final values, for what a
+ * sanitiser got right and a later rewrite (chain substitution, a RedQueen
+ * pin) can undo: an fcntl F_SETSIG signal and a wait that would block on
+ * a child's pid namespace init are repaired in place, and a close_range
+ * whose slots no longer match the range its sanitiser vetted is refused.
+ *
  * Callers see three counters: STATS_FIELD_VALIDATOR_REJECTED (via the
  * -1 return), STATS_FIELD_ARG_CONSTRAINT_REPAIRED (per clamp), and
  * STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT (per skipped clamp).
@@ -330,6 +336,26 @@ int validate_arg_coupling(struct syscallrecord *rec)
 		if (entry->is_waitid && (int) rec->a1 == P_ALL &&
 		    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))
 			rec->a4 |= WNOHANG;
+	}
+
+	/*
+	 * close_range: sanitise_close_range() keeps the kcov and other
+	 * protected fds out of the set the call closes and records the
+	 * range it vetted.  Chain substitution rewrites one slot after
+	 * that, and all three take a number, so the kernel could be handed
+	 * a range nobody vetted: an 8 in the flags is EXCEPT, which closes
+	 * everything outside the range, and a pid in max_fd runs the range
+	 * back over the fds above PROTECTED_FD_HIGH_BASE.  A RedQueen pin
+	 * lands after sanitise too.  The post handler also trusts the
+	 * sanitiser's snapshot, so a rewritten call would be retired and
+	 * reported as a range it never closed.  Judged on the final slots
+	 * like F_SETSIG above, but refused rather than repaired: a
+	 * substituted close_range is not worth a second pass of the guard.
+	 */
+	if (entry->is_close_range && !close_range_call_is_vetted(rec)) {
+		outputerr("arg-coupling: %s rejected: the slots are not the range sanitise vetted\n",
+			  entry->name);
+		return -1;
 	}
 
 	/*

@@ -2,7 +2,7 @@
 
 Central registry that turns the 431 per-syscall descriptors under `syscalls/` (and the per-arch static arrays under `include/syscalls-*.h`) into the live, shared-memory-backed arrays every picker, dispatcher, and stats/hint subsystem indexes by syscall number.
 
-## Files (7 files, ~2,037 LOC)
+## Files (7 files, ~2,041 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -11,7 +11,7 @@ Central registry that turns the 431 per-syscall descriptors under `syscalls/` (a
 | tables-biarch.c | 458 | Dual-table (32-on-64) arch variant: `syscalls_32bit`/`syscalls_64bit` globals, same operation set doubled, plus 32/64 pairing logic in `enable_random_syscalls_biarch()` and `toggle_syscall_biarch()` |
 | table-activate.c | 233 | Cost-pool-aware `activate_syscall_in_table()`/`deactivate_syscall_in_table()`, the pool-partition assertion, and the lock-taking / lock-free deactivation wrappers the pickers call |
 | tables-uniarch.c | 229 | Single-table arch variant: `syscalls` global, activate/deactivate/toggle/enable-random/group-setup/dump/display, all operating on one flat table |
-| table-copy.c | 224 | `copy_syscall_table()` + the one-time `select_syscall_tables()` entry point, the init-time EXPENSIVE bitmap build and `syscall_is_expensive()` |
+| table-copy.c | 228 | `copy_syscall_table()` + the one-time `select_syscall_tables()` entry point, the init-time EXPENSIVE bitmap build and `syscall_is_expensive()` |
 | table-protect.c | 61 | `protect_syscall_tables()`: mprotect-extent bookkeeping (`desc_extents[]`) and the PROT_READ freeze run after `munge_tables()` and before `fork_children()` |
 
 ## Data model

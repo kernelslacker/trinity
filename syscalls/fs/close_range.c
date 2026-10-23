@@ -64,6 +64,10 @@ static unsigned long close_range_flags[] = {
  *
  * The scribble-class here is the same one many recent post handlers
  * have been hardened against; treat it the same way.
+ *
+ * It is also the record of what the protected-fd guard vetted:
+ * close_range_call_is_vetted() holds the slots the kernel is about to
+ * read to it.
  */
 #define CLOSE_RANGE_POST_STATE_MAGIC	0x43524E474D41475FUL	/* "CRNGMAG_" */
 struct close_range_post_state {
@@ -72,6 +76,36 @@ struct close_range_post_state {
 	unsigned int max_fd;
 	unsigned int flags;
 };
+
+/*
+ * The guard on the range runs in sanitise, but chain substitution
+ * rewrites one slot after it, and all three take a number: an 8 in the
+ * flags is EXCEPT, which closes everything outside the range, and a pid
+ * or a byte count in max_fd runs the range back over the fds parked above
+ * PROTECTED_FD_HIGH_BASE.  The post handler trusts the snapshot, so a
+ * rewritten call would also be retired and reported as a range the
+ * kernel never closed.  validate_arg_coupling() asks this on the final
+ * slots and refuses the call when it is not the one that was vetted.
+ *
+ * A record with no snapshot of ours has nothing to vouch for its range,
+ * and one wasted call costs less than a closed kcov fd, so it fails too.
+ * Shape, then ownership, then magic, as post_state_claim_owned() orders
+ * them: the first two keep the read of the third safe.
+ */
+bool close_range_call_is_vetted(const struct syscallrecord *rec)
+{
+	const struct close_range_post_state *snap =
+		(const struct close_range_post_state *) rec->post_state;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != CLOSE_RANGE_POST_STATE_MAGIC)
+		return false;
+
+	/* The kernel reads each slot as an unsigned int. */
+	return (unsigned int) rec->a1 == snap->fd &&
+	       (unsigned int) rec->a2 == snap->max_fd &&
+	       (unsigned int) rec->a3 == snap->flags;
+}
 
 /*
  * Per-child disposable high-fd sandbox: dup /dev/null into a
@@ -485,7 +519,7 @@ struct syscallentry syscall_close_range = {
 	.post = post_close_range,
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VFS_IO,
-	/* Not REEXEC_SANITISE_OK: the protected-fd clamp only holds for the
-	 * a1/a2/a3 that sanitise picked, and a RedQueen pin applied after it
-	 * (max_fd, or an EXCEPT flags word) can undo it and close a kcov fd. */
+	/* Not REEXEC_SANITISE_OK: a RedQueen pin rewrites a slot after
+	 * sanitise, and validate_arg_coupling() refuses a close_range whose
+	 * slots changed since, so a pinned re-exec would only be refused. */
 };

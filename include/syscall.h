@@ -623,6 +623,15 @@ struct syscallentry {
 	enum objecttype ret_objtype;
 
 	/*
+	 * Cached identity of close_range, set at table init so
+	 * validate_arg_coupling() can hold its slots to the range the
+	 * sanitiser vetted (close_range_call_is_vetted()) with a single
+	 * byte load per dispatch.  It sits in the alignment hole before
+	 * ret_objtype_via_post: the struct has no tail padding left.
+	 */
+	bool is_close_range;
+
+	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls
@@ -1077,6 +1086,17 @@ void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry);
 void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
+
+/*
+ * Whether a close_range call is still the one its sanitiser vetted: its
+ * three slots, read the way the kernel reads them, equal the range the
+ * sanitiser recorded in rec->post_state.  False for a record with no such
+ * snapshot as well, since nothing then vouches for the range.  Defined in
+ * syscalls/fs/close_range.c, which keeps the snapshot private, and asked
+ * by validate_arg_coupling() on the slots the kernel will see.
+ */
+bool close_range_call_is_vetted(const struct syscallrecord *rec);
+
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);
 uint8_t compute_cleanup_arg_mask(const struct syscallentry *entry);
