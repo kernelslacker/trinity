@@ -91,12 +91,6 @@ struct cmp_field_pool {
  *                       running mask -- bare C would clobber it.  When
  *                       old == 0 the function degrades to bare C (no
  *                       signal to mix with).
- *   CMP_HINT_FIELD      Placeholder for the field-scoped pool lookup.
- *                       Today's behaviour is identical to
- *                       CMP_HINT_EXACT -- field-scoped pools do not
- *                       exist yet so there is nothing to look up
- *                       against; the use case ships here so the caller
- *                       surface settles before the consumer side lands.
  *
  * Width-aware masked/sign-extended transforms per comparison size are
  * called out in the spec as a fourth transform family and will land in
@@ -111,7 +105,6 @@ enum cmp_hint_use {
 	CMP_HINT_EXACT,
 	CMP_HINT_BOUNDARY,
 	CMP_HINT_FLAG_MASK,
-	CMP_HINT_FIELD,
 };
 
 /*
@@ -174,42 +167,31 @@ struct cmp_accept_range {
  * (`weight = floor + wins*4 - misses` clamped, keeping random
  * exploration) will consume the score.
  *
- * pool_kind partitions the stash by which pool the hint came from so
- * the follow-up can score per-kind independently.  Both pools now have
- * consumers wired; the field-scoped consumer runs in SHADOW today
- * (bumps would-pick / would-miss counters but does not affect the live
- * pick, which stays per-syscall) and a follow-up flips it LIVE once
- * the shadow signal is validated against a real run.
+ * pool_kind records which pool the hint came from and indexes the
+ * by-pool counters in kcov_cmp_hint_pool.  CMP_HINT_POOL_KIND_NR is
+ * the stamp for a hint no native pool served (the shared-tier
+ * bootstrap), which the by-pool partitions skip.
  */
 enum cmp_hint_pool_kind {
 	CMP_HINT_POOL_PER_SYSCALL = 0,
-	CMP_HINT_POOL_FIELD,
 	CMP_HINT_POOL_KIND_NR,
 };
 
 /*
  * Per-child stash entry recording one cmp_hints_try_get_ex() return.
- * Sized to 40 bytes after the field-scoped widen (arg_idx / field_idx /
- * desc).  The historical 24-byte layout carried only the per-syscall
- * key (nr + cmp_ip); the field-scoped credit drain re-finds its bucket
- * via cmp_field_pool_hash(desc, nr, do32, arg_idx, field_idx, size), so
- * every field key component must round-trip through the stash.  The
- * extra fields are NULL/0 for per-syscall pool kinds; only the
- * CMP_HINT_POOL_FIELD branch populates them.  The 8-deep stash now
- * spans five cachelines on the childdata struct (was three); 8 entries
+ * The credit drain re-finds the pool entry from (nr, do32, cmp_ip,
+ * value, size), so those round-trip through the stash.  The 8-deep
+ * stash spans four cachelines on the childdata struct; 8 entries
  * still covers the maximum hint-consuming-arg count with headroom.
  */
 struct cmp_hint_consumed_entry {
 	unsigned long cmp_ip;
 	unsigned long value;
-	const struct struct_desc *desc;	/* NULL for CMP_HINT_POOL_PER_SYSCALL */
 	uint16_t nr;
-	uint16_t field_idx;		/* 0 for CMP_HINT_POOL_PER_SYSCALL */
 	uint8_t do32;
 	uint8_t pool_kind;		/* enum cmp_hint_pool_kind */
 	uint8_t size;
 	uint8_t transform;		/* enum cmp_hint_use */
-	uint8_t arg_idx;		/* 1-based, 0 for CMP_HINT_POOL_PER_SYSCALL */
 	/* Freshness / tier breadcrumbs stamped at pick time and consumed
 	 * by cmp_hints_feedback_credit_pc() so the per-tier and per-age
 	 * cmp_hint_tier_*_wins / cmp_hint_durable_age_*_wins counters in
@@ -217,7 +199,7 @@ struct cmp_hint_consumed_entry {
 	 * from and how stale it was when picked.  Recent-ring picks set
 	 * served_from_recent=1 and age_bucket=0 (the ring has no per-entry
 	 * LRU stamp; its freshness story is the tier itself).  Durable
-	 * picks (per-syscall pool, field pool) set served_from_recent=0
+	 * picks set served_from_recent=0
 	 * and age_bucket = cmp_hint_age_bucket(pool->last_used_stamp -
 	 * picked->last_used) measured lock-free at pick time, tolerant of
 	 * a torn read in exactly the same way the rest of the pick path
@@ -230,11 +212,9 @@ struct cmp_hint_consumed_entry {
 	 * the credit drain can partition the PC-mode outcome by callsite
 	 * (cmp_hint_callsite_pc_wins[] / cmp_hint_callsite_misses[]) in
 	 * lock-step with the existing by-pool partition.  Sentinel value
-	 * CMP_HINT_CALLSITE_NR means "unclassified" -- used by field-pool
-	 * pulls (cmp_hints_field_try_get) that have no argtype-handler
-	 * callsite; the drain gates the by-callsite bump on
-	 * < CMP_HINT_CALLSITE_NR so an unclassified stash entry is
-	 * silently skipped rather than misattributed. */
+	 * CMP_HINT_CALLSITE_NR means "unclassified"; the drain gates the
+	 * by-callsite bump on < CMP_HINT_CALLSITE_NR so an unclassified
+	 * stash entry is silently skipped rather than misattributed. */
 	uint8_t callsite;		/* enum cmp_hint_callsite, NR == unset */
 	/* 1 == value came from the live typed-hypothesis inject arm at
 	 * pick time, 0 == raw pool value (the unchanged historical

@@ -45,9 +45,6 @@
 #include "kcov-groups/cmp_field_attr.h"
 #include "kcov-groups/cmp_boring.h"
 #include "kcov-groups/cmp_recent.h"
-#include "kcov-groups/field_consumer.h"
-#include "kcov-groups/field_consumer_guard.h"
-#include "kcov-groups/field_consumer_prove.h"
 #include "kcov-groups/hint_tier.h"
 #include "kcov-groups/hyp_flat.h"
 #include "kcov-groups/reexec_step.h"
@@ -60,7 +57,6 @@
 #include "kcov-groups/cmp_nonconst.h"
 #include "kcov-groups/cmp_width_pin.h"
 #include "kcov-groups/cmp_hyp_shadow.h"
-#include "kcov-groups/field_consumer_shadow.h"
 #include "kcov-groups/cmp_shared_tier_shadow.h"
 #include "kcov-groups/reexec_arms.h"
 
@@ -180,17 +176,6 @@ struct kcov_shared {
 	 * first on a CMP_RISING_PC_FLAT plateau; the pair of would-pick
 	 * counters + live-picks sizes served vs opportunity. */
 	struct kcov_cmp_recent cmp_recent;
-	/* SHADOW counters for the field-scoped CMP hint consumer.  Active
-	 * in both arms so an A/B run reads the same shadow rates a future
-	 * live arm will eventually consume. */
-	struct kcov_field_consumer field_consumer;
-	/* Per-reason skip counters for the generator-invariant guard on
-	 * the field consumer would-pick path. */
-	struct kcov_field_consumer_guard field_consumer_guard;
-	/* Prove-overlay baseline for the field consumer: eligible-pick
-	 * denominator + three "_at_pick" numerators for a later live-arm
-	 * diff. */
-	struct kcov_field_consumer_prove field_consumer_prove;
 	/* CMP-hint freshness / tier observability -- per-tier and per-age
 	 * partitions of wins/misses/consumed so conversion rate per
 	 * (tier, age-bucket) is directly readable. */
@@ -236,10 +221,6 @@ struct kcov_shared {
 	 * typed-hypothesis derive.  Nothing on the live pick path reads
 	 * these; sizes the coverage headroom of promoting the class. */
 	struct kcov_cmp_hyp_shadow cmp_hyp_shadow;
-	/* SHADOW win-scalar for the field-scoped CMP inject arm.  Bumped
-	 * on the would_pick subset where the pool value differs from what
-	 * the generator was about to write. */
-	struct kcov_field_consumer_shadow field_consumer_shadow;
 	/* SHADOW would-confirm win-scalar for the shared-tier cold-serve
 	 * arm.  Election is READ-ONLY, no-RNG, deterministic; sizes the
 	 * fraction of opportunities already corroborated by this nr's
@@ -320,13 +301,13 @@ static inline unsigned long per_syscall_calls_prior_total(unsigned int nr)
  *   reexec_gate  (4 arrays):  +1024
  *   childop_cmp  (1 array):   +256
  *   total:                    +5376
- * Absolute values after bump:
- *   sizeof:                     25947376 + 5376 = 25952752
- *   cmp_records..:              8388680  (unchanged, precedes childop_kcov)
- *   hints_flat..:               8388736  (unchanged, precedes childop_kcov)
- *   per_syscall.per_syscall_edges: 8401576 + 2304 = 8403880
- *   reexec_arms..:              25947360 + 5376 = 25952736 */
-_Static_assert(sizeof(struct kcov_shared) == 25952752UL,
+ * Absolute values:
+ *   sizeof:                     25952600
+ *   cmp_records..:              8388680  (precedes childop_kcov)
+ *   hints_flat..:               8388736  (precedes childop_kcov)
+ *   per_syscall.per_syscall_edges: 8403880
+ *   reexec_arms..:              25952584 */
+_Static_assert(sizeof(struct kcov_shared) == 25952600UL,
 	"struct kcov_shared sizeof drifted -- audit layout before updating this");
 _Static_assert(offsetof(struct kcov_shared, bucket_seen) == 0UL,
 	"kcov_shared.bucket_seen must remain the first field");
@@ -336,5 +317,5 @@ _Static_assert(offsetof(struct kcov_shared, hints_flat.cmp_hints_injected) == 83
 	"kcov_shared.hints_flat.cmp_hints_injected offset drifted");
 _Static_assert(offsetof(struct kcov_shared, per_syscall.per_syscall_edges) == 8403880UL,
 	"kcov_shared.per_syscall.per_syscall_edges offset drifted");
-_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25952736UL,
+_Static_assert(offsetof(struct kcov_shared, reexec_arms.reexec_new_edges_by_arm) == 25952584UL,
 	"kcov_shared last-field offset drifted -- append-only tail broken");

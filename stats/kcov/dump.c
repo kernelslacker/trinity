@@ -31,8 +31,6 @@ void __cold dump_stats_kcov_block(void)
 
 		dump_stats_render_kcov_ring_replay();
 
-		dump_stats_render_kcov_cmp_field_consumer();
-
 		dump_stats_render_kcov_exit_edge_delta();
 
 		dump_stats_render_kcov_exit_edge_totals();

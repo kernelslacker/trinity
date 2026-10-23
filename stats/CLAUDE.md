@@ -34,7 +34,7 @@ bottom rather than enumerated. The renderers below are the other 58.
 | kcov/dump-base.c | Base KCOV counters, warm known-hits, exit-edge delta and totals. |
 | kcov/dump-topn.c | Top-edges / cold-syscall, per-syscall yield and dedup top-Ns. |
 | kcov/dump-remote.c | Remote edge producers plus per-syscall last-edge / last-EFAULT / local-PC top-Ns. |
-| kcov/dump-reexec.c | CMP hint tier, reexec, ring replay, and CMP field-consumer blocks. |
+| kcov/dump-reexec.c | CMP hint tier, reexec, and ring replay blocks. |
 | kcov/dump-shadow.c | Shadow measurements, KCOV probe costs, KCOV dispatch stats. |
 | kcov/dump-internal.h | Private renderer prototypes shared across `stats/kcov/dump-*.c`. |
 | kcov/cmp/periodic.c | Public entry `kcov_cmp_stats_periodic_dump()`: previous-window state, elapsed gate, delta computation, render-block fan-out; plus the static renderers for the RedQueen burst-drain cohort and the per-callsite splits that no sibling owns. |

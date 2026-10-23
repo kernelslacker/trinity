@@ -220,9 +220,7 @@ void kcov_cmp_render_oldpool_per_syscall_topn(void)
  * Old-flat-pool vs shadow-hypothesis comparison block.  Two sub-blocks:
  *
  *   1. Flat per-pool-kind summary: per-pool consumed / pc-wins / misses /
- *      cmp-novelty cumulative + window-delta.  Lets an operator read the
- *      per-syscall vs field-pool conversion ratio at a glance without
- *      having to thread per-syscall arrays.
+ *      cmp-novelty cumulative + window-delta.
  *
  *   2. Per-syscall top-N table (rendered by
  *      kcov_cmp_render_oldpool_per_syscall_topn()).
@@ -255,7 +253,6 @@ void kcov_cmp_oldpool_vs_shadow_block_render(long elapsed __unused__)
 
 	static const char *const pool_kind_name[CMP_HINT_POOL_KIND_NR] = {
 		[CMP_HINT_POOL_PER_SYSCALL] = "per-syscall",
-		[CMP_HINT_POOL_FIELD]       = "field",
 	};
 
 	if (kcov_shm == NULL)

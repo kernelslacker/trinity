@@ -7,10 +7,8 @@
  * dispatch (PC-mode win / PC-mode miss / CMP-mode novelty / typed
  * TRANSITION_WIN / typed CORPUS_SAVE), walks the ring, and credits
  * the matching pool entry's uint16_t wins/misses via a CAS-saturate
- * loop.  The per-syscall drain re-walks the durable pool at (nr,
- * do32) for a value-keyed match; the field-scoped drain re-walks
- * the field pool via the same hash + ACQUIRE-load key probe the
- * recorder uses.  Torn reads / concurrent evictions forfeit that
+ * loop.  The drain re-walks the durable pool at (nr, do32) for a
+ * value-keyed match.  Torn reads / concurrent evictions forfeit that
  * stash slot's per-entry score but never mis-index the pool.
  */
 
@@ -93,81 +91,6 @@ static void cmp_hint_credit_entry_per_syscall(unsigned int nr, bool do32,
 				   1UL, __ATOMIC_RELAXED);
 }
 
-/*
- * Mirror of cmp_hint_credit_entry_per_syscall for the field-scoped pool.
- * Re-walks the bucket via the SAME cmp_field_pool_hash + ACQUIRE-load key
- * probe loop the recorder uses so the credit drain re-finds the entry the
- * pick path stashed -- modulo a concurrent eviction, which forfeits this
- * pull's per-entry score (the flat call-level counter still bumps via
- * cmp_hints_feedback_credit_pc).  Full-key match is required: a hash
- * collision on (desc, nr, do32, arg_idx, field_idx, size) where the live
- * occupant is a different key continues the probe walk.  Walks the same
- * CMP_FIELD_POOL_PROBE_MAX window the recorder bounded so a saturated
- * table whose late buckets are unrelated keys still terminates.
- */
-static void cmp_hint_credit_entry_field(unsigned int nr, bool do32,
-					unsigned int arg_idx,
-					const struct struct_desc *desc,
-					unsigned int field_idx,
-					unsigned long cmp_ip,
-					unsigned long value,
-					unsigned int size,
-					bool win)
-{
-	uint32_t h;
-	unsigned int probe;
-	unsigned int do32_idx = do32 ? 1U : 0U;
-
-	if (cmp_hints_shm == NULL || desc == NULL)
-		return;
-	if (nr >= MAX_NR_SYSCALL || arg_idx < 1 || arg_idx > 6)
-		return;
-	if (size != 1 && size != 2 && size != 4 && size != 8)
-		return;
-
-	h = cmp_field_pool_hash(desc, nr, do32_idx, arg_idx, field_idx, size);
-
-	for (probe = 0; probe < CMP_FIELD_POOL_PROBE_MAX; probe++) {
-		unsigned int idx = (h + probe) & (CMP_FIELD_POOL_BUCKETS - 1U);
-		struct cmp_field_pool *pool = &cmp_hints_shm->field_pools[idx];
-		const struct struct_desc *occ;
-		unsigned int count;
-		unsigned int i;
-
-		occ = __atomic_load_n(&pool->key.desc, __ATOMIC_ACQUIRE);
-		if (occ == NULL)
-			return;
-		if (occ != desc ||
-		    pool->key.nr != (uint16_t) nr ||
-		    pool->key.do32 != (uint8_t) do32_idx ||
-		    pool->key.arg_idx != (uint8_t) arg_idx ||
-		    pool->key.field_idx != (uint16_t) field_idx ||
-		    pool->key.size != (uint8_t) size)
-			continue;
-
-		count = __atomic_load_n(&pool->count, __ATOMIC_ACQUIRE);
-		if (count == 0)
-			return;
-		if (cmp_field_pool_corrupted(pool, count))
-			return;
-
-		for (i = 0; i < count; i++) {
-			struct cmp_hint_entry *e = &pool->entries[i];
-
-			if (e->value != value || e->cmp_ip != cmp_ip ||
-			    e->size != size)
-				continue;
-			cmp_hint_entry_bump_sat(win ? &e->wins : &e->misses);
-			return;
-		}
-
-		if (kcov_shm != NULL)
-			__atomic_fetch_add(&kcov_shm->hint_flat.cmp_hint_credit_entry_evicted,
-					   1UL, __ATOMIC_RELAXED);
-		return;
-	}
-}
-
 void cmp_hints_feedback_reset_stash(void)
 {
 	struct childdata *child = this_child();
@@ -230,13 +153,6 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 							  e->cmp_ip, e->value,
 							  e->size, outcome_win);
 			break;
-		case CMP_HINT_POOL_FIELD:
-			cmp_hint_credit_entry_field(e->nr, e->do32 != 0,
-						    e->arg_idx, e->desc,
-						    e->field_idx, e->cmp_ip,
-						    e->value, e->size,
-						    outcome_win);
-			break;
 		case CMP_HINT_POOL_KIND_NR:
 		default:
 			break;
@@ -244,10 +160,10 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 
 		/* SHADOW old-flat-pool by-kind PC outcome partition.  Per-
 		 * stash-entry bump (the flat cmp_hint_wins / cmp_hint_misses
-		 * counters above bump once per parent dispatch) so a dispatch
-		 * that stashed hints from both per-syscall and field pools
-		 * lands its PC outcome on each kind's column.  Matches the
-		 * per-tier discipline already used by cmp_hint_tier_*_wins. */
+		 * counters above bump once per parent dispatch), so a dispatch
+		 * that stashed several hints lands its PC outcome once per
+		 * entry.  Matches the per-tier discipline already used by
+		 * cmp_hint_tier_*_wins. */
 		if (kcov_shm != NULL &&
 		    e->pool_kind < CMP_HINT_POOL_KIND_NR)
 			__atomic_fetch_add(outcome_win ?
@@ -262,8 +178,8 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		 * exists for INJECTED only, win split exists for POOL only"
 		 * hole so the raw pool baseline can be projected onto the
 		 * typed-eligible callsite buckets (ARG_STRUCT_SIZE and
-		 * ARG_RANGE) for a per-callsite conversion rate.  Field-pool
-		 * stashes carry the CMP_HINT_CALLSITE_NR sentinel and are
+		 * ARG_RANGE) for a per-callsite conversion rate.  A stash
+		 * entry clamped to the CMP_HINT_CALLSITE_NR sentinel is
 		 * silently skipped by the bound check. */
 		if (kcov_shm != NULL &&
 		    e->callsite < CMP_HINT_CALLSITE_NR)
@@ -274,10 +190,9 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 
 		/* SHADOW zero-PC-win hard-cool budget census -- see
 		 * CMP_HINT_ZERO_WIN_BUDGET_T + struct cmp_hint_pool's
-		 * zero_win_streak field for the model.  Only the flat per-
-		 * syscall pool participates; field-pool credits (hash-keyed
-		 * open-addressed buckets, not the pools[nr][do32] grid the
-		 * "old-flat" language refers to) don't feed this shadow.
+		 * zero_win_streak field for the model.  Only per-syscall pool
+		 * stash entries participate; the shared-tier sentinel kind is
+		 * skipped.
 		 *
 		 * PC-WIN: exchange-clear the streak and, if the pre-clear
 		 * value was already past the budget, count this credit as
@@ -288,11 +203,12 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		 * T count as injections the retirement would have
 		 * prevented (the saved-miss lane of _would_save).
 		 *
-		 * cmp_hints_shm null-check mirrors the helper guards in
-		 * cmp_hint_credit_entry_* above; kcov_shm null-check keeps
-		 * this measurement-only branch inert when observability is
-		 * disabled.  Live pool selection ignores zero_win_streak, so
-		 * this branch is byte-identical for the injection arm.
+		 * cmp_hints_shm null-check mirrors the helper guard in
+		 * cmp_hint_credit_entry_per_syscall above; kcov_shm
+		 * null-check keeps this measurement-only branch inert when
+		 * observability is disabled.  Live pool selection ignores
+		 * zero_win_streak, so this branch is byte-identical for the
+		 * injection arm.
 		 */
 		if (cmp_hints_shm != NULL && kcov_shm != NULL &&
 		    e->pool_kind == CMP_HINT_POOL_PER_SYSCALL &&
@@ -357,10 +273,10 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		 * sourcing channel.  Recent-served stash entries roll up
 		 * under the recent tier counter and skip the age
 		 * histogram (the ring has no per-entry LRU stamp).
-		 * Durable-served stash entries (both per-syscall and
-		 * field pools) roll up under the durable tier counter and
-		 * bump the age-bucketed wins/misses indexed by the bucket
-		 * stamped on the stash entry at pick time.  Defensive
+		 * Durable-served stash entries roll up under the durable
+		 * tier counter and bump the age-bucketed wins/misses
+		 * indexed by the bucket stamped on the stash entry at pick
+		 * time.  Defensive
 		 * clamp on age_bucket mirrors the clamp in
 		 * cmp_hints_stash_consumed for the same reason -- a
 		 * corrupted stash entry that survived the in-stash clamp

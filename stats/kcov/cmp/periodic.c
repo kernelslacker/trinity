@@ -132,8 +132,8 @@ static void kcov_cmp_render_cmp_hint_callsites(bool any_callsite_delta, bool any
 			}
 		}
 		/* PC-mode WIN/MISS partition by callsite -- sibling of
-		 * the injected split above.  Field-pool pulls (stamped
-		 * CMP_HINT_CALLSITE_NR) are not attributed here, so
+		 * the injected split above.  Stash entries clamped to
+		 * CMP_HINT_CALLSITE_NR are not attributed here, so
 		 * sum(pc_wins/misses) can be less than the flat
 		 * cmp_hint_wins / cmp_hint_misses. */
 		if (any_callsite_wins_delta) {

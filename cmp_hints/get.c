@@ -30,8 +30,8 @@
  * policy -- the header-anticipated follow-up to the SHADOW per-entry
  * feedback loop ("weighted live-pick policy" in include/cmp_hints.h).
  *
- * Arm A (false) keeps the historical uniform draw at the two pick
- * sites below; arm B (true) routes the same pick through
+ * Arm A (false) keeps the historical uniform draw at the pick
+ * site below; arm B (true) routes the same pick through
  * cmp_hint_weighted_pick(), weighting each entry by
  *
  *      weight = CMP_HINT_LIVEPICK_FLOOR + wins * 4 - misses
@@ -389,14 +389,9 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 			}
 		}
 
-		/* arg_idx is carried on the stash but unread by the per-
-		 * syscall pool credit path (which keys on cmp_ip/value/size);
-		 * only the field-scoped credit lane consumes it, so a per-
-		 * syscall stash entry passing arg_idx == 0 is fine. */
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
 					 callsite,
 					 picked_cmp_ip, stash_value, picked_size, use,
-					 arg_idx, 0, NULL,
 					 false, bucket, hyp_injected, false);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
@@ -412,7 +407,6 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    unsigned long old,
 						    bool allow_hyp_inject,
 						    const struct cmp_accept_range *accept,
-						    unsigned int arg_idx,
 						    enum cmp_hint_callsite callsite,
 						    unsigned long *out,
 						    unsigned int *out_size)
@@ -509,7 +503,6 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 							 callsite,
 							 re_cmp_ip, re_value,
 							 re_size, use,
-							 arg_idx, 0, NULL,
 							 true, 0, false, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
@@ -592,8 +585,7 @@ static bool cmp_hints_try_get_ex_common(unsigned int nr, bool do32,
 
 	switch (cmp_try_get_recent_tier(nr, do32, use, old,
 					allow_hyp_inject, accept,
-					arg_idx, callsite, out,
-					out_size)) {
+					callsite, out, out_size)) {
 	case CMP_TIER_SERVED:
 		return true;
 	case CMP_TIER_REJECTED:

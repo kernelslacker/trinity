@@ -30,7 +30,6 @@ void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_syscalls_t
 void dump_stats_render_kcov_cmp_hint_tier(void);
 void dump_stats_render_kcov_reexec(void);
 void dump_stats_render_kcov_ring_replay(void);
-void dump_stats_render_kcov_cmp_field_consumer(void);
 
 /* dump-shadow.c */
 void dump_stats_render_kcov_shadow_measurements(void);

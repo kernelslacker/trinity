@@ -229,8 +229,6 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
 - `args/gen_arg_struct_ptr.c` — the `ARG_STRUCT_PTR_IN/OUT/INOUT` arg
   generator: `struct_arg_lookup()` → `struct_field_fill_schema_aware()` →
   `struct_field_mutate_one()` per dispatch.
-- `args/gen_arg_time.c` — direct `struct_catalog_lookup("timespec")` for
-  time-shaped scalar args.
 - `cmp_hints/field.c` — calls `struct_arg_lookup()` to resolve the live
   struct for a dispatch, then walks its fields to match KCOV-CMP constants
   against specific field offsets (the consumer this catalog was originally

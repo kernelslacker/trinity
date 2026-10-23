@@ -271,33 +271,6 @@ bool cmp_hints_try_get_sized(unsigned int nr, bool do32,
 			     unsigned long *out, unsigned int *out_size);
 
 /*
- * Field-scoped hint pull.  Locates the field pool keyed by
- * (desc, nr, do32, arg_idx, field_idx, size) via the same hash + ACQUIRE
- * probe loop the recorder uses, picks one entry uniformly at random, and
- * routes the result through cmp_hint_apply_transform() before writing it
- * to *out.  Bumps cmp_field_consumer_would_pick / would_miss / pool_empty
- * / key_absent counters on every call regardless of the LIVE arm state so
- * the would-pull distribution is observable from a default run; only the
- * LIVE arm actually returns a value and stashes it for credit.  Returns
- * false on chaos suppression / corrupted pool / out-of-range key / SHADOW
- * arm.  Caller contract mirrors cmp_hints_field_record(): nr <
- * MAX_NR_SYSCALL, arg_idx in 1..6, size in {1,2,4,8}, desc != NULL.
- *
- * fallback carries the value the generator would OTHERWISE write to the
- * slot if this pull did not fire (i.e. the pre-hint value already sitting
- * in the destination).  Consumed only by the SHADOW would_value_differs
- * measurement -- compared against the elected pool entry's value to bump
- * the differs win-scalar on the subset where a live-arm flip would
- * actually change the byte on the wire.  Does not influence pick / miss
- * / key-absent counting and does not affect the returned value.
- */
-bool cmp_hints_field_try_get(unsigned int nr, bool do32, unsigned int arg_idx,
-			     const struct struct_desc *desc,
-			     unsigned int field_idx, unsigned int size,
-			     enum cmp_hint_use use, unsigned long old,
-			     unsigned long fallback, unsigned long *out);
-
-/*
  * Reset the per-child stash without crediting anything.  Called from
  * generate_syscall_args() at the top of a new call so a parent
  * dispatch that bailed before reaching the credit drain does not leak

@@ -18,10 +18,9 @@ unsigned long cmp_hint_callsite_injected[CMP_HINT_CALLSITE_NR];
  * closes the callsite-WIN hole so a typed-eligible baseline
  * (ARG_STRUCT_SIZE + ARG_RANGE) can be projected out of the raw
  * pool wins rather than compared against the aggregate.  Stash
- * entries with an unset / out-of-range callsite (field-pool pulls
- * from cmp_hints_field_try_get, which have no argtype-handler
- * callsite) are not attributed here, so sum(_by_callsite) can be
- * less than the flat cmp_hint_wins / cmp_hint_misses. */
+ * entries with an unset / out-of-range callsite are not attributed
+ * here, so sum(_by_callsite) can be less than the flat
+ * cmp_hint_wins / cmp_hint_misses. */
 unsigned long cmp_hint_callsite_pc_wins[CMP_HINT_CALLSITE_NR];
 unsigned long cmp_hint_callsite_misses[CMP_HINT_CALLSITE_NR];
 };

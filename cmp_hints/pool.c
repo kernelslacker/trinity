@@ -129,9 +129,8 @@ unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
 
 /*
  * cmp_hint_age_bucket() definition moved to include/cmp_hints-internal.h
- * so cmp_hints/get.c and cmp_hints/field.c both see it inline.  The
- * static assert stays here (in the pool cluster) alongside the kcov_shm
- * histogram it guards.
+ * so cmp_hints/get.c sees it inline.  The static assert stays here (in
+ * the pool cluster) alongside the kcov_shm histogram it guards.
  */
 _Static_assert(CMP_HINT_AGE_BUCKETS == 7U,
 	       "cmp_hint_age_bucket() arms must match CMP_HINT_AGE_BUCKETS");
@@ -982,9 +981,8 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 	 * cmp_hint_tier_shared_wins / _misses in the drain; every
 	 * other native credit lane (per-entry pool wins, by-pool /
 	 * by-callsite / by-tier / by-age partitions, typed-hyp
-	 * consume/would-pick) is gated OFF for this entry.  arg_idx /
-	 * field_idx / desc are unused (per-syscall-shape stash) and
-	 * age_bucket is zero because the shared tier has no per-entry
+	 * consume/would-pick) is gated OFF for this entry.  age_bucket
+	 * is zero because the shared tier has no per-entry
 	 * LRU stamp -- same shape the recent-tier stash uses.  The
 	 * cmp_ip carried on the stash is the tier bucket's cmp_ip
 	 * (may belong to another syscall's observation); it is used
@@ -993,7 +991,7 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 	cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_KIND_NR,
 				 callsite,
 				 served_cmp_ip, served_value, served_size,
-				 use, 0, 0, NULL,
+				 use,
 				 false, 0, false, true);
 	return true;
 }

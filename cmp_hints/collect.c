@@ -1045,10 +1045,8 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 /*
  * Per-use-case output transform applied after the pool entry is picked.
  * Factored out of the (formerly inline) try_get body so each transform
- * lives next to its own documentation; the four use cases map onto
- * three distinct rotations (EXACT and FIELD share the bare-C path
- * because both back equality-gated slots that need the recorded
- * constant unmolested).
+ * lives next to its own documentation; the three use cases map onto
+ * three distinct rotations.
  *
  * The transform does not consult the pool entry's recorded comparison
  * width: this split deliberately keeps every existing pull byte-for-byte
@@ -1063,14 +1061,10 @@ unsigned long cmp_hint_apply_transform(unsigned long c,
 {
 	switch (use) {
 	case CMP_HINT_EXACT:
-	case CMP_HINT_FIELD:
 		/* Bare C.  Equality-gated slots (cmd codes, enum
 		 * selectors, version magics) need the constant
 		 * unmolested -- the boundary +/-1 below would silently
-		 * miss every exact-equality kernel check.  FIELD shares
-		 * this path for the same reason: a field-scoped pull
-		 * also targets equality-gated struct fields, so the
-		 * recorded constant must reach the kernel unmodified. */
+		 * miss every exact-equality kernel check. */
 		return c;
 	case CMP_HINT_BOUNDARY:
 		/*
@@ -1160,9 +1154,6 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      enum cmp_hint_callsite callsite,
 			      unsigned long cmp_ip, unsigned long value,
 			      unsigned int size, enum cmp_hint_use use,
-			      unsigned int arg_idx,
-			      unsigned int field_idx,
-			      const struct struct_desc *desc,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
 			      bool hyp_injected,
@@ -1184,24 +1175,20 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	e = &child->cmp_hints_consumed_stash[child->cmp_hints_consumed_count++];
 	e->cmp_ip = cmp_ip;
 	e->value = value;
-	e->desc = desc;
 	e->nr = (uint16_t)nr;
-	e->field_idx = (uint16_t)field_idx;
 	e->do32 = do32 ? 1 : 0;
 	e->pool_kind = (uint8_t)pool_kind;
 	/* Callsite the caller identified when it invoked cmp_hints_try_get*().
-	 * Clamped to the CMP_HINT_CALLSITE_NR sentinel when the caller has
-	 * no argtype-handler callsite (field-pool pulls from
-	 * cmp_hints_field_try_get) so the credit-drain by-callsite bump
-	 * silently skips those entries rather than misattributing them to
-	 * bucket 0 (ARG_OP).  Defensive against a caller bug that passes an
-	 * out-of-range value; the enum only grows via explicit tail appends. */
+	 * An out-of-range value is clamped to the CMP_HINT_CALLSITE_NR
+	 * sentinel so the credit-drain by-callsite bump silently skips the
+	 * entry rather than misattributing it to bucket 0 (ARG_OP).
+	 * Defensive against a caller bug; the enum only grows via explicit
+	 * tail appends. */
 	e->callsite = ((unsigned int)callsite < (unsigned int)CMP_HINT_CALLSITE_NR)
 		      ? (uint8_t)callsite
 		      : (uint8_t)CMP_HINT_CALLSITE_NR;
 	e->size = (uint8_t)size;
 	e->transform = (uint8_t)use;
-	e->arg_idx = (uint8_t)arg_idx;
 	e->served_from_recent = served_from_recent ? 1 : 0;
 	/* Defensive clamp -- a caller bug that passes an out-of-range bucket
 	 * would otherwise blow past the kcov_shm histogram array width.

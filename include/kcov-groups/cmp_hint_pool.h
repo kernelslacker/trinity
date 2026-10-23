@@ -21,11 +21,7 @@ unsigned long cmp_hint_cmp_novelty_wins_by_pool[CMP_HINT_POOL_KIND_NR];
  *
  * Bumped from cmp_hints_feedback_credit_pc()'s per-syscall arm
  * using the per-pool zero_win_streak state on struct cmp_hint_pool.
- * Only the CMP_HINT_POOL_PER_SYSCALL pool_kind participates -- the
- * field-scoped pool is a different structural cohort (hash-keyed
- * open-addressed buckets, not the flat pools[nr][do32] grid the
- * "old-flat" language refers to) and would need its own budget
- * shadow before it can be counted here.
+ * Only the CMP_HINT_POOL_PER_SYSCALL pool_kind participates.
  *
  *  cmp_hint_pool_zero_win_would_retire
  *      Bumped once per per-syscall pool crossing the streak from

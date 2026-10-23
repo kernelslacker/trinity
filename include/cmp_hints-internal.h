@@ -50,9 +50,8 @@ bool cmp_hints_pool_corrupted(struct cmp_hint_pool *pool,
  * recently refreshed in the pool); higher buckets == entry has been
  * carried over many pool mutations since its last_used was bumped.
  * Static-asserted against the kcov_shm array width in the pool
- * cluster.  Inlined here so cmp_hints/get.c and cmp_hints/field.c
- * both see the definition without adding cross-TU call overhead to
- * the pick fast path.
+ * cluster.  Inlined here so cmp_hints/get.c sees the definition
+ * without adding cross-TU call overhead to the pick fast path.
  */
 static inline uint8_t cmp_hint_age_bucket(uint64_t age)
 {
@@ -75,8 +74,7 @@ static inline uint8_t cmp_hint_age_bucket(uint64_t age)
  * Field-pool sticky wild-write gate.  Independent latch from the
  * per-syscall pool corruption gate so a stomp on a field pool is not
  * folded into the per-syscall pool's corruption rate.  Definition in
- * cmp_hints/field.c; cmp_hints/get.c and cmp_hints/credit.c gate
- * their field-pool readers through it.
+ * cmp_hints/field.c; the recorder gates its inserts through it.
  */
 bool cmp_field_pool_corrupted(struct cmp_field_pool *pool,
 			      unsigned int observed_count);
@@ -193,16 +191,13 @@ unsigned int cmp_hints_flush_pending(struct cmp_hint_pool *pool,
 /*
  * Per-child A/B stamp for the cmp-hints live-pick policy.  Arm B
  * routes the uniform draw through cmp_hint_weighted_pick() below.
- * Definition + stamp state live in cmp_hints/get.c; the field
- * consumer in cmp_hints/field.c also gates its LIVE-arm pick through
- * the same stamp so both consumers stay in the same cohort.
+ * Definition + stamp state live in cmp_hints/get.c.
  */
 bool cmp_hint_livepick_arm_b_active(void);
 
 /*
  * Weighted draw over cmp_hint_entry.wins / .misses.  Definition in
- * cmp_hints/get.c; called from the per-syscall picker (get.c) and
- * from the field-scoped picker (cmp_hints/field.c) when
+ * cmp_hints/get.c; called from the per-syscall picker when
  * cmp_hint_livepick_arm_b_active() is true.  count is the
  * corruption-gated snapshot; entries is the pool's entries[] array.
  */
@@ -224,7 +219,7 @@ enum cmp_tier_result {
 /*
  * Per-use-case output transform applied after the pool entry is
  * picked.  Definition in cmp_hints/collect.c; the picker
- * (cmp_hints/get.c) and the field consumer (cmp_hints/field.c) both
+ * (cmp_hints/get.c) and the shared-tier serve (cmp_hints/pool.c) both
  * route their served value through it before writing *out.
  */
 unsigned long cmp_hint_apply_transform(unsigned long c,
@@ -234,19 +229,15 @@ unsigned long cmp_hint_apply_transform(unsigned long c,
 /*
  * Push one entry onto the per-child SHADOW consume stash.
  * Definition in cmp_hints/collect.c; every successful pick in
- * cmp_hints/get.c (per-syscall and recent tiers) and cmp_hints/field.c
- * (field-scoped LIVE arm) calls it so the dispatch-tail feedback
- * drain in cmp_hints/credit.c has a per-pull record to score
- * against.
+ * cmp_hints/get.c (per-syscall and recent tiers) calls it so the
+ * dispatch-tail feedback drain in cmp_hints/credit.c has a per-pull
+ * record to score against.
  */
 void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      enum cmp_hint_pool_kind pool_kind,
 			      enum cmp_hint_callsite callsite,
 			      unsigned long cmp_ip, unsigned long value,
 			      unsigned int size, enum cmp_hint_use use,
-			      unsigned int arg_idx,
-			      unsigned int field_idx,
-			      const struct struct_desc *desc,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
 			      bool hyp_injected,
