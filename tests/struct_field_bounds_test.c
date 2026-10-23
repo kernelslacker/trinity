@@ -22,36 +22,37 @@ void struct_field_bounds_self_check(void)
 {
 	/*
 	 * 1. Verify the arithmetic: UINT_MAX-4 + 8 wraps to 3 in
-	 *    unsigned int, which would pass the old guard against any
-	 *    size >= 3.  Document this so the test is self-annotating
-	 *    without needing a comment outside the function.
+	 *    unsigned int, which passes a guard of the form
+	 *    `offset + size > bufsz` for any bufsz >= 3.  Document this so
+	 *    the test is self-annotating without needing a comment outside
+	 *    the function.
 	 */
 	unsigned int bad_sum = (unsigned int)(UINT_MAX - 4) + (unsigned int)8;
 
-	assert(bad_sum == 3u); /* wraps: the old predicate is blind to this */
+	assert(bad_sum == 3u); /* wraps: a summing predicate is blind to this */
 
 	/*
-	 * 2. The *fixed* predicate must catch the same pair.
+	 * 2. The non-wrapping predicate must catch the same pair.
 	 */
 	unsigned int off = UINT_MAX - 4;
 	unsigned int fsz = 8;
 	unsigned int bufsz = 16;
 	int skipped_new = (off > bufsz || fsz > bufsz - off);
 
-	assert(skipped_new); /* fixed predicate catches the wrapping case */
+	assert(skipped_new); /* the two-disjunct predicate catches the wrap */
 
 	/*
 	 * 3. Call the real struct_fill_passes() with the wrapping field.
 	 *
-	 *    Before the fix: fill_field_flags() is reached and performs
+	 *    Without the bound, fill_field_flags() is reached and performs
 	 *    memcpy(buf + (UINT_MAX-4), …, 8), which addresses a location
 	 *    ~4 GiB beyond buf.  On a 64-bit kernel this maps to
 	 *    unmapped memory and raises SIGSEGV -- the test binary
 	 *    terminates non-zero (FAIL).
 	 *
-	 *    After the fix: the first disjunct (UINT_MAX-4 > 16) is
-	 *    TRUE, the loop takes `continue`, fill_field_flags() is
-	 *    never called, and buf is untouched (PASS).
+	 *    With it, the first disjunct (UINT_MAX-4 > 16) is TRUE, the
+	 *    loop takes `continue`, fill_field_flags() is never called,
+	 *    and buf is untouched (PASS).
 	 */
 	static const struct struct_field fields[1] = {{
 		.name          = "wrap_probe",

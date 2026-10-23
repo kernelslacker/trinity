@@ -187,7 +187,7 @@ static void xfail_uncarved_ptr_write(void)
 	memset(uncarved, 'P', SHARED_FREELIST_SLOT_STRIDE);
 
 	/* Bogus free: uncarved is stride-aligned, inside the heap,
-	 * state == UNCARVED (0) -- should be a no-op; is not at HEAD. */
+	 * state == UNCARVED (0) -- must be a no-op. */
 	free_shared_str(uncarved);
 
 	for (i = 0; i < SHARED_FREELIST_SLOT_STRIDE; i++) {
@@ -200,7 +200,7 @@ static void xfail_uncarved_ptr_write(void)
 }
 
 /*
- * CASE 4 (EXPECTED TO PASS at HEAD): alloc/free/realloc round-trip
+ * CASE 4: alloc/free/realloc round-trip
  * across every one of the 8 size buckets.
  *
  * For each bucket: allocate a slot at the bucket's canonical size,
@@ -348,6 +348,6 @@ void shared_str_heap_free_size_check(void)
 	xfail_interior_ptr_corruption();
 	xfail_uncarved_ptr_write();
 
-	/* Case 4: expected to PASS at HEAD. */
+	/* Case 4: round-trip across every bucket. */
 	pass_bucket_roundtrip();
 }
