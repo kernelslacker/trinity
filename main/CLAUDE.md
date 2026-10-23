@@ -12,7 +12,7 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 |---|---|
 | trinity.c | Process entry: `main()`, option/table setup, and the epoch loop that repeatedly calls `main_loop()`. Does not fuzz. |
 | trinity-warmstart.c | Startup/shutdown staging split out of `trinity.c`: `warm_start_all()`, `init_main_process()`/`init_main_early()`/`init_pre_fork()`, `persist_state_on_clean_exit()`, `run_oneshot_passes()`; `main/trinity-internal.h` holds the declarations the two files share |
-| params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, `--childop`, richness levers). Split by concern -- see the subdirectory breakdown below. |
+| params/ | CLI option parsing and the global tunables/flags the rest of the codebase reads (targeting, childop sizing and canary knobs, richness levers). Split by concern -- see the subdirectory breakdown below. |
 | main/loop.c | `main_loop()` driver: per-tick phase sequencing (drain → stop-checks → periodic surfaces → fork-replace), epoch reset (`reset_epoch_state`), `panic()` |
 | main/reap.c | Reap core: `reap_child()`, `reap_dead_kids()` `waitpid(-1)` drain, `kill_all_kids()`, `get_pid_state()`, signal-status dispatch (`handle_children()`) |
 | main/reap-watchdog.c | Stuck-child watchdog: `is_child_making_progress()`, SIGKILL escalation, stuck-fd eviction, wedge accounting, `stall_genocide()`, `check_children_progressing()` |
@@ -242,7 +242,7 @@ API surface.
 1. **The reap cluster's responsibility span** (6 files, ~2,700 LOC) — shm
    corruption sanity, normal reap, zombie/D-state deferral, watchdog
    escalation, D-state forensic dumping (5 separate bounded `/proc` readers),
-   fast-die-loop ring detection, and signal-status dispatch. Each now has its
+   fast-die-loop ring detection, and signal-status dispatch. Each has its
    own translation unit, so a change to one sub-concern (e.g. the D-state
    diagnostic format) lands in one file; what crosses the boundary is
    declared in `main/reap-internal.h`. The largest files in main/ are
