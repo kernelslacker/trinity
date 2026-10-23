@@ -76,14 +76,6 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 	abort();
 }
 
-/*
- * args/struct_fill.c is now in REAL_SRCS; it provides the canonical
- * write_field_uint / read_field_uint implementations.  The stubs that
- * used to live here have been removed to avoid duplicate-symbol link
- * errors.  The behaviour is identical -- the old comment described them
- * as "semantically identical" copies.
- */
-
 /* Neutral stub: no test lands on a live catalog lookup (the depth-cap test
  * installs its own override, and the address-walk test uses hand-built
  * descs with no FT_PTR_STRUCT descent), so NULL satisfies the linker for
