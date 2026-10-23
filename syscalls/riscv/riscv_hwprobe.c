@@ -8,39 +8,39 @@
  */
 #if defined(__riscv) && __riscv_xlen == 64
 
-#include <stdint.h>
+#include <asm/hwprobe.h>
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "shm.h"
 #include "utils.h"
+
+#ifndef RISCV_HWPROBE_WHICH_CPUS
+#define RISCV_HWPROBE_WHICH_CPUS	(1 << 0)
+#endif
 
 #define HWPROBE_MAX_PAIRS	16
 #define HWPROBE_MAX_KEY		16
 
-struct hwprobe_pair {
-	int64_t key;
-	uint64_t value;
-};
-
 static unsigned long hwprobe_flags[] = {
-	0, 1,	/* RISCV_HWPROBE_WHICH_CPUS */
+	0, RISCV_HWPROBE_WHICH_CPUS,
 };
 
 static void sanitise_riscv_hwprobe(struct syscallrecord *rec)
 {
-	struct hwprobe_pair *pairs;
+	struct riscv_hwprobe *pairs;
 	unsigned int nr, i;
 
 	nr = 1 + rnd_modulo_u32(HWPROBE_MAX_PAIRS);
 	pairs = get_writable_struct(nr * sizeof(*pairs));
-	if (pairs == NULL)
+	if (pairs == NULL) {
+		rec->a2 = 0;
 		return;
+	}
 
 	for (i = 0; i < nr; i++) {
 		/* mostly defined keys, some past the end */
 		pairs[i].key = ONE_IN(8) ? (int64_t)rnd_u64() :
-					   (int64_t)rnd_modulo_u32(HWPROBE_MAX_KEY);
+					   (int64_t)rnd_modulo_u32(HWPROBE_MAX_KEY + 2);
 		/* only read as a filter under WHICH_CPUS */
 		pairs[i].value = ONE_IN(2) ? 0 : rnd_u64();
 	}
