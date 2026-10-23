@@ -1,13 +1,7 @@
 /*
- * msg-rtnl-neigh.c
- *
- * Per-family rtnetlink payload builders for the neighbour (NDA_*),
- * neighbour-table (NDTA_*), bridge multicast database (MDBA_*) and
- * bridge VLAN database (BRIDGE_VLANDB_*) groups, split out of
- * net/netlink/msg-rtnl-payloads.c so each family's rationale comments
- * and per-attr switch live in a TU a reviewer thinks about
- * separately.  Shared helpers (rand_ipv4, rand_ipv6, start_nlattr,
- * build_nested_attrs) live in net/netlink/msg-rtnl-common.c.
+ * Rtnetlink payload builders for the neighbour (NDA_*), neighbour-table
+ * (NDTA_*), bridge multicast database (MDBA_*) and bridge VLAN database
+ * (BRIDGE_VLANDB_*) groups.
  */
 #include <sys/socket.h>
 #include <stddef.h>

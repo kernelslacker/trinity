@@ -1,18 +1,8 @@
 /*
- * Per-protocol body-struct builders split out of net/netlink/msg-core.c.
- *
- * Each NETLINK_* protocol family carries a small fixed header (or a
- * per-type struct) immediately after the nlmsghdr; the kernel
- * validates its size and family byte before the attribute walker
- * ever runs.  The builders here size and fill that header so the
- * message survives the initial copy_from_user length check and
- * reaches the family-specific parser.
- *
- * The entry points (gen_genl_body, gen_nfnl_body, gen_xfrm_body,
- * gen_audit_body, gen_sockdiag_body, pick_genl_attr_type) are
- * declared in msg-internal.h; xfrm_pin_family is a helper local to
- * gen_xfrm_body and stays file-static here.  rand_family() is
- * defined in msg-rtnl-body.c and declared in msg-internal.h.
+ * Per-protocol body-struct builders (genl, nfnl, xfrm, audit, sock_diag):
+ * size and fill the fixed header each NETLINK_* family expects after the
+ * nlmsghdr, so the message passes the family's length and family-byte
+ * checks and reaches its attribute parser.
  */
 #include <sys/socket.h>
 #include <stddef.h>

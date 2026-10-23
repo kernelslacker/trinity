@@ -1,22 +1,8 @@
 /*
- * msg-tables.c
- *
- * Descriptor tables extracted from msg-core.c so the two halves of
- * the module can compile in parallel.  The tables here are pure data:
- * per-protocol message-type lists (NETLINK_ROUTE / NETLINK_XFRM /
- * NETLINK_AUDIT), per-rtnetlink-group nlattr-type lists, per-family
- * nla_attr_spec tables (genl-ctrl, XFRM, sock_diag) and the xfrm
- * family-field offset table consumed by xfrm_pin_family.
- *
- * Each table was file-static in the original TU; linkage is widened
- * to external here so the emitters in msg-core.c can index into
- * them across the TU split.  A companion `_n` size constant is
- * emitted for every table so the emitter side can scale a uniform
- * pick without needing the complete array type that ARRAY_SIZE()
- * requires across the TU boundary.
- *
- * Body contents — initializers, comments, ordering — are byte-
- * identical to the original.
+ * Pure descriptor data for the netlink message emitter: per-protocol
+ * message-type lists, per-rtnl-group attribute-type lists, the genl-ctrl /
+ * XFRM / sock_diag nla_attr_spec tables and the xfrm family-field offsets.
+ * Each table has a `_n` size constant, as msg-internal.h explains.
  */
 
 #include <stddef.h>

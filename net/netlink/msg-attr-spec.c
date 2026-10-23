@@ -1,21 +1,8 @@
 /*
- * Spec-driven attribute emission split out of net/netlink/msg-core.c.
- *
- * Families with a curated nla_attr_spec table (XFRM, ctnetlink,
- * nftables, genl-ctrl, sock_diag, ...) go through this path instead
- * of the legacy random-payload emitter in msg-attr-random.c.  Each
- * attribute's payload is sized by the spec's kind (U8/U16/U32/U64,
- * STRING, BINARY, NESTED, ...) so the kernel's per-family policy
- * gate lets us reach the actual command handler instead of bouncing
- * every attr with EINVAL.
- *
- * pick_spec_table() returns the (table, count) pair for a given
- * protocol/nlmsg_type or NULL to fall through to the random path.
- * append_specced_nlattr() is the top-level entry point and routes
- * NLA_KIND_NESTED specs through append_specced_nested(), which
- * builds a 1-3 child container and shares the same nested-attr
- * counter with append_nested_attr_container() so the dump output
- * stays consistent across both nesting paths.
+ * Spec-driven attribute emission for families with a curated nla_attr_spec
+ * table (genl, nfnl, XFRM, sock_diag): each payload is sized by the spec's
+ * kind so the family's policy lets the message reach its handler.  Families
+ * without a table use the random emitter in msg-attr-random.c.
  */
 #include <stddef.h>
 #include <string.h>
@@ -55,7 +42,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_BINARY_FIXED2:
 		return ONE_IN(2) ? spec->min_len : spec->max_len;
 	case NLA_KIND_NESTED:
-		/* Caller decides — nested kinds get a recursive emission */
+		/* Caller decides: append_specced_nested() builds the container */
 		return 0;
 	default:
 		return 0;

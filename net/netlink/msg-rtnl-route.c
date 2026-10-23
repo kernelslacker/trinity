@@ -1,12 +1,6 @@
 /*
- * msg-rtnl-route.c
- *
- * Per-family rtnetlink payload builders for the route / rule / nexthop
- * / prefix / nsid / chain groups, split out of
- * net/netlink/msg-rtnl-payloads.c so each family's rationale comments
- * and per-attr switch live in a TU a reviewer thinks about
- * separately.  Shared helpers (rand_ipv4, rand_ipv6, start_nlattr,
- * build_nested_attrs) live in net/netlink/msg-rtnl-common.c.
+ * Rtnetlink payload builders for the route, rule, nexthop, prefix, nsid and
+ * chain groups.
  */
 #include <sys/socket.h>
 #include <stddef.h>

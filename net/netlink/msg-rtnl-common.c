@@ -1,13 +1,6 @@
 /*
- * msg-rtnl-common.c
- *
- * Shared rtnetlink payload-builder helpers used across the per-family
- * TUs split out of net/netlink/msg-rtnl-payloads.c.  The four
- * generators here (rand_ipv4, rand_ipv6, start_nlattr,
- * build_nested_attrs) previously lived as file-static inside
- * msg-rtnl-payloads.c; widening them to external linkage here lets
- * msg-rtnl-{route,link,neigh,tc,misc}.c reuse the same bodies across
- * the split.
+ * Address, nlattr-header and nested-chain helpers shared by the msg-rtnl-*.c
+ * payload builders (declared in msg-rtnl-common.h).
  */
 #include <sys/socket.h>
 #include <stddef.h>

@@ -1,13 +1,6 @@
 /*
- * msg-rtnl-link.c
- *
- * Per-family rtnetlink payload builders for the link (IFLA_*),
- * link-property (RTM_*LINKPROP) and tunnel (RTM_*TUNNEL /
- * vxlan-vnifilter) groups, split out of
- * net/netlink/msg-rtnl-payloads.c so each family's rationale comments
- * and per-attr switch live in a TU a reviewer thinks about
- * separately.  Shared helpers (rand_ipv4, rand_ipv6, start_nlattr,
- * build_nested_attrs) live in net/netlink/msg-rtnl-common.c.
+ * Rtnetlink payload builders for the link (IFLA_*), link-property
+ * (RTM_*LINKPROP) and tunnel (RTM_*TUNNEL, vxlan-vnifilter) groups.
  */
 #include <sys/socket.h>
 #include <stddef.h>

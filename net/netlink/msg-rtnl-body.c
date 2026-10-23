@@ -1,17 +1,8 @@
 /*
- * Rtnetlink body-struct builders split out of net/netlink/msg-core.c.
- *
- * Each RTM_* message group carries a small fixed struct (ifinfomsg,
- * rtmsg, ndmsg, ...) immediately after the nlmsghdr; the kernel
- * validates its length and family byte before parsing attributes.
- * The per-group builders here fill each struct with fuzzed field
- * values of the correct size so validation lets us through into the
- * attribute walker where the interesting bugs live.
- *
- * rand_family() is shared with the sock_diag body builder in
- * msg-proto-body.c, so its declaration lives in msg-internal.h with
- * external linkage; the router gen_rtnl_body() is also declared in
- * msg-internal.h and dispatched from build_one_nlmsg() in msg-core.c.
+ * Rtnetlink body-struct builders: the fixed struct each RTM_* group carries
+ * after the nlmsghdr (ifinfomsg, rtmsg, ndmsg, ...), filled with fuzzed
+ * fields of the right size so the kernel's length and family checks pass and
+ * the message reaches the attribute walker.
  */
 #include <sys/socket.h>
 #include <arpa/inet.h>
