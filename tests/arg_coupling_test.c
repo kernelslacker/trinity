@@ -595,6 +595,7 @@ static unsigned int shmat_remaps_kept(int shmid, bool compat)
 		rec.a1 = (unsigned long) shmid;
 		rec.a3 = SHM_REMAP;
 		syscall_shmat.sanitise(&rec);
+		syscall_shmat.cleanup(&rec);
 		if (!(rec.a3 & SHM_REMAP)) {
 			if (rec.a2 != 0)
 				BUG("shmat: a dropped SHM_REMAP left an address an attach can only fail at");
@@ -633,6 +634,7 @@ static void shmat_remap_held_to_mapping(void)
 		rec.entry = &syscall_shmat;
 		rec.a1 = (unsigned long) shmid;
 		syscall_shmat.sanitise(&rec);
+		syscall_shmat.cleanup(&rec);
 		if (rec.a2 == (unsigned long) pool_obj.map.ptr)
 			at_map++;
 		else if (rec.a2 != 0)
@@ -2870,6 +2872,175 @@ static void mmap_fixed_held_to_vetted_call(void)
 	fake_this_child = NULL;
 }
 
+/* A shmat call the sanitiser built for segment @shmid over the mapping
+ * fake_map_drawn names, redrawn until it keeps SHM_REMAP. */
+static void shmat_remap_drawn(int shmid, bool compat)
+{
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_shmat;
+		rec.do32bit = compat;
+		rec.a1 = (unsigned long) shmid;
+		rec.a3 = SHM_REMAP;
+		syscall_shmat.sanitise(&rec);
+		if (rec.a3 & SHM_REMAP)
+			return;
+		syscall_shmat.cleanup(&rec);
+	}
+	BUG("shmat: the sanitiser never kept SHM_REMAP");
+}
+
+/* A final call carrying SHM_REMAP over an address replaces what lies there,
+ * so it has to be the attach the sanitiser vetted: not at another address,
+ * a page further into the mapping, nor of another segment, which may be
+ * longer, nor with other flags, SHM_RND among them, which moves the
+ * address.  The kernel reads shmid and shmflg as ints, so their upper
+ * halves are no part of it.  A SHM_REMAP over a NULL address, which the
+ * kernel refuses, and a call that lost SHM_REMAP pass, and the snapshot
+ * is the call's own and goes at cleanup.  A SHM_REMAP the sanitiser did
+ * not draw is refused. */
+static void shmat_remap_held(int shmid)
+{
+	unsigned long a1, a2, a3;
+	unsigned int i;
+
+	shmat_remap_drawn(shmid, false);
+	a1 = rec.a1;
+	a2 = rec.a2;
+	a3 = rec.a3;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("shmat: the SHM_REMAP attach the sanitiser vetted was refused");
+	rec.a2 = a2 + page_size;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("shmat: a SHM_REMAP at a substituted address was kept");
+	rec.a2 = a2;
+	rec.a1 = a1 + 1;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("shmat: a SHM_REMAP of another segment was kept");
+	rec.a1 = a1;
+	rec.a3 = a3 | SHM_RND;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("shmat: a SHM_REMAP with flags the sanitiser did not draw was kept");
+	rec.a3 = a3 & ~(unsigned long) SHM_REMAP;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("shmat: an attach without SHM_REMAP was refused");
+	rec.a3 = a3;
+	rec.a2 = 0;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("shmat: a SHM_REMAP with no address was refused");
+	rec.a2 = a2;
+	rec.a1 = a1 | (1UL << 32);
+	rec.a3 = a3 | (1UL << 40);
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("shmat: a SHM_REMAP was judged on the upper half of an int slot");
+	rec.a1 = a1;
+	rec.a3 = a3;
+	snapshot_gate_held(&rec, "shmat");
+	syscall_shmat.cleanup(&rec);
+	if (rec.post_state != 0)
+		BUG("shmat: cleanup left the snapshot behind");
+
+	for (i = 0; i < 1000; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_shmat;
+		rec.a1 = (unsigned long) shmid;
+		syscall_shmat.sanitise(&rec);
+		if (rec.a2 != 0)
+			break;
+	}
+	if (i == 1000)
+		BUG("shmat: the sanitiser never aimed an attach at the mapping");
+	if (rec.post_state != 0)
+		BUG("shmat: an attach without SHM_REMAP was given a snapshot");
+	rec.a3 |= SHM_REMAP;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("shmat: a SHM_REMAP the sanitiser did not draw was kept");
+	syscall_shmat.cleanup(&rec);
+}
+
+/* A compat call's kernel reads the low 32 bits of the address: a SHM_REMAP
+ * address whose upper half a rewrite changed is still the one the
+ * sanitiser vetted, and a native call's is not. */
+static void shmat_compat_address_truncated(int shmid)
+{
+	pool_obj.map.ptr = (void *) 0x40001000UL;
+	shmat_remap_drawn(shmid, true);
+	rec.a2 |= 1UL << 32;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("shmat: a compat SHM_REMAP was judged on its address's upper half");
+	rec.do32bit = false;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("shmat: a native SHM_REMAP's rewritten upper half was dropped");
+	syscall_shmat.cleanup(&rec);
+}
+
+/* A SHM_REMAP attach that worked replaced pages of the mapping with the
+ * segment's, so the post handler drops the pool entry: prot 0, known_rw
+ * cleared, and the snapshot released.  One that failed, or an attach with
+ * no SHM_REMAP, where the kernel picked the address, leaves the entry as
+ * it was. */
+static void shmat_remap_drops_entry(int shmid)
+{
+	unsigned int c;
+
+	for (c = 0; c < 3; c++) {
+		bool drops = c == 0;
+
+		if (c < 2) {
+			shmat_remap_drawn(shmid, false);
+		} else {
+			memset(&rec, 0, sizeof(rec));
+			rec.entry = &syscall_shmat;
+			rec.a1 = (unsigned long) shmid;
+			syscall_shmat.sanitise(&rec);
+		}
+		pool_obj.map.prot = PROT_READ | PROT_WRITE;
+		pool_obj.map.known_rw = true;
+		rec.retval = c == 1 ? (unsigned long) -1L : POOL_MAP + page_size;
+		syscall_shmat.post(&rec);
+		if (rec.post_state != 0)
+			BUG("shmat: the post handler left the snapshot behind");
+		if ((pool_obj.map.prot == 0) != drops ||
+		    pool_obj.map.known_rw == drops)
+			BUG("shmat: the pool entry was kept after a SHM_REMAP attach, or dropped after another call");
+		syscall_shmat.cleanup(&rec);
+	}
+}
+
+/* shmat's final SHM_REMAP attaches only as its sanitiser vetted, and a call
+ * the sanitiser built passes as it is, natively and as a compat call. */
+static void shmat_remap_held_to_vetted_call(void)
+{
+	int shmid = shm_test_segment();
+	unsigned int i;
+
+	if (shmid < 0) {
+		printf("(no SysV shared memory, skipping shmat's final slots) ");
+		return;
+	}
+
+	fake_map_drawn = &pool_obj.map;
+	pool_obj.map.ptr = (void *) (POOL_MAP + page_size);
+	pool_obj.map.size = 4 * page_size;
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_shmat;
+		rec.do32bit = (i % 10) == 0;
+		rec.a1 = (unsigned long) shmid;
+		rec.a3 = rnd_u32() & (SHM_RDONLY | SHM_RND | SHM_REMAP | SHM_EXEC);
+		syscall_shmat.sanitise(&rec);
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("shmat: a call the sanitiser built was refused");
+		syscall_shmat.cleanup(&rec);
+	}
+	shmat_remap_held(shmid);
+	shmat_remap_drops_entry(shmid);
+	shmat_compat_address_truncated(shmid);
+	fake_map_drawn = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -2901,4 +3072,5 @@ void arg_coupling_self_check(void)
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
 	mmap_fixed_held_to_vetted_call();
+	shmat_remap_held_to_vetted_call();
 }
