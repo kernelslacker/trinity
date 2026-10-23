@@ -178,8 +178,7 @@ void sanitise_perf_event_open(struct syscallrecord *rec)
 	 * pulls attr->size out of the user buffer itself and drives
 	 * copy_struct_from_user against that.  Plant the csfu-picked
 	 * usize here so the validator gets exercised across all five
-	 * bucket shapes instead of the open-coded VER0..VER8 + raw
-	 * garbage roll that used to live in random_attr_size().
+	 * bucket shapes.
 	 */
 	attr->size = buf.usize;
 

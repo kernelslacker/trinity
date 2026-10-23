@@ -279,9 +279,7 @@ unsigned long handle_arg_list(struct syscallentry *entry,
  * If this argtype declares a paired_length in the descriptor table and
  * the next slot is actually of that paired type, publish len there so
  * the corresponding ARG_IOVECLEN / ARG_SOCKADDRLEN generator can hand
- * it back unchanged.  Replaces the hardcoded
- * `entry->argtype[argnum] == ARG_IOVECLEN/ARG_SOCKADDRLEN` checks that
- * used to live inside handle_arg_iovec / handle_arg_sockaddr.
+ * it back unchanged.
  */
 void publish_paired_length(struct syscallentry *entry,
 			   struct syscallrecord *rec,

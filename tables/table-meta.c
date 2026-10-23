@@ -530,16 +530,10 @@ struct syscallentry * get_syscall_entry(unsigned int callno, bool do32 __attribu
 }
 
 /*
- * Single id-to-name table for the syscall groups.  Two copies of this
- * used to live in child/child.c and stats/network/childops.c, both of
- * them stopping at GROUP_XATTR (11).  GROUP_VFS_PATH (12) through
- * GROUP_NS (18) are real and reachable, so those callers passed NULL
- * to a "%s" conversion -- undefined behaviour that glibc happens to
- * render as "(null)", which is exactly what a --stats run prints in
- * the blob_fills_by_group table today.
- *
- * Returns a non-NULL string for every input, including one that is
- * out of range, so no caller can reintroduce the NULL.
+ * Single id-to-name table for the syscall groups, GROUP_NONE through
+ * GROUP_NS.  Returns a non-NULL string for every input, including one
+ * that is out of range, so no caller can hand a NULL to a "%s"
+ * conversion.
  */
 const char *group_name(unsigned int group)
 {

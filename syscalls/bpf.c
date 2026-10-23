@@ -56,9 +56,6 @@ void bpf_fill_obj_name(char *name)
 	name_pool_record(NAME_KIND_BPF_OBJ_NAME, name, n);
 }
 
-/* BPF_F_TOKEN_FD and the map-type fallbacks moved to include/bpf.h
- * so the schema-aware fill catalog and this file share them. */
-
 /*
  * Snapshot of the dispatch cmd and the pre-relocation attr pointer the
  * post handler reads, captured at sanitise time and consumed by the
