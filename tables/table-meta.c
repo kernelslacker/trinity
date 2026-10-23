@@ -1,15 +1,8 @@
 /*
- * Syscall table metadata query, sanity-check, and inspection helpers.
- *
- * Carved out of tables/tables.c: this file owns the read-only accessors
- * (search_syscall_table, get_syscall_entry, print_syscall_name,
- * syscall_nr_is_excluded), the per-entry sanity-check pass run at init
- * (sanity_check_tables and its helpers), the enabled/disabled counters
- * (count_syscalls_enabled, no_syscalls_enabled,
- * validate_syscall_tables), the -c/-x arg-name parser
- * (check_user_specified_arch / clear_check_user_specified_arch), and
- * the inspection printers (print_disabled_syscalls,
- * show_unannotated_args).
+ * Syscall table metadata: the read-only accessors (search_syscall_table(),
+ * get_syscall_entry(), syscall_nr_is_excluded()), the init-time
+ * sanity_check_tables() pass, the enabled/disabled counters, the -c/-x
+ * arg-name parser and the inspection printers.
  */
 
 

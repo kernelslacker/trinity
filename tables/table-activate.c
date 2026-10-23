@@ -1,11 +1,8 @@
 /*
- * Syscall activation / deactivation helpers.
- *
- * Carved out of tables/tables.c: this file owns the cost-pool-aware
- * activate_syscall_in_table() / deactivate_syscall_in_table() pair,
- * plus the pool-partition invariant assertion and the lock-taking /
- * lock-free deactivation wrappers the pickers and auto-disable path
- * call into.
+ * Syscall activation / deactivation helpers: the cost-pool-aware
+ * activate_syscall_in_table() / deactivate_syscall_in_table() pair, the
+ * pool-partition invariant assertion, and the lock-taking / lock-free
+ * deactivation wrappers the pickers and auto-disable path call.
  */
 
 

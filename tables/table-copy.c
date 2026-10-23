@@ -1,10 +1,8 @@
 /*
- * Syscall table copy / stamping + init-time EXPENSIVE bitmap build.
- *
- * Carved out of tables/tables.c: this file owns copy_syscall_table(),
- * the one-time entry point select_syscall_tables() that copies the
- * per-arch static descriptor arrays into shared memory, and the
- * read-only EXPENSIVE bitmaps + syscall_is_expensive() query the
+ * Syscall table copy / stamping + init-time EXPENSIVE bitmap build:
+ * copy_syscall_table(), the one-time select_syscall_tables() entry point that
+ * copies the per-arch static descriptor arrays into shared memory, and the
+ * read-only EXPENSIVE bitmaps behind syscall_is_expensive(), which the
  * pickers hit on their reject fast path.
  */
 

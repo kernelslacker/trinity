@@ -1,10 +1,8 @@
 /*
- * Per-arch syscallentry descriptor tables PROT_READ freeze.
- *
- * Carved out of tables/tables.c: this file owns the mprotect-extent
- * bookkeeping (desc_extents[]) that copy_syscall_table() populates via
- * out-params and select_syscall_tables() files, plus the freeze itself
- * that runs after munge_tables() completes and before fork_children().
+ * Per-arch syscallentry descriptor tables PROT_READ freeze: the
+ * mprotect-extent bookkeeping (desc_extents[]) that copy_syscall_table()
+ * populates via out-params and select_syscall_tables() files, plus the freeze
+ * itself, run after munge_tables() completes and before fork_children().
  */
 
 #include <stdio.h>
