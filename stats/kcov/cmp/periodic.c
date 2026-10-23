@@ -454,6 +454,120 @@ static void cmp_window_snapshot(struct cmp_window *cur, struct cmp_levels *lvl)
 	}
 }
 
+static void kcov_cmp_render_window_deltas(long elapsed,
+					 const struct cmp_window *cur_p,
+					 const struct cmp_window *delta_p,
+					 const struct cmp_levels *lvl_p)
+{
+	const struct cmp_window cur = *cur_p, delta = *delta_p;
+	const struct cmp_levels lvl = *lvl_p;
+	bool any_callsite_delta;
+	bool any_callsite_wins_delta;
+	bool any_prop_callsite_delta;
+
+	any_callsite_delta = words_nonzero(delta.cmp_hint_callsite,
+					   CMP_HINT_CALLSITE_NR);
+	any_callsite_wins_delta =
+		words_nonzero(delta.cmp_hint_callsite_pc_wins, CMP_HINT_CALLSITE_NR) ||
+		words_nonzero(delta.cmp_hint_callsite_misses, CMP_HINT_CALLSITE_NR);
+	any_prop_callsite_delta = words_nonzero(delta.prop_injected_callsite,
+						PROP_INJECTED_CALLSITE_NR);
+
+	stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
+
+	emit_rate_rows(elapsed, &cur, &delta, funnel_rows, ARRAY_SIZE(funnel_rows));
+	if (delta.chaos_suppressed) {
+		unsigned long rate_milli = (delta.chaos_suppressed * 1000UL) / (unsigned long)elapsed;
+		stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, chaos_active=%d)\n",
+				"cmp_hints_chaos_suppressed", delta.chaos_suppressed,
+				rate_milli / 1000, rate_milli % 1000, cur.chaos_suppressed,
+				cmp_hints_chaos_query() ? 1 : 0);
+	}
+	kcov_cmp_render_wild_write_delta(elapsed,
+					 delta.count_oob, cur.count_oob,
+					 delta.canary_lock_post, cur.canary_lock_post,
+					 delta.canary_pre, cur.canary_pre,
+					 delta.canary_post, cur.canary_post);
+	emit_rate_rows(elapsed, &cur, &delta, reexec_rows, ARRAY_SIZE(reexec_rows));
+	kcov_cmp_render_reexec_burst_drain_cohort(delta.reexec_attempts_by_arm,
+						  cur.reexec_attempts_by_arm,
+						  delta.reexec_new_cmps_by_arm,
+						  cur.reexec_new_cmps_by_arm,
+						  delta.reexec_new_edges_by_arm,
+						  cur.reexec_new_edges_by_arm);
+	emit_rate_rows(elapsed, &cur, &delta, reexec_drop_rows, ARRAY_SIZE(reexec_drop_rows));
+	kcov_cmp_render_reexec_skip_reason_breakdown(elapsed,
+						     delta.reexec_gate_skip_in_reexec, cur.reexec_gate_skip_in_reexec,
+						     delta.reexec_gate_skip_disabled, cur.reexec_gate_skip_disabled,
+						     delta.reexec_gate_skip_mode, cur.reexec_gate_skip_mode,
+						     delta.reexec_gate_skip_chain_mid, cur.reexec_gate_skip_chain_mid,
+						     delta.reexec_gate_skip_no_new_cmp, cur.reexec_gate_skip_no_new_cmp,
+						     delta.reexec_gate_skip_no_pending, cur.reexec_gate_skip_no_pending,
+						     delta.reexec_gate_skip_rate, cur.reexec_gate_skip_rate,
+						     delta.reexec_gate_pass, cur.reexec_gate_pass);
+	emit_rate_rows(elapsed, &cur, &delta, cmp_parent_rows, ARRAY_SIZE(cmp_parent_rows));
+	kcov_cmp_render_cmp_hint_callsites(any_callsite_delta, any_callsite_wins_delta,
+					   delta.cmp_hint_callsite, cur.cmp_hint_callsite,
+					   delta.cmp_hint_callsite_pc_wins,
+					   cur.cmp_hint_callsite_pc_wins,
+					   delta.cmp_hint_callsite_misses,
+					   cur.cmp_hint_callsite_misses);
+	kcov_cmp_render_prop_injected_callsite(any_prop_callsite_delta,
+					       delta.prop_injected_callsite,
+					       cur.prop_injected_callsite);
+	kcov_cmp_render_per_entry_feedback_scoring(elapsed,
+						   delta.cmp_hints_consumed, cur.cmp_hints_consumed,
+						   delta.cmp_hint_wins, cur.cmp_hint_wins,
+						   delta.cmp_hint_misses, cur.cmp_hint_misses,
+						   delta.cmp_hint_cmp_novelty_wins, cur.cmp_hint_cmp_novelty_wins,
+						   delta.cmp_hint_stash_overflow, cur.cmp_hint_stash_overflow,
+						   delta.cmp_hint_credit_entry_evicted, cur.cmp_hint_credit_entry_evicted);
+	kcov_cmp_render_recent_cmp_pool_tier(elapsed,
+					     delta.cmp_recent_inserts, cur.cmp_recent_inserts,
+					     delta.cmp_recent_evicts, cur.cmp_recent_evicts,
+					     delta.cmp_recent_would_pick, cur.cmp_recent_would_pick,
+					     delta.cmp_recent_would_miss, cur.cmp_recent_would_miss,
+					     delta.cmp_recent_live_picks, cur.cmp_recent_live_picks);
+	kcov_cmp_render_ab_baseline_inject_denom(elapsed,
+						 delta.cmp_inject_arm_a_baseline_fires, cur.cmp_inject_arm_a_baseline_fires,
+						 delta.cmp_inject_arm_b_baseline_fires, cur.cmp_inject_arm_b_baseline_fires,
+						 delta.cmp_inject_denom_diverged, cur.cmp_inject_denom_diverged,
+						 lvl.cmp_inject_arm_a_children,
+						 lvl.cmp_inject_arm_b_children);
+	kcov_cmp_render_handle_arg_op_prop_ring_cohort(elapsed,
+						       delta.prop_ring_argop_arm_b_fires,
+						       cur.prop_ring_argop_arm_b_fires,
+						       lvl.prop_ring_argop_arm_a_children,
+						       lvl.prop_ring_argop_arm_b_children);
+	kcov_cmp_render_frontier_cold_weight_blend_cohort(elapsed,
+							  delta.frontier_blend_samples,
+							  cur.frontier_blend_samples,
+							  lvl.frontier_blend_arm_a_children,
+							  lvl.frontier_blend_arm_b_children);
+	kcov_cmp_render_adaptive_remote_kcov_cohort(elapsed,
+						    delta.remote_adaptive_samples,
+						    cur.remote_adaptive_samples,
+						    lvl.remote_adaptive_arm_a_children,
+						    lvl.remote_adaptive_arm_b_children,
+						    lvl.remote_adaptive_would_demote,
+						    lvl.remote_adaptive_would_promote,
+						    lvl.remote_adaptive_would_force,
+						    lvl.remote_adaptive_would_gate_promote,
+						    lvl.remote_adaptive_agree);
+	kcov_cmp_render_per_arg_ownership_sidecar(lvl.blanket_address_scrub_slots_walked,
+						  lvl.arg_meta_addr_with_meta,
+						  lvl.arg_meta_addr_without_meta,
+						  lvl.arg_meta_argtype_stale,
+						  lvl.arg_meta_scrub_would_destroy_in,
+						  lvl.arg_meta_scrub_would_preserve_out);
+	kcov_cmp_render_structure_aware_picker_cohort(elapsed,
+						      delta.mut_structured_shadow_divergences,
+						      cur.mut_structured_shadow_divergences,
+						      lvl.mut_structured_shadow_samples,
+						      lvl.mut_structured_arm_a_children,
+						      lvl.mut_structured_arm_b_children);
+}
+
 /*
  * Surface the KCOV CMP counters in the same 600s periodic stats-log-file
  * dump as periodic_counter_rates_dump.  Without this the cmp counters
@@ -481,9 +595,6 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 	const unsigned long *p = (const unsigned long *)&prev;
 	unsigned long *d = (unsigned long *)&delta;
 	long elapsed;
-	bool any_callsite_delta;
-	bool any_callsite_wins_delta;
-	bool any_prop_callsite_delta;
 	size_t i;
 
 	if (kcov_shm == NULL)
@@ -507,109 +618,9 @@ void __cold kcov_cmp_stats_periodic_dump(void)
 
 	for (i = 0; i < CMP_WINDOW_WORDS; i++)
 		d[i] = sat_sub_ul(c[i], p[i]);
-	any_callsite_delta = words_nonzero(delta.cmp_hint_callsite,
-					   CMP_HINT_CALLSITE_NR);
-	any_callsite_wins_delta =
-		words_nonzero(delta.cmp_hint_callsite_pc_wins, CMP_HINT_CALLSITE_NR) ||
-		words_nonzero(delta.cmp_hint_callsite_misses, CMP_HINT_CALLSITE_NR);
-	any_prop_callsite_delta = words_nonzero(delta.prop_injected_callsite,
-						PROP_INJECTED_CALLSITE_NR);
 
-	if (words_nonzero(d, CMP_WINDOW_WORDS)) {
-		stats_log_write("KCOV CMP stats over last %lds:\n", elapsed);
-
-		emit_rate_rows(elapsed, &cur, &delta, funnel_rows, ARRAY_SIZE(funnel_rows));
-		if (delta.chaos_suppressed) {
-			unsigned long rate_milli = (delta.chaos_suppressed * 1000UL) / (unsigned long)elapsed;
-			stats_log_write("  %-32s +%lu  (%lu.%03lu/s, total %lu, chaos_active=%d)\n",
-					"cmp_hints_chaos_suppressed", delta.chaos_suppressed,
-					rate_milli / 1000, rate_milli % 1000, cur.chaos_suppressed,
-					cmp_hints_chaos_query() ? 1 : 0);
-		}
-		kcov_cmp_render_wild_write_delta(elapsed,
-						 delta.count_oob, cur.count_oob,
-						 delta.canary_lock_post, cur.canary_lock_post,
-						 delta.canary_pre, cur.canary_pre,
-						 delta.canary_post, cur.canary_post);
-		emit_rate_rows(elapsed, &cur, &delta, reexec_rows, ARRAY_SIZE(reexec_rows));
-		kcov_cmp_render_reexec_burst_drain_cohort(delta.reexec_attempts_by_arm,
-							  cur.reexec_attempts_by_arm,
-							  delta.reexec_new_cmps_by_arm,
-							  cur.reexec_new_cmps_by_arm,
-							  delta.reexec_new_edges_by_arm,
-							  cur.reexec_new_edges_by_arm);
-		emit_rate_rows(elapsed, &cur, &delta, reexec_drop_rows, ARRAY_SIZE(reexec_drop_rows));
-		kcov_cmp_render_reexec_skip_reason_breakdown(elapsed,
-							     delta.reexec_gate_skip_in_reexec, cur.reexec_gate_skip_in_reexec,
-							     delta.reexec_gate_skip_disabled, cur.reexec_gate_skip_disabled,
-							     delta.reexec_gate_skip_mode, cur.reexec_gate_skip_mode,
-							     delta.reexec_gate_skip_chain_mid, cur.reexec_gate_skip_chain_mid,
-							     delta.reexec_gate_skip_no_new_cmp, cur.reexec_gate_skip_no_new_cmp,
-							     delta.reexec_gate_skip_no_pending, cur.reexec_gate_skip_no_pending,
-							     delta.reexec_gate_skip_rate, cur.reexec_gate_skip_rate,
-							     delta.reexec_gate_pass, cur.reexec_gate_pass);
-		emit_rate_rows(elapsed, &cur, &delta, cmp_parent_rows, ARRAY_SIZE(cmp_parent_rows));
-		kcov_cmp_render_cmp_hint_callsites(any_callsite_delta, any_callsite_wins_delta,
-						   delta.cmp_hint_callsite, cur.cmp_hint_callsite,
-						   delta.cmp_hint_callsite_pc_wins,
-						   cur.cmp_hint_callsite_pc_wins,
-						   delta.cmp_hint_callsite_misses,
-						   cur.cmp_hint_callsite_misses);
-		kcov_cmp_render_prop_injected_callsite(any_prop_callsite_delta,
-						       delta.prop_injected_callsite,
-						       cur.prop_injected_callsite);
-		kcov_cmp_render_per_entry_feedback_scoring(elapsed,
-							   delta.cmp_hints_consumed, cur.cmp_hints_consumed,
-							   delta.cmp_hint_wins, cur.cmp_hint_wins,
-							   delta.cmp_hint_misses, cur.cmp_hint_misses,
-							   delta.cmp_hint_cmp_novelty_wins, cur.cmp_hint_cmp_novelty_wins,
-							   delta.cmp_hint_stash_overflow, cur.cmp_hint_stash_overflow,
-							   delta.cmp_hint_credit_entry_evicted, cur.cmp_hint_credit_entry_evicted);
-		kcov_cmp_render_recent_cmp_pool_tier(elapsed,
-						     delta.cmp_recent_inserts, cur.cmp_recent_inserts,
-						     delta.cmp_recent_evicts, cur.cmp_recent_evicts,
-						     delta.cmp_recent_would_pick, cur.cmp_recent_would_pick,
-						     delta.cmp_recent_would_miss, cur.cmp_recent_would_miss,
-						     delta.cmp_recent_live_picks, cur.cmp_recent_live_picks);
-		kcov_cmp_render_ab_baseline_inject_denom(elapsed,
-							 delta.cmp_inject_arm_a_baseline_fires, cur.cmp_inject_arm_a_baseline_fires,
-							 delta.cmp_inject_arm_b_baseline_fires, cur.cmp_inject_arm_b_baseline_fires,
-							 delta.cmp_inject_denom_diverged, cur.cmp_inject_denom_diverged,
-							 lvl.cmp_inject_arm_a_children,
-							 lvl.cmp_inject_arm_b_children);
-		kcov_cmp_render_handle_arg_op_prop_ring_cohort(elapsed,
-							       delta.prop_ring_argop_arm_b_fires,
-							       cur.prop_ring_argop_arm_b_fires,
-							       lvl.prop_ring_argop_arm_a_children,
-							       lvl.prop_ring_argop_arm_b_children);
-		kcov_cmp_render_frontier_cold_weight_blend_cohort(elapsed,
-								  delta.frontier_blend_samples,
-								  cur.frontier_blend_samples,
-								  lvl.frontier_blend_arm_a_children,
-								  lvl.frontier_blend_arm_b_children);
-		kcov_cmp_render_adaptive_remote_kcov_cohort(elapsed,
-							    delta.remote_adaptive_samples,
-							    cur.remote_adaptive_samples,
-							    lvl.remote_adaptive_arm_a_children,
-							    lvl.remote_adaptive_arm_b_children,
-							    lvl.remote_adaptive_would_demote,
-							    lvl.remote_adaptive_would_promote,
-							    lvl.remote_adaptive_would_force,
-							    lvl.remote_adaptive_would_gate_promote,
-							    lvl.remote_adaptive_agree);
-		kcov_cmp_render_per_arg_ownership_sidecar(lvl.blanket_address_scrub_slots_walked,
-							  lvl.arg_meta_addr_with_meta,
-							  lvl.arg_meta_addr_without_meta,
-							  lvl.arg_meta_argtype_stale,
-							  lvl.arg_meta_scrub_would_destroy_in,
-							  lvl.arg_meta_scrub_would_preserve_out);
-		kcov_cmp_render_structure_aware_picker_cohort(elapsed,
-							      delta.mut_structured_shadow_divergences,
-							      cur.mut_structured_shadow_divergences,
-							      lvl.mut_structured_shadow_samples,
-							      lvl.mut_structured_arm_a_children,
-							      lvl.mut_structured_arm_b_children);
-	}
+	if (words_nonzero(d, CMP_WINDOW_WORDS))
+		kcov_cmp_render_window_deltas(elapsed, &cur, &delta, &lvl);
 
 	kcov_cmp_render_hyp_shadow_stats_block(elapsed);
 
