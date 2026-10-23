@@ -112,7 +112,7 @@ LDFLAGS		+= -Wl,--wrap=fill_arg
 # into a subsequent non-ASAN link (and vice versa).
 #
 # NDEBUG target: `make -C tests NDEBUG=1` compiles with -DNDEBUG,
-# disabling assert() guards in persist/deferred-free.c.  All twelve
+# disabling assert() guards in persist/deferred-free-regions.c.  All twelve
 # fixtures pass green in NDEBUG builds; fixture 7 uses the bool return
 # value of deferred_free_seal_all() in place of debug_assert_sealed().
 # The NDEBUG binary lands in build-ndebug/ so it never contaminates
@@ -147,6 +147,7 @@ REAL_SRCS	:= \
 	$(TOP)/utils/tmpdir.c \
 	$(TOP)/persist/deferred-free.c \
 	$(TOP)/persist/deferred-free-record.c \
+	$(TOP)/persist/deferred-free-regions.c \
 	$(TOP)/fds/fds-protected.c \
 	$(TOP)/lib/jsonl.c \
 	$(TOP)/fds/owned-fd-ring.c \

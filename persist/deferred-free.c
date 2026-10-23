@@ -10,8 +10,6 @@
 #include <errno.h>
 #include <stdint.h>
 #include <limits.h>
-#include <sys/mman.h>
-#include <time.h>
 #include <unistd.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -19,8 +17,6 @@
 
 #include "child.h"
 #include "deferred-free.h"
-#include "deferred-free-internal.h"
-#include "params.h"
 #include "pc_format.h"
 #include "random.h"
 #include "shm.h"
@@ -28,11 +24,10 @@
 #include "trinity.h"
 #include "utils.h"
 
-#ifndef NDEBUG
-#include <assert.h>
-#endif
-
 #include "kernel/fcntl.h"
+
+#include "deferred-free-internal.h"
+
 #define DEFERRED_TTL_MIN	5
 #define DEFERRED_TTL_MAX	50
 
@@ -54,11 +49,6 @@ enum argtype deferred_free_get_cleanup_argtype(void)
 	return current_cleanup_argtype;
 }
 
-struct deferred_entry {
-	void *ptr;
-	unsigned int ttl;
-};
-
 /*
  * Opt-in side-set of live malloc results.  Sites whose pointer flows
  * through deferred_free_enqueue() allocate via zmalloc_tracked();
@@ -75,22 +65,8 @@ struct deferred_entry {
  * owning child, no locking.
  */
 
-/*
- * alloc_track[] and alloc_track_hash[] share a single mmap'd backing
- * region so one mprotect bracket covers both arrays' pages, halving
- * the syscall cost on the deferred_alloc_track hot path (which writes
- * both in one operation).  The base, size, and array pointers below
- * are set up in deferred_free_init().  Steady state is PROT_READ so
- * the lookup hot path (alloc_track_lookup, called from every
- * cleanup_release_post_state and the deferred-free enqueue gate)
- * reads directly without an mprotect syscall; only the writer entry
- * points (deferred_alloc_track, alloc_track_consume) flip RW for the
- * duration of the mutation.
- */
-static void **alloc_track;
+void **alloc_track;
 static unsigned int alloc_track_head;
-static void *alloc_track_base;
-static size_t alloc_track_bytes;
 
 /*
  * Parallel size storage indexed identically to alloc_track[]: each
@@ -108,84 +84,9 @@ static size_t alloc_track_bytes;
  * bound check with a length that does not belong to the value the
  * caller actually holds).
  */
-static size_t *alloc_track_sizes;
+size_t *alloc_track_sizes;
 
-/*
- * Membership accelerator for alloc_track[]: 16384-slot open-addressed
- * hash mirroring the array so both hit and miss are O(1).  alloc_track[]
- * stays source of truth; the hash mirrors it for membership only.
- * Steady state PROT_READ is load-bearing for memory safety (slots feed
- * free() gates), not just a perf nicety.  See Documentation/deferred-free.md
- * "alloc_track hash table" for the full rationale (sizing, Fibonacci
- * hashing, duplicate-ptr edge case).
- */
-#define ALLOC_TRACK_HASH_SHIFT	14
-#define ALLOC_TRACK_HASH_SIZE	(1U << ALLOC_TRACK_HASH_SHIFT)
-#define ALLOC_TRACK_HASH_MASK	(ALLOC_TRACK_HASH_SIZE - 1U)
-
-/* 2^64 / phi, rounded to nearest odd: the 64-bit Fibonacci constant. */
-#define ALLOC_TRACK_FIB_MUL	0x9E3779B97F4A7C15ULL
-
-static void **alloc_track_hash;
-
-/*
- * Untraced cost accounting for the per-region mprotect
- * brackets (alloc_track, ring+ring_control).  Each unlock
- * records CLOCK_MONOTONIC before its mprotect and stashes it in the
- * per-region timestamp; the matching lock re-samples after its
- * mprotect and accumulates the elapsed nanoseconds into shm->stats.
- * deferred_free.*_rw_ns_total.  The paired call counters (*_rw_calls
- * / *_ro_calls) let an operator compute mean-ns-per-bracket from the
- * cumulative totals without additional plumbing.  Statics are per-
- * child by COW-at-fork and single-writer per bracket, so no locking
- * is required.  A zero timestamp (tv_sec == 0 && tv_nsec == 0) means
- * "no open unlock window" -- lock() skips the counter bumps and
- * df_cost_elapsed_ns returns 0 in that case, so the four unpaired
- * lock-downs at init tail (and any future unpaired lock) record
- * nothing rather than charging the machine-uptime delta between the
- * zero-init timestamp and CLOCK_MONOTONIC into *_rw_ns_total.
- */
-static struct timespec alloc_track_rw_open_at;
-static struct timespec rc_rw_open_at;
-static struct timespec ring_rw_open_at;
-
-/*
- * Per-region open flags for the batched mode.  With batching off
- * these stay false and the X_unlock/X_lock helpers behave exactly as
- * before (real mprotect flip per mutation).  With batching ON the
- * first X_unlock() of a phase mprotects the region RW and sets its
- * flag; subsequent X_unlock() calls on the same region within the same
- * phase short-circuit; the paired X_lock() calls become no-ops (the
- * deferred close is issued by deferred_free_seal_all() at the next
- * kernel-entry chokepoint).  Only real mprotect flips bump the
- * *_rw_calls / *_ro_calls / *_rw_ns_total accounting, so the t372-a
- * counters measure the actual syscall reduction.  Statics are per-
- * child by COW-at-fork and single-writer per region, so no locking.
- */
-static bool alloc_track_rw_open;
-static bool rc_rw_open;
-static bool ring_rw_open;
-
-static inline bool df_ts_is_zero(const struct timespec *ts)
-{
-	return ts->tv_sec == 0 && ts->tv_nsec == 0;
-}
-
-static inline unsigned long df_cost_elapsed_ns(const struct timespec *begin)
-{
-	struct timespec now;
-	long ns;
-
-	if (df_ts_is_zero(begin))
-		return 0;
-
-	clock_gettime(CLOCK_MONOTONIC, &now);
-	ns = (now.tv_sec - begin->tv_sec) * 1000000000L
-	     + (now.tv_nsec - begin->tv_nsec);
-	if (ns < 0)
-		return 0;
-	return (unsigned long)ns;
-}
+void **alloc_track_hash;
 
 static inline unsigned int alloc_track_hash_index(void *ptr)
 {
@@ -193,60 +94,6 @@ static inline unsigned int alloc_track_hash_index(void *ptr)
 
 	return (unsigned int)((key * ALLOC_TRACK_FIB_MUL) >>
 			      (64 - ALLOC_TRACK_HASH_SHIFT));
-}
-
-/*
- * Flip the alloc_track / alloc_track_hash backing to PROT_READ|WRITE
- * for a single mutation, then back to PROT_READ.  Lookups read
- * directly against the PROT_READ steady state -- no bracket on the
- * hot path.  An unlock failure leaves the page PROT_READ and the
- * caller skips its write; the side-set ends up with a missing entry
- * (subsequent deferred_free_enqueue of that ptr rejects it as
- * untracked and the ptr is leaked) or a stale entry (subsequent
- * alloc_track_lookup answers false-positive, the lookup result
- * still flows through the deferred-free shape/heap/shared-region
- * gates), both safer than silently flipping a membership bit.
- */
-static int alloc_track_unlock(void)
-{
-	struct timespec begin;
-
-	if (deferred_free_batch && alloc_track_rw_open)
-		return 0;
-
-	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(alloc_track_base, alloc_track_bytes,
-		     PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: alloc_track unlock failed: "
-			  "errno=%d\n", errno);
-		return -1;
-	}
-	alloc_track_rw_open_at = begin;
-	alloc_track_rw_open = true;
-	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_calls,
-			   1, __ATOMIC_RELAXED);
-	return 0;
-}
-
-static void alloc_track_lock(void)
-{
-	unsigned long ns;
-
-	if (deferred_free_batch)
-		return;
-
-	if (mprotect(alloc_track_base, alloc_track_bytes, PROT_READ) != 0)
-		outputerr("deferred_free: alloc_track lock failed: "
-			  "errno=%d\n", errno);
-	alloc_track_rw_open = false;
-	if (df_ts_is_zero(&alloc_track_rw_open_at))
-		return;
-	ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
-	alloc_track_rw_open_at = (struct timespec){0};
-	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
-			   ns, __ATOMIC_RELAXED);
 }
 
 /*
@@ -477,180 +324,6 @@ static bool alloc_track_consume(void *ptr)
 }
 
 /*
- * Ring storage lives in an mmap'd region whose address range is registered
- * with shared_regions[] via track_shared_region().  That tracking lets
- * avoid_shared_buffer() and the mm-syscall sanitisers refuse fuzzed
- * pointers/lengths that would land inside the ring.  Without that
- * registration a fuzzed write could scribble ring[i].ptr with a
- * pid-shaped value and the next deferred_free_tick() would free() the
- * bogus pointer.
- *
- * MAP_PRIVATE (not MAP_SHARED via alloc_shared()) is deliberate: the queue
- * is process-local by contract -- pointers come from each child's own
- * post-fork heap.  Sharing the ring across forks would let one child's
- * deferred_free_tick() free a pointer enqueued by a different child --
- * either a double free if both children reach ttl==0 on the same slot, or
- * cross-heap chunk-metadata corruption because the freeing child's glibc
- * has no record of an allocation at that address.  Each forked child needs
- * its own COW copy of the ring; only the address range is shared with
- * the tracker.
- */
-/*
- * Ring control state -- the ring pointer, its mmap'd size, the
- * in-flight slot count, and the per-slot occupancy bitmap.  All four
- * live in their own small mmap'd armor page so a sibling fuzzed
- * value-result syscall cannot scribble the values that DRIVE ring[]'s
- * own mprotect/munmap bracket: a stomped ring would point mprotect at
- * an arbitrary VA, a stomped ring_bytes would extend munmap into
- * unrelated VMAs, a stomped ring_count would mis-gate the enqueue
- * full-ring check and the tick early-bail, and a stomped
- * occupied_mask would either (mask=0 while ring is really full)
- * bypass the full-ring eviction and orphan a live slot on the next
- * enqueue, or (mask=~0ULL while ring is really empty) drive
- * __builtin_ctzll(~mask) into its UB-on-zero case.  ring and
- * ring_bytes are write-once during init (plus the dispose-time
- * NULL/zero clear); ring_count and occupied_mask mutate per enqueue
- * and drain.  Steady state of the armor page is PROT_READ so the
- * dominant reads (the "if (ring == NULL)" / "if (ring_count == 0)"
- * fast-bail checks, the ring_count comparison in the full-ring
- * branch, and __builtin_ctzll(~occupied_mask) in the slot-hunt)
- * execute without a syscall; the few writer paths flip RW via
- * rc_unlock()/rc_lock() for the duration of the mutation.  The field
- * access pattern is hidden behind the file-scope macros below so the
- * rest of the file keeps reading like ring/ring_count/ring_bytes/
- * occupied_mask were still plain file-static scalars.
- */
-struct ring_control {
-	struct deferred_entry *ring;
-	size_t ring_bytes;
-	unsigned int ring_count;
-	uint64_t occupied_mask;
-};
-
-static struct ring_control *rc;
-static size_t rc_bytes;
-
-#define ring		(rc->ring)
-#define ring_bytes	(rc->ring_bytes)
-#define ring_count	(rc->ring_count)
-#define occupied_mask	(rc->occupied_mask)
-
-static int rc_unlock(void)
-{
-	struct timespec begin;
-
-	if (deferred_free_batch && rc_rw_open)
-		return 0;
-
-	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(rc, rc_bytes, PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: ring_control unlock failed: "
-			  "errno=%d\n", errno);
-		return -1;
-	}
-	rc_rw_open_at = begin;
-	rc_rw_open = true;
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_calls,
-			   1, __ATOMIC_RELAXED);
-	return 0;
-}
-
-static void rc_lock(void)
-{
-	unsigned long ns;
-
-	if (deferred_free_batch)
-		return;
-
-	if (mprotect(rc, rc_bytes, PROT_READ) != 0)
-		outputerr("deferred_free: ring_control lock failed: "
-			  "errno=%d\n", errno);
-	rc_rw_open = false;
-	if (df_ts_is_zero(&rc_rw_open_at))
-		return;
-	ns = df_cost_elapsed_ns(&rc_rw_open_at);
-	rc_rw_open_at = (struct timespec){0};
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
-			   ns, __ATOMIC_RELAXED);
-}
-
-/*
- * occupied_mask: one bit per ring slot (1 == occupied, 0 == free).
- * Lets enqueue find the next empty slot in O(1) via
- * __builtin_ctzll(~occupied_mask) instead of a linear scan over all
- * 64 entries.  Maintained alongside ring_count: every ptr write that
- * fills a slot sets the bit, every clear that empties a slot clears
- * it.  Lives in the ring_control armor page (see struct definition
- * above) -- reads at rest hit PROT_READ without a syscall; writers
- * update it inside the same rc_unlock/rc_lock bracket that guards
- * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
- */
-
-/*
- * Bracket writers/readers of ring[] with mprotect(): at rest PROT_NONE
- * so a fuzzed value-result stomp SIGSEGVs in copy_from_user instead of
- * scribbling a slot.  ring_unlock() returns a three-way result so ENOMEM
- * (VMA-budget) is distinguishable from generic failure: collapsing them
- * would leave the ring PROT_NONE while the caller fell through, turning
- * queued pages into SEGV_ACCERR bait.  See Documentation/deferred-free.md
- * "Three-result ring_unlock and the mprotect bracket".
- */
-enum ring_unlock_result {
-	RING_UNLOCK_OK,
-	RING_UNLOCK_ENOMEM,
-	RING_UNLOCK_FAIL,
-};
-
-static enum ring_unlock_result ring_unlock(void)
-{
-	struct timespec begin;
-
-	if (deferred_free_batch && ring_rw_open)
-		return RING_UNLOCK_OK;
-
-	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
-		int e = errno;
-		static unsigned long rw_fail_n;
-
-		if ((++rw_fail_n % 1000) == 1)
-			outputerr("deferred_free: mprotect RW failed: errno=%d\n", e);
-		return (e == ENOMEM) ? RING_UNLOCK_ENOMEM : RING_UNLOCK_FAIL;
-	}
-	ring_rw_open_at = begin;
-	ring_rw_open = true;
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_calls,
-			   1, __ATOMIC_RELAXED);
-	return RING_UNLOCK_OK;
-}
-
-static void ring_lock(void)
-{
-	unsigned long ns;
-
-	if (deferred_free_batch)
-		return;
-
-	if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
-		static unsigned long none_fail_n;
-
-		if ((++none_fail_n % 1000) == 1)
-			outputerr("deferred_free: mprotect NONE failed: errno=%d\n", errno);
-	}
-	ring_rw_open = false;
-	if (df_ts_is_zero(&ring_rw_open_at))
-		return;
-	ns = df_cost_elapsed_ns(&ring_rw_open_at);
-	ring_rw_open_at = (struct timespec){0};
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
-			   ns, __ATOMIC_RELAXED);
-}
-
-/*
  * Generation arena: bounded holding pen for pointers evicted out of the
  * full ring by ring_evict_oldest_safe().  Eviction cannot free() on the
  * spot: the evicted entry may be a pre-dispatch buffer the syscall being
@@ -690,8 +363,6 @@ static void ring_lock(void)
  * generation's ptrs[] page fails the write, preserving the
  * "corruption-shaped stomp cannot silently reach free()" invariant.
  */
-#define GEN_ARENA_SLOTS			8
-#define GEN_ARENA_ENTRIES		256
 #define GEN_ARENA_SEAL_TICKS		16	/* ~256 syscalls: force-seal an under-filled active */
 #define GEN_ARENA_RETIRE_TICKS		DEFERRED_TTL_MAX	/* post-seal hold: the longest ring TTL */
 
@@ -712,31 +383,6 @@ _Static_assert((DEFERRED_TTL_MAX + 1 + GEN_ARENA_SEAL_TICKS +
 	       "an evicted chunk can outlive its alloc_track slot, so its "
 	       "retire would consume-miss and leak it");
 
-enum gen_arena_state {
-	GEN_EMPTY = 0,
-	GEN_ACTIVE,
-	GEN_SEALED,
-};
-
-struct gen_arena {
-	void *ptrs[GEN_ARENA_ENTRIES];
-	unsigned int count;
-	unsigned long armed_tick;	/* tick_counter when it went ACTIVE */
-	unsigned long sealed_tick;	/* tick_counter when it went SEALED */
-	enum gen_arena_state state;
-};
-
-struct gen_arena_region {
-	struct gen_arena arenas[GEN_ARENA_SLOTS];
-	unsigned int active_idx;
-	unsigned long tick_counter;	/* monotonic batched-tick clock */
-};
-
-static struct gen_arena_region *gen;
-static size_t gen_bytes;
-static struct timespec gen_rw_open_at;
-static bool gen_rw_open;
-
 /*
  * Forward declaration: the retire helper below hands ptrs off to
  * tracked_free_checked() with the arena-retire site tag, but the
@@ -751,47 +397,6 @@ enum tracked_free_site {
 	TRACKED_FREE_SITE_GEN_RETIRE,	/* gen_arena_retire_one -- generation-arena drain */
 };
 static bool tracked_free_checked(void *ptr, enum tracked_free_site site);
-
-static int gen_unlock(void)
-{
-	struct timespec begin;
-
-	if (deferred_free_batch && gen_rw_open)
-		return 0;
-
-	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(gen, gen_bytes, PROT_READ | PROT_WRITE) != 0) {
-		outputerr("deferred_free: gen_arena unlock failed: errno=%d\n",
-			  errno);
-		return -1;
-	}
-	gen_rw_open_at = begin;
-	gen_rw_open = true;
-	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_calls,
-			   1, __ATOMIC_RELAXED);
-	return 0;
-}
-
-static void gen_lock(void)
-{
-	unsigned long ns;
-
-	if (deferred_free_batch)
-		return;
-
-	if (mprotect(gen, gen_bytes, PROT_READ) != 0)
-		outputerr("deferred_free: gen_arena lock failed: errno=%d\n",
-			  errno);
-	gen_rw_open = false;
-	if (df_ts_is_zero(&gen_rw_open_at))
-		return;
-	ns = df_cost_elapsed_ns(&gen_rw_open_at);
-	gen_rw_open_at = (struct timespec){0};
-	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_ro_calls,
-			   1, __ATOMIC_RELAXED);
-	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_ns_total,
-			   ns, __ATOMIC_RELAXED);
-}
 
 /*
  * Retirement gate for a SEALED generation.  Runs the same stateless
@@ -1228,43 +833,7 @@ _Static_assert(DEFERRED_RING_SIZE * 2 <= DEFERRED_DEFAULT_MAX_VMAS,
 	       "raise DEFERRED_DEFAULT_MAX_VMAS or revisit the cap formula");
 static unsigned int g_max_vmas = DEFERRED_DEFAULT_MAX_VMAS;
 
-/*
- * Tear down the ring after ring_unlock() ENOMEM: munmap releases the
- * VMA (dropping the PROT_NONE SEGV_ACCERR bait) at the cost of leaking
- * still-queued ptrs until child exit.  Untrack the shared region BEFORE
- * munmap (check-static pairing rule).  Idempotent (ring==NULL bail);
- * after dispose the deferred-free machinery is functionally off in this
- * child for the rest of its life.  See Documentation/deferred-free.md
- * "ring_dispose_after_enomem" for the tradeoff analysis.
- */
-static void ring_dispose_after_enomem(void)
-{
-	if (ring == NULL)
-		return;
-
-	untrack_shared_region((unsigned long)ring, ring_bytes);
-	if (munmap(ring, ring_bytes) != 0)
-		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
-			  errno);
-
-	/*
-	 * The ring page is gone.  Under batching a leftover
-	 * ring_rw_open=true would drive the next seal barrier into an
-	 * mprotect against a stale VA (EFAULT, flag stays set, debug assert
-	 * trips at the next chokepoint).  Clear it now: no page to reprotect
-	 * anyway.  Byte-neutral under batch OFF (flag was never set).
-	 */
-	ring_rw_open = false;
-
-	if (rc_unlock() == 0) {
-		ring = NULL;
-		ring_count = 0;
-		occupied_mask = 0;
-		rc_lock();
-	}
-}
-
-static void deferred_free_read_max_map_count(void)
+void deferred_free_read_max_map_count(void)
 {
 	int fd;
 	char buf[32];
@@ -1315,239 +884,6 @@ static void deferred_free_record_outstanding(unsigned int v)
 				__ATOMIC_RELAXED, __ATOMIC_RELAXED))
 			return;
 	}
-}
-
-/*
- * Kernel-entry seal barrier for the batched mode.  Walk each of
- * the protection regions; for any left rw_open by an earlier
- * lazy-open, mprotect it back to its steady state (READ for
- * alloc_track / rc, NONE for ring) and clear the
- * flag.  Real close, so it bumps the *_ro_calls / *_rw_ns_total
- * counters the same way the pre-batch X_lock() would have -- the
- * A/B delta measured against the t372-a *_rw_calls totals stays
- * accurate.  With batching OFF this is unreachable via the flag
- * check on every X_lock (which flips the region back immediately),
- * so the barrier body never runs and the seal is a no-op.
- *
- * Fail-closed: an mprotect that returns non-zero leaves the flag
- * SET so a subsequent barrier re-attempts the close.  The caller
- * (do_syscall prologue / op_fn dispatch prologue) checks the bool
- * return and, on false, does NOT proceed to the target syscall or
- * childop — it aborts or recycles the child before any kernel
- * entry.  The outputerr line preserves the breadcrumb.  Ring
- * skipped when ring_dispose_after_enomem() has already torn it
- * down (ring == NULL); the disposed state re-arms via rw_open
- * being clear once the dispose path runs.
- */
-bool deferred_free_seal_all(void)
-{
-	bool sealed = true;
-
-	if (!deferred_free_batch)
-		return true;
-
-	if (alloc_track_rw_open) {
-		unsigned long ns;
-
-		if (mprotect(alloc_track_base, alloc_track_bytes,
-			     PROT_READ) != 0) {
-			outputerr("deferred_free: seal alloc_track failed: "
-				  "errno=%d\n", errno);
-			sealed = false;
-		} else {
-			ns = df_cost_elapsed_ns(&alloc_track_rw_open_at);
-			alloc_track_rw_open = false;
-			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_ro_calls,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_rw_ns_total,
-					   ns, __ATOMIC_RELAXED);
-		}
-	}
-
-	if (rc_rw_open) {
-		unsigned long ns;
-
-		if (mprotect(rc, rc_bytes, PROT_READ) != 0) {
-			outputerr("deferred_free: seal ring_control failed: "
-				  "errno=%d\n", errno);
-			sealed = false;
-		} else {
-			ns = df_cost_elapsed_ns(&rc_rw_open_at);
-			rc_rw_open = false;
-			__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
-					   ns, __ATOMIC_RELAXED);
-		}
-	}
-
-	if (ring_rw_open && ring != NULL) {
-		unsigned long ns;
-
-		if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
-			outputerr("deferred_free: seal ring failed: "
-				  "errno=%d\n", errno);
-			sealed = false;
-		} else {
-			ns = df_cost_elapsed_ns(&ring_rw_open_at);
-			ring_rw_open = false;
-			__atomic_add_fetch(&shm->stats.deferred_free.ring_ro_calls,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
-					   ns, __ATOMIC_RELAXED);
-		}
-	} else if (ring == NULL) {
-		/* Ring was disposed after ENOMEM inside this phase; the
-		 * page is gone, so drop the flag with no mprotect.  A
-		 * PROT_NONE call against a stale VA would fail EFAULT
-		 * and leave the flag set, arming the assert. */
-		ring_rw_open = false;
-	}
-
-	if (gen_rw_open && gen != NULL) {
-		unsigned long ns;
-
-		if (mprotect(gen, gen_bytes, PROT_READ) != 0) {
-			outputerr("deferred_free: seal gen_arena failed: "
-				  "errno=%d\n", errno);
-			sealed = false;
-		} else {
-			ns = df_cost_elapsed_ns(&gen_rw_open_at);
-			gen_rw_open = false;
-			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_ro_calls,
-					   1, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_rw_ns_total,
-					   ns, __ATOMIC_RELAXED);
-		}
-	}
-
-	return sealed;
-}
-
-#ifndef NDEBUG
-void deferred_free_debug_assert_sealed(void)
-{
-	if (!deferred_free_batch)
-		return;
-	assert(!alloc_track_rw_open);
-	assert(!rc_rw_open);
-	assert(!ring_rw_open);
-	assert(!gen_rw_open);
-}
-#endif
-
-void deferred_free_init(void)
-{
-	const size_t raw = sizeof(struct deferred_entry) * DEFERRED_RING_SIZE;
-	const size_t at_raw = sizeof(void *) *
-		(ALLOC_TRACK_SIZE + ALLOC_TRACK_HASH_SIZE) +
-		sizeof(size_t) * ALLOC_TRACK_SIZE;
-	const size_t rc_raw = sizeof(struct ring_control);
-
-	/*
-	 * Ring control armor page first -- writes to ring/ring_bytes/
-	 * ring_count below all go through rc->* fields, so the page must
-	 * be live and writable for the duration of init.  Locked to
-	 * PROT_READ at the tail of init alongside the data ring.
-	 */
-	rc_bytes = ((rc_raw + page_size - 1) / page_size) * page_size;
-	rc = mmap(NULL, rc_bytes, PROT_READ | PROT_WRITE,
-		  MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (rc == MAP_FAILED) {
-		outputerr("deferred_free_init: ring_control mmap %zu failed\n",
-			  rc_bytes);
-		exit(EXIT_FAILURE);
-	}
-	memset(rc, 0, rc_bytes);
-	track_shared_region((unsigned long)rc, rc_bytes);
-
-	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
-
-	ring = mmap(NULL, ring_bytes, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (ring == MAP_FAILED) {
-		outputerr("deferred_free_init: mmap %zu failed\n", ring_bytes);
-		exit(EXIT_FAILURE);
-	}
-	memset(ring, 0, ring_bytes);
-	track_shared_region((unsigned long)ring, ring_bytes);
-	ring_count = 0;
-	occupied_mask = 0;
-	ring_lock();
-	rc_lock();
-
-	/*
-	 * alloc_track[] and alloc_track_hash[] share one mmap'd region so a
-	 * single mprotect bracket covers both for deferred_alloc_track's
-	 * combined slot+hash write.  PROT_READ steady state keeps the lookup
-	 * hot path (alloc_track_lookup, called from every deferred-free
-	 * enqueue ownership gate and from every cleanup_release_post_state)
-	 * free of mprotect syscalls -- only the writer paths flip RW.
-	 */
-	alloc_track_bytes = ((at_raw + page_size - 1) / page_size) * page_size;
-	alloc_track_base = mmap(NULL, alloc_track_bytes,
-				PROT_READ | PROT_WRITE,
-				MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (alloc_track_base == MAP_FAILED) {
-		outputerr("deferred_free_init: alloc_track mmap %zu failed\n",
-			  alloc_track_bytes);
-		exit(EXIT_FAILURE);
-	}
-	memset(alloc_track_base, 0, alloc_track_bytes);
-	alloc_track = (void **)alloc_track_base;
-	alloc_track_hash = alloc_track + ALLOC_TRACK_SIZE;
-	alloc_track_sizes = (size_t *)(alloc_track_hash + ALLOC_TRACK_HASH_SIZE);
-	track_shared_region((unsigned long)alloc_track_base, alloc_track_bytes);
-	alloc_track_lock();
-
-	/*
-	 * Generation-arena armor page.  One region shared across all
-	 * GEN_ARENA_SLOTS generations plus the active_idx and tick_counter
-	 * bookkeeping fields (see struct gen_arena_region above).  Steady
-	 * state PROT_READ so gen_arena_tick's per-generation state reads
-	 * (mostly the "sealed?  aged enough?" checks) run without an
-	 * mprotect syscall; only push/retire flip RW via
-	 * gen_unlock()/gen_lock().  Tracked with track_shared_region so the
-	 * mm-syscall sanitisers refuse fuzzed pointers/lengths aliasing the
-	 * arena's page.
-	 */
-	{
-		const size_t gen_raw = sizeof(struct gen_arena_region);
-
-		gen_bytes = ((gen_raw + page_size - 1) / page_size) * page_size;
-		gen = mmap(NULL, gen_bytes, PROT_READ | PROT_WRITE,
-			   MAP_PRIVATE | MAP_ANON, -1, 0);
-		if (gen == MAP_FAILED) {
-			outputerr("deferred_free_init: gen_arena mmap %zu failed\n",
-				  gen_bytes);
-			exit(EXIT_FAILURE);
-		}
-		memset(gen, 0, gen_bytes);
-		track_shared_region((unsigned long)gen, gen_bytes);
-		gen_lock();
-	}
-
-	/*
-	 * Read vm.max_map_count once in the parent so every child
-	 * inherits the same cached value via COW BSS.  Failure to read
-	 * is non-fatal: the default DEFERRED_DEFAULT_MAX_VMAS leaves
-	 * the soft cap at half the upstream default, which is
-	 * conservative without being trigger-happy.
-	 */
-	deferred_free_read_max_map_count();
-
-	/*
-	 * Cache the brk-arena extent and labeled non-brk allocator
-	 * regions now, before any child forks.  Every child inherits
-	 * the bounds via COW BSS as a baseline, then re-parses
-	 * /proc/self/maps once at end-of-init_child() to capture the
-	 * mmap arenas glibc spawned post-fork.  Caching at init time
-	 * (here and at child startup, not per call) keeps the hot
-	 * is_in_glibc_heap / range_overlaps_libc_heap path a small
-	 * array walk -- a syscall fuzzer parsing /proc on every
-	 * deferred_free_enqueue would dwarf the work it's gating.
-	 */
-	heap_bounds_init();
 }
 
 /*

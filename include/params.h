@@ -64,7 +64,7 @@ extern bool sysrq_on_lockup;
 extern bool self_corrupt_canary;
 
 /*
- * Per-iteration mprotect batching inside persist/deferred-free.c.
+ * Per-iteration mprotect batching inside persist/deferred-free-regions.c.
  * DEFAULT ON: repeat mutations inside one iteration-phase collapse into
  * a single lazy-open plus a single seal-barrier close, which is a ~2x+
  * mprotect reduction on the hot path (measured against the *_rw_calls /

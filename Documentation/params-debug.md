@@ -29,7 +29,7 @@ off.
 ## --no-deferred-free-batch
 
 Turns off per-iteration mprotect batching inside
-`persist/deferred-free.c`, restoring the per-mutation tripwire.
+`persist/deferred-free-regions.c`, restoring the per-mutation tripwire.
 
 Each protection region (`alloc_track` + hash, `ring_control`, `ring`)
 can be flipped RW->write->RO/NONE by every metadata mutation:

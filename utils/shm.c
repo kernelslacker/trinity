@@ -471,7 +471,8 @@ static void init_shm_publish_and_subsystems(void)
 	 * Allocate the deferred-free ring in the parent before any child
 	 * forks so its address range is registered with shared_regions[]
 	 * once and inherited (MAP_PRIVATE / COW) by every forked child.
-	 * See deferred-free.c for the rationale on MAP_PRIVATE vs MAP_SHARED.
+	 * See deferred-free-internal.h for the rationale on MAP_PRIVATE vs
+	 * MAP_SHARED.
 	 */
 	deferred_free_init();
 

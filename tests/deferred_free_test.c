@@ -58,10 +58,11 @@
 #include <sys/mman.h>
 
 #include "deferred-free.h"	/* public deferred-free API */
-#include "deferred-free-internal.h"	/* ALLOC_TRACK_SIZE &c. */
 #include "params.h"		/* extern bool deferred_free_batch */
 #include "shm.h"		/* extern struct shm_s *shm */
 #include "stats_ring.h"		/* extern struct stats_aggregate parent_stats */
+
+#include "deferred-free-internal.h"	/* ALLOC_TRACK_SIZE &c.; keep last */
 
 /* ------------------------------------------------------------------ */
 /* mprotect failure-injection wrapper (fixtures 7 and 8)              */
