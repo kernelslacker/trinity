@@ -6,8 +6,7 @@
  *
  * Symbols here are NOT part of the public strategy API in
  * include/strategy.h.  They are only declared here because they
- * cross a strategy-* TU boundary after the per-concern split of
- * the old monolithic strategy.c.  Do not include from anywhere
+ * cross a strategy-* TU boundary.  Do not include from anywhere
  * outside strategy.c / strategy-*.c.
  */
 

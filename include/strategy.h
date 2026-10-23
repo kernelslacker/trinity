@@ -159,15 +159,16 @@ enum frontier_spare_reason
 frontier_spare_lane_decide(unsigned int syscallnr, bool do32);
 
 /*
- * Saturation-cooldown spare-lane helper, extracted from the silent-
- * regime accept site in random_syscall/pick-frontier.c so the predicate, the per-
- * arch producer-observer bitmap, and the shadow-counter bumps live in
- * one place.  No-op when frontier_saturation_cooldown_mode is OFF or
+ * Saturation-cooldown spare-lane helper, called from the silent-regime
+ * accept site in random_syscall/pick-frontier.c; the predicate, the
+ * per-arch producer-observer bitmap, and the shadow-counter bumps live
+ * in one place.  No-op when frontier_saturation_cooldown_mode is OFF or
  * kcov_shm is unavailable; otherwise evaluates the windowed-plateau +
  * magnitude predicate and bumps the frontier_satcool_* shadow
  * counters.  SHADOW-ONLY -- never returns a value, never gates picker
  * selection; the COMBINED live-reject is a deliberate follow-up.
- * See the implementation in strategy-frontier.c for the full contract.
+ * See the implementation in strategy-frontier-cool.c for the full
+ * contract.
  */
 void frontier_satcool_spare(unsigned int syscallnr, bool do32);
 

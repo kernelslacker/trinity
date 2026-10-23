@@ -13,7 +13,7 @@
 #include "tables.h"		/* get_syscall_entry */
 
 /*
- * SHADOW-ONLY saturation-cooldown predicate, extracted from the silent-
+ * SHADOW-ONLY saturation-cooldown predicate, called from the silent-
  * regime accept site in random_syscall/pick-frontier.c.  Gated by
  * --frontier-saturation-cooldown != off.  Sibling of the silent-streak
  * decay block and the errno-plateau block at the call site; this one
@@ -59,13 +59,11 @@
  * existing silent-streak block's bound at the call site so the per-
  * syscall would-skip array index is safe.
  *
- * Byte-identical to the pre-extraction inline shape: the candidate
- * gate is (calls_total >= FRONTIER_SATCOOL_CMIN AND windowed_edges
- * == 0); a windowed_edges != 0 nr early-returns from the shared
- * spare-lane decide function with FRONTIER_SPARE_WINDOWED_EDGES, which
- * this wrapper treats as the same "no bump" outcome the original
- * candidate-gate early-return produced.  The arggen-wins-over-
- * objproducer precedence in the bump cascade is preserved by the
+ * The candidate gate is (calls_total >= FRONTIER_SATCOOL_CMIN AND
+ * windowed_edges == 0); a windowed_edges != 0 nr early-returns from the
+ * shared spare-lane decide function with FRONTIER_SPARE_WINDOWED_EDGES,
+ * which this wrapper treats as a "no bump" outcome.  The arggen-wins-
+ * over-objproducer precedence in the bump cascade comes from the
  * lane-order in frontier_spare_lane_decide above.
  */
 void frontier_satcool_spare(unsigned int syscallnr, bool do32)
@@ -90,12 +88,9 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 	reason = frontier_spare_lane_decide(syscallnr, do32);
 
 	/*
-	 * Windowed-edges spare is folded into the early-return path the
-	 * pre-extraction shape used (the original candidate gate required
-	 * windowed_edges == 0).  Preserving that early-return keeps the
-	 * satcool counter cascade byte-identical: a windowed-nonzero nr
-	 * never bumped candidates / spared_arggen / spared_objproducer
-	 * before extraction and still does not after.
+	 * Windowed-edges spare is folded into the early-return path: the
+	 * candidate gate requires windowed_edges == 0, so a windowed-nonzero
+	 * nr never bumps candidates / spared_arggen / spared_objproducer.
 	 */
 	if (reason == FRONTIER_SPARE_WINDOWED_EDGES)
 		return;
