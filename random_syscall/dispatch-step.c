@@ -152,6 +152,51 @@ classify_strategy_return_class(const struct syscallrecord *rec)
 }
 
 /*
+ * --blob-ab-mode: within-run A/B attribution.  When this
+ * call had a blob_fill() and the flag is on, blob_fill
+ * stashed the coin-flipped mode (HAVOC vs CMPDICT) on
+ * child->blob_ab_mode_last; credit one fill plus this
+ * call's novelty to that mode here: new_edges (PC),
+ * hit_cmp (per-call new_cmp>0 -- the verdict numerator on
+ * warm/PC-plateau runs where new_edges is ~0), and sum_cmp
+ * (CMP magnitude, non-gating shadow only).  Both arms
+ * share the same warm state / corpus / kcov context at
+ * every moment, so the per-fill rates are the clean
+ * per-mode comparison.  When the flag is absent the stamp
+ * stays BLOB_AB_MODE_NONE for every call and this block
+ * is inert.
+ */
+static void credit_blob_ab_mode(struct childdata *child, bool new_edges,
+				unsigned long new_cmp)
+{
+	if (child->blob_ab_mode_last == BLOB_AB_MODE_HAVOC) {
+		__atomic_fetch_add(&shm->stats.blob_ab.havoc_fills,
+				   1UL, __ATOMIC_RELAXED);
+		if (new_edges > 0)
+			__atomic_fetch_add(&shm->stats.blob_ab.havoc_new_edges,
+					   (unsigned long) new_edges,
+					   __ATOMIC_RELAXED);
+		if (new_cmp > 0)
+			__atomic_fetch_add(&shm->stats.blob_ab.havoc_hit_cmp,
+					   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(&shm->stats.blob_ab.havoc_sum_cmp,
+				   new_cmp, __ATOMIC_RELAXED);
+	} else if (child->blob_ab_mode_last == BLOB_AB_MODE_CMPDICT) {
+		__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_fills,
+				   1UL, __ATOMIC_RELAXED);
+		if (new_edges > 0)
+			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_new_edges,
+					   (unsigned long) new_edges,
+					   __ATOMIC_RELAXED);
+		if (new_cmp > 0)
+			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_hit_cmp,
+					   1UL, __ATOMIC_RELAXED);
+		__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_sum_cmp,
+				   new_cmp, __ATOMIC_RELAXED);
+	}
+}
+
+/*
  * Single combined enqueue: op_count + success/failure +
  * syscall_category_count[] all ride on one STATS_FIELD_CALL_COMPLETE
  * slot.  The drain expands it back into three logical bumps.
@@ -761,44 +806,7 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 			cmp_hints_feedback_reset_stash();
 		}
 
-		/* --blob-ab-mode: within-run A/B attribution.  When this
-		 * call had a blob_fill() and the flag is on, blob_fill
-		 * stashed the coin-flipped mode (HAVOC vs CMPDICT) on
-		 * child->blob_ab_mode_last; credit one fill plus this
-		 * call's novelty to that mode here: new_edges (PC),
-		 * hit_cmp (per-call new_cmp>0 -- the verdict numerator on
-		 * warm/PC-plateau runs where new_edges is ~0), and sum_cmp
-		 * (CMP magnitude, non-gating shadow only).  Both arms
-		 * share the same warm state / corpus / kcov context at
-		 * every moment, so the per-fill rates are the clean
-		 * per-mode comparison.  When the flag is absent the stamp
-		 * stays BLOB_AB_MODE_NONE for every call and this block
-		 * is inert. */
-		if (child->blob_ab_mode_last == BLOB_AB_MODE_HAVOC) {
-			__atomic_fetch_add(&shm->stats.blob_ab.havoc_fills,
-					   1UL, __ATOMIC_RELAXED);
-			if (new_edges > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab.havoc_new_edges,
-						   (unsigned long) new_edges,
-						   __ATOMIC_RELAXED);
-			if (new_cmp > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab.havoc_hit_cmp,
-						   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&shm->stats.blob_ab.havoc_sum_cmp,
-					   new_cmp, __ATOMIC_RELAXED);
-		} else if (child->blob_ab_mode_last == BLOB_AB_MODE_CMPDICT) {
-			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_fills,
-					   1UL, __ATOMIC_RELAXED);
-			if (new_edges > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_new_edges,
-						   (unsigned long) new_edges,
-						   __ATOMIC_RELAXED);
-			if (new_cmp > 0)
-				__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_hit_cmp,
-						   1UL, __ATOMIC_RELAXED);
-			__atomic_fetch_add(&shm->stats.blob_ab.cmpdict_sum_cmp,
-					   new_cmp, __ATOMIC_RELAXED);
-		}
+		credit_blob_ab_mode(child, new_edges, new_cmp);
 	}
 
 	/* Save args that produced any novelty signal, but only for
