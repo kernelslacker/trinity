@@ -43,12 +43,12 @@ unsigned int canary_window_iters = 10000;
 bool canary_queue_disabled = false;
 
 /* Opt-in drain mode: under sustained fork() failure, temporarily stop
- * scheduling pid-heavy canary ops (PIDFD_STORM and the per-childop
- * subworker-forking races) so the canary picker stops piling new
- * fork demand on a parent already losing the spawn race.  Default
- * off -- this only engages in a degenerate state and the canary
- * picker is not normally a contributor to fork pressure, but the
- * flag exists so an operator who sees the bail snapshot in the log
+ * scheduling pid-heavy canary ops (the ones that fork a helper worker
+ * of their own, listed in child-canary-policy.c) so the canary picker
+ * stops piling new fork demand on a parent already losing the spawn
+ * race.  Default off -- this only engages in a degenerate state and
+ * the canary picker is not normally a contributor to fork pressure, but
+ * the flag exists so an operator who sees the bail snapshot in the log
  * can re-run with the suppression in place. */
 bool fork_pressure_drain = false;
 unsigned char canary_seed_override[CANARY_SEED_OVERRIDE_MAX];

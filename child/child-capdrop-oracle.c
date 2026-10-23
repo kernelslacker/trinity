@@ -39,11 +39,10 @@
  * probe gates below.
  *
  * Rationale: the capget/mount/net_admin probes assert "no caps in this
- * task's userns / mntns / netns".  An alt-op that legitimately unshares
- * into a fresh userns (statmount-idmap-overflow's Pattern-B in-place
- * unshare; the transient-fork capdrop helper) makes those probes false-
- * fire forever after, because the child now has full caps in the
- * bootstrapped userns.  Re-stat at tick-time and skip the gated probe
+ * task's userns / mntns / netns".  A child that legitimately enters a
+ * fresh userns (the userns-admin lane, or an alt-op that unshares in
+ * place) makes those probes false-fire forever after, because the child
+ * now has full caps in the bootstrapped userns.  Re-stat at tick-time and skip the gated probe
  * if the ns identity no longer matches the anchor: the oracle stays
  * silent on legitimate ns transitions but still fires on a real cap-
  * drop regression that leaves the child in its init ns.

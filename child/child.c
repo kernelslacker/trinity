@@ -685,14 +685,13 @@ void child_process(struct childdata *child, int childno)
 		 * sample pair so the elapsed dispatch time can be split into
 		 * childop vs random-syscall buckets.  Also set child->in_childop
 		 * across the dispatch so a random_syscall_step() called from
-		 * inside an alt-op recipe (e.g. sched_cycler) bumps
-		 * syscalls_in_childops at the call-complete enqueue, not
-		 * syscalls_random.  The flag is the per-child source of truth
-		 * for the syscall-count attribution; the wall-time
-		 * accumulation below is independent of it (driven off the
-		 * is_alt_op snapshot taken at the top of the iter so a
-		 * corrupted op_type can't reroute the bucket after we've
-		 * already paid the op_fn). */
+		 * inside an alt-op op_fn bumps syscalls_in_childops at the
+		 * call-complete enqueue, not syscalls_random.  The flag is
+		 * the per-child source of truth for the syscall-count
+		 * attribution; the wall-time accumulation below is
+		 * independent of it (driven off the is_alt_op snapshot taken
+		 * at the top of the iter so a corrupted op_type can't
+		 * reroute the bucket after we've already paid the op_fn). */
 		struct timespec split_t0, split_t1;
 		/* Per-op CPU-time bracket.  Paired with the wall bracket
 		 * below and populated with the same is_alt_op gate so on-CPU

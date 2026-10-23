@@ -158,8 +158,8 @@ void divergence_sentinel_tick(struct childdata *child);
  * capdrop_oracle_capture_init_ns_anchors() stamps the (st_dev, st_ino)
  * identity of /proc/self/ns/{user,mnt,net} so subsequent ticks can skip
  * the ns-scoped probes after a legitimate userns/mntns/netns transition
- * (statmount-idmap-overflow's in-place unshare, transient-fork capdrop
- * helper) that would otherwise false-fire them.  Call once at child
+ * (the userns-admin lane, or an alt-op that unshares in place) that
+ * would otherwise false-fire them.  Call once at child
  * sandbox setup, immediately after the capset()-to-empty drop.  The
  * bpf(KPROBE) probe is never gated -- its cap check pins to the init
  * userns and is the load-bearing init-ns invariant.
@@ -194,7 +194,7 @@ void oom_score_adj(int adj);
 /* Dedicated alt-op children: when --alt-op-children=N is set, the first
  * N child slots run a fixed alt op for life (round-robin from a static
  * rotation table) instead of the default 95%-syscall / 5%-altop mix.
- * Lets slow VMA / inode / mlock / fork-storm paths get continuous
+ * Lets slow inode / xattr / epoll / procfs paths get continuous
  * exercise without slowing the throughput-optimised default children.
  *
  * assign_dedicated_alt_op() runs in the parent right before fork(),

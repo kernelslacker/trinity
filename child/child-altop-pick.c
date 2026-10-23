@@ -51,13 +51,8 @@ static int dormant_op_disabled[] = {
 };
 
 /*
- * Round-robin rotation for dedicated alt-op children.  The slow,
- * pressure-style ops are listed first (mmap_lifecycle, mprotect_split,
- * mlock_pressure, inode_spewer) because those are the paths the design
- * brief explicitly calls out as too expensive to mix into the syscall
- * hot loop even at 1%.  fork/futex/signal/pipe/flock storms come next,
- * then the cgroup/mount/uffd/io_uring churners, and finally the heavier
- * subsystem fuzzers (perf, tracefs, bpf, fault-injector, recipes).  The
+ * Round-robin rotation for dedicated alt-op children.  These are the
+ * ops too expensive to mix into the syscall hot loop even at 1%.  The
  * dispatch in child_process() already has cases for every entry below,
  * so a dedicated child stamped with any of these op types runs straight
  * through the existing per-op function on every iteration.

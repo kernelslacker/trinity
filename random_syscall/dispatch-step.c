@@ -266,9 +266,9 @@ static void emit_call_stats(struct childdata *child,
 	/* childop_split telemetry: attribute this syscall to the
 	 * in-childop or random-syscall bucket based on the per-child
 	 * flag set by child_process()'s per-op bracket.  Set when
-	 * random_syscall_step() ran from inside an alt-op op_fn
-	 * (e.g. sched_cycler's inner loop), clear otherwise (direct
-	 * CHILD_OP_SYSCALL fallthrough via run_sequence_chain).
+	 * random_syscall_step() ran from inside an alt-op op_fn, clear
+	 * otherwise (direct CHILD_OP_SYSCALL fallthrough via
+	 * run_sequence_chain).
 	 * RELAXED add-fetch: cumulative diagnostic, lost-update races
 	 * are tolerated.  Owner is the only writer of in_childop so
 	 * no read race -- this child either is or isn't inside its
