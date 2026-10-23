@@ -25,7 +25,7 @@
 #include "deferred-free-internal.h"
 
 /*
- * alloc_track[] and alloc_track_hash[] share a single mmap'd backing
+ * df_alloc_track[] and df_alloc_track_hash[] share a single mmap'd backing
  * region so one mprotect bracket covers both arrays' pages, halving
  * the syscall cost on the deferred_alloc_track hot path (which writes
  * both in one operation).  The base, size, and array pointers below
@@ -33,7 +33,7 @@
  * the lookup hot path (alloc_track_lookup, called from every
  * cleanup_release_post_state and the deferred-free enqueue gate)
  * reads directly without an mprotect syscall; only the writer entry
- * points (deferred_alloc_track, alloc_track_consume) flip RW for the
+ * points (deferred_alloc_track, df_alloc_track_consume) flip RW for the
  * duration of the mutation.
  */
 static void *alloc_track_base;
@@ -99,7 +99,7 @@ static inline unsigned long df_cost_elapsed_ns(const struct timespec *begin)
 }
 
 /*
- * Flip the alloc_track / alloc_track_hash backing to PROT_READ|WRITE
+ * Flip the df_alloc_track / df_alloc_track_hash backing to PROT_READ|WRITE
  * for a single mutation, then back to PROT_READ.  Lookups read
  * directly against the PROT_READ steady state -- no bracket on the
  * hot path.  An unlock failure leaves the page PROT_READ and the
@@ -110,7 +110,7 @@ static inline unsigned long df_cost_elapsed_ns(const struct timespec *begin)
  * still flows through the deferred-free shape/heap/shared-region
  * gates), both safer than silently flipping a membership bit.
  */
-int alloc_track_unlock(void)
+int df_alloc_track_unlock(void)
 {
 	struct timespec begin;
 
@@ -131,7 +131,7 @@ int alloc_track_unlock(void)
 	return 0;
 }
 
-void alloc_track_lock(void)
+void df_alloc_track_lock(void)
 {
 	unsigned long ns;
 
@@ -152,10 +152,10 @@ void alloc_track_lock(void)
 			   ns, __ATOMIC_RELAXED);
 }
 
-struct ring_control *rc;
+struct ring_control *df_rc;
 static size_t rc_bytes;
 
-int rc_unlock(void)
+int df_rc_unlock(void)
 {
 	struct timespec begin;
 
@@ -163,7 +163,7 @@ int rc_unlock(void)
 		return 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(rc, rc_bytes, PROT_READ | PROT_WRITE) != 0) {
+	if (mprotect(df_rc, rc_bytes, PROT_READ | PROT_WRITE) != 0) {
 		outputerr("deferred_free: ring_control unlock failed: "
 			  "errno=%d\n", errno);
 		return -1;
@@ -175,14 +175,14 @@ int rc_unlock(void)
 	return 0;
 }
 
-void rc_lock(void)
+void df_rc_lock(void)
 {
 	unsigned long ns;
 
 	if (deferred_free_batch)
 		return;
 
-	if (mprotect(rc, rc_bytes, PROT_READ) != 0)
+	if (mprotect(df_rc, rc_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: ring_control lock failed: "
 			  "errno=%d\n", errno);
 	rc_rw_open = false;
@@ -196,7 +196,7 @@ void rc_lock(void)
 			   ns, __ATOMIC_RELAXED);
 }
 
-enum ring_unlock_result ring_unlock(void)
+enum ring_unlock_result df_ring_unlock(void)
 {
 	struct timespec begin;
 
@@ -204,7 +204,8 @@ enum ring_unlock_result ring_unlock(void)
 		return RING_UNLOCK_OK;
 
 	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(rc->ring, rc->ring_bytes, PROT_READ | PROT_WRITE) != 0) {
+	if (mprotect(df_rc->ring, df_rc->ring_bytes,
+		     PROT_READ | PROT_WRITE) != 0) {
 		int e = errno;
 		static unsigned long rw_fail_n;
 
@@ -219,14 +220,14 @@ enum ring_unlock_result ring_unlock(void)
 	return RING_UNLOCK_OK;
 }
 
-void ring_lock(void)
+void df_ring_lock(void)
 {
 	unsigned long ns;
 
 	if (deferred_free_batch)
 		return;
 
-	if (mprotect(rc->ring, rc->ring_bytes, PROT_NONE) != 0) {
+	if (mprotect(df_rc->ring, df_rc->ring_bytes, PROT_NONE) != 0) {
 		static unsigned long none_fail_n;
 
 		if ((++none_fail_n % 1000) == 1)
@@ -243,12 +244,12 @@ void ring_lock(void)
 			   ns, __ATOMIC_RELAXED);
 }
 
-struct gen_arena_region *gen;
+struct gen_arena_region *df_gen;
 static size_t gen_bytes;
 static struct timespec gen_rw_open_at;
 static bool gen_rw_open;
 
-int gen_unlock(void)
+int df_gen_unlock(void)
 {
 	struct timespec begin;
 
@@ -256,7 +257,7 @@ int gen_unlock(void)
 		return 0;
 
 	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(gen, gen_bytes, PROT_READ | PROT_WRITE) != 0) {
+	if (mprotect(df_gen, gen_bytes, PROT_READ | PROT_WRITE) != 0) {
 		outputerr("deferred_free: gen_arena unlock failed: errno=%d\n",
 			  errno);
 		return -1;
@@ -268,14 +269,14 @@ int gen_unlock(void)
 	return 0;
 }
 
-void gen_lock(void)
+void df_gen_lock(void)
 {
 	unsigned long ns;
 
 	if (deferred_free_batch)
 		return;
 
-	if (mprotect(gen, gen_bytes, PROT_READ) != 0)
+	if (mprotect(df_gen, gen_bytes, PROT_READ) != 0)
 		outputerr("deferred_free: gen_arena lock failed: errno=%d\n",
 			  errno);
 	gen_rw_open = false;
@@ -290,21 +291,21 @@ void gen_lock(void)
 }
 
 /*
- * Tear down the ring after ring_unlock() ENOMEM: munmap releases the
+ * Tear down the ring after df_ring_unlock() ENOMEM: munmap releases the
  * VMA (dropping the PROT_NONE SEGV_ACCERR bait) at the cost of leaking
  * still-queued ptrs until child exit.  Untrack the shared region BEFORE
  * munmap (check-static pairing rule).  Idempotent (ring==NULL bail);
  * after dispose the deferred-free machinery is functionally off in this
  * child for the rest of its life.  See Documentation/deferred-free.md
- * "ring_dispose_after_enomem" for the tradeoff analysis.
+ * "df_ring_dispose_after_enomem" for the tradeoff analysis.
  */
-void ring_dispose_after_enomem(void)
+void df_ring_dispose_after_enomem(void)
 {
-	if (rc->ring == NULL)
+	if (df_rc->ring == NULL)
 		return;
 
-	untrack_shared_region((unsigned long)rc->ring, rc->ring_bytes);
-	if (munmap(rc->ring, rc->ring_bytes) != 0)
+	untrack_shared_region((unsigned long)df_rc->ring, df_rc->ring_bytes);
+	if (munmap(df_rc->ring, df_rc->ring_bytes) != 0)
 		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
 			  errno);
 
@@ -317,11 +318,11 @@ void ring_dispose_after_enomem(void)
 	 */
 	ring_rw_open = false;
 
-	if (rc_unlock() == 0) {
-		rc->ring = NULL;
-		rc->ring_count = 0;
-		rc->occupied_mask = 0;
-		rc_lock();
+	if (df_rc_unlock() == 0) {
+		df_rc->ring = NULL;
+		df_rc->ring_count = 0;
+		df_rc->occupied_mask = 0;
+		df_rc_lock();
 	}
 }
 
@@ -343,7 +344,7 @@ void ring_dispose_after_enomem(void)
  * return and, on false, does NOT proceed to the target syscall or
  * childop — it aborts or recycles the child before any kernel
  * entry.  The outputerr line preserves the breadcrumb.  Ring
- * skipped when ring_dispose_after_enomem() has already torn it
+ * skipped when df_ring_dispose_after_enomem() has already torn it
  * down (ring == NULL); the disposed state re-arms via rw_open
  * being clear once the dispose path runs.
  */
@@ -375,7 +376,7 @@ bool deferred_free_seal_all(void)
 	if (rc_rw_open) {
 		unsigned long ns;
 
-		if (mprotect(rc, rc_bytes, PROT_READ) != 0) {
+		if (mprotect(df_rc, rc_bytes, PROT_READ) != 0) {
 			outputerr("deferred_free: seal ring_control failed: "
 				  "errno=%d\n", errno);
 			sealed = false;
@@ -389,10 +390,10 @@ bool deferred_free_seal_all(void)
 		}
 	}
 
-	if (ring_rw_open && rc->ring != NULL) {
+	if (ring_rw_open && df_rc->ring != NULL) {
 		unsigned long ns;
 
-		if (mprotect(rc->ring, rc->ring_bytes, PROT_NONE) != 0) {
+		if (mprotect(df_rc->ring, df_rc->ring_bytes, PROT_NONE) != 0) {
 			outputerr("deferred_free: seal ring failed: "
 				  "errno=%d\n", errno);
 			sealed = false;
@@ -404,7 +405,7 @@ bool deferred_free_seal_all(void)
 			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
 					   ns, __ATOMIC_RELAXED);
 		}
-	} else if (rc->ring == NULL) {
+	} else if (df_rc->ring == NULL) {
 		/* Ring was disposed after ENOMEM inside this phase; the
 		 * page is gone, so drop the flag with no mprotect.  A
 		 * PROT_NONE call against a stale VA would fail EFAULT
@@ -412,10 +413,10 @@ bool deferred_free_seal_all(void)
 		ring_rw_open = false;
 	}
 
-	if (gen_rw_open && gen != NULL) {
+	if (gen_rw_open && df_gen != NULL) {
 		unsigned long ns;
 
-		if (mprotect(gen, gen_bytes, PROT_READ) != 0) {
+		if (mprotect(df_gen, gen_bytes, PROT_READ) != 0) {
 			outputerr("deferred_free: seal gen_arena failed: "
 				  "errno=%d\n", errno);
 			sealed = false;
@@ -454,40 +455,40 @@ void deferred_free_init(void)
 
 	/*
 	 * Ring control armor page first -- writes to ring/ring_bytes/
-	 * ring_count below all go through rc->* fields, so the page must
+	 * ring_count below all go through df_rc->* fields, so the page must
 	 * be live and writable for the duration of init.  Locked to
 	 * PROT_READ at the tail of init alongside the data ring.
 	 */
 	rc_bytes = ((rc_raw + page_size - 1) / page_size) * page_size;
-	rc = mmap(NULL, rc_bytes, PROT_READ | PROT_WRITE,
-		  MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (rc == MAP_FAILED) {
+	df_rc = mmap(NULL, rc_bytes, PROT_READ | PROT_WRITE,
+		     MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (df_rc == MAP_FAILED) {
 		outputerr("deferred_free_init: ring_control mmap %zu failed\n",
 			  rc_bytes);
 		exit(EXIT_FAILURE);
 	}
-	memset(rc, 0, rc_bytes);
-	track_shared_region((unsigned long)rc, rc_bytes);
+	memset(df_rc, 0, rc_bytes);
+	track_shared_region((unsigned long)df_rc, rc_bytes);
 
-	rc->ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
+	df_rc->ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
 
-	rc->ring = mmap(NULL, rc->ring_bytes, PROT_READ | PROT_WRITE,
-			MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (rc->ring == MAP_FAILED) {
+	df_rc->ring = mmap(NULL, df_rc->ring_bytes, PROT_READ | PROT_WRITE,
+			   MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (df_rc->ring == MAP_FAILED) {
 		outputerr("deferred_free_init: mmap %zu failed\n",
-			  rc->ring_bytes);
+			  df_rc->ring_bytes);
 		exit(EXIT_FAILURE);
 	}
-	memset(rc->ring, 0, rc->ring_bytes);
-	track_shared_region((unsigned long)rc->ring, rc->ring_bytes);
-	rc->ring_count = 0;
-	rc->occupied_mask = 0;
-	ring_lock();
-	rc_lock();
+	memset(df_rc->ring, 0, df_rc->ring_bytes);
+	track_shared_region((unsigned long)df_rc->ring, df_rc->ring_bytes);
+	df_rc->ring_count = 0;
+	df_rc->occupied_mask = 0;
+	df_ring_lock();
+	df_rc_lock();
 
 	/*
-	 * alloc_track[] and alloc_track_hash[] share one mmap'd region so a
-	 * single mprotect bracket covers both for deferred_alloc_track's
+	 * df_alloc_track[] and df_alloc_track_hash[] share one mmap'd region
+	 * so a single mprotect bracket covers both for deferred_alloc_track's
 	 * combined slot+hash write.  PROT_READ steady state keeps the lookup
 	 * hot path (alloc_track_lookup, called from every deferred-free
 	 * enqueue ownership gate and from every cleanup_release_post_state)
@@ -503,37 +504,38 @@ void deferred_free_init(void)
 		exit(EXIT_FAILURE);
 	}
 	memset(alloc_track_base, 0, alloc_track_bytes);
-	alloc_track = (void **)alloc_track_base;
-	alloc_track_hash = alloc_track + ALLOC_TRACK_SIZE;
-	alloc_track_sizes = (size_t *)(alloc_track_hash + ALLOC_TRACK_HASH_SIZE);
+	df_alloc_track = (void **)alloc_track_base;
+	df_alloc_track_hash = df_alloc_track + ALLOC_TRACK_SIZE;
+	df_alloc_track_sizes = (size_t *)(df_alloc_track_hash +
+					  ALLOC_TRACK_HASH_SIZE);
 	track_shared_region((unsigned long)alloc_track_base, alloc_track_bytes);
-	alloc_track_lock();
+	df_alloc_track_lock();
 
 	/*
 	 * Generation-arena armor page.  One region shared across all
 	 * GEN_ARENA_SLOTS generations plus the active_idx and tick_counter
 	 * bookkeeping fields (see struct gen_arena_region above).  Steady
-	 * state PROT_READ so gen_arena_tick's per-generation state reads
+	 * state PROT_READ so df_gen_arena_tick's per-generation state reads
 	 * (mostly the "sealed?  aged enough?" checks) run without an
 	 * mprotect syscall; only push/retire flip RW via
-	 * gen_unlock()/gen_lock().  Tracked with track_shared_region so the
-	 * mm-syscall sanitisers refuse fuzzed pointers/lengths aliasing the
+	 * df_gen_unlock()/df_gen_lock().  Tracked with track_shared_region so
+	 * the mm-syscall sanitisers refuse fuzzed pointers/lengths aliasing the
 	 * arena's page.
 	 */
 	{
 		const size_t gen_raw = sizeof(struct gen_arena_region);
 
 		gen_bytes = ((gen_raw + page_size - 1) / page_size) * page_size;
-		gen = mmap(NULL, gen_bytes, PROT_READ | PROT_WRITE,
-			   MAP_PRIVATE | MAP_ANON, -1, 0);
-		if (gen == MAP_FAILED) {
+		df_gen = mmap(NULL, gen_bytes, PROT_READ | PROT_WRITE,
+			      MAP_PRIVATE | MAP_ANON, -1, 0);
+		if (df_gen == MAP_FAILED) {
 			outputerr("deferred_free_init: gen_arena mmap %zu failed\n",
 				  gen_bytes);
 			exit(EXIT_FAILURE);
 		}
-		memset(gen, 0, gen_bytes);
-		track_shared_region((unsigned long)gen, gen_bytes);
-		gen_lock();
+		memset(df_gen, 0, gen_bytes);
+		track_shared_region((unsigned long)df_gen, gen_bytes);
+		df_gen_lock();
 	}
 
 	/*

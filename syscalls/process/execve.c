@@ -157,7 +157,7 @@ static void block_self_exec(struct syscallrecord *rec)
 	 * debunked invariant fixed in pathnames.c:get_testfile_path.
 	 * cleanup_deferred_free reads the live arg slot after dispatch,
 	 * so reassigning rec->aN releases the new buffer; the original
-	 * ARG_PATHNAME allocation is left in alloc_track[] and freed
+	 * ARG_PATHNAME allocation is left in df_alloc_track[] and freed
 	 * when the ring evicts it.
 	 *
 	 * The execveat AT_EMPTY_PATH+NULL-path shape has no real buffer

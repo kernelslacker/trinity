@@ -89,9 +89,9 @@ void map_destructor(struct object *obj)
 	/*
 	 * Free the name via tracked_free_now(), not a bare free().  A bare
 	 * free() releases the buffer to glibc but leaves its pointer in
-	 * alloc_track[] -- the alloc_track_lookup() gate only tests
+	 * df_alloc_track[] -- the alloc_track_lookup() gate only tests
 	 * membership, it does not consume the entry.  A later
-	 * alloc_track_consume() (the deferred-free ring drain, or after
+	 * df_alloc_track_consume() (the deferred-free ring drain, or after
 	 * glibc reuses the freed chunk for a new tracked allocation) then
 	 * still returns true and free()s it a second time -- the ASAN
 	 * bad-free observed at deferred-free.c:697.  tracked_free_now()
@@ -236,7 +236,7 @@ void clone_global_mmap_pool(enum objecttype type)
 			for_each_obj(localhead, localobj, lidx) {
 				if (localobj->map.ptr == m->ptr) {
 					dup = true;
-					/* Refresh the local obj in alloc_track[] so the validator
+					/* Refresh the local obj in df_alloc_track[] so the validator
 					 * LRU lookup at get_map_handle (mm/maps-pick.c) stays warm
 					 * even when dedup skips a fresh __zmalloc_tracked.  Without
 					 * this, dedup starves alloc_track and pool entries rotate

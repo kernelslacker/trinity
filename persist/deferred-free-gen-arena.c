@@ -25,7 +25,7 @@
  * Every evicted chunk is filed into an ACTIVE generation, an ACTIVE
  * generation SEALs when it fills or ages past GEN_ARENA_SEAL_TICKS, and a
  * SEALED generation retires (drains its entire chunk list via
- * tracked_free_checked, which alloc_track-consume-gates each free) once
+ * df_tracked_free_checked, which alloc_track-consume-gates each free) once
  * it has aged GEN_ARENA_RETIRE_TICKS batched-ticks beyond seal time.
  *
  * The retire horizon is bounded on both sides.  It matches the longest
@@ -48,7 +48,7 @@
  * while SLOTS - 1 seal windows cover RETIRE_TICKS (asserted below).
  *
  * Storage is one small mmap'd armor region shared across all generations;
- * gen_unlock()/gen_lock() open the RW window for the duration of a
+ * df_gen_unlock()/df_gen_lock() open the RW window for the duration of a
  * mutation, matching the discipline of the other three protection
  * regions.  Steady state PROT_READ so a fuzzed value-result stomp on a
  * generation's ptrs[] page fails the write, preserving the
@@ -77,10 +77,10 @@ _Static_assert((DEFERRED_TTL_MAX + 1 + GEN_ARENA_SEAL_TICKS +
 /*
  * Retirement gate for a SEALED generation.  Runs the same stateless
  * prefilters free_ring_entry uses (shape / heap-bounds / shared-region)
- * against every entry before handing it to tracked_free_checked with the
+ * against every entry before handing it to df_tracked_free_checked with the
  * arena-retire site tag; a stomp that scribbled the arena's ptrs[] slot
  * during the hold is caught here rather than fed to free().  Caller must
- * hold gen_unlock() -- we mutate arena->count and arena->state and clear
+ * hold df_gen_unlock() -- we mutate arena->count and arena->state and clear
  * arena->ptrs[].  Ordered "clear the slot BEFORE free()" for the same
  * signal/longjmp reason free_ring_entry has.
  */
@@ -111,7 +111,7 @@ static void gen_arena_retire_one(struct gen_arena *arena)
 			continue;
 		}
 
-		if (tracked_free_checked(ptr, TRACKED_FREE_SITE_GEN_RETIRE))
+		if (df_tracked_free_checked(ptr, TRACKED_FREE_SITE_GEN_RETIRE))
 			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_retired_ok,
 					   1, __ATOMIC_RELAXED);
 	}
@@ -130,25 +130,25 @@ static void gen_arena_retire_one(struct gen_arena *arena)
  * from deferred_free_tick() under the same batched cadence as the ring
  * drain, so the arena's bookkeeping runs at 1/DEFERRED_TICK_BATCH the
  * syscall rate and does not add per-syscall syscalls.  Caller must NOT
- * hold gen_unlock() -- we open it ourselves.
+ * hold df_gen_unlock() -- we open it ourselves.
  */
-void gen_arena_tick(void)
+void df_gen_arena_tick(void)
 {
 	unsigned int i;
 	unsigned long now;
 	bool did_work = false;
 
-	if (gen == NULL)
+	if (df_gen == NULL)
 		return;
 
-	if (gen_unlock() != 0)
+	if (df_gen_unlock() != 0)
 		return;
 
-	gen->tick_counter++;
-	now = gen->tick_counter;
+	df_gen->tick_counter++;
+	now = df_gen->tick_counter;
 
 	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
-		struct gen_arena *a = &gen->arenas[i];
+		struct gen_arena *a = &df_gen->arenas[i];
 
 		if (a->state == GEN_ACTIVE && a->count > 0 &&
 		    (now - a->armed_tick) >= GEN_ARENA_SEAL_TICKS) {
@@ -159,7 +159,7 @@ void gen_arena_tick(void)
 	}
 
 	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
-		struct gen_arena *a = &gen->arenas[i];
+		struct gen_arena *a = &df_gen->arenas[i];
 
 		if (a->state == GEN_SEALED &&
 		    (now - a->sealed_tick) >= GEN_ARENA_RETIRE_TICKS) {
@@ -169,7 +169,7 @@ void gen_arena_tick(void)
 	}
 
 	(void)did_work;
-	gen_lock();
+	df_gen_lock();
 }
 
 /*
@@ -182,38 +182,38 @@ void gen_arena_tick(void)
  * if no free slot exists at that point we intentionally do NOT retire
  * a not-yet-mature SEALED generation (that would defeat the retirement
  * bake) -- the next push returns false and the caller leaks.  Caller
- * must NOT hold gen_unlock() -- we open it ourselves.
+ * must NOT hold df_gen_unlock() -- we open it ourselves.
  */
-bool gen_arena_push(void *ptr)
+bool df_gen_arena_push(void *ptr)
 {
 	struct gen_arena *a;
 	unsigned int i;
 
-	if (gen == NULL || ptr == NULL)
+	if (df_gen == NULL || ptr == NULL)
 		return false;
 
-	if (gen_unlock() != 0)
+	if (df_gen_unlock() != 0)
 		return false;
 
-	a = &gen->arenas[gen->active_idx];
+	a = &df_gen->arenas[df_gen->active_idx];
 
 	if (a->state == GEN_EMPTY) {
 		a->state = GEN_ACTIVE;
-		a->armed_tick = gen->tick_counter;
+		a->armed_tick = df_gen->tick_counter;
 	}
 
 	if (a->state != GEN_ACTIVE || a->count >= GEN_ARENA_ENTRIES) {
 		if (a->state == GEN_ACTIVE) {
 			a->state = GEN_SEALED;
-			a->sealed_tick = gen->tick_counter;
+			a->sealed_tick = df_gen->tick_counter;
 		}
 		for (i = 0; i < GEN_ARENA_SLOTS; i++) {
-			struct gen_arena *cand = &gen->arenas[i];
+			struct gen_arena *cand = &df_gen->arenas[i];
 
 			if (cand->state == GEN_EMPTY) {
-				gen->active_idx = i;
+				df_gen->active_idx = i;
 				cand->state = GEN_ACTIVE;
-				cand->armed_tick = gen->tick_counter;
+				cand->armed_tick = df_gen->tick_counter;
 				a = cand;
 				break;
 			}
@@ -222,7 +222,7 @@ bool gen_arena_push(void *ptr)
 			/* Arena pressure: every generation is either
 			 * ACTIVE-full or SEALED-not-yet-retirable.  The
 			 * caller leaks in this window. */
-			gen_lock();
+			df_gen_lock();
 			return false;
 		}
 	}
@@ -230,7 +230,7 @@ bool gen_arena_push(void *ptr)
 	a->ptrs[a->count++] = ptr;
 	__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_admitted,
 			   1, __ATOMIC_RELAXED);
-	gen_lock();
+	df_gen_lock();
 	return true;
 }
 
@@ -239,28 +239,28 @@ bool gen_arena_push(void *ptr)
  * child exit from deferred_free_flush(): the child is going away, so
  * holding chunks for the retirement bake is pointless -- the kernel
  * reclaims the whole address space right after anyway.  Retire discipline
- * still applies (prefilter + alloc_track_consume gate); a scribbled arena
- * slot does not silently reach free().  Caller must NOT hold gen_unlock()
+ * still applies (prefilter + df_alloc_track_consume gate); a scribbled arena
+ * slot does not silently reach free().  Caller must NOT hold df_gen_unlock()
  * -- we open it ourselves.
  */
-void gen_arena_flush(void)
+void df_gen_arena_flush(void)
 {
 	unsigned int i;
 
-	if (gen == NULL)
+	if (df_gen == NULL)
 		return;
 
-	if (gen_unlock() != 0)
+	if (df_gen_unlock() != 0)
 		return;
 
 	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
-		struct gen_arena *a = &gen->arenas[i];
+		struct gen_arena *a = &df_gen->arenas[i];
 
 		if (a->state != GEN_EMPTY)
 			gen_arena_retire_one(a);
 	}
-	gen->active_idx = 0;
-	gen_lock();
+	df_gen->active_idx = 0;
+	df_gen_lock();
 }
 
 /*
@@ -275,16 +275,16 @@ void gen_arena_flush(void)
  * calls scans every occupied entry, several hundred while the ring is
  * saturated.
  */
-bool gen_arena_contains(void *ptr)
+bool df_gen_arena_contains(void *ptr)
 {
 	unsigned int i;
 	unsigned int j;
 
-	if (gen == NULL)
+	if (df_gen == NULL)
 		return false;
 
 	for (i = 0; i < GEN_ARENA_SLOTS; i++) {
-		const struct gen_arena *a = &gen->arenas[i];
+		const struct gen_arena *a = &df_gen->arenas[i];
 
 		for (j = 0; j < a->count && j < GEN_ARENA_ENTRIES; j++) {
 			if (a->ptrs[j] == ptr)

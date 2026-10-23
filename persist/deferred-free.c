@@ -49,11 +49,11 @@ enum argtype deferred_free_get_cleanup_argtype(void)
  * the 64 slots; cheap (64 cache-resident pointer compares) and definitive
  * because ring[] is the source-of-truth for ring residency.
  *
- * The caller must already hold the ring_unlock() bracket: ring[] is
+ * The caller must already hold the df_ring_unlock() bracket: ring[] is
  * PROT_NONE at rest, so an unbracketed read would SIGSEGV.  Splitting
  * the bracket out of this helper lets callers that are already inside
- * an open ring_unlock() window (deferred_free_enqueue_internal's
- * admission-dedup, after the unlock + before the matching ring_lock)
+ * an open df_ring_unlock() window (deferred_free_enqueue_internal's
+ * admission-dedup, after the unlock + before the matching df_ring_lock)
  * skip a second mprotect pair.  Callers that don't already hold the
  * bracket (tracked_free_now) take it themselves before calling.
  */
@@ -62,7 +62,7 @@ static bool ring_contains(void *ptr)
 	unsigned int i;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (rc->ring[i].ptr == ptr)
+		if (df_rc->ring[i].ptr == ptr)
 			return true;
 	}
 	return false;
@@ -74,7 +74,7 @@ static bool ring_contains(void *ptr)
  * unrelated tracked-alloc churn.  Skip when @ptr is ring- or
  * arena-resident: the ring owns the lifecycle and a fresh alloc_track
  * entry would become a stale survivor that outlives the ring's drain and
- * arms an address-reuse bad-free.  ring_unlock failure -> skip (cannot
+ * arms an address-reuse bad-free.  df_ring_unlock failure -> skip (cannot
  * verify residency safely).  See Documentation/deferred-free.md
  * "alloc_track_refresh" for the full desync analysis.
  */
@@ -86,17 +86,17 @@ void alloc_track_refresh(void *ptr)
 	if (ptr == NULL)
 		return;
 
-	if (rc->ring != NULL) {
-		if (ring_unlock() != RING_UNLOCK_OK) {
+	if (df_rc->ring != NULL) {
+		if (df_ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_unverified_skip,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
 		ring_owned = ring_contains(ptr);
-		ring_lock();
+		df_ring_lock();
 	}
 
-	if (ring_owned || gen_arena_contains(ptr)) {
+	if (ring_owned || df_gen_arena_contains(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -111,7 +111,7 @@ void alloc_track_refresh(void *ptr)
 	 * discipline" for the historical bad-free class this replaced.
 	 */
 	size = alloc_track_lookup_size(ptr);
-	if (!alloc_track_consume(ptr)) {
+	if (!df_alloc_track_consume(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_consume_miss,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -125,7 +125,7 @@ void alloc_track_refresh(void *ptr)
  * generation it evicted @ptr into does).  Ring-ownership check scans
  * ring[] directly (source of truth); the previous value-keyed mirror
  * desynced under ENOMEM and stomp pressure and armed a reuse-mediated
- * double-free.  ring_unlock ENOMEM -> leak @ptr rather than risk it.
+ * double-free.  df_ring_unlock ENOMEM -> leak @ptr rather than risk it.
  * See Documentation/deferred-free.md "tracked_free_now ring-residency
  * check".
  */
@@ -139,18 +139,18 @@ void tracked_free_now(void *ptr)
 	/*
 	 * Gate on ring != NULL, not occupied_mask != 0.  Even now that
 	 * occupied_mask shares the armored ring_control page (see the
-	 * struct comment), the RW window opened by rc_unlock() during
+	 * struct comment), the RW window opened by df_rc_unlock() during
 	 * eviction/enqueue/drain lets a sibling fuzzed value-result
 	 * syscall land inside; a mask-driven gate would still be
 	 * skippable within that window and would then let this function
 	 * free() a ring-resident chunk, which eviction or TTL would free
 	 * a second time.  ring is set once at init and cleared only by
-	 * ring_dispose_after_enomem(); both writers go through
-	 * rc_unlock()'s armored bracket, so the pointer cannot lie about
+	 * df_ring_dispose_after_enomem(); both writers go through
+	 * df_rc_unlock()'s armored bracket, so the pointer cannot lie about
 	 * ring liveness.  Always run the armored ring[] scan whenever
 	 * the ring still exists.
 	 *
-	 * Ring residency check runs BEFORE alloc_track_consume:
+	 * Ring residency check runs BEFORE df_alloc_track_consume:
 	 * alloc_track is now populated through ring residency (the
 	 * enqueue gate uses non-consuming alloc_track_lookup; consume is
 	 * deferred to free_ring_entry, or to gen_arena_retire_one for an
@@ -160,23 +160,23 @@ void tracked_free_now(void *ptr)
 	 * chunk instead of freeing it.  Skip the consume (and the free,
 	 * which the ring or arena will perform) when ring-owned.
 	 */
-	if (rc->ring != NULL) {
-		if (ring_unlock() != RING_UNLOCK_OK) {
+	if (df_rc->ring != NULL) {
+		if (df_ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free.tracked_free_unverified_leak,
 					   1, __ATOMIC_RELAXED);
 			return;
 		}
 		ring_owned = ring_contains(ptr);
-		ring_lock();
+		df_ring_lock();
 	}
 
-	if (ring_owned || gen_arena_contains(ptr)) {
+	if (ring_owned || df_gen_arena_contains(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.ring_owned_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	tracked_free_checked(ptr, TRACKED_FREE_SITE_IMMEDIATE);
+	df_tracked_free_checked(ptr, TRACKED_FREE_SITE_IMMEDIATE);
 }
 
 /*
@@ -364,12 +364,13 @@ static void ring_evict_oldest_safe(void)
 	bool corrupt = false;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (rc->ring[i].ptr != NULL && rc->ring[i].ttl < min_ttl) {
-			min_ttl = rc->ring[i].ttl;
+		if (df_rc->ring[i].ptr != NULL &&
+		    df_rc->ring[i].ttl < min_ttl) {
+			min_ttl = df_rc->ring[i].ttl;
 			oldest = i;
 		}
 	}
-	if (rc->ring[oldest].ptr == NULL)
+	if (df_rc->ring[oldest].ptr == NULL)
 		return;
 
 	/*
@@ -377,12 +378,12 @@ static void ring_evict_oldest_safe(void)
 	 * does before free(): an interruption in between then leaks the
 	 * chunk instead of leaving it owned by both the ring and the arena.
 	 */
-	evict_ptr = rc->ring[oldest].ptr;
-	rc->ring[oldest].ptr = NULL;
-	if (rc_unlock() == 0) {
-		rc->occupied_mask &= ~(1ULL << oldest);
-		rc->ring_count--;
-		rc_lock();
+	evict_ptr = df_rc->ring[oldest].ptr;
+	df_rc->ring[oldest].ptr = NULL;
+	if (df_rc_unlock() == 0) {
+		df_rc->occupied_mask &= ~(1ULL << oldest);
+		df_rc->ring_count--;
+		df_rc_lock();
 	}
 
 	/*
@@ -411,7 +412,7 @@ static void ring_evict_oldest_safe(void)
 		else
 			parent_stats.ring_eviction_corrupt++;
 	} else {
-		if (!gen_arena_push(evict_ptr)) {
+		if (!df_gen_arena_push(evict_ptr)) {
 			__atomic_add_fetch(&shm->stats.deferred_free.gen_arena_pressure_leak,
 					   1, __ATOMIC_RELAXED);
 			__atomic_add_fetch(&shm->stats.deferred_free.ring_evict_leaked,
@@ -469,7 +470,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * (free_ring_entry / gen_arena_retire_one).  Defer of the consume
 	 * is what lets a stomp that swaps ring[i].ptr to an interior or
 	 * stale heap-shaped value be rejected at free time -- the interior
-	 * pointer matches no alloc_track slot, alloc_track_consume misses,
+	 * pointer matches no alloc_track slot, df_alloc_track_consume misses,
 	 * and the slot is leaked instead of handed to free().  The
 	 * companion free-time consume is in free_ring_entry and, for an
 	 * evicted ptr, gen_arena_retire_one.
@@ -503,7 +504,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * is the breadcrumb to the root cause.  Limited to one print per
 	 * 1000 rejects to keep noise sane.
 	 *
-	 * This range check runs BEFORE ring_unlock() so we don't pay the
+	 * This range check runs BEFORE df_ring_unlock() so we don't pay the
 	 * mprotect cost on rejected enqueues.
 	 */
 	if (range_overlaps_shared((unsigned long)ptr, 1)) {
@@ -526,7 +527,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * it here, ahead of the pressure fallbacks, which would otherwise
 	 * free a chunk the arena still owns.
 	 */
-	if (gen_arena_contains(ptr)) {
+	if (df_gen_arena_contains(ptr)) {
 		__atomic_add_fetch(&shm->stats.deferred_free.double_admit_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
@@ -549,26 +550,26 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 *
 	 * Placed AFTER the alloc_track_lookup ownership gate so an
 	 * untracked-ptr reject short-circuits before the VMA accounting,
-	 * and BEFORE ring_unlock so the rejected enqueue does not pay
+	 * and BEFORE df_ring_unlock so the rejected enqueue does not pay
 	 * the mprotect bracket cost.  The alloc_track entry stays
 	 * populated through ring residency by design (consume is
 	 * deferred to free_ring_entry / gen_arena_retire_one); the
 	 * pressure-path immediate-free below routes around the ring and
-	 * goes through tracked_free_checked() so its free() is gated on
-	 * alloc_track_consume() success -- keeps the set in lock-step
+	 * goes through df_tracked_free_checked() so its free() is gated on
+	 * df_alloc_track_consume() success -- keeps the set in lock-step
 	 * with the heap, and a consume-miss (lookup said yes earlier but
 	 * the slot has since rotated out) bumps deferred_free_reject_
 	 * untracked instead of being silently freed.
 	 */
-	if (rc->ring_count > g_max_vmas / 2) {
+	if (df_rc->ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free.vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
 		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			tracked_free_checked(ptr,
-					     TRACKED_FREE_SITE_IMMEDIATE);
+			df_tracked_free_checked(ptr,
+						TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -581,13 +582,13 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * (_enomem_drain, _rw_restore_enomem) already record the rate of
 	 * ring teardowns; per-enqueue noise after teardown adds nothing.
 	 */
-	if (rc->ring == NULL) {
+	if (df_rc->ring == NULL) {
 		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			tracked_free_checked(ptr,
-					     TRACKED_FREE_SITE_IMMEDIATE);
+			df_tracked_free_checked(ptr,
+						TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -598,7 +599,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * the ring entirely (munmap releases the VMA slot so the page
 	 * stops being SEGV_ACCERR fault-bait for sibling fuzzed value-
 	 * result syscalls), bump the dedicated counter (the existing
-	 * outputerr line from ring_unlock keeps the per-event log
+	 * outputerr line from df_ring_unlock keeps the per-event log
 	 * breadcrumb), and free this ptr immediately so the caller's "no
 	 * longer your problem" contract still holds (or leak it instead
 	 * for the pre-dispatch variant -- see leak_on_pressure docs).
@@ -614,22 +615,22 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * immediate-free / leak path, but does NOT dispose the ring -- a
 	 * non-ENOMEM failure is a different class (typically EACCES from
 	 * a not-yet-sanitised mm-syscall that overlapped the ring), not
-	 * a VMA-budget event, and the next ring_unlock can plausibly
+	 * a VMA-budget event, and the next df_ring_unlock can plausibly
 	 * succeed.
 	 */
 	{
-		enum ring_unlock_result r = ring_unlock();
+		enum ring_unlock_result r = df_ring_unlock();
 
 		if (r == RING_UNLOCK_ENOMEM) {
 			__atomic_add_fetch(&shm->stats.deferred_free.enomem_drain,
 					   1, __ATOMIC_RELAXED);
-			ring_dispose_after_enomem();
+			df_ring_dispose_after_enomem();
 			if (leak_on_pressure) {
 				__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				tracked_free_checked(ptr,
-						     TRACKED_FREE_SITE_IMMEDIATE);
+				df_tracked_free_checked(ptr,
+							TRACKED_FREE_SITE_IMMEDIATE);
 			}
 			return;
 		}
@@ -638,8 +639,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 				__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 						   1, __ATOMIC_RELAXED);
 			} else {
-				tracked_free_checked(ptr,
-						     TRACKED_FREE_SITE_IMMEDIATE);
+				df_tracked_free_checked(ptr,
+							TRACKED_FREE_SITE_IMMEDIATE);
 			}
 			return;
 		}
@@ -655,18 +656,18 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * value is the reuse-mediated double-free shape: slot A's TTL
 	 * fires and free()s @ptr; the address is reused by a new alloc;
 	 * slot B's TTL fires and free()s the new owner's chunk.  ring[]
-	 * is the source-of-truth, so scan it directly.  The ring_unlock
+	 * is the source-of-truth, so scan it directly.  The df_ring_unlock
 	 * bracket above is still open, so this is just a 64-compare
 	 * scan, no additional mprotect.  Re-lock and bail on hit.
 	 */
 	if (ring_contains(ptr)) {
-		ring_lock();
+		df_ring_lock();
 		__atomic_add_fetch(&shm->stats.deferred_free.double_admit_skip,
 				   1, __ATOMIC_RELAXED);
 		return;
 	}
 
-	if (rc->occupied_mask == ~0ULL)
+	if (df_rc->occupied_mask == ~0ULL)
 		ring_evict_oldest_safe();
 
 	/*
@@ -678,14 +679,14 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * don't ctzll(0) into UB territory and write one element past
 	 * the ring.
 	 */
-	if (rc->occupied_mask == ~0ULL) {
-		ring_lock();
+	if (df_rc->occupied_mask == ~0ULL) {
+		df_ring_lock();
 		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
 		} else {
-			tracked_free_checked(ptr,
-					     TRACKED_FREE_SITE_IMMEDIATE);
+			df_tracked_free_checked(ptr,
+						TRACKED_FREE_SITE_IMMEDIATE);
 		}
 		return;
 	}
@@ -693,17 +694,17 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	/* Find an empty slot.  After the full-ring eviction above, at
 	 * least one bit in occupied_mask is clear, so ~occupied_mask is
 	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
-	i = __builtin_ctzll(~rc->occupied_mask);
-	rc->ring[i].ptr = ptr;
-	rc->ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
-	if (rc_unlock() == 0) {
-		rc->occupied_mask |= 1ULL << i;
-		rc->ring_count++;
-		rc_lock();
+	i = __builtin_ctzll(~df_rc->occupied_mask);
+	df_rc->ring[i].ptr = ptr;
+	df_rc->ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
+	if (df_rc_unlock() == 0) {
+		df_rc->occupied_mask |= 1ULL << i;
+		df_rc->ring_count++;
+		df_rc_lock();
 	}
-	deferred_free_record_outstanding(rc->ring_count);
+	deferred_free_record_outstanding(df_rc->ring_count);
 
-	ring_lock();
+	df_ring_lock();
 
 }
 
@@ -732,8 +733,8 @@ void deferred_freeptr(unsigned long *p)
  * ring_count where per-slot) before calling -- a signal that longjmps
  * mid-free must not leave a freed ptr pending in the ring.  Re-runs the
  * enqueue-time stateless gates (shape / heap-bounds / shared-region);
- * binding ownership gate is alloc_track_consume via
- * tracked_free_checked.  See Documentation/deferred-free.md "free_ring_entry corruption gating".
+ * binding ownership gate is df_alloc_track_consume via
+ * df_tracked_free_checked.  See Documentation/deferred-free.md "free_ring_entry corruption gating".
  */
 static void free_ring_entry(void *ptr, unsigned int slot)
 {
@@ -760,7 +761,7 @@ static void free_ring_entry(void *ptr, unsigned int slot)
 		return;
 	}
 
-	tracked_free_checked(ptr, TRACKED_FREE_SITE_RING_DRAIN);
+	df_tracked_free_checked(ptr, TRACKED_FREE_SITE_RING_DRAIN);
 }
 
 void deferred_free_tick(void)
@@ -798,9 +799,9 @@ void deferred_free_tick(void)
 	 * ring is empty or disposed.  Kept ahead of the ring drain so a
 	 * retirement that free()s an alloc_track entry can, in the same
 	 * tick, be re-populated by a fresh admission below. */
-	gen_arena_tick();
+	df_gen_arena_tick();
 
-	if (rc->ring_count == 0)
+	if (df_rc->ring_count == 0)
 		return;
 
 	/*
@@ -823,11 +824,11 @@ void deferred_free_tick(void)
 	 * syscall is not the VMA-budget class and does not warrant
 	 * abandoning the ring.
 	 */
-	r = ring_unlock();
+	r = df_ring_unlock();
 	if (r == RING_UNLOCK_ENOMEM) {
 		__atomic_add_fetch(&shm->stats.deferred_free.rw_restore_enomem,
 				   1, __ATOMIC_RELAXED);
-		ring_dispose_after_enomem();
+		df_ring_dispose_after_enomem();
 		return;
 	}
 	if (r != RING_UNLOCK_OK)
@@ -840,15 +841,15 @@ void deferred_free_tick(void)
 	 * PROT_READ once the loop has settled.  Bail before touching
 	 * ring_count if the unlock fails -- the next tick will retry.
 	 */
-	if (rc_unlock() != 0) {
-		ring_lock();
+	if (df_rc_unlock() != 0) {
+		df_ring_lock();
 		return;
 	}
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
-		if (rc->ring[i].ptr == NULL) {
+		if (df_rc->ring[i].ptr == NULL) {
 			/*
 			 * Stomped corpse: a fuzzed value-result syscall
 			 * scribbled this slot's ptr to NULL while it was
@@ -862,32 +863,32 @@ void deferred_free_tick(void)
 			 * so this is the sole remaining path that lets its
 			 * bits diverge from ring[]'s ptr state.
 			 */
-			if (rc->occupied_mask & (1ULL << i)) {
-				rc->occupied_mask &= ~(1ULL << i);
-				rc->ring_count--;
+			if (df_rc->occupied_mask & (1ULL << i)) {
+				df_rc->occupied_mask &= ~(1ULL << i);
+				df_rc->ring_count--;
 			}
 			continue;
 		}
 
-		if (rc->ring[i].ttl > 0) {
-			rc->ring[i].ttl--;
+		if (df_rc->ring[i].ttl > 0) {
+			df_rc->ring[i].ttl--;
 			continue;
 		}
 
 		/* TTL expired — free it.  Clear the slot BEFORE calling
 		 * the free function so that if a signal interrupts us
 		 * mid-free and we longjmp, the slot is already empty. */
-		ptr = rc->ring[i].ptr;
-		rc->ring[i].ptr = NULL;
-		rc->occupied_mask &= ~(1ULL << i);
-		rc->ring_count--;
+		ptr = df_rc->ring[i].ptr;
+		df_rc->ring[i].ptr = NULL;
+		df_rc->occupied_mask &= ~(1ULL << i);
+		df_rc->ring_count--;
 
 		free_ring_entry(ptr, i);
 	}
 
-	rc_lock();
+	df_rc_lock();
 
-	ring_lock();
+	df_ring_lock();
 }
 
 void deferred_free_flush(void)
@@ -899,18 +900,18 @@ void deferred_free_flush(void)
 	 * independently of the ring, and a child exiting with SEALED-but-
 	 * not-yet-retired generations would otherwise leak the whole set
 	 * (kernel reclaims the address space right after, but the retire
-	 * discipline -- alloc_track_consume gate, corrupt-shape reject --
+	 * discipline -- df_alloc_track_consume gate, corrupt-shape reject --
 	 * is what we want to run against every held ptr, not the anonymous
 	 * "process exit reclaims everything" path).  Runs BEFORE the ring
 	 * drain, so a ptr that somehow lives in both is consumed and freed
 	 * by the arena retire and the ring drain's consume then misses:
 	 * one free either way. */
-	gen_arena_flush();
+	df_gen_arena_flush();
 
 	/* Ring already disposed by a prior ENOMEM event.  Nothing to
-	 * flush; skip ring_unlock so we don't emit a "mprotect RW
+	 * flush; skip df_ring_unlock so we don't emit a "mprotect RW
 	 * failed" log line on every child exit for the rest of the run. */
-	if (rc->ring == NULL)
+	if (df_rc->ring == NULL)
 		return;
 
 	/*
@@ -924,11 +925,11 @@ void deferred_free_flush(void)
 	 * whole address space at exit.  RING_UNLOCK_FAIL (non-ENOMEM)
 	 * stays a silent bail -- not the VMA-budget class.
 	 */
-	r = ring_unlock();
+	r = df_ring_unlock();
 	if (r == RING_UNLOCK_ENOMEM) {
 		__atomic_add_fetch(&shm->stats.deferred_free.rw_restore_enomem,
 				   1, __ATOMIC_RELAXED);
-		ring_dispose_after_enomem();
+		df_ring_dispose_after_enomem();
 		return;
 	}
 	if (r != RING_UNLOCK_OK)
@@ -937,20 +938,20 @@ void deferred_free_flush(void)
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
-		if (rc->ring[i].ptr == NULL)
+		if (df_rc->ring[i].ptr == NULL)
 			continue;
 
 		/* Clear before invoking, mirroring tick: a signal that
 		 * longjmps mid-free leaves the slot empty either way. */
-		ptr = rc->ring[i].ptr;
-		rc->ring[i].ptr = NULL;
+		ptr = df_rc->ring[i].ptr;
+		df_rc->ring[i].ptr = NULL;
 		free_ring_entry(ptr, i);
 	}
-	if (rc_unlock() == 0) {
-		rc->ring_count = 0;
-		rc->occupied_mask = 0;
-		rc_lock();
+	if (df_rc_unlock() == 0) {
+		df_rc->ring_count = 0;
+		df_rc->occupied_mask = 0;
+		df_rc_lock();
 	}
 
-	ring_lock();
+	df_ring_lock();
 }

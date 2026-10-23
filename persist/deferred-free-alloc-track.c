@@ -1,8 +1,9 @@
 /*
  * alloc_track: the opt-in side-set of live zmalloc_tracked() results that
- * gates every free().  alloc_track[] is the source of truth, a hash mirrors
+ * gates every free().  df_alloc_track[] is the source of truth, a hash mirrors
  * it for membership and a parallel array records each extent;
- * tracked_free_checked() frees only what alloc_track_consume() proves live.
+ * df_tracked_free_checked() frees only what df_alloc_track_consume() proves
+ * live.
  */
 
 #include <stdint.h>
@@ -31,11 +32,11 @@
  * owning child, no locking.
  */
 
-void **alloc_track;
+void **df_alloc_track;
 static unsigned int alloc_track_head;
 
 /*
- * Parallel size storage indexed identically to alloc_track[]: each
+ * Parallel size storage indexed identically to df_alloc_track[]: each
  * slot records the allocation extent passed to deferred_alloc_track()
  * at registration time, so a consumer that holds a tracked pointer
  * (the nested-address scrub and setsockopt today) can recover the
@@ -43,16 +44,16 @@ static unsigned int alloc_track_head;
  * alloc_track_base mmap'd region so the same mprotect bracket covers
  * it -- a fuzzed value-result syscall that aliases these pages hits
  * the PROT_READ wall instead of silently flipping a recorded size.
- * Slot index matches alloc_track[]: a consume() that nulls
- * alloc_track[idx] MUST zero alloc_track_sizes[idx] in the same
+ * Slot index matches df_alloc_track[]: a consume() that nulls
+ * df_alloc_track[idx] MUST zero df_alloc_track_sizes[idx] in the same
  * bracket so the size cannot survive its pointer (a stale non-zero
  * size lingering after the slot rotated out would feed a downstream
  * bound check with a length that does not belong to the value the
  * caller actually holds).
  */
-size_t *alloc_track_sizes;
+size_t *df_alloc_track_sizes;
 
-void **alloc_track_hash;
+void **df_alloc_track_hash;
 
 static inline unsigned int alloc_track_hash_index(void *ptr)
 {
@@ -65,7 +66,7 @@ static inline unsigned int alloc_track_hash_index(void *ptr)
 /*
  * Idempotent insert: a second insert of an already-present ptr is a
  * no-op.  Matches the "ptr appears in array iff present in hash"
- * mirror semantics when an alloc_track[] write happens to land the
+ * mirror semantics when a df_alloc_track[] write happens to land the
  * same pointer in the same slot it already occupied.  Bounded loop:
  * occupancy is capped at ALLOC_TRACK_SIZE (4096) << table size, so a
  * full table is impossible from the mirror path; the bound is a
@@ -77,11 +78,11 @@ static void alloc_track_hash_insert(void *ptr)
 	unsigned int probes;
 
 	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
-		if (alloc_track_hash[idx] == NULL) {
-			alloc_track_hash[idx] = ptr;
+		if (df_alloc_track_hash[idx] == NULL) {
+			df_alloc_track_hash[idx] = ptr;
 			return;
 		}
-		if (alloc_track_hash[idx] == ptr)
+		if (df_alloc_track_hash[idx] == ptr)
 			return;
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
 	}
@@ -105,13 +106,13 @@ static void alloc_track_hash_remove(void *ptr)
 	unsigned int probes;
 
 	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
-		if (alloc_track_hash[idx] == NULL)
+		if (df_alloc_track_hash[idx] == NULL)
 			return;
-		if (alloc_track_hash[idx] == ptr)
+		if (df_alloc_track_hash[idx] == ptr)
 			break;
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
 	}
-	if (alloc_track_hash[idx] != ptr)
+	if (df_alloc_track_hash[idx] != ptr)
 		return;
 
 	hole = idx;
@@ -121,32 +122,32 @@ static void alloc_track_hash_remove(void *ptr)
 		unsigned int dist_to_natural;
 
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
-		if (alloc_track_hash[idx] == NULL) {
-			alloc_track_hash[hole] = NULL;
+		if (df_alloc_track_hash[idx] == NULL) {
+			df_alloc_track_hash[hole] = NULL;
 			return;
 		}
-		natural = alloc_track_hash_index(alloc_track_hash[idx]);
+		natural = alloc_track_hash_index(df_alloc_track_hash[idx]);
 		dist_to_hole = (idx - hole) & ALLOC_TRACK_HASH_MASK;
 		dist_to_natural = (idx - natural) & ALLOC_TRACK_HASH_MASK;
 		if (dist_to_natural >= dist_to_hole) {
-			alloc_track_hash[hole] = alloc_track_hash[idx];
+			df_alloc_track_hash[hole] = df_alloc_track_hash[idx];
 			hole = idx;
 		}
 	}
 	/* Unreachable in a well-formed table; if we got here, the table
 	 * is corrupt or fully-occupied with no NULLs.  Clear the hole
 	 * we know about and bail. */
-	alloc_track_hash[hole] = NULL;
+	df_alloc_track_hash[hole] = NULL;
 }
 
 /*
  * Membership probe against the alloc_track side-set.  The hash mirrors
- * alloc_track[] for the O(1) hit case, but a hash miss is NOT proof of
+ * df_alloc_track[] for the O(1) hit case, but a hash miss is NOT proof of
  * absence: deferred_alloc_track()'s duplicate-ptr insert is idempotent
  * on the hash (same value already present -> no-op) yet still writes a
- * fresh alloc_track[] slot, so a subsequent displaced-eviction of the
- * older slot removes the hash entry while the newer alloc_track[] slot
- * still holds @ptr.  Falling back to a linear alloc_track[] scan on a
+ * fresh df_alloc_track[] slot, so a subsequent displaced-eviction of the
+ * older slot removes the hash entry while the newer df_alloc_track[] slot
+ * still holds @ptr.  Falling back to a linear df_alloc_track[] scan on a
  * NULL-slot hash miss restores the "array is source of truth" invariant
  * the fail-closed callers below assume (all of them leak-on-miss
  * rather than free-on-miss, so a false negative just leaks the chunk
@@ -166,15 +167,15 @@ bool alloc_track_lookup(void *ptr)
 	unsigned int probes;
 
 	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
-		if (alloc_track_hash[idx] == NULL)
+		if (df_alloc_track_hash[idx] == NULL)
 			goto fallback;
-		if (alloc_track_hash[idx] == ptr)
+		if (df_alloc_track_hash[idx] == ptr)
 			return true;
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
 	}
 fallback:
 	for (probes = 0; probes < ALLOC_TRACK_SIZE; probes++) {
-		if (alloc_track[probes] == ptr) {
+		if (df_alloc_track[probes] == ptr) {
 			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit,
 					   1, __ATOMIC_RELAXED);
 			return true;
@@ -185,7 +186,7 @@ fallback:
 
 /*
  * Gated by alloc_track_lookup(): a hash hit accepts in O(1), a hash
- * miss falls back to a linear alloc_track[] scan (so a mirror-desync
+ * miss falls back to a linear df_alloc_track[] scan (so a mirror-desync
  * @ptr still gates in), and only a miss there rejects -- the reject is
  * the slow path.  Hits proceed to the backward scan below to locate
  * the slot whose ptr matches, then read the parallel sizes array.
@@ -208,8 +209,8 @@ size_t alloc_track_lookup_size(void *ptr)
 
 	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
-		if (alloc_track[idx] == ptr)
-			return alloc_track_sizes[idx];
+		if (df_alloc_track[idx] == ptr)
+			return df_alloc_track_sizes[idx];
 		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
 	}
 	return 0;
@@ -223,14 +224,14 @@ void deferred_alloc_track(void *ptr, size_t size)
 	if (ptr == NULL)
 		return;
 
-	if (alloc_track_unlock() != 0)
+	if (df_alloc_track_unlock() != 0)
 		return;
 
 	slot = alloc_track_head & (ALLOC_TRACK_SIZE - 1);
-	displaced = alloc_track[slot];
+	displaced = df_alloc_track[slot];
 
-	alloc_track[slot] = ptr;
-	alloc_track_sizes[slot] = size;
+	df_alloc_track[slot] = ptr;
+	df_alloc_track_sizes[slot] = size;
 	alloc_track_head++;
 
 	alloc_track_hash_insert(ptr);
@@ -243,7 +244,7 @@ void deferred_alloc_track(void *ptr, size_t size)
 	if (displaced != NULL && displaced != ptr)
 		alloc_track_hash_remove(displaced);
 
-	alloc_track_lock();
+	df_alloc_track_lock();
 }
 
 /*
@@ -251,10 +252,10 @@ void deferred_alloc_track(void *ptr, size_t size)
  * the slot); false if the pointer was not in the side-set, meaning the
  * caller is about to free something __zmalloc() never produced.
  *
- * Backward scan from head against alloc_track[] (source of truth) --
+ * Backward scan from head against df_alloc_track[] (source of truth) --
  * NO hash-lookup fast-reject.  A miss on the hash is not proof of
  * absence: an aggressive glibc address reuse can land the same pointer
- * in two different alloc_track[] slots (deferred_alloc_track does not
+ * in two different df_alloc_track[] slots (deferred_alloc_track does not
  * scrub the older slot when its insert idempotently no-ops on the
  * duplicate), and a later displaced-eviction of the older slot then
  * removes the hash entry while the newer slot still holds the pointer.
@@ -265,7 +266,7 @@ void deferred_alloc_track(void *ptr, size_t size)
  * head (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers
  * per arg).
  */
-bool alloc_track_consume(void *ptr)
+bool df_alloc_track_consume(void *ptr)
 {
 	unsigned int idx;
 	unsigned int i;
@@ -275,13 +276,13 @@ bool alloc_track_consume(void *ptr)
 
 	idx = (alloc_track_head - 1) & (ALLOC_TRACK_SIZE - 1);
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
-		if (alloc_track[idx] == ptr) {
-			if (alloc_track_unlock() != 0)
+		if (df_alloc_track[idx] == ptr) {
+			if (df_alloc_track_unlock() != 0)
 				return false;
-			alloc_track[idx] = NULL;
-			alloc_track_sizes[idx] = 0;
+			df_alloc_track[idx] = NULL;
+			df_alloc_track_sizes[idx] = 0;
 			alloc_track_hash_remove(ptr);
-			alloc_track_lock();
+			df_alloc_track_lock();
 			return true;
 		}
 		idx = (idx - 1) & (ALLOC_TRACK_SIZE - 1);
@@ -290,20 +291,20 @@ bool alloc_track_consume(void *ptr)
 }
 
 /*
- * Free-time ownership gate: only a true return from alloc_track_consume()
+ * Free-time ownership gate: only a true return from df_alloc_track_consume()
  * is proof that __zmalloc() currently owns @ptr; a miss swallows the free
  * and bumps a per-site counter for telemetry.  Do NOT gate on
  * alloc_track_lookup() -- it is a value-keyed prefilter that desyncs from
  * the array (rotation / duplicate-ptr edge case).  See
- * Documentation/deferred-free.md "Ownership gate: alloc_track_consume vs
+ * Documentation/deferred-free.md "Ownership gate: df_alloc_track_consume vs
  * alloc_track_lookup" for the historical bad-free class this replaced.
  * Returns true iff @ptr was freed.
  */
-bool tracked_free_checked(void *ptr, enum tracked_free_site site)
+bool df_tracked_free_checked(void *ptr, enum tracked_free_site site)
 {
 	struct childdata *c;
 
-	if (alloc_track_consume(ptr)) {
+	if (df_alloc_track_consume(ptr)) {
 		free(ptr);
 		return true;
 	}

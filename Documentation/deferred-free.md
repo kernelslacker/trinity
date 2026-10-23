@@ -7,20 +7,21 @@ titled for the function or structure it explains.
 
 ## alloc_track hash table
 
-Side-set membership accelerator for `alloc_track[]`.
+Side-set membership accelerator for `df_alloc_track[]`.
 
 `alloc_track_lookup()` resolves a hit through this 16384-slot hash (0.25 load
 factor at full occupancy) in O(1).  A hash miss is not proof of absence (see
 the duplicate-ptr edge case below), so a miss falls back to a linear scan of
-`alloc_track[]`; a fallback hit bumps `alloc_track_lookup_array_fallback_hit`.
-The hash is deliberately not repaired on that path: the lookup runs against
-the `PROT_READ` steady state and a repair would need an mprotect RW bracket.
-`alloc_track_consume()` does not consult the hash at all -- it scans
-`alloc_track[]` backward from the head and removes the hash entry on a hit.
+`df_alloc_track[]`; a fallback hit bumps
+`alloc_track_lookup_array_fallback_hit`.  The hash is deliberately not repaired
+on that path: the lookup runs against the `PROT_READ` steady state and a repair
+would need an mprotect RW bracket.
+`df_alloc_track_consume()` does not consult the hash at all -- it scans
+`df_alloc_track[]` backward from the head and removes the hash entry on a hit.
 
-`alloc_track[]` remains the source of truth for lifecycle (which slot a ptr
+`df_alloc_track[]` remains the source of truth for lifecycle (which slot a ptr
 lives in, who got displaced on rotation); the hash mirrors it for membership
-only.  Every write to `alloc_track[]` in `deferred-free-alloc-track.c` is
+only.  Every write to `df_alloc_track[]` in `deferred-free-alloc-track.c` is
 paired with the matching hash op inside the same function, so the two stay in
 lock-step apart from the duplicate-ptr case below.  A divergence here isn't
 just a perf miss -- it would be a correctness bug in the deferred-free gate,
@@ -34,7 +35,7 @@ bracket covers both arrays.  Slots DO hold pointer values an attacker can turn
 into a `free()`
 target -- `alloc_track_lookup` gates `cleanup_release_post_state` ->
 `tracked_free_now` -> `free()` and the deferred-free enqueue admission, and
-`alloc_track_consume` (same pages) is the deferred-free free-time ownership
+`df_alloc_track_consume` (same pages) is the deferred-free free-time ownership
 check -- so the `PROT_READ` steady state is load-bearing for memory safety,
 not just a perf nicety.  Mirror the `ring[]` armor pattern.
 
@@ -44,19 +45,19 @@ golden-ratio constant.  Top 14 bits (`ALLOC_TRACK_HASH_SHIFT`) of the product
 become the slot index, which scatters pointer streams that share a common
 prefix (e.g. addresses drawn from the same arena) across the table.
 
-Duplicate-ptr edge case: if the same address enters `alloc_track[]` twice
+Duplicate-ptr edge case: if the same address enters `df_alloc_track[]` twice
 (rare; requires a direct `free()` outside the deferred path before a
 re-malloc returns the same address), the hash records one membership entry.
 When the first array slot rotates out, the displaced ptr is
 `alloc_track_hash_remove()`d -- the second slot's copy is orphaned (hash says
 no, array says yes).  The array fallback in `alloc_track_lookup()` and the
-array scan in `alloc_track_consume()` still find it, so the ptr is not
+array scan in `df_alloc_track_consume()` still find it, so the ptr is not
 rejected; the hash just stays out of step until the second slot rotates out
 too.  Every caller that sees a false negative leaks rather than frees, which
 is the safer direction to err per the opt-in vs. implicit-track design
 rationale.
 
-## Three-result ring_unlock and the mprotect bracket
+## Three-result df_ring_unlock and the mprotect bracket
 
 Bracket every writer/reader of `ring[]` with `mprotect()`.  Between ticks the
 ring sits at `PROT_NONE`; any fuzzed value-result syscall that tries to
@@ -65,7 +66,7 @@ silently overwriting `ring[i].ptr` with a pid-shaped value.  `mprotect` is
 async-signal-safe so these are safe to call from anywhere `deferred_free_*`
 is reachable.
 
-`ring_unlock()` returns `RING_UNLOCK_OK` on success, `RING_UNLOCK_ENOMEM`
+`df_ring_unlock()` returns `RING_UNLOCK_OK` on success, `RING_UNLOCK_ENOMEM`
 when the kernel rejected the protection change for VMA-budget reasons
 (per-process `/proc/sys/vm/max_map_count` cap approached, or splitting the
 surrounding mapping would overshoot it), and `RING_UNLOCK_FAIL` on any other
@@ -85,7 +86,7 @@ the VMA limit.
 ## alloc_track_refresh
 
 Refresh an existing tracked entry's LRU position without freeing it.  If
-`@ptr` is currently tracked (`alloc_track_consume` hit), null its current
+`@ptr` is currently tracked (`df_alloc_track_consume` hit), null its current
 slot + remove from hash, then re-insert at head.  If `@ptr` is NOT currently
 tracked (consume miss), bail without inserting -- see the consume-miss
 rationale below.  Post-call state on a hit has `@ptr` exactly once in the
@@ -117,17 +118,17 @@ now the generation arena) was put in place to mask.  Treat "ring owns this
 ptr" as an authoritative skip on the refresh source itself.  The generation
 arena counts as ring residency: an evicted pointer keeps its `alloc_track`
 entry until its generation retires, so the skip also fires when
-`gen_arena_contains()` finds it.
+`df_gen_arena_contains()` finds it.
 
 Source of truth: `ring[]` is mprotect-armored AND registered with
 `shared_regions[]`, so neither scribble nor mprotect-failure can desync it
-from itself; `alloc_track` is not.  The scan needs an open `ring_unlock()`
+from itself; `alloc_track` is not.  The scan needs an open `df_ring_unlock()`
 bracket (`ring[]` is `PROT_NONE` at rest, see `ring_contains`' contract).
-`ring_unlock()` failure (typically ENOMEM under VMA pressure) cannot verify
+`df_ring_unlock()` failure (typically ENOMEM under VMA pressure) cannot verify
 residency; skip the refresh entirely rather than risk re-adding a
 ring-resident ptr.  The cost of a skipped refresh is the LRU position only
 -- the original `alloc_track` entry is untouched, so a follow-up lookup
-still resolves and the entry rotates out per the normal `alloc_track[]`
+still resolves and the entry rotates out per the normal `df_alloc_track[]`
 aging.
 
 ## alloc_track_refresh consume-miss discipline
@@ -136,9 +137,9 @@ Preserve the recorded extent across the consume + re-add so downstream
 `alloc_track_lookup_size()` readers continue to see the original allocation
 length.
 
-`alloc_track_consume()` is the source-of-truth ownership gate (see
-`tracked_free_checked()`).  A false return means `@ptr` is NOT currently in
-`alloc_track[]` -- either it was rotated out by intervening churn, or it was
+`df_alloc_track_consume()` is the source-of-truth ownership gate (see
+`df_tracked_free_checked()`).  A false return means `@ptr` is NOT currently in
+`df_alloc_track[]` -- either it was rotated out by intervening churn, or it was
 never tracked at all (a stale caller ref, an interior pointer the caller
 derived by a few bytes off a tracked chunk, or a scribbled `head->array` /
 `localobj` from a sibling fuzzed value-result syscall).  The two cases are
@@ -146,9 +147,9 @@ indistinguishable from this side.
 
 The previous shape called `deferred_alloc_track(@ptr, 0)` unconditionally,
 blessing the unproven `@ptr` as tracked and arming a bad-free at the next
-`tracked_free_checked()`: `free_ring_entry` / `tracked_free_now` /
+`df_tracked_free_checked()`: `free_ring_entry` / `tracked_free_now` /
 `ring_evict_oldest_safe` called `free()` on an interior pointer that
-`alloc_track_consume()` now happily approved -- the ASAN "attempting free on
+`df_alloc_track_consume()` now happily approved -- the ASAN "attempting free on
 address which was not `malloc()`-ed" class caught in a recent fuzz run (88
 bytes after a 40-byte region; address derived from a scribbled `head->array`
 / `localobj` from a sibling fuzzed value-result syscall).
@@ -160,11 +161,11 @@ untracked, leaked).  That is the safer direction to err vs. silently
 blessing an arbitrary VA -- the leak is bounded by child lifetime and the
 kernel reclaims at exit, the bad-free is unrecoverable.
 
-## Ownership gate: alloc_track_consume vs alloc_track_lookup
+## Ownership gate: df_alloc_track_consume vs alloc_track_lookup
 
 Free-time ownership gate shared by every path that hands a tracked pointer
-back to `free()`.  `alloc_track_consume()` scans the authoritative
-`alloc_track[]` array and clears the matching slot on a hit; only a true
+back to `free()`.  `df_alloc_track_consume()` scans the authoritative
+`df_alloc_track[]` array and clears the matching slot on a hit; only a true
 return is proof that `__zmalloc()` currently owns `@ptr`.  On a miss the
 caller is about to free something the heap does not own -- swallow the
 `free()` and bump the per-site corrupt/untracked counter so existing
@@ -172,7 +173,7 @@ telemetry granularity (`ring_eviction_corrupt` vs `deferred_free_corrupt_ptr`
 vs `deferred_free_reject_untracked`) is preserved.
 
 Why not gate on `alloc_track_lookup()`?  `lookup` is a value-keyed hash
-prefilter that can stay true after the backing `alloc_track[]` slot has been
+prefilter that can stay true after the backing `df_alloc_track[]` slot has been
 rotated out -- duplicate-ptr edge case, or a hash entry that survived its
 array slot's rotation.  The reverted slot-cookie stack tried adding a NEW
 value-keyed shadow on top of the existing one; the new shadow also desynced.
@@ -184,14 +185,14 @@ owned -- a repeated ASAN bad-free class (143 reports across mid-June 2026).
 Cheap stateless prefilters (`is_in_glibc_heap`, `range_overlaps_shared`) may
 still run before the helper at sites that want their own granular stat
 counter for those rejection classes, but they are NOT sufficient proof of
-ownership -- only a true return from `alloc_track_consume()` is.
+ownership -- only a true return from `df_alloc_track_consume()` is.
 
 ## tracked_free_now ring-residency check
 
-Synchronously free a `zmalloc_tracked()` pointer.  `alloc_track_consume()`
-pulls the entry out of both `alloc_track[]` and `alloc_track_hash[]` in one
-shot (backward array scan, with the paired `alloc_track_hash_remove()` on the
-hit), which is exactly the removal the deferred ring would have done
+Synchronously free a `zmalloc_tracked()` pointer.  `df_alloc_track_consume()`
+pulls the entry out of both `df_alloc_track[]` and `df_alloc_track_hash[]` in
+one shot (backward array scan, with the paired `alloc_track_hash_remove()` on
+the hit), which is exactly the removal the deferred ring would have done
 at TTL expiry -- but here without the queue latency.  The consume-miss case
 (pointer was never tracked, was already consumed, or rotated out) is
 silently tolerated: `free()`ing a non-tracked pointer is not by itself a bug,
@@ -205,24 +206,24 @@ scribble nor mprotect-failure can desync it from itself).  Direct
 `ring[]` scan trusts the stronger gate and is immune to both desync
 vectors.  A pointer the ring evicted into the generation arena is still
 owned by the deferred path (its retire consumes and frees it), so
-`gen_arena_contains()` is checked alongside the ring scan.
+`df_gen_arena_contains()` is checked alongside the ring scan.
 
-Cost: `ring != NULL` gate (read against `rc`'s `PROT_READ` steady state --
-no syscall); while the ring exists, one `ring_unlock` pair plus a 64-slot
+Cost: `ring != NULL` gate (read against `df_rc`'s `PROT_READ` steady state --
+no syscall); while the ring exists, one `df_ring_unlock` pair plus a 64-slot
 scan, then a scan of the arena's occupied entries, which are `PROT_READ` at
 rest and need no bracket.  Acceptable on the cleanup boundary.
 
-`ring_unlock()` failure (ENOMEM) cannot verify residency -- leak `@ptr`
+`df_ring_unlock()` failure (ENOMEM) cannot verify residency -- leak `@ptr`
 rather than risk a double-free; child exit reclaims it.  Bumps
 `deferred_free_tracked_free_unverified_leak` so the rate is observable.
 
-## ring_dispose_after_enomem
+## df_ring_dispose_after_enomem
 
-Tear down the ring after `ring_unlock()` returned ENOMEM.  The page is still
+Tear down the ring after `df_ring_unlock()` returned ENOMEM.  The page is still
 `PROT_NONE` at this point (the RW flip is exactly what failed); if we just
 bail and leave it that way, every sibling fuzzed value-result syscall whose
 buffer lands inside the ring `SEGV_ACCERR`s in `copy_to_user`, and every
-subsequent `ring_unlock` retry hits the same ENOMEM and emits another
+subsequent `df_ring_unlock` retry hits the same ENOMEM and emits another
 "mprotect RW failed" line.
 
 Releasing the VMA slot with `munmap()` drops both failure modes at the
@@ -262,7 +263,7 @@ is the address-reuse window.  A stale caller reference to a chunk that was
 freed and recycled by glibc still holds the original pointer value; that
 value now names a live chunk owned by an unrelated allocation.  The value
 gates here (`is_in_glibc_heap`, `range_overlaps_shared`) and the
-source-of-truth gate (`alloc_track_consume`) all answer "yes, this value is
+source-of-truth gate (`df_alloc_track_consume`) all answer "yes, this value is
 a valid live tracked chunk" -- because it IS, just not the one the stale
 ref thought it was.  Freeing on that signal frees a now-live chunk and the
 original owner eventually trips ASAN.  The durable fix is at the caller-
@@ -315,15 +316,15 @@ pointer in the first place: shape (pid-scribbled / sub-page / non-canonical
 / misaligned), heap-bounds, shared-region overlap.  A recent ASAN run logged
 105 "attempting free on un-malloc'd" crashes whose root cause is the ring
 entry being scribbled between the enqueue admission check and TTL expiry --
-the slot lives RW inside `ring_unlock()` brackets, but a sibling fuzzed
+the slot lives RW inside `df_ring_unlock()` brackets, but a sibling fuzzed
 value-result syscall can still land a stomp into the same page during that
 window.  Before this guard, `free_ring_entry` checked only sub-page and
 alignment; every stomp that landed on something heap-shaped but not actually
 malloc-returned was being fed straight to `free()`.
 
 `alloc_track` ownership is the binding gate, applied via
-`tracked_free_checked()`: the helper calls `alloc_track_consume()` and only
-hands `@ptr` to `free()` when consume returns true.  A stomp value whose
+`df_tracked_free_checked()`: the helper calls `df_alloc_track_consume()` and
+only hands `@ptr` to `free()` when consume returns true.  A stomp value whose
 shape passes heap-bounds and avoids the shared regions can still mismatch
 the originally admitted pointer -- the `alloc_track` set records what
 `__zmalloc()` actually returned, so a consume miss means `@ptr` is either an
@@ -336,7 +337,7 @@ source of truth.
 
 Bumps `STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR` (or its parent fallback) on
 the stateless-prefilter rejections, with the specific gate that fired in
-the `outputerr` log line.  A consume-miss inside `tracked_free_checked()`
+the `outputerr` log line.  A consume-miss inside `df_tracked_free_checked()`
 bumps the same counter so the alloc-track-miss class stays observable; no
 separate per-rejection log because the call site is unambiguous (only
 `free_ring_entry` routes through `TRACKED_FREE_SITE_RING_DRAIN`).

@@ -15,7 +15,7 @@ The deferred-free queue — hold a tracked free for a TTL window so a temporally
 |---|---|---|
 | deferred-free.c | 959 | Queue core: the enqueue reject gates, ring eviction into the generation arena, enqueue, the TTL tick drain and child-exit flush, and the ring-residency-aware `tracked_free_now()` / `alloc_track_refresh()` |
 | deferred-free-regions.c | 560 | The mprotect-armoured regions (alloc_track backing, ring_control, ring, generation arena): `deferred_free_init()`, the per-region unlock/lock brackets with their cost accounting, the kernel-entry seal barrier, ring disposal after ENOMEM |
-| deferred-free-alloc-track.c | 344 | The alloc_track side-set of live `zmalloc_tracked()` results: hash mirror, parallel size array, lookup / track / consume, and the consume-gated `tracked_free_checked()` |
+| deferred-free-alloc-track.c | 344 | The alloc_track side-set of live `zmalloc_tracked()` results: hash mirror, parallel size array, lookup / track / consume, and the consume-gated `df_tracked_free_checked()` |
 | deferred-free-gen-arena.c | 295 | Generation arena: the bounded holding pen for pointers evicted from the full ring, sealed by fill or age and retired through the consume gate |
 | deferred-free-record.c | 172 | Per-`syscallrecord` release: the `cleanup_release_post_state()` gates and the `rec_own()` / `rec_owned_drain()` owned-pointer carrier |
 

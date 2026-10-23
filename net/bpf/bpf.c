@@ -473,7 +473,7 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
  *
  * Inner-filter free is alloc_track_lookup()-only: free what we can
  * prove we own, leak the unproven.  alloc_track_lookup() hashes first
- * and falls back to a linear alloc_track[] scan on a NULL-slot hash
+ * and falls back to a linear df_alloc_track[] scan on a NULL-slot hash
  * miss, so the mirror-desync class (duplicate-ptr displaced-eviction
  * leaves the hash empty while the array still owns the ptr) still
  * gates the free.  A readable-but-untracked inner pointer

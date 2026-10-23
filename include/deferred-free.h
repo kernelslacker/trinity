@@ -77,8 +77,8 @@ size_t alloc_track_lookup_size(void *ptr) __must_check;
 void alloc_track_refresh(void *ptr);
 
 /*
- * tracked_free_now() removes ptr from alloc_track[] LRU and
- * alloc_track_hash[], then calls free().  Use this when a caller
+ * tracked_free_now() removes ptr from df_alloc_track[] LRU and
+ * df_alloc_track_hash[], then calls free().  Use this when a caller
  * wants to synchronously dispose of a zmalloc_tracked() allocation
  * instead of routing it through the deferred ring.  Direct free() on
  * a tracked pointer leaves a stale entry behind that subsequent
@@ -152,7 +152,7 @@ void rec_own(struct syscallrecord *rec, void *ptr);
 
 /*
  * Drain rec->owned[]: release every registered pointer via
- * tracked_free_now() (which keeps the alloc_track[] side-set in
+ * tracked_free_now() (which keeps the df_alloc_track[] side-set in
  * lock-step with the heap), then reset owned_count to zero.
  *
  * Called exactly once per dispatched call from the tail of

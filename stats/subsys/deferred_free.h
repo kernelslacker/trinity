@@ -58,7 +58,7 @@ struct deferred_free_stats {
 	 * deferred-free.c clause 3. */
 	unsigned long reject_non_heap;
 
-	/* !alloc_track_consume(ptr): ground-truth check refused a pointer
+	/* !df_alloc_track_consume(ptr): ground-truth check refused a pointer
 	 * that __zmalloc() never produced.  Same alloc_track LRU pressure
 	 * class as [[maps_reject_alloc_track_miss]]: shared 256-slot LRU
 	 * can rotate out legitimate live entries under fd-pressure
@@ -122,7 +122,7 @@ struct deferred_free_stats {
 	 * (/proc/sys/vm/max_map_count) via the mprotect bracket around its
 	 * mmap'd ring page -- under fuzz pressure the bracket's RW flip can
 	 * return -ENOMEM when the kernel runs out of VMA slots to split the
-	 * surrounding mapping, at which point ring_unlock fails and the
+	 * surrounding mapping, at which point df_ring_unlock fails and the
 	 * enqueue path can't access the slot.  The trio below surfaces the
 	 * bound-and-fallback path that keeps the deferred-free instrumen-
 	 * tation from killing a child whose VMA table fills up:
@@ -143,10 +143,10 @@ struct deferred_free_stats {
 	 *     starts arming per-slot redzones), but tracking it keeps the
 	 *     defensive bound observable for that case.
 	 *
-	 *   _enomem_drain: hard-cap events on the enqueue path -- ring_unlock
-	 *     returned -ENOMEM despite the soft cap.  The ring is munmap'd
-	 *     (releasing the VMA slot the kernel was short of) and the
-	 *     current ptr is freed immediately so the caller's "no longer
+	 *   _enomem_drain: hard-cap events on the enqueue path --
+	 *     df_ring_unlock returned -ENOMEM despite the soft cap.  The ring
+	 *     is munmap'd (releasing the VMA slot the kernel was short of) and
+	 *     the current ptr is freed immediately so the caller's "no longer
 	 *     your problem" contract holds; the ring stays NULL for the
 	 *     rest of the child's life, so subsequent enqueues fall through
 	 *     to plain free().  Non-zero is a real VMA-exhaustion event,
@@ -235,7 +235,7 @@ struct deferred_free_stats {
 	unsigned long double_admit_skip;
 
 	/* tracked_free_now() could not verify ring residency because
-	 * ring_unlock() returned non-OK (typically ENOMEM under VMA
+	 * df_ring_unlock() returned non-OK (typically ENOMEM under VMA
 	 * pressure -- same class as enomem_drain).  The chunk is leaked
 	 * rather than freed because freeing without having verified the
 	 * ring would risk a double-free against an eviction whose guards
@@ -251,7 +251,7 @@ struct deferred_free_stats {
 	 * eviction site never free()s: that is the defense against the
 	 * address-reuse window where a stale caller ref to a freed-and-
 	 * reused chunk passes every value-keyed gate (heap-bounds,
-	 * shared-region, alloc_track_consume) and eviction free()s a
+	 * shared-region, df_alloc_track_consume) and eviction free()s a
 	 * now-live chunk -- the surviving class of bad-free at the
 	 * eviction site.  The durable fix is at the caller-lifecycle
 	 * root (drop the retained ref).  Cannot double-free because the
@@ -278,19 +278,19 @@ struct deferred_free_stats {
 	unsigned long alloc_track_refresh_ring_owned_skip;
 
 	/* alloc_track_refresh() could not verify ring residency because
-	 * ring_unlock() returned non-OK (typically ENOMEM under VMA
+	 * df_ring_unlock() returned non-OK (typically ENOMEM under VMA
 	 * pressure -- same class as enomem_drain).  The refresh is
 	 * skipped entirely rather than risk re-adding a ring-resident
 	 * @ptr; the only cost is the LRU position -- the original
 	 * alloc_track entry is untouched, so a follow-up lookup still
-	 * resolves and the entry rotates out per the normal alloc_track[]
+	 * resolves and the entry rotates out per the normal df_alloc_track[]
 	 * aging.  Non-zero rate indicates VMA-pressure leaking into the
 	 * refresh path -- correlate with enomem_drain and
 	 * tracked_free_unverified_leak. */
 	unsigned long alloc_track_refresh_unverified_skip;
 
 	/* alloc_track_refresh() found @ptr was not currently tracked
-	 * (alloc_track_consume miss) and bailed without re-inserting.
+	 * (df_alloc_track_consume miss) and bailed without re-inserting.
 	 * Two indistinguishable causes: @ptr was a legitimate tracked
 	 * allocation that rotated out under churn (the LRU bump is
 	 * lost, the next deferred_free_enqueue rejects as untracked
@@ -299,20 +299,20 @@ struct deferred_free_stats {
 	 * head->array / localobj, or a fuzzed value-result syscall
 	 * scribble.  The previous shape called deferred_alloc_track
 	 * (@ptr, 0) unconditionally, which blessed the latter class
-	 * as tracked and let the next tracked_free_checked() free() it
+	 * as tracked and let the next df_tracked_free_checked() free() it
 	 * -- ASAN bad-free at deferred-free.c:880 (free_ring_entry /
 	 * ring_evict_oldest_safe / tracked_free_now) on an interior
 	 * pointer that consume() approved on the falsely-blessed
 	 * re-insert.  Non-zero proves the gate is engaged. */
 	unsigned long alloc_track_refresh_consume_miss;
 
-	/* alloc_track_lookup() found @ptr via the linear alloc_track[]
+	/* alloc_track_lookup() found @ptr via the linear df_alloc_track[]
 	 * fallback scan after its hash probe terminated on a NULL slot
 	 * without finding the entry.  The mirror-desync class this
 	 * catches: deferred_alloc_track()'s duplicate-ptr insert is
-	 * idempotent on the hash but still writes a fresh alloc_track[]
+	 * idempotent on the hash but still writes a fresh df_alloc_track[]
 	 * slot; a subsequent displaced-eviction of the older slot then
-	 * removes the hash entry while the newer alloc_track[] slot
+	 * removes the hash entry while the newer df_alloc_track[] slot
 	 * still holds @ptr, so a hash-only lookup would leak the chunk
 	 * (bpf_free_filter inner buffer, cleanup_release_post_state,
 	 * deferred_free_enqueue).  Non-zero rate means duplicate-ptr
@@ -363,10 +363,10 @@ struct deferred_free_stats {
 	 * each generation ages for a bounded call-window (at least the
 	 * longest ring TTL, and short enough that alloc_track still
 	 * remembers its entries), then retires ALL its entries as one
-	 * drain.  Retirement routes through tracked_free_checked() so
+	 * drain.  Retirement routes through df_tracked_free_checked() so
 	 * alloc_track remains the binding ownership gate; a stomp between
 	 * admission and retire is caught by the retire-time
-	 * shape/heap/shared prefilter and the alloc_track_consume gate.
+	 * shape/heap/shared prefilter and the df_alloc_track_consume gate.
 	 *
 	 *   _admitted: evicted-from-ring chunks pushed into the active
 	 *     generation.  Rate matches ring eviction rate less the
@@ -378,7 +378,7 @@ struct deferred_free_stats {
 	 *     misses plus the chunks still held.
 	 *
 	 *   _retired_ok: chunks free()d by the generation drain and
-	 *     confirmed by alloc_track_consume() -- the arena is doing
+	 *     confirmed by df_alloc_track_consume() -- the arena is doing
 	 *     what leak-on-eviction refused to.  Steady-state should
 	 *     track _admitted after a bake-in lag equal to the retirement
 	 *     window.  A consume miss at retire leaks the chunk and lands

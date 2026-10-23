@@ -33,8 +33,8 @@
 #define ALLOC_TRACK_SIZE	4096
 
 /*
- * Membership accelerator for alloc_track[]: 16384-slot open-addressed
- * hash mirroring the array so both hit and miss are O(1).  alloc_track[]
+ * Membership accelerator for df_alloc_track[]: 16384-slot open-addressed
+ * hash mirroring the array so both hit and miss are O(1).  df_alloc_track[]
  * stays source of truth; the hash mirrors it for membership only.
  * Steady state PROT_READ is load-bearing for memory safety (slots feed
  * free() gates), not just a perf nicety.  See Documentation/deferred-free.md
@@ -92,7 +92,7 @@ struct deferred_entry {
  * fast-bail checks, the ring_count comparison in the full-ring
  * branch, and __builtin_ctzll(~occupied_mask) in the slot-hunt)
  * execute without a syscall; the few writer paths flip RW via
- * rc_unlock()/rc_lock() for the duration of the mutation.
+ * df_rc_unlock()/df_rc_lock() for the duration of the mutation.
  */
 struct ring_control {
 	struct deferred_entry *ring;
@@ -109,18 +109,18 @@ struct ring_control {
  * fills a slot sets the bit, every clear that empties a slot clears
  * it.  Lives in the ring_control armor page (see struct definition
  * above) -- reads at rest hit PROT_READ without a syscall; writers
- * update it inside the same rc_unlock/rc_lock bracket that guards
+ * update it inside the same df_rc_unlock/df_rc_lock bracket that guards
  * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
  */
 
 /*
  * Bracket writers/readers of ring[] with mprotect(): at rest PROT_NONE
  * so a fuzzed value-result stomp SIGSEGVs in copy_from_user instead of
- * scribbling a slot.  ring_unlock() returns a three-way result so ENOMEM
+ * scribbling a slot.  df_ring_unlock() returns a three-way result so ENOMEM
  * (VMA-budget) is distinguishable from generic failure: collapsing them
  * would leave the ring PROT_NONE while the caller fell through, turning
  * queued pages into SEGV_ACCERR bait.  See Documentation/deferred-free.md
- * "Three-result ring_unlock and the mprotect bracket".
+ * "Three-result df_ring_unlock and the mprotect bracket".
  */
 enum ring_unlock_result {
 	RING_UNLOCK_OK,
@@ -156,7 +156,7 @@ struct gen_arena_region {
 };
 
 /*
- * The free paths that go through tracked_free_checked(), so a consume miss
+ * The free paths that go through df_tracked_free_checked(), so a consume miss
  * is charged to the counter of the path that made it.
  */
 enum tracked_free_site {
@@ -174,35 +174,36 @@ enum tracked_free_site {
  * PROT_NONE for the ring), or leaves that to deferred_free_seal_all() when
  * batching.
  */
-extern struct ring_control *rc;
-extern struct gen_arena_region *gen;
+extern struct ring_control *df_rc;
+extern struct gen_arena_region *df_gen;
 
-int alloc_track_unlock(void);
-void alloc_track_lock(void);
-int rc_unlock(void);
-void rc_lock(void);
-enum ring_unlock_result ring_unlock(void);
-void ring_lock(void);
-int gen_unlock(void);
-void gen_lock(void);
+int df_alloc_track_unlock(void);
+void df_alloc_track_lock(void);
+int df_rc_unlock(void);
+void df_rc_lock(void);
+enum ring_unlock_result df_ring_unlock(void);
+void df_ring_lock(void);
+int df_gen_unlock(void);
+void df_gen_lock(void);
 
-/* Tear the ring down after ring_unlock() reports ENOMEM. */
-void ring_dispose_after_enomem(void);
+/* Tear the ring down after df_ring_unlock() reports ENOMEM. */
+void df_ring_dispose_after_enomem(void);
 
 /*
  * alloc_track storage, defined in deferred-free-alloc-track.c.
  * deferred_free_init() maps the backing region and points these into it.
  */
-extern void **alloc_track;
-extern void **alloc_track_hash;
-extern size_t *alloc_track_sizes;
+extern void **df_alloc_track;
+extern void **df_alloc_track_hash;
+extern size_t *df_alloc_track_sizes;
 
 /*
- * Remove @ptr from the side-set; true iff it was live.  tracked_free_checked()
- * frees only when that succeeds and otherwise charges the miss to @site.
+ * Remove @ptr from the side-set; true iff it was live.
+ * df_tracked_free_checked() frees only when that succeeds and otherwise
+ * charges the miss to @site.
  */
-bool alloc_track_consume(void *ptr);
-bool tracked_free_checked(void *ptr, enum tracked_free_site site);
+bool df_alloc_track_consume(void *ptr);
+bool df_tracked_free_checked(void *ptr, enum tracked_free_site site);
 
 /*
  * Generation arena, defined in deferred-free-gen-arena.c.  _tick() seals and
@@ -211,10 +212,10 @@ bool tracked_free_checked(void *ptr, enum tracked_free_site site);
  * drains every generation at child exit; _contains() says whether a
  * generation still holds @ptr.
  */
-void gen_arena_tick(void);
-bool gen_arena_push(void *ptr);
-void gen_arena_flush(void);
-bool gen_arena_contains(void *ptr);
+void df_gen_arena_tick(void);
+bool df_gen_arena_push(void *ptr);
+void df_gen_arena_flush(void);
+bool df_gen_arena_contains(void *ptr);
 
 /* Reads vm.max_map_count once, in the parent, for the enqueue VMA cap. */
 void deferred_free_read_max_map_count(void);

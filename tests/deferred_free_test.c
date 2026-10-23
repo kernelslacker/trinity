@@ -137,23 +137,24 @@ static void fixture_duplicate_address(void)
 	DF_ASSERT(alloc_track_lookup(ptr));
 
 	/* Second enqueue: ring_contains(ptr) returns true inside the
-	 * ring_unlock bracket -> bail, bump double_admit_skip. */
+	 * df_ring_unlock bracket -> bail, bump double_admit_skip. */
 	deferred_free_enqueue(ptr);
 	DF_ASSERT(shm->stats.deferred_free.double_admit_skip == base_skip + 1);
 
 	/* Array and hash still agree: ptr is tracked (ring owns lifecycle). */
 	DF_ASSERT(alloc_track_lookup(ptr));
 
-	/* Drain the ring (frees ptr via tracked_free_checked + free()). */
+	/* Drain the ring (frees ptr via df_tracked_free_checked + free()). */
 	deferred_free_flush();
 }
 
 /* ------------------------------------------------------------------ */
 /* Fixture 2: Hash desync / displacement                              */
 /*                                                                     */
-/* Force alloc_track[] and alloc_track_hash[] out of agreement via the */
-/* duplicate-ptr displacement scenario described in the alloc_track_   */
-/* lookup() comment (deferred-free-alloc-track.c "Membership probe"): */
+/* Force df_alloc_track[] and df_alloc_track_hash[] out of agreement  */
+/* via the duplicate-ptr displacement scenario described in the       */
+/* alloc_track_lookup() comment (deferred-free-alloc-track.c          */
+/* "Membership probe"):                                               */
 /*                                                                     */
 /*   1. Track ptr_A -> array slot S1, hash[H_A] = ptr_A               */
 /*   2. Track ptr_A again -> array slot S2, hash unchanged (idempotent)*/
@@ -215,8 +216,8 @@ static void fixture_hash_desync_array_authority(void)
 
 	/*
 	 * Free ptr_A via tracked_free_now(): ring_contains returns false
-	 * (never enqueued), so tracked_free_checked -> alloc_track_consume
-	 * (finds ptr_A at slot S2) -> free(ptr_A).
+	 * (never enqueued), so df_tracked_free_checked ->
+	 * df_alloc_track_consume (finds ptr_A at slot S2) -> free(ptr_A).
 	 */
 	tracked_free_now(ptr_A);
 
@@ -279,18 +280,18 @@ static void fixture_ring_ownership(void)
 /*                                                                     */
 /* Evict a pointer from the ring into the generation arena, then flush.*/
 /* Assert: the evicted pointer's alloc_track entry is consumed during  */
-/* gen_arena_flush() (retired = unreachable); subsequent address reuse */
-/* is safe because the old alloc_track slot was already cleared.       */
+/* df_gen_arena_flush() (retired = unreachable); subsequent address   */
+/* reuse is safe because the old alloc_track slot was already cleared. */
 /*                                                                     */
 /* Protocol:                                                           */
 /*   - Fill ring with DEFERRED_RING_SIZE ptrs (all ACTIVE).           */
 /*   - Enqueue one more ptr -> ring_evict_oldest_safe() evicts the     */
-/*     lowest-TTL slot into the generation arena (gen_arena_push).     */
+/*     lowest-TTL slot into the generation arena (df_gen_arena_push).  */
 /*   - Before flush: alloc_track has all DEFERRED_RING_SIZE+1 ptrs.   */
-/*   - deferred_free_flush() runs gen_arena_flush() FIRST, retiring    */
-/*     the evicted ptr (tracked_free_checked -> alloc_track_consume -> */
-/*     free).  Then the ring drain frees the remaining                 */
-/*     DEFERRED_RING_SIZE ptrs.                                        */
+/*   - deferred_free_flush() runs df_gen_arena_flush() FIRST, retiring */
+/*     the evicted ptr (df_tracked_free_checked ->                     */
+/*     df_alloc_track_consume -> free).  Then the ring drain frees the */
+/*     remaining DEFERRED_RING_SIZE ptrs.                              */
 /*   - After flush: alloc_track_lookup for all DEFERRED_RING_SIZE+1    */
 /*     ptrs returns false.                                             */
 /* ------------------------------------------------------------------ */
@@ -315,7 +316,7 @@ static void fixture_generation_retirement(void)
 		deferred_free_enqueue(ptrs[i]);
 
 	/* One more enqueue triggers ring_evict_oldest_safe() ->
-	 * gen_arena_push() for the evicted pointer. */
+	 * df_gen_arena_push() for the evicted pointer. */
 	deferred_free_enqueue(ptrs[DEFERRED_RING_SIZE]);
 
 	/* gen_arena_admitted must have increased by at least 1
@@ -339,8 +340,8 @@ static void fixture_generation_retirement(void)
 	}
 
 	/*
-	 * Flush: gen_arena_flush() runs first and retires every arena
-	 * entry via tracked_free_checked() -> alloc_track_consume() ->
+	 * Flush: df_gen_arena_flush() runs first and retires every arena
+	 * entry via df_tracked_free_checked() -> df_alloc_track_consume() ->
 	 * free().  Then the ring drain frees the remaining
 	 * DEFERRED_RING_SIZE ptrs.
 	 *
@@ -371,9 +372,10 @@ static void fixture_generation_retirement(void)
 /* Simulate the disposal-path uncertainty case: enqueue ptr_A, then   */
 /* rotate its alloc_track entry out by tracking ALLOC_TRACK_SIZE      */
 /* fake pointers.  When deferred_free_flush() drains the ring,        */
-/* free_ring_entry(ptr_A) -> tracked_free_checked -> alloc_track_     */
-/* consume fails (ptr_A no longer in alloc_track) -> leak-on-         */
-/* uncertainty: ptr_A is NOT freed, deferred_free_corrupt_ptr bumps.  */
+/* free_ring_entry(ptr_A) -> df_tracked_free_checked ->               */
+/* df_alloc_track_consume fails (ptr_A no longer in alloc_track) ->   */
+/* leak-on-uncertainty: ptr_A is NOT freed, deferred_free_corrupt_ptr */
+/* bumps.                                                             */
 /*                                                                     */
 /* "Not a partial state transition": the ring slot is fully cleared    */
 /* (ring[i].ptr = NULL, ring_count decremented) even though ptr_A was  */
@@ -406,13 +408,13 @@ static void fixture_enomem_disposal(void)
 	base_corrupt = parent_stats.deferred_free_corrupt_ptr;
 
 	/*
-	 * Register ALLOC_TRACK_SIZE fake pointers to wrap the alloc_track[]
+	 * Register ALLOC_TRACK_SIZE fake pointers to wrap the df_alloc_track[]
 	 * ring once, overwriting ptr_A's slot.  After tracking ptr_A at
 	 * head H5, head is at H5+1.  The N-th filler writes slot (H5+N) &
 	 * mask.  We need (H5+N) & mask == H5 & mask == slot_A, i.e.
 	 * N = ALLOC_TRACK_SIZE.  After this:
 	 *   alloc_track_hash_remove(ptr_A) was called (the displaced slot
-	 *   triggered it), and alloc_track[] no longer contains ptr_A.
+	 *   triggered it), and df_alloc_track[] no longer contains ptr_A.
 	 */
 	for (i = 0; i < ALLOC_TRACK_SIZE; i++)
 		deferred_alloc_track(next_fake_ptr(), 0);
@@ -421,8 +423,8 @@ static void fixture_enomem_disposal(void)
 	DF_ASSERT(!alloc_track_lookup(ptr_A));
 
 	/*
-	 * Flush: free_ring_entry(ptr_A) -> tracked_free_checked ->
-	 * alloc_track_consume(ptr_A) fails -> ptr_A NOT freed.
+	 * Flush: free_ring_entry(ptr_A) -> df_tracked_free_checked ->
+	 * df_alloc_track_consume(ptr_A) fails -> ptr_A NOT freed.
 	 * parent_stats.deferred_free_corrupt_ptr must increment by 1.
 	 */
 	deferred_free_flush();
@@ -449,7 +451,7 @@ static void fixture_enomem_disposal(void)
 /* Fixture 6: Signal unwind with RW-open region                       */
 /*                                                                     */
 /* With deferred_free_batch enabled, mprotect bracket calls are lazy:  */
-/* alloc_track_lock() is a no-op, so a region can be left RW-open      */
+/* df_alloc_track_lock() is a no-op, so a region can be left RW-open   */
 /* after an unexpected unwind (signal/longjmp).  The loop-top reseal   */
 /* (deferred_free_seal_all()) must detect and close the open region.   */
 /*                                                                     */
@@ -457,7 +459,8 @@ static void fixture_enomem_disposal(void)
 /*   1. Enable batching.                                               */
 /*   2. setjmp recovery point.                                         */
 /*   3. deferred_alloc_track() opens alloc_track to RW (batch mode     */
-/*      leaves alloc_track_lock a no-op -> alloc_track_rw_open=true).  */
+/*      leaves df_alloc_track_lock a no-op ->                          */
+/*      alloc_track_rw_open=true).                                     */
 /*   4. longjmp out (simulating a signal unwind mid-critical-section). */
 /*   5. Loop-top: deferred_free_seal_all() closes every open region.  */
 /*   6. Debug build: deferred_free_debug_assert_sealed() must not abort.*/
@@ -481,8 +484,8 @@ static void fixture_signal_unwind(void)
 	if (setjmp(recovery) == 0) {
 		/*
 		 * Critical section: open alloc_track region.
-		 * With batching ON, alloc_track_unlock() mprotects to RW
-		 * and sets alloc_track_rw_open=true; alloc_track_lock()
+		 * With batching ON, df_alloc_track_unlock() mprotects to RW
+		 * and sets alloc_track_rw_open=true; df_alloc_track_lock()
 		 * is a no-op, so the region stays open after this returns.
 		 */
 		deferred_alloc_track(ptr, 8);
@@ -575,7 +578,7 @@ static void open_all_five_regions(void **ptr_out, void **ptr2_out)
 
 	/*
 	 * Open gen arena: call deferred_free_tick() DEFERRED_TICK_BATCH
-	 * times to trigger gen_arena_tick() which calls gen_unlock()
+	 * times to trigger df_gen_arena_tick() which calls df_gen_unlock()
 	 * (gen_rw_open=true).
 	 */
 	for (i = 0; i < DEFERRED_TICK_BATCH; i++)

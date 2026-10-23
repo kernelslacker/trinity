@@ -33,8 +33,8 @@ Turns off per-iteration mprotect batching inside
 
 Each protection region (`alloc_track` + hash, `ring_control`, `ring`)
 can be flipped RW->write->RO/NONE by every metadata mutation:
-`deferred_alloc_track`, `alloc_track_consume`, ring
-enqueue/tick/evict, and every `rc_unlock` pair around `ring_count` /
+`deferred_alloc_track`, `df_alloc_track_consume`, ring
+enqueue/tick/evict, and every `df_rc_unlock` pair around `ring_count` /
 `occupied_mask` updates.  That is the tightest possible corruption
 tripwire and it is also expensive: mprotect was ~half of trinity's
 child syscall traffic when it ran on every mutation.
