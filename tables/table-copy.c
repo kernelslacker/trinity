@@ -154,7 +154,6 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 					   strcmp(copy[m].name, "waitpid") == 0);
 		copy[m].is_waitid = (strcmp(copy[m].name, "waitid") == 0);
 		copy[m].is_madvise = (strcmp(copy[m].name, "madvise") == 0);
-		copy[m].is_munmap = (strcmp(copy[m].name, "munmap") == 0);
 		copy[m].is_mprotect_family =
 			(strcmp(copy[m].name, "mprotect") == 0 ||
 			 strcmp(copy[m].name, "pkey_mprotect") == 0);

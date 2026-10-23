@@ -2,7 +2,7 @@
  * SYSCALL_DEFINE2(munmap, unsigned long, addr, size_t, len)
  *
  * The range stays inside the pool mapping the sanitiser picked, final
- * slots included (munmap_vet_final_slots()).
+ * slots included (vet_final_munmap()).
  */
 #include "arch.h"
 #include "maps.h"
@@ -20,7 +20,7 @@
 /*
  * Snapshot of the four munmap inputs read by the post handler, captured
  * at sanitise time, its range moved to the final slots at dispatch
- * (munmap_vet_final_slots()), and consumed by the post handler.  Lives in
+ * (vet_final_munmap()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot:
@@ -58,20 +58,29 @@ struct munmap_post_state {
 #define MUNMAP_POST_STATE_MAGIC	0x4D554E4D41505F5FUL	/* "MUNMAP__" */
 
 /*
- * validate_arg_coupling() holds the final slots to the mapping with this
- * (see map_range_vet()).  A record with no snapshot of ours passes only
- * a range the kernel acts on nothing of.  Shape, then ownership, then
+ * The final range has to stay inside the mapping the sanitiser picked
+ * (see map_range_vet()): do_vmi_munmap() unmaps every VMA a longer range
+ * reaches, holes and all.  Refused rather than repaired, and a pass moves
+ * the snapshot to the final slots, so the post handler acts on what the
+ * kernel was handed.  A record with no snapshot of ours passes only a
+ * range the kernel acts on nothing of.  Shape, then ownership, then
  * magic, as post_state_claim_owned() orders them.
  */
-bool munmap_vet_final_slots(const struct syscallrecord *rec)
+static int vet_final_munmap(struct syscallrecord *rec)
 {
 	struct munmap_post_state *snap =
 		(struct munmap_post_state *) rec->post_state;
+	struct map_range *range = NULL;
 
-	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
-	    snap->magic != MUNMAP_POST_STATE_MAGIC)
-		return map_range_vet(rec, NULL, false);
-	return map_range_vet(rec, &snap->range, false);
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == MUNMAP_POST_STATE_MAGIC)
+		range = &snap->range;
+	if (map_range_vet(rec, range, false))
+		return 0;
+
+	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
+		  rec->entry->name);
+	return -1;
 }
 
 static void sanitise_munmap(struct syscallrecord *rec)
@@ -300,6 +309,7 @@ struct syscallentry syscall_munmap = {
 	.argname = { [0] = "addr", [1] = "len" },
 	.group = GROUP_VM,
 	.sanitise = sanitise_munmap,
+	.vet_final = vet_final_munmap,
 	.post = post_munmap,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,

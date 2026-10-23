@@ -30,6 +30,7 @@
 #include "net.h"			/* generate_sockaddr */
 #include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
+#include "rnd.h"			/* rnd_state */
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
 #include "syscall.h"			/* struct syscallrecord */
 #include "testfile.h"			/* get_rand_testfile_fd */
@@ -1160,26 +1161,85 @@ static void munmap_compat_slots_truncated(struct syscallentry *entry)
 	entry->post(mrec);
 }
 
+/* munmap.c's WHOLE: the sanitiser's action for a whole-mapping unmap,
+ * which it leaves in a4. */
+#define MUNMAP_WHOLE	1UL
+
+/* A whole-mapping unmap is one draw in twenty, so the draws above build
+ * one as a compat call only by chance.  Find one built natively and
+ * replay its draws as a compat call, which takes the same branch: the
+ * sanitiser draws it before it looks at do32bit or the address.  Over the
+ * high mapping, whose address the slots cannot carry, the call is built
+ * empty with its action dropped, and passes; over a low mapping it is the
+ * whole mapping, and passes. */
+static void munmap_compat_whole_mapping(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec;
+	uint64_t state = 0;
+	unsigned int i;
+
+	for (i = 0; i < 10000; i++) {
+		mrec = mm_call(entry);
+		state = rnd_state;
+		entry->sanitise(mrec);
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+		if (mrec->a4 == MUNMAP_WHOLE)
+			break;
+	}
+	if (i == 10000)
+		BUG("munmap: the sanitiser never built a whole-mapping unmap");
+
+	mrec = mm_call(entry);
+	mrec->do32bit = true;
+	rnd_state = state;
+	entry->sanitise(mrec);
+	if (mrec->a1 != 0 || mrec->a2 != 0 || mrec->a4 != 0)
+		BUG("munmap: a compat whole-mapping unmap of a high mapping was kept");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("munmap: an emptied compat whole-mapping unmap was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+
+	mrec = mm_call(entry);
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	mrec->do32bit = true;
+	rnd_state = state;
+	entry->sanitise(mrec);
+	if (mrec->a4 != MUNMAP_WHOLE || mrec->a1 != LOW_POOL_MAP ||
+	    mrec->a2 != POOL_PAGES * page_size)
+		BUG("munmap: a compat whole-mapping unmap of a low mapping was not built whole");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("munmap: a compat whole-mapping unmap of a low mapping was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+}
+
 /* munmap's final range stays inside the mapping its sanitiser picked. */
 static void munmap_range_held_to_mapping(void)
 {
 	struct syscallentry munmap_entry = syscall_munmap;
 	struct syscallentry other = syscall_munmap;
+	struct syscallrecord *mrec;
 
-	/* As copy_syscall_table() stamps the copy. */
-	munmap_entry.is_munmap = true;
+	/* munmap's slots and sanitiser, without its final-slot rule. */
+	other.vet_final = NULL;
 	fake_get_objhead = no_pool;
 
 	munmap_sanitised_range_passes(&munmap_entry);
+	munmap_compat_whole_mapping(&munmap_entry);
 	munmap_rewritten_range_held(&munmap_entry);
 	munmap_post_acts_on_final_range(&munmap_entry);
 	munmap_needs_its_snapshot(&munmap_entry);
 	munmap_compat_slots_truncated(&munmap_entry);
 
-	/* The rule is munmap's alone. */
-	mm_call(&other)->a2 = 0x7ffff000UL;
-	if (validate_arg_coupling(&mm_child.syscall, mm_child.syscall.entry) != 0)
-		BUG("munmap: the range rule judged an entry that is not munmap");
+	/* The rule is the hook's alone: munmap's would refuse this aligned
+	 * range, which no snapshot vouches for. */
+	mrec = mm_call(&other);
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = 0x7ffff000UL;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("munmap: the range rule judged an entry without munmap's hook");
 
 	fake_get_objhead = NULL;
 	fake_this_child = NULL;

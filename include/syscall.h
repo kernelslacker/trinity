@@ -664,16 +664,11 @@ struct syscallentry {
 	bool is_madvise;
 
 	/*
-	 * Cached identity of munmap, set at table init so
-	 * validate_arg_coupling() can hold its final range to the pool
-	 * mapping the sanitiser picked (munmap_vet_final_slots()) with a
-	 * single byte load per dispatch.  In the same alignment hole.
-	 */
-	bool is_munmap;
-
-	/*
-	 * The same for mprotect and pkey_mprotect, which share a sanitiser
-	 * (mprotect_vet_final_slots()).  The last byte of the hole.
+	 * Cached membership of mprotect and pkey_mprotect, which share a
+	 * sanitiser, set at table init so validate_arg_coupling() can hold
+	 * their final range to the pool mapping the sanitiser picked
+	 * (mprotect_vet_final_slots()) with a single byte load per
+	 * dispatch.  In the same alignment hole.
 	 */
 	bool is_mprotect_family;
 
@@ -1135,16 +1130,11 @@ void post_fs_ctx_fd(struct syscallrecord *rec);
 void post_open_fd(struct syscallrecord *rec);
 
 /*
- * Hold a munmap call's final slots to the pool mapping its sanitiser
- * picked (map_range_vet()).  A pass refreshes the call's snapshot to
- * them; false refuses the call.  Defined in syscalls/mm/munmap.c, which
- * keeps the snapshot private, for validate_arg_coupling().
- */
-bool munmap_vet_final_slots(const struct syscallrecord *rec);
-
-/*
- * The same for mprotect and pkey_mprotect; a pass also refreshes the
- * prot and the key in the snapshot.  Defined in syscalls/mm/mprotect.c.
+ * Hold an mprotect or pkey_mprotect call's final slots to the pool
+ * mapping its sanitiser picked (map_range_vet()).  A pass refreshes the
+ * call's snapshot to them, the prot and the key included; false refuses
+ * the call.  Defined in syscalls/mm/mprotect.c, which keeps the snapshot
+ * private, for validate_arg_coupling().
  */
 bool mprotect_vet_final_slots(const struct syscallrecord *rec);
 
