@@ -7,9 +7,8 @@
 # (health/signals-policy.c), so any blocking waitpid() in a non-syscall
 # path can return -1/EINTR.
 # Treating EINTR as "done" leaves a child unreaped -- for sites that
-# tear down a shared mapping right after the wait (barrier-racer,
-# futex-storm) it also leaves a worker that will fault when it next
-# touches the destroyed barrier.
+# tear down a shared mapping right after the wait it also leaves a
+# worker that will fault when it next touches the destroyed mapping.
 #
 # Every reap site routes through the EINTR-restartable waitpid_eintr()
 # wrapper in include/utils.h instead.  Two locations are allowed to

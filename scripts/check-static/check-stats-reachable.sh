@@ -424,12 +424,6 @@ fi
 #   * Family-indexed dispatch tables (genl_family_calls_.*) still on
 #     the flat side, walked by a bespoke emitter.
 #
-#   * Macro-concatenated dispatch (nftables_churn_.*_expr_emit /
-#     nftables_churn\..*_expr_emit) -- addressed via
-#     `offsetof(struct stats_s, nftables_churn_##field##_expr_emit)`
-#     in the nft_expr_table[] descriptor.  Preprocessor concatenation
-#     hides the literal identifier from every text scan.
-#
 #   * ORACLE_ANOMALY_ROW-emitted diagnostic counters
 #     (diag.statmount_setup_fail) whose macro invocation spells the
 #     field bare (`diag.statmount_setup_fail`) with no `stats.`
@@ -512,17 +506,12 @@ echo "PASS: $NAME: $field_count stats_s fields (flat + nested), all reachable or
 # =====================================================================
 # shm_s scalar counter coverage (additive extension).
 #
-# The stats_s walker above covers shm->stats.<path>.  A scalar
-# counter declared directly in struct shm_s -- e.g. nat_t_churn.lo_up_fail
-# was written from rtnl_bring_lo_up / bring_lo_up (four __atomic sites)
-# while still a shm_s member, with no render path, before commit
-# 9c09cc25e898 ("lo_up_fail: wire into stats surface with four-site plumbing")
-# moved it into struct nat_t_churn_stats where it is now
-# correctly covered by STAT_FIELD_SUB(nat_t_churn, lo_up_fail) and a
-# stat_row emit -- lies outside that population entirely: the stats_s walker cannot
-# enumerate it, and the consumer-read grep only matches shm->stats.*,
-# so a producer with no render path passes silently.  This section
-# closes that gap without touching any existing logic.
+# The stats_s walker above covers shm->stats.<path>.  A scalar counter
+# declared directly in struct shm_s lies outside that population
+# entirely: the stats_s walker cannot enumerate it, and the
+# consumer-read grep only matches shm->stats.*, so a producer with no
+# render path passes silently.  This section closes that gap without
+# touching any existing logic.
 #
 # Population: scalar (non-array) members of struct shm_s in
 # include/shm.h that have at least one counter write site (any of the

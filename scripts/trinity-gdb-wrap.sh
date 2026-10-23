@@ -19,7 +19,7 @@
 #   thread apply all bt full     — every thread's stack, locals included
 #
 # Usage:
-#   ./scripts/trinity-gdb-wrap.sh -- -c iouring_flood -N 1
+#   ./scripts/trinity-gdb-wrap.sh -- -c read -N 1
 #   ./scripts/trinity-gdb-wrap.sh -- --max-runtime 5m
 #
 # Everything after `--` is forwarded verbatim to the trinity binary.
