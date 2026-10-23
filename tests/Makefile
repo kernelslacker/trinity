@@ -107,8 +107,8 @@ LDFLAGS		+= -Wl,--wrap=get_num_fds
 # sanitiser_owned_mask_test.c wraps it with one that records the slot.
 LDFLAGS		+= -Wl,--wrap=fill_arg
 
-# ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
-# arch-program #10 spec calls for on the integration path.  -Og +
+# ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
+# integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
 # selftest under the test binary lands the same backtrace shape a
 # failing selftest inside the live trinity would.  Objects land in

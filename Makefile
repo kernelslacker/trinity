@@ -101,7 +101,7 @@ debug: trinity
 check-config:
 	@if [ ! -f $(CONFIG_H) ]; then  echo "[1;31mRun ./configure first.[0m" >&2; exit 1; fi
 
-# PURE-module test binary integration paths (arch-program #10).
+# PURE-module test binary integration paths.
 #
 # `make test-bin`    -- build the tests/ binary against the fake
 #                       shm+RNG providers and run it.
