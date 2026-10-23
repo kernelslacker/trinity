@@ -40,7 +40,7 @@ every translation unit lives under one of the directories below.
 | [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,670 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (364 files, ~66,278 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~2,037 LOC) |
-| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,749 LOC) |
+| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,811 LOC) |
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~3,011 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (49 files, ~10,502 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,131 LOC) |

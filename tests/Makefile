@@ -98,6 +98,11 @@ LDFLAGS		+= -Wl,--wrap=replace_child
 # for real unless a test has set fake_num_fds_errno.
 LDFLAGS		+= -Wl,--wrap=get_num_fds
 
+# fill_arg() stand-in: args/argtype_table.c is linked for its table and
+# defines the real fill_arg(), which would run the generators.
+# sanitiser_owned_mask_test.c wraps it with one that records the slot.
+LDFLAGS		+= -Wl,--wrap=fill_arg
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs the
 # arch-program #10 spec calls for on the integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -202,14 +207,16 @@ REAL_SRCS	:= \
 # syscalls/quota/quotactl.c, syscalls/sched/nice.c and
 # syscalls/process/personality.c bring syscall_futex_wake,
 # syscall_quotactl, syscall_nice and syscall_personality, whose
-# sanitisers it runs the same way.
+# sanitisers it runs the same way.  args/argtype_table.c brings
+# argtype_table[], whose replay classes corpus_replay_class_test.c
+# checks; fake_arg_gens.c stands in for the generators its rows name.
 # They also pull in functions the tests never call (main_loop() reaches
 # most of the parent, dispatch_step() most of the child), so each
 # function gets its own section and --gc-sections drops the unreached
 # ones.  -fdata-sections gives each function its own jump-table section
 # too: in a shared .rodata, one reached switch keeps every other
 # function's case targets, and their references, alive.  fake_parent.c
-# covers the rest; sanitiser_owned_mask_test.c fakes fill_arg().
+# covers the rest; sanitiser_owned_mask_test.c wraps fill_arg().
 PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
@@ -253,7 +260,8 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/concurrency/futex_wake.c \
 	$(TOP)/syscalls/quota/quotactl.c \
 	$(TOP)/syscalls/sched/nice.c \
-	$(TOP)/syscalls/process/personality.c
+	$(TOP)/syscalls/process/personality.c \
+	$(TOP)/args/argtype_table.c
 LDFLAGS		+= -Wl,--gc-sections
 
 # The CMP-hint collect path, linked for cmp_hints_collect().  Same
@@ -346,6 +354,8 @@ FAKE_SRCS	:= \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
 	chain_corpus_test.c \
+	fake_arg_gens.c \
+	corpus_replay_class_test.c \
 	redqueen_pin_test.c \
 	asb_relocate_test.c \
 	fake_ioctls.c \

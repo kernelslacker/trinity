@@ -17,7 +17,6 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch */
-#include "args-internal.h"	/* fill_arg */
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* generic_sanitise */
 #include "syscall.h"		/* arg_meta_init */
@@ -29,8 +28,10 @@
 /* Bit (argnum - 1) is set for each slot generic_sanitise() generated. */
 static unsigned int filled;
 
-unsigned long fill_arg(struct syscallentry *entry, struct syscallrecord *rec,
-		       unsigned int argnum)
+unsigned long __wrap_fill_arg(struct syscallentry *entry,
+			      struct syscallrecord *rec, unsigned int argnum);
+unsigned long __wrap_fill_arg(struct syscallentry *entry,
+			      struct syscallrecord *rec, unsigned int argnum)
 {
 	(void)entry; (void)rec;
 	filled |= 1u << (argnum - 1);

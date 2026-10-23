@@ -52,6 +52,7 @@ void cmp_collect_self_check(void);
 void sanitiser_owned_mask_self_check(void);
 void minicorpus_abi_self_check(void);
 void chain_corpus_self_check(void);
+void corpus_replay_class_self_check(void);
 void redqueen_pin_self_check(void);
 void asb_relocate_self_check(void);
 void loop_status_self_check(void);
@@ -249,6 +250,11 @@ int main(int argc, char **argv)
 	printf("  chain_corpus_self_check ... ");
 	fflush(stdout);
 	chain_corpus_self_check();
+	printf("OK\n");
+
+	printf("  corpus_replay_class_self_check ... ");
+	fflush(stdout);
+	corpus_replay_class_self_check();
 	printf("OK\n");
 
 	printf("  redqueen_pin_self_check ... ");

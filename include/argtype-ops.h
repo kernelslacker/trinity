@@ -5,6 +5,53 @@
 #include "syscall.h"
 
 /*
+ * What the corpora do with a saved value of an argtype.  Every row of
+ * argtype_table[] sets one, so a new argtype has to be classified.
+ */
+enum corpus_replay {
+	/*
+	 * Nobody classified the argtype: what a row that leaves the field
+	 * out gets.
+	 */
+	CORPUS_REPLAY_UNSET = 0,
+
+	/*
+	 * Replays as saved: a length, a flag set or another plain value,
+	 * or an id the kernel validates itself (key serial, timer id,
+	 * SysV id, aio context), where a stale one just fails the
+	 * kernel's lookup.
+	 */
+	CORPUS_REPLAY_KEEP,
+
+	/*
+	 * Stale in the replaying run: zeroed at save and again at load.
+	 * An fd is closed or recycled by then, and a zero slot is below
+	 * the stdio floor, so the mutator draws a fresh fd for it.  A
+	 * pointer is an address from the saving run.  A struct buffer is
+	 * a heap chunk the deferred-free queue has since released, and
+	 * nested_address_scrub() accepts any in-heap address, freed
+	 * chunks included.  A writable-pool slot is handed out again once
+	 * the pool cursor wraps, so it holds some other call's bytes.
+	 * Zero gives the kernel NULL instead.
+	 */
+	CORPUS_REPLAY_ZERO,
+
+	/*
+	 * Runtime-relative: a syscall with such an argument is neither
+	 * saved nor replayed.  A heap pointer handed out by
+	 * generic_sanitise() (iovec, pathname, sockaddr, mmap) goes stale
+	 * after deferred-free eviction, and replay would feed freed
+	 * memory to the kernel.  A pid valid in the saving run is
+	 * meaningless in the replaying one, and dense trinity pid
+	 * allocation plus kernel pid recycling means a stale pid often
+	 * hits a live child or the parent: replaying kill, tkill, tgkill,
+	 * pidfd_send_signal or rt_sigqueueinfo would cascade-SIGKILL the
+	 * fleet.
+	 */
+	CORPUS_REPLAY_REFUSE,
+};
+
+/*
  * Per-argtype policy descriptor.
  *
  * Concentrates the policy that used to be spread across the giant switch
@@ -72,6 +119,12 @@ struct argtype_ops {
 	 * checks that previously lived inside the generators.
 	 */
 	enum argtype paired_length;
+
+	/*
+	 * What the minicorpus and the chain corpus do with a saved value
+	 * of this argtype.  Every row sets it.
+	 */
+	enum corpus_replay replay;
 };
 
 extern const struct argtype_ops argtype_table[];
