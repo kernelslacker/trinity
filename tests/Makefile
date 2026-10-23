@@ -107,6 +107,18 @@ LDFLAGS		+= -Wl,--wrap=get_num_fds
 # sanitiser_owned_mask_test.c wraps it with one that records the slot.
 LDFLAGS		+= -Wl,--wrap=fill_arg
 
+# get_objhead() stand-in: objects/registry.c is linked for the
+# for_each_obj snapshot, and its get_objhead() would resolve pools
+# through childdata no test builds.  fake_objects.c wraps it with the
+# stand-in a test installs its pools through.
+LDFLAGS		+= -Wl,--wrap=get_objhead
+
+# alloc_object() stand-in: objects/registry.c is linked for the pool
+# readers, and dispatch/syscall-retfd.c calls its alloc_object(), which a
+# protected-fd retval must never reach.  fake_objects.c wraps it with a
+# stand-in that aborts.
+LDFLAGS		+= -Wl,--wrap=alloc_object
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -217,7 +229,7 @@ REAL_SRCS	:= \
 # syscalls/keyctl/keyctl.c, syscalls/socket/socket.c and
 # syscalls/socket/socketpair.c bring syscall_keyctl, syscall_socket and
 # syscall_socketpair, whose sanitisers sanitiser_owned_mask_test.c runs
-# against the empty pools in fake_objects.c and the domain tables in
+# with no object pools behind the real readers and the domain tables in
 # fake_net.c; args/output-poison.c is the poison stamp socketpair's
 # sanitiser makes.  syscalls/concurrency/futex_wake.c,
 # syscalls/quota/quotactl.c, syscalls/sched/nice.c and
@@ -461,6 +473,14 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 		   $(TOP)/syscalls/mm/munmap.c \
 		   $(TOP)/syscalls/mm/madvise.c \
 		   $(TOP)/mm/maps-arg.c
+
+# objects/registry-pick.c and registry.c bring the pool readers:
+# get_random_object(), objpool_check(), objects_empty() and
+# objects_pool_empty(), and the for_each_obj snapshot.  They read the
+# pools a test installs through the get_objhead() stand-in, or none:
+# keyctl's sanitiser asks for a key serial pool that is not there.
+PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
+		   $(TOP)/objects/registry.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

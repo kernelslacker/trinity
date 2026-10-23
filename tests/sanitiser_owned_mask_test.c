@@ -21,12 +21,16 @@
 #include "blob_corpus.h"	/* blob_corpus_clear_pending */
 #include "cmp_hints.h"		/* cmp_hints_feedback_reset_stash */
 #include "debug.h"		/* BUG */
+#include "objects.h"		/* enum obj_scope, struct objhead */
 #include "sanitise.h"		/* generic_sanitise, generate_syscall_args */
 #include "syscall.h"		/* arg_meta_init */
 #include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl, ... */
 #include "tables.h"		/* syscalls, max_nr_syscalls, sanity_check_tables */
 #include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
+
+extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
+					   enum objecttype type);	/* fake_objects.c */
 
 /* Bit (argnum - 1) is set for each slot generic_sanitise() generated. */
 static unsigned int filled;
@@ -212,6 +216,13 @@ static const uint8_t owner_slots[] = {
 #define OWNER_RUNS	2048
 #define OWNER_MARK(k)	(0x5a5a00UL + (k))
 
+/* No pools, so a sanitiser that draws from one takes its empty-pool arm. */
+static struct objhead *no_pools(enum obj_scope scope, enum objecttype type)
+{
+	(void)scope; (void)type;
+	return NULL;
+}
+
 static void real_entries_own_what_they_write(void)
 {
 	static struct syscallrecord rec;
@@ -219,6 +230,8 @@ static void real_entries_own_what_they_write(void)
 		&rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6,
 	};
 	unsigned int e, i, k;
+
+	fake_get_objhead = no_pools;
 
 	for (e = 0; e < ARRAY_SIZE(owner_entry); e++) {
 		struct syscallentry *entry = owner_entry[e];
@@ -248,6 +261,8 @@ static void real_entries_own_what_they_write(void)
 			free((void *) rec.post_state);
 		}
 	}
+
+	fake_get_objhead = NULL;
 }
 
 void sanitiser_owned_mask_self_check(void);

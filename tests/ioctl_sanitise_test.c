@@ -67,16 +67,11 @@ static const char *const returns_fd[] = {
  * What the linked groups reach beyond the fake registry.  Only the fd_test
  * of the groups that name a typed-fd class touches the object pools, and
  * only the claim case calls them, with get_objhead() and
- * find_local_object_by_fd() hooked in fake_objects.c.  The pidfd group's
- * info sanitiser asks for set_rand_bitmask(), which genl_ops_test.c
- * fakes, and the perf group's for a bpf prog fd.
+ * find_local_object_by_fd() hooked in fake_objects.c; their for_each_obj
+ * walks run through objects/registry.c.  The pidfd group's info sanitiser
+ * asks for set_rand_bitmask(), which genl_ops_test.c fakes, and the perf
+ * group's for a bpf prog fd.
  */
-void __for_each_obj_init(struct objhead *head, struct __for_each_obj_state *s)
-{
-	s->n_snap = head->num_entries;
-	s->array_snap = head->array;
-}
-
 int get_rand_bpf_prog_fd(void)
 {
 	return -1;
