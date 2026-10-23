@@ -33,10 +33,10 @@
  *       char machine[9];
  *   };
  *
- * Five 9-byte char arrays, total 45 bytes.  Fields are NOT guaranteed
- * null-terminated when the source string is exactly 9 characters long
- * (the kernel uname code path copies min(strlen, 9) bytes).  Compares
- * therefore use exact-size memcmp(..., 9), not strcmp.
+ * Five 9-byte char arrays, total 45 bytes.  The kernel zeroes the
+ * struct and copies the first 8 bytes of each name, so every field ends
+ * in a NUL.  Compares still use exact-size memcmp(..., 9), not strcmp,
+ * so the bytes after the NUL take part in the comparison.
  */
 struct trinity_oldold_utsname {
 	char sysname[9];
