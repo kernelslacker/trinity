@@ -1,62 +1,9 @@
 /*
  * Help/usage output for the params cluster.  option_descs[] and
- * shortonly_descs[] are the single source of truth for the --help
- * text; longopts[] in options.c is the getopt_long() metadata that
- * mirrors them and dispatches into the parse_*_options() helpers.
- * Adding an option means touching both tables (plus a parser helper).
- *
- * Rationale for individual options (why they exist, mode contracts,
- * validation checklists before promoting a shadow arm) lives outside
- * this file -- the --help entries are one-liners, the design notes
- * are in Documentation/:
- *
- *   --alt-op-children              Documentation/childop-canary-queue.md#alt-op-children
- *   --arg-len-semantics            Documentation/params-args.md#arg-len-semantics
- *   --bandit-reward-edge-count     Documentation/strategy.md#bandit-reward-edge-count
- *   --blob-ab-mode                 Documentation/blob-mutator.md#blob-ab-mode
- *   --blob-mutator                 Documentation/blob-mutator.md
- *   --canary-seed                  Documentation/childop-canary-queue.md#canary-seed
- *   --canary-slots                 Documentation/childop-canary-queue.md#canary-slots
- *   --canary-window                Documentation/childop-canary-queue.md#canary-window
- *   --chain-resource-typing        Documentation/params-args.md#chain-resource-typing
- *   --childop-cmp-consume          Documentation/cmp-frontier.md#childop-cmp-consume
- *   --childop-cmp-harvest          Documentation/cmp-frontier.md#childop-cmp-harvest
- *   --childop-kcov-attribution     Documentation/childop-canary-queue.md#childop-kcov-attribution
- *   --cmp-frontier                 Documentation/cmp-frontier.md
- *   --cmp-shared-tier              Documentation/cmp-frontier.md#cmp-shared-tier
- *   --cmsg-richness                Documentation/params-args.md#cmsg-richness
- *   --context-pool                 Documentation/params-picker.md#context-pool
- *   --corpus-save-errno-grad-live  Documentation/params-picker.md#corpus-save-errno-grad-live
- *   --cost-pool-selector           Documentation/params-picker.md#cost-pool-selector
- *   --cred-throttle                Documentation/params-picker.md#cred-throttle
- *   --no-deferred-free-batch       Documentation/params-debug.md#no-deferred-free-batch
- *   --expensive-adaptive           Documentation/params-picker.md#expensive-adaptive
- *   --explorer-children            Documentation/strategy.md#explorer-children
- *   --fork-pressure-drain          Documentation/childop-canary-queue.md#fork-pressure-drain
- *   --frontier-barren-demote       Documentation/params-frontier.md#frontier-barren-demote
- *   --frontier-group-antilock      Documentation/params-frontier.md#frontier-group-antilock
- *   --frontier-live-cooldown-mode  Documentation/params-frontier.md#frontier-live-cooldown-mode
- *   --frontier-noise-sample        Documentation/kcov-shared-layout.md#frontier-noise-sample
- *   --frontier-saturation-cooldown Documentation/params-frontier.md#frontier-saturation-cooldown
- *   --guard-shared                 Documentation/params-debug.md#guard-shared
- *   --hermetic                     Documentation/params-warm-start.md#hermetic
- *   --kcov-trace-size              Documentation/kcov-shared-layout.md#kcov-trace-size
- *   --kcov-transition-coverage     Documentation/kcov-shared-layout.md#kcov-transition-coverage
- *   --kcov-transition-reward       Documentation/kcov-shared-layout.md#kcov-transition-reward
- *   --memory-high, --memory-max, --memory-swap-max
- *                                  Documentation/params-cgroup.md
- *   --no-canary-queue              Documentation/childop-canary-queue.md#no-canary-queue
- *   --no-cgroup                    Documentation/params-cgroup.md#no-cgroup
- *   --no-*-warm-start, --no-warm-start, --warm-start-path
- *                                  Documentation/params-warm-start.md
- *   --no-startup-isolation         Documentation/params-cgroup.md#no-startup-isolation
- *   --reach-band                   Documentation/reach-band.md
- *   --redqueen-pending-pick        Documentation/params-debug.md#redqueen-pending-pick
- *   --self-corrupt-canary          Documentation/params-debug.md#self-corrupt-canary
- *   --strategy                     Documentation/strategy.md#strategy
- *   --writer-pin-stride            Documentation/params-debug.md#writer-pin-stride
- *   --writer-pin-sweep             Documentation/params-debug.md#writer-pin-sweep
- *   --writer-watch                 Documentation/params-debug.md#writer-watch
+ * shortonly_descs[] are the single source of truth for the --help text;
+ * longopts[] in options.c is the getopt_long() metadata that mirrors them,
+ * so adding an option means touching both tables plus a parser helper.
+ * Per-option rationale and mode contracts live in Documentation/.
  */
 
 #include <stdlib.h>

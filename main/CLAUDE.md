@@ -40,7 +40,7 @@ inside `main/params/` is params-cluster private and declared in
 | `internal.h` | Params-private helper + option-family declarations shared across `main/params/*.c`. Not exported outside this cluster. |
 | `state.c` | Definitions of the global tunable storage (booleans, strings, mode enums) the rest of the codebase reads. |
 | `defaults.c` | `derive_max_children_cap()` + `clamp_default_*()` helpers `main()` calls after `parse_args()` finalises operator input. |
-| `help.c` | `option_descs[]`, `shortonly_descs[]` and `usage()` -- the `--help` output. |
+| `help.c` | `option_descs[]`, `shortonly_descs[]` and `usage()` -- the `--help` output. Entries are one-liners: each option's rationale and mode contract lives in `Documentation/`, in a section named after the option or in a per-feature file. |
 | `options.c` | `paramstr` and `longopts[]` -- the `getopt_long()` metadata. |
 | `parse.c` | `parse_args()` orchestrator, `parse_duration()`/`parse_unsigned()` scalar helpers shared by every family. |
 | `selection.c` | Arch/syscall/domain/group/-r/-N/-s/-V selection knobs plus the comma-list csv helper. |
