@@ -1,14 +1,8 @@
 /*
- * Mini-corpus per-arg mutator engine.
- *
- * Weighted case picker (Beta(1,1)-prior posterior mean over historical
- * trials/wins), the structure-aware neighbour ops for ARG_LIST /
- * ARG_OP / ARG_RANGE slots, and the stacking wrapper that composes 1..
- * STACK_MAX primitive mutations per invocation.  The splice-and-mutate
- * driver in persist/minicorpus-splice.c drives this by calling
- * mutate_arg_stacked() per slot; the attribution stashes populated as
- * a side effect are drained by persist/minicorpus-accounting.c on the
- * post-syscall commit.
+ * Mini-corpus per-arg mutator engine: the weighted case picker (posterior
+ * mean of a Beta(1,1) prior over historical trials/wins), the structure-aware
+ * neighbour ops for ARG_LIST / ARG_OP / ARG_RANGE slots, and the stacking
+ * wrapper that composes 1..STACK_MAX mutations per invocation.
  */
 
 #include "child.h"

@@ -1,13 +1,8 @@
 /*
- * Mini-corpus mutate accept-reject accounting.
- *
- * Holds the per-process attribution stashes that the mutator engine
- * bumps as it works and drains them into fleet-wide trials/wins on the
- * post-syscall commit.  Split out of minicorpus-mutate.c so the
- * accounting rules (baseline gate, source-age histogram, per-tag
- * struct-field credit, replay/splice win counters) live in one
- * place, separate from the mutator picker and the splice-and-mutate
- * driver that populate the stash.
+ * Mini-corpus mutate accept-reject accounting: the per-process attribution
+ * stashes the mutator engine bumps as it works, drained into fleet-wide
+ * trials/wins on the post-syscall commit (baseline gate, source-age
+ * histogram, per-tag struct-field credit, replay/splice win counters).
  */
 
 #include "child.h"

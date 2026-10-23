@@ -1,14 +1,9 @@
 /*
- * Mini-corpus splice-and-mutate driver.
- *
- * Walks the six saved arg slots for one syscall replay applying the
- * cross-arg splice and the weighted-stack per-arg mutator chain from
- * persist/minicorpus-field-mutate.c, with a final fd-safety scrub so
- * stale stdio fds in the saved args never reach dispatch.  Both the
- * per-syscall mini-corpus replay path (persist/minicorpus-select.c)
- * and the chain-corpus replay path call this so the mutation logic --
- * and the splice/replay telemetry it bumps -- stays a single shared
- * engine.
+ * Mini-corpus splice-and-mutate driver: walks the six saved arg slots of one
+ * syscall replay applying the cross-arg splice and the per-arg mutator chain
+ * from minicorpus-field-mutate.c, then an fd-safety scrub so stale stdio fds
+ * in the saved args never reach dispatch.  The per-syscall replay and the
+ * chain-corpus replay both call it, keeping the mutation logic one engine.
  */
 
 #include <string.h>

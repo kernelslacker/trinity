@@ -1,16 +1,9 @@
 /*
- * On-disk corpus persistence (warm-start).
- *
- * The format is a fixed header followed by a stream of fixed-size
- * entries.  Header carries a magic, a format version, the running
- * kernel's major.minor, and the syscall-number space size.  Each
- * entry carries the syscall number, num_args, six argument values,
- * the ABI (do32bit) and a CRC32 covering only the entry payload — a
- * corrupt entry is dropped without taking down the whole file.
- *
- * The layout is intentionally architecture-specific: callers build
- * paths under a per-arch subdirectory.  Cross-arch reuse is unsafe
- * because syscall numbers don't agree.
+ * On-disk corpus persistence (warm-start): a fixed header followed by
+ * fixed-size entries, each carrying its ABI (do32bit) and a CRC32 over its
+ * own payload, so a corrupt entry is dropped without taking down the file.
+ * The layout is architecture-specific: callers build paths under a per-arch
+ * subdirectory, since syscall numbers don't agree across arches.
  */
 
 #include <errno.h>

@@ -1,16 +1,9 @@
 /*
- * Periodic mid-run snapshot trigger.
- *
- * The save path itself is set in the parent before fork via
- * minicorpus_enable_snapshots() and inherited COW by every child.  All
- * children call minicorpus_maybe_snapshot() after each kcov edge event;
- * the function early-returns cheaply unless the fleet-wide edge count
- * has advanced MINICORPUS_SNAPSHOT_EDGES past the last snapshot's
- * high-water-mark.  When the gap is reached, a single CAS on
- * minicorpus_shm->edges_at_last_snapshot picks one caller as the saver
- * — it runs minicorpus_save_file() while everyone else loses the CAS
- * and returns.  The next snapshot opportunity opens once the next
- * MINICORPUS_SNAPSHOT_EDGES window has accumulated.
+ * Periodic mid-run snapshot trigger.  minicorpus_enable_snapshots() sets the
+ * save path in the parent before fork; every child calls
+ * minicorpus_maybe_snapshot() after each kcov edge event, and a single CAS on
+ * minicorpus_shm->edges_at_last_snapshot elects one caller to run
+ * minicorpus_save_file() once the edge-count or elapsed-time window opens.
  */
 
 #include <limits.h>
