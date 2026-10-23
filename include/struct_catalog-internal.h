@@ -522,22 +522,14 @@ extern const struct struct_field fs_disk_quota_fields[FS_DISK_QUOTA_FIELDS_N];
  * it did before the carve.
  */
 enum {
-	TIMEX_FIELDS_N		= 18,
-	ITIMERSPEC_FIELDS_N	= 4,
 	TIMESPEC_FIELDS_N	= 2,
-	ITIMERVAL_FIELDS_N	= 4,
 	UTIMBUF_FIELDS_N	= 2,
 	TIMEVAL_FIELDS_N	= 2,
-	TIMEZONE_FIELDS_N	= 2,
 };
 
-extern const struct struct_field timex_fields[TIMEX_FIELDS_N];
-extern const struct struct_field itimerspec_fields[ITIMERSPEC_FIELDS_N];
 extern const struct struct_field timespec_fields[TIMESPEC_FIELDS_N];
-extern const struct struct_field itimerval_fields[ITIMERVAL_FIELDS_N];
 extern const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N];
 extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
-extern const struct struct_field timezone_fields[TIMEZONE_FIELDS_N];
 
 /*
  * perf_event_attr leaf tables defined in struct_catalog/perf.c.  The
@@ -576,38 +568,18 @@ extern const struct struct_field landlock_path_beneath_attr_fields[LANDLOCK_PATH
 extern const struct struct_field landlock_net_port_attr_fields[LANDLOCK_NET_PORT_ATTR_FIELDS_N];
 
 /*
- * LSM leaf table defined in struct_catalog/lsm.c.  Covers struct
- * lsm_ctx (lsm_set_self_attr a2 head).  The _N constant gives the
- * extern decl a complete array type so the spine's ARRAY_SIZE() at
- * the reference site keeps folding to the same constant it did before
- * the carve.  The struct lsm_ctx fallback shim lives in both
- * struct_catalog.c and struct_catalog/lsm.c under the same
- * #ifndef _LINUX_LSM_H guard -- the spine needs the type visible for
- * sizeof(struct lsm_ctx) on its catalog entry, the leaf TU needs it
- * for the FIELD() offsetof / sizeof initialisers.
- */
-enum {
-	LSM_CTX_FIELDS_N	= 4,
-};
-
-extern const struct struct_field lsm_ctx_fields[LSM_CTX_FIELDS_N];
-
-/*
  * signal-shaped leaf tables defined in struct_catalog/signal.c.
- * Covers struct sigevent (timer_create), struct sigaction (rt_sigaction),
- * stack_t (sigaltstack), the siginfo_t header + its _rt / _kill variant
- * arms (rt_sigqueueinfo / rt_tgsigqueueinfo / pidfd_send_signal), and
- * sigset_t (signalfd / signalfd4).  Each _N constant gives the extern
- * decl a complete array type so the spine's ARRAY_SIZE() at the
- * reference site keeps folding to the same constant it did before the
- * carve.  sigevent_notify_values / siginfo_t_si_code_vocab /
+ * Covers struct sigaction (rt_sigaction), stack_t (sigaltstack), the
+ * siginfo_t header + its _rt / _kill variant arms (rt_sigqueueinfo /
+ * rt_tgsigqueueinfo / pidfd_send_signal), and sigset_t (signalfd /
+ * signalfd4).  Each _N constant gives the extern decl a complete array
+ * type so the spine's ARRAY_SIZE() at the reference site keeps folding
+ * to the same constant it did before the carve.  siginfo_t_si_code_vocab /
  * siginfo_t_kill_discrim_values are private vocab pools referenced
  * only by their own signal field arrays / variant entries and stay
  * scoped to signal.c through this extern surface.
  */
 enum {
-	SIGEVENT_NOTIFY_VALUES_N		= 4,
-	SIGEVENT_FIELDS_N			= 4,
 	SIGACTION_FIELDS_N			= 1,
 	STACK_T_FIELDS_N			= 3,
 	SIGINFO_T_SI_CODE_VOCAB_N		= 6,
@@ -619,8 +591,6 @@ enum {
 	SIGSET_T_FIELDS_N			= 1,
 };
 
-extern const unsigned long sigevent_notify_values[SIGEVENT_NOTIFY_VALUES_N];
-extern const struct struct_field sigevent_fields[SIGEVENT_FIELDS_N];
 extern const struct struct_field sigaction_fields[SIGACTION_FIELDS_N];
 extern const struct struct_field stack_t_fields[STACK_T_FIELDS_N];
 extern const unsigned long siginfo_t_si_code_vocab[SIGINFO_T_SI_CODE_VOCAB_N];
@@ -630,29 +600,6 @@ extern const struct struct_field siginfo_t_kill_variant_fields[SIGINFO_T_KILL_VA
 extern const unsigned long siginfo_t_kill_discrim_values[SIGINFO_T_KILL_DISCRIM_VALUES_N];
 extern const struct union_variant siginfo_t_variants[SIGINFO_T_VARIANTS_N];
 extern const struct struct_field sigset_t_fields[SIGSET_T_FIELDS_N];
-
-/*
- * SysV / POSIX IPC leaf tables defined in struct_catalog/ipc.c.
- * Covers struct sembuf (semop / semtimedop), struct mq_attr
- * (mq_open / mq_getsetattr), struct msqid_ds (msgctl IPC_SET),
- * struct shmid_ds (shmctl IPC_SET), and struct msgbuf (msgsnd).
- * Each _N constant gives the extern decl a complete array type so
- * the spine's ARRAY_SIZE() at the reference site keeps folding to
- * the same constant it did before the carve.
- */
-enum {
-	SEMBUF_FIELDS_N		= 3,
-	MQ_ATTR_FIELDS_N	= 4,
-	MSQID_DS_FIELDS_N	= 2,
-	SHMID_DS_FIELDS_N	= 3,
-	MSGBUF_FIELDS_N		= 1,
-};
-
-extern const struct struct_field sembuf_fields[SEMBUF_FIELDS_N];
-extern const struct struct_field mq_attr_fields[MQ_ATTR_FIELDS_N];
-extern const struct struct_field msqid_ds_fields[MSQID_DS_FIELDS_N];
-extern const struct struct_field shmid_ds_fields[SHMID_DS_FIELDS_N];
-extern const struct struct_field msgbuf_fields[MSGBUF_FIELDS_N];
 
 /*
  * fcntl-family leaf tables defined in struct_catalog/fcntl.c.
@@ -776,19 +723,6 @@ enum {
 
 extern const struct struct_field sock_filter_fields[SOCK_FILTER_FIELDS_N];
 extern const struct struct_field sock_fprog_fields[SOCK_FPROG_FIELDS_N];
-
-/*
- * kexec leaf tables defined in struct_catalog/kexec.c.  Covers struct
- * kexec_segment (the kexec_load segments array element).  The _N
- * constant gives the extern decl a complete array type so the spine's
- * ARRAY_SIZE() at the reference site keeps folding to the same
- * constant it did before the carve.
- */
-enum {
-	KEXEC_SEGMENT_FIELDS_N	= 4,
-};
-
-extern const struct struct_field kexec_segment_fields[KEXEC_SEGMENT_FIELDS_N];
 
 /*
  * keyctl payload leaf tables defined in struct_catalog/keyctl.c.

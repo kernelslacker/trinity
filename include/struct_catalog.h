@@ -324,12 +324,10 @@ struct syscall_struct_arg {
  * slot, so a referenced-but-disabled entry is a compile error.
  */
 enum struct_catalog_idx {
-	SC_TIMEX,
 	SC_SCHED_ATTR,
 	SC_CLONE_ARGS,
 	SC_IO_URING_PARAMS,
 	SC_RLIMIT,
-	SC_ITIMERSPEC,
 	SC_EPOLL_EVENT,
 	SC_PERF_EVENT_ATTR,
 	SC_SIGACTION,
@@ -342,8 +340,6 @@ enum struct_catalog_idx {
 	SC_FUTEX_WAITV,
 	SC_STACK_T,
 	SC_SIGINFO_T,
-	SC_MQ_ATTR,
-	SC_MSQID_DS,
 	SC_SCHED_PARAM,
 	SC_IO_URING_REGISTER_ARGS,
 #ifdef USE_BPF
@@ -354,17 +350,13 @@ enum struct_catalog_idx {
 	SC_TIMESPEC,
 	SC_CACHESTAT_RANGE,
 	SC_MOUNT_ATTR,
-	SC_SEMBUF,
 	SC_POLLFD,
 	SC_OPEN_HOW,
-	SC_SIGEVENT,
 	SC_ROBUST_LIST_HEAD,
 	SC_RSEQ,
-	SC_ITIMERVAL,
 	SC_UTIMBUF,
 	SC_FLOCK,
 	SC_TIMEVAL,
-	SC_TIMEZONE,
 	SC_NS_ID_REQ,
 #ifdef USE_XATTR_ARGS
 	SC_XATTR_ARGS,
@@ -384,7 +376,6 @@ enum struct_catalog_idx {
 #endif
 	SC_SOCK_FILTER,
 	SC_SOCK_FPROG,
-	SC_SHMID_DS,
 	SC_IOCB,
 	/*
 	 * setsockopt optval struct shapes -- first batch (the proof) for
@@ -430,10 +421,7 @@ enum struct_catalog_idx {
 	SC_MMSGHDR,
 	SC_GROUP_SOURCE_REQ,
 	SC_IP_MREQ_SOURCE,
-	SC_MSGBUF,
 	SC_SIGSET_T,
-	SC_LSM_CTX,
-	SC_KEXEC_SEGMENT,
 	SC_KEYCTL_PAYLOAD,
 	SC_UFFDIO_RANGE,
 	SC_UFFDIO_API,

@@ -12,17 +12,12 @@
 #include <stddef.h>
 #include <signal.h>
 #include <sys/time.h>
-#include <sys/timex.h>
 #include <sys/resource.h>
 #include <sys/epoll.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/uio.h>
-#include <sys/ipc.h>
-#include <sys/msg.h>
-#include <sys/sem.h>
-#include <sys/shm.h>
 #include <sched.h>
 #include <utime.h>
 #include <netinet/in.h>
@@ -40,7 +35,6 @@
 #include <linux/sched.h>
 #include <linux/sched/types.h>
 #include <linux/io_uring.h>
-#include <linux/kexec.h>
 #include <linux/landlock.h>
 #include <linux/mman.h>
 #include <linux/mount.h>
@@ -48,7 +42,6 @@
 #include <linux/quota.h>
 #include <linux/dqblk_xfs.h>
 #include <linux/userfaultfd.h>
-#include <mqueue.h>
 #include <fcntl.h>
 #include <string.h>
 #include <time.h>
@@ -194,36 +187,6 @@ _Static_assert(sizeof(struct open_how) == 3 * sizeof(__u64),
  */
 
 /*
- * struct lsm_ctx from include/uapi/linux/lsm.h may not be present in
- * every host's kernel headers.  The field table lives in
- * struct_catalog/lsm.c, but the spine's struct_catalog[] entry takes
- * sizeof(struct lsm_ctx), so the type definition must also be visible
- * here.  The ifndef guard hands off to the host header when it is
- * present; both TUs land on a layout-identical definition either way.
- * A future uapi bump that grows the fixed head needs both copies
- * updated.  The flexible ctx[] tail is intentionally omitted: only
- * the fixed 4-u64 head is cataloged.
- */
-#ifndef _LINUX_LSM_H
-struct lsm_ctx {
-	__u64 id;
-	__u64 flags;
-	__u64 len;
-	__u64 ctx_len;
-};
-#else
-/*
- * Host <linux/lsm.h> supplied the struct.  Assert the fixed head is
- * the 4-u64 layout the fallback declares so a future uapi bump that
- * grows the head trips at compile time rather than silently diverging
- * from the shim in struct_catalog/lsm.c.  Only the fixed head is
- * cataloged; the flexible ctx[] tail is intentionally not covered.
- */
-_Static_assert(sizeof(struct lsm_ctx) == 4 * sizeof(__u64),
-	       "struct lsm_ctx head drifted from trinity fallback; update both fallback copies");
-#endif
-
-/*
  * struct keyctl_pkey_params / keyctl_dh_params may not be present in
  * every host's <linux/keyctl.h>.  The field tables live in
  * struct_catalog/keyctl.c, but the spine's struct_catalog[] entry
@@ -265,12 +228,6 @@ _Static_assert(sizeof(struct keyctl_pkey_params) == sizeof(__s32) + 9 * sizeof(_
 
 const struct struct_desc struct_catalog[] = {
 	/* Slot order is immaterial -- refs use SC_X. */
-	[SC_TIMEX] = {
-		.name		= "timex",
-		.struct_size	= sizeof(struct timex),
-		.fields		= timex_fields,
-		.num_fields	= ARRAY_SIZE(timex_fields),
-	},
 	[SC_SCHED_ATTR] = {
 		.name		= "sched_attr",
 		.struct_size	= sizeof(struct sched_attr),
@@ -294,12 +251,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct rlimit),
 		.fields		= rlimit_fields,
 		.num_fields	= ARRAY_SIZE(rlimit_fields),
-	},
-	[SC_ITIMERSPEC] = {
-		.name		= "itimerspec",
-		.struct_size	= sizeof(struct itimerspec),
-		.fields		= itimerspec_fields,
-		.num_fields	= ARRAY_SIZE(itimerspec_fields),
 	},
 	[SC_EPOLL_EVENT] = {
 		.name		= "epoll_event",
@@ -388,18 +339,6 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_offset	= offsetof(siginfo_t, si_code),
 		.buffer_discrim_size	= sizeof(((siginfo_t *) 0)->si_code),
 	},
-	[SC_MQ_ATTR] = {
-		.name		= "mq_attr",
-		.struct_size	= sizeof(struct mq_attr),
-		.fields		= mq_attr_fields,
-		.num_fields	= ARRAY_SIZE(mq_attr_fields),
-	},
-	[SC_MSQID_DS] = {
-		.name		= "msqid_ds",
-		.struct_size	= sizeof(struct msqid_ds),
-		.fields		= msqid_ds_fields,
-		.num_fields	= ARRAY_SIZE(msqid_ds_fields),
-	},
 	[SC_SCHED_PARAM] = {
 		.name		= "sched_param",
 		.struct_size	= sizeof(struct sched_param),
@@ -474,12 +413,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= mount_attr_fields,
 		.num_fields	= ARRAY_SIZE(mount_attr_fields),
 	},
-	[SC_SEMBUF] = {
-		.name		= "sembuf",
-		.struct_size	= sizeof(struct sembuf),
-		.fields		= sembuf_fields,
-		.num_fields	= ARRAY_SIZE(sembuf_fields),
-	},
 	[SC_POLLFD] = {
 		.name		= "pollfd",
 		.struct_size	= sizeof(struct pollfd),
@@ -492,12 +425,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= open_how_fields,
 		.num_fields	= ARRAY_SIZE(open_how_fields),
 	},
-	[SC_SIGEVENT] = {
-		.name		= "sigevent",
-		.struct_size	= sizeof(struct sigevent),
-		.fields		= sigevent_fields,
-		.num_fields	= ARRAY_SIZE(sigevent_fields),
-	},
 	[SC_ROBUST_LIST_HEAD] = {
 		.name		= "robust_list_head",
 		.struct_size	= sizeof(struct robust_list_head),
@@ -509,12 +436,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct rseq),
 		.fields		= rseq_fields,
 		.num_fields	= ARRAY_SIZE(rseq_fields),
-	},
-	[SC_ITIMERVAL] = {
-		.name		= "itimerval",
-		.struct_size	= sizeof(struct itimerval),
-		.fields		= itimerval_fields,
-		.num_fields	= ARRAY_SIZE(itimerval_fields),
 	},
 	[SC_UTIMBUF] = {
 		.name		= "utimbuf",
@@ -533,12 +454,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct timeval),
 		.fields		= timeval_fields,
 		.num_fields	= ARRAY_SIZE(timeval_fields),
-	},
-	[SC_TIMEZONE] = {
-		.name		= "timezone",
-		.struct_size	= sizeof(struct timezone),
-		.fields		= timezone_fields,
-		.num_fields	= ARRAY_SIZE(timezone_fields),
 	},
 	[SC_NS_ID_REQ] = {
 		.name		= "ns_id_req",
@@ -611,12 +526,6 @@ const struct struct_desc struct_catalog[] = {
 		.fields		= sock_fprog_fields,
 		.num_fields	= ARRAY_SIZE(sock_fprog_fields),
 	},
-	[SC_SHMID_DS] = {
-		.name		= "shmid_ds",
-		.struct_size	= sizeof(struct shmid_ds),
-		.fields		= shmid_ds_fields,
-		.num_fields	= ARRAY_SIZE(shmid_ds_fields),
-	},
 	[SC_IOCB] = {
 		.name		= "iocb",
 		.struct_size	= sizeof(struct iocb),
@@ -624,23 +533,11 @@ const struct struct_desc struct_catalog[] = {
 		.num_fields	= ARRAY_SIZE(iocb_fields),
 	},
 #include "catalog-setsockopt.inc"
-	[SC_MSGBUF] = {
-		.name		= "msgbuf",
-		.struct_size	= sizeof(struct msgbuf),
-		.fields		= msgbuf_fields,
-		.num_fields	= ARRAY_SIZE(msgbuf_fields),
-	},
 	[SC_SIGSET_T] = {
 		.name		= "sigset_t",
 		.struct_size	= sizeof(sigset_t),
 		.fields		= sigset_t_fields,
 		.num_fields	= ARRAY_SIZE(sigset_t_fields),
-	},
-	[SC_LSM_CTX] = {
-		.name		= "lsm_ctx",
-		.struct_size	= sizeof(struct lsm_ctx),
-		.fields		= lsm_ctx_fields,
-		.num_fields	= ARRAY_SIZE(lsm_ctx_fields),
 	},
 #ifdef USE_TCP_REPAIR_OPT
 	[SC_TCP_REPAIR_OPT] = {
@@ -668,12 +565,6 @@ const struct struct_desc struct_catalog[] = {
 		.struct_size	= sizeof(struct mmsghdr),
 		.fields		= mmsghdr_fields,
 		.num_fields	= ARRAY_SIZE(mmsghdr_fields),
-	},
-	[SC_KEXEC_SEGMENT] = {
-		.name		= "kexec_segment",
-		.struct_size	= sizeof(struct kexec_segment),
-		.fields		= kexec_segment_fields,
-		.num_fields	= ARRAY_SIZE(kexec_segment_fields),
 	},
 #include "catalog-uffdio.inc"
 	[SC_KEYCTL_PAYLOAD] = {

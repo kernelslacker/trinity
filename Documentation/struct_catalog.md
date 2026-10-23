@@ -46,17 +46,12 @@ and resolve to NULL -- `gen_arg_struct_ptr_inout` falls through to a
 zeroed fallback buffer that `sanitise_fcntl` overwrites with an fd
 or integer flag word, same as before.
 
-## timeval slots -- settimeofday / select / futimesat / utimes
+## timeval slots -- select / futimesat / utimes
 
-All four rows are attribution-only; the bespoke sanitiser remains
+All three rows are attribution-only; the bespoke sanitiser remains
 the sole writer of the timeval slot, and the catalog row lets
 `struct_field_for_cmp` steer CMP-learned constants at `tv_sec` /
 `tv_usec` rather than at a coincidentally-same-width slot.
-
-- `settimeofday(struct timeval *tv, struct timezone *tz)`: a1 is the
-  INPUT timeval. `sanitise_settimeofday()` fills 70% near-now via
-  `clock_gettime()` + bounded `tv_usec`, 30% random with an explicit
-  invalid-`tv_usec` leg.
 
 - `select(int n, fd_set *, fd_set *, fd_set *, struct timeval *tvp)`:
   a5 is the INOUT timeout. `sanitise_select()` stamps a deterministic
@@ -75,16 +70,6 @@ the sole writer of the timeval slot, and the catalog row lets
 - `utimes(char *filename, struct __kernel_old_timeval *utimes)`: a2 is
   the INPUT `struct timeval[2]` pointer. Same single-element caveat
   as `futimesat`.
-
-Not mapped: `gettimeofday`'s a1 is a kernel-written OUTPUT with no
-input fill to attribute against.
-
-`settimeofday`'s a2 (`struct timezone`) is registered separately with
-its own attribution-only row -- `sanitise_settimeofday()` runs a
-`RAND_BOOL()` gate over `get_writable_address()`: a 50/50 zero-leg
-vs random-leg producing `tz_minuteswest` in `[-780, +780]` and
-`tz_dsttime` in `[0, 3]`. `gettimeofday`'s a2 is likewise a
-kernel-written OUTPUT and not mapped.
 
 ## landlock_add_rule a3 -- rule_type-discriminated struct pointer
 

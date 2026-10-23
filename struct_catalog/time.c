@@ -10,62 +10,11 @@
 #include <stddef.h>
 #include <time.h>
 #include <sys/time.h>
-#include <sys/timex.h>
 #include <utime.h>
 
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
-
-/* ------------------------------------------------------------------ */
-/* struct timex (adjtimex, clock_adjtime)                               */
-/* ------------------------------------------------------------------ */
-
-/*
- * ADJ_* mode-bit vocabulary for timex.modes.  Anything outside the
- * mask causes the kernel to reject the call before any clock state is
- * read, so an FT_RAW splat almost never reaches the do_adjtimex()
- * dispatch.  Mask values are stable in linux/timex.h; new ADJ_* bits
- * are rare and caught by reviewer reading the uapi diff.
- */
-#define TIMEX_MODES_MASK \
-	(ADJ_OFFSET | ADJ_FREQUENCY | ADJ_MAXERROR | ADJ_ESTERROR | \
-	 ADJ_STATUS | ADJ_TIMECONST | ADJ_TAI    | ADJ_SETOFFSET | \
-	 ADJ_MICRO  | ADJ_NANO      | ADJ_TICK)
-
-const struct struct_field timex_fields[TIMEX_FIELDS_N] = {
-	FIELDX(struct timex, modes, FT_FLAGS,
-	       .u.flags.mask = TIMEX_MODES_MASK,
-	       .mutate_weight = 80),
-	FIELD(struct timex, offset),
-	FIELD(struct timex, freq),
-	FIELD(struct timex, maxerror),
-	FIELD(struct timex, esterror),
-	FIELD(struct timex, status),
-	FIELD(struct timex, constant),
-	FIELD(struct timex, precision),
-	FIELD(struct timex, tolerance),
-	FIELD(struct timex, tick),
-	FIELD(struct timex, ppsfreq),
-	FIELD(struct timex, jitter),
-	FIELD(struct timex, shift),
-	FIELD(struct timex, stabil),
-	FIELD(struct timex, jitcnt),
-	FIELD(struct timex, calcnt),
-	FIELD(struct timex, errcnt),
-	FIELD(struct timex, stbcnt),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct itimerspec (timer_settime, timerfd_settime)                  */
-/* ------------------------------------------------------------------ */
-
-const struct struct_field itimerspec_fields[ITIMERSPEC_FIELDS_N] = {
-	FIELD(struct itimerspec, it_interval.tv_sec),
-	FIELD(struct itimerspec, it_interval.tv_nsec),
-	FIELD(struct itimerspec, it_value.tv_sec),
-	FIELD(struct itimerspec, it_value.tv_nsec),
-};
 
 /* ------------------------------------------------------------------ */
 /* struct timespec (clock_nanosleep, nanosleep, utimensat)             */
@@ -86,50 +35,6 @@ const struct struct_field timespec_fields[TIMESPEC_FIELDS_N] = {
 	       .mutate_weight = 60),
 	FIELDX(struct timespec, tv_nsec, FT_RANGE,
 	       .u.range = { 0, 999999999UL },
-	       .mutate_weight = 60),
-};
-
-/* ------------------------------------------------------------------ */
-/* struct itimerval (setitimer)                                        */
-/* ------------------------------------------------------------------ */
-
-/*
- * setitimer(int which, const struct itimerval __user *value,
- *           struct itimerval __user *ovalue) passes the input itimerval
- * at a2.  The bespoke sanitise_setitimer() in syscalls/itimer/setitimer.c
- * continues to own the live fill: it get_writable_address()es a struct
- * itimerval, walks both embedded timevals through fill_timeval() (zero
- * / sub-second / small-positive / random tv_sec buckets paired with a
- * legal tv_usec), half the time disarms the timer by zeroing it_value,
- * routes a2 to the writable buffer, and runs a3 through
- * avoid_shared_buffer_out().  setitimer's argtype[1] is not
- * ARG_STRUCT_PTR_*, so the schema-aware fill path never runs against
- * it -- mirrors itimerspec / robust_list_head / rseq / pollfd / sembuf
- * / open_how / sigevent above.
- *
- * Registration is attribution-only: struct_field_for_cmp() uses the
- * FT_RANGE tags to attribute small-int CMP constants at the named
- * tv_sec / tv_usec slots rather than at a coincidentally-same-width
- * slot.  Bounds mirror the timespec_fields[] precedent: tv_sec is left
- * unbounded so absolute / past / future buckets stay reachable; tv_usec
- * is pinned to the legal microsecond range so the request actually
- * clears timeval_valid() inside the kernel's setitimer entry.  Only
- * setitimer's INPUT a2 is mapped below -- a3 (ovalue) is a kernel-
- * written output, and getitimer's a2 is likewise an output, so neither
- * is mapped.
- */
-const struct struct_field itimerval_fields[ITIMERVAL_FIELDS_N] = {
-	FIELDX(struct itimerval, it_interval.tv_sec, FT_RANGE,
-	       .u.range = { 0, 4000000000UL },
-	       .mutate_weight = 60),
-	FIELDX(struct itimerval, it_interval.tv_usec, FT_RANGE,
-	       .u.range = { 0, 999999UL },
-	       .mutate_weight = 60),
-	FIELDX(struct itimerval, it_value.tv_sec, FT_RANGE,
-	       .u.range = { 0, 4000000000UL },
-	       .mutate_weight = 60),
-	FIELDX(struct itimerval, it_value.tv_usec, FT_RANGE,
-	       .u.range = { 0, 999999UL },
 	       .mutate_weight = 60),
 };
 
@@ -183,8 +88,7 @@ const struct struct_field utimbuf_fields[UTIMBUF_FIELDS_N] = {
  * produce are preserved; tv_usec is pinned to the legal microsecond
  * range so attribution at the named tv_usec slot lines up with the
  * kernel's timeval_valid() check rather than landing on a
- * coincidentally-same-width neighbour.  Bound mirrors the
- * itimerval_fields[] tv_usec precedent (0..999999).
+ * coincidentally-same-width neighbour.
  */
 const struct struct_field timeval_fields[TIMEVAL_FIELDS_N] = {
 	FIELD(struct timeval, tv_sec),
@@ -193,39 +97,3 @@ const struct struct_field timeval_fields[TIMEVAL_FIELDS_N] = {
 	       .mutate_weight = 60),
 };
 
-/* ------------------------------------------------------------------ */
-/* struct timezone (settimeofday)                                      */
-/* ------------------------------------------------------------------ */
-
-/*
- * struct timezone is the (tz_minuteswest, tz_dsttime) pair settimeofday
- * takes at a2.  The bespoke sanitise_settimeofday() owns the live fill
- * via get_writable_address(): a 50/50 zero-vs-random leg producing
- * tz_minuteswest in [-780, +780] (-13h..+13h in minutes) and tz_dsttime
- * in [0, 3].  Without a catalog entry the slot was filled but had no
- * schema path of its own, so struct_field_for_cmp() had nothing to
- * hang KCOV-CMP attribution against and learned constants fell at a
- * coincidentally-same-width slot rather than at a named field.
- *
- * Registration is attribution-only, mirroring the in-tree timespec /
- * utimensat handling and the landed timeval / utimbuf / flock commits:
- * the bespoke sanitiser keeps owning the fill -- this only feeds the
- * CMP-attribution path.  tz_minuteswest is left FT_RAW: the live fill
- * spans a signed window [-780, +780] and the FT_RANGE union carries
- * unsigned bounds (struct { unsigned long lo, hi; } range), so a
- * literal {-780, 780} would wrap to a garbage upper bound; the signed
- * bytes the bespoke fill produces are preserved verbatim.  tz_dsttime
- * is all-positive [0, 3] and pins cleanly to FT_RANGE so attribution
- * at the named slot lines up with the kernel's narrow legal window.
- */
-const struct struct_field timezone_fields[TIMEZONE_FIELDS_N] = {
-	/*
-	 * FT_RANGE's bounds are unsigned long, so this signed
-	 * [-780, +780] minutes-west window cannot be expressed as a
-	 * range; keep FT_RAW and let the bespoke fill own the value.
-	 */
-	FIELD(struct timezone, tz_minuteswest),
-	FIELDX(struct timezone, tz_dsttime, FT_RANGE,
-	       .u.range = { 0, 3 },
-	       .mutate_weight = 40),
-};

@@ -16,7 +16,7 @@ per-cmd BPF field tables under `bpf-*.c`.
 | File | Lines | Role |
 |---|---|---|
 | sockaddr-af.c | 792 | `sockaddr_storage_fields`/`_variants` tagged union (dispatch on `ss_family`) + per-AF field arrays (UNIX/INET/INET6/NETLINK/PACKET/TIPC/QIPCRTR/NFC + optional VSOCK/CAIF/CAN/RXRPC/X25/PHONET/AX25/ROSE/ATM/LLC/MCTP/IF_ALG/XDP) |
-| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`, `lsm_ctx`), `struct_catalog_lookup()` by name |
+| catalog.c | 725 | `struct_catalog[]` — the struct_desc array itself (name/size/fields/variants per SC_X slot), local shims for structs missing from older kernel headers (`open_how`, `ns_id_req`), `struct_catalog_lookup()` by name |
 | io_uring_register.c | 695 | io_uring_setup params fields + `io_uring_register_variants[]` (one variant per IORING_REGISTER_* opcode) |
 | sctp.c | 587 | 20+ SCTP setsockopt optval field tables (rtoinfo, assocparams, sndinfo, paddrparams, etc.), gated `USE_SCTP` |
 | perf.c | 572 | `perf_event_attr_fields` + per-PERF_TYPE_* variant field arrays and vocab pools |
@@ -25,8 +25,8 @@ per-cmd BPF field tables under `bpf-*.c`.
 | registry.c | 343 | Registration composition root + (nr, arg) lookup: `syscall_struct_arg_groups[]`, the `slot_binding` pool + `desc_by_nr_64/32[]` fast nr-indexed lookup, `struct_arg_lookup`/`_two_key`, `struct_catalog_init()` |
 | bpf-prog.c | 297 | BPF_PROG_* command family field tables |
 | variant.c | 260 | Generic discriminator resolution: `read_rec_arg`, `discrim_key_matches`, `discrim_key2_matches` (shared with registry.c's rec-based lookup), `struct_desc_resolve_variant`, `struct_desc_resolve_nested_variant` |
-| time.c | 231 | timex, itimerspec, timespec, itimerval, utimbuf, timeval, timezone field tables |
-| signal.c | 231 | sigevent, sigaction, stack_t, siginfo_t (+ `_rt`/`_kill` tagged-union variants), sigset_t |
+| time.c | 231 | timespec, utimbuf, timeval field tables |
+| signal.c | 231 | sigaction, stack_t, siginfo_t (+ `_rt`/`_kill` tagged-union variants), sigset_t |
 | fcntl.c | 203 | flock, f_owner_ex, open_how, file_handle field tables + fcntl cmd vocab |
 | validate.c | 189 | Init-time slot-shape guard: BUGs if a registration row's arg_idx lands on a non-struct-shaped argtype (catches the arg_idx off-by-one class of bug) |
 | sockaddr-mcast.c | 171 | ip_mreqn, ip_mreq_source, ipv6_mreq + well-known multicast-address vocab pools |
@@ -39,7 +39,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 | cmp.c | 146 | `struct_field_for_cmp()` — reservoir-sampled heuristic mapping a KCOV-CMP constant to the most likely field (prefers FT_ENUM/FT_FLAGS/FT_VERSION_MAGIC "gate" fields over same-width FT_RAW) |
 | keyctl.c | 138 | keyctl payload per-cmd field tables, dispatched off `rec->a1` in the same tagged-union shape as bpf.c; attribution-only (bespoke `sanitise_keyctl()` owns every live fill) |
 | mount.c | 116 | mount_attr, mnt_id_req, ns_id_req (+ local `ns_id_req` shim for pre-6.8 headers) |
-| ipc.c | 122 | sembuf, mq_attr, msqid_ds, shmid_ds, msgbuf |
 | socket.c | 118 | iovec, msghdr, mmsghdr |
 | futex.c | 115 | robust_list_head, rseq, futex_waitv |
 | uffdio.c | 102 | userfaultfd ioctl argument structs; attribution-only, and reached by name rather than through the registration table (ioctl args don't resolve that way) |
@@ -48,11 +47,9 @@ per-cmd BPF field tables under `bpf-*.c`.
 | aio.c | 95 | iocb + IOCB_CMD_* opcode vocab (io_cancel) |
 | bpf-task-storage.c | 85 | Task / iter / stats / token / raw-tracepoint cmd families: BPF_TASK_FD_QUERY, BPF_ENABLE_STATS, BPF_ITER_CREATE, BPF_RAW_TRACEPOINT_OPEN, BPF_TOKEN_CREATE |
 | poll.c | 83 | pollfd, epoll_event |
-| lsm.c | 80 | lsm_ctx (fixed 4-u64 head only; flexible ctx[] tail not cataloged) |
 | bpf-btf.c | 70 | BTF family: BPF_BTF_LOAD and the generic BPF_OBJ_GET_INFO_BY_FD info-query slot |
 | sched.c | 61 | sched_attr, clone_args, sched_param |
 | resource.c | 48 | rlimit, cachestat_range |
-| kexec.c | 48 | kexec_segment |
 | ldt.c | 45 | user_desc (modify_ldt write arm, X86-only) |
 | cap.c | 35 | user_cap_header, user_cap_data |
 | tcp.c | 33 | tcp_repair_opt (gated `USE_TCP_REPAIR_OPT`) |
@@ -65,8 +62,6 @@ per-cmd BPF field tables under `bpf-*.c`.
 | registry/fs.c | 503 | Filesystem / VFS rows: file / dir / mount / xattr / quota / poll / io syscalls, the landlock attrs, the fcntl / landlock_add_rule / quotactl / quotactl_fd discriminator-aware rows and their pools, the iovec fanout, and the sigset_t rows on signalfd/ppoll/epoll_pwait |
 | registry/net.c | 470 | Network rows: sockaddr / msghdr / mmsghdr on the socket calls, plus the setsockopt / getsockopt (level, optname) two-key rows and their discriminator vocabularies |
 | registry/process.c | 236 | Process / signal / rlimit / futex rows: clone3, rlimits, perf_event_open, the sigaction / siginfo / sigaltstack / sigqueue rows, capset / capget, keyctl, rseq, set_robust_list, process_vm_{read,write}v, the futex family, and (X86) modify_ldt |
-| registry/misc.c | 125 | Catch-all rows for syscalls with no clean fs / net / io_uring / sched / time / process / bpf bucket — POSIX mqueue, SysV IPC, and friends |
-| registry/time.c | 85 | Time / timer rows: adjtimex, clock_*, timer_*, timerfd_*, nanosleep, settimeofday, setitimer, timer_create. Timeout-taking syscalls whose primary domain is elsewhere keep their timespec rows in that domain's file. |
 | registry/bpf.c | 75 | BPF / seccomp rows: the bpf(2) attr union, `seccomp(SECCOMP_SET_MODE_FILTER)`, and its `prctl(PR_SET_SECCOMP)` legacy sibling |
 | registry/sched.c | 28 | sched_setattr / sched_getattr → sched_attr; sched_setparam / sched_setscheduler → sched_param |
 | registry/io_uring.c | 25 | io_uring setup and register paths only — io_uring_enter's opcode-dispatched SQE bodies resolve through their own opcode table |
@@ -108,7 +103,7 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
   across TUs, and a leaf/spine size mismatch is a build error rather than a
   runtime corruption.
 - `catalog.c`'s `struct_catalog[]` is indexed by a stable `enum
-  struct_catalog_idx` (`SC_TIMEX`, `SC_BPF_ATTR`, ...) using C99 designated
+  struct_catalog_idx` (`SC_SCHED_ATTR`, `SC_BPF_ATTR`, ...) using C99 designated
   initializers, so `#ifdef`-gated slots (USE_BPF, USE_SCTP, X86, ...) don't
   shift other indices; a `_Static_assert` locks `ARRAY_SIZE(struct_catalog)
   == SC_NR_ENTRIES` at compile time, and `struct_catalog_init()` additionally
@@ -121,7 +116,7 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
    tables; `catalog.c` assembles them into `struct_catalog[SC_X]` entries.
 2. Each `registry/<domain>.c` defines a NULL-terminated array of
    `(syscall_name, arg_idx, desc, discriminator...)` rows, hand-written per
-   syscall (~165 rows across the eight files); `registry.c` composes those
+   syscall; `registry.c` composes those
    arrays into `syscall_struct_arg_groups[]`, walked via
    `FOR_EACH_SYSCALL_STRUCT_ARG()`. A row's identity is (syscall_name,
    arg_idx) plus any discriminator keys, so group order does not matter.
@@ -245,8 +240,8 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
 
 ## Areas of attention
 
-1. **`registry/` is ~1,547 lines of near-entirely declarative data** (comments
-   plus initializer literals) spread over eight per-domain files, which is
+1. **`registry/` is near-entirely declarative data** (comments plus
+   initializer literals) spread over per-domain files, which is
    appropriate for a registration table but means any structural change to the
    row shape (e.g. a third discriminator key) touches all of them at once. The
    lookup logic itself (`struct_arg_lookup*`, `slot_binding_attach`,
@@ -269,7 +264,7 @@ setsockopt, sctp and uffdio slots, each wrapped in its own feature guard.
    sizes (max ~22 fields), but would need revisiting if per-cmd bpf_attr-style
    variants grow substantially larger.
 5. **The catalog is hand-maintained against kernel UAPI headers**, including
-   inline fallback struct definitions (`open_how`, `ns_id_req`, `lsm_ctx`) for
+   inline fallback struct definitions (`open_how`, `ns_id_req`) for
    hosts with older kernel-headers packages. These shims are duplicated
    between `catalog.c` (for `sizeof()`) and the owning leaf TU (for
    `offsetof()`), with comments flagging that a future UAPI header bump
