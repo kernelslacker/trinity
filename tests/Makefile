@@ -120,6 +120,12 @@ LDFLAGS		+= -Wl,--wrap=get_objhead
 # calls go to the real alloc_object() and to the fake add_object().
 LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 
+# munmap() refusal injection: arg_coupling_test.c wraps munmap so a test
+# can have it refuse a range with EPERM, unmapping nothing, as the kernel
+# refuses one that holds a sealed VMA.  The wrapper forwards to the real
+# munmap() unless armed.
+LDFLAGS		+= -Wl,--wrap=munmap
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -522,8 +528,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
 
 # syscalls/mm/numa/set_mempolicy_home_node.c brings set_mempolicy_home_node,
 # whose sanitiser and .vet_final hook arg_coupling_test.c runs over the
-# fake pool mapping the munmap tests use.
-PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c
+# fake pool mapping the munmap tests use.  syscalls/mm/mseal.c brings
+# mseal, whose sanitiser maps a real scratch mapping in the test process
+# and whose hook and cleanup the same test runs.
+PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c \
+		   $(TOP)/syscalls/mm/mseal.c
 
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and

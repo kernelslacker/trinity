@@ -108,8 +108,8 @@ void log_mprotect_failure(void *addr, size_t len, int prot,
  * region arrays here resolves the false positives in which a valid,
  * disjoint mm-syscall range shares a 2 MiB chunk with a tracked
  * allocation; the bitmap previously rejected those unconditionally,
- * losing real munmap / mremap / madvise / mprotect / mseal / mbind
- * coverage on hosts where allocations cluster.
+ * losing real munmap / mremap / madvise / mprotect / mbind coverage on
+ * hosts where allocations cluster.
  *
  * Semantics match the pre-bitmap byte-precise test:
  *   - a non-empty range [addr, end) overlaps [rstart, rend) iff

@@ -6,9 +6,11 @@
  * count stays inside its buffer, a munmap, mprotect, pkey_mprotect,
  * madvise or set_mempolicy_home_node range inside the pool mapping its
  * sanitiser picked, madvise's (addr, len) off trinity's tracked regions
- * too, and a madvise never installs guard pages.
+ * too, a madvise never installs guard pages, and an mseal seals only a
+ * mapping its sanitiser made for it.
  */
 
+#include <errno.h>
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -1415,6 +1417,212 @@ static void home_node_range_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* mseal.c's disposable mapping, in pages, and how many sealed ones a
+ * child keeps before its calls get an empty range. */
+#define MSEAL_MAP_PAGES		4
+#define MSEAL_MAX_SEALED	16
+
+/* munmap() as the kernel answers it over a sealed mapping (the munmap wrap
+ * in tests/Makefile): a range that holds munmap_sealed fails with EPERM
+ * and nothing is unmapped, and munmap_refused_len keeps how long it was.
+ * Any other range goes to the real call. */
+static unsigned long munmap_sealed;
+static unsigned long munmap_refused_len;
+
+int __real_munmap(void *addr, size_t len);
+int __wrap_munmap(void *addr, size_t len);
+int __wrap_munmap(void *addr, size_t len)
+{
+	unsigned long start = (unsigned long) addr;
+
+	if (munmap_sealed != 0 && munmap_sealed >= start &&
+	    munmap_sealed - start < len) {
+		munmap_refused_len = len;
+		errno = EPERM;
+		return -1;
+	}
+	return __real_munmap(addr, len);
+}
+
+/* An mseal the sanitiser built, whatever the ARG_MMAP handle in its start
+ * slot: an empty range, or one inside a fresh mapping of the call's own. */
+static struct syscallrecord *mseal_call(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	unsigned char vec;
+
+	entry->sanitise(mrec);
+	if (mrec->a1 == (unsigned long) &pool_obj.map ||
+	    (mrec->a1 >= POOL_MAP && mrec->a1 < POOL_MAP + POOL_PAGES * page_size))
+		BUG("mseal: the call named a pool mapping or its handle");
+	if (mrec->a1 != 0 &&
+	    ((mrec->a1 & ~PAGE_MASK) != 0 || mrec->a2 == 0 ||
+	     mrec->a2 > MSEAL_MAP_PAGES * page_size ||
+	     mincore((void *) mrec->a1, page_size, &vec) != 0))
+		BUG("mseal: the range is not one inside a mapping the sanitiser made");
+	return mrec;
+}
+
+/* The rewrites the hook refuses and the ones it lets through, over a call
+ * whose range is the whole disposable mapping at @base: a range past the
+ * mapping or outside it, a pool mapping included, is refused; one inside
+ * it, and one the kernel seals nothing of, passes.  Flags a rewrite turns
+ * from 0 to something else, or back, are refused, since they decide
+ * whether the kernel reads the range at all; flags that still pass or
+ * fail as the drawn ones did are not. */
+static void mseal_rewrites_held(struct syscallrecord *mrec, unsigned long base)
+{
+	const unsigned long pg = page_size, whole = MSEAL_MAP_PAGES * pg;
+	const struct {
+		unsigned long addr, len;
+		int verdict;
+	} cases[] = {
+		{ base, whole + 1, -1 },
+		{ base, 0x7ffff000UL, -1 },
+		{ base + pg, whole, -1 },
+		{ base - pg, pg, -1 },
+		{ POOL_MAP, pg, -1 },
+		{ base, whole, 0 },
+		{ base + pg, whole - pg, 0 },
+		{ base + whole - pg, pg - 1, 0 },
+		{ base + 1, pg, 0 },
+		{ base, 0, 0 },
+		{ POOL_MAP, 0, 0 },
+	};
+	const unsigned long drawn = mrec->a3;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		mrec->a1 = cases[i].addr;
+		mrec->a2 = cases[i].len;
+		if (validate_arg_coupling(mrec, mrec->entry) != cases[i].verdict)
+			BUG("mseal: a rewritten range was judged wrongly");
+	}
+
+	mrec->a1 = base;
+	mrec->a2 = pg;
+	mrec->a3 = drawn == 0 ? 1UL << 5 : 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mseal: flags rewritten to pass or fail otherwise were kept");
+	mrec->a3 = drawn == 0 ? 0 : (drawn == 1 ? 2 : 1);
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mseal: flags that pass or fail as the drawn ones did were refused");
+}
+
+/* mseal seals only a mapping its sanitiser makes for the call, never a
+ * pool mapping, and holds the final slots to it.  The cleanup gives the
+ * mapping back by its extent, not by the slots a rewrite moved, unless the
+ * kernel refuses to unmap it because the call sealed it: then it stays,
+ * whatever the call returned, and counts.  A child that has kept
+ * MSEAL_MAX_SEALED gets an empty range from then on.  This can run only
+ * once per process: it leaves the count at the cap, the mappings mapped. */
+static void mseal_seals_only_its_own_mapping(void)
+{
+	struct syscallentry entry = syscall_mseal;
+	struct syscallrecord *mrec;
+	unsigned long region, scratch;
+	unsigned int i, tested = 0, kept;
+	unsigned char vec;
+	void *p;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mseal_call(&entry);
+		region = mrec->a1;
+		if (region == 0)
+			BUG("mseal: a child under its cap was given no mapping");
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mseal: a range the sanitiser built was refused");
+		mrec->retval = (unsigned long) -1L;
+		entry.cleanup(mrec);
+		if (mincore((void *) region, page_size, &vec) == 0)
+			BUG("mseal: a call that failed kept its mapping");
+	}
+
+	/* Calls covering the whole mapping, so starting at its base: one
+	 * whose flags drew 0 and one whose flags drew something else. */
+	for (i = 0; i < 10000 && tested != 3; i++) {
+		unsigned int kind;
+
+		mrec = mseal_call(&entry);
+		region = mrec->a1;
+		kind = mrec->a3 == 0 ? 1 : 2;
+		if (mrec->a2 > (MSEAL_MAP_PAGES - 1) * page_size &&
+		    (tested & kind) == 0) {
+			mseal_rewrites_held(mrec, region);
+			tested |= kind;
+		}
+		mrec->retval = (unsigned long) -1L;
+		entry.cleanup(mrec);
+		if (mincore((void *) region, page_size, &vec) == 0)
+			BUG("mseal: a call that was refused kept its mapping");
+	}
+	if (tested != 3)
+		BUG("mseal: the sanitiser never covered its mapping with each kind of flags");
+
+	/* A rewrite onto another mapping is refused, and the cleanup unmaps
+	 * the call's own mapping, not the one the slots now name. */
+	p = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		BUG("mseal: no scratch mapping for the test");
+	scratch = (unsigned long) p;
+	mrec = mseal_call(&entry);
+	region = mrec->a1;
+	mrec->a1 = scratch;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mseal: a range rewritten onto another mapping was kept");
+	mrec->retval = (unsigned long) -1L;
+	entry.cleanup(mrec);
+	if (mincore((void *) region, page_size, &vec) == 0 ||
+	    mincore(p, page_size, &vec) != 0)
+		BUG("mseal: the cleanup unmapped by the slots, not by the snapshot");
+	munmap(p, page_size);
+
+	/* A call whose return says it worked, over a range that names pages,
+	 * still gives its mapping back if the kernel unmaps it. */
+	mrec = mseal_call(&entry);
+	region = mrec->a1;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mseal: a range the sanitiser built was refused");
+	mrec->retval = 0;
+	entry.cleanup(mrec);
+	if (mincore((void *) region, page_size, &vec) == 0)
+		BUG("mseal: a mapping the kernel did not seal was kept on the return value's word");
+
+	/* A mapping the kernel refuses to unmap stays, whatever the call
+	 * returned, and counts: the cleanup asked for all of it. */
+	for (kept = 0; kept <= MSEAL_MAX_SEALED; kept++) {
+		mrec = mseal_call(&entry);
+		region = mrec->a1;
+		if (region == 0)
+			break;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("mseal: a range the sanitiser built was refused");
+		mrec->retval = (unsigned long) -1L;
+		munmap_sealed = region;
+		munmap_refused_len = 0;
+		entry.cleanup(mrec);
+		munmap_sealed = 0;
+		if (munmap_refused_len != MSEAL_MAP_PAGES * page_size ||
+		    mincore((void *) region, page_size, &vec) != 0)
+			BUG("mseal: a sealed mapping was not asked back whole, or was lost");
+	}
+	if (kept != MSEAL_MAX_SEALED)
+		BUG("mseal: the sanitiser did not stop at its cap");
+
+	/* Past it, the range is empty, which still reaches the kernel, and a
+	 * rewrite has no mapping to give it pages in. */
+	if (mrec->a2 != 0 || validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mseal: a call past the cap was not an empty one");
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("mseal: a call past the cap kept a rewritten range");
+	entry.cleanup(mrec);
+
+	fake_this_child = NULL;
+}
+
 /* The mapping's cached prot after a call whose range the sanitiser drew
  * from a mapping with @prot_before, over prot @prot, that was rewritten to
  * the final slots @len, @final_prot and @key, and worked. */
@@ -1788,5 +1996,6 @@ void arg_coupling_self_check(void)
 	munmap_range_held_to_mapping();
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();
+	mseal_seals_only_its_own_mapping();
 	mprotect_range_held_to_mapping();
 }

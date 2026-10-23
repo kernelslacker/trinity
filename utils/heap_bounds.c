@@ -687,7 +687,7 @@ bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 
 /*
  * Diagnostic helper for the mm-syscall arg sanitisers.  Called from each
- * mm-syscall hook (madvise / mmap / mprotect / mremap / mseal /
+ * mm-syscall hook (madvise / mmap / mprotect / mremap /
  * remap_file_pages) AFTER the brk-overlap gate
  * (range_overlaps_libc_heap) has returned "not heap" for [addr, addr+len)
  * and the per-syscall sanitiser has finished any further addr rewrites.

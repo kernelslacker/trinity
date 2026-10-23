@@ -18,7 +18,7 @@
  * SHARED_BITMAP_GRANULARITY-byte chunk of user VA; a set bit means at
  * least one byte in that chunk belongs to a registered shared region.
  *
- * The mm-syscall sanitisers (madvise/mremap/mprotect/munmap/mseal/mbind/
+ * The mm-syscall sanitisers (madvise/mremap/mprotect/munmap/mbind/
  * process_madvise/remap_file_pages/...) call range_overlaps_shared()
  * once per fuzzed call, often many times per child per second.  The
  * original linear scan over shared_regions[] is O(N) per query with N
