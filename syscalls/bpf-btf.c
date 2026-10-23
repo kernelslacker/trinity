@@ -1,18 +1,9 @@
 /*
- * syscalls/bpf-btf.c -- BPF_BTF_* command family sanitisers and post
- * handler carved out of syscalls/bpf.c.
- *
- * Covers BTF_LOAD (with its BPF_F_TOKEN_FD arm), the cross-family
- * OBJ_GET_INFO_BY_FD dispatcher (which rotates through all four fd
- * pools -- prog, map, link, btf), and post_bpf_btf_fd shared by
- * BTF_LOAD and BTF_GET_FD_BY_ID.  The aggregator syscalls/bpf.c
- * dispatches into these via the externs in bpf-internal.h.
- *
- * OBJ_GET_INFO_BY_FD lives here because BTF is the pool most likely
- * to source a fresh fd for the dispatcher: the other three arms
- * (map / prog / link) already have their own carved TUs, so keeping
- * this alongside the btf pool leaves the aggregator with just the
- * cross-family generic ID ops.
+ * syscalls/bpf-btf.c -- BPF_BTF_* command family sanitisers and post handler:
+ * BTF_LOAD (with its BPF_F_TOKEN_FD arm), the cross-family OBJ_GET_INFO_BY_FD
+ * dispatcher (rotates through the prog, map, link and btf fd pools) and
+ * post_bpf_btf_fd, shared by BTF_LOAD and BTF_GET_FD_BY_ID.  The dispatcher
+ * lives here because BTF is the pool most likely to source a fresh fd.
  */
 
 #ifdef USE_BPF

@@ -1,18 +1,10 @@
 /*
  * perf_event_open: perf_event_attr body builders.
  *
- * Split out of syscalls/perf/perf_event_open.c so the four
- * create_mostly_valid_* / create_random_event body-fill routines and
- * the maybe_fill_perf_attr_body dispatcher live away from the sanitise
- * glue and the syscall descriptor.  Each builder composes the shared
- * per-type tuple picker (pick_perf_tuple) or the legacy independent
- * random_event_type / random_event_config fallback with the sample /
- * read-format / branch-sample pickers and the breakpoint-union helper
- * to shape one variant of a valid-ish perf_event_attr.
- *
- * maybe_fill_perf_attr_body is the sole caller of the four builders --
- * only it is externalised via the internal header; the individual
- * create_* builders stay file-static.
+ * Each builder composes the shared per-type tuple picker (pick_perf_tuple) or
+ * the legacy random_event_type / random_event_config fallback with the sample,
+ * read-format and branch-sample pickers and the breakpoint-union helper.  Only
+ * maybe_fill_perf_attr_body() is external; the create_* builders are static.
  */
 
 #include "csfu.h"

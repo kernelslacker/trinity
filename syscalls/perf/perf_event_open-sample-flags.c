@@ -1,16 +1,10 @@
 /*
- * perf_event_open: sample_type / read_format / branch_sample_type bit
- * pickers.
+ * perf_event_open: sample_type / read_format / branch_sample_type bit pickers.
  *
- * Split out of syscalls/perf/perf_event_open.c so the wide RAND_BOOL
- * chains that OR up attr->sample_type, attr->read_format and
- * attr->branch_sample_type from the PERF_SAMPLE_* / PERF_FORMAT_* /
- * PERF_SAMPLE_BRANCH_* vocabularies live away from the sanitise glue.
- * Each picker also has a 50% "return rand64() directly" branch that
- * feeds the kernel bit-flag validators outside the enumerated set.
- * All three are reached from the create_mostly_valid_* / create_random
- * attr builders in the sibling attr TU via the internal-header
- * prototypes.
+ * The wide RAND_BOOL chains that OR up attr->sample_type, attr->read_format
+ * and attr->branch_sample_type from the PERF_SAMPLE_* / PERF_FORMAT_* /
+ * PERF_SAMPLE_BRANCH_* vocabularies.  Each picker returns rand64() directly
+ * half the time, so the bit-flag validators see bits outside the vocabulary.
  */
 
 #include "perf.h"

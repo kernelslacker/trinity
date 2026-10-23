@@ -1,11 +1,7 @@
 /*
- * syscalls/bpf-link.c -- BPF_LINK_* command family sanitisers and
- * post handlers carved out of syscalls/bpf.c.
- *
- * Covers LINK_CREATE, LINK_UPDATE, LINK_DETACH, ITER_CREATE (which
- * consumes a link_fd) and their two post handlers.  The aggregator
- * syscalls/bpf.c dispatches into these via the externs in
- * bpf-internal.h.
+ * syscalls/bpf-link.c -- BPF_LINK_* command family sanitisers and post
+ * handlers: LINK_CREATE, LINK_UPDATE, LINK_DETACH and ITER_CREATE (which
+ * consumes a link_fd).
  */
 
 #ifdef USE_BPF

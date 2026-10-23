@@ -1,17 +1,9 @@
 /*
- * syscalls/bpf-prog.c -- BPF_PROG_* command family sanitisers and
- * post handlers carved out of syscalls/bpf.c.
- *
- * Covers PROG_LOAD (with its bpf_prog_load / get_kern_version /
- * bpf_raw_tp_names / license helpers, the classic-vs-eBPF insn buffer
- * split, and the sk_lookup post-attach lifecycle), PROG_ATTACH /
- * PROG_DETACH, PROG_TEST_RUN, and RAW_TRACEPOINT_OPEN.  The RAW
- * tracepoint arm rides here because it consumes a prog_fd (via
- * get_rand_bpf_prog_fd) and the fixed name-pool for raw tracepoint
- * names has no independent object type of its own.
- *
- * The aggregator syscalls/bpf.c dispatches into these via the externs
- * in bpf-internal.h.
+ * syscalls/bpf-prog.c -- BPF_PROG_* command family sanitisers and post
+ * handlers: PROG_LOAD (the classic-vs-eBPF insn buffer split and the sk_lookup
+ * post-attach lifecycle), PROG_ATTACH / PROG_DETACH, PROG_TEST_RUN and
+ * RAW_TRACEPOINT_OPEN.  The raw tracepoint arm rides here because it consumes
+ * a prog_fd and the fixed name pool has no object type of its own.
  */
 
 #ifdef USE_BPF

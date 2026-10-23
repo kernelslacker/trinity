@@ -1,14 +1,10 @@
 /*
  * perf_event_open: tuple-aware (type, config) picker + vocab tables.
  *
- * Split out of syscalls/perf/perf_event_open.c so the hw_tuple_configs
- * / sw_tuple_configs vocabularies, the perf_tuples[] descriptor table
- * and the pick_perf_tuple driver that keeps attr->type and attr->config
- * co-derived live away from the sanitise glue and syscall descriptor.
- * pick_perf_tuple is reached by the create_mostly_valid_* attr builders
- * in the sibling attr TU via the internal-header prototype; the vocab
- * tables and the perf_tuple struct stay file-static because
- * pick_perf_tuple is their only consumer.
+ * The hw_tuple_configs / sw_tuple_configs vocabularies, the perf_tuples[]
+ * descriptor table and the pick_perf_tuple() driver that keeps attr->type and
+ * attr->config co-derived.  The vocab tables and struct perf_tuple stay
+ * file-static because pick_perf_tuple() is their only consumer.
  */
 
 #include "perf.h"

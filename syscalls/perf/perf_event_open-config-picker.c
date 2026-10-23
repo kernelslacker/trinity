@@ -1,15 +1,10 @@
 /*
  * perf_event_open: type/config pickers.
  *
- * Split out of syscalls/perf/perf_event_open.c so the per-type config
- * randomizers (hw/sw/cache/tracepoint/raw/breakpoint) and the top-level
- * random_event_config dispatch live away from the sanitise glue and
- * syscall descriptor.  random_sysfs_config, the PMU-sysfs-driven path
- * reached through PERF_TYPE_READ_FROM_SYSFS, lives with the PMU
- * enumeration TU (perf_event_open-pmu-discovery.c) and is called here
- * via the internal-header prototype.  setup_breakpoints fills the
- * bp_type / bp_addr / bp_len union fields for PERF_TYPE_BREAKPOINT and
- * is reachable from both the tuple picker and the attr builders.
+ * The per-type config randomizers (hw/sw/cache/tracepoint/raw/breakpoint) and
+ * the top-level random_event_config() dispatch.  random_sysfs_config(), the
+ * PERF_TYPE_READ_FROM_SYSFS path, lives in the PMU discovery TU;
+ * setup_breakpoints() fills the bp_* union fields for PERF_TYPE_BREAKPOINT.
  */
 
 #include "child-api.h"

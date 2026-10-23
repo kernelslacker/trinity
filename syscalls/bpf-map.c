@@ -1,11 +1,7 @@
 /*
- * syscalls/bpf-map.c -- BPF_MAP_* command family sanitisers and post
- * handlers carved out of syscalls/bpf.c.
- *
- * Includes the OBJ_GET arm because its attr layout is the map-fd
- * shape (attr->map_fd + 32-byte a3 window), not a distinct object
- * pool.  The aggregator syscalls/bpf.c dispatches into these via the
- * externs in bpf-internal.h.
+ * syscalls/bpf-map.c -- BPF_MAP_* command family sanitisers and post handlers.
+ * Includes the OBJ_GET arm because its attr layout is the map-fd shape
+ * (attr->map_fd + 32-byte a3 window), not a distinct object pool.
  */
 
 #ifdef USE_BPF

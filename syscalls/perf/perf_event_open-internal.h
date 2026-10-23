@@ -1,30 +1,26 @@
 /*
  * perf_event_open-internal.h
  *
- * Shared declarations split out of syscalls/perf/perf_event_open.c so the
- * sysfs PMU enumerator and the tracefs tracepoint-id pool builder
- * (scan_pmu_*, iter_pmu_dir, init_pmus, scan_tracepoint_*,
- * init_tracepoint_ids) can live in their own translation unit and
- * compile in parallel with the perf_event_attr randomizer, the
+ * Shared declarations for the sysfs PMU enumerator and the tracefs
+ * tracepoint-id pool builder (scan_pmu_*, iter_pmu_dir, init_pmus,
+ * scan_tracepoint_*, init_tracepoint_ids), which live in their own
+ * translation unit apart from the perf_event_attr randomizer, the
  * sanitise / post / cleanup hooks and the syscall dispatch table.
- * This header is private to the two TUs that make up perf_event_open
+ * This header is private to the syscalls/perf/perf_event_open*.c TUs
  * -- do not include it from anywhere else.
  *
  * Contents:
  *   - the struct generic_event_type / format_type / pmu_type triple
- *     shared between the discovery side (writes pmus[]) and the
- *     randomizer side (random_sysfs_config reads pmus[]);
+ *     the discovery side fills into pmus[] and random_sysfs_config()
+ *     reads back;
  *   - the FIELD_* tags those structs encode;
  *   - extern declarations for the pmus[] / num_pmus pair owned by the
- *     discovery TU (already external-linkage in the pre-split file --
- *     the leading comment there records they're "not static so other
- *     tools can access the PMU data", and this header just makes that
- *     access typed for the in-tree caller);
+ *     discovery TU;
  *   - a forward declaration for init_pmus(), deliberately widened
  *     from file-static to external linkage so syscall_perf_event_open
  *     .init in perf_event_open.c can still take its address across
  *     the TU boundary.  random_tracepoint_config() is already declared
- *     in include/perf.h (for struct_catalog.c's FT_PICKER) so it is
+ *     in include/perf.h (for struct_catalog/perf.c's FT_PICKER) so it is
  *     not redeclared here.
  */
 

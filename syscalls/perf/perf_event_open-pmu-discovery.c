@@ -1,13 +1,9 @@
 /*
- * perf_event_open: PMU enumeration + tracepoint-id pool builder.
- *
- * Walks /sys/bus/event_source/devices to populate pmus[] (the sysfs PMU
- * format / generic-event tables consumed by random_sysfs_config in
- * perf_event_open.c) and walks /sys/kernel/tracing/events (or the legacy
- * debugfs path) to populate tracepoint_ids[] (the live id pool consumed
- * by random_tracepoint_config below).  Both populators are driven from
- * init_pmus, which the syscall_perf_event_open dispatch table reaches
- * through the .init hook.
+ * perf_event_open: PMU enumeration + tracepoint-id pool builder, both driven
+ * from init_pmus() via the syscall_perf_event_open .init hook.  Walks
+ * /sys/bus/event_source/devices to fill pmus[] (read by random_sysfs_config()
+ * below) and /sys/kernel/tracing/events, or the legacy debugfs path, to fill
+ * tracepoint_ids[] (read by random_tracepoint_config()).
  */
 
 #include <fcntl.h>
