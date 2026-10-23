@@ -502,8 +502,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 # objects_pool_empty(), and the for_each_obj snapshot.  They read the
 # pools a test installs through the get_objhead() stand-in, or none:
 # keyctl's sanitiser asks for a key serial pool that is not there.
+# objects/objpool-arena.c brings the arena a child's local pools live
+# in, which objpool_reader_test.c builds its pools from.
 PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
-		   $(TOP)/objects/registry.c
+		   $(TOP)/objects/registry.c \
+		   $(TOP)/objects/objpool-arena.c
+FAKE_SRCS	+= objpool_reader_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

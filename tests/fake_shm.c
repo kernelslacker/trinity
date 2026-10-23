@@ -136,12 +136,20 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	return fake_overlaps_libc_heap;
 }
 
+/* What is_in_glibc_heap() answers: every pointer, so the deferred-free
+ * gates do not prematurely reject addresses, unless a test sets
+ * fake_heap_size to have only [fake_heap_start, +fake_heap_size) count
+ * as heap, the way the real check refuses whatever lies outside it. */
+unsigned long fake_heap_start;
+unsigned long fake_heap_size;
+
 bool is_in_glibc_heap(const void *p)
 {
-	(void)p;
-	/* Conservative: report every pointer as heap-resident so the
-	 * deferred-free gates do not prematurely reject addresses. */
-	return true;
+	unsigned long v = (unsigned long)p;
+
+	if (fake_heap_size == 0)
+		return true;
+	return v >= fake_heap_start && v - fake_heap_start < fake_heap_size;
 }
 
 void heap_bounds_init(void)

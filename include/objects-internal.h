@@ -62,7 +62,9 @@ void destroy_objects(enum objecttype type, enum obj_scope scope);
  *   objpool_local_arena_owns   -- containment check used by the release
  *                                 path to route back into the arena
  *                                 memset-and-leak branch instead of the
- *                                 libc-heap deferred_free_enqueue path.
+ *                                 libc-heap deferred_free_enqueue path,
+ *                                 and by the pool readers to accept
+ *                                 arena storage, which is not libc heap.
  *
  * The parent-side one-shot init entry point (objpool_local_arena_init)
  * is declared in include/objects.h so the pre-fork init call from

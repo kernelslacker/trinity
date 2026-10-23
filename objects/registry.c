@@ -74,6 +74,30 @@ void release_obj(struct object *obj,
 	deferred_free_enqueue(obj);
 }
 
+/*
+ * Can a pool reader load @size bytes at @p?  Pool storage comes only from
+ * alloc_object()'s two stores and the array grow that mirrors them: a
+ * child's OBJ_LOCAL storage from the objpool arena, which is not libc
+ * heap, and the rest -- OBJ_GLOBAL, a child's snapshot of it, and the
+ * zmalloc_tracked() fallback -- from the libc heap.  The arena is one
+ * mapping with known bounds, so an address inside it is judged by the
+ * arena alone, which has to hold every byte the reader loads, even when
+ * is_in_glibc_heap() knows no allocator region and accepts anything.  A
+ * libc chunk is placed by its start, which is all is_in_glibc_heap() can
+ * judge.  The O(1) arena test runs first: arena addresses sit above the
+ * break, where the heap lookup pays an sbrk().
+ */
+bool objpool_storage_plausible(const void *p, unsigned long size)
+{
+	uintptr_t v = (uintptr_t)p;
+
+	if (v < 0x10000UL || v >= 0x800000000000UL)
+		return false;
+	if (objpool_local_arena_owns(p, 0))
+		return objpool_local_arena_owns(p, size);
+	return is_in_glibc_heap(p);
+}
+
 struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 {
 	struct objhead *head;
@@ -127,12 +151,13 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  * required post-Stage-5 — every pool lives in the iterating
  * process's private heap.
  *
- * The array_snap is additionally range-checked and gated through
- * is_in_glibc_heap() before the walk publishes n_snap, mirroring
- * the guard in objhead_indexed_read().  A scribbled head->array
- * that survives the NULL test still lands the indexed load off
- * for_each_obj's array_snap[idx] on an unmapped page; forcing
- * n_snap to 0 makes the iterator bail cleanly instead.
+ * The array_snap is additionally gated through
+ * objpool_storage_plausible() over the n_snap slots the walk loads
+ * before it publishes n_snap, the same check objhead_indexed_read()
+ * makes.  A scribbled head->array that survives the NULL test still
+ * lands the indexed load off for_each_obj's array_snap[idx] on an
+ * unmapped page; forcing n_snap to 0 makes the iterator bail cleanly
+ * instead.
  */
 void __for_each_obj_init(struct objhead *head,
 			 struct __for_each_obj_state *s)
@@ -145,9 +170,8 @@ void __for_each_obj_init(struct objhead *head,
 		return;
 	}
 
-	if ((uintptr_t)s->array_snap < 0x10000UL ||
-	    (uintptr_t)s->array_snap >= 0x800000000000UL ||
-	    !is_in_glibc_heap(s->array_snap)) {
+	if (!objpool_storage_plausible(s->array_snap,
+			(unsigned long)s->n_snap * sizeof(*s->array_snap))) {
 		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		s->n_snap = 0;

@@ -561,11 +561,14 @@ struct object * get_random_object(enum objecttype type, enum obj_scope scope) __
  *   1. NULL — the lockless picker can return NULL legitimately on an
  *      empty pool, and consumers must skip such picks.  Not counted
  *      as a wild-obj catch.
- *   2. VA-range — heap pointers land at >= 0x10000 and below the
- *      47-bit user/kernel boundary on every distro we exercise;
- *      anything outside that window can't be a real obj struct.
+ *   2. Storage — obj pointers land at >= 0x10000 and below the
+ *      47-bit user/kernel boundary on every distro we exercise, and
+ *      in storage a pool hands out: an obj in the objpool arena (a
+ *      child's OBJ_LOCAL objects) lies wholly inside it, and any
+ *      other starts in the libc heap.  Anything else can't be a real
+ *      obj struct.
  *   3. Pool tag — obj->obj_type must equal the type the caller asked
- *      for.  Catches the cross-pool recycling case the VA-range gate
+ *      for.  Catches the cross-pool recycling case the storage gate
  *      cannot, and reads OBJ_NONE (== 0) for a free/zero'd chunk
  *      after release_obj()'s memset.
  *

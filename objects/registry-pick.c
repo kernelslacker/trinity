@@ -28,17 +28,18 @@
  * indexed it post-grow would read off a chunk that may already have
  * been handed back to glibc (ASAN: heap-use-after-free at the
  * arr[idx] load).  All three array-replace sites
- * (OBJ_GLOBAL grow, OBJ_LOCAL grow, destroy_objects teardown) now
- * route the old container through deferred_free_enqueue, so the
- * captured arr stays readable across the TTL window the rechecks
- * below rely on.  The recipe here mirrors the obj-level
- * slot_version / object_slot_alive() pattern one level earlier and
- * is strictly check-then-load:
+ * (OBJ_GLOBAL grow, OBJ_LOCAL grow, destroy_objects teardown) route a
+ * libc-heap old container through deferred_free_enqueue, and an arena
+ * one is never handed back, so the captured arr stays readable across
+ * the TTL window the rechecks below rely on.  The recipe here mirrors
+ * the obj-level slot_version / object_slot_alive() pattern one level
+ * earlier and is strictly check-then-load:
  *
  *   1. Snapshot array_generation, the array pointer and num_entries.
- *   2. Cheap stateless provenance check on the captured array pointer
- *      so an obviously-wild value (early-init noise, a scribbled
- *      head->array) is rejected before the indexed read fires --
+ *   2. Cheap stateless provenance check, objpool_storage_plausible(),
+ *      over the num_entries slots of the captured array, so an
+ *      obviously-wild value (early-init noise, a scribbled head->array
+ *      or num_entries) is rejected before the indexed read fires --
  *      defense in depth on top of the gen re-check, not a substitute
  *      for it.
  *   3. Re-read array_generation BEFORE the load.  Mismatch ==> a
@@ -72,9 +73,7 @@ static struct object *objhead_indexed_read(struct objhead *head, unsigned int id
 	if (arr == NULL || n == 0 || idx >= n)
 		return NULL;
 
-	if ((uintptr_t)arr < 0x10000UL ||
-	    (uintptr_t)arr >= 0x800000000000UL ||
-	    !is_in_glibc_heap(arr)) {
+	if (!objpool_storage_plausible(arr, (unsigned long)n * sizeof(*arr))) {
 		__atomic_add_fetch(&shm->stats.diag.objpool_array_stale_caught, 1,
 				   __ATOMIC_RELAXED);
 		return NULL;
@@ -134,9 +133,7 @@ bool objpool_check(const struct object *obj, enum objecttype expected)
 	if (obj == NULL)
 		return false;
 
-	if ((uintptr_t)obj < 0x10000UL ||
-	    (uintptr_t)obj >= 0x800000000000UL ||
-	    !is_in_glibc_heap(obj)) {
+	if (!objpool_storage_plausible(obj, sizeof(*obj))) {
 		__atomic_add_fetch(&shm->stats.diag.global_obj_uaf_caught, 1,
 				   __ATOMIC_RELAXED);
 		return false;

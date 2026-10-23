@@ -30,6 +30,14 @@ void release_obj(struct object *obj, enum obj_scope scope,
 		 enum objecttype type);
 
 /*
+ * Storage check the pool readers run before they load @size bytes at @p,
+ * an objhead array or an obj struct: get_random_object(), objpool_check()
+ * and the for_each_obj snapshot.  Lives in registry.c beside
+ * alloc_object(), whose two backing stores it accepts.
+ */
+bool objpool_storage_plausible(const void *p, unsigned long size) __must_check;
+
+/*
  * Grow head->array if the next slot is past current capacity.  Lives
  * in registry-pool.c; called from add_object() in registry-lifecycle.c.
  * See the definition site for the full contract on the allocate-copy-
