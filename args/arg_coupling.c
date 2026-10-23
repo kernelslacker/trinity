@@ -2,9 +2,9 @@
  * Cross-arg validator and repair pass (contract: include/arg_coupling.h).
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: the entry's own
- * .vet_final rule, (address, length) coherence, then the per-syscall rules
- * for fcntl F_SETSIG, waits on a pid namespace init, the madvise range
- * and buf_count_slot byte counts.
+ * .vet_final rule, the per-syscall rules for fcntl F_SETSIG and waits on a
+ * pid namespace init, then buf_count_slot byte counts and (address,
+ * length) coherence.
  */
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -34,7 +34,7 @@
  */
 #define ARG_COUPLING_REPAIR_SKIP_ONE_IN 4
 
-static void arg_coupling_bump(enum stats_field field)
+void arg_coupling_bump(enum stats_field field)
 {
 	struct childdata *child = this_child();
 
@@ -355,46 +355,6 @@ int validate_arg_coupling(struct syscallrecord *rec,
 		if (entry->is_waitid && (int) rec->a1 == P_ALL &&
 		    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))
 			rec->a4 |= WNOHANG;
-	}
-
-	/*
-	 * madvise: sanitise_madvise() zeroes an (addr, len) that overlaps
-	 * one of trinity's own regions or the libc heap.  The regions are
-	 * MAP_SHARED anonymous memory, shmem underneath, and MADV_REMOVE
-	 * punches a hole through the backing file of whatever it covers, so
-	 * the pages go for every child that maps them.  A chain
-	 * substitution can put a return value in len and a RedQueen pin a
-	 * kernel constant in either slot, which leaves the kernel reading a
-	 * range nobody vetted.  Repaired as the sanitiser does, on the final
-	 * slots like F_SETSIG above; the advice stays, so a REMOVE that
-	 * lands here reaches the kernel as an empty range.  The rule below,
-	 * which holds the range to the mapping the sanitiser picked, does
-	 * not make this one redundant: the initial anonymous mappings and
-	 * mmap_fd()'s file mappings are pool mappings and tracked regions
-	 * at once.  This runs first, so the snapshot takes the repair.
-	 */
-	if (entry->is_madvise &&
-	    (range_overlaps_shared(rec->a1, rec->a2) ||
-	     range_overlaps_libc_heap(rec->a1, rec->a2))) {
-		rec->a1 = 0;
-		rec->a2 = 0;
-		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
-	}
-
-	/*
-	 * madvise: the final range has to stay inside the pool mapping the
-	 * sanitiser picked, and the advice may not have become a
-	 * GUARD_INSTALL (see map_range_vet()).  Chain substitution and a
-	 * RedQueen pin rewrite slots after the sanitiser has run, and the
-	 * kernel advises every VMA a longer range reaches.  Refused rather
-	 * than repaired; a call that passes has its snapshot moved to the
-	 * final slots, so the post handler acts on what the kernel was
-	 * handed.
-	 */
-	if (entry->is_madvise && !madvise_vet_final_slots(rec)) {
-		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked, or the advice installs guard pages\n",
-			  entry->name);
-		return -1;
 	}
 
 	/*

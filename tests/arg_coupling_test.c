@@ -1434,6 +1434,38 @@ static void madvise_range_held_off_regions(struct syscallentry *madvise_entry)
 	fake_untrack_regions();
 }
 
+/* A compat call hands the kernel the low 32 bits of each slot, so its range
+ * is held off the regions on those: an upper half added to a range over a
+ * low tracked mapping does not keep it, and a region the full slots reach
+ * but their low halves do not empties nothing.  Either way the call passes,
+ * the low halves lying inside the low mapping its sanitiser picked. */
+static void madvise_compat_range_held_off_regions(struct syscallentry *madvise_entry)
+{
+	const unsigned long upper = 1UL << 32;
+	unsigned int t;
+
+	for (t = 0; t < 2; t++) {
+		bool low_region = t == 0;
+		struct syscallrecord *mrec = mm_call(madvise_entry);
+
+		fake_untrack_regions();
+		fake_track_region(low_region ? LOW_POOL_MAP : LOW_POOL_MAP | upper,
+				  POOL_PAGES * page_size);
+		pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+		mrec->do32bit = true;
+		madvise_entry->sanitise(mrec);
+		mrec->a1 = LOW_POOL_MAP | upper;
+		mrec->a2 = page_size;
+		mrec->a3 = MADV_REMOVE_ADVICE;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0 ||
+		    (mrec->a1 == 0) != low_region || (mrec->a2 == 0) != low_region)
+			BUG("madvise: a compat range was held off the regions on its upper halves");
+		mrec->retval = (unsigned long) -1L;
+		madvise_entry->post(mrec);
+	}
+	fake_untrack_regions();
+}
+
 /* What validate_arg_coupling() makes of a madvise the sanitiser built
  * over the pool mapping and a rewrite left at (@addr, @len, @advice). */
 static int madvise_verdict(struct syscallentry *entry, unsigned long addr,
@@ -1555,10 +1587,8 @@ static void madvise_held(void)
 {
 	struct syscallentry madvise_entry = syscall_madvise;
 
-	/* As copy_syscall_table() stamps the copy. */
-	madvise_entry.is_madvise = true;
-
 	madvise_range_held_off_regions(&madvise_entry);
+	madvise_compat_range_held_off_regions(&madvise_entry);
 	madvise_range_held_to_mapping(&madvise_entry);
 	fake_this_child = NULL;
 }

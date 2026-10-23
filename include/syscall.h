@@ -655,15 +655,6 @@ struct syscallentry {
 	enum objecttype ret_objtype;
 
 	/*
-	 * Cached identity of madvise, set at table init so
-	 * validate_arg_coupling() can keep its (addr, len) off trinity's
-	 * own regions and inside the pool mapping the sanitiser picked
-	 * (madvise_vet_final_slots()) on the slots the kernel will read.
-	 * It sits in the alignment hole before ret_objtype_via_post.
-	 */
-	bool is_madvise;
-
-	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls
@@ -1119,16 +1110,6 @@ void generic_post_close_fd(struct syscallrecord *rec);
 void post_mount_fd(struct syscallrecord *rec);
 void post_fs_ctx_fd(struct syscallrecord *rec);
 void post_open_fd(struct syscallrecord *rec);
-
-/*
- * Hold a madvise call's final slots to the pool mapping its sanitiser
- * picked (map_range_vet()), and refuse a final MADV_GUARD_INSTALL over
- * any range the kernel acts on.  A pass refreshes the call's snapshot to
- * them, the advice included; false refuses the call.  Defined in
- * syscalls/mm/madvise.c, which keeps the snapshot private, for
- * validate_arg_coupling().
- */
-bool madvise_vet_final_slots(const struct syscallrecord *rec);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

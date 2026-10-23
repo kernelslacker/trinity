@@ -1,5 +1,7 @@
 #pragma once
 
+#include "stats_ring.h"		/* enum stats_field */
+
 struct syscallentry;
 struct syscallrecord;
 
@@ -30,3 +32,10 @@ struct syscallrecord;
  */
 int validate_arg_coupling(struct syscallrecord *rec,
 			  const struct syscallentry *entry);
+
+/*
+ * Count a repaired slot (STATS_FIELD_ARG_CONSTRAINT_REPAIRED) or an
+ * over-extent shape left alone (_KEPT_INCOHERENT) on this child's stats
+ * ring.  madvise's .vet_final hook counts its overlap repair here.
+ */
+void arg_coupling_bump(enum stats_field field);
