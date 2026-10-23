@@ -128,9 +128,9 @@ unsigned int cmp_hints_pool_safe_count(struct cmp_hint_pool *pool)
 }
 
 /*
- * cmp_hint_age_bucket() definition moved to include/cmp_hints-internal.h
- * so cmp_hints/get.c sees it inline.  The static assert stays here (in
- * the pool cluster) alongside the kcov_shm histogram it guards.
+ * cmp_hint_age_bucket() is defined in include/cmp_hints-internal.h so
+ * cmp_hints/get.c sees it inline.  The static assert sits here (in the
+ * pool cluster) alongside the kcov_shm histogram it guards.
  */
 _Static_assert(CMP_HINT_AGE_BUCKETS == 7U,
 	       "cmp_hint_age_bucket() arms must match CMP_HINT_AGE_BUCKETS");
@@ -319,13 +319,10 @@ bool cmp_hints_bloom_check_and_set(struct cmp_hints_bloom *b,
 }
 
 /*
- * CMP_HINTS_PENDING_BATCH moved to include/cmp_hints-internal.h --
- * cmp_hints/collect.c allocates the stack batch and cmp_hints/pool.c
- * drains it, so both sides need the same size.
- *
- * struct cmp_hints_pending moved to include/cmp_hints-internal.h so
- * cmp_hints/collect.c can build the batch and cmp_hints/pool.c can
- * drain it against the same type.
+ * CMP_HINTS_PENDING_BATCH and struct cmp_hints_pending are in
+ * include/cmp_hints-internal.h: cmp_hints/collect.c builds the stack
+ * batch and cmp_hints/pool.c drains it, so both sides need the same
+ * size and type.
  */
 
 /*

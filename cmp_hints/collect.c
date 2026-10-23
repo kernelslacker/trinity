@@ -971,16 +971,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 
 /*
  * Per-use-case output transform applied after the pool entry is picked.
- * Factored out of the (formerly inline) try_get body so each transform
- * lives next to its own documentation; the three use cases map onto
- * three distinct rotations.
+ * Each transform lives next to its own documentation; the three use
+ * cases map onto three distinct rotations.
  *
  * The transform does not consult the pool entry's recorded comparison
- * width: this split deliberately keeps every existing pull byte-for-byte
- * equivalent so the wrapper can land alongside the new API without
- * shifting any of the four generate-args.c consumers.  The width-aware
- * fourth transform family from the spec ships in a follow-up once a
- * callsite opts into it.
+ * width.
  */
 unsigned long cmp_hint_apply_transform(unsigned long c,
 				       enum cmp_hint_use use,

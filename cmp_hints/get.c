@@ -395,8 +395,6 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 	return true;
 }
 
-/* enum cmp_tier_result moved to include/cmp_hints-internal.h. */
-
 static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 						    enum cmp_hint_use use,
 						    unsigned long old,
