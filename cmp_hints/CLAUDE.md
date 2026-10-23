@@ -7,7 +7,7 @@ Fuzzer intelligence layer for Trinity. Collects constants the kernel compares sy
 | File | Lines | Role |
 |---|---|---|
 | cmp_hints.c | 369 | Entry point: SHM allocation, strip-installation, chaos-mode gating |
-| collect.c | 1249 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer, cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
+| collect.c | 1174 | KCOV ingestion: cmp_hints_collect() walks raw trace_cmp buffer (its once-per-call scan setup is `cmp_attribution_prestage()`), cmp_hint_apply_transform() normalizes values, cmp_hints_stash_consumed() records consumed hints for credit |
 | pool.c | 1046 | Pool primitives: lock wrappers, corruption gates, dedup + LRU eviction, bloom filter, recent ring, batch flush |
 | get.c | 648 | Consumer tier: two-tier picker (recent ring first during plateaus, durable pool otherwise), A/B live-pick policy, weighted draw |
 | credit.c | 511 | Feedback loop: per-entry credit drain (wins/misses), outcome classification (PC win, CMP novelty, transition, corpus save) |
@@ -67,7 +67,7 @@ Per-child:
 
 ## Areas of attention
 
-1. **Largest files** — collect.c (1,249), pool.c (1,046), persist.c (866), hyp-derive.c (814). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:505–814) is still ~310 lines with deep nesting.
+1. **Largest files** — collect.c (1,174), pool.c (1,046), persist.c (866), hyp-derive.c (814). The hypothesis store's responsibilities (inference, state machine, picker, derive, credit outcomes, live inject) now sit one per `hyp-*.c` lane file, but `cmp_hyp_derive_value()` (hyp-derive.c:505–814) is still ~310 lines with deep nesting. `cmp_hints_collect()` (collect.c:247–981) is still a ~735-line function: its per-record loop (collect.c:403–934, ~530 lines, with the RedQueen attribution scan nested in it) stays whole on purpose, and only the once-per-call scan setup was carved out, into `cmp_attribution_prestage()`. The post-loop counter flush stays inline: it publishes thirteen same-typed accumulators that the loop increments by name, so a helper would take them as a long positional list or need a struct that rewrites every increment in the loop.
 2. **Complex credit resolution** — `cmp_hyp_find_for_credit()` walks all 5 hypothesis kinds in specificity order (EXACT > ENUM_FAMILY > BITMASK > RANGE > BOUNDARY) on every consume and every outcome credit.
 3. **Timespec-pin safety depends on `range_readable_user()`** (`cmp_field_match_timespec()` in collect.c) — checks VMA readability before dereferencing the dispatch-time buffer; a missed page-fault race is recovered through the sigsetjmp point in health/signals-fault-handler.c.
 
