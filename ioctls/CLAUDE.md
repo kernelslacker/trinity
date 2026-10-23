@@ -2,26 +2,26 @@
 
 Registry of kernel ioctl-driven subsystems Trinity fuzzes through the `ioctl()` syscall. One file per subsystem (device driver, virtualization interface, filesystem control plane, etc), except where a subsystem's ioctl surface was large enough to carve one class per file behind an internal header; each group declares its ioctl command table and, optionally, hand-rolled argument sanitisers for commands whose args are structs. `syscalls/ioctl.c` picks a group at dispatch time; groups don't call each other.
 
-## Files (69 .c files + 2 internal headers, ~17,653 LOC)
+## Files (69 .c files + 2 internal headers, ~17,619 LOC)
 
 Core registry/dispatch (not a per-device group):
 - `ioctls.c` (309) — group registration table, fd→group matching (`find_ioctl_group`), the tiered arg-shape picker (`pick_random_ioctl` / `ioctl_arg_for_request`), `dump_ioctls()`. No `REG_IOCTL_GROUP` — this *is* the registry.
-- `efault_cache.c` (297) — shm-resident EFAULT-probe cache backing Tier 2 of the arg-shape picker (see below). No `REG_IOCTL_GROUP` either; it's a support module `ioctls.c` calls into.
+- `efault_cache.c` (259) — shm-resident EFAULT-probe cache backing Tier 2 of the arg-shape picker (see below). No `REG_IOCTL_GROUP` either; it's a support module `ioctls.c` calls into.
 
 Largest / structurally distinct per-device files:
 - `drm.c` (809) — DRM core plus vendor extensions (i915, nouveau, radeon, exynos); defines fallback structs/macros for nouveau ioctls not present in all kernel header versions (`DRM_IOCTL_NOUVEAU_GETPARAM` etc, guarded by `#ifndef`).
-- `btrfs.c` (740) — btrfs filesystem ioctls (as opposed to `btrfs-control.c`, the 41-line `/dev/btrfs-control` device-manager group).
+- `btrfs.c` (731) — btrfs filesystem ioctls (as opposed to `btrfs-control.c`, the 41-line `/dev/btrfs-control` device-manager group).
 - `iommufd.c` (753) and `vfio.c` (614) — see areas of attention below; the two most heavily hand-tuned groups.
 - `vhost.c` (572) — vhost-net/vsock/scsi/vdpa control ioctls.
 - `firewire.c` (560) — IEEE1394 character device ioctls, 26 struct-alloc sites.
 - `cdrom.c` (505) — CDROM/ATAPI command family, 23 `get_writable_struct()` sites for the various TOC/subchannel/multisession structs.
-- `vduse.c` (425), `userfaultfd.c` (415), `binder.c` (407), `gpio.c` (399), `cec.c` (397), `vfs.c` (390), `mtd.c` (390), `framebuffer.c` (348), `autofs.c` (337) — mid-size, each with several `sanitise_*` struct-fillers for their multi-command ioctl surface. `binder.c` carries its own copy of `<linux/android/binder.h>`-equivalent definitions (`flat_binder_object`, `binder_write_read`, etc) inline, since the header isn't part of the standard kernel-headers package trinity builds against.
+- `vduse.c` (419), `userfaultfd.c` (415), `binder.c` (407), `gpio.c` (396), `cec.c` (397), `vfs.c` (390), `mtd.c` (390), `framebuffer.c` (348), `autofs.c` (338) — mid-size, each with several `sanitise_*` struct-fillers for their multi-command ioctl surface. `binder.c` carries its own copy of `<linux/android/binder.h>`-equivalent definitions (`flat_binder_object`, `binder_write_read`, etc) inline, since the header isn't part of the standard kernel-headers package trinity builds against.
 
 Two groups are split one class per translation unit rather than living in a
 single file. Each carved TU exposes exactly two symbols — a sanitiser and a
 dispatcher — and the spine walks them in order:
-- ALSA: `snd.c` (633, the spine plus hwdep/mixer) with `snd-oss.c` (345), `snd-seq.c` (325), `snd-ctl.c` (292), `snd-pcm.c` (284), `snd-timer.c` (215), `snd-compress.c` (124), `snd-rawmidi.c` (84) and `snd-internal.h` (49). 87 `get_writable_struct()` call sites across the cluster — by far the densest sanitiser surface in the directory.
-- Virtual terminal: `vt.c` (221, the spine) with `vt-tioc.c` (272), `vt-kd.c` (251), `vt-vt.c` (183), `vt-font.c` (105), `vt-unimap.c` (71) and `vt-internal.h` (43). 32 `get_writable_struct()` sites across the cluster; the hand-built `termios2` fallback struct lives in `vt-internal.h` so both the spine's `vt_ioctls[]` and the tioc TU can name the `TCGETS2`-family request numbers.
+- ALSA: `snd.c` (633, the spine plus hwdep/mixer) with `snd-oss.c` (345), `snd-seq.c` (325), `snd-ctl.c` (292), `snd-pcm.c` (284), `snd-timer.c` (215), `snd-compress.c` (124), `snd-rawmidi.c` (84) and `snd-internal.h` (48). 87 `get_writable_struct()` call sites across the cluster — by far the densest sanitiser surface in the directory.
+- Virtual terminal: `vt.c` (221, the spine) with `vt-tioc.c` (272), `vt-kd.c` (251), `vt-vt.c` (183), `vt-font.c` (105), `vt-unimap.c` (71) and `vt-internal.h` (42). 32 `get_writable_struct()` sites across the cluster; the hand-built `termios2` fallback struct lives in `vt-internal.h` so both the spine's `vt_ioctls[]` and the tioc TU can name the `TCGETS2`-family request numbers.
 
 The remaining files follow the same per-ioctl-table pattern described below, scaled to however many commands the subsystem exposes and whether any need struct-shaped args. Examples: `nvme.c`, `sg.c`, `i2c-dev.c`, `mei.c`, `usbmon.c`, `pps.c`, `ptp_clock.c`, `rtc.c`, `loop.c`, `nbd.c`, `userfaultfd.c`, `seccomp.c`, `pidfd.c`, `epoll.c`, `dm.c`, `scsi.c`, `hidraw.c`, `input.c`, `joystick.c`, `videodev2.c`, `atm.c`, `socket.c`, `vsock.c`, `vmci.c`, `watchdog.c`, `rfkill.c`, `msr.c`, `hpet.c`, `mce.c`, `dmabuf.c`, `sgx.c`, `uinput.c`, `ext.c`, `tun.c`, `fuse.c`, `perf_event.c`, `random.c`.
 

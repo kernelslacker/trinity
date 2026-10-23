@@ -6,45 +6,45 @@ limits, namespace/cgroup isolation, crash/debug diagnostics, and small
 pointer-sanity/range helpers consumed from syscalls/, mm/, kcov/, and
 cmp_hints/.
 
-## Files (34 files + 2 internal headers, ~10,755 LOC)
+## Files (34 files + 2 internal headers, ~10,754 LOC)
 
 | File | Lines | Role |
 |---|---|---|
-| range_overlap.c | 802 | `range_overlaps_shared()`/`range_in_tracked_shared()` — mm-syscall sanitiser oracle: bitmap prefilter + exact linear-scan confirm; `CONFIG_GUARD_SHARED` audit path (`range_overlaps_shared_audited`) cross-checks fast vs. slow verdicts |
+| range_overlap.c | 801 | `range_overlaps_shared()`/`range_in_tracked_shared()` — mm-syscall sanitiser oracle: bitmap prefilter + exact linear-scan confirm; `CONFIG_GUARD_SHARED` audit path (`range_overlaps_shared_audited`) cross-checks fast vs. slow verdicts |
 | heap_bounds.c | 787 | glibc brk-arena bounds tracking from `/proc/self/maps`; `is_in_glibc_heap()`, `range_overlaps_libc_heap()` guard mm-syscalls against clobbering the malloc arena |
 | shared_mem.c | 509 | Core shared-memory allocator: `alloc_shared()`/`alloc_shared_pool()`/`free_shared()`, `alloc_shared_page_aligned()`, region tracking (`shared_regions[]` + overflow tail), `track_shared_region[_tagged]`/`untrack_shared_region` |
 | shared_str_heap.c | 341 | Shared string sub-heap: `alloc_shared_str`/`alloc_shared_strdup`/`free_shared_str`, so object names live in shared memory rather than the per-process heap |
-| shared_mem_bitmap.c | 325 | 2 MiB-granularity region bitmap plus the size-bucket bitmap: `shared_bitmap_mark`/`unmark`, `tracked_size_mark`/`unmark`, `shared_bitmap_self_check` |
-| shared_mem_guard.c | 320 | Per-object `CONFIG_GUARD_SHARED` guard-page mode: `guard_pages_alloc`, span derivation, scope classification and naming, guarded-object census |
+| shared_mem_bitmap.c | 314 | 2 MiB-granularity region bitmap plus the size-bucket bitmap: `shared_bitmap_mark`/`unmark`, `tracked_size_mark`/`unmark`, `shared_bitmap_self_check` |
+| shared_mem_guard.c | 305 | Per-object `CONFIG_GUARD_SHARED` guard-page mode: `guard_pages_alloc`, span derivation, scope classification and naming, guarded-object census |
 | shared_freelist.c | 283 | Size-bucket freelist: `shared_freelist_pop`/`push` with token bounds-checking and CAS slot claim/release |
 | corrupt_ptr.c | 634 | `looks_like_corrupted_ptr()` heuristic (NULL-ish/pid-shaped/kernel-VA/misaligned bands) plus per-child attribution rings (by syscall, by callsite PC, by rejection site) for the cluster-1/2/3 SIGSEGV triage |
-| locks.c | 487 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
+| locks.c | 467 | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
 | debug.c | 813 | Backtraces, `BUG()`/panic path, child crash dump (`dump_child_bug`, `dump_child_fault_beacon`, `dump_childdata`), list-corruption assertions, `debugf`/`syslogf` |
 | isolation.c | 381 | Parent-side one-shot namespace provisioning: `unshare(CLONE_NEWNET\|CLONE_NEWNS)`, hand-rolled netlink RTM_NEWLINK/RTM_NEWADDR to bring up lo+loopback addrs, MS_PRIVATE remount; publishes `net_ready`/`mnt_ready` latches to shm |
 | post_state.c | 403 | Ownership table for post-handler state snapshots (`rec->post_state`) hung off zmalloc'd structs — guards against a sibling's value-result write redirecting the pointer into another syscall's chunk |
-| pc_format.c | 343 | `pc_to_string()`: renders a code pointer as "binary+0xOFFSET" via `dl_iterate_phdr`/link_map bias, addr2line-friendly for both PIE and EXEC builds |
+| pc_format.c | 328 | `pc_to_string()`: renders a code pointer as "binary+0xOFFSET" via `dl_iterate_phdr`/link_map bias, addr2line-friendly for both PIE and EXEC builds |
 | utils.c | 297 | Misc: `sizeunit()`, `kill_pid()`, `sanitize_inherited_fds()`, `get_num_fds()`, `cached_online_cpus()` |
 | proc-status.c | 293 | `/proc/self/status` seq_file-safe reader (loops read() to EOF) plus field parsers (uint, uid/gid quad, hex sigmask, ns-last-uint) |
-| rlimit-safe.c | 246 | Per-resource "safe" (cur,max) pair dictionaries for fuzzing the rlimit family without self-DoS (RLIMIT_NICE encoding, RTPRIO range, etc.) |
-| shm.c | 528 | `create_shm()`/`init_shm()` orchestrator: shm sizing, sentinel stamping (scratch_block=-1), phased init (debug/start-time, self-exe snapshot, strategy-rotation state, children[] + fd/stats ring allocation with the ring-pointer canaries in parent-private heap, mprotect(PROT_READ) lockdown, subsystem singleton bring-up) |
+| rlimit-safe.c | 238 | Per-resource "safe" (cur,max) pair dictionaries for fuzzing the rlimit family without self-DoS (RLIMIT_NICE encoding, RTPRIO range, etc.) |
+| shm.c | 529 | `create_shm()`/`init_shm()` orchestrator: shm sizing, sentinel stamping (scratch_block=-1), phased init (debug/start-time, self-exe snapshot, strategy-rotation state, children[] + fd/stats ring allocation with the ring-pointer canaries in parent-private heap, mprotect(PROT_READ) lockdown, subsystem singleton bring-up) |
 | post_snapshot.c | 135 | `range_readable_user()` (VMA-readability gate before deref) and safe struct-copy helpers used by field-scoped attribution and post handlers |
 | sysv-shm.c | 114 | SysV shared-memory object type: create/dump/destructor, integrates with `objects/` and shared-region tracking |
-| rlimits.c | 128 | Startup rlimit caps: raise RLIMIT_MEMLOCK to infinity (needs CAP_SYS_RESOURCE), cap NOFILE/NPROC/AS as OOM-cascade defense-in-depth |
+| rlimits.c | 126 | Startup rlimit caps: raise RLIMIT_MEMLOCK to infinity (needs CAP_SYS_RESOURCE), cap NOFILE/NPROC/AS as OOM-cascade defense-in-depth |
 | uid.c | 156 | `drop_privs()`, `init_uids()`, `check_uid()` — privilege-drop-to-nobody spine |
-| writer-watch.c | 141 | `--writer-watch=<addr>`: arms a hardware WRITE breakpoint (perf_event_open) per child for pinpointing a wild writer's exact RIP |
-| log-load-bases.c | 118 | Logs PIE/libc/ld-linux/vDSO load bases via `dl_iterate_phdr()` at startup so post-mortem crash IPs can be resolved offline |
+| writer-watch.c | 124 | `--writer-watch=<addr>`: arms a hardware WRITE breakpoint (perf_event_open) per child for pinpointing a wild writer's exact RIP |
+| log-load-bases.c | 104 | Logs PIE/libc/ld-linux/vDSO load bases via `dl_iterate_phdr()` at startup so post-mortem crash IPs can be resolved offline |
 | output.c | 108 | `output()`/`outputerr()`/`outputstd()` verbosity-gated logging, `should_route_to_stdout()` (stdout reserved for `--stats-json`) |
 | persist-envelope.c | 310 | Shared warm-start envelope: kernel-identity stamping, generation counter, `persist_envelope_validate()` and the on-disk generation manifest read/write shared by every persistence format |
-| self_cgroup_setup.c | 571 | cgroup v2 layout: `setup_split()`/`setup_single()` parent/children sub-cgroup construction, memory.high/max caps, OOM-group isolation, `self_cgroup_setup`/`self_cgroup_cleanup` |
+| self_cgroup_setup.c | 569 | cgroup v2 layout: `setup_split()`/`setup_single()` parent/children sub-cgroup construction, memory.high/max caps, OOM-group isolation, `self_cgroup_setup`/`self_cgroup_cleanup` |
 | self_cgroup_events.c | 280 | memory.high/max event polling: `events_setup`/`events_cleanup`, `self_cgroup_events_fd`/`self_cgroup_events_check`, `self_cgroup_drop_fds_in_child` |
 | self_cgroup_paths.c | 209 | Size-arg parsing/validation (`parse_size_arg`, `validate_cgroup_size_arg`, `mem_total_bytes`) and cgroup path/file IO (`read_self_cg_path`, `write_cg_file`) |
 | self_cgroup_delegation.c | 141 | Delegation/capability probing: `already_capped`, `compute_parent_high`, `enable_memory_subtree`, `scope_can_delegate` |
-| self_cgroup_fork.c | 114 | `self_cgroup_fork_into_workload()` — clone-into-cgroup of the children sub-cgroup |
+| self_cgroup_fork.c | 112 | `self_cgroup_fork_into_workload()` — clone-into-cgroup of the children sub-cgroup |
 | self-cgroup-internal.h | 116 | Declarations private to the `self_cgroup_*.c` cluster |
-| persist-util.c | 107 | `persist_sweep_stale_tmp()`: sweeps orphaned `<path>.tmp.<pid>` staging files left by a killed writer, shared by minicorpus/cmp_hints/kcov-bitmap persistence |
+| persist-util.c | 94 | `persist_sweep_stale_tmp()`: sweeps orphaned `<path>.tmp.<pid>` staging files left by a killed writer, shared by minicorpus/cmp_hints/kcov-bitmap persistence |
 | tmpdir.c | 175 | trinity's tmp/ working directory: `change_tmp_dir()` moves the parent into it at startup, `trinity_tmpdir_abs()` returns its absolute path (`/tmp` when there is none), `make_scratch_dir()` creates a per-pid scratch dir there (adopting only a leftover dir we own), `sweep_dead_pid_dirs()` removes the ones a SIGKILLed or ASAN-exited run left behind |
 | zmalloc.c | 65 | `__zmalloc()`/`__zmalloc_tracked()`: zeroing malloc wrapper with mlockall-retry-on-ENOMEM and brk-cache refresh tick |
-| pidstat-probe.c | 91 | `pidstat_task_gone()`: asks an fd opened on `/proc/<pid>/stat` whether the task is gone, which a recycled pid number cannot fake the way a `kill(pid, 0)` probe can, and counts only ESRCH as gone; used by the parent's reap path. `pidstat_read()` reads that file by pid for `pid_alive()` and `pid_start_time()` and answers gone only for ESRCH, or for ENOENT that `kill(pid, 0)` confirms with ESRCH (hidepid=2 and a foreign pid namespace give ENOENT for a live task), unknown for any other failure. `pidstat_parse()` picks the state and start time out of the line, `pidstat_child_exited()` asks `waitid(WEXITED | WNOHANG | WNOWAIT)` whether a pid is an exited child of the caller, and `pidstat_identity_gone()` is the dead-owner test the lock recovery sites share |
+| pidstat-probe.c | 209 | `pidstat_task_gone()`: asks an fd opened on `/proc/<pid>/stat` whether the task is gone, which a recycled pid number cannot fake the way a `kill(pid, 0)` probe can, and counts only ESRCH as gone; used by the parent's reap path. `pidstat_read()` reads that file by pid for `pid_alive()` and `pid_start_time()` and answers gone only for ESRCH, or for ENOENT that `kill(pid, 0)` confirms with ESRCH (hidepid=2 and a foreign pid namespace give ENOENT for a live task), unknown for any other failure. `pidstat_parse()` picks the state and start time out of the line, `pidstat_child_exited()` asks `waitid(WEXITED | WNOHANG | WNOWAIT)` whether a pid is an exited child of the caller, and `pidstat_identity_gone()` is the dead-owner test the lock recovery sites share |
 | shared_mem-internal.h | 24 | Declarations private to the `shared_mem*.c` siblings: the bitmap and size-bucket marks and, under `CONFIG_GUARD_SHARED`, the guard-page allocator |
 
 ## Key design decisions
@@ -73,7 +73,7 @@ cmp_hints/.
 
 ## Areas of attention
 
-1. **The self_cgroup cluster does five jobs across five files** — size-arg parsing/validation (self_cgroup_paths.c), cgroup v2 filesystem manipulation (mkdir/write/rmdir across parent+children sub-cgroups), delegation/capability probing (`scope_can_delegate`, `already_capped`, self_cgroup_delegation.c), fork-into-workload orchestration (self_cgroup_fork.c), and `memory.events` polling (self_cgroup_events.c). `setup_split()`/`setup_single()` (self_cgroup_setup.c:76-358) remain the split/fallback cgroup-layout logic and the densest part.
+1. **The self_cgroup cluster does five jobs across five files** — size-arg parsing/validation (self_cgroup_paths.c), cgroup v2 filesystem manipulation (mkdir/write/rmdir across parent+children sub-cgroups), delegation/capability probing (`scope_can_delegate`, `already_capped`, self_cgroup_delegation.c), fork-into-workload orchestration (self_cgroup_fork.c), and `memory.events` polling (self_cgroup_events.c). `setup_split()`/`setup_single()` (self_cgroup_setup.c:74-356) remain the split/fallback cgroup-layout logic and the densest part.
 2. **shared_mem.c carries both allocator variants** — the bitmap+size-bucket region tracker (`shared_mem_bitmap.c`) and the `CONFIG_GUARD_SHARED` guard-page subsystem (`shared_mem_guard.c`) sit behind `shared_mem-internal.h`, but `__alloc_shared()` is still compiled twice, under `#ifdef CONFIG_GUARD_SHARED` and `#else`, and each variant marks the bitmaps itself. The guard-page code (`guard_pages_alloc`, `guard_pages_classify`, `guard_pages_derive_span`) is compiled conditionally but interleaves with the always-on allocator, raising the file's effective complexity even when the feature is off.
 3. **isolation.c hand-rolls netlink wire encoding** — `privnet_bring_link_up()` and `privnet_add_loopback_addr()` build `nlmsghdr`/`ifinfomsg`/`ifaddrmsg`/`nlattr` byte layouts directly into fixed 128-byte stack buffers with manual `NLMSG_ALIGN`/`NLA_ALIGN` offset arithmetic. This is inherently fiddly (any off-by-one in the attribute offset math corrupts the netlink request) though the surface is small and self-contained; runs once pre-fork as root, so a bug here is a startup-isolation regression rather than an exploitable runtime path.
 4. **Lock recovery has several independent dead-owner paths that must stay in lock-step** — `check_lock()`, `try_release_dead_holder()`, and `force_bust_lock()` share the (pid, start_time) fingerprint test in `pidstat_identity_gone()` but each reimplements the CAS-on-sampled-state pattern independently; a future fix to the ABA-release logic must be applied in all three call sites.

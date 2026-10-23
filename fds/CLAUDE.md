@@ -2,52 +2,52 @@
 
 Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, pidfd, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
 
-## Files (45 .c files + 1 internal header, ~10,090 LOC)
+## Files (45 .c files + 1 internal header, ~9,958 LOC)
 
-The registry core is no longer one file: `fds.c` was carved into `fds-*.c`
-behind `fds-internal.h`, one concern per translation unit.
+The registry core spans `fds.c` and the `fds-*.c` files behind
+`fds-internal.h`, one concern per translation unit.
 
 | File | Lines | Role |
 |---|---|---|
-| sockets.c | 750 | Socket fd provider across address families/types |
-| bpf.c | 737 | BPF map/prog/link/btf/token providers — largest single-domain file, drives `bpf(2)` directly |
-| scratch_block.c | 678 | loop-device + mkfs.ext4/tmpfs scratch block fds behind mount-namespace isolation |
-| pagecache.c | 404 | Read-only pagecache-backed file fd pool |
+| sockets.c | 752 | Socket fd provider across address families/types |
+| bpf.c | 736 | BPF map/prog/link/btf/token providers — largest single-domain file, drives `bpf(2)` directly |
+| scratch_block.c | 650 | loop-device + mkfs.ext4/tmpfs scratch block fds behind mount-namespace isolation |
+| pagecache.c | 396 | Read-only pagecache-backed file fd pool |
 | fds-pick.c | 389 | The pickers: `get_new_random_fd()`, `get_random_fd()` (cache + retry/decay), `get_typed_fd()`, `get_pollable_random_fd()`, `get_child_live_fd()` |
 | cgroup.c | 352 | cgroup subdirectory fds (`O_PATH` on `/sys/fs/cgroup`) |
-| canary.c | 341 | Deterministic-content file pool for read-side verification (pagecache canary childop) |
-| io_uring.c | 321 | io_uring instance fd provider |
+| canary.c | 319 | Deterministic-content file pool for read-side verification (pagecache canary childop) |
+| io_uring.c | 303 | io_uring instance fd provider |
 | epoll.c | 297 | epoll fd provider + lazy child-side arming (`arm_epoll_if_needed`) |
 | perf.c | 259 | `perf_event_open` fd provider |
-| memfd.c | 258 | memfd provider |
+| memfd.c | 252 | memfd provider |
 | timerfd.c | 238 | timerfd provider |
-| landlock.c | 236 | Landlock ruleset fd provider |
+| landlock.c | 233 | Landlock ruleset fd provider |
 | testfiles.c | 235 | Regular-file test fd pool (open/create/fcntl-state tracked) |
-| memfd_secret.c | 225 | `memfd_secret` fd provider |
+| memfd_secret.c | 216 | `memfd_secret` fd provider |
 | pipes.c | 223 | Pipe fd provider |
 | userfaultfd.c | 226 | userfaultfd provider (`poll_can_block`-tagged) |
 | fds-protected.c | 286 | Protected-fd registry: `fd_is_protected()`, `lowest_protected_fd_in_range()`, `reroll_protected_fd_arg()`, `stat_names_protected_file()` (a path can reopen a protected file under a number the registry does not know); plus `fd_relocate_high()`, the park-above-`PROTECTED_FD_HIGH_BASE` step the kcov, taint, fail-nth and rotation-sink fds share |
-| watch_queue.c | 215 | Notification-pipe fds via `pipe2(O_NOTIFICATION_PIPE)` |
+| watch_queue.c | 213 | Notification-pipe fds via `pipe2(O_NOTIFICATION_PIPE)` |
 | inotify.c | 217 | inotify fd provider |
-| writeable-pagecache.c | 212 | Writable pagecache-backed file fd pool |
+| writeable-pagecache.c | 197 | Writable pagecache-backed file fd pool |
 | files.c | 201 | Shared pool-file helpers (`open_pool_files`, `get_rand_pool_fd`) backing devfs/procfs/sysfs |
-| seccomp_notif.c | 177 | seccomp user-notification fd provider (`#ifdef USE_SECCOMP`) |
+| seccomp_notif.c | 174 | seccomp user-notification fd provider (`#ifdef USE_SECCOMP`) |
 | fanotify_init.c | 175 | fanotify fd provider |
-| sparse-files.c | 176 | Sparse-file fd provider |
+| sparse-files.c | 171 | Sparse-file fd provider |
 | eventfd.c | 174 | eventfd provider |
 | mq.c | 172 | POSIX message-queue fd provider |
-| signalfd.c | 165 | signalfd provider |
+| signalfd.c | 160 | signalfd provider |
 | fds.c | 164 | Provider dispatchers: fd→provider lookup, `fd_poll_can_block()`, the periodic `child_ops` / `child_init` walks, and the rate-limited `run_fd_provider_replenish()` tick, which resumes after the last provider it served |
 | drm.c | 164 | DRM device fd provider |
-| pidfd.c | 162 | pidfd provider (`pidfd_open`) |
-| dev_template.c | 148 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
+| pidfd.c | 159 | pidfd provider (`pidfd_open`) |
+| dev_template.c | 145 | Templated `/dev/*` probing provider (parent-side, pre-fork) |
 | fs_ctx.c | 137 | `fsopen`/`fsconfig` filesystem-context fd provider |
 | fds-init.c | 127 | `open_fds()` — randomized init sweep, `active_providers[]` build, enabled/initialized and per-pool-size startup logging |
 | mount.c | 117 | mount fd provider (`open_tree`/`fsmount`/`move_mount`) |
 | iommufd.c | 115 | IOMMUFD provider (`#ifdef USE_IOMMUFD`) |
 | fds-param.c | 95 | `--enable-fds` / `--disable-fds` parsing (`process_fds_param`) |
 | fds-registry.c | 93 | The constructor-time provider list: `register_fd_provider()`, `fd_provider_name()`, `dump_fd_provider_names()` |
-| fds-internal.h | 66 | Private cross-file interface for the carve-outs — the counters and provider arrays that used to be file-statics in `fds.c`, and the replenish per-tick cap |
+| fds-internal.h | 66 | Private cross-file interface of the registry translation units — the counters and provider arrays they share, and the replenish per-tick cap |
 | owned-fd-ring.c | 89 | `owned_fd_ring_record()` and `owned_fd_ring_retire()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded. A retire takes a number out of every provider's ring without closing it: a record retires the number it is given first, and `account_fd_and_group()` retires each number a fuzzed call returns, which `fstat()` cannot do for anon-inode files and dups |
 | fds-dup.c | 116 | `pool_dup_result()` and `pool_foreign_fd()` (`include/fd.h`): pool the fd a dup, dup2, dup3 or `fcntl(F_DUPFD*)` returned under the object type of the fd it copied, after retiring the local object its number held; and the fd `pidfd_getfd` returned, when `fstat()` says it is a socket or a pipe end |
 | fds-pool.c | 109 | `pool_returned_fd()` and `pool_open_result()` (`include/fd.h`): the child's capped pool of the files a call hands back that no provider owns (an open result, the fd an ioctl cmd returns), as local `OBJ_FD_TESTFILE` objects. At most `POOLED_FD_MAX` of them: a full pool destroys its oldest object (smallest `slot_version`) through the head's destructor to make room, and a head with no destructor takes nothing. An open result qualifies only as a regular file or a directory that is not a second name of a protected file |
@@ -65,7 +65,7 @@ behind `fds-internal.h`, one concern per translation unit.
 5. **Protected-fd registry** (`fd_is_protected()`, `lowest_protected_fd_in_range()`): keeps the child's kcov PC/CMP fds, the stderr-capture memfd and the rotation-events sink out of the fuzz-supplied fd pool, since a fuzzed `close`/`dup2`/`ftruncate`/etc. landing on them silently kills coverage, corrupts the crash log or tears the JSONL every child shares. Consulted by `gen_arg_fd()`, the close family, size-changing sanitisers (`reroll_protected_fd_arg()`), and the two rewrites that land after a sanitiser, chain substitution and the RedQueen pin, through `rewrite_refused_slots()`. `close_range()`'s sanitiser truncates a range below the lowest protected fd it sweeps, and with EXCEPT, which closes everything outside the range, widens it to hold every one; a rewrite after sanitise could undo either, so `validate_arg_coupling()` refuses a `close_range` whose slots no longer match what the sanitiser vetted (`close_range_call_is_vetted()`: chain substitution and a RedQueen pin both land after it), and the entry is not `REEXEC_SANITISE_OK`. Children also park the kcov, taint, fail-nth and rotation-sink fds above one shared base, `PROTECTED_FD_HIGH_BASE` (`include/fd.h`), out of the small numbers the pickers and mutated fd args reach; the move is `fd_relocate_high()`, which keeps the low fd when it fails.
 6. **`poll_can_block` opt-in flag**: providers whose kernel `->poll` can block on an external actor (FUSE via devfs/dev_template, userfaultfd, io_uring, pidfd, seccomp_notif) tag themselves so `epoll_ctl`/`poll`/`select` sanitisers exclude them from watch sets — arming one of these under `EPOLL_CTL_ADD` can wedge the whole child in `TASK_UNINTERRUPTIBLE`, unrecoverable even by SIGKILL/watchdog.
 7. **Shared pool-file helper** (`files.c`, `include/files.h`): devfs.c/procfs.c/sysfs.c are ~18-34 line wrappers over `open_pool_files(pool_id, objtype)` / `get_rand_pool_fd(objtype)` — three numbered pools (0=/dev, 1=/proc, 2=/sys), not three independent implementations.
-8. **`init_reason` diagnostics**: providers that fail `.init()` can call `fd_provider_init_fail(reason, errno, detail)` to classify the failure (config-absent, cap-missing, resource, errno) before returning false, letting `open_fds()` log why (e.g. distinguishing kernel-lacks-IOMMUFD from missing CAP_SYS_ADMIN) instead of a bare failure line.
+8. **`fd_init_reason` diagnostics**: providers that fail `.init()` can call `fd_provider_init_fail(reason, errno, detail)` to classify the failure (config-absent, cap-missing, resource, errno) before returning false, letting `open_fds()` log why (e.g. distinguishing kernel-lacks-IOMMUFD from missing CAP_SYS_ADMIN) instead of a bare failure line.
 9. **Randomized init order**: `open_fds()` opens roughly half of enabled providers in random order (`RAND_BOOL()` skip) before sweeping the rest, so provider init order isn't a fixed, guessable sequence.
 
 ## Integration points
@@ -91,10 +91,10 @@ behind `fds-internal.h`, one concern per translation unit.
 
 ## Areas of attention
 
-1. **bpf.c (737 LOC)** builds raw `union bpf_attr` blobs across ~16 map types (`bpf_fd_types[]`) plus prog/link/btf/token providers in one file — the largest and most kernel-ABI-coupled provider; a `union bpf_attr` layout change or new map type needs updates here.
-2. **scratch_block.c (678 LOC)** manages a multi-stage, stateful kernel resource (loop device→mkfs→mount) with explicit teardown ordering — its `atexit()` parent-teardown path (unmount, `LOOP_CLR_FD`, unlink, rmdir) is best-effort/idempotent by design because partial failure is only recoverable by process exit. Loops are bound with `LO_FLAGS_AUTOCLEAR`, so the parent-held loop fd is what keeps each one bound for the run: closing it before teardown unbinds the device on its last close. A child's `LOOP_SET_STATUS(64)` replaces that flag, so `ioctls/loop.c` sets it on every such write aimed at a scratch loop's device node (matched by inode, so a dup counts).
+1. **bpf.c (736 LOC)** builds raw `union bpf_attr` blobs across ~16 map types (`bpf_fd_types[]`) plus prog/link/btf/token providers in one file — the largest and most kernel-ABI-coupled provider; a `union bpf_attr` layout change or new map type needs updates here.
+2. **scratch_block.c (650 LOC)** manages a multi-stage, stateful kernel resource (loop device→mkfs→mount) with explicit teardown ordering — its `atexit()` parent-teardown path (unmount, `LOOP_CLR_FD`, unlink, rmdir) is best-effort/idempotent by design because partial failure is only recoverable by process exit. Loops are bound with `LO_FLAGS_AUTOCLEAR`, so the parent-held loop fd is what keeps each one bound for the run: closing it before teardown unbinds the device on its last close. A child's `LOOP_SET_STATUS(64)` replaces that flag, so `ioctls/loop.c` sets it on every such write aimed at a scratch loop's device node (matched by inode, so a dup counts).
 3. **Security/isolation-sensitive providers**: scratch_block.c gates on `shm->isolation.mnt_ready` (post-`unshare(CLONE_NEWNS)` latch) before touching loop devices, so a real host disk node cannot enter the pool; cgroup.c and mount.c operate on `/sys/fs/cgroup` and mount namespaces respectively and are natural blast-radius points if the isolation gate were ever bypassed.
-4. **`fds-pick.c`'s `get_new_random_fd()`/`get_random_fd()` retry/decay logic** (lines 19-248) is dense: nested inner (10-try) and outer (64, decaying to 16) retry budgets exist specifically to avoid a documented prior bug where a depleted-pool child could tight-loop burning CPU undetected by the parent's progress watchdog (the syscall record sits in PREP, before the watchdog's BEFORE-onward liveness check applies).
+4. **`fds-pick.c`'s `get_new_random_fd()`/`get_random_fd()` retry/decay logic** (lines 19-239) is dense: nested inner (10-try) and outer (64, decaying to 16) retry budgets exist specifically to avoid a documented prior bug where a depleted-pool child could tight-loop burning CPU undetected by the parent's progress watchdog (the syscall record sits in PREP, before the watchdog's BEFORE-onward liveness check applies).
 5. **`#ifdef`-gated providers** (bpf.c `USE_BPF`, drm.c `USE_DRM`, iommufd.c `USE_IOMMUFD`, seccomp_notif.c `USE_SECCOMP`) mean the registered-provider set varies by build config; `fds.c` code must never assume a fixed provider count.
 
 ## Summary
