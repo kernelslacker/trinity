@@ -664,15 +664,6 @@ struct syscallentry {
 	bool is_madvise;
 
 	/*
-	 * Cached membership of mprotect and pkey_mprotect, which share a
-	 * sanitiser, set at table init so validate_arg_coupling() can hold
-	 * their final range to the pool mapping the sanitiser picked
-	 * (mprotect_vet_final_slots()) with a single byte load per
-	 * dispatch.  In the same alignment hole.
-	 */
-	bool is_mprotect_family;
-
-	/*
 	 * Post-derived secondary-object registrar.  ret_objtype covers
 	 * the single-fd case where the syscall's primary retval IS the
 	 * trackable object (open, socket, accept, ...).  Some syscalls
@@ -1130,18 +1121,12 @@ void post_fs_ctx_fd(struct syscallrecord *rec);
 void post_open_fd(struct syscallrecord *rec);
 
 /*
- * Hold an mprotect or pkey_mprotect call's final slots to the pool
- * mapping its sanitiser picked (map_range_vet()).  A pass refreshes the
- * call's snapshot to them, the prot and the key included; false refuses
- * the call.  Defined in syscalls/mm/mprotect.c, which keeps the snapshot
- * private, for validate_arg_coupling().
- */
-bool mprotect_vet_final_slots(const struct syscallrecord *rec);
-
-/*
- * The same for madvise, which also refuses a final MADV_GUARD_INSTALL
- * over any range the kernel acts on; a pass also refreshes the advice in
- * the snapshot.  Defined in syscalls/mm/madvise.c.
+ * Hold a madvise call's final slots to the pool mapping its sanitiser
+ * picked (map_range_vet()), and refuse a final MADV_GUARD_INSTALL over
+ * any range the kernel acts on.  A pass refreshes the call's snapshot to
+ * them, the advice included; false refuses the call.  Defined in
+ * syscalls/mm/madvise.c, which keeps the snapshot private, for
+ * validate_arg_coupling().
  */
 bool madvise_vet_final_slots(const struct syscallrecord *rec);
 

@@ -892,8 +892,10 @@ static void pkey_mprotect_known_through_its_copy(void)
 
 /* The mapping's cached prot after a call that worked with a4 = @key: a
  * read-write mapping, @size long, made read-write again over a range the
- * sanitiser drew.  A mapping of a page or more gets a range that is not
- * empty; under a page the range can only be empty. */
+ * sanitiser drew.  A mapping of more than a page gets a range that is not
+ * empty; the sanitiser rounds a length drawn below the mapping's size
+ * down to whole pages, so one of a page or less can only get an empty
+ * one. */
 static int prot_after_keyed_call(struct syscallentry *entry, int key,
 				 unsigned long size)
 {
@@ -907,7 +909,7 @@ static int prot_after_keyed_call(struct syscallentry *entry, int key,
 		mrec->a3 = PROT_READ | PROT_WRITE;
 		mrec->a4 = (unsigned long) key;
 		entry->sanitise(mrec);
-		if (mrec->a2 != 0 || size < page_size)
+		if (mrec->a2 != 0 || size <= page_size)
 			break;
 		mrec->retval = (unsigned long) -1L;
 		entry->post(mrec);
@@ -1280,9 +1282,7 @@ static void mprotect_range_held_to_mapping(void)
 	const int rw = PROT_READ | PROT_WRITE;
 	unsigned int e, i;
 
-	/* As copy_syscall_table() stamps the copies. */
-	mprotect_entry.is_mprotect_family = true;
-	pkey_entry.is_mprotect_family = true;
+	/* As copy_syscall_table() stamps the copy. */
 	pkey_entry.is_pkey_mprotect = true;
 
 	for (e = 0; e < ARRAY_SIZE(entries); e++) {

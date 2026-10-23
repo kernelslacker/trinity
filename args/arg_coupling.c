@@ -3,8 +3,8 @@
  * Runs on the final slot values, after .sanitise, chain substitution and any
  * RedQueen pin, so it judges what the kernel will read: the entry's own
  * .vet_final rule, (address, length) coherence, then the per-syscall rules
- * for fcntl F_SETSIG, waits on a pid namespace init, the madvise and
- * mprotect ranges and buf_count_slot byte counts.
+ * for fcntl F_SETSIG, waits on a pid namespace init, the madvise range
+ * and buf_count_slot byte counts.
  */
 #include <fcntl.h>
 #include <sys/uio.h>
@@ -382,20 +382,18 @@ int validate_arg_coupling(struct syscallrecord *rec,
 	}
 
 	/*
-	 * mprotect, pkey_mprotect, madvise: the final range has to stay
-	 * inside the pool mapping the sanitiser picked, and a madvise may
-	 * not have become a GUARD_INSTALL (see map_range_vet()).  Chain
-	 * substitution and a RedQueen pin rewrite slots after the sanitiser
-	 * has run, and the kernel reprotects or advises every VMA a longer
-	 * range reaches.  Refused rather than repaired; a call that passes
-	 * has its snapshot moved to the final slots, so the post handler
-	 * acts on what the kernel was handed.
+	 * madvise: the final range has to stay inside the pool mapping the
+	 * sanitiser picked, and the advice may not have become a
+	 * GUARD_INSTALL (see map_range_vet()).  Chain substitution and a
+	 * RedQueen pin rewrite slots after the sanitiser has run, and the
+	 * kernel advises every VMA a longer range reaches.  Refused rather
+	 * than repaired; a call that passes has its snapshot moved to the
+	 * final slots, so the post handler acts on what the kernel was
+	 * handed.
 	 */
-	if ((entry->is_mprotect_family && !mprotect_vet_final_slots(rec)) ||
-	    (entry->is_madvise && !madvise_vet_final_slots(rec))) {
-		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked%s\n",
-			  entry->name,
-			  entry->is_madvise ? ", or the advice installs guard pages" : "");
+	if (entry->is_madvise && !madvise_vet_final_slots(rec)) {
+		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked, or the advice installs guard pages\n",
+			  entry->name);
 		return -1;
 	}
 

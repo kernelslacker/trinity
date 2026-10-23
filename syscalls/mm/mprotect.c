@@ -2,7 +2,7 @@
  * sys_mprotect(unsigned long start, size_t len, unsigned long prot)
  *
  * The range stays inside the pool mapping the sanitiser picked, final
- * slots included (mprotect_vet_final_slots()).
+ * slots included (vet_final_mprotect()).
  */
 #include <asm/mman.h>
 #include "arch.h"
@@ -17,7 +17,7 @@
 /*
  * Snapshot of the mprotect inputs read by the post handler, captured at
  * sanitise time, moved to the final slots at dispatch
- * (mprotect_vet_final_slots()), and consumed by the post handler.  Lives in
+ * (vet_final_mprotect()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot smear the addr/len/prot/map the post handler
@@ -50,27 +50,36 @@ struct mprotect_post_state {
 };
 
 /*
- * validate_arg_coupling() holds the final slots to the mapping with this
- * (see map_range_vet()).  A pass also moves the prot, and pkey_mprotect's
- * key, into the snapshot, since post_mprotect caches them into map->prot.
- * A record with no snapshot of ours passes only a range the kernel acts
- * on nothing of.  Shape, then ownership, then magic, as
- * post_state_claim_owned() orders them.
+ * The final range has to stay inside the mapping the sanitiser picked
+ * (see map_range_vet()): do_mprotect_pkey() reprotects every VMA a longer
+ * range reaches, up to the first hole.  Refused rather than repaired.  A
+ * pass moves the snapshot to the final slots, the prot and pkey_mprotect's
+ * key included, since post_mprotect caches them into map->prot.  A record
+ * with no snapshot of ours passes only a range the kernel acts on nothing
+ * of.  Shape, then ownership, then magic, as post_state_claim_owned()
+ * orders them.
  */
-bool mprotect_vet_final_slots(const struct syscallrecord *rec)
+static int vet_final_mprotect(struct syscallrecord *rec)
 {
 	struct mprotect_post_state *snap =
 		(struct mprotect_post_state *) rec->post_state;
+	struct map_range *range = NULL;
 
-	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
-	    snap->magic != MPROTECT_POST_STATE_MAGIC)
-		return map_range_vet(rec, NULL, false);
-	if (!map_range_vet(rec, &snap->range, false))
-		return false;
-	snap->prot = rec->a3;
-	if (rec->entry->is_pkey_mprotect)
-		snap->pkey = rec->a4;
-	return true;
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == MPROTECT_POST_STATE_MAGIC)
+		range = &snap->range;
+	if (!map_range_vet(rec, range, false)) {
+		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
+			  rec->entry->name);
+		return -1;
+	}
+
+	if (range != NULL) {
+		snap->prot = rec->a3;
+		if (rec->entry->is_pkey_mprotect)
+			snap->pkey = rec->a4;
+	}
+	return 0;
 }
 
 static void sanitise_mprotect(struct syscallrecord *rec)
@@ -278,6 +287,7 @@ struct syscallentry syscall_mprotect = {
 	.argname = { [0] = "start", [1] = "len", [2] = "prot" },
 	.arg_params[2].list = ARGLIST(mprotect_prots),
 	.sanitise = sanitise_mprotect,
+	.vet_final = vet_final_mprotect,
 	.group = GROUP_VM,
 	.post = post_mprotect,
 	.rettype = RET_ZERO_SUCCESS,
@@ -291,6 +301,7 @@ struct syscallentry syscall_pkey_mprotect = {
 	.argname = { [0] = "start", [1] = "len", [2] = "prot", [3] = "key" },
 	.arg_params[2].list = ARGLIST(mprotect_prots),
 	.sanitise = sanitise_mprotect,
+	.vet_final = vet_final_mprotect,
 	.group = GROUP_VM,
 	.post = post_mprotect,
 	.rettype = RET_ZERO_SUCCESS,
