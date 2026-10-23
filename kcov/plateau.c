@@ -44,11 +44,12 @@
  * across racing children so only one breadcrumb fires per window even
  * when many children cross the boundary in the same instant.
  */
+
+/* Childop sets behind the four breadcrumb tags.  Every set is empty, so
+ * none of the tags can fire. */
 static const enum child_op_type covjump_bridge_ops[] = {
-	/* CHILD_OP_BRIDGE_CT_CHURN removed */
 };
 static const enum child_op_type covjump_conntrack_ops[] = {
-	/* CHILD_OP_NF_CONNTRACK_HELPER removed (nf_conntrack_helper_churn doomed) */
 };
 static const enum child_op_type covjump_mld_ops[] = {
 };
