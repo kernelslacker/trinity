@@ -5,10 +5,6 @@
  * by persist/deferred-free*.c and, for the sizing constants, with
  * tests/deferred_free_test.c so its arithmetic follows the production
  * values.  Not part of the public API in deferred-free.h.
- *
- * Include it after every other project header: the ring accessor macros at
- * the end would rewrite a parameter named ring in any prototype declared
- * after them.
  */
 
 #include <stdbool.h>
@@ -96,10 +92,7 @@ struct deferred_entry {
  * fast-bail checks, the ring_count comparison in the full-ring
  * branch, and __builtin_ctzll(~occupied_mask) in the slot-hunt)
  * execute without a syscall; the few writer paths flip RW via
- * rc_unlock()/rc_lock() for the duration of the mutation.  The field
- * access pattern is hidden behind the file-scope macros below so the
- * rest of the file keeps reading like ring/ring_count/ring_bytes/
- * occupied_mask were still plain file-static scalars.
+ * rc_unlock()/rc_lock() for the duration of the mutation.
  */
 struct ring_control {
 	struct deferred_entry *ring;
@@ -107,6 +100,18 @@ struct ring_control {
 	unsigned int ring_count;
 	uint64_t occupied_mask;
 };
+
+/*
+ * occupied_mask: one bit per ring slot (1 == occupied, 0 == free).
+ * Lets enqueue find the next empty slot in O(1) via
+ * __builtin_ctzll(~occupied_mask) instead of a linear scan over all
+ * 64 entries.  Maintained alongside ring_count: every ptr write that
+ * fills a slot sets the bit, every clear that empties a slot clears
+ * it.  Lives in the ring_control armor page (see struct definition
+ * above) -- reads at rest hit PROT_READ without a syscall; writers
+ * update it inside the same rc_unlock/rc_lock bracket that guards
+ * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
+ */
 
 /*
  * Bracket writers/readers of ring[] with mprotect(): at rest PROT_NONE
@@ -213,25 +218,3 @@ bool gen_arena_contains(void *ptr);
 
 /* Reads vm.max_map_count once, in the parent, for the enqueue VMA cap. */
 void deferred_free_read_max_map_count(void);
-
-/*
- * Accessors for the ring_control fields, so code reads as if ring and its
- * bookkeeping were plain file-static scalars.  Last in this header: the
- * macros follow every declaration they could rewrite.
- */
-#define ring		(rc->ring)
-#define ring_bytes	(rc->ring_bytes)
-#define ring_count	(rc->ring_count)
-#define occupied_mask	(rc->occupied_mask)
-
-/*
- * occupied_mask: one bit per ring slot (1 == occupied, 0 == free).
- * Lets enqueue find the next empty slot in O(1) via
- * __builtin_ctzll(~occupied_mask) instead of a linear scan over all
- * 64 entries.  Maintained alongside ring_count: every ptr write that
- * fills a slot sets the bit, every clear that empties a slot clears
- * it.  Lives in the ring_control armor page (see struct definition
- * above) -- reads at rest hit PROT_READ without a syscall; writers
- * update it inside the same rc_unlock/rc_lock bracket that guards
- * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
- */

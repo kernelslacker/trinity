@@ -204,7 +204,7 @@ enum ring_unlock_result ring_unlock(void)
 		return RING_UNLOCK_OK;
 
 	clock_gettime(CLOCK_MONOTONIC, &begin);
-	if (mprotect(ring, ring_bytes, PROT_READ | PROT_WRITE) != 0) {
+	if (mprotect(rc->ring, rc->ring_bytes, PROT_READ | PROT_WRITE) != 0) {
 		int e = errno;
 		static unsigned long rw_fail_n;
 
@@ -226,7 +226,7 @@ void ring_lock(void)
 	if (deferred_free_batch)
 		return;
 
-	if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
+	if (mprotect(rc->ring, rc->ring_bytes, PROT_NONE) != 0) {
 		static unsigned long none_fail_n;
 
 		if ((++none_fail_n % 1000) == 1)
@@ -300,11 +300,11 @@ void gen_lock(void)
  */
 void ring_dispose_after_enomem(void)
 {
-	if (ring == NULL)
+	if (rc->ring == NULL)
 		return;
 
-	untrack_shared_region((unsigned long)ring, ring_bytes);
-	if (munmap(ring, ring_bytes) != 0)
+	untrack_shared_region((unsigned long)rc->ring, rc->ring_bytes);
+	if (munmap(rc->ring, rc->ring_bytes) != 0)
 		outputerr("deferred_free: munmap ring after ENOMEM failed: errno=%d\n",
 			  errno);
 
@@ -318,9 +318,9 @@ void ring_dispose_after_enomem(void)
 	ring_rw_open = false;
 
 	if (rc_unlock() == 0) {
-		ring = NULL;
-		ring_count = 0;
-		occupied_mask = 0;
+		rc->ring = NULL;
+		rc->ring_count = 0;
+		rc->occupied_mask = 0;
 		rc_lock();
 	}
 }
@@ -389,10 +389,10 @@ bool deferred_free_seal_all(void)
 		}
 	}
 
-	if (ring_rw_open && ring != NULL) {
+	if (ring_rw_open && rc->ring != NULL) {
 		unsigned long ns;
 
-		if (mprotect(ring, ring_bytes, PROT_NONE) != 0) {
+		if (mprotect(rc->ring, rc->ring_bytes, PROT_NONE) != 0) {
 			outputerr("deferred_free: seal ring failed: "
 				  "errno=%d\n", errno);
 			sealed = false;
@@ -404,7 +404,7 @@ bool deferred_free_seal_all(void)
 			__atomic_add_fetch(&shm->stats.deferred_free.ring_rw_ns_total,
 					   ns, __ATOMIC_RELAXED);
 		}
-	} else if (ring == NULL) {
+	} else if (rc->ring == NULL) {
 		/* Ring was disposed after ENOMEM inside this phase; the
 		 * page is gone, so drop the flag with no mprotect.  A
 		 * PROT_NONE call against a stale VA would fail EFAULT
@@ -469,18 +469,19 @@ void deferred_free_init(void)
 	memset(rc, 0, rc_bytes);
 	track_shared_region((unsigned long)rc, rc_bytes);
 
-	ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
+	rc->ring_bytes = ((raw + page_size - 1) / page_size) * page_size;
 
-	ring = mmap(NULL, ring_bytes, PROT_READ | PROT_WRITE,
-		    MAP_PRIVATE | MAP_ANON, -1, 0);
-	if (ring == MAP_FAILED) {
-		outputerr("deferred_free_init: mmap %zu failed\n", ring_bytes);
+	rc->ring = mmap(NULL, rc->ring_bytes, PROT_READ | PROT_WRITE,
+			MAP_PRIVATE | MAP_ANON, -1, 0);
+	if (rc->ring == MAP_FAILED) {
+		outputerr("deferred_free_init: mmap %zu failed\n",
+			  rc->ring_bytes);
 		exit(EXIT_FAILURE);
 	}
-	memset(ring, 0, ring_bytes);
-	track_shared_region((unsigned long)ring, ring_bytes);
-	ring_count = 0;
-	occupied_mask = 0;
+	memset(rc->ring, 0, rc->ring_bytes);
+	track_shared_region((unsigned long)rc->ring, rc->ring_bytes);
+	rc->ring_count = 0;
+	rc->occupied_mask = 0;
 	ring_lock();
 	rc_lock();
 

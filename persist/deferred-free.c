@@ -65,7 +65,7 @@ static bool ring_contains(void *ptr)
 	unsigned int i;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (ring[i].ptr == ptr)
+		if (rc->ring[i].ptr == ptr)
 			return true;
 	}
 	return false;
@@ -89,7 +89,7 @@ void alloc_track_refresh(void *ptr)
 	if (ptr == NULL)
 		return;
 
-	if (ring != NULL) {
+	if (rc->ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free.alloc_track_refresh_unverified_skip,
 					   1, __ATOMIC_RELAXED);
@@ -163,7 +163,7 @@ void tracked_free_now(void *ptr)
 	 * chunk instead of freeing it.  Skip the consume (and the free,
 	 * which the ring or arena will perform) when ring-owned.
 	 */
-	if (ring != NULL) {
+	if (rc->ring != NULL) {
 		if (ring_unlock() != RING_UNLOCK_OK) {
 			__atomic_add_fetch(&shm->stats.deferred_free.tracked_free_unverified_leak,
 					   1, __ATOMIC_RELAXED);
@@ -367,12 +367,12 @@ static void ring_evict_oldest_safe(void)
 	bool corrupt = false;
 
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
-		if (ring[i].ptr != NULL && ring[i].ttl < min_ttl) {
-			min_ttl = ring[i].ttl;
+		if (rc->ring[i].ptr != NULL && rc->ring[i].ttl < min_ttl) {
+			min_ttl = rc->ring[i].ttl;
 			oldest = i;
 		}
 	}
-	if (ring[oldest].ptr == NULL)
+	if (rc->ring[oldest].ptr == NULL)
 		return;
 
 	/*
@@ -380,11 +380,11 @@ static void ring_evict_oldest_safe(void)
 	 * does before free(): an interruption in between then leaks the
 	 * chunk instead of leaving it owned by both the ring and the arena.
 	 */
-	evict_ptr = ring[oldest].ptr;
-	ring[oldest].ptr = NULL;
+	evict_ptr = rc->ring[oldest].ptr;
+	rc->ring[oldest].ptr = NULL;
 	if (rc_unlock() == 0) {
-		occupied_mask &= ~(1ULL << oldest);
-		ring_count--;
+		rc->occupied_mask &= ~(1ULL << oldest);
+		rc->ring_count--;
 		rc_lock();
 	}
 
@@ -563,7 +563,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * the slot has since rotated out) bumps deferred_free_reject_
 	 * untracked instead of being silently freed.
 	 */
-	if (ring_count > g_max_vmas / 2) {
+	if (rc->ring_count > g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free.vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
 		if (leak_on_pressure) {
@@ -584,7 +584,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * (_enomem_drain, _rw_restore_enomem) already record the rate of
 	 * ring teardowns; per-enqueue noise after teardown adds nothing.
 	 */
-	if (ring == NULL) {
+	if (rc->ring == NULL) {
 		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
 					   1, __ATOMIC_RELAXED);
@@ -669,7 +669,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 		return;
 	}
 
-	if (occupied_mask == ~0ULL)
+	if (rc->occupied_mask == ~0ULL)
 		ring_evict_oldest_safe();
 
 	/*
@@ -681,7 +681,7 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * don't ctzll(0) into UB territory and write one element past
 	 * the ring.
 	 */
-	if (occupied_mask == ~0ULL) {
+	if (rc->occupied_mask == ~0ULL) {
 		ring_lock();
 		if (leak_on_pressure) {
 			__atomic_add_fetch(&shm->stats.deferred_free.pre_dispatch_leaked,
@@ -696,15 +696,15 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	/* Find an empty slot.  After the full-ring eviction above, at
 	 * least one bit in occupied_mask is clear, so ~occupied_mask is
 	 * non-zero and __builtin_ctzll's UB-on-zero case can't fire. */
-	i = __builtin_ctzll(~occupied_mask);
-	ring[i].ptr = ptr;
-	ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
+	i = __builtin_ctzll(~rc->occupied_mask);
+	rc->ring[i].ptr = ptr;
+	rc->ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	if (rc_unlock() == 0) {
-		occupied_mask |= 1ULL << i;
-		ring_count++;
+		rc->occupied_mask |= 1ULL << i;
+		rc->ring_count++;
 		rc_lock();
 	}
-	deferred_free_record_outstanding(ring_count);
+	deferred_free_record_outstanding(rc->ring_count);
 
 	ring_lock();
 
@@ -803,7 +803,7 @@ void deferred_free_tick(void)
 	 * tick, be re-populated by a fresh admission below. */
 	gen_arena_tick();
 
-	if (ring_count == 0)
+	if (rc->ring_count == 0)
 		return;
 
 	/*
@@ -851,7 +851,7 @@ void deferred_free_tick(void)
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
-		if (ring[i].ptr == NULL) {
+		if (rc->ring[i].ptr == NULL) {
 			/*
 			 * Stomped corpse: a fuzzed value-result syscall
 			 * scribbled this slot's ptr to NULL while it was
@@ -865,25 +865,25 @@ void deferred_free_tick(void)
 			 * so this is the sole remaining path that lets its
 			 * bits diverge from ring[]'s ptr state.
 			 */
-			if (occupied_mask & (1ULL << i)) {
-				occupied_mask &= ~(1ULL << i);
-				ring_count--;
+			if (rc->occupied_mask & (1ULL << i)) {
+				rc->occupied_mask &= ~(1ULL << i);
+				rc->ring_count--;
 			}
 			continue;
 		}
 
-		if (ring[i].ttl > 0) {
-			ring[i].ttl--;
+		if (rc->ring[i].ttl > 0) {
+			rc->ring[i].ttl--;
 			continue;
 		}
 
 		/* TTL expired — free it.  Clear the slot BEFORE calling
 		 * the free function so that if a signal interrupts us
 		 * mid-free and we longjmp, the slot is already empty. */
-		ptr = ring[i].ptr;
-		ring[i].ptr = NULL;
-		occupied_mask &= ~(1ULL << i);
-		ring_count--;
+		ptr = rc->ring[i].ptr;
+		rc->ring[i].ptr = NULL;
+		rc->occupied_mask &= ~(1ULL << i);
+		rc->ring_count--;
 
 		free_ring_entry(ptr, i);
 	}
@@ -913,7 +913,7 @@ void deferred_free_flush(void)
 	/* Ring already disposed by a prior ENOMEM event.  Nothing to
 	 * flush; skip ring_unlock so we don't emit a "mprotect RW
 	 * failed" log line on every child exit for the rest of the run. */
-	if (ring == NULL)
+	if (rc->ring == NULL)
 		return;
 
 	/*
@@ -940,18 +940,18 @@ void deferred_free_flush(void)
 	for (i = 0; i < DEFERRED_RING_SIZE; i++) {
 		void *ptr;
 
-		if (ring[i].ptr == NULL)
+		if (rc->ring[i].ptr == NULL)
 			continue;
 
 		/* Clear before invoking, mirroring tick: a signal that
 		 * longjmps mid-free leaves the slot empty either way. */
-		ptr = ring[i].ptr;
-		ring[i].ptr = NULL;
+		ptr = rc->ring[i].ptr;
+		rc->ring[i].ptr = NULL;
 		free_ring_entry(ptr, i);
 	}
 	if (rc_unlock() == 0) {
-		ring_count = 0;
-		occupied_mask = 0;
+		rc->ring_count = 0;
+		rc->occupied_mask = 0;
 		rc_lock();
 	}
 
