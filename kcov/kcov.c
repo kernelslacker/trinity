@@ -48,13 +48,14 @@
 struct kcov_shared *kcov_shm = NULL;
 
 /* The per-childop arrays in struct kcov_shared are sized off
- * KCOV_CHILDOP_NR_MAX because include/kcov.h cannot pull in child.h
+ * KCOV_CHILDOP_NR_MAX because the kcov headers cannot pull in child.h
  * for the real NR_CHILD_OP_TYPES (child.h includes kcov.h for struct
- * kcov_child).  Bump KCOV_CHILDOP_NR_MAX in include/kcov.h if a
- * childop slot beyond the bound is ever added. */
+ * kcov_child).  Bump KCOV_CHILDOP_NR_MAX in
+ * include/kcov-groups/constants.h if a childop slot beyond the bound is
+ * ever added. */
 _Static_assert(NR_CHILD_OP_TYPES <= KCOV_CHILDOP_NR_MAX,
 	"NR_CHILD_OP_TYPES exceeds KCOV_CHILDOP_NR_MAX; "
-	"bump KCOV_CHILDOP_NR_MAX in include/kcov.h");
+	"bump KCOV_CHILDOP_NR_MAX in include/kcov-groups/constants.h");
 
 enum childop_kcov_attribution_mode childop_kcov_attr_mode =
 	CHILDOP_KCOV_ATTR_DUAL;
