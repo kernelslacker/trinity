@@ -23,14 +23,13 @@
  * Blanket retval bound for RET_FD handlers at the do_syscall layer.
  * Complements the add_object()-side check: that gate fires only on
  * RET_FD entries that declare a ret_objtype and reach the universal
- * pool-registration chokepoint.  Roughly 19 RET_FD entries instead
- * carry bespoke .post handlers that consume the returned fd without
- * ever calling add_object() -- the generic_post_close_fd users
- * (signalfd, signalfd4, fsmount, open_tree, open_tree_attr,
- * memfd_secret, pidfd_getfd), perf_event_open's close-on-fail path,
- * futex(FUTEX_FD) (which has no retval check at all), and a handful
- * of others.  Without a chokepoint at this layer a wholesale-stomped
- * or upper-bit-corrupt rec->retval whose lower bits happen to be
+ * pool-registration chokepoint.  Other RET_FD entries carry bespoke
+ * .post handlers that consume the returned fd themselves --
+ * pool_foreign_fd() / publish_resource() with a close() fallback,
+ * generic_post_close_fd (pidfd_getfd's fallback), perf_event_open's
+ * close-on-fail path, futex(FUTEX_FD) (which has no retval check at
+ * all), and others.  Without a chokepoint at this layer a
+ * wholesale-stomped or upper-bit-corrupt rec->retval whose lower bits happen to be
  * positive slips past the "(long)retval >= 0" gates these handlers
  * use and is fed straight back to the kernel as a real fd by close()
  * (or worse, lands on a file-table entry an unrelated path opened).
