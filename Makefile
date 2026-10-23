@@ -351,7 +351,7 @@ coverity:
 # Re-run after every rebuild -- the security.capability xattr is stripped
 # on recompile.  Needs an xattr-capable, non-nosuid fs (ext4/xfs/btrfs/
 # recent tmpfs; not nfs/overlayfs).
-# Depends on the child capability-drop in child-init.c: forked fuzz
+# Depends on the child capability-drop in child-init-sandbox.c: forked fuzz
 # children capset() every cap (CAP_SYS_ADMIN, CAP_SYS_RESOURCE, ...) to
 # empty before the fuzz loop, so the raised RLIMIT_MEMLOCK persists
 # across fork while the cap that raised it does not.
