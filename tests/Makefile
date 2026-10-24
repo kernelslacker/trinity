@@ -571,7 +571,8 @@ PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
 FAKE_SRCS	+= objpool_reader_test.c
 
 # maps_name_test.c runs map_destructor() and the pool clones of the
-# mm/maps-lifecycle.c linked above over fake pools.
+# mm/maps-lifecycle.c linked above over fake pools, and the post handler
+# of the syscalls/mm/mmap.c linked above too.
 FAKE_SRCS	+= maps_name_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

@@ -1,8 +1,9 @@
 /*
  * Self-check for the names of a child's local map pool entries.  They
- * borrow a name, the string of the global entry they were cloned from, so
- * map_destructor() (mm/maps-lifecycle.c, linked as a parent TU) only clears
- * the pointer.  init_child_mappings() runs over fake pools, with
+ * borrow a name, the string of the global entry they were cloned from or,
+ * for a mapping post_mmap() records, one static string, so map_destructor()
+ * (mm/maps-lifecycle.c, linked as a parent TU) only clears the pointer.
+ * init_child_mappings() and post_mmap() run over fake pools, with
  * alloc_object() and add_object() hooked.
  * Entry point: maps_name_self_check().
  */
@@ -19,6 +20,8 @@
 #include "maps.h"
 #include "objects.h"
 #include "shm.h"
+#include "syscall.h"		/* struct syscallrecord */
+#include "syscalls/syscalls.h"	/* syscall_mmap */
 
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
@@ -193,6 +196,58 @@ static void destroying_a_clone_leaves_the_name_alone(void)
 		BUG("map name: destroying a clone touched a global name");
 }
 
+/*
+ * Every mapping post_mmap() records borrows one static string: the entry it
+ * adds names "misc", through the same pointer as the entry before it, and
+ * the destructor clears that pointer without freeing the string or going
+ * through the tracker.  The mappings are real, since the destructor unmaps
+ * what a runtime entry owns.
+ */
+static void runtime_mappings_borrow_a_static_name(void)
+{
+	unsigned long before = shm->stats.deferred_free.reject_untracked;
+	struct objhead *head = pool_head(OBJ_LOCAL, OBJ_MMAP_ANON);
+	const char *name;
+	unsigned int i;
+
+	for (i = 0; i < POOL_CAP; i++) {
+		struct syscallrecord rec;
+		void *p = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+		if (p == MAP_FAILED)
+			BUG("map name: no mapping for post_mmap() to record");
+		memset(&rec, 0, sizeof(rec));
+		rec.retval = (unsigned long) p;
+		rec.a2 = page_size;
+		rec.a3 = PROT_READ | PROT_WRITE;
+		rec.a4 = MAP_PRIVATE | MAP_ANONYMOUS;
+		syscall_mmap.post(&rec);
+	}
+	if (head->num_entries != POOL_CAP)
+		BUG("map name: post_mmap() did not add its mappings to the anon pool");
+	name = head->array[0]->map.name;
+	if (name == NULL || strcmp(name, "misc") != 0 ||
+	    head->array[1]->map.name != name)
+		BUG("map name: post_mmap() did not name its mappings with one static string");
+
+	for (i = 0; i < POOL_CAP; i++) {
+		struct object *obj = head->array[i];
+
+		map_destructor(obj);
+		if (obj->map.name != NULL)
+			BUG("map name: the destructor left a runtime mapping's name set");
+		free(obj);
+		head->array[i] = NULL;
+	}
+	head->num_entries = 0;
+
+	if (shm->stats.deferred_free.reject_untracked != before)
+		BUG("map name: destroying a runtime mapping went through the tracker");
+	if (strcmp(name, "misc") != 0)
+		BUG("map name: destroying a runtime mapping touched its name");
+}
+
 void maps_name_self_check(void);
 void maps_name_self_check(void)
 {
@@ -202,6 +257,7 @@ void maps_name_self_check(void)
 	pools_arm();
 	clones_borrow_the_global_name();
 	destroying_a_clone_leaves_the_name_alone();
+	runtime_mappings_borrow_a_static_name();
 	fake_get_objhead = saved_hook;
 	fake_alloc_object = NULL;
 	fake_add_object = NULL;

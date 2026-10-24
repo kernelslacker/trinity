@@ -2639,11 +2639,11 @@ static void mincore_held_to_vec(void)
 	fake_this_child = NULL;
 }
 
-/* post_mmap() dirties a mapping it made, and no test has it make one. */
+/* post_mmap() dirties half the mappings it records, and maps_name_test.c
+ * has it record some; what the walk writes is no part of a test. */
 void dirty_mapping(struct map *map)
 {
 	(void) map;
-	BUG("mmap: a test had post_mmap() dirty a mapping");
 }
 
 /* No huge page sizes are known: the kernel's default. */
