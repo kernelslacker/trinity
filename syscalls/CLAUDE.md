@@ -112,9 +112,8 @@ top of each header as private to that pair of TUs).
    sanitiser to check that every slot the mask names is written on every
    path.
    A sanitiser that sizes a byte count to the buffer before it, for a call
-   that writes as far as its source lets it (read, pread64, getrandom, the
-   xattr value and list getters, mq_timedreceive), names the count's slot
-   in `.buf_count_slot`: `validate_arg_coupling()`
+   that writes as far as its source lets it (read() from /dev/zero, for
+   one), names the count's slot in `.buf_count_slot`: `validate_arg_coupling()`
    then cuts a rewritten count (chain substitution, a RedQueen pin) that
    would run the write past the buffer into trinity's own regions, and
    `sanity_check_tables()` refuses a slot with no address argtype before it.
