@@ -394,6 +394,10 @@ void kcov_plateau_check(void);
 #define KCOV_BITMAP_SNAPSHOT_EDGES		1000UL
 #define KCOV_BITMAP_SNAPSHOT_INTERVAL_SEC	300UL
 
+/* Refused saves in a row, each a due snapshot, after which the run is
+ * asked to stop: the scribble behind a refusal does not heal. */
+#define KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP	3UL
+
 /* Warm-start persistence for the kcov_shm bucket_seen[] hit-count bitmap
  * and the edges_found counter.  Save/load are gated on a kernel-binary
  * fingerprint -- sha256 over /proc/kallsyms with the address column

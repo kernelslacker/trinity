@@ -417,13 +417,13 @@ static unsigned long kcov_bitmap_edges_at_last_save = ULONG_MAX;
 /*
  * Persist-refusal is correct (it preserves prior on-disk state when the
  * live bitmap recount has regressed below its set-once warm-load floor),
- * but the underlying scribble does not heal on its own: every subsequent
- * save attempt recounts, refuses, and loops.  A long-lived run can burn
- * CPU for hours doing this.  Once we have refused this many times in a
- * row, request a clean shutdown via EXIT_SHM_CORRUPTION so the main loop
- * tears the run down instead of spinning forever.
+ * but the underlying scribble does not heal on its own: every later save
+ * recounts and refuses again.  Once this many saves in a row have been
+ * refused, request a clean shutdown via EXIT_SHM_CORRUPTION so the main
+ * loop tears the run down.  Mid-run saves are paced by the snapshot
+ * cadence, so each refusal is a fresh look at the bitmap, not a retry of
+ * the last one; a good save clears the count.
  */
-#define KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP 1000UL
 static unsigned long kcov_bitmap_persist_refused_corrupt;
 
 /*
@@ -791,6 +791,7 @@ bool kcov_bitmap_save_file(const char *path)
 	if (!kcov_bitmap_write_file(path, &hdr, &blobs))
 		goto out;
 	kcov_bitmap_edges_at_last_save = edges_now;
+	kcov_bitmap_persist_refused_corrupt = 0;
 	ok = true;
 
 out:
@@ -1391,10 +1392,11 @@ void kcov_bitmap_maybe_snapshot(void)
 			+ (time_t)KCOV_BITMAP_SNAPSHOT_INTERVAL_SEC)
 		return;
 
-	if (kcov_bitmap_save_file(kcov_bitmap_snapshot_path)) {
-		kcov_bitmap_edges_at_last_snapshot = edges_now;
-		kcov_bitmap_last_snapshot_time = now;
-	}
+	/* Advance the cadence on a failed save too, or every tick re-runs
+	 * the whole save. */
+	kcov_bitmap_save_file(kcov_bitmap_snapshot_path);
+	kcov_bitmap_edges_at_last_snapshot = edges_now;
+	kcov_bitmap_last_snapshot_time = now;
 }
 
 /*

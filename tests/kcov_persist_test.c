@@ -23,6 +23,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "exit.h"		/* EXIT_SHM_CORRUPTION, STILL_RUNNING */
 #include "fake_parent.h"	/* fake_output_log */
 #include "fd.h"			/* read_all */
 #include "kcov.h"
@@ -615,6 +616,79 @@ static void check_save_failures(const char *dir)
 		BUG("kcov persist: cannot remove the kept cache");
 }
 
+/* edges_found values a refused or good snapshot is driven with.  The fill
+ * state's bitmap holds SAMPLE_EDGES set bits, so anything this far above
+ * that is a deficit the save refuses; a value just above it saves. */
+static unsigned long snap_edges;
+static unsigned long good_edges = SAMPLE_EDGES + 3;
+
+static bool exit_requested(void)
+{
+	return __atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) ==
+	       EXIT_SHM_CORRUPTION;
+}
+
+/* A snapshot tick with enough new edges to be due, over a bitmap that
+ * holds far fewer bits than edges_found claims. */
+static void refused_snapshot_tick(void)
+{
+	snap_edges += KCOV_BITMAP_SNAPSHOT_EDGES;
+	kcov_shm->coverage.edges_found = snap_edges;
+	kcov_bitmap_maybe_snapshot();
+}
+
+/* A save that goes through, which clears the refusal count. */
+static void good_save(const char *path)
+{
+	kcov_shm->coverage.edges_found = good_edges++;
+	if (!kcov_bitmap_save_file(path))
+		BUG("kcov persist: a save of a consistent bitmap failed");
+}
+
+static void check_refusal_pacing(const char *dir)
+{
+	char path[PATH_MAX];
+	unsigned int i;
+
+	snprintf(path, sizeof(path), "%s/paced", dir);
+	reset_state();
+	fill_state();
+	kcov_bitmap_enable_snapshots(path);
+	__atomic_store_n(&shm->exit_reason, STILL_RUNNING, __ATOMIC_RELAXED);
+
+	/* The count is of refusals in a row: a good save between two
+	 * refusals starts it again, so they never reach the cap together. */
+	good_save(path);
+	for (i = 0; i < KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP - 1; i++)
+		refused_snapshot_tick();
+	good_save(path);
+	refused_snapshot_tick();
+	expect(!exit_requested(), "refusal cap",
+	       "refusals either side of a good save were counted together");
+
+	/* A refused snapshot is not retried on every tick: ticks with no new
+	 * edges and no elapsed interval must not reach the save again, or
+	 * the cap is spent in a moment. */
+	good_save(path);
+	refused_snapshot_tick();
+	for (i = 0; i < 2 * KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP; i++)
+		kcov_bitmap_maybe_snapshot();
+	expect(!exit_requested(), "refusal pacing",
+	       "ticks with no new edges re-ran a refused snapshot");
+
+	/* Refusals that are each due do reach the cap and stop the run. */
+	for (i = 2; i < KCOV_BITMAP_PERSIST_REFUSAL_EXIT_CAP; i++)
+		refused_snapshot_tick();
+	expect(!exit_requested(), "refusal cap",
+	       "the run stopped before the cap of refused snapshots");
+	refused_snapshot_tick();
+	expect(exit_requested(), "refusal cap",
+	       "the run did not stop at the cap of refused snapshots");
+
+	if (unlink(path) != 0)
+		BUG("kcov persist: cannot remove the paced cache");
+}
+
 void kcov_persist_self_check(void);
 void kcov_persist_self_check(void)
 {
@@ -661,6 +735,7 @@ void kcov_persist_self_check(void)
 	for (i = 0; i < ARRAY_SIZE(scenarios); i++)
 		run_scenario(&scenarios[i], img, variant);
 	check_save_failures(dir);
+	check_refusal_pacing(dir);
 
 	free(img);
 	free(kcov_shm);
