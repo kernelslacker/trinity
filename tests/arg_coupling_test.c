@@ -665,6 +665,47 @@ static void send_buffer_names_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* getrandom fills every byte of its count, so its sanitiser holds the size
+ * it draws to the mapping the ARG_MMAP handle names: no draw runs past it,
+ * over a mapping of one page or of POOL_PAGES, and a boundary size that
+ * fits, 4095, is still drawn as it is.  The sanitiser stamps a poison
+ * pattern over the buffer, and range_readable_user() vouches for any range
+ * in this binary, so the mapping is a real one, long enough for any size
+ * the sanitiser draws. */
+static void getrandom_size_held_to_mapping(void)
+{
+	const unsigned long sizes[] = { page_size, POOL_PAGES * page_size };
+	const unsigned long real_len = MB(4) + page_size;
+	unsigned int s, i, kept;
+	void *real;
+
+	real = mmap(NULL, real_len, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (real == MAP_FAILED)
+		BUG("getrandom: no mapping for the sanitiser to stamp");
+	for (s = 0; s < ARRAY_SIZE(sizes); s++) {
+		kept = 0;
+		for (i = 0; i < SANITISER_DRAWS; i++) {
+			struct syscallrecord *mrec = mm_call(&syscall_getrandom);
+
+			pool_obj.map.ptr = real;
+			pool_obj.map.size = sizes[s];
+			pool_obj.map.tracked_size = sizes[s];
+			syscall_getrandom.sanitise(mrec);
+			if (mrec->a1 != (unsigned long) real || mrec->a2 > sizes[s])
+				BUG("getrandom: a size past the mapping was kept");
+			if (mrec->a2 == 4095)
+				kept++;
+			mrec->retval = (unsigned long) -1L;
+			syscall_getrandom.post(mrec);
+		}
+		if (kept == 0)
+			BUG("getrandom: a boundary size that fits the mapping was never drawn");
+	}
+	munmap(real, real_len);
+	fake_this_child = NULL;
+}
+
 #define LIVE_PKEY	7
 
 /* pkey_mprotect shares mprotect's sanitiser, which draws a live key for
@@ -1332,6 +1373,7 @@ void arg_coupling_self_check(void)
 	get_mempolicy_addr_names_mapping();
 	recv_buffer_names_mapping();
 	send_buffer_names_mapping();
+	getrandom_size_held_to_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();

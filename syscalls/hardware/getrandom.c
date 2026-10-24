@@ -101,13 +101,18 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 	/*
 	 * Override the buffer length first so the avoid_shared_buffer_out
 	 * call below sees the chosen size when deciding whether to relocate.
-	 * ~90% from the boundary pool, ~10% a random multi-page size capped
-	 * at a few MB so it still fits in the largest pool mappings.
+	 * ~90% from the boundary pool, ~10% a random multi-page size up to a
+	 * few MB, either held to the mapping: getrandom fills every byte it
+	 * is asked for, and what lies past the mapping is whatever the
+	 * kernel placed there, which no region check covers.  A boundary
+	 * size that fits stays as drawn.
 	 */
 	if (ONE_IN(10))
 		rec->a2 = rnd_modulo_u32(MB(4)) + 1;
 	else
 		rec->a2 = RAND_ARRAY(getrandom_sizes);
+	if (rec->a2 > map->size)
+		rec->a2 = map->size;
 
 	/*
 	 * Override flags.  ~85% explicit named combos so each one gets

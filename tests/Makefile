@@ -475,6 +475,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 		   $(TOP)/syscalls/socket/send.c
 
+# syscalls/hardware/getrandom.c brings getrandom, whose sanitiser
+# arg_coupling_test.c runs over a real mapping, as the sanitiser stamps
+# the buffer it hands the kernel.
+PARENT_SRCS	+= $(TOP)/syscalls/hardware/getrandom.c
+
 # syscalls/mm/mprotect.c, munmap.c and madvise.c bring mprotect,
 # pkey_mprotect, munmap and madvise, whose sanitisers arg_coupling_test.c
 # runs over a fake pool mapping, and mm/maps-arg.c the
