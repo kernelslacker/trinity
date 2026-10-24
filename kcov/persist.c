@@ -460,6 +460,59 @@ static void kcov_bitmap_recount(const unsigned char *bm, size_t n,
 }
 
 /*
+ * The bitmap as of the last good save, kept so a refusal can say how the
+ * bitmap moved since: bits only ever get set, so a cleared bit is a wild
+ * write.  Parent-private, like the rest of the save state.
+ */
+static unsigned char *kcov_bitmap_last_good;
+static unsigned long kcov_bitmap_last_good_edges;
+
+/*
+ * Describe how @cur differs from the last good save.  An edges_found that
+ * grew by more than the bits gained is a bump whose bit never landed in
+ * this mapping; cleared bits are a different failure, and where they sit
+ * (whole pages, one range, scattered bytes) says what wrote them.
+ */
+static void kcov_bitmap_report_refusal_delta(const unsigned char *cur,
+					     unsigned long edges_now)
+{
+	unsigned long cleared_bits = 0, cleared_bytes = 0, zeroed_bytes = 0;
+	unsigned long gained_bits = 0, pages = 0;
+	size_t first = 0, last = 0, last_page = SIZE_MAX;
+	size_t i;
+
+	if (kcov_bitmap_last_good == NULL) {
+		output(0, "kcov-bitmap: refusal delta: no earlier good save to compare with\n");
+		return;
+	}
+
+	for (i = 0; i < KCOV_NUM_EDGES; i++) {
+		unsigned char was = kcov_bitmap_last_good[i];
+		unsigned char now = cur[i];
+		unsigned char lost = was & (unsigned char)~now;
+
+		gained_bits += (unsigned long)__builtin_popcount(
+			now & (unsigned char)~was);
+		if (lost == 0)
+			continue;
+		cleared_bits += (unsigned long)__builtin_popcount(lost);
+		if (cleared_bytes++ == 0)
+			first = i;
+		last = i;
+		if (now == 0)
+			zeroed_bytes++;
+		if (i / 4096 != last_page) {
+			last_page = i / 4096;
+			pages++;
+		}
+	}
+
+	output(0, "kcov-bitmap: refusal delta since the last good save (edges_found +%lu): cleared %lu bits in %lu bytes (%lu now zero) over %lu pages, offsets 0x%zx..0x%zx; gained %lu bits\n",
+	       edges_now - kcov_bitmap_last_good_edges, cleared_bits,
+	       cleared_bytes, zeroed_bytes, pages, first, last, gained_bits);
+}
+
+/*
  * Scratch copies of the blocks one save serialises.  kcov_bitmap_save_file()
  * owns them and frees them at its one cleanup label.
  */
@@ -769,8 +822,12 @@ bool kcov_bitmap_save_file(const char *path)
 			    &recount_edges, &recount_distinct);
 
 	if (kcov_bitmap_persist_refused(recount_edges, recount_distinct,
-					edges_now))
+					edges_now)) {
+		if (kcov_bitmap_persist_refused_corrupt == 1)
+			kcov_bitmap_report_refusal_delta(blobs.bucket_seen,
+							 edges_now);
 		goto out;
+	}
 
 	hdr.edges_found = recount_edges;
 	hdr.distinct_edges = recount_distinct;
@@ -792,6 +849,13 @@ bool kcov_bitmap_save_file(const char *path)
 		goto out;
 	kcov_bitmap_edges_at_last_save = edges_now;
 	kcov_bitmap_persist_refused_corrupt = 0;
+	if (kcov_bitmap_last_good == NULL)
+		kcov_bitmap_last_good = malloc(KCOV_NUM_EDGES);
+	if (kcov_bitmap_last_good != NULL) {
+		memcpy(kcov_bitmap_last_good, blobs.bucket_seen,
+		       KCOV_NUM_EDGES);
+		kcov_bitmap_last_good_edges = edges_now;
+	}
 	ok = true;
 
 out:

@@ -645,6 +645,52 @@ static void good_save(const char *path)
 		BUG("kcov persist: a save of a consistent bitmap failed");
 }
 
+static unsigned int count_of(const char *hay, const char *needle)
+{
+	unsigned int n = 0;
+
+	for (; (hay = strstr(hay, needle)) != NULL; hay += strlen(needle))
+		n++;
+	return n;
+}
+
+/* A refusal says how the bitmap moved since the last good save, once for
+ * a run of refusals: bits cleared (and where), and bits gained. */
+static void check_refusal_forensics(const char *dir)
+{
+	char path[PATH_MAX];
+
+	snprintf(path, sizeof(path), "%s/forensics", dir);
+	reset_state();
+	fill_state();
+	good_save(path);
+
+	/* Clear one bit in one byte and the only bit in another, and set
+	 * two new bits: the two bytes are in different pages. */
+	kcov_shm->bucket_seen[200000] = 0x01;
+	kcov_shm->bucket_seen[100] = 0;
+	kcov_shm->bucket_seen[300000] = 0x03;
+
+	fake_output_log[0] = '\0';
+	kcov_shm->coverage.edges_found = 5000;
+	if (kcov_bitmap_save_file(path))
+		BUG("kcov persist: a bitmap far behind edges_found was saved");
+	expect(strstr(fake_output_log,
+		      "cleared 2 bits in 2 bytes (1 now zero) over 2 pages, "
+		      "offsets 0x64..0x30d40; gained 2 bits") != NULL,
+	       "refusal delta", "the first refusal did not describe the delta");
+
+	/* The next refusal of the run is not described again. */
+	kcov_shm->coverage.edges_found = 6000;
+	if (kcov_bitmap_save_file(path))
+		BUG("kcov persist: a bitmap far behind edges_found was saved");
+	expect(count_of(fake_output_log, "refusal delta") == 1,
+	       "refusal delta", "a later refusal of the run described it again");
+
+	if (unlink(path) != 0)
+		BUG("kcov persist: cannot remove the forensics cache");
+}
+
 static void check_refusal_pacing(const char *dir)
 {
 	char path[PATH_MAX];
@@ -735,6 +781,7 @@ void kcov_persist_self_check(void)
 	for (i = 0; i < ARRAY_SIZE(scenarios); i++)
 		run_scenario(&scenarios[i], img, variant);
 	check_save_failures(dir);
+	check_refusal_forensics(dir);
 	check_refusal_pacing(dir);
 
 	free(img);
