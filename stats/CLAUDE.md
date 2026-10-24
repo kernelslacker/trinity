@@ -5,10 +5,10 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, JSONL
 timeseries, and periodic operator-facing dumps.
 
-## Layout (73 .c files + 52 headers, ~16,494 LOC)
+## Layout (73 .c files + 52 headers, ~16,506 LOC)
 
 16 of those `.c` files and 48 of the headers are the per-subsystem counter
-tree under `stats/subsys/` (~391 + ~4,736 LOC), listed as one row at the
+tree under `stats/subsys/` (~392 + ~4,747 LOC), listed as one row at the
 bottom rather than enumerated. The renderers below are the other 57 `.c`
 files, with 4 headers.
 

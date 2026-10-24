@@ -2,7 +2,7 @@
 
 Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows how to open/create one kind of file descriptor (BPF map, cgroup dir, io_uring instance, pidfd, socket, ...) and publish it into the global object pool, so `gen_arg_fd()` and the typed-fd argtypes (`ARG_FD_BPF_MAP`, `ARG_FD_SOCKET`, ...) can hand realistic fds to syscalls under test.
 
-## Files (45 .c files + 1 internal header, ~9,983 LOC)
+## Files (45 .c files + 1 internal header, ~10,021 LOC)
 
 The registry core spans `fds.c` and the `fds-*.c` files behind
 `fds-internal.h`, one concern per translation unit.
@@ -15,7 +15,7 @@ The registry core spans `fds.c` and the `fds-*.c` files behind
 | pagecache.c | 396 | Read-only pagecache-backed file fd pool |
 | fds-pick.c | 389 | The pickers: `get_new_random_fd()`, `get_random_fd()` (cache + retry/decay), `get_typed_fd()`, `get_pollable_random_fd()`, `get_child_live_fd()` |
 | cgroup.c | 352 | cgroup subdirectory fds (`O_PATH` on `/sys/fs/cgroup`) |
-| canary.c | 319 | Deterministic-content file pool for read-side verification (pagecache canary childop) |
+| canary.c | 345 | Deterministic-content file pool for read-side verification (pagecache canary childop) |
 | io_uring.c | 303 | io_uring instance fd provider |
 | epoll.c | 297 | epoll fd provider + lazy child-side arming (`arm_epoll_if_needed`) |
 | perf.c | 259 | `perf_event_open` fd provider |
@@ -50,7 +50,7 @@ The registry core spans `fds.c` and the `fds-*.c` files behind
 | fds-internal.h | 66 | Private cross-file interface of the registry translation units — the counters and provider arrays they share, and the replenish per-tick cap |
 | owned-fd-ring.c | 89 | `owned_fd_ring_record()` and `owned_fd_ring_retire()` (`include/owned-fd-ring.h`): the ring of fds a `.try_replenish` provider minted; closes the oldest on wrap, but only while `fstat()` still shows the file it recorded. A retire takes a number out of every provider's ring without closing it: a record retires the number it is given first, and `account_fd_and_group()` retires each number a fuzzed call returns, which `fstat()` cannot do for anon-inode files and dups |
 | fds-dup.c | 116 | `pool_dup_result()` and `pool_foreign_fd()` (`include/fd.h`): pool the fd a dup, dup2, dup3 or `fcntl(F_DUPFD*)` returned under the object type of the fd it copied, after retiring the local object its number held; and the fd `pidfd_getfd` returned, when `fstat()` says it is a socket or a pipe end |
-| fds-pool.c | 135 | `pool_returned_fd()`, `pool_open_result()` and `pool_typed_fd()` (`include/fd.h`): the child's capped pool of the files a call hands back that no provider owns (an open result, the fd an ioctl cmd returns), as local `OBJ_FD_TESTFILE` objects. At most `POOLED_FD_MAX` of them: a full pool destroys its oldest object (smallest `slot_version`) through the head's destructor to make room, and a head with no destructor takes nothing. An open result qualifies only as a regular file or a directory that is not a second name of a protected file. `pool_typed_fd()` is the same retire-then-publish, capped at `POOLED_FD_MAX` per type, under a typed producer's own type; what it refuses past stdio and protected numbers it closes |
+| fds-pool.c | 147 | `pool_returned_fd()`, `pool_open_result()` and `pool_typed_fd()` (`include/fd.h`): the child's capped pool of the files a call hands back that no provider owns (an open result, the fd an ioctl cmd returns), as local `OBJ_FD_TESTFILE` objects. At most `POOLED_FD_MAX` of them: a full pool destroys its oldest object (smallest `slot_version`) through the head's destructor to make room, and a head with no destructor takes nothing. An open result qualifies only as a regular file or a directory that is not a second name of a protected file. `pool_typed_fd()` is the same retire-then-publish, capped at `POOLED_FD_MAX` per type, under a typed producer's own type; what it refuses past stdio and protected numbers it closes |
 | fds-diag.c | 42 | `fd_provider_init_fail()` and the last-init-reason slot `open_fds()` reads back |
 | devfs.c | 34 | `/dev` pool provider (thin wrapper over files.c, pool 0) |
 | procfs.c | 18 | `/proc` pool provider (thin wrapper over files.c, pool 1) |
