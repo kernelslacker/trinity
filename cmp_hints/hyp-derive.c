@@ -593,14 +593,12 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 		: ((uint64_t)1 << (picked->width * 8)) - 1;
 	uint64_t width_max = width_mask;
 	uint64_t cand;
-	bool have_cand = false;
 
 	switch (rnd_modulo_u32(4)) {
 	case 0:
 		if (n >= 1) {
 			cand = n - 1;
 			*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_MINUS1;
-			have_cand = true;
 			break;
 		}
 		/* N=0: N-1 would underflow.  Fall through to the +1
@@ -610,7 +608,6 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 		if (n < width_max) {
 			cand = n + 1;
 			*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_PLUS1;
-			have_cand = true;
 			break;
 		}
 		/* N == width_max: N+1 would overflow the operand
@@ -620,7 +617,6 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 	case 2:
 		cand = n;
 		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
-		have_cand = true;
 		break;
 	default:
 		/* Widen-by-one sweep for off-by-one chains.  Random
@@ -630,14 +626,12 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 			if (n >= 2) {
 				cand = n - 2;
 				*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
-				have_cand = true;
 				break;
 			}
 		} else {
 			if (n + 2 > n && n + 2 <= width_max) {
 				cand = n + 2;
 				*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_SWEEP;
-				have_cand = true;
 				break;
 			}
 		}
@@ -647,11 +641,8 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 		 * window covers exemplar matches too. */
 		cand = n;
 		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
-		have_cand = true;
 		break;
 	}
-	if (!have_cand)
-		return false;
 	*out = (unsigned long)(cand & width_mask);
 	return true;
 }
