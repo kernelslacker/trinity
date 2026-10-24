@@ -24,6 +24,7 @@
 #include "debug.h"			/* BUG */
 #include "files.h"			/* get_rand_pagecache_fd */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
+#include "kernel/syslog.h"		/* SYSLOG_ACTION_READ */
 #include "maps.h"			/* proc_maps_check */
 #include "net.h"			/* generate_sockaddr */
 #include "objects.h"			/* struct object */
@@ -706,6 +707,39 @@ static void getrandom_size_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* syslog's read-class calls copy up to their length of log into the
+ * buffer, so the sanitiser never asks for more than the mapping get_map()
+ * picked holds.  A negative length, which the kernel refuses before it
+ * copies anything, is still drawn. */
+static void syslog_read_held_to_mapping(void)
+{
+	const unsigned long size = POOL_PAGES * page_size;
+	unsigned int i, reads = 0, negative = 0;
+
+	fake_map_drawn = &pool_obj.map;
+	pool_obj.map.ptr = (void *) POOL_MAP;
+	pool_obj.map.size = size;
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_syslog;
+		syscall_syslog.sanitise(&rec);
+		if ((rec.a1 != SYSLOG_ACTION_READ &&
+		     rec.a1 != SYSLOG_ACTION_READ_ALL &&
+		     rec.a1 != SYSLOG_ACTION_READ_CLEAR) || rec.a2 == 0)
+			continue;
+		reads++;
+		if ((int) rec.a3 < 0) {
+			negative++;
+			continue;
+		}
+		if (rec.a2 != POOL_MAP || rec.a3 > size)
+			BUG("syslog: a read asked for more than the mapping holds");
+	}
+	if (reads == 0 || negative == 0)
+		BUG("syslog: the sanitiser lost its reads, or the negative length among them");
+	fake_map_drawn = NULL;
+}
+
 #define LIVE_PKEY	7
 
 /* pkey_mprotect shares mprotect's sanitiser, which draws a live key for
@@ -1374,6 +1408,7 @@ void arg_coupling_self_check(void)
 	recv_buffer_names_mapping();
 	send_buffer_names_mapping();
 	getrandom_size_held_to_mapping();
+	syslog_read_held_to_mapping();
 	madvise_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();

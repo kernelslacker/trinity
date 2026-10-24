@@ -122,10 +122,8 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			rec->a3 = rnd_modulo_u32(64);
 		else if (len_pick < 70)
 			rec->a3 = map->size;
-		else if (len_pick < 85)
-			rec->a3 = rnd_modulo_u32(map->size) & PAGE_MASK;
 		else if (len_pick < 95)
-			rec->a3 = map->size + page_size;
+			rec->a3 = rnd_modulo_u32(map->size) & PAGE_MASK;
 		else
 			rec->a3 = 0x80000000UL;
 

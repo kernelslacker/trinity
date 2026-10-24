@@ -480,6 +480,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 # the buffer it hands the kernel.
 PARENT_SRCS	+= $(TOP)/syscalls/hardware/getrandom.c
 
+# syscalls/syslog.c brings syslog, whose sanitiser arg_coupling_test.c
+# runs over the fake pool mapping, which the get_map() of
+# post_oracle_test.c hands out.
+PARENT_SRCS	+= $(TOP)/syscalls/syslog.c
+
 # syscalls/mm/mprotect.c, munmap.c and madvise.c bring mprotect,
 # pkey_mprotect, munmap and madvise, whose sanitisers arg_coupling_test.c
 # runs over a fake pool mapping, and mm/maps-arg.c the
