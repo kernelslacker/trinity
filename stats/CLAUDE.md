@@ -5,21 +5,12 @@ subsystems (kcov, cmp_hints, childops, random_syscall, corruption defenses)
 bump counters here; this directory turns those counters into text, JSON, JSONL
 timeseries, and periodic operator-facing dumps.
 
-## Layout (73 .c files + 52 headers, ~16,506 LOC)
-
-16 of those `.c` files and 48 of the headers are the per-subsystem counter
-tree under `stats/subsys/` (~392 + ~4,747 LOC), listed as one row at the
-bottom rather than enumerated. The renderers below are the other 57 `.c`
-files, with 4 headers.
+## Layout
 
 | Path | Role |
 |---|---|
 | stats.c | Shutdown report orchestrator. `dump_stats()` owns section order only. |
 | common.c | Shared helpers: text-PC check, op names, row printer, top-N insert. |
-| category.c | `stat_category` value loads and shared text-category renderer. |
-| categories/base.c | Core/blob/oracle/staged descriptor tables. |
-| categories/network.c | Network childop descriptor tables. |
-| dump.c | Empty compatibility TU; text dump leaves live in subdirectories. |
 | dump/syscall.c | Runtime header, syscall category histogram, per-syscall summary tables, wedge top-Ns. |
 | dump/fd.c | FD lifecycle/provider summaries. |
 | dump/shared-buffer.c | Shared-buffer misc and range-overlap offender summary. |
@@ -37,45 +28,8 @@ files, with 4 headers.
 | kcov/dump-remote.c | Remote edge producers plus per-syscall last-edge / last-EFAULT / local-PC top-Ns. |
 | kcov/dump-reexec.c | CMP hint tier, reexec, and ring replay blocks. |
 | kcov/dump-shadow.c | Shadow measurements, KCOV probe costs, KCOV dispatch stats. |
-| kcov/dump-internal.h | Private renderer prototypes shared across `stats/kcov/dump-*.c`. |
-| kcov/cmp/periodic.c | Public entry `kcov_cmp_stats_periodic_dump()`: previous-window state, elapsed gate, delta computation, render-block fan-out; plus the static renderers for the RedQueen burst-drain cohort and the per-callsite splits that no sibling owns. |
-| kcov/cmp/base.c | Shared `kcov_cmp_rate_line()` emitter; scalar CMP-rich per-syscall top-N table; wild-write rate rows. |
-| kcov/cmp/redqueen.c | RedQueen reexec per-syscall top-N, per-slot histograms, and reexec skip-reason breakdown. |
-| kcov/cmp/pool.c | Raw cmp-hint pool + tier: oldpool per-syscall top-N, oldpool-vs-shadow, PC-win conversion split, per-entry feedback scoring, recent-CMP-pool tier. |
-| kcov/cmp/hyp_saturation.c | Typed hypothesis pool-grid lane: per-syscall saturation top-N with per-kind fill, plus the per-entry outcome aggregates that have no `kcov_shm` scalar twin. |
-| kcov/cmp/hyp_shadow.c | Typed hypothesis SHADOW umbrella: flat lifecycle counters plus the per-kind / consume / picker / state-transition / outcome-partition breakouts. |
-| kcov/cmp/hyp_live_inject.c | Typed hypothesis LIVE inject lane: the (gate_passed, injected, no_pick) triad and its per-kind partition, per-reason gate-close breakdown, and the BOUNDARY scorecard. |
-| kcov/cmp/hyp_would.c | Typed hypothesis pure-observation lane: would-pick, would-promote, would-demote. |
-| kcov/cmp/hyp_hist.c | Typed hypothesis histograms: the 8-band score-bucket census and the per-probe-class emission census. |
-| kcov/cmp/childop.c | Childop CMP consume shadow block (childop-specific index bounds). |
-| kcov/cmp/cohort.c | Cross-subsystem A/B and sidecar rows: baseline inject denom, handle_arg_op prop_ring, frontier cold-weight blend, adaptive remote-KCOV, per-arg ownership sidecar, structure-aware picker cohort. |
-| kcov/cmp/diag.c | Steady periodic diagnostics: KCOV mode mix, KCOV CMP DIAG errnos, KCOV PC DIAG errnos + retry counters. |
-| kcov/cmp/internal.h | Private renderer prototypes shared across `stats/kcov/cmp/` TUs. |
-| kcov/cmp/hyp_kind_labels.h | The one `enum cmp_hypothesis_kind` label table the per-kind renderers print from, with a compile-time one-label-per-kind check. |
-| json/dump.c | `--stats-json` top-level orchestrator: root object, `"stats"` wrapper, and section order. |
-| json/common.c | JSON mechanics: string escape and `stat_category_emit_json()` descriptor renderer. |
-| json/syscalls.c | Per-syscall JSON array. |
-| json/kcov.c | KCOV JSON block (counters, transition globals, top-Ns, cold syscalls, previous-window snapshots). |
-| json/minicorpus.c | Minicorpus JSON block (mutators, stack-depth, saves/evicts, replay-wins, sequence chains). |
-| json/cmp-hints.c | cmp_hints JSON summary (total hints, syscalls-with-hints). |
-| json/core.c | Non-network JSON section emitters + their JSON-local descriptor tables (basic subsystems, fault injection, corruption, shared buffer). |
-| json/network.c | Network / iouring-network long-chain JSON section emitters. |
-| json/tail.c | `vsock_transport_churn` JSON tail. |
-| json/type_graph.c | JSON shape for the resource type-graph observer (the observer itself is `objects/type-graph.c`); kept under `stats/json/` so the schema check finds its format literals. |
-| json/internal.h | Private cross-file interface for the `stats/json/` cluster; only `dump_stats_json()` is exported, from `include/stats-internal.h`. |
-| periodic/strategy-topn.c | Shadow strategy per-syscall top-N helpers called at shutdown from `dump/strategy.c`. |
-| periodic/counter-rates.c | `periodic_counter_rates[]` rate table + `periodic_counter_rates_dump()` parent-tick emitter. |
-| periodic/childop-split.c | Childop-vs-random-syscall walltime/syscalls/iterations split emitter. |
-| periodic/cost-pool.c | Cost-pool active-count + shadow/live selector-fraction snapshot. |
 | periodic/top-syscalls.c | Per-syscall bandit/explorer/frontier/RQ/warm-reserve top-N deltas. |
 | periodic/vma.c | Parent + child `/proc/*/maps` line-count snapshot for VMA-leak triage. |
-| log.c | `--stats-log-file` and the `--stats` JSONL timeseries (`stats-timeseries-*.jsonl`) file lifecycle. |
-| runid.c | Run identity, boot/cache provenance, and shutdown delta manifest. |
-| corrupt_ptr.c | Corrupt-pointer attribution and deferred-free reject reporting. |
-| stats-ring.c | Per-child SPSC ring drain into parent-private aggregates. |
-| kcov_diag.c | Descriptor-driven KCOV per-syscall diagnostic helpers. |
-| rotation_event.c | Observation-only durable JSONL event stream, one record per closed strategy-rotation window, written by the CAS-winning child through `lib/jsonl.c`. Each child parks its copy of the sink fd above `PROTECTED_FD_HIGH_BASE` (the parent keeps its low number) and the protected-fd registry names it. No parent-side aggregate. |
-| subsys/*.h, subsys/*.c | Per-subsystem counter tree: each `<subsys>.h` declares that subsystem's counter struct (pulled into `shm->stats` via `include/stats.h`) and the matching `<subsys>.c` declares its `stat_category` descriptor table with `STAT_FIELD_SUB()`. 48 headers, 16 descriptor TUs — headers without a table are subsystems whose counters are rendered from elsewhere. |
 
 ## Data Model
 
@@ -85,9 +39,7 @@ Two parallel counter stores, by design:
    original counter store. Hundreds of childop-specific counters are declared
    once via `STAT_FIELD()`/`STAT_FIELD_SUB()` and grouped into `stat_category`
    tables — one per subsystem under `stats/subsys/`, with the leftover
-   cross-prefix and staged tables under `stats/categories/`. Each
-   `stats/subsys/<subsys>.h` also declares that subsystem's counter struct,
-   and `include/stats.h` pulls all 48 of them in. Childops still increment
+   cross-prefix and staged tables under `stats/categories/`. Childops still increment
    most of these directly; a wild
    kernel write via a fuzzed syscall arg can scribble these fields, which the
    corruption-defense layer treats as expected noise for this class of counter.
@@ -114,20 +66,6 @@ Two parallel counter stores, by design:
    through `stats_ring_enqueue()` into `parent_stats`. A contributor adding a
    new security-relevant counter should choose this path rather than direct
    `shm->stats` writes.
-3. **Section-oriented text dump** - `dump_stats()` in `stats.c` lists the fixed
-   shutdown report order. Leaf renderers live under `stats/dump/`,
-   `stats/childop/`, `stats/network/`, and `stats/kcov/`, so a new section has
-   a natural smaller home.
-4. **Stateful periodic logic stays separate** - `stats/kcov/cmp/periodic.c`
-   keeps the elapsed-time gate and previous-window snapshots for
-   cmp_hints/redqueen diagnostics; the fan-out render helpers live in the
-   per-domain siblings under `stats/kcov/cmp/`.  This subtree is intentionally
-   not a pure shutdown-render tree.
-5. **Ring pointer hardening in `stats_ring_drain_all()`** - the drainer reads
-   each child's ring through `expected_stats_rings[]`, a parent-private (heap)
-   copy of the ring addresses taken before fork, and only compares the
-   child-writable `child->stats_ring` against it to count and report an
-   overwrite.
 
 ## Integration Points
 
@@ -186,13 +124,3 @@ Two parallel counter stores, by design:
    an observed recycled child-slot failure mode (a late write leaving a wild
    `child->stats_ring`), not a theoretical cleanup.  It is only trustworthy
    while it stays in parent-private memory; do not move it into a shared pool.
-
-## Summary
-
-Counters are produced across the codebase and converge here through two paths:
-bulk childop telemetry lands directly in `shm->stats` and is rendered through
-descriptor tables, while hot/security-relevant counters route through per-child
-SPSC rings into a parent-private aggregate. The shutdown text report is a
-thin orchestrator plus section files under `stats/dump/`, `stats/childop/`,
-`stats/network/`, and `stats/kcov/`; JSON and periodic reporting remain their
-own entry points.

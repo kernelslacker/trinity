@@ -2,48 +2,17 @@
 
 Each forked child's per-iteration lifecycle: bring-up + sandbox, then the loop that runs one workload per iteration — either a random syscall (`random_syscall/`) or a scripted childop (`childops/`) via the alt-op picker — under an `alarm()` backstop and a set of self-integrity oracles. Distinct from `childops/`: those are the scripted *workloads*; this is the runtime *infrastructure* that drives them.
 
-## Files (25 files + internal header, ~7,693 LOC)
+## Files
 
 | File | Role |
 |---|---|
-| child.c | The per-child loop: init → iterate (alt-op vs random syscall → dispatch → record) → reap. The heart of a child's life. |
-| child-periodic.c | `periodic_work()`: the every-16-ops tick (parent-pid check, divergence sentinel, cap-drop oracle) plus, every 128th op, the maps-dirty and fd-provider `child_ops` passes, skipped under `-c`/`-r`/`-g`. |
-| child-dispatch-arm.c | Alt-op dispatch bookkeeping: `probe_lowest_free_fd()` (the fd-leak proxy bracketing each dispatch) and `storm_rate_recycle()` (recycle a child whose local corruption counters climb at storm rate). |
-| child-watchdog.c | `check_stall()`: counts consecutive SIGALRM ticks without op progress against the per-op-type `stall_threshold()`, so a stuck child exits and is respawned. |
-| child-init-core.c | `init_child()` coordinator: the readable phase map that sequences the sibling child-init-* phase files. |
-| child-init-clean.c | Coredump toggles, fault-injection fd setup (make-it-fail, fail-nth), tainted-mask fd, FPU dirtier, per-slot occupant reset (`clean_childdata`). |
-| child-init-isolate.c | Stdio + controlling-terminal isolation: fd 0/1/2 → `/dev/null`, parent-fd drops (`--stats-log-file`, self-cgroup, `/proc/<pid>/stat`), `setsid()`. |
-| child-init-freeze.c | Initial sibling-childdata + shared-region `mprotect(PROT_READ)` sweeps, parent rendezvous, per-child object-pool bring-up, optional CPU pin. |
-| child-init-sandbox.c | `shm->ready` barrier, fault-injector arm, rotation-sink fd relocation, per-child unshare()s, root-only `drop_privs`, `capset()`-to-empty, oracle anchor capture, the userns-admin lane entry (`maybe_enter_userns_admin_lane()`, a no-op while no active syscall entry sets `userns_admin_lane`), rlimit / umask sweep. After a successful `unshare(CLONE_NEWPID)` it starts the namespace's idle init (`child-pidns-init.c`) once the credentials are final, so later forks keep landing in a live namespace. |
 | child-pidns-init.c | `start_pidns_init()`: the idle init that holds pid 1 of a pid namespace the child unshared, so the namespace outlives the child's first fork into it. No exit signal and its own process group keep it out of most of the child's waits, and `validate_arg_coupling()` makes the rest, a wait for any child with `__WALL`/`__WCLONE`, WNOHANG while `pidns_init_pid` is set; default signal dispositions leave it deaf to fuzzed signals bar SIGKILL/SIGSTOP; PDEATHSIG plus the child's pidfd end it with the child. A clone that still fails after a few tries leaves the child without an init. `pidns_init_lost()` has the child loop recycle the child on the 16-op tick once the init has died, since every fork would fail from then on. The sandbox also records where the child's forks land (`pidns_note_fork_target()`); an EXTRA_FORK fork that fails with ENOMEM after a fuzzed `unshare(CLONE_NEWPID)`/`setns()` moved them elsewhere counts as a lost init too (`pidns_note_fork_enomem()`), while an ENOMEM where the sandbox left them (memory pressure, make-it-fail) does not. |
-| child-init-runtime.c | kcov bring-up, uniarch active-syscalls pin, explorer-pool slot flag, A/B-comparison cohort stamps, heap-bounds re-snapshot, `RLIMIT_AS` pin, one-shot `disable_coredumps`. |
-| child-altop-pick.c | Alt-op picker + dedicated-child rotation + dormant-op gate: `pick_op_type()` / `pick_op_type_table[]` / `alt_op_rotation[]` / `assign_dedicated_alt_op()` / `init_altop_dispatch()`. |
-| child-altop-table.c | Alt-op string names + indirect-call dispatch: `op_dispatch[]` / `alt_op_name()` / `alt_op_lookup_by_name()` / `op_uses_outer_bracket()`. |
-| child-altop-budget.c | Adaptive per-op budget multiplier + decaying-recency edge/wall ring: `adapt_budget()` / `childop_decay_record_*()` / `childop_window_advance()`. |
-| child-altop-score.c | Per-op outcome snapshot + ranked score-dump tables emitted at shutdown: `childop_outcome_snapshot()` / `childop_outcome_window_dump()` / `childop_score_dump()`. Telemetry-only. |
-| child-canary-state.c | Canary slot state-machine: parent-private state cells + state transitions (`enter_canarying` / `leave_canarying_*` / `close_window_and_decide`) + shadow recommendation helpers. |
-| child-canary-stats.c | Shared counter-read helpers: `monotonic_seconds` / `window_iters_resolved` / `edges_for_op` / `invocations_for_op`. |
-| child-canary-liveness.c | Pid-liveness probes + three-stage slot teardown (`kill_canary_slot_children`): SIGTERM → grace window → SIGKILL. |
-| child-canary-grace.c | Grace-window scheduling + init: `canary_queue_init` (priority-shuffle, CONFIG_BLOCKED stamping, first-op staging) + `canary_queue_on_child_respawn` (two-stage commit hook). |
-| child-canary-picker.c | Canary picker (`pick_next_canary`) + `~1-s` tick loop (`canary_queue_tick`), including early-bail SETUP_BROKEN and wedge-stall demotes and the plateau-edge log. |
-| child-canary-policy.c | Canary static policy: config-blocked terminals, risky-defer skip set, pid-heavy drain set (`fork_pressure_should_suppress()`), and the setup-failure / blocked reason labels (the first-pass order is a per-epoch shuffle, not a table). |
-| child-canary-report.c | Canary summary/log emitters (`canary_queue_summary`, `canary_queue_on_crash`) + the read-only public queries (`canary_slot_active`, `canary_active_op`, `canary_op_is_promoted`) called on every fork. |
-| child-sentinel.c | Deterministic-divergence sentinel: flags when a child's execution diverges from the expected deterministic path (a state-corruption tell). |
-| child-capdrop-oracle.c | Post-capdrop assertion: verifies the child actually dropped to an empty capability set (fuzzing must never run privileged). |
-| cred_throttle.c | Credential-syscall oracle plus the flag-gated `--cred-throttle`: `cred_throttle_should_reject()` rejects picks of a credential class (`setuid`, `setgroups`, ...) that has never succeeded and fails with EPERM/EINVAL nearly every time, while still sampling it ~3% so a late success can retire the throttle. |
-| child-canary-internal.h | Private interface of the `child-canary-*.c` TUs: cross-file constants, the parent-private state cells and the helpers whose callers moved to another TU. |
 
 ## Key invariants
 - **`alarm()` backstop** — every child arms an alarm so an indefinite-blocking syscall can't wedge it (paired with the per-syscall `NEED_ALARM` flag).
 - **PDEATHSIG + getppid recheck** — arm `PR_SET_PDEATHSIG`, then re-check `getppid()` to close the parent-died-before-prctl race (`child_process()` in `child.c`). A root run arms again, and re-checks, right after `drop_privs()` in `init_child_setup_sandbox()`: `commit_creds()` zeroes `pdeath_signal` when the euid or egid changes.
 - **Cap-drop verified, not assumed** — `child-capdrop-oracle.c` asserts the empty cap set; a child that failed to drop is a bug, not a fuzz finding.
 - **Child stdio is isolated** — `child-init-isolate.c` points fd 0/1/2 at `/dev/null` so a fuzzed `write`/`splice`/`sendfile` cannot reach the operator's terminal, and `init_child()` then re-points stderr at an anonymous memfd (`init_stderr_memfd()`, `health/signals-precrash.c`) that the fault handler drains into the per-pid bug log on a real crash. Child-side `output()`/`outputerr()` text reaches a log only that way.
-
-## Interactions
-- **`random_syscall/`** — the fresh/biased/replay pick for a non-alt-op iteration.
-- **`childops/`** — the scripted workloads the alt-op picker dispatches.
-- **syscall dispatch + `results.c`** — issues the syscall and records the outcome (`dispatch/`).
-- **`objects/`** — the per-child object pool feeding fd/id/handle args.
 
 ## Areas of attention
 - Alt-op scoring / canary-promotion cadence live here; the *workloads* live in `childops/`.

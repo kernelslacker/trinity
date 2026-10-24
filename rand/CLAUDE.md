@@ -1,32 +1,17 @@
 # rand/ — Randomness and Value-Generation Core
 
-The base layer every arg generator sits on top of: PRNG state/seeding,
-munged random integers, a static a-priori "interesting values" corpus,
-value mutation strategies, random address/length/page generation, and
-content-aware text payload generation. Everything downstream (args/,
-struct_catalog/, mm/, syscalls/, childops/) draws its randomness through
-this directory rather than calling libc rand() directly.
+## Files
 
-## Files (10 files, ~3,086 LOC)
-
-| File | Lines | Role |
-|---|---|---|
-| random.c | 316 | Core munged integer generators: `rand16()`/`rand32()`/`rand64()`, bitmask helpers (`set_rand_bitmask`, `rand_single_bit[64]`, `randbits[64]`), byte-repeat (`rept_byte`) |
-| interesting-numbers.c | 245 | Static a-priori boundary-value corpus: `get_boundary_value()`, `get_negative_edge_value()`, `get_sizeof_boundary_value()` (overflow-in-multiplication probes), `get_interesting_{8,16,32}bit_value()`, `get_interesting_value()` (64-bit + per-arch canonical/non-canonical address probes) |
-| text-payloads.c | 559 | Content-aware string generators for kernel string parsers: long-run strings, embedded NUL, printf format-string attacks, numeric-boundary strings, path traversal, cpu-list/bitmap-list syntax, binary control chars, plus a per-kind stateful name lane (netdev/key-desc/xattr/bpf-obj/mq/netlink-table) that bridges into name-pool.c |
-| random-address.c | 894 | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
-| random-page.c | 262 | Buffer-dirtying generators: `generate_rand_bytes()` (10 strategies incl. garbage, printable text, numeric-ASCII, fabricated pseudo-struct, printk format specifiers with %p extensions), `generate_random_page()` |
-| name-pool.c | 305 | Lock-free shared per-kind name ring (create-then-reference statefulness): `name_pool_record()` / `name_pool_draw_mutated()` with 5 mutation ops (exact/flip-byte/truncate/case-flip/suffix-grow) |
-| mutate.c | 165 | Value mutation strategies targeting kernel bug classes: truncate, sign-extend, alignment perturbation, negate, byte-swap, single-bit flip, arith delta, cross-width extend; `shift_flag_bit()` for flag-adjacency probing |
-| random-length.c | 155 | Length/size generators: `get_len()` (boundary/sizeof-boundary/typesize/masked-random blend), `get_len_relative()` (object-size-capped variant for kernel-WRITES-buffer safety) |
-| seed.c | 147 | PRNG seeding and reproducibility: `init_seed()` (urandom or `-s`), `set_seed()` (per-child seed via splitmix32-style `seed_combine`), `reseed()` (parent bumps shm seed on child crash) |
-| rand-warn.c | 30 | Runtime tripwire: `--wrap=rand` catches any libc `rand()` callsite that slipped past the static `no-libc-rand.sh` grep (e.g. via macro expansion), warns once per child, forwards to libc |
+| File | Role |
+|---|---|
+| random.c | Core munged integer generators: `rand16()`/`rand32()`/`rand64()`, bitmask helpers (`set_rand_bitmask`, `rand_single_bit[64]`, `randbits[64]`), byte-repeat (`rept_byte`) |
+| interesting-numbers.c | Static a-priori boundary-value corpus: `get_boundary_value()`, `get_negative_edge_value()`, `get_sizeof_boundary_value()` (overflow-in-multiplication probes), `get_interesting_{8,16,32}bit_value()`, `get_interesting_value()` (64-bit + per-arch canonical/non-canonical address probes) |
+| random-address.c | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
+| random-length.c | Length/size generators: `get_len()` (boundary/sizeof-boundary/typesize/masked-random blend), `get_len_relative()` (object-size-capped variant for kernel-WRITES-buffer safety) |
 
 ## Key design decisions
 
-1. **Inline splitmix64 PRNG (`include/rnd.h`), not libc `rand()`** — `rnd_u64()`/`rnd_u32()`/`rnd_modulo_u32()` (Lemire debiased bounded draw) are static-inline, taking `rand()` (~3-4% of profiled runtime) out of the hot path. State is a plain process-global `uint64_t rnd_state`, so `fork()` gives each child an independent copy for free.
 2. **Seed reproducibility (seed.c)** — parent seed (urandom or `-s`) combines with per-child number via a splitmix32-style avalanche mixer (`seed_combine`) so nearby (seed, childno) pairs land far apart; `rnd_seed()` and the `--blob-ab-mode` stream's `rnd_blob_seed()` are driven from the same combined value, so `-s` reproduces every per-child stream. On child crash, `reseed()` bumps the shm seed by `max_children` so all children converge on a new synchronized generation without seed-space collision.
-3. **libc `rand()` is banned in two layers** — a build-time grep (`scripts/check-static/no-libc-rand.sh`) rejects new source-level callsites outside `rand-warn.c`; a link-time `--wrap=rand` (rand-warn.c) catches anything that still reaches libc `rand()` via macro expansion or an unvisited header. Nothing seeds libc's generator, so a `rand()` that slipped past both layers would return glibc's default-seeded sequence whatever `-s` says.
 4. **Munged-value generators build width up** — `rand16()` picks from {byte, single-bit, randbits, raw draw, byte-repeated} then applies probabilistic post-mix gates (sign flip, divide, mask); `rand32()`/`rand64()` layer on top of the narrower generator plus feed in `get_interesting_32bit_value()`/`get_interesting_value()` as one of their draw arms — so the static "interesting" corpus is one branch inside the general-purpose integer generator, not a separate code path callers must remember to invoke.
 5. **`interesting-numbers.c` is a static a-priori corpus** — boundary values (0/1/INT_MAX/page_size±1/hugepage sizes/per-arch canonical address edges) are hardcoded from domain knowledge of common kernel bug classes (off-by-one, sign extension, allocation-size overflow), independent of any specific target kernel build.
 6. **mutate.c targets kernel-specific bug classes, not generic arithmetic** — truncate/sign-extend/alignment/cross-width mutations mirror how the kernel casts between integer widths and handles page/cacheline alignment internally, rather than blind bit-flipping.
@@ -59,11 +44,6 @@ this directory rather than calling libc rand() directly.
 ## Areas of attention
 
 1. **random-address.c is oversized for its concerns** (894 LOC) — combines the writable-pool allocator, shared-buffer relocation (with a `sigsetjmp` fault-recovery window), iovec-shape picking, iovec/msghdr scrub, and iovec-pool lifecycle in one file. The `alloc_iovec()`/`pick_iovec_entry_shape()`/`fill_iov_entry_map_backed()` cluster alone is ~325 lines of tightly-coupled per-direction (KERNEL_READ vs KERNEL_WRITE) bucket-weight logic that would be easy to get subtly wrong when adding a new shape.
-2. **PRNG is not cryptographically strong by design** — splitmix64 is chosen explicitly for speed and small state, not statistical rigor; the code comments this as an accepted tradeoff ("output quality is more than enough for fuzz argument generation"). This is a reasoned tradeoff, not an oversight, but it means all downstream randomness (including address/length choices that interact with ASLR-adjacent logic) inherits a non-CSPRNG source.
 3. **Deliberate small biases documented, not bugs** — `rand16()`/`rand32()`/`rand64()` note ~0.3 percentage-point bias in their "1-in-25" post-mix gates (using `% 25` against an 8-bit slice rather than a bounded draw) and accept it explicitly as "acceptable for a fuzz-flavour gate." Anyone tightening RNG determinism/statistical guarantees elsewhere in the tree should not assume these paths are uniform.
 4. **Every RNG stream must be seeded from the combined value** — `set_seed()` seeds the main stream (`rnd_seed(mixed)`) and the `--blob-ab-mode` stream (`rnd_blob_seed(mixed)`) from the same (shm seed, childno) value so `-s` reproduces both. A new process-local stream that is not seeded there silently breaks `-s` reproducibility without a compile-time signal — rand-warn.c's runtime tripwire only fires on libc `rand()` being *called*, not on a stream going unseeded.
 5. **name-pool.c per-child, non-shared pools** — each child lazily allocates its own name pool on first use (not shared across the fleet), so the create-then-reference statefulness that motivates the reuse arm only works within a single child's syscall stream. This is documented as intentional, but is a scoping detail future callers could misread as "global name corpus."
-
-## Summary
-
-rand/ is Trinity's foundation layer: a fast non-cryptographic PRNG (splitmix64) with reproducible per-child seeding, layered under munged integer generators (random.c) that blend in a static "interesting values" corpus (interesting-numbers.c) alongside kernel-bug-class-targeted mutation (mutate.c), safe address/length/page generation with active defenses against fuzzed pointers corrupting Trinity's own bookkeeping (random-address.c), and content-aware text payload generation for kernel string parsers (text-payloads.c) backed by a stateful cross-syscall name-reuse ring (name-pool.c). It underpins virtually every arg generator, struct-catalog filler, and childop in the tree, and is architecturally distinct from — but designed to compose with — cmp_hints/'s dynamically-observed constant corpus.

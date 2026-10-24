@@ -32,72 +32,33 @@ every translation unit lives under one of the directories below.
 
 ## Subsystem map
 
-Counts are `.c` files and the `wc -l` total over them, recursive from the
-directory.  Headers are named separately in each directory's notes file, and
-`args/` excludes `args/pools/`, which has its own row.
-
 | Directory | Role |
 |---|---|
-| [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~8,229 LOC) |
-| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (25 files, ~7,693 LOC) |
-| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~8,002 LOC) |
-| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,674 LOC) |
-| [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (366 files, ~67,060 LOC) |
-| [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~2,042 LOC) |
-| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,779 LOC) |
-| [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~2,974 LOC) |
-| [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (27 files, ~5,730 LOC) |
-| [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,086 LOC) |
-| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family (123 files, ~20,306 LOC) |
-| [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators (69 files, ~17,619 LOC) |
-| [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from (45 files, ~10,021 LOC) |
-| [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings (14 files, ~3,836 LOC) |
-| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue (13 files, ~4,645 LOC) |
-| [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly (11 files, ~3,773 LOC) |
-| [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (11 files, ~3,238 LOC) |
-| [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/write/verify) (7 files, ~4,119 LOC) |
-| [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,188 LOC) |
-| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,391 LOC) |
-| [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (14 files, ~6,983 LOC) |
-| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (73 files, ~16,506 LOC) |
-| [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (8 files, ~1,721 LOC) |
-| [utils/](utils/CLAUDE.md) | General-purpose runtime support (34 files, ~10,754 LOC) |
-| `tests/` | Unit-test binary (`make test-bin` / `test-asan` / `test-ndebug`): PURE modules linked against fake shm and RNG providers, no fuzzer process (59 files, ~24,855 LOC) |
-
-## Core runtime, grouped by concern
-
-### Startup & parent orchestration
-- [main/](main/CLAUDE.md) — process entry (`main/trinity.c`: `main()`, warm-start, the epoch loop) and CLI/tunable parsing (`main/params/`), alongside the parent control plane (fork/reap/watchdog/stats).
-
-### Child runtime
-- [child/](child/CLAUDE.md) — per-child loop, bring-up/sandbox, alt-op picker, canary/sentinel/capdrop oracles, cred throttle (25 files).
-
-### Syscall dispatch & results
-- [dispatch/](dispatch/CLAUDE.md) — issues the picked syscall (syscall.c), records results (results.c), pid liveness/kill primitives (pids.c) (9 files).
-
-### Object pools & result threading
-- `objects/` — the `OBJ_LOCAL`/`OBJ_GLOBAL` object pools threading a syscall result (fd/id/handle) into a later syscall argument, plus the cross-child futex-word pool and the prop/fd-event rings. See [objects/](objects/CLAUDE.md); `lib/publish_resource.c` is the typed stamping front end.
-
-### Argument content & environment enumeration
-- [args/pools/](args/pools/CLAUDE.md) — the content pools the generators draw from: pathname/xattr/blob/device/blockdev/fstype (11 files).
-
-### Persistence & corpora
-- [persist/](persist/CLAUDE.md) — coverage-guided argument retention (minicorpus) and the deferred-free temporal-overlap queue (13 files).
-- [random_syscall/](random_syscall/CLAUDE.md) `chain-*.c` — sequence-aware fuzzing: dispatches short syscall chains, threads each return into the next call's args, plus a chain corpus. `chain-corpus.c` (ring + init/save/pick), `chain-exec.c` (per-iteration executor), `chain-restype.c` (resource-typing classifier), `chain-subst.c` (retval substitution), `chain-persist.c` (on-disk corpus + snapshot cadence), `chain-internal.h` (cluster-private glue). Public ABI stays in `include/sequence.h`.
-
-### Signals, crashes & kernel-health monitoring
-- [health/](health/CLAUDE.md) — signal handling + mask policy, crash post-mortem, pre-crash/breadcrumb rings, `/dev/kmsg` scraper and taint-bit watch (11 files).
-
-## Where to start reading
-
-- **To follow one fuzz iteration end-to-end:** `child/child.c` →
-  `random_syscall/CLAUDE.md` → `syscalls/CLAUDE.md` → `args/CLAUDE.md` →
-  `dispatch/syscall.c` → `dispatch/results.c`.
-- **To understand the process fleet / lifecycle:** `main/trinity.c` →
-  `main/CLAUDE.md`.
-- **To understand scripted (non-random) fuzzing:** `childops/CLAUDE.md`.
-- **To understand coverage-guided steering:** `kcov/CLAUDE.md` +
-  `cmp_hints/CLAUDE.md` + `persist/CLAUDE.md`.
+| [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop |
+| [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop |
+| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall |
+| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness |
+| [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog |
+| [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields |
+| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` |
+| [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype |
+| [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs |
+| [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation |
+| [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family |
+| [ioctls/](ioctls/CLAUDE.md) | Per-subsystem `ioctl()` argument generators |
+| [fds/](fds/CLAUDE.md) | FD provider layer — where live file descriptors come from |
+| [objects/](objects/CLAUDE.md) | OBJ_LOCAL/OBJ_GLOBAL object pools — thread a syscall's result (fd/id/handle) into a later syscall's arg  + cross-child futex pool & prop/fd-event rings |
+| [persist/](persist/CLAUDE.md) | Cross-iteration persistence — coverage-guided arg retention (minicorpus) + deferred-free temporal-overlap queue |
+| [health/](health/CLAUDE.md) | Signals, crash post-mortem, pre-crash/breadcrumb rings, /dev/kmsg + taint watch — finding-vs-noise triage and crash-report assembly |
+| [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets |
+| [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/write/verify) |
+| [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration |
+| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection |
+| [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) |
+| [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting |
+| [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state |
+| [utils/](utils/CLAUDE.md) | General-purpose runtime support |
+| `tests/` | Unit-test binary (`make test-bin` / `test-asan` / `test-ndebug`): PURE modules linked against fake shm and RNG providers, no fuzzer process |
 
 ## Notes for editors
 
@@ -270,9 +231,6 @@ not aesthetics.
   flag set with stale payload.
 - **`EINTR`-retry `waitpid` and blocking syscalls** — a single `EINTR` must not
   latch a capability false or leak a zombie on an interrupted reap.
-- **`struct_catalog` rows: verify the arg index against the syscall's real
-  (1-indexed) signature**, and skip op-multiplexed args (e.g. `futex` a4 is a
-  timespec only for the WAIT ops) unless discriminated.
 - **Validate that a pointer is a real allocation start before `free()`-ing it.**
   A pointer-shape heuristic (aligned / in user VA / not pid-shaped) still passes
   a heap-region scribble that isn't at an allocation start — libc rejects it as a

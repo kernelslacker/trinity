@@ -2,22 +2,12 @@
 
 The layer that decides whether what just happened is a *finding* (a real kernel bug) or *noise* (an expected fuzzing side-effect), and assembles the evidence when it's a finding: signal handling + the child signal-mask policy, the pre-crash/breadcrumb rings that reconstruct what led to a fault, the `/dev/kmsg` scraper and taint-bit watch that catch kernel-side trouble, and the post-mortem dump assembly.
 
-## Files (11 .c files + 1 internal header, ~3,773 LOC)
+## Files
 
-| File | Lines | Role |
-|---|---|---|
-| signals-policy.c | 361 | Signal install/mask policy — `mask_signals_child()` and `setup_main_signals()`, watchdog handlers (SIGALRM/SIGXCPU), catch-all `sighandler`, the parent's SIGINT/SIGTERM stop handler. |
-| signals-fault-handler.c | 650 | Child and main fault handlers — the sigsetjmp site, `child_fault_handler()`, `main_fault_handler()`, beacon stamp, buglog redirect, guard-page attribution. |
-| signals-precrash.c | 247 | Pre-crash capture — glibc `__abort_msg` capture, per-child stderr memfd, `open_buglog_and_drain_stderr()`. |
-| signals-async-safe.c | 296 | Async-safe utilities — `write_siginfo_safely()`, `write_signal_delivery_state()` (the interrupted context's sigaltstack flags and blocked-signal mask), `write_backtrace_raw_pcs()`, `fault_beacon_extract_{ip,sp}()`. |
-| signals-internal.h | 116 | Private cross-file interface — `struct sigsafe_buf` + `sigsafe_*` inlines; forward decls for de-static'd helpers. |
-| signals-safelist.c | 77 | The CHILD-NON-FATAL signal set derived from the signal-mask policy. |
-| post-mortem.c | 629 | Crash post-mortem dump assembly — gathers the syscall record, rings, and context into the crash report. |
-| kmsg-monitor.c | 505 | Live `/dev/kmsg` scraper capturing kernel diagnostics before the taint bit flips; runs as a helper process outside the fuzz-child `pids[]` machinery. |
-| sysrq-lockup.c | 272 | Opt-in (`--sysrq-on-lockup`) wedge diagnostic — drives SysRq 'w' + 'l' to get the kernel's own blocked-task and all-CPU-backtrace dump when the fleet wedges. Called from `main/reap-watchdog.c`, short-circuited on the flag so a default run is byte-identical. |
-| pre_crash_ring.c | 246 | Per-child ring of recent syscalls, drained by the BUG path to recover the sequence that led to a crash. |
-| breadcrumb_ring.c | 223 | Per-child breadcrumb ring for `post_handler_corrupt_ptr` fires. |
-| taint.c | 263 | Kernel taint-bit checking — the first signal the kernel went sideways. |
+| File | Role |
+|---|---|
+| post-mortem.c | Crash post-mortem dump assembly — gathers the syscall record, rings, and context into the crash report. |
+| taint.c | Kernel taint-bit checking — the first signal the kernel went sideways. |
 
 ## Key invariants
 - **async-signal-safe handlers** — signal-handler bodies in `signals-fault-handler.c` and `signals-policy.c` may only call async-signal-safe libc or the trinity-internal `sigsafe_*` helpers (gated by `scripts/check-static/signal-handler-async-unsafe.sh`, which discovers handlers from `signals-policy.c` and checks their bodies in `signals-policy.c`, `signals-fault-handler.c`, `signals-async-safe.c` and `signals-precrash.c`).

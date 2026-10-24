@@ -5,21 +5,6 @@ extracted to kill copy-pasted logic that had drifted across several call sites
 (cmsg builders, id-map writers, ring buffers). No shared header, no shared
 state — this is a directory of convenience, not a subsystem.
 
-## Files (8 files, ~1,721 LOC)
-
-| File | Lines | Role |
-|---|---|---|
-| cmsg_build.c | 780 | Builds `msghdr.msg_control` ancillary-data blocks for send/sendmsg fuzzing: 16 cmsg kinds (SCM_RIGHTS, SCM_CREDENTIALS, SO_TIMESTAMPING, PACKET_AUXDATA, UDP_GSO, IP/IPv6 pktinfo/tos/ttl/retopts/rthdr, SCM_TXTIME, TLS_SET_RECORD_TYPE) plus a multi-cmsg packer |
-| userns-bootstrap.c | 336 | `userns_run_in_ns()`: fork a transient grandchild, enter an identity-mapped user namespace (+ optional secondary namespaces), run a callback, exit — never touches the persistent child's credentials |
-| publish_resource.c | 234 | `publish_resource()`: single typed entry point that stamps a freshly minted kernel handle (fd, aio ctx, key serial, pkey, timerid, pid, sysv id) into the OBJ_LOCAL object pool, replacing ~70 hand-rolled `alloc_object()`/`add_object()` call sites |
-| spsc-ring.c | 129 | Lock-free single-producer/single-consumer ring buffer primitive: `spsc_ring_init/try_enqueue/drain/overwrite_enqueue`, acquire/release atomics, power-of-two slot count, caller owns storage |
-| numa.c | 84 | Parses `/sys/devices/system/node/online` cpulist syntax into a NUMA node pool; `init_numa_nodes()` / `random_numa_node()` for `ARG_NUMA_NODE` generation |
-| fd.c | 55 | `write_all()` / `read_all()`: EINTR-retrying full-buffer read/write loops shared by every on-disk persistence format |
-| jsonl.c | 57 | Dependency-free JSON-Lines sink (`jsonl_open`/`jsonl_write`): raw open/write/close only, no reliance on trinity's output/shm/logging so it can run before those are up |
-| sanitiser-fd.c | 46 | `sanitiser_own_fd()` / `cleanup_sanitiser_fd()`: a sanitiser records the fd it opened for its call in a `post_state` snapshot, and the entry's `.cleanup` closes exactly that fd on every dispatch path |
-
-(cmsg_build.c and userns-bootstrap.c are the two largest by responsibility; userns-bootstrap.c is the highest-risk for correctness due to privilege semantics.)
-
 ## Key design decisions
 
 1. **cmsg_build.c — richness lever preserves RNG-stream identity.** `pick_cmsg_kind()` has two paths gated by `cmsg_richness_mode` (atomic, `__ATOMIC_RELAXED`): OFF does a single `rnd_modulo_u32(NR_CMSG_KINDS_BASE)` over the original 5 kinds so a build without the lever draws byte-identical RNG state; ON adds a family-gated pool (per-AF_UNIX/PACKET/INET/INET6 eligible kinds) plus a `ONE_IN(4)` chance of `CMSG_KIND_MULTI`.
@@ -51,7 +36,3 @@ state — this is a directory of convenience, not a subsystem.
 1. **userns-bootstrap.c is privilege-boundary code with a wide, security-relevant contract.** Get the fork/exit-code/errno-bucket plumbing wrong and either (a) the persistent fuzz child accidentally loses privilege (defeats the whole point of the cap-drop oracle design) or (b) a caller misreads -EPERM vs -EAGAIN and latches out of testing a real kernel policy gate incorrectly. The comment block is unusually detailed for a reason — this is the one file in the directory where a subtle bug has correctness implications beyond the fuzzer itself.
 2. **cmsg_build.c mixes two levels of abstraction in one file** — the richness-mode dispatcher/family-eligibility logic (`pick_cmsg_kind`, `build_multi_pool`) and 16 near-identical per-kind builders that repeat the same buf/memset/msg_control/cmsg_len boilerplate. Each `build_*` function is ~15-20 lines of copy-pasted structure; a small `build_one()` helper (already partially factored as `build_one_int`) could absorb more of them.
 3. **spsc-ring.c correctness is entirely dependent on correct memory-order annotations at call sites** — the primitive itself is correct, but a caller that adds a second producer or second consumer to a ring silently breaks the lock-free contract (no assertion enforces single-producer/single-consumer beyond code review).
-
-## Summary
-
-Eight independent utility modules, each solving one narrow problem that had (or would have) been duplicated across multiple call sites: cmsg construction for socket fuzzing, namespace-scoped privilege sandboxing for childops, typed object-pool publishing, a lock-free ring-buffer primitive, NUMA node enumeration, robust fd I/O loops, a minimal JSON-lines writer, and per-dispatch ownership of an fd a sanitiser opened. No file depends on another in this directory; grouping is purely "small and reusable," not architectural.

@@ -9,9 +9,6 @@ childops/ is where those scripted sequences live: each file implements one
 syscall for the current fork'd child, that drives a fixed or semi-fixed
 sequence against one kernel subsystem/feature/race window.
 
-7 dispatched ops in 7 `.c` files, grouped into per-domain subdirectories:
-`fs/` (3), `net/` (2), `misc/` (1), `mm/` (1).
-
 The set is deliberately small. An earlier tree carried 168 dispatched ops;
 runtime coverage data showed most of them producing no new edges over a full
 run while the picker's dormant gate progressively starved them, so only the
@@ -29,17 +26,6 @@ into the enum, the dispatch table, the name lookup, the outer-KCOV-bracket
 eligibility switch, and the picker's slot/dormant-gate arrays. There is no
 path coupling: the Makefile needs a glob line per directory, and a new op
 needs a `childop.def` row.
-
-### Dispatched ops
-
-- `fs/inode-spewer.c` — inode/dentry cache churn.
-- `fs/procfs-writer.c` — pseudo-filesystem write surfaces, allow/deny ruled.
-- `fs/xattr-thrash.c` — extended-attribute churn.
-- `misc/epoll-volatility.c` — epoll set churn against volatile fds.
-- `mm/pagecache-canary-check.c` — pagecache integrity canary.
-- `net/rxrpc-key-install.c` — rxrpc key install/rotate.
-- `net/vsock-transport-churn.c` — vsock transport churn, including a variant
-  that runs in a fresh netns via a `userns_run_in_ns()` grandchild.
 
 ## Notes
 

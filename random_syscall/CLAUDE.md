@@ -2,54 +2,6 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~8,002 LOC)
-
-The picker, the dispatch tail and the post-dispatch attribution helpers are each
-split one concern per translation unit, and the chain executor is the `chain-*.c`
-cluster.
-
-Picker arms and their shared plumbing:
-
-| File | Lines | Role |
-|---|---|---|
-| pick-common.c | 640 | Shared picker plumbing: `choose_syscall_table()` (32/64-bit table select), `load_active_syscall_count()`, the validation success/failure deactivation counters, `expensive_accept()` (adaptive EXPENSIVE-syscall accept-rate gate), the cost-pool selector shadow/live/predraw observers, `syscall_in_group()` |
-| pick-frontier.c | 641 | STRATEGY_COVERAGE_FRONTIER arm: `set_syscall_nr_coverage_frontier()` — uniform draw plus biased acceptance against the per-syscall frontier-edge weight |
-| pick-frontier-weight.c | 533 | Weight helpers for the frontier silent-regime accept gate: `frontier_cold_weight()` (plateau fallback when the frontier ring goes silent) and `cmp_frontier_weight()` (CMP-weighted alternate) |
-| pick-heuristic.c | 435 | STRATEGY_HEURISTIC arm: `set_syscall_nr_heuristic()` — uniform draw from `active_syscalls`, then the layered biases (group affinity, kcov cold-skip) |
-| pick-random.c | 245 | STRATEGY_RANDOM arm: `set_syscall_nr_random()` — uniform draw with no further biasing, plus the anti-prior plateau intervention |
-| pickers.c | 135 | `set_syscall_nr()`, the top-level dispatcher that reads `shm->current_strategy` and routes to one of the three arms |
-
-Dispatch and chain substitution:
-
-| File | Lines | Role |
-|---|---|---|
-| dispatch-step.c | 1345 | `dispatch_step()`: the actual `do_syscall()` call plus the ordered post-call bookkeeping (kcov/cmp collection, minicorpus save, cmp_hints credit, strategy attribution), with the blocks that run off the common path or once per call in static helpers above it (`decide_remote_mode`, `credit_blob_ab_mode`, `emit_call_stats`, `bump_arm_completion`, `redqueen_reexec_tail`), and the CMP RedQueen greedy re-exec step (`redqueen_pin_refused`, `redqueen_pin_slot`, `redqueen_pin_field`, `redqueen_reexec_step`) |
-| dispatch-wrappers.c | 261 | The three public entry points that converge on `dispatch_step()`: `random_syscall_step`, `random_syscall_step_biased`, `replay_syscall_step` |
-| chain-subst.c | 282 | `apply_chain_substitution()`: splices a prior chain step's retval into one arg slot of the current call, gated by argtype safety and `rewrite_refused_slots()`, the protected-fd/parent-pid mask the RedQueen pin shares |
-
-Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.h`:
-
-| File | Lines | Role |
-|---|---|---|
-| strategy-rotate.c | 445 | `maybe_rotate_strategy()`: the SR_* rotation gate — window expiry, atomic switch claim, bandit feed, next-arm select, fleet publish |
-| per-syscall-edges.c | 405 | `account_reexec_ab_cohort`, `account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` — per-dispatch cohort denominators and per-syscall edge attribution |
-| warm-reserve.c | 284 | `account_warm_reserve` (SHADOW deep-but-warm probe) and `account_cold_overflow_would_save` (SHADOW cold/corpus-absent overflow-tail probe) |
-| remote-adaptive.c | 247 | `remote_adaptive_decide()`: adaptive KCOV_REMOTE disposition, consulted before the raw call to override the static `remote_mode` |
-| fd-group.c | 169 | `account_fd_and_group()`: fd-leak counters, the owned-fd ring retire for a returned number, live-fd ring push, the `group_bias`-gated `last_group` stamp, and the F-RSEQ group-pin damper state machine |
-| strategy-accounting-internal.h | 51 | Cross-file declarations private to the accounting cluster |
-
-Chain executor and its corpus, sharing `random_syscall/chain-internal.h`:
-
-| File | Lines | Role |
-|---|---|---|
-| chain-persist.c | 636 | Chain-corpus on-disk persistence and mid-run snapshot cadence: versioned, arch- and release-tagged save/load with an atomic rename; the loader re-runs the replay filter and zeroes stale fd and pointer slots |
-| chain-exec.c | 612 | `run_sequence_chain()`: draws a chain source (fresh vs corpus replay), dispatches each step, records the outcome (corpus admission + per-resource-kind pair credit) |
-| chain-restype.c | 334 | Resource-type dependency table for `--chain-resource-typing`: one row per fd-family with a producer/consumer split, measured via `chain_restype_replay_win[]` |
-| chain-corpus.c | 353 | The in-memory ring of admitted chains plus init / save / pick; a single fleet-wide ring of inline `chain_entry` slots, lockless on the pick path; `chain_is_replay_safe()` refuses the minicorpus's argtype list (`corpus_argtype_refused()`) and `chain_zero_stale_args()` zeroes a saved step's stale fd and pointer slots (`corpus_argtype_stale_on_replay()`) by the step's own ABI |
-| chain-internal.h | 50 | Cross-file declarations private to the `chain-*.c` cluster |
-
-Cross-cluster private declarations live in `include/random-syscall-internal.h` (14 files here include it, `chain-subst.c` among them; the four-file chain executor cluster uses `chain-internal.h` instead). Public entry points are split across `include/child-api.h` (the three dispatch-step wrappers), `include/sequence.h` (the chain executor and its corpus API) and `include/syscall.h` (`set_syscall_nr_random`, `compute_numeric_substitute_mask`, `choose_syscall_table`).
-
 ## How a syscall gets picked
 
 `set_syscall_nr()` (pickers.c) is the single top-level entry. It:
@@ -89,11 +41,6 @@ Called identically from the fresh-args path (`random_syscall_step`), the bias pa
 10. Bump per-arm completion counters (`bump_arm_completion()`; mirrors the pick-time `strategy_picks[]` bump).
 11. **CMP RedQueen greedy re-exec tail** (`redqueen_reexec_tail()`): if the parent call is CMP-mode, redqueen-enabled, not already mid-reexec/mid-chain-step, produced new CMP novelty, and has staged `reexec_pending` attribution entries, drain *all* of them (bounded by `MAX_REEXEC_PENDING`) through `redqueen_reexec_step()` — each one regenerates fresh args, pins a single learned-constant slot or struct field (a field pin writes only through a pointer wholly inside the writable pool, per `range_in_writable_pool()`; a scalar pin that `redqueen_pin_refused()` turns away skips the re-exec and counts as a bad slot), and recursively calls `dispatch_step()` again (guarded by `child->in_reexec` against runaway recursion). Gate disposition is tracked with a mutually-exclusive per-gate skip counter for measurement.
 12. `maybe_rotate_strategy()` — cheap end-of-call check for the bandit/round-robin window boundary.
-
-The three public wrappers differ only in how `rec` gets populated before calling `dispatch_step()`:
-- `random_syscall_step` — calls `set_syscall_nr()`, `generate_syscall_args()`, then `apply_chain_substitution()`.
-- `random_syscall_step_biased` — skips `set_syscall_nr()` for a chain-executor-supplied NR (resource-typed consumer pick), still generates fresh args.
-- `replay_syscall_step` — replays a saved `(nr, do32bit, args)` chain step through `minicorpus_mutate_args()` (shared mutator engine) instead of fresh generation.
 
 Bias and replay paths both set `child->strategy_at_pick = -1` so their novelty doesn't get misattributed to whatever bandit arm happens to be current.
 
@@ -139,7 +86,3 @@ Calls out from dispatch-step.c to the rest of the tree:
 4. **`rec` field-level publish/restore discipline**: the dispatch and picker files thread `srec_publish_begin/end()` brackets carefully around every multi-field `rec` mutation so an out-of-band reader (watchdog, pre_crash_ring decoder) never observes a torn `(nr, do32bit, aN)` tuple. `redqueen_reexec_step()` additionally snapshots and restores six `rec` fields plus retval/errno/post_state around its inner dispatch call (dispatch-step.c:1148-1156, 1333-1341) — a missed field in that snapshot/restore pair would silently corrupt what the chain-corpus save sees after the parent call returns.
 5. **The protected-fd/pid masking in `rewrite_refused_slots()` (chain-subst.c) is a narrow, easy-to-regress safety net**: it depends on `fd_is_protected()` and `is_fdarg()` staying in sync with whatever fd classes trinity considers instrumentation-critical; a new protected-fd class added elsewhere without updating this masking would silently reopen the "chain-substitute closes trinity's own kcov fd" bug class this code exists to prevent. The RedQueen pin goes through the same function, so a narrow pin (under 32 bits) into an fd or pid slot is refused outright: the bytes it leaves out come from the regenerated argument and cannot be judged before the re-exec.
 6. **Every hot-path helper takes pains to be RNG-stream-identical when its owning mode is OFF** (`expensive_accept`, `cost_pool_selector_shadow_note`, `remote_adaptive_decide`, the frontier blend/decay predicates) — this is a strong implicit invariant across the whole cluster (any new mode must preserve pick-stream byte-identity under its OFF setting for reproducible fuzzing runs), but it is enforced only by code comments, not by any automated check visible in this directory.
-
-## Summary
-
-`set_syscall_nr()` picks a syscall via one of three bandit-selected arms (heuristic/random/coverage-frontier), each layering probabilistic accept/retry gates on top of a uniform draw from the active-syscall table. `apply_chain_substitution()` optionally splices a prior chain step's retval into a safe arg slot. `dispatch_step()` then runs the syscall, collects PC/CMP coverage, credits cmp_hints and mutator feedback, saves novel calls to the minicorpus, attributes rewards back to the picking strategy via the accounting cluster's `account_*` helpers, and — for CMP-mode redqueen — greedily re-executes with a learned constant pinned into the slot that produced it. `maybe_rotate_strategy()` closes the loop by feeding the window's reward deltas back into the bandit that drives the next `set_syscall_nr()` call.

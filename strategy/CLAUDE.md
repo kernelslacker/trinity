@@ -5,36 +5,8 @@ fuzzer window runs under, learns from edge-discovery yield via a discounted UCB1
 coverage plateaus and classifies their cause, and drives targeted interventions (forced-random
 rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of stalls.
 
-## Files (11 files + internal header, ~4,188 LOC)
-
-| File | Lines | Role |
-|---|---|---|
-| strategy.c | 466 | Glue + plateau-intervention dispatch: `--strategy` parsing, arm/mode name tables, `select_next_strategy()` (bandit vs. intervention dispatch), rescue-classifier-driven `amplified_intervention_arm()`, PIM rotation (`select_plateau_intervention_strategy`) |
-| strategy-bandit.c | 559 | UCB1/D-UCB learner: `bandit_record_pull()` reward attribution (call-count + CMP-novelty + transition + edge-count terms, EMA-discounted), `ucb1_score()`, `pick_next_strategy()` (cold-start + round-robin + UCB1 dispatch) |
-| strategy-frontier.c | 659 | Per-syscall frontier-edge decay ring: `frontier_record_new_edge/transition_edge`, `frontier_recent_count()`, errno-plateau decay predicate, topology-pair (setup-op → productive-event) shadow ring, context-regular suppression shadow |
-| strategy-frontier-cool.c | 389 | Saturation and barren-demote cooldown helpers |
-| strategy-frontier-window.c | 207 | Per-syscall frontier-edge ring window advance (`frontier_window_advance()`) |
-| strategy-frontier-bitmap.c | 153 | Producer-observer bitmap backing the spare-lane classifier |
-| strategy-frontier-spare.c | 116 | Spare-lane classifier (`frontier_spare_lane_decide()`) shared by the cooldown helpers |
-| strategy-frontier-internal.h | 20 | Declarations private to the `strategy-frontier*.c` cluster |
-| strategy-plateau.c | 843 | Plateau-intervention machinery: hypothesis classifier (5 rules: CMP-rising/PC-flat, childop-dominant, remote-dominant, frontier-cold, single-group-dominant), anti-prior accept-weight computation, "wall-lever" shadow suppression, snapshot/delta helpers |
-| strategy-cmp-novelty.c | 184 | Per-syscall CMP-constant novelty bloom filter (`bandit_cmp_observe()`): two-hash 1024-bit bloom per (syscall, arch) with lazy window-based decay, feeds bandit CMP-reward term |
-| strategy-rescue.c | 85 | Random-rescue classifier: `classify_random_rescue()` attributes a plateau-forced STRATEGY_RANDOM win to a class (COLD_SKIP, CMP_DERIVED, or UNKNOWN; 3 placeholder classes not yet wired) |
-| strategy-stats-dump.c | 527 | End-of-run operator summary: picker mode, plateau-forced cohort, intervention-mode distribution, rescue-class distribution, explorer-vs-bandit "edge race", per-arm pulls/reward/exposure/reason/chaos breakdowns |
-
 ## Key design decisions
 
-1. **Two-layer picker** — `select_next_strategy()` (strategy.c) is the top-level entry: if
-   `kcov_shm->plateau_active` and picker mode is bandit, it hands off to
-   `select_plateau_intervention_strategy()` (an intervention layer that bypasses the learner
-   entirely); otherwise it defers to `pick_next_strategy()` (strategy-bandit.c), the pure
-   UCB1/round-robin policy. Round-robin mode never gets plateau-intervened (its own cycling
-   already visits RANDOM).
-2. **Forced windows excluded from learner history** — `SR_PLATEAU_FORCE` windows are recorded in
-   diagnostic by-reason matrices (`bandit_pulls_by_reason[]`) but never bumped into the live
-   learner series (`bandit_pulls[]`, `recent_pulls_x1000[]`) — an intervention rescue is
-   structurally different from a policy-chosen pick and folding it in would contaminate the
-   reward history.
 3. **Discounted UCB1 (D-UCB)** — `recent_pulls_x1000[]`/`recent_reward_x1000[]` are EMA-decayed
    (alpha=0.05, ~13.5-window half-life) rather than lifetime sums, so the picker tracks
    non-stationary kernel-coverage yield (easy edges mined out early, late-run degradation)
@@ -42,10 +14,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    to stay comparable to the sqrt(ln N/n) explore term.
 4. **Plateau hypothesis classifier (5 rules)** — driven from a per-plateau entry snapshot diffed
    against the current tick (`plateau_snapshot_capture/delta`), not tick-over-tick, so rules
-   requiring sustained signal don't race noisy per-tick deltas. Rules: CMP climbing/PC flat,
-   childop-dominant (2:1 call-count ratio), remote-KCOV-dominant, frontier-cold (bandit pulled
-   frontier arm but the picker's weighted-accept gate rejected every candidate), single-group
-   dominant (>70% of edge delta in one syscall group).
+   requiring sustained signal don't race noisy per-tick deltas.
 5. **Plateau Intervention Mode (PIM) rotation** — round-robins among 4 modes (RRC_BIASED,
    ANTI_PRIOR, COVERAGE_FRONTIER, UNIFORM_RANDOM) via a fetch-add counter that only advances
    during plateau windows, so a fresh plateau resumes where the last left off. PIM_COVERAGE_FRONTIER
@@ -56,13 +25,6 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    = 8`) invert the picker's learned call-count distribution during an intervention window: cold
    syscalls (few calls) get boosted acceptance, hot syscalls get suppressed, capped so a single
    "genuinely broken in this kernel" syscall can't be boosted to monopolize the rotation.
-7. **Random-rescue classification** — a plateau-forced RANDOM call that lands a new edge is
-   attributed to a class (`classify_random_rescue`) using pre-existing evidence (heuristic's
-   cold-skip probability snapshot before the call; cmp_hints pool occupancy) so future
-   interventions can amplify the most productive rescue shape (`amplified_intervention_arm`:
-   COLD_SKIP → STRATEGY_HEURISTIC with cold-skip suppressed; CMP_DERIVED →
-   STRATEGY_COVERAGE_FRONTIER). Amplification only engages once a class clears both a minimum
-   count floor and a lead-over-runner-up ratio.
 8. **Frontier decay ring** — `FRONTIER_DECAY_WINDOWS` (=8, power-of-two, statically asserted)
    slots per syscall; `frontier_window_advance()` clears-then-publishes (age out the retiring
    slot under a CAS loop before bumping the visible slot index) specifically to avoid a
@@ -85,8 +47,7 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
 ## Integration points
 
 - `random_syscall/strategy-rotate.c` — `maybe_rotate_strategy()` is the CAS-serialized
-  rotation site: computes per-window deltas, calls `bandit_record_pull()`, then
-  `select_next_strategy()` for the next arm, then `frontier_window_advance()`. This is the
+  rotation site: This is the
   single point where strategy/ meets the hot dispatch path.
 - `random_syscall/pick-frontier.c` — `set_syscall_nr_coverage_frontier()` consumes
   `frontier_recent_count()` / `frontier_max_weight_cached` as its roulette-wheel weights; the
@@ -157,15 +118,3 @@ rescue, anti-prior bias, frontier-weighted picking) to break the fleet out of st
    sequence to piggyback on an unrelated RELEASE store (`current_strategy`) elsewhere in
    random_syscall/ for cross-field visibility. Any future refactor of the rotation site's
    store ordering would silently break these gates without a compiler error.
-
-## Summary
-
-strategy/ implements a two-tier control loop over the syscall-picking arms: a discounted UCB1
-bandit continuously reallocates windows toward whichever arm (heuristic/random/coverage-frontier)
-is yielding new edges fastest, while an independent plateau-detection and classification layer
-(fed by kcov's stall signal) periodically overrides the bandit with a targeted intervention —
-forced random, anti-prior bias, or frontier-weighted picking — chosen by rotating through modes
-and, within the RANDOM intervention, further biased by a rescue classifier that reads cmp_hints
-pool occupancy and the heuristic's own cold-skip probability. A large fraction of the directory
-(shadow discriminators, blended reward modes) is instrumented-but-inert scaffolding for future
-live-mode graduation rather than currently active decision logic.
