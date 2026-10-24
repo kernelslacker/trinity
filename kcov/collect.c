@@ -451,6 +451,166 @@ static void kcov_account_childop(struct kcov_child *kc, unsigned int nr,
 	}
 }
 
+/* Per-child staging bumps for the dump-side total_calls /
+ * remote_calls accounting.  Lives on childdata->local_stats so
+ * the hot kcov_shm cacheline does not take a relaxed atomic
+ * bump per call for dump accounting -- the per-child staging
+ * is authoritative for that path.  this_child() is NULL only
+ * in parent context, which kcov_collect()'s callers do not
+ * reach -- guard anyway so a future caller cannot crash the
+ * parent on a stray invocation.  kcov_shm->coverage.remote_calls is
+ * not bumped: no stamp-role consumer references the shm
+ * field, so the staged delta is authoritative. */
+static void kcov_stage_call_stats(const struct kcov_child *kc)
+{
+	struct childdata *cc = this_child();
+
+	if (cc != NULL) {
+		if (kcov_local_stats_plausible(cc->local_stats)) {
+			cc->local_stats->total_calls++;
+			if (kc->remote_mode)
+				cc->local_stats->remote_calls++;
+			cc->local_stats->local_syscalls_since_flush++;
+		} else {
+			log_self_corrupt_culprit(
+				"kcov:local_stats:calls",
+				(unsigned long)cc->local_stats,
+				&cc->syscall);
+		}
+	}
+}
+
+/* CAS-loop-up the per-syscall trace-size high-water mark using the
+ * post-cap count.  Same shape as the dedup_max_probe_seen update
+ * inside dedup_inc(): read, attempt cmpxchg, retry on lost race. */
+static void kcov_note_max_trace_size(unsigned int nr, bool do32,
+				     unsigned long count)
+{
+	uint32_t observed = (uint32_t)count;
+	uint32_t cur = __atomic_load_n(
+		&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
+		__ATOMIC_RELAXED);
+	while (observed > cur) {
+		if (__atomic_compare_exchange_n(
+				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
+				&cur, observed,
+				false,
+				__ATOMIC_RELAXED,
+				__ATOMIC_RELAXED))
+			break;
+	}
+}
+
+/* Post-walk per-syscall attribution for nr < MAX_NR_SYSCALL. */
+static void kcov_account_per_syscall(struct kcov_child *kc, unsigned int nr,
+				     bool do32, bool found_new,
+				     unsigned long count,
+				     unsigned long call_nr,
+				     unsigned long edges_this_call,
+				     unsigned long local_distinct_pcs,
+				     unsigned long transitions_this_call)
+{
+	/* Route per-syscall attribution through the calling
+	 * child's picker-context stamp so an INIT-user call and
+	 * a would-be user-namespace call cannot cross-contaminate
+	 * each other's evidence.  Fall back to PICKER_CTX_INIT if
+	 * this_child() is unavailable (defensive; kcov_collect
+	 * runs inside the per-child KCOV bracket so it should
+	 * always be reachable). */
+	struct childdata *ccx = this_child();
+	unsigned int ctx = ccx != NULL ? ccx->context_id : PICKER_CTX_INIT;
+
+	/* Per-child staging bump for per_syscall_calls[nr][ctx][do32].
+	 * Formerly a per-call relaxed atomic on the shared kcov_shm
+	 * cacheline; children now accumulate into local_stats and the
+	 * batched flush in kcov_child_flush_stats() enqueues one ring
+	 * slot per touched (nr, ctx, do32) tuple.  The parent drain
+	 * applies the delta back into the same shm cell so every
+	 * pre-existing reader (per_syscall_calls_total() and the
+	 * frontier / cold-skip / warm-reserve callers above it, the
+	 * kcov_diag dump and the persist priors emitter) keeps
+	 * reading from the same array.  ctx is bounds-checked here
+	 * even though generate_child_context stamps it in-range,
+	 * because a wild kernel store through a fuzzed syscall arg
+	 * could scribble context_id and turn the staged store into
+	 * an OOB write into adjacent local_stats fields.  do32 is a
+	 * bool so the ternary keeps the index in {0, 1}. */
+	{
+		struct childdata *ccps = this_child();
+
+		if (ccps != NULL &&
+		    kcov_local_stats_plausible(ccps->local_stats) &&
+		    ctx < PICKER_NCTX) {
+			ccps->local_stats->per_syscall_calls[nr][ctx][do32 ? 1 : 0]++;
+		}
+	}
+	/* per-syscall split of
+	 * kcov_collect() activity by collection mode.  See the field
+	 * comments in include/kcov.h: a remote-sampled syscall lands
+	 * in KCOV_MODE_REMOTE and drops synchronous local PC, so a
+	 * static remote sampling policy can spend half a syscall's
+	 * samples on a mode with no annotated producer.  Bump every
+	 * call into the mode-keyed slot so per-mode yield is
+	 * measurable per syscall. */
+	if (kc->remote_mode)
+		__atomic_fetch_add(&kcov_shm->pc_ctx.remote_pc_calls[nr],
+			1, __ATOMIC_RELAXED);
+	else
+		__atomic_fetch_add(&kcov_shm->pc_ctx.local_pc_calls[nr],
+			1, __ATOMIC_RELAXED);
+	if (found_new) {
+		kcov_account_new_edge(kc, nr, do32, ctx, edges_this_call,
+				      call_nr);
+	} else if (count > 0) {
+		kcov_account_warm_known(nr, call_nr);
+	}
+	/* Per-call totals into the (nr, do32)-indexed diag slot:
+	 * bucket_bits_real mirrors edges_this_call, distinct_pcs is the
+	 * count of dedup_inc() first-sight events.  Both are single
+	 * relaxed atomics per call (zero-add suppressed) regardless of
+	 * found_new — a warm-known call still has a distinct_pcs > 0
+	 * contribution that the post-mortem wants visible. */
+	if (edges_this_call > 0)
+		__atomic_fetch_add(
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].bucket_bits_real,
+			edges_this_call, __ATOMIC_RELAXED);
+	if (local_distinct_pcs > 0)
+		__atomic_fetch_add(
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].distinct_pcs,
+			local_distinct_pcs, __ATOMIC_RELAXED);
+	if (transitions_this_call > 0)
+		kcov_account_transitions(kc, nr, transitions_this_call);
+}
+
+/* Drain the per-child kcov_child_local_stats staging counters
+ * into parent_stats via the stats_ring on either trigger:
+ *   (a) found_new -- a fresh edge already costs a dump-side
+ *       notification, fold the staged delta into the same drain;
+ *   (b) the syscalls-since-flush counter has reached the cadence
+ *       cap, so a long run of no-new-edge calls still publishes.
+ * The staging bumps are gated on this_child() != NULL &&
+ * kcov_local_stats_plausible(cc->local_stats); mirror that gate
+ * here so a scribbled local_stats pointer is not followed on the
+ * cadence check either. */
+static void kcov_maybe_flush_local_stats(bool found_new)
+{
+	struct childdata *cc = this_child();
+
+	if (cc != NULL) {
+		if (kcov_local_stats_plausible(cc->local_stats)) {
+			if (found_new ||
+			    cc->local_stats->local_syscalls_since_flush >=
+				    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
+				kcov_child_flush_stats(cc);
+		} else {
+			log_self_corrupt_culprit(
+				"kcov:local_stats:flush",
+				(unsigned long)cc->local_stats,
+				&cc->syscall);
+		}
+	}
+}
+
 bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		  unsigned long *new_edge_count,
 		  struct kcov_pc_result *result)
@@ -501,56 +661,14 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	call_nr = __atomic_fetch_add(&kcov_shm->coverage.total_calls,
 		1, __ATOMIC_RELAXED);
 
-	/* Per-child staging bumps for the dump-side total_calls /
-	 * remote_calls accounting.  Lives on childdata->local_stats so
-	 * the hot kcov_shm cacheline does not take a relaxed atomic
-	 * bump per call for dump accounting -- the per-child staging
-	 * is authoritative for that path.  this_child() is NULL only
-	 * in parent context, which kcov_collect()'s callers do not
-	 * reach -- guard anyway so a future caller cannot crash the
-	 * parent on a stray invocation.  kcov_shm->coverage.remote_calls is
-	 * not bumped: no stamp-role consumer references the shm
-	 * field, so the staged delta is authoritative. */
-	{
-		struct childdata *cc = this_child();
-
-		if (cc != NULL) {
-			if (kcov_local_stats_plausible(cc->local_stats)) {
-				cc->local_stats->total_calls++;
-				if (kc->remote_mode)
-					cc->local_stats->remote_calls++;
-				cc->local_stats->local_syscalls_since_flush++;
-			} else {
-				log_self_corrupt_culprit(
-					"kcov:local_stats:calls",
-					(unsigned long)cc->local_stats,
-					&cc->syscall);
-			}
-		}
-	}
+	kcov_stage_call_stats(kc);
 
 	count = __atomic_load_n(&kc->trace_buf[0], __ATOMIC_RELAXED);
 	if (count >= (unsigned long)kcov_trace_size - 1)
 		count = kcov_note_trace_truncated(nr, do32);
 
-	/* CAS-loop-up the per-syscall trace-size high-water mark using the
-	 * post-cap count.  Same shape as the dedup_max_probe_seen update
-	 * inside dedup_inc(): read, attempt cmpxchg, retry on lost race. */
-	if (nr < MAX_NR_SYSCALL) {
-		uint32_t observed = (uint32_t)count;
-		uint32_t cur = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
-			__ATOMIC_RELAXED);
-		while (observed > cur) {
-			if (__atomic_compare_exchange_n(
-					&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].max_trace_size,
-					&cur, observed,
-					false,
-					__ATOMIC_RELAXED,
-					__ATOMIC_RELAXED))
-				break;
-		}
-	}
+	if (nr < MAX_NR_SYSCALL)
+		kcov_note_max_trace_size(nr, do32, count);
 
 	/* Reset the recover-on-EBADF attempt counter only when this call
 	 * actually harvested PCs.  A successful KCOV_ENABLE that lands on
@@ -707,76 +825,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	}
 
 	if (nr < MAX_NR_SYSCALL) {
-		/* Route per-syscall attribution through the calling
-		 * child's picker-context stamp so an INIT-user call and
-		 * a would-be user-namespace call cannot cross-contaminate
-		 * each other's evidence.  Fall back to PICKER_CTX_INIT if
-		 * this_child() is unavailable (defensive; kcov_collect
-		 * runs inside the per-child KCOV bracket so it should
-		 * always be reachable). */
-		struct childdata *ccx = this_child();
-		unsigned int ctx = ccx != NULL ? ccx->context_id : PICKER_CTX_INIT;
-
-		/* Per-child staging bump for per_syscall_calls[nr][ctx][do32].
-		 * Formerly a per-call relaxed atomic on the shared kcov_shm
-		 * cacheline; children now accumulate into local_stats and the
-		 * batched flush in kcov_child_flush_stats() enqueues one ring
-		 * slot per touched (nr, ctx, do32) tuple.  The parent drain
-		 * applies the delta back into the same shm cell so every
-		 * pre-existing reader (per_syscall_calls_total() and the
-		 * frontier / cold-skip / warm-reserve callers above it, the
-		 * kcov_diag dump and the persist priors emitter) keeps
-		 * reading from the same array.  ctx is bounds-checked here
-		 * even though generate_child_context stamps it in-range,
-		 * because a wild kernel store through a fuzzed syscall arg
-		 * could scribble context_id and turn the staged store into
-		 * an OOB write into adjacent local_stats fields.  do32 is a
-		 * bool so the ternary keeps the index in {0, 1}. */
-		{
-			struct childdata *ccps = this_child();
-
-			if (ccps != NULL &&
-			    kcov_local_stats_plausible(ccps->local_stats) &&
-			    ctx < PICKER_NCTX) {
-				ccps->local_stats->per_syscall_calls[nr][ctx][do32 ? 1 : 0]++;
-			}
-		}
-		/* per-syscall split of
-		 * kcov_collect() activity by collection mode.  See the field
-		 * comments in include/kcov.h: a remote-sampled syscall lands
-		 * in KCOV_MODE_REMOTE and drops synchronous local PC, so a
-		 * static remote sampling policy can spend half a syscall's
-		 * samples on a mode with no annotated producer.  Bump every
-		 * call into the mode-keyed slot so per-mode yield is
-		 * measurable per syscall. */
-		if (kc->remote_mode)
-			__atomic_fetch_add(&kcov_shm->pc_ctx.remote_pc_calls[nr],
-				1, __ATOMIC_RELAXED);
-		else
-			__atomic_fetch_add(&kcov_shm->pc_ctx.local_pc_calls[nr],
-				1, __ATOMIC_RELAXED);
-		if (found_new) {
-			kcov_account_new_edge(kc, nr, do32, ctx, edges_this_call,
-					      call_nr);
-		} else if (count > 0) {
-			kcov_account_warm_known(nr, call_nr);
-		}
-		/* Per-call totals into the (nr, do32)-indexed diag slot:
-		 * bucket_bits_real mirrors edges_this_call, distinct_pcs is the
-		 * count of dedup_inc() first-sight events.  Both are single
-		 * relaxed atomics per call (zero-add suppressed) regardless of
-		 * found_new — a warm-known call still has a distinct_pcs > 0
-		 * contribution that the post-mortem wants visible. */
-		if (edges_this_call > 0)
-			__atomic_fetch_add(
-				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].bucket_bits_real,
-				edges_this_call, __ATOMIC_RELAXED);
-		if (local_distinct_pcs > 0)
-			__atomic_fetch_add(
-				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].distinct_pcs,
-				local_distinct_pcs, __ATOMIC_RELAXED);
-		if (transitions_this_call > 0)
-			kcov_account_transitions(kc, nr, transitions_this_call);
+		kcov_account_per_syscall(kc, nr, do32, found_new, count,
+					 call_nr, edges_this_call,
+					 local_distinct_pcs,
+					 transitions_this_call);
 	} else if (nr >= CHILDOP_KCOV_NR_BASE) {
 		kcov_account_childop(kc, nr, found_new, edges_this_call);
 	}
@@ -812,33 +864,7 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 				transitions_this_call;
 	}
 
-	/* Drain the per-child kcov_child_local_stats staging counters
-	 * into parent_stats via the stats_ring on either trigger:
-	 *   (a) found_new -- a fresh edge already costs a dump-side
-	 *       notification, fold the staged delta into the same drain;
-	 *   (b) the syscalls-since-flush counter has reached the cadence
-	 *       cap, so a long run of no-new-edge calls still publishes.
-	 * The bumps above are gated on this_child() != NULL &&
-	 * kcov_local_stats_plausible(cc->local_stats); mirror that gate
-	 * here so a scribbled local_stats pointer is not followed on the
-	 * cadence check either. */
-	{
-		struct childdata *cc = this_child();
-
-		if (cc != NULL) {
-			if (kcov_local_stats_plausible(cc->local_stats)) {
-				if (found_new ||
-				    cc->local_stats->local_syscalls_since_flush >=
-					    KCOV_LOCAL_STATS_FLUSH_SYSCALLS)
-					kcov_child_flush_stats(cc);
-			} else {
-				log_self_corrupt_culprit(
-					"kcov:local_stats:flush",
-					(unsigned long)cc->local_stats,
-					&cc->syscall);
-			}
-		}
-	}
+	kcov_maybe_flush_local_stats(found_new);
 
 	/* Diagnostic coverage-jump breadcrumb -- pure observability, no
 	 * behaviour gate.  See kcov_covjump_breadcrumb_maybe() for the
