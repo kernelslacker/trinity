@@ -2,7 +2,7 @@
 
 Decides what value goes in each of a syscall's up to 6 argument slots, given the slot's declared `argtype` (ARG_FD, ARG_STRUCT_PTR_IN, ARG_RANGE, ...) and, for struct-shaped slots, the per-field schema pulled from struct_catalog/. Runs once per dispatch from `generate_syscall_args()`, between sanitise-callback selection and the kernel call.
 
-## Files (18 files, ~6,813 LOC)
+## Files (18 files, ~6,861 LOC)
 
 | File | Lines | Role |
 |---|---|---|
@@ -18,7 +18,7 @@ Decides what value goes in each of a syscall's up to 6 argument slots, given the
 | gen_arg_struct_ptr.c | 338 | ARG_STRUCT_PTR_IN/OUT/INOUT generators (alloc + schema-fill or poison-fill via struct_catalog lookup, fallback sizes when uncataloged) and ARG_STRUCT_SIZE (copy_struct_from_user size-word distribution, incl. per-struct old-ABI size table and CMP-hint pull) |
 | handle_arg.c | 419 | Per-argtype-family generators too stateful for a one-line table entry: ARG_ADDRESS (previous-slot reuse), ARG_RANGE (boundary bias + CMP-hint), ARG_OP/ARG_LIST (bitmask/command draws + CMP-hint + prop_ring), ARG_IOVEC(_IN) (9-bucket count distribution around UIO_FASTIOV/UIO_MAXIOV), ARG_SOCKADDR, ARG_MODE_T, `publish_paired_length()` |
 | gen_arg_time.c | 458 | ARG_TIMESPEC/ITIMERVAL/ITIMERSPEC/TIMEVAL/BUF_SIZED generators: bucketed boundary-valid time shapes (kernel's `timespec64_valid()` gate is the reason random bytes are useless here) |
-| struct_fill.c | 765 | `struct_fill_passes()`: the 3-pass per-field schema-aware filler (scalar tags -> pointer tags incl. FT_PTR_BYTES/ARRAY/STRUCT/BPF_PROGRAM allocation -> length tags reading back chosen sizes), plus `struct_variant_overlay_nested()` for tagged-union sub-variants |
+| struct_fill.c | 813 | `struct_fill_passes()`: the 3-pass per-field schema-aware filler (scalar tags -> pointer tags incl. FT_PTR_BYTES/ARRAY/STRUCT/BPF_PROGRAM allocation -> length tags reading back chosen sizes), one static helper per pass (`fill_scalar_pass`, `pin_shared_lens`, `fill_pointer_pass`, `fill_length_pass`), plus `struct_variant_overlay_nested()` for tagged-union sub-variants |
 | gen_arg_scalar.c | 550 | `gen_undefined_arg()` (9-way boundary/random/CMP-hint/prop_ring mix for ARG_UNDEFINED) and the fd/pid/key-serial/timerid/aio-ctx/sem/msg/shm/numa-node/pathname/xattr-name/fstype-name scalar generators, most with an 8-in-1 pool-vs-garbage bias and several with typed prop_ring consumption |
 | argtype_table.c | 701 | `argtype_table[]` descriptor array mapping each `enum argtype` to {generate, cleanup, paired_length, can_use_success_fd_bias, default_address_scrub, replay}; `fill_arg()` dispatch + central address-family meta stamping; `compute_*_mask()` helpers cached once per syscallentry at table-init |
 | struct_mutate.c | 527 | Post-fill single-field neighbour mutation (`struct_field_mutate_one()`, 12% gate): per-tag primitives for FT_FLAGS/ENUM/VOCAB/RANGE/SRANGE/RAW, depth-3 candidate collection through FT_PTR_STRUCT children, weighted pick |

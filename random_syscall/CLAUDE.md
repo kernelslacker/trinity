@@ -2,7 +2,7 @@
 
 The core "choose a syscall and run it" loop. Every fuzzed syscall in trinity — fresh, chain-replayed, chain-biased, or redqueen re-exec — funnels through `set_syscall_nr()` and then `dispatch_step()` in this directory. Nothing else in the codebase is on the critical path as often: this runs once (or twice, with re-exec) per syscall, for every child, for the life of the run.
 
-## Files (18 files + 2 internal headers, ~7,860 LOC)
+## Files (18 files + 2 internal headers, ~7,998 LOC)
 
 The picker, the dispatch tail and the post-dispatch attribution helpers are each
 split one concern per translation unit, and the chain executor is the `chain-*.c`
@@ -13,9 +13,9 @@ Picker arms and their shared plumbing:
 | File | Lines | Role |
 |---|---|---|
 | pick-common.c | 640 | Shared picker plumbing: `choose_syscall_table()` (32/64-bit table select), `load_active_syscall_count()`, the validation success/failure deactivation counters, `expensive_accept()` (adaptive EXPENSIVE-syscall accept-rate gate), the cost-pool selector shadow/live/predraw observers, `syscall_in_group()` |
-| pick-frontier.c | 587 | STRATEGY_COVERAGE_FRONTIER arm: `set_syscall_nr_coverage_frontier()` — uniform draw plus biased acceptance against the per-syscall frontier-edge weight |
-| pick-frontier-weight.c | 508 | Weight helpers for the frontier silent-regime accept gate: `frontier_cold_weight()` (plateau fallback when the frontier ring goes silent) and `cmp_frontier_weight()` (CMP-weighted alternate) |
-| pick-heuristic.c | 415 | STRATEGY_HEURISTIC arm: `set_syscall_nr_heuristic()` — uniform draw from `active_syscalls`, then the layered biases (group affinity, kcov cold-skip) |
+| pick-frontier.c | 641 | STRATEGY_COVERAGE_FRONTIER arm: `set_syscall_nr_coverage_frontier()` — uniform draw plus biased acceptance against the per-syscall frontier-edge weight |
+| pick-frontier-weight.c | 533 | Weight helpers for the frontier silent-regime accept gate: `frontier_cold_weight()` (plateau fallback when the frontier ring goes silent) and `cmp_frontier_weight()` (CMP-weighted alternate) |
+| pick-heuristic.c | 435 | STRATEGY_HEURISTIC arm: `set_syscall_nr_heuristic()` — uniform draw from `active_syscalls`, then the layered biases (group affinity, kcov cold-skip) |
 | pick-random.c | 245 | STRATEGY_RANDOM arm: `set_syscall_nr_random()` — uniform draw with no further biasing, plus the anti-prior plateau intervention |
 | pickers.c | 135 | `set_syscall_nr()`, the top-level dispatcher that reads `shm->current_strategy` and routes to one of the three arms |
 
@@ -31,7 +31,7 @@ Post-dispatch attribution, sharing `random_syscall/strategy-accounting-internal.
 
 | File | Lines | Role |
 |---|---|---|
-| strategy-rotate.c | 404 | `maybe_rotate_strategy()`: the SR_* rotation gate — window expiry, atomic switch claim, bandit feed, next-arm select, fleet publish |
+| strategy-rotate.c | 445 | `maybe_rotate_strategy()`: the SR_* rotation gate — window expiry, atomic switch claim, bandit feed, next-arm select, fleet publish |
 | per-syscall-edges.c | 405 | `account_reexec_ab_cohort`, `account_per_syscall_new_edges`, `account_pc_edge_only`, `account_transition_reward` — per-dispatch cohort denominators and per-syscall edge attribution |
 | warm-reserve.c | 284 | `account_warm_reserve` (SHADOW deep-but-warm probe) and `account_cold_overflow_would_save` (SHADOW cold/corpus-absent overflow-tail probe) |
 | remote-adaptive.c | 247 | `remote_adaptive_decide()`: adaptive KCOV_REMOTE disposition, consulted before the raw call to override the static `remote_mode` |
@@ -133,7 +133,7 @@ Calls out from dispatch-step.c to the rest of the tree:
 
 ## Areas of attention
 
-1. **`set_syscall_nr_coverage_frontier()` and its two weight helpers (`frontier_cold_weight`, `cmp_frontier_weight`) are the most complex control flow in the cluster** — pick-frontier.c:91-587 and pick-frontier-weight.c:102-405 / 449-508. `frontier_cold_weight()` alone computes an OLD weight, a BLENDED weight (three disjoint ilog2-scaled novelty terms), an A/B arm selection between them, and then a further reach-band adjustment (HIGH-band boost / MID-band demote), all before the caller does its own live/silent regime split with two more SHADOW decay predicates (`frontier_satcool_spare`, `frontier_errno_plateau_should_decay`) each with their own A/B live-reject roll. Six or seven independently-gated mode enums (`reach_band_mode`, `cmp_frontier_mode`, `frontier_group_antilock_mode`, per-child arm-b flags for blend/silent-decay/errno-decay/live-cool) all interact at this single call site. Correctness here depends on every SHADOW-only branch genuinely being byte-identical-when-OFF — that invariant is documented at every call site but is unverified by any test in this view.
+1. **`set_syscall_nr_coverage_frontier()` and its two weight helpers (`frontier_cold_weight`, `cmp_frontier_weight`) are the most complex control flow in the cluster** — pick-frontier.c and pick-frontier-weight.c. `frontier_cold_weight()` alone computes an OLD weight, a BLENDED weight (three disjoint ilog2-scaled novelty terms, `frontier_blend_weight()`), an A/B arm selection between them, and then a further reach-band adjustment (HIGH-band boost / MID-band demote, `frontier_reach_band_adjust()`), all before the caller does its own live/silent regime split (`frontier_live_accept()` / `frontier_silent_accept()`) with two more SHADOW decay predicates (`frontier_satcool_spare`, `frontier_errno_plateau_should_decay`) each with their own A/B live-reject roll. Six or seven independently-gated mode enums (`reach_band_mode`, `cmp_frontier_mode`, `frontier_group_antilock_mode`, per-child arm-b flags for blend/silent-decay/errno-decay/live-cool) all interact at this single call site. Correctness here depends on every SHADOW-only branch genuinely being byte-identical-when-OFF — that invariant is documented at every call site but is unverified by any test in this view.
 2. **`dispatch_step()` is still a ~360-line function (dispatch-step.c:543-899) doing coverage collection, cmp_hints credit, minicorpus save, seven `account_*` calls and the crash-ring pushes in one fixed order** — it is the busiest function in the fuzzer by call count and its correctness ordering is load-bearing in non-obvious ways: e.g. `account_cold_overflow_would_save()` must run *before* `minicorpus_save_with_reason()` or its "was this the first admission" snapshot races the save it's trying to measure (documented at warm-reserve.c:244-252). The blocks that run off the common path or once per call, and take no part in that ordering, sit in static helpers above it (`decide_remote_mode()`, `credit_blob_ab_mode()`, `emit_call_stats()`, `bump_arm_completion()`, `redqueen_reexec_tail()`); what is left is the ordered spine, kept in one function on purpose.
 3. **Recursive re-exec**: `redqueen_reexec_step()` calls back into `dispatch_step()` (dispatch-step.c:1235), guarded only by the `child->in_reexec` flag checked at the `redqueen_reexec_tail()` gate. If that guard were ever bypassed, this is an unbounded-recursion path; the per-window cap (`REDQUEEN_REEXEC_WINDOW_CAP`) and per-call cap (drain loop bounded by `MAX_REEXEC_PENDING`) are the only backstops.
 4. **`rec` field-level publish/restore discipline**: the dispatch and picker files thread `srec_publish_begin/end()` brackets carefully around every multi-field `rec` mutation so an out-of-band reader (watchdog, pre_crash_ring decoder) never observes a torn `(nr, do32bit, aN)` tuple. `redqueen_reexec_step()` additionally snapshots and restores six `rec` fields plus retval/errno/post_state around its inner dispatch call (dispatch-step.c:1146-1154, 1331-1339) — a missed field in that snapshot/restore pair would silently corrupt what the chain-corpus save sees after the parent call returns.

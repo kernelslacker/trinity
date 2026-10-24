@@ -40,11 +40,11 @@ directory.  Headers are named separately in each directory's notes file, and
 |---|---|
 | [main/](main/CLAUDE.md) | Process entry + CLI/tunables + parent control plane: fork/reap/watchdog/stats tick loop (22 files, ~8,229 LOC) |
 | [child/](child/CLAUDE.md) | Child runtime loop: per-iteration alt-op/syscall pick, canary/sentinel/capdrop oracles, alarm backstop (25 files, ~7,693 LOC) |
-| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,860 LOC) |
-| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,642 LOC) |
+| [random_syscall/](random_syscall/CLAUDE.md) | Per-iteration hot path: pick, substitute, dispatch a syscall (18 files, ~7,998 LOC) |
+| [dispatch/](dispatch/CLAUDE.md) | Issues the picked syscall, records the result, tracks pid liveness (9 files, ~2,674 LOC) |
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog (366 files, ~65,882 LOC) |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields (7 files, ~2,051 LOC) |
-| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,813 LOC) |
+| [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` (18 files, ~6,861 LOC) |
 | [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype (11 files, ~2,974 LOC) |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs (27 files, ~5,730 LOC) |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation (10 files, ~3,086 LOC) |
@@ -57,8 +57,8 @@ directory.  Headers are named separately in each directory's notes file, and
 | [mm/](mm/CLAUDE.md) | Memory-management fuzzing targets (11 files, ~3,133 LOC) |
 | [childops/](childops/CLAUDE.md) | Scripted stateful multi-syscall workloads (churn/write/verify) (7 files, ~4,117 LOC) |
 | [strategy/](strategy/CLAUDE.md) | Multi-strategy syscall-picker orchestration (11 files, ~4,188 LOC) |
-| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,367 LOC) |
-| [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (14 files, ~6,966 LOC) |
+| [kcov/](kcov/CLAUDE.md) | Generic KCOV coverage collection (10 files, ~5,391 LOC) |
+| [cmp_hints/](cmp_hints/CLAUDE.md) | KCOV comparison-operand hint system (RedQueen-style) (14 files, ~6,983 LOC) |
 | [stats/](stats/CLAUDE.md) | Telemetry aggregation and operator-facing reporting (73 files, ~16,494 LOC) |
 | [lib/](lib/CLAUDE.md) | Generic reusable primitives, no shared state (8 files, ~1,721 LOC) |
 | [utils/](utils/CLAUDE.md) | General-purpose runtime support (34 files, ~10,754 LOC) |

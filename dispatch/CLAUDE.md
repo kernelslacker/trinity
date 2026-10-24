@@ -2,7 +2,7 @@
 
 Issues the picked syscall, records its outcome, and tracks pid liveness — the tail of one fuzz iteration: `child/` picks (via `random_syscall/` + the `syscalls/` descriptor), this layer makes the call and books the result.
 
-## Files (9 files, ~2,642 LOC)
+## Files (9 files, ~2,674 LOC)
 
 The `do_syscall()` machinery spans `syscall*.c`: `syscall.c` holds the entry
 point, and the execution path and the return-side phases each have their own
