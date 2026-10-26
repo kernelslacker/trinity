@@ -557,9 +557,14 @@ struct syscallentry {
 	 * in place and refresh the call's own post_state snapshot to the
 	 * final slots.  Returns 0 to dispatch; non-zero refuses the call,
 	 * which then fails with EINVAL without entering the kernel, and the
-	 * hook says why with outputerr().  NULL for an entry with no rule.
+	 * hook says why with outputerr().  @entry is the one the dispatcher
+	 * passed, the hook's own or a sibling's sharing it: a hook names the
+	 * call and tells variants apart by it, never by rec->entry, which a
+	 * stray write to the record can repoint.  NULL for an entry with no
+	 * rule.
 	 */
-	int (*vet_final)(struct syscallrecord *rec);
+	int (*vet_final)(struct syscallrecord *rec,
+			 const struct syscallentry *entry);
 	void (*post)(struct syscallrecord *rec);
 	/*
 	 * Unconditional per-syscall teardown hook.  Runs exactly once per
@@ -1089,13 +1094,15 @@ void post_open_fd(struct syscallrecord *rec);
  * which take the events buffer and maxevents in the same slots.  Defined
  * in syscalls/poll/epoll_wait.c.
  */
-int vet_final_epoll_wait(struct syscallrecord *rec);
+int vet_final_epoll_wait(struct syscallrecord *rec,
+			 const struct syscallentry *entry);
 
 /*
  * The .vet_final hook wait4 shares with waitpid, which takes the pid and
  * the options in the same slots.  Defined in syscalls/process/wait4.c.
  */
-int vet_final_wait4(struct syscallrecord *rec);
+int vet_final_wait4(struct syscallrecord *rec,
+		    const struct syscallentry *entry);
 
 uint8_t compute_numeric_substitute_mask(const struct syscallentry *entry);
 uint8_t compute_address_scrub_mask(const struct syscallentry *entry);

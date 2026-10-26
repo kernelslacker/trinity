@@ -181,13 +181,14 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
  * epoll_pwait and epoll_pwait2 take the two in the same slots and share
  * this.
  */
-int vet_final_epoll_wait(struct syscallrecord *rec)
+int vet_final_epoll_wait(struct syscallrecord *rec,
+			 const struct syscallentry *entry)
 {
 	int maxevents = (int) rec->a3;
 
 	if (maxevents > 0 && rec->a2 == 0) {
 		outputerr("arg-coupling: %s rejected: maxevents=%d but events=NULL\n",
-			  rec->entry->name, maxevents);
+			  entry->name, maxevents);
 		return -1;
 	}
 	return 0;

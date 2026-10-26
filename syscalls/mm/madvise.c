@@ -111,7 +111,8 @@ struct madvise_post_state {
  * kernel acts on nothing of.  Shape, then ownership, then magic, as
  * post_state_claim_owned() orders them.
  */
-static int vet_final_madvise(struct syscallrecord *rec)
+static int vet_final_madvise(struct syscallrecord *rec,
+			     const struct syscallentry *entry)
 {
 	struct madvise_post_state *snap =
 		(struct madvise_post_state *) rec->post_state;
@@ -137,7 +138,7 @@ static int vet_final_madvise(struct syscallrecord *rec)
 	     map_range_pages(addr, len, false, false, &pages)) ||
 	    !map_range_vet(rec, range)) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked, or the advice installs guard pages\n",
-			  rec->entry->name);
+			  entry->name);
 		return -1;
 	}
 

@@ -50,7 +50,8 @@ struct shmat_post_state {
  * ints, a compat call's address as its low 32 bits.  Shape, then
  * ownership, then magic, as post_state_claim_owned() orders them.
  */
-static int vet_final_shmat(struct syscallrecord *rec)
+static int vet_final_shmat(struct syscallrecord *rec,
+			   const struct syscallentry *entry __unused__)
 {
 	struct shmat_post_state *snap =
 		(struct shmat_post_state *) rec->post_state;

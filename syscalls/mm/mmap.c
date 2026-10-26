@@ -132,14 +132,17 @@ struct mmap_post_state {
  * old_mmap(): the kernel copies all six arguments from a struct at a1
  * (sys_old_mmap(), compat_sys_ia32_mmap()), and the sanitiser builds none.
  */
-static bool mmap_takes_arg_struct(const struct syscallrecord *rec)
+static bool mmap_takes_arg_struct(const struct syscallrecord *rec,
+				  const struct syscallentry *entry)
 {
 #if defined(__x86_64__)
-	return rec->do32bit && !rec->entry->is_mmap2;
+	return rec->do32bit && !entry->is_mmap2;
 #elif defined(__i386__)
-	return !rec->entry->is_mmap2;
+	(void) rec;
+	return !entry->is_mmap2;
 #else
 	(void) rec;
+	(void) entry;
 	return false;
 #endif
 }
@@ -161,13 +164,14 @@ static bool mmap_takes_arg_struct(const struct syscallrecord *rec)
  * read as the kernel reads it, the low 32 bits for a compat call.  Shape,
  * then ownership, then magic, as post_state_claim_owned() orders them.
  */
-static int vet_final_mmap(struct syscallrecord *rec)
+static int vet_final_mmap(struct syscallrecord *rec,
+			  const struct syscallentry *entry)
 {
 	struct mmap_post_state *snap =
 		(struct mmap_post_state *) rec->post_state;
 	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
 	unsigned long flags = rec->a4 & mask;
-	bool arg_struct = mmap_takes_arg_struct(rec);
+	bool arg_struct = mmap_takes_arg_struct(rec, entry);
 
 	if (!arg_struct &&
 	    (!(flags & MAP_FIXED) || (flags & MAP_FIXED_NOREPLACE)))
@@ -183,7 +187,7 @@ static int vet_final_mmap(struct syscallrecord *rec)
 		return 0;
 
 	outputerr("arg-coupling: %s rejected: MAP_FIXED replaces a range sanitise did not vet, or a1 is not the struct pointer it left\n",
-		  rec->entry->name);
+		  entry->name);
 	return -1;
 }
 
@@ -322,7 +326,7 @@ static void sanitise_mmap(struct syscallrecord *rec)
 						   rec->a3);
 
 	if (((rec->a4 & MAP_FIXED) && !(rec->a4 & MAP_FIXED_NOREPLACE)) ||
-	    mmap_takes_arg_struct(rec)) {
+	    mmap_takes_arg_struct(rec, rec->entry)) {
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = MMAP_POST_STATE_MAGIC;
 		snap->addr  = rec->a1;

@@ -32,7 +32,8 @@ struct home_node_post_state {
  * on nothing of.  Shape, then ownership, then magic, as
  * post_state_claim_owned() orders them.
  */
-static int vet_final_set_mempolicy_home_node(struct syscallrecord *rec)
+static int vet_final_set_mempolicy_home_node(struct syscallrecord *rec,
+					     const struct syscallentry *entry)
 {
 	struct home_node_post_state *snap =
 		(struct home_node_post_state *) rec->post_state;
@@ -45,7 +46,7 @@ static int vet_final_set_mempolicy_home_node(struct syscallrecord *rec)
 		return 0;
 
 	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
-		  rec->entry->name);
+		  entry->name);
 	return -1;
 }
 

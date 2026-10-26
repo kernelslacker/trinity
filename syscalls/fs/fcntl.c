@@ -793,7 +793,8 @@ static void post_fcntl(struct syscallrecord *rec)
  * plain SIGIO, so the call itself is never refused.  The i386 and arm
  * fcntl64 slots share this entry.
  */
-static int vet_final_fcntl(struct syscallrecord *rec)
+static int vet_final_fcntl(struct syscallrecord *rec,
+			   const struct syscallentry *entry __unused__)
 {
 	if ((unsigned int) rec->a2 == F_SETSIG &&
 	    !parent_ignores_sigio_as((unsigned long) (int) rec->a3))

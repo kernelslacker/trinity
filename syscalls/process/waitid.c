@@ -170,7 +170,8 @@ out_release:
  * call is never refused.  The kernel reads the idtype and the options as
  * ints.
  */
-static int vet_final_waitid(struct syscallrecord *rec)
+static int vet_final_waitid(struct syscallrecord *rec,
+			    const struct syscallentry *entry __unused__)
 {
 	if (pidns_init_pid > 0 && (int) rec->a1 == P_ALL &&
 	    ((unsigned int) rec->a4 & (__WALL | __WCLONE)))

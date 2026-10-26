@@ -396,17 +396,20 @@ static void count_held_inside_buffer(void)
 	fake_untrack_regions();
 }
 
-/* The probe entry's final-slot rule: it counts its calls, keeps the record
- * and the count it was handed, and answers vet_final_verdict. */
+/* The probe entry's final-slot rule: it counts its calls, keeps the record,
+ * entry and count it was handed, and answers vet_final_verdict. */
 static unsigned int vet_final_calls;
 static const struct syscallrecord *vet_final_saw_rec;
+static const struct syscallentry *vet_final_saw_entry;
 static unsigned long vet_final_saw_count;
 static int vet_final_verdict;
 
-static int probe_vet_final(struct syscallrecord *r)
+static int probe_vet_final(struct syscallrecord *r,
+			   const struct syscallentry *entry)
 {
 	vet_final_calls++;
 	vet_final_saw_rec = r;
+	vet_final_saw_entry = entry;
 	vet_final_saw_count = r->a3;
 	return vet_final_verdict;
 }
@@ -457,7 +460,8 @@ static void vet_final_asked_first(void)
  * the record names, which a sibling's stray write can repoint: a record
  * naming an entry with no hook and no count slot is held to the probe's
  * hook and count rule when the probe is passed, and one naming the probe,
- * whose hook would refuse, is held to neither when the other is. */
+ * whose hook would refuse, is held to neither when the other is.  The
+ * hook is handed the passed entry too. */
 static void vet_final_from_the_dispatched_entry(void)
 {
 	struct syscallentry probe = {
@@ -490,9 +494,11 @@ static void vet_final_from_the_dispatched_entry(void)
 		rec.a3 = count;
 		vet_final_calls = 0;
 		vet_final_verdict = probed ? 0 : -1;
+		vet_final_saw_entry = NULL;
 		if (validate_arg_coupling(&rec, passed) != 0 ||
 		    vet_final_calls != (probed ? 1U : 0U) ||
-		    rec.a3 != (probed ? tail : count))
+		    rec.a3 != (probed ? tail : count) ||
+		    (probed && vet_final_saw_entry != &probe))
 			BUG("arg coupling: a rule came from the record's entry, not the one passed");
 	}
 
@@ -990,6 +996,38 @@ static void keyed_range_drops_cached_prot(void)
 		BUG("mprotect: a range left on the default key lost its cached prot");
 	if (prot_after_keyed_call(&plain_copy, LIVE_PKEY, whole) != rw)
 		BUG("mprotect: plain mprotect's fourth slot was taken for a key");
+	fake_this_child = NULL;
+}
+
+/* mprotect's hook moves a key a rewrite put in a4 into the snapshot for
+ * the entry the dispatcher passed: a pkey_mprotect call whose record a
+ * stray write repointed at plain mprotect still has a live key drop the
+ * mapping's cached prot. */
+static void keyed_range_known_through_the_dispatched_entry(void)
+{
+	struct syscallentry pkey_copy = syscall_pkey_mprotect;
+	struct syscallentry plain_copy = syscall_mprotect;
+	struct syscallrecord *mrec;
+
+	pkey_copy.is_pkey_mprotect = true;
+	for (;;) {
+		mrec = mm_call(&pkey_copy);
+		mrec->a3 = PROT_READ | PROT_WRITE;
+		mrec->a4 = 0;
+		pkey_copy.sanitise(mrec);
+		if (mrec->a2 != 0)
+			break;
+		mrec->retval = (unsigned long) -1L;
+		pkey_copy.post(mrec);
+	}
+	mrec->a4 = LIVE_PKEY;
+	mrec->entry = &plain_copy;
+	if (validate_arg_coupling(mrec, &pkey_copy) != 0)
+		BUG("mprotect: a range the sanitiser built was refused");
+	mrec->retval = 0;
+	pkey_copy.post(mrec);
+	if (pool_obj.map.prot != 0)
+		BUG("mprotect: the hook told the variant from the record, not the dispatched entry");
 	fake_this_child = NULL;
 }
 
@@ -3334,6 +3372,7 @@ void arg_coupling_self_check(void)
 	epoll_wait_events_held();
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
+	keyed_range_known_through_the_dispatched_entry();
 	munmap_range_held_to_mapping();
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();

@@ -300,7 +300,7 @@ int validate_arg_coupling(struct syscallrecord *rec,
 	 * The entry's own rule for its final slots (see .vet_final) runs
 	 * ahead of every rule below, which then judge what it repaired.
 	 */
-	if (entry->vet_final != NULL && entry->vet_final(rec) != 0)
+	if (entry->vet_final != NULL && entry->vet_final(rec, entry) != 0)
 		return -1;
 
 	/*

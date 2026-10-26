@@ -161,7 +161,8 @@ out_release:
  * the call is never refused.  The kernel reads the pid and the options as
  * ints.  waitpid takes the two in the same slots and shares this.
  */
-int vet_final_wait4(struct syscallrecord *rec)
+int vet_final_wait4(struct syscallrecord *rec,
+		    const struct syscallentry *entry __unused__)
 {
 	if (pidns_init_pid > 0 && (int) rec->a1 == -1 &&
 	    ((unsigned int) rec->a3 & (__WALL | __WCLONE)))

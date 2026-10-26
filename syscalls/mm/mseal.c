@@ -52,7 +52,8 @@ struct mseal_post_state {
  * of.  Shape, then ownership, then magic, as post_state_claim_owned()
  * orders them.
  */
-static int vet_final_mseal(struct syscallrecord *rec)
+static int vet_final_mseal(struct syscallrecord *rec,
+			   const struct syscallentry *entry)
 {
 	struct mseal_post_state *snap =
 		(struct mseal_post_state *) rec->post_state;
@@ -66,12 +67,12 @@ static int vet_final_mseal(struct syscallrecord *rec)
 	    (snap == NULL || snap->base == 0 ||
 	     !page_span_inside(&pages, snap->base, snap->size))) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise made\n",
-			  rec->entry->name);
+			  entry->name);
 		return -1;
 	}
 	if (snap != NULL && (rec->a3 == 0) != (snap->flags == 0)) {
 		outputerr("arg-coupling: %s rejected: the flags crossed 0 from the ones sanitise drew\n",
-			  rec->entry->name);
+			  entry->name);
 		return -1;
 	}
 	return 0;

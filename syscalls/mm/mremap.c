@@ -99,7 +99,8 @@ struct mremap_post_state {
  * Shape, then ownership, then magic, as post_state_claim_owned() orders
  * them.
  */
-static int vet_final_mremap(struct syscallrecord *rec)
+static int vet_final_mremap(struct syscallrecord *rec,
+			    const struct syscallentry *entry __unused__)
 {
 	struct mremap_post_state *snap =
 		(struct mremap_post_state *) rec->post_state;

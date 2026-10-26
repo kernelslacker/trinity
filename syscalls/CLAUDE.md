@@ -60,7 +60,10 @@ literals `tables/` copies into shared memory.
    A rule the sanitiser's vetting rests on, which a rewrite after it
    (chain substitution, a RedQueen pin) could undo, goes in `.vet_final`:
    `validate_arg_coupling()` runs it once on the slots the kernel is about
-   to read, ahead of its generic rules.  It may repair a slot in place and
+   to read, ahead of its generic rules, and hands it the entry the
+   dispatcher passed: a hook names the call and tells a shared variant
+   apart by that, never by `rec->entry`, which a stray write to the record
+   can repoint.  It may repair a slot in place and
    refresh the call's own `post_state` snapshot, and a non-zero return
    refuses the call (`fs/close_range.c` refuses a range other than the
    one its sanitiser vetted).

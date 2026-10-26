@@ -91,7 +91,8 @@ struct close_range_post_state {
  * Shape, then ownership, then magic, as post_state_claim_owned() orders
  * them: the first two keep the read of the third safe.
  */
-static int vet_final_close_range(struct syscallrecord *rec)
+static int vet_final_close_range(struct syscallrecord *rec,
+				 const struct syscallentry *entry)
 {
 	const struct close_range_post_state *snap =
 		(const struct close_range_post_state *) rec->post_state;
@@ -108,7 +109,7 @@ static int vet_final_close_range(struct syscallrecord *rec)
 
 refuse:
 	outputerr("arg-coupling: %s rejected: the slots are not the range sanitise vetted\n",
-		  rec->entry->name);
+		  entry->name);
 	return -1;
 }
 

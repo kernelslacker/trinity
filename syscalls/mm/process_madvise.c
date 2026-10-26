@@ -107,7 +107,8 @@ static bool pidfd_is_self(int fd)
  * the low 32 bits of the slot, never an array built here.  A count of 0,
  * or one past UIO_MAXIOV, reads none.  The advice is read as an int.
  */
-static int vet_final_process_madvise(struct syscallrecord *rec)
+static int vet_final_process_madvise(struct syscallrecord *rec,
+				     const struct syscallentry *entry __unused__)
 {
 	const struct iovec *iov = (const struct iovec *) rec->a2;
 	unsigned long vlen = rec->do32bit ? (unsigned int) rec->a3 : rec->a3;

@@ -59,7 +59,8 @@ struct mprotect_post_state {
  * of.  Shape, then ownership, then magic, as post_state_claim_owned()
  * orders them.
  */
-static int vet_final_mprotect(struct syscallrecord *rec)
+static int vet_final_mprotect(struct syscallrecord *rec,
+			      const struct syscallentry *entry)
 {
 	struct mprotect_post_state *snap =
 		(struct mprotect_post_state *) rec->post_state;
@@ -70,13 +71,13 @@ static int vet_final_mprotect(struct syscallrecord *rec)
 		range = &snap->range;
 	if (!map_range_vet(rec, range)) {
 		outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
-			  rec->entry->name);
+			  entry->name);
 		return -1;
 	}
 
 	if (range != NULL) {
 		snap->prot = rec->a3;
-		if (rec->entry->is_pkey_mprotect)
+		if (entry->is_pkey_mprotect)
 			snap->pkey = rec->a4;
 	}
 	return 0;

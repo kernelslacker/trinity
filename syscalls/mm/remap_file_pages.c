@@ -46,7 +46,8 @@ struct remap_file_pages_post_state {
  * range the kernel replaces nothing of.  Shape, then ownership, then
  * magic, as post_state_claim_owned() orders them.
  */
-static int vet_final_remap_file_pages(struct syscallrecord *rec)
+static int vet_final_remap_file_pages(struct syscallrecord *rec,
+				      const struct syscallentry *entry)
 {
 	struct remap_file_pages_post_state *snap =
 		(struct remap_file_pages_post_state *) rec->post_state;
@@ -67,7 +68,7 @@ static int vet_final_remap_file_pages(struct syscallrecord *rec)
 	}
 
 	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
-		  rec->entry->name);
+		  entry->name);
 	return -1;
 }
 

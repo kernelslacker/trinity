@@ -66,7 +66,8 @@ struct munmap_post_state {
  * range the kernel acts on nothing of.  Shape, then ownership, then
  * magic, as post_state_claim_owned() orders them.
  */
-static int vet_final_munmap(struct syscallrecord *rec)
+static int vet_final_munmap(struct syscallrecord *rec,
+			    const struct syscallentry *entry)
 {
 	struct munmap_post_state *snap =
 		(struct munmap_post_state *) rec->post_state;
@@ -79,7 +80,7 @@ static int vet_final_munmap(struct syscallrecord *rec)
 		return 0;
 
 	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
-		  rec->entry->name);
+		  entry->name);
 	return -1;
 }
 
