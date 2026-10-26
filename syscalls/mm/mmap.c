@@ -9,6 +9,8 @@
  * included (vet_final_mmap()).
  */
 #include <sys/mman.h>
+#include <linux/magic.h>
+#include <sys/vfs.h>
 #include <sys/stat.h>
 #include <string.h>
 #include "maps.h"
@@ -191,6 +193,31 @@ static int vet_final_mmap(struct syscallrecord *rec,
 	return -1;
 }
 
+/*
+ * How far a MAP_FIXED call of @len replaces: the kernel rounds the length
+ * up to the huge page size of a hugetlbfs file, or for an anonymous
+ * MAP_HUGETLB to the size its flags encode (ksys_mmap_pgoff()).
+ * ULONG_MAX when that rounding wraps.
+ */
+static unsigned long mmap_fixed_extent(unsigned long len, unsigned long flags,
+				       int fd)
+{
+	unsigned long huge = 0;
+	struct statfs sfs;
+
+	if (!(flags & MAP_ANONYMOUS)) {
+		if (fstatfs(fd, &sfs) == 0 && sfs.f_type == HUGETLBFS_MAGIC)
+			huge = sfs.f_bsize;
+	} else if (flags & MAP_HUGETLB) {
+		huge = hugetlb_flag_size(flags);
+	}
+	if (huge == 0 || (huge & (huge - 1)) != 0)
+		return len;
+	if (len > ULONG_MAX - (huge - 1))
+		return ULONG_MAX;
+	return (len + huge - 1) & ~(huge - 1);
+}
+
 static void sanitise_mmap(struct syscallrecord *rec)
 {
 	struct mmap_post_state *snap;
@@ -305,15 +332,20 @@ static void sanitise_mmap(struct syscallrecord *rec)
 	 * text low enough for a long range from 0 to reach, and only
 	 * mmap_min_addr, which CAP_SYS_RAWIO lifts, stands in between.
 	 * Drop MAP_FIXED and clear the hint so the kernel picks a free
-	 * slot instead.  MAP_FIXED_NOREPLACE returns -EEXIST on overlap
-	 * rather than punching, so leave it alone.
+	 * slot instead.  The range is judged as far as a huge page size
+	 * rounds the length up.  MAP_FIXED_NOREPLACE returns -EEXIST on
+	 * overlap rather than punching, so leave it alone.
 	 */
-	if ((rec->a4 & MAP_FIXED) &&
-	    (RANGE_OVERLAPS_SHARED_AUDITED("mmap", rec->a1, rec->a2) ||
-	     range_overlaps_libc_heap(rec->a1, rec->a2) ||
-	     range_overlaps_image(rec->a1, rec->a2))) {
-		rec->a4 &= ~MAP_FIXED;
-		rec->a1 = 0;
+	if (rec->a4 & MAP_FIXED) {
+		unsigned long extent = mmap_fixed_extent(rec->a2, rec->a4,
+							 (int) rec->a5);
+
+		if (RANGE_OVERLAPS_SHARED_AUDITED("mmap", rec->a1, extent) ||
+		    range_overlaps_libc_heap(rec->a1, extent) ||
+		    range_overlaps_image(rec->a1, extent)) {
+			rec->a4 &= ~MAP_FIXED;
+			rec->a1 = 0;
+		}
 	}
 
 	/*

@@ -3192,6 +3192,73 @@ static void mmap_fixed_off_image(void)
 	fake_this_child = NULL;
 }
 
+/* A huge page flag word names its size in the HUGETLB_FLAG_ENCODE bits,
+ * mmap's, shmget's and memfd_create's alike, or takes the kernel's default,
+ * a power of two of a page or more where there is one. */
+static void hugetlb_flag_size_read(void)
+{
+	unsigned long dflt = hugetlb_flag_size(MAP_HUGETLB);
+
+	if (hugetlb_flag_size(MAP_HUGETLB | (21UL << MAP_HUGE_SHIFT)) != MB(2) ||
+	    hugetlb_flag_size(SHM_HUGETLB | (30UL << MAP_HUGE_SHIFT)) != GB(1) ||
+	    hugetlb_flag_size(63UL << MAP_HUGE_SHIFT) != 1UL << 63)
+		BUG("hugetlb: an encoded huge page size was read wrongly");
+	if (dflt != 0 && (dflt < page_size || (dflt & (dflt - 1)) != 0))
+		BUG("hugetlb: the default huge page size is no power of two of a page or more");
+}
+
+/* An anonymous MAP_HUGETLB call has its length rounded up to the huge page
+ * size, and a MAP_FIXED one replaces that far.  With a region tracked
+ * halfway into the first huge page, every such call of the default size
+ * the sanitiser keeps from 0 would replace it, however short its length,
+ * so none is kept.  (MAP_UNINITIALIZED shares bit 26 with the size
+ * encoding, which then names 2 bytes: no huge page size, so the kernel
+ * refuses that call before it maps anything.) */
+static void mmap_fixed_held_to_huge_extent(void)
+{
+	static const unsigned long sizes[NR_MAPPING_SIZES] = {
+		4096, 8192, 16384, 32768, 65536, 131072, 262144, 393216, 524288,
+	};
+	unsigned long huge = hugetlb_flag_size(MAP_HUGETLB);
+	struct syscallentry mmap_entry = syscall_mmap;
+	unsigned long saved[NR_MAPPING_SIZES];
+	unsigned int i, huge_drawn = 0;
+
+	if (huge < MB(2) || range_overlaps_image(0, huge)) {
+		printf("(no default huge page size of 2 MiB or more clear of the image, skipping mmap's huge extent check) ");
+		return;
+	}
+
+	memcpy(saved, mapping_sizes, sizeof(saved));
+	memcpy(mapping_sizes, sizes, sizeof(sizes));
+	fake_random_fd_empty = true;
+	fake_rand_bitmask_draws = true;
+	fake_untrack_regions();
+	fake_track_region(huge / 2, page_size);
+	for (i = 0; i < 4 * MM_DRAWS; i++) {
+		struct syscallrecord *mrec = mm_call(&mmap_entry);
+		unsigned long flags;
+
+		mmap_entry.sanitise(mrec);
+		flags = mrec->a4;
+		if ((flags & (MAP_HUGETLB | MAP_ANONYMOUS)) ==
+		    (MAP_HUGETLB | MAP_ANONYMOUS) &&
+		    hugetlb_flag_size(flags) == huge) {
+			huge_drawn++;
+			if ((flags & MAP_FIXED) && !(flags & MAP_FIXED_NOREPLACE))
+				BUG("mmap: a MAP_FIXED huge page call that rounds up over a tracked region was kept");
+		}
+		mmap_entry.cleanup(mrec);
+	}
+	if (huge_drawn == 0)
+		BUG("mmap: the sanitiser never built an anonymous MAP_HUGETLB call");
+	fake_untrack_regions();
+	memcpy(mapping_sizes, saved, sizeof(saved));
+	fake_rand_bitmask_draws = false;
+	fake_random_fd_empty = false;
+	fake_this_child = NULL;
+}
+
 /* A shmat call the sanitiser built for segment @shmid over the mapping
  * fake_map_drawn names, redrawn until it keeps SHM_REMAP. */
 static void shmat_remap_drawn(int shmid, bool compat)
@@ -3547,6 +3614,8 @@ void arg_coupling_self_check(void)
 	mincore_held_to_vec();
 	mmap_fixed_held_to_vetted_call();
 	mmap_fixed_off_image();
+	hugetlb_flag_size_read();
+	mmap_fixed_held_to_huge_extent();
 	shmat_remap_held_to_vetted_call();
 	ipc_shmat_held();
 }

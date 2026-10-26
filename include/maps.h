@@ -215,6 +215,7 @@ bool map_range_pages(unsigned long addr, unsigned long len, bool compat,
  * Whether @pages lie inside a mapping made @size bytes long at @base, a
  * pool mapping or any other: [base, base + PAGE_ALIGN(size)).
  */
+unsigned long hugetlb_flag_size(unsigned long flags);
 bool page_span_inside(const struct page_span *pages, unsigned long base,
 		      unsigned long size);
 

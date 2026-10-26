@@ -1,4 +1,6 @@
 #include <stdbool.h>
+#include <stdio.h>
+#include <sys/mman.h>
 
 #include "arch.h"
 #include "child.h"
@@ -145,6 +147,41 @@ bool map_range_pages(unsigned long addr, unsigned long len, bool compat,
 	pages->start = addr;
 	pages->end = addr + len;
 	return pages->end > addr;
+}
+
+/*
+ * The huge page size a MAP_HUGETLB, SHM_HUGETLB or MFD_HUGETLB call gets
+ * from @flags, which encode it the same way (HUGETLB_FLAG_ENCODE): the
+ * size the encoded log names, or the kernel's default when it names none,
+ * which /proc/meminfo reports as Hugepagesize and is read once.  0 when
+ * there is no default to read.
+ */
+unsigned long hugetlb_flag_size(unsigned long flags)
+{
+	static unsigned long default_size;
+	static bool default_read;
+	unsigned int log = (flags >> MAP_HUGE_SHIFT) & MAP_HUGE_MASK;
+	unsigned long kib;
+	char line[128];
+	FILE *f;
+
+	if (log != 0)
+		return 1UL << log;
+
+	if (!default_read) {
+		default_read = true;
+		f = fopen("/proc/meminfo", "r");
+		if (f != NULL) {
+			while (fgets(line, sizeof(line), f) != NULL) {
+				if (sscanf(line, "Hugepagesize: %lu kB", &kib) == 1) {
+					default_size = kib * 1024;
+					break;
+				}
+			}
+			fclose(f);
+		}
+	}
+	return default_size;
 }
 
 /*
