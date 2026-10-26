@@ -98,7 +98,10 @@ every translation unit lives under one of the directories below.
   still breaks on the older header. For an enum value or struct member, add a
   `configure` compile-test that emits `#define HAVE_<SYMBOL> 1` into `config.h`
   and `#ifdef HAVE_<SYMBOL>` at the use site (see the `IOMMU_HWPT_ALLOC_PASID`
-  and `IOMMU_HW_INFO_FLAG_INPUT_TYPE` probes).
+  and `IOMMU_HW_INFO_FLAG_INPUT_TYPE` probes).  For an enum value a mirror
+  header falls back on, `check_enum_member HEADER SYMBOL...` in `configure` is
+  the probe and the fallback goes under `#ifndef HAVE_<SYMBOL>`, as in
+  `include/kernel/nexthop.h`.
 
 ## Build & static checks
 

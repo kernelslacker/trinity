@@ -42,6 +42,39 @@ check_header()
 	fi
 }
 
+# check_enum_member HEADER SYMBOL...: an enum member is not a preprocessor
+# symbol, so the #ifndef in a shim header cannot tell whether HEADER has it.
+# Compile-test each member and emit HAVE_<SYMBOL>; the shim header defines
+# its fallback under #ifndef HAVE_<SYMBOL>.
+check_enum_member()
+{
+	local hdr="$1" sym
+	shift
+
+	for sym in "$@"; do
+		echo -n "[*] Checking if $hdr has $sym.. "
+		rm -f "$TMP" || exit 1
+
+		cat >"$TMP.c" << EOF
+#include <$hdr>
+
+int main(void)
+{
+	return $sym;
+}
+EOF
+
+		${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+		if [ ! -x "$TMP" ]; then
+			echo $RED "[NO]" $COL_RESET
+			MISSING_DEFS=1
+		else
+			echo $GREEN "[YES]" $COL_RESET
+			echo "#define HAVE_$sym 1" >> $CONFIGH
+		fi
+	done
+}
+
 #############################################################################################
 
 echo "[*] Checking system headers."
@@ -522,6 +555,14 @@ else
 	echo $GREEN "[mnt_ns_fd]" $COL_RESET
 	echo "#define HAVE_MNT_ID_REQ_MNT_NS_FD 1" >> $CONFIGH
 fi
+
+#############################################################################################
+# Enum members the include/kernel/ shim headers fall back on, each defined
+# there under #ifndef HAVE_<SYMBOL>.  RTA_DEL_REASON and NHA_DST_PORT were
+# added in 7.3.
+#
+check_enum_member linux/rtnetlink.h RTA_DEL_REASON
+check_enum_member linux/nexthop.h NHA_DST_PORT
 
 #############################################################################################
 

@@ -6,6 +6,9 @@
   If for some reason you can't detect presence of a definition in a header file
   (or need to test prescence of a header file), add it to configure. This should
   be a last resort, in most cases an #ifndef addition to kernel fallback headers will be enough.
+  An enum member is the exception: it is not a macro, so #ifndef cannot detect it.  Probe it
+  with check_enum_member in configure, which emits HAVE_<SYMBOL>, and put the fallback in the
+  kernel fallback header under #ifndef HAVE_<SYMBOL>.
 
   `make uapi-check [KERNEL_SRC=<kernel git tree>]` finds what such a build would trip over
   before anyone has to.  KERNEL_SRC defaults to $HOME/src/kernel/git-trees/linux.  It
