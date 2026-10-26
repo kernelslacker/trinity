@@ -25,9 +25,6 @@
 #ifndef CTA_SECCTX
 #define CTA_SECCTX         19
 #endif
-#ifndef CTA_TIMESTAMP_EVENT
-#define CTA_TIMESTAMP_EVENT 27
-#endif
 
 static const struct nfnl_cmd_grammar ctnetlink_cmds[] = {
 	{ IPCTNL_MSG_CT_NEW,             "IPCTNL_MSG_CT_NEW" },
@@ -53,6 +50,9 @@ static const struct nfnl_cmd_grammar ctnetlink_exp_cmds[] = {
  * on.  Lengths follow the kernel's nla_policy maximums.  The nests are bare
  * NLA_NESTED there (max_len 0 here); the handlers parse them against
  * tuple_nla_policy, help_nla_policy, protoinfo_policy and the like.
+ * CTA_TIMESTAMP_EVENT is left out: ct_nla_policy marks it NLA_REJECT, so the
+ * four commands that carry that policy answer a message with it -EINVAL
+ * before the handler runs.
  */
 static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_TUPLE_ORIG,     NLA_KIND_NESTED, 0 },
@@ -81,7 +81,6 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
 	{ CTA_SECMARK,        NLA_KIND_U32,    4 },
 	{ CTA_SECCTX,         NLA_KIND_NESTED, 0 },
-	{ CTA_TIMESTAMP_EVENT, NLA_KIND_NESTED, 0 },
 };
 
 /*
