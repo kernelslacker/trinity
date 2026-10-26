@@ -26,9 +26,14 @@
 #endif
 #ifndef MACSEC_CMD_UPD_OFFLOAD
 /* MACSEC_CMD_UPD_OFFLOAD appended to enum macsec_nl_commands in 5.7; the
- * original 4.6 enum stopped at MACSEC_CMD_UPD_RXSA = 10. */
-#define MACSEC_CMD_UPD_OFFLOAD		11
+ * original 4.6 enum stopped at MACSEC_CMD_UPD_RXSA = 9. */
+#define MACSEC_CMD_UPD_OFFLOAD		10
 #endif
+/* The enum has no UNSPEC entry, so it counts from GET_TXSC = 0.  The macro
+ * above shadows the real member on every host, so this is the only check
+ * its number gets. */
+_Static_assert(MACSEC_CMD_UPD_OFFLOAD == MACSEC_CMD_UPD_RXSA + 1,
+	       "MACSEC_CMD_UPD_OFFLOAD follows MACSEC_CMD_UPD_RXSA in the uapi enum");
 #ifndef MACSEC_SA_ATTR_SSCI
 /* SSCI / SALT appended to enum macsec_sa_attrs in 5.7 to carry the XPN
  * (Extended Packet Number) short SCI and 96-bit salt; the original 4.6
