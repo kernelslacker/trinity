@@ -14,6 +14,8 @@
 #include <linux/msg.h>
 #include <linux/shm.h>
 #include <string.h>
+#include <unistd.h>
+#include "ipc-common.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -101,66 +103,20 @@ static void sanitise_ipc_semget(struct syscallrecord *rec)
 		rec->a4 |= IPC_EXCL;
 }
 
-static void sanitise_semctl_cmd_stat(struct syscallrecord *rec)
-{
-	struct semid_ds *buf;
-	buf = (struct semid_ds *) get_call_writable_struct(rec, sizeof(*buf));
-	if (!buf)
-		return;
-	memset(buf, 0, sizeof(*buf));
-	rec->a5 = (unsigned long) buf;
-	avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
-}
-
-static void sanitise_semctl_cmd_setval(struct syscallrecord *rec)
-{
-	unsigned long *slot;
-
-	/*
-	 * The ipc() multiplexer reads the union semun through ptr:
-	 *   get_user(arg, (unsigned long __user *)ptr)
-	 * so a5 must point at a writable slot holding the value,
-	 * not carry the value itself.
-	 */
-	slot = (unsigned long *) get_call_writable_struct(rec, sizeof(*slot));
-	if (!slot)
-		return;
-	*slot = rnd_modulo_u32(32768);
-	rec->a5 = (unsigned long) slot;
-}
-
-static void sanitise_semctl_cmd_getall(struct syscallrecord *rec)
-{
-	unsigned short *arr;
-	unsigned int nsems = 1 + (rnd_modulo_u32(32));
-	unsigned int j;
-	arr = (unsigned short *) get_call_writable_struct(rec, nsems * sizeof(*arr));
-	if (!arr)
-		return;
-	for (j = 0; j < nsems; j++)
-		arr[j] = rnd_modulo_u32(32768);
-	rec->a5 = (unsigned long) arr;
-	avoid_shared_buffer_inout(&rec->a5, nsems * sizeof(*arr));
-}
-
-static void sanitise_semctl_cmd_info(struct syscallrecord *rec)
-{
-	/* Kernel writes struct seminfo */
-	void *buf;
-	buf = get_call_writable_struct(rec, 256);
-	if (!buf)
-		return;
-	memset(buf, 0, 256);
-	rec->a5 = (unsigned long) buf;
-	avoid_shared_buffer_inout(&rec->a5, 256);
-}
-
 static void sanitise_ipc_semctl(struct syscallrecord *rec)
 {
 	/*
-	 * first=semid, second=semnum, third=cmd,
-	 * ptr=union semun (for IPC_SET/GETALL/SETALL/SETVAL)
+	 * first=semid, second=semnum, third=cmd, ptr=union semun.
+	 *
+	 * ksys_ipc() reads the semun through ptr, get_user() of an unsigned
+	 * long (a u32 for a compat call), before it looks at the command, so
+	 * ptr names a slot for every command: SETVAL's value, or the address
+	 * of the buffer a command takes, which the call has to reach too.
+	 * The other commands ignore what the slot holds.
 	 */
+	static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
+	unsigned long *slot, val = rnd_modulo_u32(SEMVMX + 1);
+	size_t len = 0;
 	int cmd;
 
 	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_sem();
@@ -172,20 +128,56 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 	case IPC_STAT:
 	case IPC_SET:
 	case SEM_STAT:
-		sanitise_semctl_cmd_stat(rec);
-		break;
-	case SETVAL:
-		sanitise_semctl_cmd_setval(rec);
-		break;
-	case GETALL:
-	case SETALL:
-		sanitise_semctl_cmd_getall(rec);
+	case SEM_STAT_ANY:
+		len = sizeof(struct semid_ds);
 		break;
 	case IPC_INFO:
 	case SEM_INFO:
-		sanitise_semctl_cmd_info(rec);
+		len = sizeof(struct seminfo);
+		break;
+	case GETALL:
+	case SETALL:
+		len = SEMCTL_ARRAY_SLOTS * sizeof(unsigned short);
 		break;
 	}
+
+	if (len != 0) {
+		void *buf = get_call_writable_struct(rec, len);
+
+		if (buf == NULL)
+			return;
+		memset(buf, 0, len);
+		val = (unsigned long) buf;
+	}
+
+	if (cmd == SETALL) {
+		unsigned short *arr = (unsigned short *) val;
+		unsigned int i;
+
+		for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
+			arr[i] = rnd_modulo_u32(SEMVMX + 1);
+	} else if (cmd == IPC_SET) {
+		struct semid_ds *ds = (struct semid_ds *) val;
+
+		/*
+		 * As semctl()'s IPC_SET: without these the call fires EPERM
+		 * or installs mode 0, which locks the set out of every later
+		 * operation.  A compat call's old layout packs the ids into
+		 * 16 bits; IPC_64's has uid, gid and mode where the native
+		 * struct does (compat_ipc64_perm).
+		 */
+		ds->sem_perm.uid = getuid();
+		ds->sem_perm.gid = getgid();
+		ds->sem_perm.mode = mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
+		if (rec->do32bit)
+			rec->a4 |= IPC_64;
+	}
+
+	slot = (unsigned long *) get_call_writable_struct(rec, sizeof(*slot));
+	if (slot == NULL)
+		return;
+	*slot = val;
+	rec->a5 = (unsigned long) slot;
 }
 
 static void sanitise_ipc_msgsnd(struct syscallrecord *rec)

@@ -33,17 +33,6 @@ static unsigned long semctl_cmds[] = {
 #define SEMCTL_FALLBACK_NSEMS	32
 
 /*
- * Upper bound on the unsigned-short array we hand the kernel for
- * SETALL / GETALL.  Has to cover the worst-case nsems we let semget()
- * create (its ARG_RANGE hi is 250); 256 entries == 512 bytes leaves
- * headroom over that without inflating the per-call alloc.  Avoids
- * the OOB-read footgun where the kernel walks N entries from the
- * caller buffer using the set's real nsems, not whatever bound the
- * fuzzer-side allocator thought it was using.
- */
-#define SEMCTL_ARRAY_SLOTS	256
-
-/*
  * union semun is glibc-private and not declared in any header; callers
  * must provide their own per the semctl(2) man page.
  */

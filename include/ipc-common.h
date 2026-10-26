@@ -5,6 +5,17 @@
 struct syscallrecord;
 
 /*
+ * Upper bound on the unsigned-short array handed to the kernel for
+ * SETALL / GETALL, by semctl() and by ipc()'s SEMCTL.  Has to cover the
+ * worst-case nsems we let semget() create (its ARG_RANGE hi is 250);
+ * 256 entries == 512 bytes leaves headroom over that without inflating
+ * the per-call alloc.  Avoids the OOB-read footgun where the kernel
+ * walks N entries from the caller buffer using the set's real nsems,
+ * not whatever bound the fuzzer-side allocator thought it was using.
+ */
+#define SEMCTL_ARRAY_SLOTS	256
+
+/*
  * Shared post-state snap for the shmctl/msgctl IPC_STAT / IPC_INFO
  * out-buffer path.  Fields:
  *   magic       - cookie verified in the post handler after the

@@ -24,6 +24,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <linux/mempolicy.h>
+#include <linux/posix_types.h>
 
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
@@ -4405,9 +4406,22 @@ int get_random_sysv_shm(void)
 	return 0;
 }
 
-/* ipc()'s call numbers for msgrcv, shmat, shmdt and shmget, from
- * <linux/ipc.h>, which cannot share a file with <sys/shm.h>. */
-enum { IPC_MSGRCV = 12, IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23 };
+/* ipc()'s call numbers and the SEMCTL commands, flags and fields the tests
+ * below use, from <linux/ipc.h> and <linux/sem.h>, which cannot share a
+ * file with <sys/shm.h>. */
+enum { IPC_SEMCTL = 3, IPC_MSGRCV = 12, IPC_SHMAT = 21, IPC_SHMDT = 22,
+       IPC_SHMGET = 23 };
+enum { KERNEL_IPC_64 = 0x0100, KERNEL_GETALL = 13, KERNEL_SETVAL = 16,
+       KERNEL_SETALL = 17, KERNEL_SEM_STAT = 18, KERNEL_SEM_INFO = 19,
+       KERNEL_SEM_STAT_ANY = 20, KERNEL_SEMVMX = 32767 };
+struct kernel_ipc_perm {
+	int key;
+	__kernel_uid_t uid;
+	__kernel_gid_t gid;
+	__kernel_uid_t cuid;
+	__kernel_gid_t cgid;
+	__kernel_mode_t mode;
+};
 
 /* An ipc() SHMAT call the sanitiser built. */
 static void ipc_shmat_built(bool compat)
@@ -4532,6 +4546,94 @@ static void ipc_shmat_held(void)
 	}
 }
 
+/* Whether @len bytes at @addr lie where @rec's call reaches them: in the
+ * writable pool, or for a compat call below 4 GiB. */
+static bool ipc_buffer_reachable(const struct syscallrecord *r,
+				 unsigned long addr, unsigned long len)
+{
+	if (r->do32bit)
+		return addr != 0 && addr <= (1UL << 32) - len;
+	return range_in_writable_pool(addr, len);
+}
+
+/* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
+ * an unsigned long or a compat call's u32, so every SEMCTL the sanitiser
+ * builds has ptr name a slot the call reaches.  For a command that takes
+ * a buffer the slot holds its address, the buffer lying where the call
+ * reaches too, and an array as long as the largest set semget() makes,
+ * since the kernel walks the set's own count: IPC_STAT, IPC_SET,
+ * SEM_STAT, SEM_STAT_ANY, IPC_INFO, SEM_INFO, GETALL and SETALL.  SETALL's
+ * values and SETVAL's fit SEMVMX.  IPC_SET gives the set the caller's own
+ * uid and gid and a readable mode, and a compat IPC_SET carries IPC_64,
+ * the layout whose uid, gid and mode lie where the native struct's do. */
+static void ipc_semctl_semun_through_ptr(void)
+{
+	unsigned int i, seen_buffer = 0;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		unsigned long slot, val;
+		int cmd;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ipc;
+#ifdef ARCH_IS_BIARCH
+		rec.do32bit = i & 1;
+#endif
+		rec.a1 = IPC_SEMCTL;
+		syscall_ipc.sanitise(&rec);
+		cmd = (int) rec.a4 & ~KERNEL_IPC_64;
+		slot = rec.a5;
+		if (!ipc_buffer_reachable(&rec, slot, sizeof(unsigned long)))
+			BUG("ipc: a SEMCTL's ptr names no slot the call reaches");
+		val = *(unsigned long *) slot;
+
+		switch (cmd) {
+		case IPC_STAT:
+		case IPC_SET:
+		case KERNEL_SEM_STAT:
+		case KERNEL_SEM_STAT_ANY:
+		case IPC_INFO:
+		case KERNEL_SEM_INFO:
+			/* A seminfo's ten ints, the smallest of them. */
+			if (!ipc_buffer_reachable(&rec, val, 10 * sizeof(int)))
+				BUG("ipc: a SEMCTL's semun names no buffer the call reaches");
+			seen_buffer++;
+			break;
+		case KERNEL_GETALL:
+		case KERNEL_SETALL: {
+			const unsigned short *arr = (const unsigned short *) val;
+			unsigned int j;
+
+			if (!ipc_buffer_reachable(&rec, val, 256 * sizeof(*arr)))
+				BUG("ipc: a SEMCTL's array does not hold the largest set");
+			for (j = 0; cmd == KERNEL_SETALL && j < 256; j++)
+				if (arr[j] > KERNEL_SEMVMX)
+					BUG("ipc: a SETALL value is past SEMVMX");
+			seen_buffer++;
+			break;
+		}
+		case KERNEL_SETVAL:
+			if (val > KERNEL_SEMVMX)
+				BUG("ipc: a SETVAL value is past SEMVMX");
+			break;
+		}
+
+		if (cmd == IPC_SET) {
+			const struct kernel_ipc_perm *perm =
+				(const struct kernel_ipc_perm *) val;
+
+			if (perm->uid != getuid() || perm->gid != getgid() ||
+			    !(perm->mode & 0400))
+				BUG("ipc: an IPC_SET hands the set someone else's ownership or no read access");
+			if (rec.do32bit != !!(rec.a4 & KERNEL_IPC_64))
+				BUG("ipc: an IPC_SET's layout is not the one its buffer has");
+		}
+		syscall_ipc.cleanup(&rec);
+	}
+	if (seen_buffer == 0)
+		BUG("ipc: the sanitiser never drew a SEMCTL that takes a buffer");
+}
+
 #ifdef ARCH_IS_BIARCH
 /* ipc() is in the i386 table alone, so on x86-64 every call is compat and
  * reaches compat_ksys_ipc(), which reads each pointer slot as its low 32
@@ -4608,6 +4710,7 @@ void arg_coupling_self_check(void)
 	mmap_fixed_held_to_huge_extent();
 	shmat_remap_held_to_vetted_call();
 	ipc_shmat_held();
+	ipc_semctl_semun_through_ptr();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
 #endif
