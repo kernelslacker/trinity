@@ -5,7 +5,7 @@
 The audit in `docs/ns-capable-audit.md` classifies every admin-gated surface
 into three classes based on the kernel-side capability gate:
 
-- **Class 1** (`capable(CAP_*)`, 39 entries) — routes to
+- **Class 1** (`capable(CAP_*)`, 40 entries) — routes to
   `ns_capable(&init_user_ns, cap)` at task level.  Permanently dead under
   capset-to-empty because the child holds no capabilities in `init_user_ns`.
 
@@ -15,13 +15,13 @@ into three classes based on the kernel-side capability gate:
   owner of the object's enclosing namespace.
 
 - **Class 3** (`ns_capable(&init_user_ns, ...)` or object always host-owned,
-  61 entries) — dead, equivalent to class 1 for the same reason.
+  261 entries) — dead, equivalent to class 1 for the same reason.
 
 The two subtypes of class-2 surfaces that are first-in-line for the unlock are:
 
 | Gate | Representative surfaces | Required namespaces |
 |---|---|---|
-| `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` | batadv (~15 cmds), ovs (~14 cmds), l2tp (8 cmds), tipc (~12 cmds), mptcp_pm (9 cmds), ethtool (~25 cmds), wireguard (2 cmds), nl80211 (~96 cmds), netdev BIND_RX | CLONE_NEWUSER + CLONE_NEWNET |
+| `GENL_UNS_ADMIN_PERM` → `ns_capable(net->user_ns, CAP_NET_ADMIN)` | batadv (15 cmds), ovs (14 cmds), l2tp (8 cmds), tipc (12 cmds), mptcp_pm (9 cmds), ethtool (25 cmds), wireguard (2 cmds), nl80211 (96 cmds), netdev BIND_RX | CLONE_NEWUSER + CLONE_NEWNET |
 | `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` | FIFREEZE, FITHAW | CLONE_NEWUSER + CLONE_NEWNS + child-owned mount |
 
 Class-3 surfaces (`GENL_ADMIN_PERM`) route through `netlink_capable()` which
@@ -194,7 +194,7 @@ Specifically, within the `GENL_UNS_ADMIN_PERM` group, the **batadv** and
 **l2tp** genl families are the first opt-in candidates: both have small,
 well-understood cmd sets (15 and 8 cmds respectively) and their handlers
 operate entirely within the child's private netns without touching host
-routing tables.  nl80211 (~96 cmds) is the largest surface but requires
+routing tables.  nl80211 (96 cmds) is the largest surface but requires
 a mac80211 virtual PHY in the private netns — a pre-condition that needs its
 own childop setup; it follows after the simpler families are confirmed working.
 
