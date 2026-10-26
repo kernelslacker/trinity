@@ -65,6 +65,7 @@ static inline unsigned long maps_pick_read_cycles(void)
 	unsigned long v;
 
 	__asm__ volatile("rdtime %0" : "=r"(v));
+	return v;
 #elif defined(__loongarch64)
 	unsigned long v;
 
