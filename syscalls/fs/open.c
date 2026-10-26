@@ -2,6 +2,7 @@
 #include <fcntl.h>
 #include <linux/magic.h>
 #include <stdio.h>
+#include <string.h>
 #include <sys/stat.h>
 #include <sys/vfs.h>
 #include <unistd.h>
@@ -95,6 +96,20 @@ struct openat_post_state {
 	struct timespec ctime;
 };
 
+/*
+ * Whether @path ends in a name.  A last component that is empty, "." or
+ * "..", as after a trailing '/', has the walk follow a symlink before it,
+ * lstat()'s included.
+ */
+static bool path_ends_in_a_name(const char *path)
+{
+	const char *last = strrchr(path, '/');
+
+	last = last != NULL ? last + 1 : path;
+	return strcmp(last, "") != 0 && strcmp(last, ".") != 0 &&
+	       strcmp(last, "..") != 0;
+}
+
 static void sanitise_openat(struct syscallrecord *rec)
 {
 	struct stat st;
@@ -150,12 +165,17 @@ static void sanitise_openat(struct syscallrecord *rec)
 	 * Look the path up for the oracle in post_openat(), for the shape it
 	 * judges.  A symlink is left out: a procfs magic link can move and
 	 * come back between two lookups, and its fd is the target's, which
-	 * fstatfs() cannot place.  O_NOFOLLOW changes only what a trailing
-	 * symlink opens, so any other path is judged with it or without.
+	 * fstatfs() cannot place.  So is a path that does not end in a name,
+	 * whose lookup follows a final symlink as the open does, past what
+	 * S_ISLNK() can see.  The name is read only once lstat() has, so the
+	 * kernel has seen a string there.  O_NOFOLLOW changes only what a
+	 * trailing symlink opens, so any other path is judged with it or
+	 * without.
 	 */
 	if ((rec->a3 & O_PATH) &&
 	    (int) rec->a1 == AT_FDCWD && rec->a2 != 0 &&
-	    lstat((const char *) rec->a2, &st) == 0 && !S_ISLNK(st.st_mode)) {
+	    lstat((const char *) rec->a2, &st) == 0 && !S_ISLNK(st.st_mode) &&
+	    path_ends_in_a_name((const char *) rec->a2)) {
 		struct openat_post_state *snap = zmalloc_tracked(sizeof(*snap));
 
 		snap->magic = OPENAT_POST_STATE_MAGIC;

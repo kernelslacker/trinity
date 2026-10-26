@@ -2704,6 +2704,35 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	if (fd >= 0)
 		close(fd);
 
+	/* A path ending in '/', "." or ".." has lstat() follow a final
+	 * symlink just as the open does, so such a path is left out as a
+	 * symlink is: each of these names the directory through a link, and
+	 * the fd handed back is a file. */
+	oracle_files();
+	{
+		char link_path[sizeof(oracle_template) + 2];
+		char tails[3][sizeof(link_path) + 3];
+		unsigned int t;
+
+		snprintf(link_path, sizeof(link_path), "%s/l", oracle_dir);
+		if (symlink(oracle_dir, link_path) != 0)
+			BUG("fd pool: cannot make a symlink for the O_PATH oracle");
+		snprintf(tails[0], sizeof(tails[0]), "%s/", link_path);
+		snprintf(tails[1], sizeof(tails[1]), "%s/.", link_path);
+		snprintf(tails[2], sizeof(tails[2]), "%s/..", link_path);
+		inconclusive = OPENAT_INCONCLUSIVE;
+		for (t = 0; t < ARRAY_SIZE(tails); t++) {
+			sanitise_openat_path(tails[t]);
+			fd = open_o_path(oracle_a);
+			check("a path ending past a symlink was judged", "openat",
+			      post_openat_path(fd) == 0);
+			close(fd);
+		}
+		check("a path ending past a symlink was counted as inconclusive",
+		      "openat", OPENAT_INCONCLUSIVE == inconclusive);
+		unlink(link_path);
+	}
+
 	/* The link names b for the open and a again for the later lookup, so
 	 * the lookups agree and the fd differs from both. */
 	oracle_files();
