@@ -73,7 +73,7 @@ static void fail(const char *msg, size_t alloc_size, void *expected,
  * Assertion: the first four bytes of the freed slot (its next-chain
  * link) are identical before and after the second free call.
  */
-static void xfail_double_free_chain(void)
+static void double_free_keeps_chain(void)
 {
 	char *slot_a, *slot_b;
 	uint32_t link_before, link_after;
@@ -118,7 +118,7 @@ static void xfail_double_free_chain(void)
  * Assertion: bytes at the interior stride offset are byte-identical
  * before and after the bogus free call.
  */
-static void xfail_interior_ptr_corruption(void)
+static void interior_free_keeps_live_slot(void)
 {
 	char *big;
 	char before_buf[SHARED_FREELIST_SLOT_STRIDE];
@@ -165,7 +165,7 @@ static void xfail_interior_ptr_corruption(void)
  * Assertion: every byte in the target range retains its sentinel
  * value after the bogus free call.
  */
-static void xfail_uncarved_ptr_write(void)
+static void uncarved_free_is_noop(void)
 {
 	char *slot_a, *uncarved;
 	unsigned int i;
@@ -212,7 +212,7 @@ static void xfail_uncarved_ptr_write(void)
  * buckets' freelists must remain unaffected (no cross-bucket
  * leakage).
  */
-static void pass_bucket_roundtrip(void)
+static void bucket_roundtrip(void)
 {
 	unsigned int i;
 
@@ -226,7 +226,7 @@ static void pass_bucket_roundtrip(void)
 
 		slot = alloc_shared_str(alloc_size);
 		if (slot == NULL)
-			fail("pass_bucket_roundtrip: initial alloc failed",
+			fail("bucket_roundtrip: initial alloc failed",
 			     alloc_size, NULL, NULL);
 
 		/* Fill with a per-bucket sentinel so a stale-slot pop
@@ -239,18 +239,18 @@ static void pass_bucket_roundtrip(void)
 
 		slot2 = alloc_shared_str(alloc_size);
 		if (slot2 == NULL)
-			fail("pass_bucket_roundtrip: re-alloc returned NULL "
+			fail("bucket_roundtrip: re-alloc returned NULL "
 			     "(freelist empty -- wrong-bucket free?)",
 			     alloc_size, slot, NULL);
 		if (slot2 != slot)
-			fail("pass_bucket_roundtrip: wrong-bucket free "
+			fail("bucket_roundtrip: wrong-bucket free "
 			     "(re-alloc did not recycle the freed slot)",
 			     alloc_size, slot, slot2);
 
 		/* Freelist pop zeroes the slot on success. */
 		for (j = 0; j < bucket_bytes; j++) {
 			if (slot2[j] != 0)
-				fail("pass_bucket_roundtrip: slot not zeroed "
+				fail("bucket_roundtrip: slot not zeroed "
 				     "after freelist pop",
 				     alloc_size, slot, slot2);
 		}
@@ -265,11 +265,11 @@ static void pass_bucket_roundtrip(void)
 		 * occurred, the pop would return something else or NULL. */
 		slot = alloc_shared_str(alloc_size);
 		if (slot == NULL)
-			fail("pass_bucket_roundtrip: cross-bucket check alloc "
+			fail("bucket_roundtrip: cross-bucket check alloc "
 			     "returned NULL",
 			     alloc_size, slot2, NULL);
 		if (slot != slot2)
-			fail("pass_bucket_roundtrip: cross-bucket leakage "
+			fail("bucket_roundtrip: cross-bucket leakage "
 			     "(unexpected pointer on freelist)",
 			     alloc_size, slot2, slot);
 
@@ -344,10 +344,10 @@ void shared_str_heap_free_size_check(void)
 	/* === four additional free_shared_str() corruption cases === */
 
 	/* Cases 1-3: regression assertions for the shared-str provenance fix. */
-	xfail_double_free_chain();
-	xfail_interior_ptr_corruption();
-	xfail_uncarved_ptr_write();
+	double_free_keeps_chain();
+	interior_free_keeps_live_slot();
+	uncarved_free_is_noop();
 
 	/* Case 4: round-trip across every bucket. */
-	pass_bucket_roundtrip();
+	bucket_roundtrip();
 }
