@@ -2466,23 +2466,45 @@ static void process_madvise_guard_install_held(void)
 	{
 		pid_t saved_pid = cached_pid;
 		int self = syscall(__NR_pidfd_open, getpid(), 0);
+		unsigned int c;
 
 		if (self < 0)
 			return;
 
-		/* A pidfd for this process takes the sanitiser's self path. */
+		/* A pidfd for this process takes the sanitiser's self path,
+		 * where a GUARD_INSTALL gets a throwaway mapping of its own:
+		 * the first iovec names pages of it, the others none, and the
+		 * cleanup unmaps it.  An iovec put back on the pool mapping
+		 * is refused. */
 		cached_pid = getpid();
-		for (i = 0; i < 3; i++)
-			iov[i].iov_len = page_size;
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_process_madvise;
-		rec.a1 = (unsigned long) self;
-		rec.a2 = (unsigned long) iov;
-		rec.a3 = 3;
-		rec.a4 = guard | (1UL << 32);
-		syscall_process_madvise.sanitise(&rec);
-		if (validate_arg_coupling(&rec, rec.entry) != 0)
-			BUG("process_madvise: a guard install its sanitiser built was refused");
+		for (c = 0; c < 2; c++) {
+			unsigned char vec;
+			char *own;
+
+			for (i = 0; i < 3; i++)
+				iov[i].iov_len = page_size;
+			memset(&rec, 0, sizeof(rec));
+			rec.entry = &syscall_process_madvise;
+			rec.a1 = (unsigned long) self;
+			rec.a2 = (unsigned long) iov;
+			rec.a3 = 3;
+			rec.a4 = guard | (1UL << 32);
+			syscall_process_madvise.sanitise(&rec);
+			own = iov[0].iov_base;
+			if (iov[0].iov_len == 0 || iov[1].iov_len != 0 ||
+			    iov[2].iov_len != 0 ||
+			    mincore(own, page_size, &vec) != 0)
+				BUG("process_madvise: a guard install was not given a mapping of its own");
+			if (c == 1) {
+				iov[2].iov_base = (void *) POOL_MAP;
+				iov[2].iov_len = page_size;
+			}
+			if (validate_arg_coupling(&rec, rec.entry) != (c == 1 ? -1 : 0))
+				BUG("process_madvise: a guard install was judged wrongly against its own mapping");
+			syscall_process_madvise.cleanup(&rec);
+			if (mincore(own, page_size, &vec) == 0)
+				BUG("process_madvise: a guard install's own mapping was left behind");
+		}
 
 		/* A compat one too, though it reads no array built here. */
 		memset(&rec, 0, sizeof(rec));
@@ -2495,6 +2517,7 @@ static void process_madvise_guard_install_held(void)
 		syscall_process_madvise.sanitise(&rec);
 		if (validate_arg_coupling(&rec, rec.entry) != 0)
 			BUG("process_madvise: a compat guard install its sanitiser built was refused");
+		syscall_process_madvise.cleanup(&rec);
 		cached_pid = saved_pid;
 		close(self);
 	}

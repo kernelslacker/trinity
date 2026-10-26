@@ -2,8 +2,8 @@
  * SYSCALL_DEFINE5(process_madvise, int, pidfd, const struct iovec __user *, vec,
  *                 size_t, vlen, int, behavior, unsigned int, flags)
  *
- * A GUARD_INSTALL acts on no page, final slots included
- * (vet_final_process_madvise()).
+ * A GUARD_INSTALL acts only on a throwaway mapping of its own, final
+ * slots included (vet_final_process_madvise()).
  */
 #include <fcntl.h>
 #include <stdio.h>
@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include "arch.h"
 #include "maps.h"
 #include "pids.h"
 #include "sanitise.h"
@@ -99,19 +100,38 @@ static bool pidfd_is_self(int fd)
 }
 
 /*
+ * The throwaway mapping a self GUARD_INSTALL plants its guards in, for the
+ * final-slot hook and the cleanup.  Lives in rec->post_state, a slot the
+ * syscall ABI does not expose.
+ */
+#define PROCESS_MADVISE_POST_STATE_MAGIC	0x504D414456495345UL	/* "PMADVISE" */
+struct process_madvise_post_state {
+	unsigned long magic;
+	unsigned long scratch;
+};
+
+/* The pages of that mapping. */
+#define PROCESS_MADVISE_SCRATCH_PAGES	4
+
+/*
  * A rewrite after the sanitiser can make any advice a GUARD_INSTALL, or
- * stretch vlen past the iovecs it emptied, so a final GUARD_INSTALL is
- * refused unless no iovec the kernel reads names a page
- * (map_range_pages()).  Only an array in the iovec pool can be judged, as
- * nothing but this child writes it; a compat call reads 32-bit iovecs at
- * the low 32 bits of the slot, never an array built here.  A count of 0,
- * or one past UIO_MAXIOV, reads none.  The advice is read as an int.
+ * stretch vlen past the iovecs it set, so a final GUARD_INSTALL is refused
+ * unless every iovec the kernel reads that names a page
+ * (map_range_pages()) names pages of the call's own throwaway mapping.
+ * Only an array in the iovec pool can be judged, as nothing but this
+ * child writes it; a compat call reads 32-bit iovecs at the low 32 bits
+ * of the slot, never an array built here.  A count of 0, or one past
+ * UIO_MAXIOV, reads none.  The advice is read as an int.  Shape, then
+ * ownership, then magic, as post_state_claim_owned() orders them.
  */
 static int vet_final_process_madvise(struct syscallrecord *rec,
 				     const struct syscallentry *entry __unused__)
 {
+	struct process_madvise_post_state *snap =
+		(struct process_madvise_post_state *) rec->post_state;
 	const struct iovec *iov = (const struct iovec *) rec->a2;
 	unsigned long vlen = rec->do32bit ? (unsigned int) rec->a3 : rec->a3;
+	unsigned long scratch = 0;
 	struct page_span pages;
 	unsigned long i;
 
@@ -119,12 +139,19 @@ static int vet_final_process_madvise(struct syscallrecord *rec,
 	    vlen > UIO_MAXIOV)
 		return 0;
 
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == PROCESS_MADVISE_POST_STATE_MAGIC)
+		scratch = snap->scratch;
+
 	if (!rec->do32bit &&
 	    range_in_iovec_pool(rec->a2, vlen * sizeof(*iov))) {
 		for (i = 0; i < vlen; i++) {
 			if (map_range_pages((unsigned long) iov[i].iov_base,
 					    iov[i].iov_len, false, false,
-					    &pages))
+					    &pages) &&
+			    (scratch == 0 ||
+			     !page_span_inside(&pages, scratch,
+					PROCESS_MADVISE_SCRATCH_PAGES * page_size)))
 				break;
 		}
 		if (i == vlen)
@@ -154,6 +181,13 @@ static int vet_final_process_madvise(struct syscallrecord *rec,
  */
 static void sanitise_process_madvise(struct syscallrecord *rec)
 {
+	/*
+	 * Clear post_state up front so the final-slot hook and the cleanup
+	 * see no snapshot rather than a stale pointer carried over from an
+	 * earlier syscall on this record.
+	 */
+	rec->post_state = 0;
+
 	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 
 	if (!pidfd_is_self((int)rec->a1)) {
@@ -165,23 +199,28 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 * Self-path: MADV_GUARD_INSTALL plants PTE_MARKER_GUARD on every page
 	 * in the supplied iovec ranges.  If any of those pages belong to a
 	 * trinity pool allocation, the next write from any code path that
-	 * reuses the mapping SEGVs the child.  Neutralise by zeroing every
-	 * iov_len so the kernel sees an empty range set and returns
-	 * immediately – the syscall entry point is still exercised.
+	 * reuses the mapping SEGVs the child.  So the call gets a throwaway
+	 * mapping of its own: the first iovec names a sub-range of it and
+	 * every other iovec's length goes to 0, and the cleanup unmaps it.
+	 * With no mapping to be had, every iov_len goes to 0, so the kernel
+	 * sees an empty range set and returns at once – the syscall entry
+	 * point is still exercised.
 	 *
 	 * MADV_GUARD_REMOVE is safe to pass through: removing guards from a
 	 * range that carries no guard PTEs is a kernel fast-path no-op.
 	 *
-	 * Mirrors madvise.c's rec->a1=0; rec->a2=0 neutraliser for the same
-	 * advice on the plain madvise(2) path.  The kernel reads the advice
-	 * as an int, and vet_final_process_madvise() refuses a GUARD_INSTALL
-	 * a rewrite makes later.  A compat call reads 32-bit iovecs at the
-	 * low 32 bits of the slot, never the array emptied here, so it is
-	 * handed a count of 0 instead.
+	 * Mirrors madvise.c's throwaway mapping for the same advice on the
+	 * plain madvise(2) path.  The kernel reads the advice as an int, and
+	 * vet_final_process_madvise() refuses a GUARD_INSTALL a rewrite makes
+	 * later, or one whose iovecs leave the mapping.  A compat call reads
+	 * 32-bit iovecs at the low 32 bits of the slot, never the array set
+	 * here, so it is handed a count of 0 instead.
 	 */
 	if ((int) rec->a4 == MADV_GUARD_INSTALL) {
+		struct process_madvise_post_state *snap;
 		struct iovec *iov = (struct iovec *)rec->a2;
-		unsigned long i, vlen = rec->a3;
+		unsigned long i, vlen = rec->a3, first, pages;
+		void *p;
 
 		if (rec->do32bit) {
 			rec->a3 = 0;
@@ -193,7 +232,35 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 			vlen = UIO_MAXIOV;
 		for (i = 0; i < vlen; i++)
 			iov[i].iov_len = 0;
+
+		p = mmap(NULL, PROCESS_MADVISE_SCRATCH_PAGES * page_size,
+			 PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
+			 -1, 0);
+		if (vlen == 0 || p == MAP_FAILED)
+			return;
+		first = rnd_modulo_u32(PROCESS_MADVISE_SCRATCH_PAGES);
+		pages = 1 + rnd_modulo_u32(PROCESS_MADVISE_SCRATCH_PAGES - first);
+		iov[0].iov_base = (char *) p + first * page_size;
+		iov[0].iov_len = pages * page_size;
+
+		snap = zmalloc_tracked(sizeof(*snap));
+		snap->magic = PROCESS_MADVISE_POST_STATE_MAGIC;
+		snap->scratch = (unsigned long) p;
+		post_state_install(rec, snap);
 	}
+}
+
+/* The throwaway mapping goes on every path, and the snapshot with it. */
+static void cleanup_process_madvise(struct syscallrecord *rec)
+{
+	struct process_madvise_post_state *snap;
+
+	snap = post_state_claim_owned(rec, PROCESS_MADVISE_POST_STATE_MAGIC,
+				      __func__);
+	if (snap != NULL)
+		munmap((void *) snap->scratch,
+		       PROCESS_MADVISE_SCRATCH_PAGES * page_size);
+	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_process_madvise = {
@@ -206,6 +273,7 @@ struct syscallentry syscall_process_madvise = {
 	.group = GROUP_VM,
 	.sanitise = sanitise_process_madvise,
 	.vet_final = vet_final_process_madvise,
+	.cleanup = cleanup_process_madvise,
 	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_NUM_BYTES,
 };
