@@ -2157,7 +2157,7 @@ static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
  * judge the array: one outside the iovec pool, or any array a compat
  * call reads.  A count of 0, or one the kernel refuses, reads no iovec.
  * What its sanitiser builds for a GUARD_INSTALL aimed at the calling
- * process names no page. */
+ * process names no page, compat or not. */
 static void process_madvise_guard_install_held(void)
 {
 	const unsigned long guard = MADV_GUARD_INSTALL;
@@ -2210,6 +2210,18 @@ static void process_madvise_guard_install_held(void)
 		syscall_process_madvise.sanitise(&rec);
 		if (validate_arg_coupling(&rec, rec.entry) != 0)
 			BUG("process_madvise: a guard install its sanitiser built was refused");
+
+		/* A compat one too, though it reads no array built here. */
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_process_madvise;
+		rec.do32bit = true;
+		rec.a1 = (unsigned long) self;
+		rec.a2 = (unsigned long) iov;
+		rec.a3 = 3;
+		rec.a4 = guard;
+		syscall_process_madvise.sanitise(&rec);
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("process_madvise: a compat guard install its sanitiser built was refused");
 		cached_pid = saved_pid;
 		close(self);
 	}

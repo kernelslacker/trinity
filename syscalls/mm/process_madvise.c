@@ -175,12 +175,18 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 * Mirrors madvise.c's rec->a1=0; rec->a2=0 neutraliser for the same
 	 * advice on the plain madvise(2) path.  The kernel reads the advice
 	 * as an int, and vet_final_process_madvise() refuses a GUARD_INSTALL
-	 * a rewrite makes later.
+	 * a rewrite makes later.  A compat call reads 32-bit iovecs at the
+	 * low 32 bits of the slot, never the array emptied here, so it is
+	 * handed a count of 0 instead.
 	 */
 	if ((int) rec->a4 == MADV_GUARD_INSTALL) {
 		struct iovec *iov = (struct iovec *)rec->a2;
 		unsigned long i, vlen = rec->a3;
 
+		if (rec->do32bit) {
+			rec->a3 = 0;
+			return;
+		}
 		if (iov == NULL)
 			return;
 		if (vlen > UIO_MAXIOV)
