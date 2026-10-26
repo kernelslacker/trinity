@@ -1,11 +1,16 @@
 /*
  * SYSCALL_DEFINE3(syslog, int, type, char __user *, buf, int, len)
+ *
+ * The final len of a read action stays inside the buffer the sanitiser
+ * sized, buf included (vet_final_syslog()).
  */
 #include "arch.h"
 #include "maps.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"
+#include "utils.h"
 
 #include "kernel/syslog.h"
 
@@ -40,6 +45,90 @@ static unsigned long syslog_types[] = {
 	SYSLOG_ACTION_SIZE_BUFFER,
 };
 
+/*
+ * The buffer attach_buffer() aimed at the picked mapping, and how many
+ * bytes from it the kernel may write: the mapping's walkable size, or the
+ * length the pool slot the buffer moved to was sized for.  Captured at
+ * sanitise time for the final-slot hook, which has nothing else to name
+ * the buffer by: a slot rewritten after the sanitiser holds whatever the
+ * rewrite put there.  Lives in rec->post_state, a slot the syscall ABI
+ * does not expose.
+ */
+#define SYSLOG_POST_STATE_MAGIC	0x5359534C4F475F50UL	/* "SYSLOG_P" */
+struct syslog_post_state {
+	unsigned long magic;
+	unsigned long buf;
+	size_t extent;
+};
+
+/*
+ * do_syslog() copies up to len bytes of log into buf for the three read
+ * actions and writes nothing through buf for any other, so only a read is
+ * held here.  The type is ARG_OP, which chain substitution may rewrite,
+ * and a RedQueen pin may rewrite any slot: either can turn a call the
+ * sanitiser built for another action, one with a buffer it never vetted
+ * included, into a read, or grow the len of one it did.  A read has to
+ * name the buffer the sanitiser recorded and fit the extent it recorded
+ * for it.  The kernel reads type and len as ints, buf as a pointer (the
+ * low 32 bits for a compat call).  A len of 0 or below copies nothing, a
+ * negative one being refused before anything is, and a NULL buf takes no
+ * copy; a record with no snapshot of ours passes only those.  Refused
+ * rather than repaired, each slot read once.  Shape, then ownership, then
+ * magic, as post_state_claim_owned() orders them.
+ */
+static int vet_final_syslog(struct syscallrecord *rec,
+			    const struct syscallentry *entry)
+{
+	struct syslog_post_state *snap =
+		(struct syslog_post_state *) rec->post_state;
+	int type = (int) rec->a1, len = (int) rec->a3;
+	unsigned long buf = rec->do32bit ? (unsigned int) rec->a2 : rec->a2;
+	size_t extent = 0;
+
+	if (type != SYSLOG_ACTION_READ && type != SYSLOG_ACTION_READ_ALL &&
+	    type != SYSLOG_ACTION_READ_CLEAR)
+		return 0;
+
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == SYSLOG_POST_STATE_MAGIC)
+		extent = snap->extent;
+	else
+		snap = NULL;
+
+	/* A len left after the first test fits extent, so snap is ours. */
+	if (buf != 0 && len > 0 && ((size_t) len > extent || buf != snap->buf)) {
+		outputerr("arg-coupling: %s rejected: the len runs past the buffer sanitise sized, or buf is not the one it sized\n",
+			  entry->name);
+		return -1;
+	}
+	return 0;
+}
+
+/*
+ * Aim the buffer at @map for a call of @len bytes, off trinity's regions,
+ * and record what the final-slot hook holds the call to.
+ */
+static void attach_buffer(struct syscallrecord *rec, struct map *map,
+			  unsigned long len)
+{
+	struct syslog_post_state *snap = zmalloc_tracked(sizeof(*snap));
+
+	rec->a2 = (unsigned long) map->ptr;
+	rec->a3 = len;
+	avoid_shared_buffer_out(&rec->a2, rec->a3);
+
+	/* A compat call's kernel reads the low 32 bits of the buffer slot,
+	 * which for a buffer above them is an address nobody sized: it has
+	 * no bytes to copy into it. */
+	if (rec->do32bit && rec->a2 > UINT_MAX)
+		rec->a3 = 0;
+
+	snap->magic = SYSLOG_POST_STATE_MAGIC;
+	snap->buf = rec->a2;
+	snap->extent = rec->a2 == (unsigned long) map->ptr ? map->size : rec->a3;
+	post_state_install(rec, snap);
+}
+
 static void sanitise_syslog(struct syscallrecord *rec)
 {
 	static const unsigned long read_cmds[] = {
@@ -63,6 +152,14 @@ static void sanitise_syslog(struct syscallrecord *rec)
 	unsigned int pick = rnd_modulo_u32(100);
 	enum { CLASS_READ, CLASS_LEVEL, CLASS_SIZE,
 	       CLASS_VOID, CLASS_RANDOM, CLASS_INVALID } class;
+
+	/*
+	 * Clear post_state up front so a class that attaches no buffer
+	 * leaves the final-slot hook and the cleanup with no snapshot rather
+	 * than a stale pointer carried over from an earlier syscall on this
+	 * record.
+	 */
+	rec->post_state = 0;
 
 	if (pick < 35)
 		class = CLASS_READ;
@@ -103,6 +200,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 	if (class == CLASS_READ) {
 		struct map *map;
 		unsigned int len_pick;
+		unsigned long len;
 
 		map = get_map();
 		if (map == NULL) {
@@ -111,23 +209,21 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			goto out;
 		}
 
-		rec->a2 = (unsigned long) map->ptr;
-
 		len_pick = rnd_modulo_u32(100);
 		if (len_pick < 20)
-			rec->a3 = 0;
+			len = 0;
 		else if (len_pick < 35)
-			rec->a3 = 1;
+			len = 1;
 		else if (len_pick < 50)
-			rec->a3 = rnd_modulo_u32(64);
+			len = rnd_modulo_u32(64);
 		else if (len_pick < 70)
-			rec->a3 = map->size;
+			len = map->size;
 		else if (len_pick < 95)
-			rec->a3 = rnd_modulo_u32(map->size) & PAGE_MASK;
+			len = rnd_modulo_u32(map->size) & PAGE_MASK;
 		else
-			rec->a3 = 0x80000000UL;
+			len = 0x80000000UL;
 
-		avoid_shared_buffer_out(&rec->a2, rec->a3);
+		attach_buffer(rec, map, len);
 		goto out;
 	}
 
@@ -151,9 +247,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			struct map *map = get_map();
 
 			if (map != NULL) {
-				rec->a2 = (unsigned long) map->ptr;
-				rec->a3 = rnd_modulo_u32(map->size);
-				avoid_shared_buffer_out(&rec->a2, rec->a3);
+				attach_buffer(rec, map, rnd_modulo_u32(map->size));
 				goto out;
 			}
 		}
@@ -181,9 +275,7 @@ static void sanitise_syslog(struct syscallrecord *rec)
 			goto out;
 		}
 
-		rec->a2 = (unsigned long) map->ptr;
-		rec->a3 = rnd_modulo_u32(map->size) & PAGE_MASK;
-		avoid_shared_buffer_out(&rec->a2, rec->a3);
+		attach_buffer(rec, map, rnd_modulo_u32(map->size) & PAGE_MASK);
 	}
 
 out:
@@ -194,6 +286,15 @@ out:
 		rec->flags |= REEXEC_OK;
 }
 
+/* The snapshot is the final-slot hook's alone, so it goes on every path. */
+static void cleanup_syslog(struct syscallrecord *rec)
+{
+	struct syslog_post_state *snap;
+
+	snap = post_state_claim_owned(rec, SYSLOG_POST_STATE_MAGIC, __func__);
+	post_state_release(rec, snap);
+}
+
 struct syscallentry syscall_syslog = {
 	.name = "syslog",
 	.num_args = 3,
@@ -201,6 +302,8 @@ struct syscallentry syscall_syslog = {
 	.argname = { [0] = "type", [1] = "buf", [2] = "len" },
 	.arg_params[0].list = ARGLIST(syslog_types),
 	.sanitise = sanitise_syslog,
+	.vet_final = vet_final_syslog,
+	.cleanup = cleanup_syslog,
 	.group = GROUP_PROCESS,
 	.flags = NEEDS_ROOT | REEXEC_SANITISE_OK,
 	.rettype = RET_BORING,

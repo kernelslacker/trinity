@@ -3,13 +3,13 @@
  * final argument slots to, an entry's own .vet_final rule first: a rewrite
  * after the sanitiser (chain substitution, a RedQueen pin) must not leave
  * the kernel a range the sanitiser would have refused.  A buffer-filling
- * count stays inside its buffer (a recv or recvfrom size or a getrandom
- * count inside the one its sanitiser made of the picked mapping), a munmap,
- * mprotect, pkey_mprotect,
- * madvise, set_mempolicy_home_node or remap_file_pages range inside the
- * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
- * tracked regions too, a madvise or process_madvise never installs guard
- * pages, and an mseal seals only a mapping its sanitiser made for it.
+ * count stays inside its buffer (a recv or recvfrom size, a getrandom count
+ * or a syslog read's len inside the one its sanitiser made of the picked
+ * mapping), a munmap, mprotect, pkey_mprotect, madvise,
+ * set_mempolicy_home_node or remap_file_pages range inside the pool mapping
+ * its sanitiser picked, madvise's (addr, len) off trinity's tracked regions
+ * too, a madvise or process_madvise never installs guard pages, and an
+ * mseal seals only a mapping its sanitiser made for it.
  */
 
 #include <errno.h>
@@ -899,6 +899,8 @@ static void syslog_read_held_to_mapping(void)
 		memset(&rec, 0, sizeof(rec));
 		rec.entry = &syscall_syslog;
 		syscall_syslog.sanitise(&rec);
+		/* The snapshot is the hook's: the checks read only the slots. */
+		syscall_syslog.cleanup(&rec);
 		if ((rec.a1 != SYSLOG_ACTION_READ &&
 		     rec.a1 != SYSLOG_ACTION_READ_ALL &&
 		     rec.a1 != SYSLOG_ACTION_READ_CLEAR) || rec.a2 == 0)
@@ -3556,6 +3558,274 @@ static void getrandom_buffer_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* Whether @type, read as the int the kernel reads it as, is one of the
+ * actions that copy log into the buffer. */
+static bool syslog_reads(unsigned long type)
+{
+	int action = (int) type;
+
+	return action == SYSLOG_ACTION_READ || action == SYSLOG_ACTION_READ_ALL ||
+	       action == SYSLOG_ACTION_READ_CLEAR;
+}
+
+/* The call syslog's sanitiser builds over the fake pool mapping, redrawn
+ * until it carries a buffer, @snapshot saying whether it also carries the
+ * snapshot of one: the buffer a vetted call carries has one, and the one
+ * CLASS_INVALID leaves at the mapping's start has none. */
+static struct syscallrecord *syslog_buffered_call(bool snapshot, bool compat)
+{
+	unsigned int i;
+
+	for (i = 0; i < 10000; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_syslog;
+		rec.do32bit = compat;
+		syscall_syslog.sanitise(&rec);
+		if (rec.a2 != 0 && (rec.post_state != 0) == snapshot)
+			return &rec;
+		syscall_syslog.cleanup(&rec);
+	}
+	BUG("syslog: the sanitiser never built the call the case needs");
+}
+
+/* Whatever the sanitiser builds passes, over each state of the picked
+ * mapping: one clear of trinity's regions, one the buffer moves off, a low
+ * one and a high one, and none picked, natively and as a compat call.  A
+ * compat read whose buffer is above 4 GiB is built to copy nothing, as its
+ * slot cannot carry the buffer. */
+static void syslog_sanitised_call_passes(void)
+{
+	unsigned int shape, i;
+
+	for (shape = 0; shape < 16; shape++) {
+		for (i = 0; i < SANITISER_DRAWS / 16; i++) {
+			unsigned long a2, a3;
+
+			memset(&rec, 0, sizeof(rec));
+			rec.entry = &syscall_syslog;
+			rec.do32bit = (shape & 4) != 0;
+			pool_obj.map.ptr = (void *) ((shape & 1) ? LOW_POOL_MAP : POOL_MAP);
+			fake_map_drawn = (shape & 8) ? NULL : &pool_obj.map;
+			if (shape & 2)
+				fake_track_region((unsigned long) pool_obj.map.ptr,
+						  pool_obj.map.size);
+			syscall_syslog.sanitise(&rec);
+			fake_untrack_regions();
+			a2 = rec.a2;
+			a3 = rec.a3;
+			if (rec.do32bit && a2 > UINT_MAX && syslog_reads(rec.a1) &&
+			    (int) a3 > 0)
+				BUG("syslog: the sanitiser built a compat read its buffer slot cannot carry");
+			if (validate_arg_coupling(&rec, rec.entry) != 0 ||
+			    rec.a2 != a2 || rec.a3 != a3)
+				BUG("syslog: a call the sanitiser built was refused or rewritten");
+			syscall_syslog.cleanup(&rec);
+		}
+	}
+	fake_map_drawn = &pool_obj.map;
+	pool_obj.map.ptr = (void *) POOL_MAP;
+}
+
+/* A slot rewritten after the sanitiser that has a read copy past the
+ * buffer, or into another, is refused.  A buffer at the mapping may take
+ * the mapping's size, whatever len the sanitiser drew, and no more: a byte
+ * past it, INT_MAX or a pid is refused.  len is the int the kernel reads,
+ * so the half of the slot above it drops, and a negative or zero one
+ * copies nothing.  One that moved to a pool slot may take only the length
+ * the slot was sized for.  A buffer pinned elsewhere is refused, inside the
+ * mapping too, unless it is NULL, which takes no copy, or len is 0.  The
+ * other actions never touch the buffer, and the type is read as an int. */
+static void syslog_rewritten_slots_held(void)
+{
+	static const unsigned long reads[] = {
+		SYSLOG_ACTION_READ, SYSLOG_ACTION_READ_ALL, SYSLOG_ACTION_READ_CLEAR,
+	};
+	static const unsigned long others[] = {
+		SYSLOG_ACTION_CLOSE, SYSLOG_ACTION_OPEN, SYSLOG_ACTION_CLEAR,
+		SYSLOG_ACTION_CONSOLE_OFF, SYSLOG_ACTION_CONSOLE_ON,
+		SYSLOG_ACTION_CONSOLE_LEVEL, SYSLOG_ACTION_SIZE_UNREAD,
+		SYSLOG_ACTION_SIZE_BUFFER, 11, 12, (unsigned long) -1L,
+		0x80000000UL, (1UL << 32) | SYSLOG_ACTION_SIZE_BUFFER,
+	};
+	const unsigned long size = POOL_PAGES * page_size;
+	const struct {
+		unsigned long len;
+		int verdict;
+	} lens[] = {
+		{ size, 0 },
+		{ size + 1, -1 },
+		{ INT_MAX, -1 },
+		{ 3000000UL, -1 },
+		{ (1UL << 32) | page_size, 0 },
+		{ (1UL << 40) | INT_MAX, -1 },
+		{ 0x80000000UL, 0 },
+		{ 0xffffffffUL, 0 },
+		{ 0, 0 },
+	};
+	struct syscallrecord *mrec;
+	unsigned int t, i;
+
+	mrec = syslog_buffered_call(true, false);
+	if (mrec->a2 != POOL_MAP)
+		BUG("syslog: the sanitiser did not build the call the case needs");
+	for (t = 0; t < ARRAY_SIZE(reads); t++) {
+		mrec->a1 = reads[t];
+		for (i = 0; i < ARRAY_SIZE(lens); i++) {
+			mrec->a3 = lens[i].len;
+			if (validate_arg_coupling(mrec, mrec->entry) != lens[i].verdict)
+				BUG("syslog: a rewritten len was judged wrongly");
+		}
+	}
+
+	mrec->a3 = size + 1;
+	for (i = 0; i < ARRAY_SIZE(others); i++) {
+		mrec->a1 = others[i];
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("syslog: an action that copies nothing was held to the buffer");
+	}
+	mrec->a1 = (1UL << 32) | SYSLOG_ACTION_READ;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a read was judged on the type slot's upper half");
+
+	mrec->a1 = SYSLOG_ACTION_READ;
+	mrec->a3 = page_size;
+	mrec->a2 = POOL_MAP + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a buffer moved inside the mapping was kept");
+	mrec->a2 = 0x10000000UL;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a pinned buffer was kept");
+	mrec->a3 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a pinned buffer that copies nothing was refused");
+	mrec->a2 = 0;
+	mrec->a3 = INT_MAX;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a NULL buffer was refused");
+	syscall_syslog.cleanup(mrec);
+
+	/* The pool slot is as long as the len it was moved for. */
+	fake_track_region(POOL_MAP, size);
+	for (i = 0; i < 10000; i++) {
+		mrec = syslog_buffered_call(true, false);
+		if (range_in_writable_pool(mrec->a2, mrec->a3) &&
+		    (int) mrec->a3 > 0 && mrec->a3 < size)
+			break;
+		syscall_syslog.cleanup(mrec);
+	}
+	fake_untrack_regions();
+	if (i == 10000)
+		BUG("syslog: the sanitiser never built a call over a tracked mapping");
+	mrec->a1 = SYSLOG_ACTION_READ;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a read over a tracked mapping was refused");
+	mrec->a3++;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a len one past its pool slot was kept");
+	mrec->a3 = size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a len covering the mapping was kept for a pool slot");
+	syscall_syslog.cleanup(mrec);
+}
+
+/* A call with no mapping picked carries a NULL buffer and no snapshot, and
+ * passes; a buffer pinned over it is refused, there being no snapshot to
+ * name one, and so is a read of the one CLASS_INVALID leaves at the
+ * mapping, which the sanitiser never vetted.  So is any read whose snapshot
+ * is not its own: a pid where the pointer was, one the ownership table does
+ * not hold, or one with another magic. */
+static void syslog_needs_its_snapshot(void)
+{
+	struct syscallrecord *mrec;
+
+	fake_map_drawn = NULL;
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_syslog;
+	syscall_syslog.sanitise(&rec);
+	fake_map_drawn = &pool_obj.map;
+	if (rec.a2 != 0 || rec.post_state != 0)
+		BUG("syslog: the sanitiser built a buffer or a snapshot with no mapping");
+	rec.a1 = SYSLOG_ACTION_READ;
+	rec.a2 = POOL_MAP;
+	rec.a3 = 100;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("syslog: a buffer pinned over no mapping was kept");
+	rec.a3 = 0;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("syslog: a pinned buffer that copies nothing was refused");
+
+	mrec = syslog_buffered_call(false, false);
+	if (mrec->a2 != POOL_MAP || syslog_reads(mrec->a1))
+		BUG("syslog: the sanitiser did not build the call the case needs");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a call that is no read was refused");
+	mrec->a1 = SYSLOG_ACTION_READ;
+	mrec->a3 = 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a read of a buffer the sanitiser never vetted was kept");
+	syscall_syslog.cleanup(mrec);
+
+	mrec = syslog_buffered_call(true, false);
+	mrec->a1 = SYSLOG_ACTION_READ;
+	mrec->a3 = page_size;
+	snapshot_gate_held(mrec, "syslog");
+	syscall_syslog.cleanup(mrec);
+}
+
+/* A compat call hands the kernel the low 32 bits of the buffer, so it is
+ * judged on those: an upper half on a buffer over a low mapping drops, and
+ * over a high mapping the low half names an address nobody sized, which no
+ * len may be put in, unless it is 0: NULL takes no copy.  The half of len
+ * above an int drops in a native call too. */
+static void syslog_compat_slots_truncated(void)
+{
+	const unsigned long upper = 1UL << 32;
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	mrec = syslog_buffered_call(true, false);
+	mrec->a1 = SYSLOG_ACTION_READ;
+	mrec->a3 = page_size | upper;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a len was judged on the slot's upper half");
+	mrec->a3 = page_size;
+	mrec->a2 = LOW_POOL_MAP | upper;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("syslog: a native buffer's upper half was dropped");
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("syslog: a compat buffer was judged on the slot's upper half");
+	syscall_syslog.cleanup(mrec);
+
+	for (i = 0; i < 2; i++) {
+		pool_obj.map.ptr = (void *) (POOL_MAP + (i ? 0x40001000UL : 0));
+		mrec = syslog_buffered_call(true, true);
+		mrec->a1 = SYSLOG_ACTION_READ;
+		if (mrec->a3 != 0 || validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("syslog: a compat read over a high mapping was not built empty, or was refused");
+		mrec->a3 = 1;
+		if (validate_arg_coupling(mrec, mrec->entry) != (i ? -1 : 0))
+			BUG("syslog: a len was judged wrongly for a compat buffer its slot cannot carry");
+		syscall_syslog.cleanup(mrec);
+	}
+	pool_obj.map.ptr = (void *) POOL_MAP;
+}
+
+/* syslog's final len, for the actions that read, stays inside the buffer
+ * its sanitiser aimed at the picked mapping, and the buffer is that one. */
+static void syslog_buffer_held_to_mapping(void)
+{
+	fake_map_drawn = &pool_obj.map;
+	pool_obj.map.ptr = (void *) POOL_MAP;
+	pool_obj.map.size = POOL_PAGES * page_size;
+	syslog_sanitised_call_passes();
+	syslog_rewritten_slots_held();
+	syslog_needs_its_snapshot();
+	syslog_compat_slots_truncated();
+	fake_map_drawn = NULL;
+}
+
 /* post_mmap() dirties half the mappings it records, and maps_name_test.c
  * has it record some; what the walk writes is no part of a test. */
 void dirty_mapping(struct map *map)
@@ -4260,6 +4530,7 @@ void arg_coupling_self_check(void)
 	mincore_held_to_vec();
 	recv_buffer_held_to_mapping();
 	getrandom_buffer_held_to_mapping();
+	syslog_buffer_held_to_mapping();
 	mmap_fixed_held_to_vetted_call();
 	mmap_fixed_off_image();
 	hugetlb_flag_size_read();
