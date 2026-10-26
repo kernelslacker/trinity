@@ -19,6 +19,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
@@ -2651,6 +2652,25 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	check("a path unlinked after the open was reported", "openat",
 	      post_openat_path(fd) == 0);
 	check("a path that was unlinked was not counted as inconclusive",
+	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
+	close(fd);
+
+	/* a moves away and comes back inside the window, so the open finds
+	 * b and both lookups find a.  The move changes a's ctime, which the
+	 * kernel keeps at the coarse clock's grain, so a tick passes after
+	 * the sanitiser's lookup first. */
+	oracle_files();
+	sanitise_openat_path(oracle_a);
+	nanosleep(&(const struct timespec) { 0, 20 * 1000 * 1000 }, NULL);
+	if (rename(oracle_a, oracle_c) != 0 || rename(oracle_b, oracle_a) != 0)
+		BUG("fd pool: cannot move the O_PATH oracle's file away");
+	fd = open_o_path(oracle_a);
+	if (rename(oracle_a, oracle_b) != 0 || rename(oracle_c, oracle_a) != 0)
+		BUG("fd pool: cannot move the O_PATH oracle's file back");
+	inconclusive = OPENAT_INCONCLUSIVE;
+	check("a path that moved away and back was reported", "openat",
+	      post_openat_path(fd) == 0);
+	check("a path that moved away and back was not counted as inconclusive",
 	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
 	close(fd);
 

@@ -81,7 +81,8 @@ static void sanitise_open(struct syscallrecord *rec)
 
 /*
  * What sanitise_openat() saw for the oracle in post_openat(): the inode the
- * path named before the call, and the (dfd, path, flags) of that call.
+ * path named before the call and its ctime, and the (dfd, path, flags) of
+ * that call.
  */
 #define OPENAT_POST_STATE_MAGIC	0x4F504154UL	/* "OPAT" */
 struct openat_post_state {
@@ -91,6 +92,7 @@ struct openat_post_state {
 	unsigned long flags;
 	dev_t dev;
 	ino_t ino;
+	struct timespec ctime;
 };
 
 static void sanitise_openat(struct syscallrecord *rec)
@@ -162,6 +164,7 @@ static void sanitise_openat(struct syscallrecord *rec)
 		snap->flags = rec->a3;
 		snap->dev = st.st_dev;
 		snap->ino = st.st_ino;
+		snap->ctime = st.st_ctim;
 		post_state_install(rec, snap);
 	}
 }
@@ -221,7 +224,11 @@ struct syscallentry syscall_open = {
  * path names.  The open and a later lookup are separate walks, so the path is
  * looked up before the call too: a mismatch counts only when both lookups
  * agree and the fd differs from both, and lookups that disagree are
- * inconclusive.  Symlinks and procfs fds are skipped.
+ * inconclusive.  They have to agree on the inode's ctime as well: the path
+ * can name another inode for the open and the first one again by the later
+ * lookup only if that one was renamed away and back or linked there again,
+ * and either sets its ctime (a write in the window does too, and leaves the
+ * call unjudged).  Symlinks and procfs fds are skipped.
  */
 static void openat_path_oracle(const struct syscallrecord *rec,
 			       const struct openat_post_state *snap,
@@ -242,7 +249,9 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 		return;
 
 	if (lstat((const char *) snap->path, &st_path) != 0 ||
-	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino) {
+	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino ||
+	    st_path.st_ctim.tv_sec != snap->ctime.tv_sec ||
+	    st_path.st_ctim.tv_nsec != snap->ctime.tv_nsec) {
 		__atomic_add_fetch(
 			&shm->stats.oracle.openat_oracle_inconclusive,
 			1, __ATOMIC_RELAXED);
