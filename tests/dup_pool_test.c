@@ -2622,9 +2622,19 @@ static unsigned long renamed_path_anomalies(bool open_first,
 	return anomalies;
 }
 
+/* Whether @fd is a directory on another filesystem than @path. */
+static bool on_another_filesystem(int fd, const char *path)
+{
+	struct stat st_fd, st_path;
+
+	return fstat(fd, &st_fd) == 0 && stat(path, &st_path) == 0 &&
+	       S_ISDIR(st_fd.st_mode) && st_fd.st_dev != st_path.st_dev;
+}
+
 /* A path that moved, a procfs magic link that names another file for the
- * open than for the lookups either side of it, and an fd on procfs: none
- * is the kernel's doing, and none is reported. */
+ * open than for the lookups either side of it, an fd on procfs, and a
+ * directory fd on another filesystem: none is the kernel's doing, and none
+ * is reported. */
 static void openat_oracle_ignores_a_path_that_moved(void)
 {
 	unsigned long inconclusive;
@@ -2673,6 +2683,26 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	check("a path that moved away and back was not counted as inconclusive",
 	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
 	close(fd);
+
+	/* An automount trigger opened with O_DIRECTORY: the fd lands on the
+	 * root of what it mounted while both lookups stay on the trigger.  A
+	 * directory on another filesystem stands in for that root. */
+	fd = open("/dev", O_PATH | O_DIRECTORY);
+	if (fd < 0 || !on_another_filesystem(fd, oracle_dir)) {
+		if (fd >= 0)
+			close(fd);
+		fd = open("/sys", O_PATH | O_DIRECTORY);
+	}
+	if (fd >= 0 && on_another_filesystem(fd, oracle_dir)) {
+		sanitise_openat_path(oracle_dir);
+		inconclusive = OPENAT_INCONCLUSIVE;
+		check("a directory fd on another filesystem was reported",
+		      "openat", post_openat_path(fd) == 0);
+		check("a directory fd on another filesystem was not counted as inconclusive",
+		      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
+	}
+	if (fd >= 0)
+		close(fd);
 
 	/* The link names b for the open and a again for the later lookup, so
 	 * the lookups agree and the fd differs from both. */

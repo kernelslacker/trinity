@@ -261,6 +261,19 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 	if (st_fd->st_dev == snap->dev && st_fd->st_ino == snap->ino)
 		return;
 
+	/*
+	 * An automount trigger opened with O_DIRECTORY puts the fd on the root
+	 * of what it mounted, while lstat() leaves the trigger alone and stays
+	 * on it (follow_automount()): a directory fd on another filesystem
+	 * than the path's is no evidence either way.
+	 */
+	if (S_ISDIR(st_fd->st_mode) && st_fd->st_dev != snap->dev) {
+		__atomic_add_fetch(
+			&shm->stats.oracle.openat_oracle_inconclusive,
+			1, __ATOMIC_RELAXED);
+		return;
+	}
+
 	output(0, "fd oracle: openat(%s, O_PATH) inode mismatch "
 	       "fd=(%lu:%lu) path=(%lu:%lu)\n",
 	       (const char *) snap->path,
