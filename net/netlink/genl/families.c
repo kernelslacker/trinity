@@ -692,6 +692,36 @@ unsigned char genl_pick_cmd(const struct genl_family_grammar *fam)
 	return fam->cmds[rnd_modulo_u32(fam->n_cmds)].cmd;
 }
 
+const struct nla_attr_spec genl_no_attrs[1];
+
+const struct nla_attr_spec *genl_cmd_attrs(const struct genl_family_grammar *fam,
+					   unsigned char cmd, bool dump,
+					   size_t *nr_out)
+{
+	unsigned int i;
+
+	for (i = 0; i < fam->n_cmds; i++) {
+		const struct genl_cmd_grammar *c = &fam->cmds[i];
+
+		if (c->cmd != cmd)
+			continue;
+		if (dump && c->dump_attrs != NULL) {
+			*nr_out = c->n_dump_attrs;
+			return c->dump_attrs;
+		}
+		if (c->attrs != NULL) {
+			*nr_out = c->n_attrs;
+			return c->attrs;
+		}
+		break;
+	}
+
+	if (fam->n_attrs == 0)
+		return NULL;
+	*nr_out = fam->n_attrs;
+	return fam->attrs;
+}
+
 void genl_family_bump_calls(const struct genl_family_grammar *fam)
 {
 	if (!fam || !fam->call_counter)

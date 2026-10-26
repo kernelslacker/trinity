@@ -4,7 +4,8 @@
  * netlink_gen_msg() sets NLM_F_DUMP to suit the cmd it picks and keeps
  * most requests inside the genl core's header check.  The reply is
  * canned and arrives over a unix socketpair standing in for the
- * NETLINK_GENERIC socket; no netlink socket is opened.
+ * NETLINK_GENERIC socket; no netlink socket is opened.  Which attribute
+ * table a cmd draws from is checked on a grammar of the test's own.
  */
 
 #include <errno.h>
@@ -642,6 +643,95 @@ static void check_flags(void)
 	check_other_protocol_flags();
 }
 
+/* ---------- Checking which attribute table a cmd draws from ------------ */
+
+struct table_case {
+	unsigned char cmd;
+	bool dump;
+	const struct nla_attr_spec *want;
+	size_t want_nr;
+};
+
+static void expect_tables(const struct genl_family_grammar *fam,
+			  const struct table_case *cases, unsigned int nr_cases,
+			  const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_cases; i++) {
+		size_t nr = 0;
+		const struct nla_attr_spec *got;
+
+		got = genl_cmd_attrs(fam, cases[i].cmd, cases[i].dump, &nr);
+		if (got == cases[i].want && (got == NULL || nr == cases[i].want_nr))
+			continue;
+		fprintf(stderr, "%s: cmd %u%s drew from %p (%zu), want %p (%zu)\n",
+			what, cases[i].cmd, cases[i].dump ? " dump" : "",
+			(const void *) got, nr, (const void *) cases[i].want,
+			cases[i].want_nr);
+		BUG("genl ops: a cmd drew from the wrong attribute table");
+	}
+}
+
+/*
+ * A cmd's own table beats the family's, its dump table beats its own for a
+ * dump request, and a cmd that names none takes the family's.  A cmd with
+ * genl_no_attrs gets an empty table, which differs from none at all: that
+ * sends the caller to the random-attribute path.
+ */
+static void check_cmd_attr_tables(void)
+{
+	static const struct nla_attr_spec family[] = { { 1, NLA_KIND_U32, 4 } };
+	static const struct nla_attr_spec own[] = {
+		{ 2, NLA_KIND_U8, 1 }, { 3, NLA_KIND_U16, 2 },
+	};
+	static const struct nla_attr_spec dump[] = { { 4, NLA_KIND_U64, 8 } };
+	static const struct genl_cmd_grammar cmds[] = {
+		{ 1, "plain" },
+		{ 2, "own", own, ARRAY_SIZE(own) },
+		{ 3, "none", genl_no_attrs },
+		{ 4, "own, dump", own, ARRAY_SIZE(own), dump, ARRAY_SIZE(dump) },
+		{ 5, "own, dump none", own, ARRAY_SIZE(own), genl_no_attrs },
+		{ 6, "dump only", NULL, 0, dump, ARRAY_SIZE(dump) },
+	};
+	static const struct table_case with_family[] = {
+		{ 1, false, family, ARRAY_SIZE(family) },
+		{ 1, true, family, ARRAY_SIZE(family) },
+		{ 2, false, own, ARRAY_SIZE(own) },
+		{ 2, true, own, ARRAY_SIZE(own) },
+		{ 3, false, genl_no_attrs, 0 },
+		{ 3, true, genl_no_attrs, 0 },
+		{ 4, false, own, ARRAY_SIZE(own) },
+		{ 4, true, dump, ARRAY_SIZE(dump) },
+		{ 5, false, own, ARRAY_SIZE(own) },
+		{ 5, true, genl_no_attrs, 0 },
+		{ 6, false, family, ARRAY_SIZE(family) },
+		{ 6, true, dump, ARRAY_SIZE(dump) },
+		{ 99, false, family, ARRAY_SIZE(family) },
+		{ 99, true, family, ARRAY_SIZE(family) },
+	};
+	static const struct table_case without_family[] = {
+		{ 1, false, NULL, 0 },
+		{ 2, false, own, ARRAY_SIZE(own) },
+		{ 3, true, genl_no_attrs, 0 },
+		{ 6, false, NULL, 0 },
+		{ 99, true, NULL, 0 },
+	};
+	struct genl_family_grammar fam = {
+		.name = "table test",
+		.cmds = cmds,
+		.n_cmds = ARRAY_SIZE(cmds),
+		.attrs = family,
+		.n_attrs = ARRAY_SIZE(family),
+	};
+
+	expect_tables(&fam, with_family, ARRAY_SIZE(with_family), "family table");
+
+	fam.attrs = NULL;
+	fam.n_attrs = 0;
+	expect_tables(&fam, without_family, ARRAY_SIZE(without_family), "no family table");
+}
+
 void genl_ops_self_check(void);
 void genl_ops_self_check(void)
 {
@@ -653,5 +743,6 @@ void genl_ops_self_check(void)
 
 	check_reply_parsed();
 	check_flags();
+	check_cmd_attr_tables();
 	close(peer_fd);
 }

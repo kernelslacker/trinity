@@ -1,5 +1,8 @@
 #pragma once
 
+#include <stdbool.h>
+#include <stddef.h>
+
 #include "netlink-attrs.h"
 
 /*
@@ -30,7 +33,28 @@
 struct genl_cmd_grammar {
 	unsigned char cmd;
 	const char *name;	/* for debugging only */
+
+	/* The attributes the cmd's own policy takes, when that is narrower
+	 * than the family's table: a request for the cmd draws only from
+	 * these.  A strict op answers an id its policy has no slot for with
+	 * -EINVAL, and a split op with no policy gets a reject-all one, so a
+	 * cmd that takes nothing names genl_no_attrs and leaves n_attrs 0.
+	 * NULL keeps the family's table. */
+	const struct nla_attr_spec *attrs;
+	unsigned int n_attrs;
+
+	/* The same for a dump request, when the dumpit's policy is not the
+	 * doit's.  NULL keeps attrs. */
+	const struct nla_attr_spec *dump_attrs;
+	unsigned int n_dump_attrs;
 };
+
+/*
+ * The table of a cmd that takes no attribute.  Nothing is drawn from it,
+ * its cmd's n_attrs being 0; it exists because a NULL table means the
+ * family's.
+ */
+extern const struct nla_attr_spec genl_no_attrs[];
 
 struct genl_family_grammar {
 	const char *name;	/* GENL family name (e.g. "devlink") */
@@ -97,6 +121,16 @@ const struct genl_family_grammar *genl_lookup_by_id(unsigned short family_id);
  * the kernel rejects cleanly via -EOPNOTSUPP.
  */
 unsigned char genl_pick_cmd(const struct genl_family_grammar *fam);
+
+/*
+ * The attribute table a request for cmd draws from, with its length in
+ * *nr_out: the cmd's own table, its dump table for a dump request that
+ * has one, else the family's.  NULL when none of them exists, which
+ * sends the caller to the legacy random-attribute path.
+ */
+const struct nla_attr_spec *genl_cmd_attrs(const struct genl_family_grammar *fam,
+					   unsigned char cmd, bool dump,
+					   size_t *nr_out);
 
 /*
  * Bump the per-family dispatch counter for fam.  Called from

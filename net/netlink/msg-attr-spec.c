@@ -272,31 +272,37 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 }
 
 /*
- * Return the nla_attr_spec table for a given protocol/nlmsg_type pair,
- * setting *nr_out to its element count.  NULL means the family is not
- * spec-aware and the caller should fall back to the legacy flat-attr
- * generator.  Netfilter dispatches by NFNL_SUBSYS_x nibble of
- * nlmsg_type via the per-subsys grammar registry; generic netlink
- * dispatches by runtime-resolved family_id via the genl registry.
+ * Return the nla_attr_spec table for the message whose header is nlh and
+ * whose body is already built, setting *nr_out to its element count.
+ * NULL means the family is not spec-aware and the caller should fall back
+ * to the legacy flat-attr generator.  Netfilter dispatches by NFNL_SUBSYS_x
+ * nibble of nlmsg_type via the per-subsys grammar registry; generic netlink
+ * dispatches by runtime-resolved family_id via the genl registry, and then
+ * by the cmd and dump flag the message carries, since the policies are the
+ * cmd's.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
-					    unsigned short nlmsg_type,
+					    const struct nlmsghdr *nlh,
 					    size_t *nr_out)
 {
+	unsigned short nlmsg_type = nlh->nlmsg_type;
+
 	switch (protocol) {
 	case NETLINK_GENERIC: {
 		const struct genl_family_grammar *fam;
+		const struct genlmsghdr *genl;
 
 		if (nlmsg_type == GENL_ID_CTRL) {
 			*nr_out = ctrl_specs_n;
 			return ctrl_specs;
 		}
 		fam = genl_lookup_by_id(nlmsg_type);
-		if (fam != NULL && fam->n_attrs > 0) {
-			*nr_out = fam->n_attrs;
-			return fam->attrs;
-		}
-		return NULL;
+		if (fam == NULL)
+			return NULL;
+		genl = NLMSG_DATA(nlh);
+		return genl_cmd_attrs(fam, genl->cmd,
+				      (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP,
+				      nr_out);
 	}
 	case NETLINK_XFRM:
 		*nr_out = xfrma_specs_n;

@@ -367,15 +367,15 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	/* After the body: a genl cmd's handlers decide the dump bits. */
 	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, triplet->protocol, genl_caps);
 
-	/* Append nlattr TLVs with protocol-appropriate types.
+	/* Append nlattr TLVs with protocol-appropriate types.  A genl
+	 * cmd's table depends on its cmd and dump flag, both set above.
 	 * Audit messages don't use nlattr — skip for that protocol. */
 	num_attrs = (triplet->protocol == NETLINK_AUDIT) ? 0 : rnd_modulo_u32(8);
 	if (num_attrs > 0) {
 		const struct nla_attr_spec *spec_table;
 		size_t nr_specs = 0;
 
-		spec_table = pick_spec_table(triplet->protocol, nlmsg_type,
-					     &nr_specs);
+		spec_table = pick_spec_table(triplet->protocol, nlh, &nr_specs);
 
 		while (num_attrs-- > 0 && offset < buflen) {
 			size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
