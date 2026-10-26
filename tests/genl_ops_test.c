@@ -50,6 +50,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OPS_FIRST	706
 #define ID_HANDSHAKE	710
 #define ID_VDPA		711
+#define ID_WIREGUARD	712
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -410,12 +411,59 @@ static struct cmd_policy vdpa_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/wireguard.h>)
+#include "kernel/wireguard.h"
+
+extern struct genl_family_grammar fam_wireguard;
+
+/* drivers/net/wireguard/generated/netlink.c: the wireguard_*_nl_policy tables */
+static struct slot wireguard_allowedip[] = {
+	S_U16(WGALLOWEDIP_A_FAMILY),
+	S_BLOB(WGALLOWEDIP_A_IPADDR, 4, 0xffff),
+	S_U8(WGALLOWEDIP_A_CIDR_MASK),
+	S_U32(WGALLOWEDIP_A_FLAGS),
+};
+static struct slot wireguard_peer[] = {
+	S_BLOB(WGPEER_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN),
+	S_BLOB(WGPEER_A_PRESHARED_KEY, WG_KEY_LEN, WG_KEY_LEN),
+	S_U32(WGPEER_A_FLAGS),
+	S_BLOB(WGPEER_A_ENDPOINT, 16, 0xffff),
+	S_U16(WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL),
+	S_BLOB(WGPEER_A_LAST_HANDSHAKE_TIME, 16, 16),
+	S_U64(WGPEER_A_RX_BYTES),
+	S_U64(WGPEER_A_TX_BYTES),
+	S_ARRAY(WGPEER_A_ALLOWEDIPS, wireguard_allowedip),
+	S_U32(WGPEER_A_PROTOCOL_VERSION),
+};
+static struct slot wireguard_get_device[] = {
+	S_U32(WGDEVICE_A_IFINDEX),
+	S_STR(WGDEVICE_A_IFNAME, 15),
+};
+static struct slot wireguard_set_device[] = {
+	S_U32(WGDEVICE_A_IFINDEX),
+	S_STR(WGDEVICE_A_IFNAME, 15),
+	S_BLOB(WGDEVICE_A_PRIVATE_KEY, WG_KEY_LEN, WG_KEY_LEN),
+	S_BLOB(WGDEVICE_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN),
+	S_U32(WGDEVICE_A_FLAGS),
+	S_U16(WGDEVICE_A_LISTEN_PORT),
+	S_U32(WGDEVICE_A_FWMARK),
+	S_ARRAY(WGDEVICE_A_PEERS, wireguard_peer),
+};
+static struct cmd_policy wireguard_cmds[] = {
+	P_CMD(WG_CMD_GET_DEVICE, wireguard_get_device),
+	P_CMD(WG_CMD_SET_DEVICE, wireguard_set_device),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
 #endif
 #if __has_include(<linux/vdpa.h>)
 	{ &fam_vdpa, ID_VDPA, vdpa_cmds, ARRAY_SIZE(vdpa_cmds) },
+#endif
+#if __has_include(<linux/wireguard.h>)
+	{ &fam_wireguard, ID_WIREGUARD, wireguard_cmds, ARRAY_SIZE(wireguard_cmds) },
 #endif
 };
 
