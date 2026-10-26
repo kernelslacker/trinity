@@ -248,6 +248,7 @@ static const struct ioctl_group loop_grp = {
 	.devs_cnt = ARRAY_SIZE(loop_devs),
 	.fd_test = loop_fd_test,
 	.sanitise = loop_sanitise,
+	.cmd_held = true,
 	.ioctls = loop_dev_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(loop_dev_ioctls),
 };

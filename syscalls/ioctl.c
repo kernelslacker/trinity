@@ -53,10 +53,56 @@ static const struct ioctl_group *pick_group_first(struct syscallrecord *rec)
 	return grp;
 }
 
+/*
+ * The cmd a group that holds its cmd drew (struct ioctl_group's cmd_held),
+ * for vet_final_ioctl().  Lives in rec->post_state, a slot the syscall ABI
+ * does not expose.
+ */
+#define IOCTL_POST_STATE_MAGIC	0x494F43544C5F4344UL	/* "IOCTL_CD" */
+struct ioctl_post_state {
+	unsigned long magic;
+	unsigned long cmd;
+};
+
+/*
+ * A group that holds its cmd builds valid args only for the cmds it means
+ * to see work, so a final cmd other than the one it drew, which a RedQueen
+ * pin on the cmd slot or a chain substitution can supply, would reach the
+ * driver with args built for another: the call is refused.  The kernel
+ * reads the cmd as an unsigned int.  A call with no snapshot drew its cmd
+ * from a group that holds none; one whose snapshot fails the shape,
+ * ownership or magic check, in post_state_claim_owned()'s order, is
+ * refused too.
+ */
+static int vet_final_ioctl(struct syscallrecord *rec,
+			   const struct syscallentry *entry)
+{
+	struct ioctl_post_state *snap =
+		(struct ioctl_post_state *) rec->post_state;
+
+	if (rec->post_state == 0)
+		return 0;
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == IOCTL_POST_STATE_MAGIC &&
+	    (unsigned int) rec->a2 == (unsigned int) snap->cmd)
+		return 0;
+
+	outputerr("arg-coupling: %s rejected: the cmd is not the one its group drew\n",
+		  entry->name);
+	return -1;
+}
+
 static void sanitise_ioctl(struct syscallrecord *rec)
 {
 	const struct ioctl_group *grp;
 	bool fd_claimed = false;
+
+	/*
+	 * Clear post_state up front so the final-slot hook and the cleanup
+	 * see no snapshot rather than a stale pointer carried over from an
+	 * earlier syscall on this record.
+	 */
+	rec->post_state = 0;
 
 	if (ONE_IN(100)) {
 		grp = get_random_ioctl_group();
@@ -117,6 +163,14 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 	 */
 	if (!fd_claimed)
 		rec->rettype = RET_NONE;
+
+	if (grp != NULL && grp->cmd_held) {
+		struct ioctl_post_state *snap = zmalloc_tracked(sizeof(*snap));
+
+		snap->magic = IOCTL_POST_STATE_MAGIC;
+		snap->cmd = rec->a2;
+		post_state_install(rec, snap);
+	}
 }
 
 #ifndef NSFS_MAGIC
@@ -158,13 +212,24 @@ static void post_ioctl(struct syscallrecord *rec)
 		close(fd);
 }
 
+/* The snapshot is the final-slot hook's alone, so it goes on every path. */
+static void cleanup_ioctl(struct syscallrecord *rec)
+{
+	struct ioctl_post_state *snap;
+
+	snap = post_state_claim_owned(rec, IOCTL_POST_STATE_MAGIC, __func__);
+	post_state_release(rec, snap);
+}
+
 struct syscallentry syscall_ioctl = {
 	.name = "ioctl",
 	.num_args = 3,
 	.argtype = { [0] = ARG_FD },
 	.argname = { [0] = "fd", [1] = "cmd", [2] = "arg" },
 	.sanitise = sanitise_ioctl,
+	.vet_final = vet_final_ioctl,
 	.post = post_ioctl,
+	.cleanup = cleanup_ioctl,
 	.flags = NEED_ALARM | IGNORE_ENOSYS | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
 };

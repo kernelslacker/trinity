@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "arg_coupling.h"	/* validate_arg_coupling */
 #include "bpf.h"		/* get_rand_bpf_prog_fd */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
@@ -166,6 +167,23 @@ static const struct ioctl_group claimed_grp = {
 	.sanitise = claimed_sanitise,
 };
 
+/* A group that holds its cmd, which its sanitiser draws as held_cmd. */
+#define HELD_CMD	0x40044a01UL
+static bool fd_held;
+
+static void held_sanitise(const struct ioctl_group *grp,
+			  struct syscallrecord *rec)
+{
+	(void)grp;
+	rec->a2 = HELD_CMD;
+}
+
+static const struct ioctl_group held_grp = {
+	.name = "held",
+	.sanitise = held_sanitise,
+	.cmd_held = true,
+};
+
 static const struct ioctl_group random_grp = {
 	.name = "random",
 	.sanitise = random_sanitise,
@@ -174,6 +192,8 @@ static const struct ioctl_group random_grp = {
 const struct ioctl_group *find_ioctl_group(int fd)
 {
 	(void)fd;
+	if (fd_held)
+		return &held_grp;
 	return fd_claimed ? &claimed_grp : NULL;
 }
 
@@ -217,6 +237,46 @@ static void withdrawn_off_the_fd(void)
 	/* Each way a group is chosen has to have been taken. */
 	if (claimed == 0 || foreign == 0 || none == 0)
 		BUG("ioctl rettype: a group pick was never exercised");
+}
+
+/*
+ * A group that holds its cmd refuses a final cmd other than the one its
+ * sanitiser drew, read as the unsigned int the kernel takes: a rewrite to
+ * another is refused, the drawn one with any upper bits passes.  A cmd
+ * from a group that holds none is left alone.
+ */
+static void cmd_held_to_the_one_drawn(void)
+{
+	static struct syscallrecord rec;
+	unsigned int held = 0, other = 0;
+	int i;
+
+	fd_held = true;
+	for (i = 0; i < PICK_ROUNDS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ioctl;
+		syscall_ioctl.sanitise(&rec);
+		if (rec.a2 == HELD_CMD) {
+			held++;
+			rec.a2 = HELD_CMD | (1UL << 32);
+			if (validate_arg_coupling(&rec, &syscall_ioctl) != 0)
+				BUG("ioctl: the cmd a held group drew was refused");
+			rec.a2 = HELD_CMD + 1;
+			if (validate_arg_coupling(&rec, &syscall_ioctl) != -1)
+				BUG("ioctl: a held group's cmd was rewritten and kept");
+		} else {
+			other++;
+			rec.a2 = HELD_CMD + 1;
+			if (validate_arg_coupling(&rec, &syscall_ioctl) != 0)
+				BUG("ioctl: a cmd from a group that holds none was refused");
+		}
+		syscall_ioctl.cleanup(&rec);
+		if (rec.post_state != 0)
+			BUG("ioctl: the cleanup left a held group's snapshot behind");
+	}
+	fd_held = false;
+	if (held == 0 || other == 0)
+		BUG("ioctl: a held group, or one that holds none, was never drawn");
 }
 
 /*
@@ -592,4 +652,5 @@ void ioctl_sanitise_self_check(void)
 	ns_getters_get_a_zero_arg();
 	only_the_ns_getters_are_getters();
 	fd_class_groups_claim_the_childs_own_fds();
+	cmd_held_to_the_one_drawn();
 }

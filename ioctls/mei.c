@@ -234,6 +234,7 @@ static const struct ioctl_group mei_grp = {
 	.devs = mei_devs,
 	.devs_cnt = ARRAY_SIZE(mei_devs),
 	.sanitise = mei_sanitise,
+	.cmd_held = true,
 	.ioctls = mei_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(mei_ioctls),
 };

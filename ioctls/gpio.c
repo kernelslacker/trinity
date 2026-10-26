@@ -389,6 +389,7 @@ static const struct ioctl_group gpio_grp = {
 	.devtype = DEV_CHAR,
 	.fd_test = gpio_fd_test,
 	.sanitise = gpio_sanitise,
+	.cmd_held = true,
 	.ioctls = gpio_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(gpio_ioctls),
 };

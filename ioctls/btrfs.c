@@ -723,6 +723,7 @@ static const struct ioctl_group btrfs_grp = {
 	.name = "btrfs",
 	.fd_test = btrfs_fd_test,
 	.sanitise = btrfs_sanitise,
+	.cmd_held = true,
 	.ioctls = btrfs_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(btrfs_ioctls),
 };

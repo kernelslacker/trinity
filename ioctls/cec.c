@@ -390,6 +390,7 @@ static const struct ioctl_group cec_grp = {
 	.devs = cec_devs,
 	.devs_cnt = ARRAY_SIZE(cec_devs),
 	.sanitise = cec_sanitise,
+	.cmd_held = true,
 	.ioctls = cec_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(cec_ioctls),
 };

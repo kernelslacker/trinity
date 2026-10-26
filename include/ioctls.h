@@ -47,6 +47,14 @@ struct ioctl_group {
 	 * the fd pick also hands ioctl() the child's own recent returns,
 	 * which sit in its local pool, so the fd_test claims those too. */
 	enum argtype fd_class;
+
+	/* The group's sanitiser builds valid args only for the cmds it means
+	 * to see work, and some cmds must never get them: a box-safety list,
+	 * a cmd its table leaves out on purpose, a write it fixes up for a
+	 * scratch device.  The final cmd is then held to the one it drew
+	 * (vet_final_ioctl() in syscalls/ioctl.c), since a cmd pinned or
+	 * substituted after it would take args built for another. */
+	bool cmd_held;
 };
 
 void register_ioctl_group(const struct ioctl_group *);
