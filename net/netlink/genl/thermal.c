@@ -1,8 +1,10 @@
 /*
  * Genetlink family grammar: thermal (kernel thermal subsystem), targeting
  * thermal_genl_policy and the handlers in drivers/thermal/thermal_netlink.c.
- * None of its nine ops is GENL_ADMIN_PERM.  The six nested containers are
- * output-only; the input ids are read flat from the top level.
+ * None of its nine ops is GENL_ADMIN_PERM, but the THRESHOLD_ADD, _DELETE
+ * and _FLUSH handlers test capable(CAP_SYS_ADMIN) first.  The six nested
+ * containers are output-only; the input ids are read flat from the top
+ * level.
  */
 
 #if __has_include(<linux/thermal.h>)
