@@ -10,6 +10,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sysv-shm.h"
+#include "maps.h"
 #include "objects.h"
 #include "utils.h"
 
@@ -87,22 +88,23 @@ void create_sysv_shms(void)
 		obj->sysv_shm.ptr = p;
 
 		/*
-		 * The kernel rounds hugetlb segments up to a multiple of
-		 * the VMA's hugepage size; the size we requested may be
-		 * smaller than the actual VMA extent.  Query the post-
-		 * allocation size via IPC_STAT so the recorded size and
-		 * the tracked shared region match the kernel's view.
-		 * Anything walking shared_regions[] with tight-extent
+		 * The kernel backs a SHM_HUGETLB segment with a hugetlbfs
+		 * file rounded up to its huge page size (newseg()), and the
+		 * attach maps the whole file, so the VMA reaches past the
+		 * size asked for, which is all IPC_STAT's shm_segsz
+		 * reports.  Record and track the extent the attach covers:
+		 * anything walking shared_regions[] with tight-extent
 		 * assumptions (range_overlaps_shared, range_in_tracked_shared)
-		 * needs the real extent or it will miss addresses inside
-		 * the VMA but past the requested size.
+		 * would otherwise miss addresses inside the VMA past the size
+		 * asked for.
 		 */
 		{
-			struct shmid_ds buf;
+			unsigned long huge = (flags & SHM_HUGETLB) ?
+					     hugetlb_flag_size(flags) : 0;
 			size_t real_size = size;
 
-			if (shmctl(id, IPC_STAT, &buf) == 0 && buf.shm_segsz > 0)
-				real_size = (size_t) buf.shm_segsz;
+			if (huge != 0 && (huge & (huge - 1)) == 0)
+				real_size = (size + huge - 1) & ~(huge - 1);
 			obj->sysv_shm.size = real_size;
 			track_shared_region((unsigned long)p, real_size);
 		}
