@@ -49,6 +49,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_TRUNCATED	705
 #define ID_OPS_FIRST	706
 #define ID_HANDSHAKE	710
+#define ID_VDPA		711
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -323,13 +324,20 @@ static void put_ops_first_family(struct reply *r,
  * seen counts what the generator emitted, so a slot it never reaches shows
  * up.
  */
+enum slot_kind { SK_BYTES, SK_STRING };
+
 struct slot {
 	unsigned short id;
-	unsigned short min, max;	/* payload length */
+	unsigned char kind;
+	unsigned short min, max;	/* payload length; a string's max 0 is any */
 	unsigned int seen;
 };
 
-#define S_U32(id)	{ id, 4, 4 }
+#define S_BLOB(id, lo, hi)	{ id, SK_BYTES, lo, hi }
+#define S_U16(id)		S_BLOB(id, 2, 2)
+#define S_U32(id)		S_BLOB(id, 4, 4)
+#define S_U64(id)		S_BLOB(id, 8, 8)
+#define S_STR(id, hi)		{ id, SK_STRING, 1, hi }
 
 /* What a cmd's request takes. */
 struct cmd_policy {
@@ -370,9 +378,39 @@ static struct cmd_policy handshake_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/vdpa.h>)
+#include "kernel/vdpa.h"
+
+extern struct genl_family_grammar fam_vdpa;
+
+/* drivers/vdpa/vdpa.c: vdpa_nl_policy, which every op shares */
+static struct slot vdpa_policy[] = {
+	S_STR(VDPA_ATTR_MGMTDEV_BUS_NAME, 0),
+	S_STR(VDPA_ATTR_MGMTDEV_DEV_NAME, 0),
+	S_STR(VDPA_ATTR_DEV_NAME, 0),
+	S_BLOB(VDPA_ATTR_DEV_NET_CFG_MACADDR, 6, 6),
+	S_U16(VDPA_ATTR_DEV_NET_CFG_MAX_VQP),
+	S_U16(VDPA_ATTR_DEV_NET_CFG_MTU),
+	S_U32(VDPA_ATTR_DEV_QUEUE_INDEX),
+	S_U64(VDPA_ATTR_DEV_FEATURES),
+};
+static struct cmd_policy vdpa_cmds[] = {
+	P_CMD(VDPA_CMD_MGMTDEV_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_NEW, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_DEL, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_CONFIG_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_VSTATS_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_ATTR_SET, vdpa_policy),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
+#endif
+#if __has_include(<linux/vdpa.h>)
+	{ &fam_vdpa, ID_VDPA, vdpa_cmds, ARRAY_SIZE(vdpa_cmds) },
 #endif
 };
 
@@ -738,8 +776,8 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 /*
  * What nla_validate() with NL_VALIDATE_STRICT makes of the stream: an id
  * past the policy, or in a slot it leaves untyped, is refused, as is a
- * length the slot does not take and a flag on an attribute that is not a
- * nest.
+ * length the slot does not take, a string with no NUL and a flag on an
+ * attribute that is not a nest.
  */
 static bool stream_conforms(const unsigned char *p, size_t len,
 			    struct slot *slots, unsigned int n_slots)
@@ -761,9 +799,19 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 			return false;
 
 		plen = nla->nla_len - NLA_HDRLEN;
-		if ((nla->nla_type & NLA_F_NESTED) || plen < slot->min ||
-		    plen > slot->max)
+		if (nla->nla_type & NLA_F_NESTED)
 			return false;
+		switch (slot->kind) {
+		case SK_BYTES:
+			if (plen < slot->min || plen > slot->max)
+				return false;
+			break;
+		case SK_STRING:
+			if (plen < slot->min || (slot->max && plen > slot->max + 1u) ||
+			    p[off + nla->nla_len - 1] != '\0')
+				return false;
+			break;
+		}
 		slot->seen++;
 		off += NLA_ALIGN(nla->nla_len);
 	}

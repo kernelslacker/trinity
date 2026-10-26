@@ -26,42 +26,22 @@ static const struct genl_cmd_grammar vdpa_cmds[] = {
 };
 
 /*
- * Attribute spec follows the VDPA_ATTR_* enum in <linux/vdpa.h>.
- * MGMTDEV_BUS_NAME / MGMTDEV_DEV_NAME / DEV_NAME / VENDOR_ATTR_NAME
- * are NUL-terminated strings naming the management parent and child
- * device.  DEV_ID / DEV_VENDOR_ID / DEV_MAX_VQS / DEV_QUEUE_INDEX /
- * DEV_MGMTDEV_MAX_VQS are u32 scalars (queue-index selects which of
- * the device's VQs DEV_VSTATS_GET reads back).  DEV_MAX_VQ_SIZE /
- * DEV_MIN_VQ_SIZE / DEV_NET_CFG_MAX_VQP / DEV_NET_CFG_MTU are u16
- * scalars.  DEV_NET_CFG_MACADDR is the 6-byte ethernet address pushed
- * by DEV_NEW / DEV_ATTR_SET.  DEV_NET_STATUS is a u8 (virtio_net
- * link-status word).  DEV_NEGOTIATED_FEATURES / DEV_SUPPORTED_FEATURES
- * / MGMTDEV_SUPPORTED_CLASSES / VENDOR_ATTR_VALUE are u64 bitmasks /
- * stat values.  The kernel's vdpa_nl_policy validates a subset of
- * these on input; the remainder are response-side payloads emitted by
- * the GET commands.  The ops validate strictly, so each of those costs
- * an -EINVAL on every command.
+ * The ops share one policy, vdpa_nl_policy, and validate strictly, so an id
+ * it leaves untyped, the reply-side counts and feature words among them,
+ * costs an -EINVAL on any command.  It types eight: the three names
+ * (NLA_STRING or NLA_NUL_STRING, so a byte at least), MACADDR (exactly an
+ * ethernet address), the u16 MAX_VQP and MTU (68 at least), the u32
+ * QUEUE_INDEX and the u64 FEATURES.
  */
 static const struct nla_attr_spec vdpa_attrs[] = {
-	{ VDPA_ATTR_MGMTDEV_BUS_NAME,		NLA_KIND_STRING, 0 },
-	{ VDPA_ATTR_MGMTDEV_DEV_NAME,		NLA_KIND_STRING, 0 },
-	{ VDPA_ATTR_MGMTDEV_SUPPORTED_CLASSES,	NLA_KIND_U64,    8 },
-	{ VDPA_ATTR_DEV_NAME,			NLA_KIND_STRING, 0 },
-	{ VDPA_ATTR_DEV_ID,			NLA_KIND_U32,    4 },
-	{ VDPA_ATTR_DEV_VENDOR_ID,		NLA_KIND_U32,    4 },
-	{ VDPA_ATTR_DEV_MAX_VQS,		NLA_KIND_U32,    4 },
-	{ VDPA_ATTR_DEV_MAX_VQ_SIZE,		NLA_KIND_U16,    2 },
-	{ VDPA_ATTR_DEV_MIN_VQ_SIZE,		NLA_KIND_U16,    2 },
-	{ VDPA_ATTR_DEV_NET_CFG_MACADDR,	NLA_KIND_BINARY, 6 },
-	{ VDPA_ATTR_DEV_NET_STATUS,		NLA_KIND_U8,     1 },
+	{ VDPA_ATTR_MGMTDEV_BUS_NAME,		NLA_KIND_STRING, 32, 1 },
+	{ VDPA_ATTR_MGMTDEV_DEV_NAME,		NLA_KIND_STRING, 32, 1 },
+	{ VDPA_ATTR_DEV_NAME,			NLA_KIND_STRING, 32, 1 },
+	{ VDPA_ATTR_DEV_NET_CFG_MACADDR,	NLA_KIND_BINARY_FIXED2, 6, 6 },
 	{ VDPA_ATTR_DEV_NET_CFG_MAX_VQP,	NLA_KIND_U16,    2 },
 	{ VDPA_ATTR_DEV_NET_CFG_MTU,		NLA_KIND_U16,    2 },
-	{ VDPA_ATTR_DEV_NEGOTIATED_FEATURES,	NLA_KIND_U64,    8 },
-	{ VDPA_ATTR_DEV_MGMTDEV_MAX_VQS,	NLA_KIND_U32,    4 },
-	{ VDPA_ATTR_DEV_SUPPORTED_FEATURES,	NLA_KIND_U64,    8 },
 	{ VDPA_ATTR_DEV_QUEUE_INDEX,		NLA_KIND_U32,    4 },
-	{ VDPA_ATTR_DEV_VENDOR_ATTR_NAME,	NLA_KIND_STRING, 0 },
-	{ VDPA_ATTR_DEV_VENDOR_ATTR_VALUE,	NLA_KIND_U64,    8 },
+	{ VDPA_ATTR_DEV_FEATURES,		NLA_KIND_U64,    8 },
 };
 
 struct genl_family_grammar fam_vdpa = {
