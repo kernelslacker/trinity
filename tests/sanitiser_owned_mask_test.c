@@ -203,14 +203,16 @@ static void bad_mask_refused(void)
  * own, one bit per slot.  A sanitiser that skips an owned slot on any
  * path sends the zero generic_sanitise() left there to the kernel, so
  * the sanitiser runs below and must write every one.  An entry can be
- * listed once its TU is linked into the test binary. */
+ * listed once its TU is linked into the test binary; one with a .cleanup
+ * has it run after each draw, as the dispatcher does, so whatever its
+ * sanitiser made for the call goes with it. */
 static struct syscallentry *const owner_entry[] = {
 	&syscall_prctl, &syscall_keyctl, &syscall_socket, &syscall_socketpair,
 	&syscall_futex_wake, &syscall_quotactl, &syscall_nice,
-	&syscall_personality,
+	&syscall_personality, &syscall_mseal,
 };
 static const uint8_t owner_slots[] = {
-	1u << 0, 1u << 0, 0x07, 0x0f, 0x0a, 1u << 0, 1u << 0, 1u << 0,
+	1u << 0, 1u << 0, 0x07, 0x0f, 0x0a, 1u << 0, 1u << 0, 1u << 0, 0x07,
 };
 
 #define OWNER_RUNS	2048
@@ -258,6 +260,8 @@ static void real_entries_own_what_they_write(void)
 				if (((owned >> k) & 1) && *slot[k] == OWNER_MARK(k))
 					BUG("a sanitiser left a slot it owns unwritten");
 			}
+			if (entry->cleanup != NULL)
+				entry->cleanup(&rec);
 			free((void *) rec.post_state);
 		}
 	}

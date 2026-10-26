@@ -166,6 +166,7 @@ struct syscallentry syscall_mseal = {
 	.rettype = RET_ZERO_SUCCESS,
 	.group = GROUP_VM,
 	.sanitise = sanitise_mseal,
+	.sanitiser_owned_mask = (1u << 0) | (1u << 1) | (1u << 2),
 	.vet_final = vet_final_mseal,
 	.cleanup = cleanup_mseal,
 	.flags = REEXEC_SANITISE_OK,
