@@ -1,9 +1,10 @@
 /*
  * Self-check for the canary pool (fds/canary.c) and its verifier childop
  * (childops/mm/pagecache-canary-check.c): the pool sits in the directory init
- * ran in, by absolute paths, so a child whose cwd a fuzzed chdir() moved still
- * opens its own files and reads no same-named file of the new directory.  Init
- * runs through the provider's hook, against fake object-pool hooks.
+ * ran in, held open and named by absolute paths, so a child whose cwd a fuzzed
+ * chdir() moved still opens its own files and reads no same-named file of the
+ * new directory, and one whose root moved still finds them.  Init runs
+ * through the provider's hook, against fake object-pool hooks.
  */
 
 #include <fcntl.h>
@@ -140,6 +141,7 @@ static void check_pool(int (*init)(void), const char *run, const char *away,
 		       const char *decoy, bool in_tmp_dir)
 {
 	char cwd[PATH_MAX], want[PATH_MAX + sizeof("/canary/")];
+	char moved[PATH_MAX + sizeof("/canary.moved")];
 	unsigned long opened, corrupt;
 	unsigned int i, bad = 0;
 
@@ -166,6 +168,22 @@ static void check_pool(int (*init)(void), const char *run, const char *away,
 	expect(opened == NR_VERIFY,
 	       "passes that could not open a pool file after a chdir",
 	       NR_VERIFY - opened);
+
+	/* The pool's directory held open, and safe from a fuzzed close:
+	 * with canary/ moved, so its absolute paths name nothing, as after
+	 * a chroot, the files are still found through it. */
+	expect(canary_dir_fd() >= 0 && fd_is_protected(canary_dir_fd()),
+	       "a pool directory not held open, or not protected", 1);
+	snprintf(moved, sizeof(moved), "%s/canary.moved", cwd);
+	want[strlen(want) - 1] = '\0';
+	if (rename(want, moved) != 0)
+		BUG("canary path: cannot move the pool's directory");
+	run_verifier(&opened, &corrupt);
+	expect(opened == NR_VERIFY,
+	       "passes that could not open a pool file once its directory moved",
+	       NR_VERIFY - opened);
+	if (rename(moved, want) != 0)
+		BUG("canary path: cannot move the pool's directory back");
 
 	/* A directory holding canary/<idx> files of the right sizes and the
 	 * wrong bytes: none of them is the pool's. */

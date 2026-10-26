@@ -59,6 +59,18 @@ struct canary_pool {
 
 static struct canary_pool *canary_pool;
 
+/*
+ * The pool's directory, held open from init: the verifier reopens a pool
+ * file relative to it, so a chroot() a child made after a userns unshare,
+ * or an ancestor directory a nobody child cannot search, keeps no child
+ * from the file the way they would keep it from an absolute path.  Init,
+ * in the parent, parks it above PROTECTED_FD_HIGH_BASE before any child
+ * forks, and the protected-fd registry names it, so no fuzzed close or
+ * dup2 takes it.  -1 when init could not open the directory, and the
+ * verifier falls back to the absolute path.
+ */
+static int canary_dir = -1;
+
 static void canary_destructor(struct object *obj)
 {
 	/*
@@ -270,6 +282,15 @@ static int init_canary_fds(void)
 		return false;
 	}
 
+	if (canary_dir >= 0)
+		close(canary_dir);
+	canary_dir = open(dir, O_PATH | O_DIRECTORY | O_CLOEXEC);
+	if (canary_dir >= 0)
+		canary_dir = fd_relocate_high(canary_dir);
+	else
+		outputerr("canary: cannot hold %s open: %s\n",
+			  dir, strerror(errno));
+
 	output(1, "canary: initialised %u/%u files in %s\n",
 		canary_pool->count, NR_CANARY_FILES, dir);
 	return true;
@@ -286,6 +307,11 @@ const struct canary_file_info *canary_file_get(unsigned int idx)
 	    idx >= canary_pool->count)
 		return NULL;
 	return &canary_pool->entries[idx];
+}
+
+int canary_dir_fd(void)
+{
+	return canary_dir;
 }
 
 unsigned int canary_pool_size(void)

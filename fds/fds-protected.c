@@ -4,6 +4,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "canary.h"
 #include "child.h"
 #include "fd.h"
 #include "pids.h"
@@ -85,6 +86,12 @@
  *     nowhere or into an unrelated file.  Each child also moves its
  *     copy above PROTECTED_FD_HIGH_BASE.
  *
+ *   - the canary pool's directory (canary_dir_fd()), which the parent
+ *     opens and parks above PROTECTED_FD_HIGH_BASE before fork and every
+ *     child keeps: the pagecache-canary verifier reopens the pool's files
+ *     relative to it, so a close or dup2 over its number loses the oracle
+ *     its files for the rest of that child's life.
+ *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
  * stderr memfd, a per-child tainted_fd, or a per-child fail_nth_fd,
@@ -120,6 +127,8 @@ bool fd_is_protected(int fd)
 	rotfd = stats_rotation_event_fd();
 	if (rotfd >= 0 && fd == rotfd)
 		return true;
+	if (fd == canary_dir_fd())
+		return true;
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
 	if (child == NULL)
@@ -154,6 +163,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	int memfd;
 	int taintfd;
 	int rotfd;
+	int dirfd;
 	int lowest = -1;
 
 	if (hi < lo)
@@ -180,6 +190,12 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	    (unsigned int) rotfd >= lo && (unsigned int) rotfd <= hi)
 		if (lowest < 0 || rotfd < lowest)
 			lowest = rotfd;
+
+	dirfd = canary_dir_fd();
+	if (dirfd >= 0 &&
+	    (unsigned int) dirfd >= lo && (unsigned int) dirfd <= hi)
+		if (lowest < 0 || dirfd < lowest)
+			lowest = dirfd;
 
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();

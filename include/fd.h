@@ -236,6 +236,9 @@ int get_typed_fd(enum argtype type);
  *     so the CAS-winning child can write its record, which makes it one
  *     file description the whole fleet shares.  A fuzz-induced write /
  *     ftruncate over its number tears the stream for every child.
+ *   - the canary pool's directory (canary_dir_fd(), see canary.h): opened
+ *     and parked high by the parent and kept by every child, which reopens
+ *     the pool's files relative to it.
  *
  * Parent-context callers (this_child() == NULL) still get STDERR_FILENO
  * and the rotation sink protected -- both are process-wide -- but

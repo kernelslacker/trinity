@@ -534,7 +534,9 @@ bool pagecache_canary_check(struct childdata *child)
 	unsigned int pool_size;
 	unsigned int idx;
 	enum read_mode mode;
+	char name[16];
 	int open_flags;
+	int dirfd;
 	int fd;
 
 	/* Snapshot child->op_type once: a sibling poisoned-arena write
@@ -566,12 +568,22 @@ bool pagecache_canary_check(struct childdata *child)
 	default: break;
 	}
 
-	/* info->path is absolute, so a chdir() this child fuzzed earlier
-	 * cannot redirect the reopen. */
-	fd = open(info->path, open_flags);
+	/*
+	 * Relative to the pool's directory, held open since init, so neither
+	 * a chdir() nor a chroot() this child fuzzed earlier, nor an ancestor
+	 * directory a nobody child cannot search, keeps it from its file.
+	 * The name comes from the index, not from the shared path string.
+	 * With no such fd, info->path is absolute, which a chdir() at least
+	 * cannot redirect.
+	 */
+	dirfd = canary_dir_fd();
+	snprintf(name, sizeof(name), "%u", idx);
+	fd = dirfd >= 0 ? openat(dirfd, name, open_flags) :
+			  open(info->path, open_flags);
 	direct_calls++;
 	if (fd < 0 && (open_flags & O_DIRECT) && errno == EINVAL) {
-		fd = open(info->path, O_RDONLY);
+		fd = dirfd >= 0 ? openat(dirfd, name, O_RDONLY) :
+				  open(info->path, O_RDONLY);
 		direct_calls++;
 	}
 	if (fd < 0) {
