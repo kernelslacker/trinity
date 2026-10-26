@@ -408,8 +408,11 @@ update this section to match `ls scripts/check-static/*.sh`.)
   compiler's value, and so must each pair pinned in
   `scripts/check-static/uapi-shim-values.baseline`.
   `#ifndef` guards on enum values are always taken — enums are not macros, so
-  the shim is the definition, not a fallback.  A miscounted or typo'd value
-  compiles silently and sends the wrong netlink attribute to the kernel.
+  the shim is the definition, not a fallback, unless `configure` compile-tests
+  the member and the shim sits under `#ifndef HAVE_<SYMBOL>`
+  (`uapi-enum-probes`): then it is a fallback, and this check keeps its number
+  right.  A miscounted or typo'd value compiles silently and sends the wrong
+  netlink attribute to the kernel.
   The `XFRMA_*` shims are probed like any other and pinned in the baseline.
   A baseline symbol that the tree shims but no probe can resolve, such as a
   constant newer than the build host's headers, is skipped with a `SKIP` line

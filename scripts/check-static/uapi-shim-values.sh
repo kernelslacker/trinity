@@ -8,8 +8,11 @@
 #
 # (whether or not wrapped in #ifndef) is the EFFECTIVE definition on every
 # build -- enum constants are not macros, so a cpp #ifndef is unconditionally
-# true.  A typo or miscounted enum position compiles clean, links clean, and
-# silently encodes the wrong netlink attribute forever.
+# true.  The exception is a shim under #ifndef HAVE_<SYMBOL>, which configure
+# compile-tests: there the define is only a fallback for a header that lacks
+# the member, and this check keeps its number right.  A typo or miscounted
+# enum position compiles clean, links clean, and silently encodes the wrong
+# netlink attribute forever.
 #
 # HOW IT WORKS:
 #   1. Harvest  -- collect every "#define SYM <integer>" from the whole tree
