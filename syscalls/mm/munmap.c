@@ -15,22 +15,16 @@
 #include "trinity.h"
 #include "utils.h"
 
-#define WHOLE 1
-
 /*
- * Snapshot of the four munmap inputs read by the post handler, captured
- * at sanitise time, its range moved to the final slots at dispatch
+ * Snapshot of the munmap inputs read by the post handler, captured at
+ * sanitise time, its range moved to the final slots at dispatch
  * (vet_final_munmap()), and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot:
- *   - flip the action gate that decides destroy_object vs prot=0
- *     invalidate (a stomped 1 destroys an arbitrary trinity object via
- *     container_of(); a stomped 0 leaves a stale entry the consumer
- *     pool will hand out for write);
- *   - retarget the trinity-tracked map pointer the post handler
- *     destroys or invalidates (looks_like_corrupted_ptr cannot tell a
- *     real-but-wrong heap address from a real map pointer);
+ *   - retarget the trinity-tracked map pointer the post handler retires
+ *     (looks_like_corrupted_ptr cannot tell a real-but-wrong heap
+ *     address from a real map pointer);
  *   - steer the proc-maps oracle's range arguments at a different
  *     address window than the syscall actually operated on (forging
  *     either a clean compare against an unrelated /proc/self/maps slice
@@ -39,18 +33,15 @@
 struct munmap_post_state {
 	unsigned long magic;
 	struct map_range range;
-	unsigned long action;
 	/*
 	 * OBJ_MMAP_* pool the underlying obj lives in, as resolved by
 	 * common_set_mmap_ptr_len() at sanitise time.  Captured here so
-	 * the WHOLE branch in post_munmap routes destroy_object() to the
-	 * head whose array actually contains the obj; a hard-coded
-	 * OBJ_MMAP_ANON destroys nothing when the entry came from
-	 * FILE/TESTFILE and the now-unmapped VMA stays cached in the
-	 * pool for the next consumer to walk into.  OBJ_NONE means
+	 * post_munmap retires the entry from the head whose array actually
+	 * contains the obj; a hard-coded OBJ_MMAP_ANON destroys nothing
+	 * when the entry came from FILE/TESTFILE.  OBJ_NONE means
 	 * common_set_mmap_ptr_len() couldn't match the obj against any
-	 * local mmap pool -- the WHOLE branch then declines to destroy
-	 * rather than guess.
+	 * local mmap pool -- the entry is then marked holed and left where
+	 * it is rather than destroyed at a guessed head.
 	 */
 	unsigned long type;
 };
@@ -89,7 +80,6 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	struct munmap_post_state *snap;
 	enum objecttype map_type = OBJ_NONE;
 	struct map *map = common_set_mmap_ptr_len(&map_type);
-	int action = 0;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -98,32 +88,20 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	if (map == NULL) {
-		/* No mapping to unmap. Stash NULL/0 so post_munmap sees
-		 * action != WHOLE and skips the container_of deref. */
-		rec->a3 = 0;
-		rec->a4 = 0;
+	if (map == NULL)
 		return;
-	}
 
 	if (ONE_IN(20) == true) {
 		/* delete the whole mapping. */
-		action = WHOLE;
-		/* For WHOLE, post_munmap will destroy the obj and call
-		 * map_destructor → munmap(map->ptr, tracked_size ?: size).
-		 * Match that extent here so the kernel-side munmap covers
-		 * the full VMA -- map->size has been clamped down to the
-		 * file-backed walkable region for clamped MMAPED_FILE
-		 * entries, so passing it would unmap only the head and
-		 * leak the past-EOF tail VMA when post_munmap declines to
-		 * destroy (pool_type == OBJ_NONE arm, line ~217), and even
-		 * when the destructor does fire the kernel sees two munmaps
-		 * for the head plus one for the tail rather than a single
-		 * clean teardown.  shared_region overlap check below also
-		 * gets the real span so a tail that grazes trinity bookkeeping
-		 * gets caught.  Falls back to map->size for legacy entries
-		 * (alloc_zero_map ANON, post_mmap CHILD_ANON) where the two
-		 * are equal anyway. */
+		/* Over the VMA's full extent: map->size has been clamped
+		 * down to the file-backed walkable region for clamped
+		 * MMAPED_FILE entries, so passing it would unmap only the
+		 * head and leave the past-EOF tail for post_munmap to
+		 * unmap after the call.  The shared_region overlap check
+		 * below also gets the real span so a tail that grazes
+		 * trinity bookkeeping gets caught.  Falls back to
+		 * map->size for legacy entries (alloc_zero_map ANON,
+		 * post_mmap CHILD_ANON) where the two are equal anyway. */
 		rec->a1 = (unsigned long) map->ptr;
 		rec->a2 = map->tracked_size ? map->tracked_size : map->size;
 	} else if (RAND_BOOL()) {
@@ -154,8 +132,6 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	/*
 	 * Make sure we don't unmap the shm region — children fuzzing
 	 * munmap can blow away trinity's shared state and crash everyone.
-	 * For WHOLE, also drop the action so post_munmap doesn't run the
-	 * destructor (which would munmap(map->ptr, map->size) regardless).
 	 * A compat call hands the kernel only the low 32 bits of each slot,
 	 * so a range they cannot carry is emptied too, rather than left for
 	 * validate_arg_coupling() to refuse.
@@ -164,23 +140,14 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
-		action = 0;
 	}
 
-	/* Stash map pointer and action in unused arg slots for post callback. */
-	rec->a3 = (unsigned long) map;
-	rec->a4 = action;
-
 	/*
-	 * Snapshot the four inputs the post handler reads.  Without this
-	 * the post handler reads rec->a1/a2/a3/a4 at post-time, when a
-	 * sibling syscall may have scribbled the slots: a stomped action
-	 * flips destroy_object vs prot=0 invalidate (destroying an
-	 * arbitrary object via container_of, or leaving a stale entry the
-	 * pool hands out for write), looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from a real map pointer so a
-	 * foreign-heap stomp slips the rec->a3 guard, and a stomped
-	 * rec->a1/a2 retargets the proc-maps oracle at a window the
+	 * Snapshot the inputs the post handler reads.  The slots are where
+	 * a sibling syscall may have scribbled by post-time:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from a real map pointer, and a stomped rec->a1/a2
+	 * retargets the retirement and the proc-maps oracle at a window the
 	 * syscall never touched -- forging either a clean compare or a
 	 * never-happened anomaly.  post_state is private to the post
 	 * handler, and validate_arg_coupling() moves the range to the
@@ -195,7 +162,6 @@ static void sanitise_munmap(struct syscallrecord *rec)
 	snap->range.map  = map;
 	snap->range.addr = rec->a1;
 	snap->range.len  = rec->a2;
-	snap->action     = rec->a4;
 	snap->type       = (unsigned long) map_type;
 	post_state_install(rec, snap);
 }
@@ -204,7 +170,6 @@ static void post_munmap(struct syscallrecord *rec)
 {
 	struct munmap_post_state *snap;
 	struct map *map;
-	unsigned long action;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -220,7 +185,6 @@ static void post_munmap(struct syscallrecord *rec)
 		goto out_free;
 
 	map = snap->range.map;
-	action = snap->action;
 
 	/*
 	 * Defense in depth: even with the post_state snapshot, a wholesale
@@ -234,54 +198,15 @@ static void post_munmap(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Either branch invalidates the get_writable_address() known_rw
-	 * skip-cache.  For WHOLE the slot is about to be destroyed; for the
-	 * sub-range branch we are about to clear map->prot to 0.  In both
-	 * cases the cached "slot is RW and resident" claim is stale and
-	 * letting it persist would let the hot path hand a caller a
-	 * pointer into a torn-down or hole-punched VMA.
+	 * The call took the snapshot's range out of the entry's VMA, all of
+	 * it or a hole in it, and the entry's single (ptr, size) cannot say
+	 * which pages are left.  So whatever it took, the entry is retired:
+	 * left for a pick, its extent would soon hold whatever the kernel
+	 * put in the hole (see retire_holed_map()).
 	 */
 	if (map != NULL)
-		map->known_rw = false;
-
-	if (action == WHOLE && map != NULL) {
-		enum objecttype pool_type = (enum objecttype) snap->type;
-
-		/*
-		 * Only destroy when common_set_mmap_ptr_len() positively
-		 * identified the pool this obj lives in.  An OBJ_NONE
-		 * here means the obj didn't match any local mmap pool at
-		 * sanitise time -- the underlying VMA has now been
-		 * unmapped, but routing destroy_object() at a guessed
-		 * head would trip the head->array[idx] == obj invariant
-		 * and leave the slot in place anyway.  The entry will be
-		 * cleaned up later when its pool is torn down; better
-		 * that than chasing the wrong head.
-		 */
-		if (pool_type == OBJ_MMAP_ANON ||
-		    pool_type == OBJ_MMAP_FILE ||
-		    pool_type == OBJ_MMAP_TESTFILE) {
-			struct object *obj =
-				container_of(map, struct object, map);
-			destroy_object(obj, OBJ_LOCAL, pool_type);
-		}
-	} else if (map != NULL) {
-		/*
-		 * Sub-range munmap (19/20 invocations) punches a hole in the
-		 * pool entry but leaves map->ptr / map->size unchanged.  A later
-		 * get_map_with_prot() consumer would then write into the
-		 * punched-out range and SEGV_MAPERR on the first unmapped
-		 * page.  Mirror the conservative invalidate from
-		 * post_mprotect: blanket-disable the entry by clearing
-		 * map->prot so get_map_with_prot(any) skips it.  Middle-of-
-		 * mapping holes can't be expressed in a single (ptr, size)
-		 * pair, so prot=0 is the only universally correct option.
-		 * False-negatives (consumer skips a mapping that may still be
-		 * partially writable) are acceptable; false-positives crash
-		 * the child.
-		 */
-		map->prot = 0;
-	}
+		retire_holed_map(map, (enum objecttype) snap->type,
+				 snap->range.addr, snap->range.len);
 
 	/*
 	 * Oracle: 1-in-100 chance — verify the unmapped range is gone from

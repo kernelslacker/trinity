@@ -569,6 +569,7 @@ static struct syscallrecord *mm_call(struct syscallentry *entry)
 	pool_obj.map.tracked_size = pool_obj.map.size;
 	pool_obj.map.prot = PROT_READ | PROT_WRITE;
 	pool_obj.map.keyed = false;
+	pool_obj.map.holed = false;
 	fake_this_child = &mm_child;
 	return mrec;
 }
@@ -1310,17 +1311,13 @@ static void munmap_compat_slots_truncated(struct syscallentry *entry)
 	entry->post(mrec);
 }
 
-/* munmap.c's WHOLE: the sanitiser's action for a whole-mapping unmap,
- * which it leaves in a4. */
-#define MUNMAP_WHOLE	1UL
-
 /* A whole-mapping unmap is one draw in twenty, so the draws above build
  * one as a compat call only by chance.  Find one built natively and
  * replay its draws as a compat call, which takes the same branch: the
  * sanitiser draws it before it looks at do32bit or the address.  Over the
  * high mapping, whose address the slots cannot carry, the call is built
- * empty with its action dropped, and passes; over a low mapping it is the
- * whole mapping, and passes. */
+ * empty, and passes; over a low mapping it is the whole mapping, and
+ * passes. */
 static void munmap_compat_whole_mapping(struct syscallentry *entry)
 {
 	struct syscallrecord *mrec;
@@ -1333,7 +1330,7 @@ static void munmap_compat_whole_mapping(struct syscallentry *entry)
 		entry->sanitise(mrec);
 		mrec->retval = (unsigned long) -1L;
 		entry->post(mrec);
-		if (mrec->a4 == MUNMAP_WHOLE)
+		if (mrec->a1 == POOL_MAP && mrec->a2 == POOL_PAGES * page_size)
 			break;
 	}
 	if (i == 10000)
@@ -1343,7 +1340,7 @@ static void munmap_compat_whole_mapping(struct syscallentry *entry)
 	mrec->do32bit = true;
 	rnd_state = state;
 	entry->sanitise(mrec);
-	if (mrec->a1 != 0 || mrec->a2 != 0 || mrec->a4 != 0)
+	if (mrec->a1 != 0 || mrec->a2 != 0)
 		BUG("munmap: a compat whole-mapping unmap of a high mapping was kept");
 	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: an emptied compat whole-mapping unmap was refused");
@@ -1355,13 +1352,81 @@ static void munmap_compat_whole_mapping(struct syscallentry *entry)
 	mrec->do32bit = true;
 	rnd_state = state;
 	entry->sanitise(mrec);
-	if (mrec->a4 != MUNMAP_WHOLE || mrec->a1 != LOW_POOL_MAP ||
-	    mrec->a2 != POOL_PAGES * page_size)
+	if (mrec->a1 != LOW_POOL_MAP || mrec->a2 != POOL_PAGES * page_size)
 		BUG("munmap: a compat whole-mapping unmap of a low mapping was not built whole");
 	if (validate_arg_coupling(mrec, mrec->entry) != 0)
 		BUG("munmap: a compat whole-mapping unmap of a low mapping was refused");
 	mrec->retval = (unsigned long) -1L;
 	entry->post(mrec);
+}
+
+/* The global entry a borrowed clone was made from, which the munmap
+ * retirement test installs alone in the anon global pool. */
+static struct object retire_global;
+static struct object *retire_global_array[1] = { &retire_global };
+static struct objhead retire_global_head = {
+	.array = retire_global_array, .num_entries = 1, .array_capacity = 1,
+};
+
+static struct objhead *retire_pools(enum obj_scope scope, enum objecttype type)
+{
+	if (scope == OBJ_GLOBAL && type == OBJ_MMAP_ANON)
+		return &retire_global_head;
+	return NULL;
+}
+
+/* A munmap that worked takes the pool entry out of use however much of
+ * its VMA it took, since the entry cannot describe what is left: an entry
+ * that owns its VMA unmaps the rest of it at once and is marked holed, and
+ * a borrowed clone marks the global entry it came from, so a refill does
+ * not clone that back.  The owned mapping is real, so what is left of it
+ * shows; the kernel's own munmap of the hole is done here first. */
+static void munmap_retires_what_it_holed(struct syscallentry *entry)
+{
+	const unsigned long len = 4 * page_size;
+	struct syscallrecord *mrec;
+	unsigned char vec;
+	unsigned long i;
+	char *p;
+
+	p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		BUG("munmap: no mapping to hole");
+	mrec = mm_call(entry);
+	pool_obj.map.ptr = p;
+	pool_obj.map.size = pool_obj.map.tracked_size = len;
+	pool_obj.map.owns_vma = true;
+	entry->sanitise(mrec);
+	mrec->a1 = (unsigned long) p + page_size;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("munmap: a page inside the mapping was refused");
+	munmap(p + page_size, page_size);
+	mrec->retval = 0;
+	entry->post(mrec);
+	for (i = 0; i < len; i += page_size) {
+		if (mincore(p + i, page_size, &vec) == 0)
+			BUG("munmap: a holed entry left part of the VMA it owns mapped");
+	}
+	if (!pool_obj.map.holed || pool_obj.map.prot != 0)
+		BUG("munmap: a holed entry was left for a pick");
+	pool_obj.map.owns_vma = false;
+
+	memset(&retire_global, 0, sizeof(retire_global));
+	retire_global.map.ptr = (void *) POOL_MAP;
+	fake_get_objhead = retire_pools;
+	mrec = mm_call(entry);
+	entry->sanitise(mrec);
+	mrec->a1 = POOL_MAP;
+	mrec->a2 = page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("munmap: a page inside the mapping was refused");
+	mrec->retval = 0;
+	entry->post(mrec);
+	if (!pool_obj.map.holed || !retire_global.map.holed)
+		BUG("munmap: a holed clone left its global entry to be cloned back");
+	fake_get_objhead = no_pool;
 }
 
 /* munmap's final range stays inside the mapping its sanitiser picked. */
@@ -1379,6 +1444,7 @@ static void munmap_range_held_to_mapping(void)
 	munmap_compat_whole_mapping(&munmap_entry);
 	munmap_rewritten_range_held(&munmap_entry);
 	munmap_post_acts_on_final_range(&munmap_entry);
+	munmap_retires_what_it_holed(&munmap_entry);
 	munmap_needs_its_snapshot(&munmap_entry);
 	munmap_compat_slots_truncated(&munmap_entry);
 

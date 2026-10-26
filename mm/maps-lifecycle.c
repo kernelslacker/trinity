@@ -86,6 +86,71 @@ void map_destructor(struct object *obj)
 }
 
 /*
+ * A syscall just took the pages [addr, addr + len) spans (map_range_pages())
+ * from the VMA @map describes, part of it or all.  The kernel can put
+ * anything in that range from now on, so the entry is retired (see struct
+ * map's holed) rather than left for a pick to build a range in.  An entry
+ * that owns its VMA unmaps the rest of it now, while nothing else can have
+ * been placed in the range, under the band and cap map_destructor() checks;
+ * the destructor unmaps nothing for a holed entry.  A borrowed clone leaves
+ * its global source's VMA alone, as map_destructor() does, but marks the
+ * source so a refill does not clone it back.  The entry leaves its pool when
+ * @type names the one it is in, and otherwise stays, holed.
+ */
+void retire_holed_map(struct map *map, enum objecttype type,
+		      unsigned long addr, unsigned long len)
+{
+	static const enum objecttype pools[] = {
+		OBJ_MMAP_ANON, OBJ_MMAP_FILE, OBJ_MMAP_TESTFILE,
+	};
+	unsigned long base = (unsigned long) map->ptr;
+	unsigned long extent = map->tracked_size > map->size ?
+			       map->tracked_size : map->size;
+	struct page_span hole;
+	unsigned int i;
+
+	map->holed = true;
+	map->prot = 0;
+	map->known_rw = false;
+
+	if (map->owns_vma &&
+	    base >= 0x10000UL && base < 0x800000000000UL &&
+	    extent != 0 && extent <= GB(4UL) &&
+	    map_range_pages(addr, len, false, false, &hole) &&
+	    page_span_inside(&hole, base, extent)) {
+		unsigned long end = base + ((extent + page_size - 1) & PAGE_MASK);
+
+		if (hole.start > base)
+			munmap(map->ptr, hole.start - base);
+		if (hole.end < end)
+			munmap((void *) hole.end, end - hole.end);
+	}
+
+	if (!map->owns_vma) {
+		for (i = 0; i < ARRAY_SIZE(pools); i++) {
+			struct objhead *head = get_objhead(OBJ_GLOBAL, pools[i]);
+			struct object *obj;
+			unsigned int idx;
+
+			if (head == NULL || head->array == NULL)
+				continue;
+			for_each_obj(head, obj, idx) {
+				if (obj->map.ptr == map->ptr)
+					obj->map.holed = true;
+			}
+		}
+	}
+
+	for (i = 0; i < ARRAY_SIZE(pools); i++) {
+		if (type == pools[i]) {
+			destroy_object(container_of(map, struct object, map),
+				       OBJ_LOCAL, type);
+			break;
+		}
+	}
+}
+
+/*
  * Destructor for OBJ_GLOBAL mmap entries created via mmap_fd() and
  * setup_initial_mappings().  The obj struct itself is freed by
  * release_obj() (which zeroes the chunk and routes it through
