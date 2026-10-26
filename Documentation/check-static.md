@@ -136,14 +136,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   the `offsetof()` form, which a naive grep misses.
 
 - `shim-symbol-single-value`: a uapi fallback symbol -- one guarded by
-  `#ifndef SYM` anywhere in the tree -- must have exactly one value.  Two
-  values for one symbol means two translation units disagree about the ABI
-  while the build stays green, which is how `struct ns_id_req` ran as a
-  24-byte layout in `struct_catalog/` and a 32-byte one in
+  `#ifndef SYM` anywhere in the tree, or by `#ifndef HAVE_SYM`, the guard of
+  an enum member that `configure` compile-tests -- must have exactly one
+  value.  Two values for one symbol means two translation units disagree
+  about the ABI while the build stays green, which is how `struct ns_id_req`
+  ran as a 24-byte layout in `struct_catalog/` and a 32-byte one in
   `include/kernel/nsfs.h`.  Per-arch and file-local constants are out of
   scope: they are unguarded and are allowed to differ.  Self-tests both
-  directions -- a planted guarded conflict must fire, a planted unguarded
-  one must not.
+  directions -- a planted guarded conflict, `HAVE_SYM` guard included, must
+  fire; a planted unguarded one, or one under another symbol's `HAVE_`
+  guard, must not.
 
 - `shim-cross-tu`: a uapi fallback written into a `.c` file -- a
   `#define` in the true branch of an `#ifndef` or `#if !defined()` block,

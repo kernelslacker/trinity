@@ -25,6 +25,8 @@
 # Scope: a symbol is in scope once ANY definition of it in the tree is
 # guarded by `#ifndef SYM` -- i.e. it is a fallback for something the
 # kernel headers may already provide, and therefore has one true value.
+# `#ifndef HAVE_SYM` is the same guard for an enum member, which #ifndef
+# cannot see: configure compile-tests it and emits HAVE_SYM.
 # Plain per-arch or per-TU constants (PTE_FILE_MAX_BITS in include/arch-*.h,
 # a file-local MAX_ITERATIONS) are deliberately out of scope: they are
 # allowed to differ, and they are not guarded.
@@ -49,8 +51,8 @@ MIN_GUARDED=500
 #
 # Emit "SYM VALUE FILE:LINE GUARDED" for every integer #define in the
 # tree, where GUARDED is 1 when the define sits inside an `#ifndef SYM`
-# block for its own name.  Comments are stripped first so a commented-out
-# stale value is not harvested.
+# or `#ifndef HAVE_SYM` block for its own name.  Comments are stripped
+# first so a commented-out stale value is not harvested.
 scan_tree() {
 	local root="$1"
 
@@ -84,7 +86,7 @@ scan_tree() {
 
 				guarded = 0
 				for (d = depth; d > 0; d--)
-					if (guard[d] == name) { guarded = 1; break }
+					if (guard[d] == name || guard[d] == "HAVE_" name) { guarded = 1; break }
 
 				printf "%s %s %s:%d %d\n", name, val, file, NR, guarded
 			}
@@ -164,8 +166,18 @@ cat > "$selftest_dir/a/shim.h" <<'EOF'
 #define TRINITY_SELFTEST_SHIM	32
 #endif
 EOF
+cat > "$selftest_dir/a/probed.h" <<'EOF'
+#ifndef HAVE_TRINITY_SELFTEST_PROBED
+#define TRINITY_SELFTEST_PROBED	32
+#endif
+#ifndef HAVE_TRINITY_SELFTEST_OTHER
+#define TRINITY_SELFTEST_FOREIGN	1
+#endif
+EOF
 cat > "$selftest_dir/b/other.c" <<'EOF'
 #define TRINITY_SELFTEST_SHIM 0x18
+#define TRINITY_SELFTEST_PROBED 0x18
+#define TRINITY_SELFTEST_FOREIGN 2
 #define TRINITY_SELFTEST_PLAIN 1
 EOF
 cat > "$selftest_dir/a/plain.c" <<'EOF'
@@ -185,6 +197,19 @@ if printf '%s\n' "$st_out" | grep -q '^TRINITY_SELFTEST_PLAIN$'; then
 	echo "  $NAME: self-test FAILED -- an UNGUARDED 1-vs-2 conflict was reported." >&2
 	echo "  per-arch and file-local constants are allowed to differ; reporting" >&2
 	echo "  them would bury the real hits in noise." >&2
+	echo "FAIL: $NAME: self-test reported an out-of-scope conflict"
+	exit 1
+fi
+if ! printf '%s\n' "$st_out" | grep -q '^TRINITY_SELFTEST_PROBED$'; then
+	echo "  $NAME: self-test FAILED -- planted 32-vs-0x18 conflict on a HAVE_-guarded" >&2
+	echo "  shim was not detected.  An enum member's fallback sits under" >&2
+	echo "  #ifndef HAVE_SYM, which must count as a guard like #ifndef SYM does." >&2
+	echo "FAIL: $NAME: self-test did not detect a planted conflict on a HAVE_ shim"
+	exit 1
+fi
+if printf '%s\n' "$st_out" | grep -q '^TRINITY_SELFTEST_FOREIGN$'; then
+	echo "  $NAME: self-test FAILED -- a define under another symbol's HAVE_ guard" >&2
+	echo "  was taken for a shim guard.  Only #ifndef HAVE_<its own name> counts." >&2
 	echo "FAIL: $NAME: self-test reported an out-of-scope conflict"
 	exit 1
 fi
