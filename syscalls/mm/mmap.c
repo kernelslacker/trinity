@@ -8,6 +8,7 @@
  * A MAP_FIXED that replaces is the one the sanitiser vetted, final slots
  * included (vet_final_mmap()).
  */
+#include <stdint.h>
 #include <sys/mman.h>
 #include <linux/magic.h>
 #include <sys/vfs.h>
@@ -113,26 +114,37 @@ unsigned long get_rand_mmap_flags(void)
 }
 
 /*
- * The call the sanitiser vetted, in the slots that place and size what a
- * MAP_FIXED replaces, for vet_final_mmap(): kept for a call that replaces,
- * or that takes its arguments from a struct, since no other call is held.
- * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
- * rewrite of rec->aN cannot move what the call is held to.  Nothing reads
- * it after dispatch, and .cleanup releases it.
+ * The call the sanitiser vetted, for vet_final_mmap(): the slots that place
+ * and size what a MAP_FIXED replaces, and for a call that takes its
+ * arguments from a struct, every slot.  Kept for a call that replaces, or
+ * that takes a struct, since no other call is held.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a rewrite of
+ * rec->aN cannot move what the call is held to.  Nothing reads it after
+ * dispatch, and .cleanup releases it.
  */
 #define MMAP_POST_STATE_MAGIC	0x4D4D41505F564554UL	/* "MMAP_VET" */
 struct mmap_post_state {
 	unsigned long magic;
 	unsigned long addr;
 	unsigned long len;
+	unsigned long prot;
 	unsigned long flags;
 	unsigned long fd;
+	unsigned long off;
+};
+
+/*
+ * old_mmap()'s argument block: six 32-bit words, for i386 and for an
+ * x86-64 compat call alike (struct mmap_arg_struct32).
+ */
+struct old_mmap_args {
+	uint32_t addr, len, prot, flags, fd, offset;
 };
 
 /*
  * i386's mmap, and so an x86-64 compat call through the i386 table, is
  * old_mmap(): the kernel copies all six arguments from a struct at a1
- * (sys_old_mmap(), compat_sys_ia32_mmap()), and the sanitiser builds none.
+ * (sys_old_mmap(), compat_sys_ia32_mmap()), which the sanitiser builds.
  */
 static bool mmap_takes_arg_struct(const struct syscallrecord *rec,
 				  const struct syscallentry *entry)
@@ -160,11 +172,13 @@ static bool mmap_takes_arg_struct(const struct syscallrecord *rec,
  * and a file mapping's fd, as a huge page flag or a hugetlbfs file rounds
  * the length up (ksys_mmap_pgoff()).  A MAP_FIXED it did not draw, or with
  * no snapshot of ours, is refused too.  A call that takes its arguments
- * from a struct at a1 has only a1 to hold, to the NULL the sanitiser left:
- * any other pointer hands the kernel six arguments nobody vetted, which
- * may well carry MAP_FIXED.  Refused rather than repaired, each slot
- * read as the kernel reads it, the low 32 bits for a compat call.  Shape,
- * then ownership, then magic, as post_state_claim_owned() orders them.
+ * from a struct at a1 is held to the struct the sanitiser built, any other
+ * pointer handing the kernel six arguments nobody vetted, which may well
+ * carry MAP_FIXED, and every other slot to what the struct holds, since
+ * the post handler records the mapping from the slots.  Refused rather
+ * than repaired, each slot read as the kernel reads it, the low 32 bits
+ * for a compat call.  Shape, then ownership, then magic, as
+ * post_state_claim_owned() orders them.
  */
 static int vet_final_mmap(struct syscallrecord *rec,
 			  const struct syscallentry *entry)
@@ -182,13 +196,16 @@ static int vet_final_mmap(struct syscallrecord *rec,
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == MMAP_POST_STATE_MAGIC &&
 	    !((rec->a1 ^ snap->addr) & mask) &&
-	    (arg_struct ||
-	     (!((rec->a2 ^ snap->len) & mask) &&
-	      flags == (snap->flags & mask) &&
-	      ((flags & MAP_ANONYMOUS) || !((rec->a5 ^ snap->fd) & mask)))))
+	    !((rec->a2 ^ snap->len) & mask) &&
+	    flags == (snap->flags & mask) &&
+	    (((flags & MAP_ANONYMOUS) && !arg_struct) ||
+	     !((rec->a5 ^ snap->fd) & mask)) &&
+	    (!arg_struct ||
+	     (!((rec->a3 ^ snap->prot) & mask) &&
+	      !((rec->a6 ^ snap->off) & mask))))
 		return 0;
 
-	outputerr("arg-coupling: %s rejected: MAP_FIXED replaces a range sanitise did not vet, or a1 is not the struct pointer it left\n",
+	outputerr("arg-coupling: %s rejected: MAP_FIXED replaces a range sanitise did not vet, or the slots are not the struct it built\n",
 		  entry->name);
 	return -1;
 }
@@ -357,14 +374,42 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		log_mm_syscall_post_gate_heap_slip("mmap", rec->a1, rec->a2,
 						   rec->a3);
 
+	/*
+	 * Build old_mmap()'s struct from the slots as vetted, where a1 can
+	 * carry it, and leave the slots holding what it holds, cut to its
+	 * 32-bit words, for the post handler to record.  With no pool to
+	 * draw from, a1 stays NULL and the call faults.
+	 */
+	if (mmap_takes_arg_struct(rec, rec->entry)) {
+		struct old_mmap_args *args =
+			get_call_writable_struct(rec, sizeof(*args));
+
+		if (args != NULL) {
+			args->addr   = rec->a1;
+			args->len    = rec->a2;
+			args->prot   = rec->a3;
+			args->flags  = rec->a4;
+			args->fd     = rec->a5;
+			args->offset = rec->a6;
+			rec->a1 = (unsigned long) args;
+			rec->a2 = args->len;
+			rec->a3 = args->prot;
+			rec->a4 = args->flags;
+			rec->a5 = args->fd;
+			rec->a6 = args->offset;
+		}
+	}
+
 	if (((rec->a4 & MAP_FIXED) && !(rec->a4 & MAP_FIXED_NOREPLACE)) ||
 	    mmap_takes_arg_struct(rec, rec->entry)) {
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = MMAP_POST_STATE_MAGIC;
 		snap->addr  = rec->a1;
 		snap->len   = rec->a2;
+		snap->prot  = rec->a3;
 		snap->flags = rec->a4;
 		snap->fd    = rec->a5;
+		snap->off   = rec->a6;
 		post_state_install(rec, snap);
 	}
 }

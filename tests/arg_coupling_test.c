@@ -4018,10 +4018,13 @@ static void mmap_needs_its_snapshot(struct syscallentry *entry)
 
 #if defined(__x86_64__)
 /* A compat call through the i386 table's mmap is old_mmap(): the kernel
- * copies all six arguments from a struct at a1, as the low 32 bits read
- * it, so a1 is held to the NULL the sanitiser leaves there whatever the
- * other slots say, MAP_FIXED or not.  A compat mmap2 takes its arguments
- * in registers, and a1 without MAP_FIXED is only a hint there. */
+ * copies all six arguments from a struct at a1, six 32-bit words, as the
+ * low 32 bits of a1 read it.  The sanitiser builds that struct below
+ * 4 GiB, from the arguments it vetted, which stay in the slots as the
+ * struct holds them for the post handler to record: so a1 is held to the
+ * struct and every other slot to what it holds, MAP_FIXED or not.  A
+ * compat mmap2 takes its arguments in registers, and a1 without MAP_FIXED
+ * is only a hint there. */
 static void mmap_arg_struct_held(struct syscallentry *mmap_entry,
 				 struct syscallentry *mmap2_entry)
 {
@@ -4030,6 +4033,7 @@ static void mmap_arg_struct_held(struct syscallentry *mmap_entry,
 
 	for (e = 0; e < ARRAY_SIZE(entries); e++) {
 		struct syscallrecord *mrec = NULL;
+		unsigned long *slots[5], a1;
 
 		for (i = 0; i < 1000; i++) {
 			mrec = mm_call(entries[e]);
@@ -4045,10 +4049,30 @@ static void mmap_arg_struct_held(struct syscallentry *mmap_entry,
 
 		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("mmap: a compat call the sanitiser built was refused");
-		mrec->a1 = 1UL << 32;
+		a1 = mrec->a1;
+		if (!entries[e]->is_mmap2) {
+			const uint32_t *args = (const uint32_t *) a1;
+
+			slots[0] = &mrec->a2;
+			slots[1] = &mrec->a3;
+			slots[2] = &mrec->a4;
+			slots[3] = &mrec->a5;
+			slots[4] = &mrec->a6;
+			if (a1 == 0 || a1 > UINT_MAX - 6 * sizeof(*args))
+				BUG("mmap: old_mmap's struct lies where a1 cannot carry it");
+			for (i = 0; i < ARRAY_SIZE(slots); i++) {
+				if (*slots[i] != args[i + 1])
+					BUG("mmap: old_mmap's slots do not hold what its struct does");
+				*slots[i] += page_size;
+				if (validate_arg_coupling(mrec, mrec->entry) != -1)
+					BUG("mmap: old_mmap kept a slot rewritten away from its struct");
+				*slots[i] -= page_size;
+			}
+		}
+		mrec->a1 = a1 | (1UL << 32);
 		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("mmap: a compat call was judged on a1's upper half");
-		mrec->a1 = LOW_POOL_MAP;
+		mrec->a1 = a1 + 16;
 		if (validate_arg_coupling(mrec, mrec->entry) != (entries[e]->is_mmap2 ? 0 : -1))
 			BUG("mmap: a1 was held on the wrong ABI");
 		entries[e]->cleanup(mrec);
