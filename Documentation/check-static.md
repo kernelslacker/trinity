@@ -390,6 +390,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `track-shared-region-pairing`: every `track_shared_region()` must
   have a matching `untrack_shared_region()` on every cleanup-goto exit
   path that can free or recycle the backing mapping.
+- `uapi-enum-probes`: every enum fallback in `include/kernel/` -- a `#define`
+  under `#ifndef HAVE_<SYMBOL>` -- is paired with a `check_enum_member`
+  compile-test in `configure` that emits that name, and every symbol
+  `configure` probes has such a fallback.  An enum member is not a macro, so
+  `#ifndef` cannot tell whether the installed header has it and `configure`
+  decides instead.  The two halves are typed by hand in two files, and a name
+  that does not match fails silently: a guard nothing emits is always taken,
+  so the fallback macro shadows the real member on every host, and a probe
+  nothing falls back on probes for nothing.  Also fails a guard whose
+  `#define` names another symbol.  Self-tests a planted tree with each
+  mismatch, and with a comment that names a guard and the helper's own
+  definition, which must not fire.
 - `uapi-shim-values`: every integer `#define` in the tree (decimal, hex or a
   single-bit shift) that a probe can resolve, against the installed uapi
   headers or a kernel tree named by `TRINITY_LINUS_SRC`, must carry the
