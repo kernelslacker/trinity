@@ -13,10 +13,18 @@
 #include "netlink-nfnl-subsystems.h"
 #include "utils.h"
 
+/*
+ * All five callbacks carry cttimeout_nla_policy, so one attribute table
+ * serves them.  DEFAULT_SET needs L4PROTO and DATA and DEFAULT_GET L3PROTO
+ * and L4PROTO; neither reads a NAME, because they act on the netns's
+ * default timeouts for the protocol, not on a timeout object.
+ */
 static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
-	{ IPCTNL_MSG_TIMEOUT_NEW,    "IPCTNL_MSG_TIMEOUT_NEW" },
-	{ IPCTNL_MSG_TIMEOUT_GET,    "IPCTNL_MSG_TIMEOUT_GET" },
-	{ IPCTNL_MSG_TIMEOUT_DELETE, "IPCTNL_MSG_TIMEOUT_DELETE" },
+	{ IPCTNL_MSG_TIMEOUT_NEW,         "IPCTNL_MSG_TIMEOUT_NEW" },
+	{ IPCTNL_MSG_TIMEOUT_GET,         "IPCTNL_MSG_TIMEOUT_GET" },
+	{ IPCTNL_MSG_TIMEOUT_DELETE,      "IPCTNL_MSG_TIMEOUT_DELETE" },
+	{ IPCTNL_MSG_TIMEOUT_DEFAULT_SET, "IPCTNL_MSG_TIMEOUT_DEFAULT_SET" },
+	{ IPCTNL_MSG_TIMEOUT_DEFAULT_GET, "IPCTNL_MSG_TIMEOUT_DEFAULT_GET" },
 };
 
 /*

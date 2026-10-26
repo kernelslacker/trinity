@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_cttimeout.h>
 #include <linux/netlink.h>
 
 #include "debug.h"		/* BUG */
@@ -77,8 +78,43 @@ static void check_no_rejected_attr(void)
 	}
 }
 
+/*
+ * cttimeout_cb[] in nfnetlink_cttimeout.c registers five callbacks, NEW
+ * through DEFAULT_GET, which all share cttimeout_nla_policy.  The picker
+ * draws uniformly from the grammar's command table, so each of the five
+ * is a fifth of the draws.
+ */
+static void check_cttimeout_commands(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK_TIMEOUT);
+	unsigned int picked[IPCTNL_MSG_TIMEOUT_MAX] = { 0 };
+	unsigned int round, cmd;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: cttimeout is not registered");
+
+	for (round = 0; round < ROUNDS; round++) {
+		cmd = nfnl_pick_cmd(sub);
+		if (cmd >= IPCTNL_MSG_TIMEOUT_MAX) {
+			fprintf(stderr, "cttimeout: picked cmd %u, the kernel registers %u\n",
+				cmd, IPCTNL_MSG_TIMEOUT_MAX);
+			BUG("nfnl grammar: cttimeout lists a command the kernel lacks");
+		}
+		picked[cmd]++;
+	}
+
+	for (cmd = 0; cmd < IPCTNL_MSG_TIMEOUT_MAX; cmd++) {
+		if (picked[cmd] >= ROUNDS / 10)
+			continue;
+		fprintf(stderr, "cttimeout: cmd %u picked %u times in %u draws\n",
+			cmd, picked[cmd], ROUNDS);
+		BUG("nfnl grammar: cttimeout leaves out a command the kernel registers");
+	}
+}
+
 void nfnl_gen_self_check(void);
 void nfnl_gen_self_check(void)
 {
 	check_no_rejected_attr();
+	check_cttimeout_commands();
 }
