@@ -319,25 +319,30 @@ static void put_ops_first_family(struct reply *r,
 
 /*
  * A slot of a kernel nla_policy as far as the generator shapes it: the
- * attribute's id and the payload lengths it takes.  Values, a flags mask
- * or an enum range, are not the generator's to shape and are not modelled.
- * seen counts what the generator emitted, so a slot it never reaches shows
- * up.
+ * attribute's id, the payload lengths it takes and, for a nest, the policy
+ * its children meet.  Values, a flags mask or an enum range, are not the
+ * generator's to shape and are not modelled.  seen counts what the
+ * generator emitted, so a slot it never reaches shows up.
  */
-enum slot_kind { SK_BYTES, SK_STRING };
+enum slot_kind { SK_BYTES, SK_STRING, SK_NEST, SK_ARRAY };
 
 struct slot {
 	unsigned short id;
 	unsigned char kind;
 	unsigned short min, max;	/* payload length; a string's max 0 is any */
+	struct slot *nest;		/* SK_NEST, SK_ARRAY: the children's policy */
+	unsigned int n_nest;
 	unsigned int seen;
 };
 
 #define S_BLOB(id, lo, hi)	{ id, SK_BYTES, lo, hi }
+#define S_U8(id)		S_BLOB(id, 1, 1)
 #define S_U16(id)		S_BLOB(id, 2, 2)
 #define S_U32(id)		S_BLOB(id, 4, 4)
 #define S_U64(id)		S_BLOB(id, 8, 8)
 #define S_STR(id, hi)		{ id, SK_STRING, 1, hi }
+#define S_NEST(id, tbl)		{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl) }
+#define S_ARRAY(id, tbl)	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl) }
 
 /* What a cmd's request takes. */
 struct cmd_policy {
@@ -773,11 +778,41 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 	return NULL;
 }
 
+static bool stream_conforms(const unsigned char *p, size_t len,
+			    struct slot *slots, unsigned int n_slots);
+
+/*
+ * The elements of an NLA_POLICY_NESTED_ARRAY: any type, but each an
+ * NLA_F_NESTED attribute, as userspace sends them and a handler's
+ * nla_parse_nested() wants, holding a stream of its own.
+ */
+static bool array_conforms(const unsigned char *p, size_t len, struct slot *slot)
+{
+	size_t off = 0;
+
+	while (off < len) {
+		const struct nlattr *elem;
+
+		if (len - off < NLA_HDRLEN)
+			return false;
+		elem = (const struct nlattr *) (p + off);
+		if (elem->nla_len < NLA_HDRLEN || elem->nla_len > len - off ||
+		    !(elem->nla_type & NLA_F_NESTED))
+			return false;
+		if (elem->nla_len > NLA_HDRLEN &&
+		    !stream_conforms(p + off + NLA_HDRLEN, elem->nla_len - NLA_HDRLEN,
+				     slot->nest, slot->n_nest))
+			return false;
+		off += NLA_ALIGN(elem->nla_len);
+	}
+	return true;
+}
+
 /*
  * What nla_validate() with NL_VALIDATE_STRICT makes of the stream: an id
  * past the policy, or in a slot it leaves untyped, is refused, as is a
- * length the slot does not take, a string with no NUL and a flag on an
- * attribute that is not a nest.
+ * length the slot does not take, a string with no NUL, a nest without
+ * NLA_F_NESTED and that flag on an attribute that is not a nest.
  */
 static bool stream_conforms(const unsigned char *p, size_t len,
 			    struct slot *slots, unsigned int n_slots)
@@ -799,7 +834,8 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 			return false;
 
 		plen = nla->nla_len - NLA_HDRLEN;
-		if (nla->nla_type & NLA_F_NESTED)
+		if (!!(nla->nla_type & NLA_F_NESTED) !=
+		    (slot->kind == SK_NEST || slot->kind == SK_ARRAY))
 			return false;
 		switch (slot->kind) {
 		case SK_BYTES:
@@ -809,6 +845,15 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 		case SK_STRING:
 			if (plen < slot->min || (slot->max && plen > slot->max + 1u) ||
 			    p[off + nla->nla_len - 1] != '\0')
+				return false;
+			break;
+		case SK_NEST:
+			if (!stream_conforms(p + off + NLA_HDRLEN, plen,
+					     slot->nest, slot->n_nest))
+				return false;
+			break;
+		case SK_ARRAY:
+			if (!array_conforms(p + off + NLA_HDRLEN, plen, slot))
 				return false;
 			break;
 		}
@@ -849,6 +894,21 @@ static void hexdump(const unsigned char *p, size_t len)
 	fputc('\n', stderr);
 }
 
+static void expect_slots_seen(const struct slot *slots, unsigned int n_slots,
+			      const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		if (slots[i].seen == 0) {
+			fprintf(stderr, "%s: attribute %u was never emitted\n",
+				what, slots[i].id);
+			BUG("genl ops: a policy's attribute is out of the generator's reach");
+		}
+		expect_slots_seen(slots[i].nest, slots[i].n_nest, what);
+	}
+}
+
 /*
  * Only a lone message whose nlmsg_len is intact says where its attributes
  * end, so a batch is left out, and so is a message the generator gave a
@@ -875,7 +935,7 @@ static void check_attrs_in_policy(void)
 		.type = SOCK_RAW,
 		.protocol = NETLINK_GENERIC,
 	};
-	unsigned int round, i, j, k;
+	unsigned int round, i, j;
 
 	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
 		struct policy_family *pf = &policy_families[i];
@@ -931,20 +991,91 @@ next:
 
 		for (j = 0; j < pf->n_cmds; j++) {
 			const struct cmd_policy *cp = &pf->cmds[j];
+			char what[64];
 
 			if (cp->msgs < MIN_MSGS) {
 				fprintf(stderr, "%s cmd %u: only %u messages\n",
 					pf->fam->name, cp->cmd, cp->msgs);
 				BUG("genl ops: too few messages to judge a cmd's attributes");
 			}
-			for (k = 0; k < cp->n_slots; k++) {
-				if (cp->slots[k].seen > 0)
-					continue;
-				fprintf(stderr, "%s cmd %u: attribute %u was never emitted\n",
-					pf->fam->name, cp->cmd, cp->slots[k].id);
-				BUG("genl ops: a policy's attribute is out of the generator's reach");
-			}
+			snprintf(what, sizeof(what), "%s cmd %u", pf->fam->name, cp->cmd);
+			expect_slots_seen(cp->slots, cp->n_slots, what);
 		}
+	}
+}
+
+/* ---------- Checking how a nest is filled -------------------------------- */
+
+size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
+			     const struct nla_attr_spec *table, size_t nr_specs);
+
+#define NEST_ROUNDS	20000
+
+/*
+ * Nests of the generator's own tables and mirrors of what each must hold.
+ * A nest with a table of its own gets its children from it, an array gets
+ * flagged elements that hold a stream apiece, and the nests of a table
+ * without any hold what the table holds, a NESTED child among them a
+ * placeholder of 16 bytes.
+ */
+static void check_nest_tables(void)
+{
+	static const struct nla_attr_spec leaf[] = {
+		{ 1, NLA_KIND_U16, 2 },
+		{ 2, NLA_KIND_BINARY_FIXED2, 6, 6 },
+	};
+	static const struct nla_attr_spec elem[] = {
+		{ 1, NLA_KIND_U32, 4 },
+		{ 2, NLA_KIND_NESTED_ARRAY, 0, 0, leaf, ARRAY_SIZE(leaf) },
+		{ 3, NLA_KIND_NESTED, 0, 0, leaf, ARRAY_SIZE(leaf) },
+	};
+	static const struct nla_attr_spec top[] = {
+		{ 4, NLA_KIND_NESTED_ARRAY, 0, 0, elem, ARRAY_SIZE(elem) },
+		{ 5, NLA_KIND_NESTED, 0, 0, elem, ARRAY_SIZE(elem) },
+		{ 6, NLA_KIND_U8, 1 },
+	};
+	static const struct nla_attr_spec flat[] = {
+		{ 7, NLA_KIND_NESTED, 0 },
+		{ 8, NLA_KIND_U16, 2 },
+	};
+	static struct slot leaf_mirror[] = { S_U16(1), S_BLOB(2, 6, 6) };
+	static struct slot elem_mirror[] = {
+		S_U32(1), S_ARRAY(2, leaf_mirror), S_NEST(3, leaf_mirror),
+	};
+	static struct slot top_mirror[] = {
+		S_ARRAY(4, elem_mirror), S_NEST(5, elem_mirror), S_U8(6),
+	};
+	static struct slot flat_inside[] = { S_BLOB(7, 16, 16), S_U16(8) };
+	static struct slot flat_mirror[] = { S_NEST(7, flat_inside), S_U16(8) };
+	static const struct {
+		const struct nla_attr_spec *specs;
+		unsigned int n_specs;
+		struct slot *mirror;
+		unsigned int n_mirror;
+	} cases[] = {
+		{ top, ARRAY_SIZE(top), top_mirror, ARRAY_SIZE(top_mirror) },
+		{ flat, ARRAY_SIZE(flat), flat_mirror, ARRAY_SIZE(flat_mirror) },
+	};
+	unsigned char buf[2048];
+	unsigned int i, round;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		char what[32];
+
+		for (round = 0; round < NEST_ROUNDS; round++) {
+			size_t end;
+
+			memset(buf, 0, sizeof(buf));
+			end = append_specced_nlattr(buf, 0, sizeof(buf),
+						    cases[i].specs, cases[i].n_specs);
+			if (stream_conforms(buf, end, cases[i].mirror, cases[i].n_mirror))
+				continue;
+			fprintf(stderr, "nest table %u:\n", i);
+			hexdump(buf, end);
+			BUG("genl ops: a nest is not filled from the table it names");
+		}
+		snprintf(what, sizeof(what), "nest table %u", i);
+		expect_slots_seen(cases[i].mirror, cases[i].n_mirror, what);
 	}
 }
 
@@ -1049,6 +1180,7 @@ void genl_ops_self_check(void)
 	check_reply_parsed();
 	check_flags();
 	check_cmd_attr_tables();
+	check_nest_tables();
 	check_attrs_in_policy();
 	close(peer_fd);
 }

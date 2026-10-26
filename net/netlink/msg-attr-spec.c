@@ -5,6 +5,7 @@
  * without a table use the random emitter in msg-attr-random.c.
  */
 #include <arpa/inet.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -120,15 +121,23 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	}
 }
 
+static size_t append_specced_nested(unsigned char *buf, size_t offset,
+				    size_t buflen,
+				    const struct nla_attr_spec *spec,
+				    const struct nla_attr_spec *table,
+				    size_t nr_specs);
+
 /*
- * Emit a single attribute described by a freshly picked spec, treating
- * NESTED as a small binary payload.  Used inside append_specced_nested
- * so children stay one level deep.
+ * Emit a single attribute described by a freshly picked spec.  A nest with
+ * a table of its own is built by append_specced_nested(); any other nest is
+ * a small binary payload, so children stay one level deep.  own is set when
+ * table is a nest's own: a child that does not fit is dropped rather than
+ * cut short, since a shortened one fails the nest's policy.
  */
 static size_t append_specced_flat(unsigned char *buf, size_t offset,
 				  size_t buflen,
 				  const struct nla_attr_spec *table,
-				  size_t nr_specs)
+				  size_t nr_specs, bool own)
 {
 	const struct nla_attr_spec *spec;
 	struct nlattr nla;
@@ -142,7 +151,11 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
 
 	spec = &table[rnd_modulo_u32(nr_specs)];
 
-	if (spec->kind == NLA_KIND_NESTED)
+	if (spec->nest != NULL)
+		return append_specced_nested(buf, offset, buflen, spec,
+					     table, nr_specs);
+
+	if (spec->kind == NLA_KIND_NESTED || spec->kind == NLA_KIND_NESTED_ARRAY)
 		payload_len = 16;	/* placeholder bytes — no recursion */
 	else
 		payload_len = spec_payload_len(spec);
@@ -156,7 +169,7 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
 
 	total = NLA_ALIGN(NLA_HDRLEN + payload_len);
 	if (offset + total > buflen) {
-		if (buflen - offset < NLA_HDRLEN)
+		if (own || buflen - offset < NLA_HDRLEN)
 			return offset;
 		total = buflen - offset;
 		payload_len = total - NLA_HDRLEN;
@@ -170,25 +183,78 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
 	return offset + total;
 }
 
+/* 1-3 attributes drawn from table into the avail bytes at inner; returns
+ * the bytes used. */
+static size_t append_nest_children(unsigned char *inner, size_t avail,
+				   const struct nla_attr_spec *table,
+				   size_t nr_specs, bool own)
+{
+	size_t off = 0;
+	int child_count = RAND_RANGE(1, 3);
+
+	while (child_count-- > 0) {
+		size_t new_off = append_specced_flat(inner, off, avail,
+						     table, nr_specs, own);
+		if (new_off == off)
+			break;
+		off = new_off;
+	}
+	return off;
+}
+
+/*
+ * 1-3 elements of an NLA_POLICY_NESTED_ARRAY: each an NLA_F_NESTED
+ * attribute, numbered from 0, that holds children drawn from table.
+ */
+static size_t append_nest_elements(unsigned char *inner, size_t avail,
+				   const struct nla_attr_spec *table,
+				   size_t nr_specs, bool own)
+{
+	size_t off = 0;
+	int elem_count = RAND_RANGE(1, 3);
+	unsigned short elem_no = 0;
+
+	while (elem_count-- > 0) {
+		struct nlattr nla;
+		size_t stream;
+
+		if (off + NLA_HDRLEN + NLA_HDRLEN + 4 > avail)
+			break;
+		stream = append_nest_children(inner + off + NLA_HDRLEN,
+					      avail - off - NLA_HDRLEN,
+					      table, nr_specs, own);
+		if (stream == 0)
+			break;
+
+		nla.nla_len = NLA_HDRLEN + stream;
+		nla.nla_type = NLA_F_NESTED | elem_no++;
+		memcpy(inner + off, &nla, NLA_HDRLEN);
+		off += NLA_ALIGN(NLA_HDRLEN + stream);
+	}
+	return off > avail ? avail : off;
+}
+
 /*
  * Emit a NLA_F_NESTED outer attr whose payload is 1-3 children drawn
- * from the same spec table.  Mirrors append_nested_attr_container() but
- * walks a typed spec table for kind/max_len information.  Increments
- * the same nested counter so the dump output stays consistent across
- * spec-driven and pick_attr_hint-driven nesting.
+ * from the spec's nest table, or from table, the one the spec is in, when it
+ * names none; an array's payload is 1-3 elements holding such children.
+ * Mirrors append_nested_attr_container() but walks a typed spec table for
+ * kind/max_len information.  Increments the same nested counter so the dump
+ * output stays consistent across spec-driven and pick_attr_hint-driven
+ * nesting.
  */
 static size_t append_specced_nested(unsigned char *buf, size_t offset,
 				    size_t buflen,
-				    unsigned short outer_type,
+				    const struct nla_attr_spec *spec,
 				    const struct nla_attr_spec *table,
 				    size_t nr_specs)
 {
 	struct nlattr nla;
 	unsigned char *inner;
 	size_t inner_avail;
-	size_t inner_off = 0;
+	size_t inner_off;
 	size_t total;
-	int child_count;
+	bool own = spec->nest != NULL;
 
 	if (offset + NLA_HDRLEN + NLA_HDRLEN + 4 > buflen)
 		return offset;
@@ -198,21 +264,22 @@ static size_t append_specced_nested(unsigned char *buf, size_t offset,
 	if (inner_avail > 256)
 		inner_avail = 256;
 
-	child_count = RAND_RANGE(1, 3);
-	while (child_count-- > 0) {
-		size_t new_off = append_specced_flat(inner, inner_off,
-						     inner_avail,
-						     table, nr_specs);
-		if (new_off == inner_off)
-			break;
-		inner_off = new_off;
+	if (own) {
+		table = spec->nest;
+		nr_specs = spec->n_nest;
 	}
+	if (spec->kind == NLA_KIND_NESTED_ARRAY)
+		inner_off = append_nest_elements(inner, inner_avail,
+						 table, nr_specs, own);
+	else
+		inner_off = append_nest_children(inner, inner_avail,
+						 table, nr_specs, own);
 
 	if (inner_off == 0)
 		return offset;
 
 	nla.nla_len = NLA_HDRLEN + inner_off;
-	nla.nla_type = outer_type | NLA_F_NESTED;
+	nla.nla_type = spec->type | NLA_F_NESTED;
 	memcpy(buf + offset, &nla, NLA_HDRLEN);
 
 	total = NLA_ALIGN(NLA_HDRLEN + inner_off);
@@ -249,8 +316,8 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 
 	spec = &table[rnd_modulo_u32(nr_specs)];
 
-	if (spec->kind == NLA_KIND_NESTED)
-		return append_specced_nested(buf, offset, buflen, spec->type,
+	if (spec->kind == NLA_KIND_NESTED || spec->kind == NLA_KIND_NESTED_ARRAY)
+		return append_specced_nested(buf, offset, buflen, spec,
 					     table, nr_specs);
 
 	payload_len = spec_payload_len(spec);

@@ -263,8 +263,9 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
  * with the body built) or NULL to fall through to the legacy
  * random-payload path in msg-attr-random.c.
  * append_specced_nlattr() emits one attribute using that table,
- * routing NLA_KIND_NESTED entries through an internal 1-3 child
- * container so the depth stays one level deep.
+ * routing NLA_KIND_NESTED and NLA_KIND_NESTED_ARRAY entries through an
+ * internal 1-3 child container: one with a nest table of its own draws
+ * its children from that, one without keeps them one level deep.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,

@@ -43,6 +43,12 @@ enum nla_kind {
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
 	NLA_KIND_BE32_MAX,
+	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
+	 * children are elements, each an NLA_F_NESTED attribute holding an
+	 * attribute stream of its own, drawn from the spec's nest table.
+	 * The elements' own types are not checked; they are numbered from
+	 * 0. */
+	NLA_KIND_NESTED_ARRAY,
 };
 
 struct nla_attr_spec {
@@ -54,4 +60,13 @@ struct nla_attr_spec {
 	unsigned short min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
 				 * max_len}.  Zero on other kinds. */
+
+	/* NLA_KIND_NESTED, NLA_KIND_NESTED_ARRAY: the table the nest's
+	 * children are drawn from, n_nest long, typed as the nest's own
+	 * kernel policy types them.  NULL draws them from the table the
+	 * nest is in, whose ids belong to the outer policy.  A child that
+	 * does not fit a nest with a table is dropped, where the last child
+	 * of one without is cut short to fill the window. */
+	const struct nla_attr_spec *nest;
+	unsigned int n_nest;
 };
