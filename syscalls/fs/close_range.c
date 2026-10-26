@@ -24,11 +24,16 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
-#define CLOSE_RANGE_UNSHARE     (1U << 1)
-#define CLOSE_RANGE_CLOEXEC     (1U << 2)
 
-/* A kernel header that has these spells each as an enumerator plus a
- * macro of the same name, which an unguarded define here would redefine. */
+/* A kernel header that has these spells each as a macro, lately as an
+ * enumerator plus a macro of the same name, which an unguarded define
+ * here would redefine. */
+#ifndef CLOSE_RANGE_UNSHARE
+#define CLOSE_RANGE_UNSHARE	(1U << 1)
+#endif
+#ifndef CLOSE_RANGE_CLOEXEC
+#define CLOSE_RANGE_CLOEXEC	(1U << 2)
+#endif
 #ifndef CLOSE_RANGE_EXCEPT
 #define CLOSE_RANGE_EXCEPT	(1U << 3)
 #endif
