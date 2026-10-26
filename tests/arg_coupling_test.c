@@ -4600,6 +4600,41 @@ static bool ipc_buffer_reachable(const struct syscallrecord *r,
 	return range_in_writable_pool(addr, len);
 }
 
+/* semctl()'s GETALL and SETALL hand the kernel an array of a short for
+ * each semaphore, as many as the largest set trinity creates, but the
+ * kernel walks the set's own count, and a set trinity did not make can
+ * hold more.  So the array comes from the pool the call reaches, never
+ * the heap, and an overrun runs into pool scratch or the pool's guard
+ * page: the writable pool for a native call, below 4 GiB for a compat
+ * one, which takes arg as a 32-bit pointer.  SETALL's values fit SEMVMX. */
+static void semctl_arrays_from_pool(void)
+{
+	static const int cmds[] = { KERNEL_GETALL, KERNEL_SETALL };
+	unsigned int i, c;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		const unsigned short *arr;
+
+		c = cmds[i % ARRAY_SIZE(cmds)];
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_semctl;
+#ifdef ARCH_IS_BIARCH
+		rec.do32bit = (i / ARRAY_SIZE(cmds)) & 1;
+#endif
+		rec.a3 = c;
+		syscall_semctl.sanitise(&rec);
+		arr = (const unsigned short *) rec.a4;
+		if (!ipc_buffer_reachable(&rec, rec.a4,
+					  SEMCTL_ARRAY_SLOTS * sizeof(*arr)))
+			BUG("semctl: a GETALL or SETALL array is not in the pool the call reaches");
+		for (c = 0; rec.a3 == KERNEL_SETALL && c < SEMCTL_ARRAY_SLOTS; c++)
+			if (arr[c] > KERNEL_SEMVMX)
+				BUG("semctl: a SETALL value is past SEMVMX");
+		rec.retval = (unsigned long) -1L;
+		syscall_semctl.post(&rec);
+	}
+}
+
 /* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
  * an unsigned long or a compat call's u32, so every SEMCTL the sanitiser
  * builds has ptr name a slot the call reaches.  For a command that takes
@@ -4756,6 +4791,7 @@ void arg_coupling_self_check(void)
 	ipc_shmat_held();
 	ipc_semget_nsems_held();
 	ipc_semctl_semun_through_ptr();
+	semctl_arrays_from_pool();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
 #endif

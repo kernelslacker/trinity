@@ -82,13 +82,13 @@ static int pick_semnum(int semid)
  *
  * On x86-64 the union semun is passed by value in a single register,
  * so storing the per-cmd value through rec->a4 is sufficient -- no
- * separate type slot to track.  The pointer-typed buffers are
- * zmalloc_tracked so the per-call lifetime matches the syscall's.
- * For the kernel-READ cmds (SETALL, IPC_SET) we then run
- * avoid_shared_buffer_inout() so the relocation away from any
- * shared-mem overlap preserves the curated payload; for the
- * kernel-WRITTEN cmds and the ignored-arg default we use
- * avoid_shared_buffer_out(), which relocates without copying (the
+ * separate type slot to track.  The struct buffers are zmalloc_tracked
+ * so the per-call lifetime matches the syscall's, and the SETALL/GETALL
+ * arrays come from the call's pool (see there).  For IPC_SET, which the
+ * kernel reads, we then run avoid_shared_buffer_inout() so the
+ * relocation away from any shared-mem overlap preserves the curated
+ * payload; for the kernel-WRITTEN cmds and the ignored-arg default we
+ * use avoid_shared_buffer_out(), which relocates without copying (the
  * kernel is about to overwrite the buffer anyway).
  */
 static void build_semun_arg(struct syscallrecord *rec)
@@ -108,21 +108,23 @@ static void build_semun_arg(struct syscallrecord *rec)
 		return;
 
 	case SETALL:
-		array = zmalloc_tracked(SEMCTL_ARRAY_SLOTS * sizeof(*array));
-		for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
-			array[i] = (unsigned short) rnd_modulo_u32(SEMVMX + 1);
-		u.array = array;
-		rec->a4 = (unsigned long) u.array;
-		avoid_shared_buffer_inout(&rec->a4,
-					  SEMCTL_ARRAY_SLOTS * sizeof(*array));
-		return;
-
 	case GETALL:
-		array = zmalloc_tracked(SEMCTL_ARRAY_SLOTS * sizeof(*array));
+		/*
+		 * The kernel walks the set's own nsems, which for a set
+		 * trinity did not make can exceed the array, so the array
+		 * comes from the pool the call reaches, never the heap: an
+		 * overrun runs into pool scratch or the pool's guard page.
+		 * A compat call takes arg as a 32-bit pointer, which the low
+		 * pool carries; with none, arg is NULL and the call faults.
+		 */
+		array = get_call_writable_struct(rec,
+				SEMCTL_ARRAY_SLOTS * sizeof(*array));
+		if (array != NULL && cmd == SETALL) {
+			for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
+				array[i] = (unsigned short) rnd_modulo_u32(SEMVMX + 1);
+		}
 		u.array = array;
 		rec->a4 = (unsigned long) u.array;
-		avoid_shared_buffer_out(&rec->a4,
-					SEMCTL_ARRAY_SLOTS * sizeof(*array));
 		return;
 
 	case IPC_STAT:
@@ -212,9 +214,9 @@ static void sanitise_semctl(struct syscallrecord *rec)
 	 * contract documented at include/syscall.h REEXEC_OK, consumed by
 	 * random_syscall/dispatch-step.c:redqueen_reexec_step().  The syscall
 	 * entry lacks the static REEXEC_SANITISE_OK because build_semun_arg
-	 * multiplexes to buffer-carrying arms (GETALL / SETALL fill an
-	 * unsigned-short array with avoid_shared_buffer_inout / _out
-	 * relocation, IPC_STAT / SEM_STAT / SEM_STAT_ANY / IPC_INFO /
+	 * multiplexes to buffer-carrying arms (GETALL / SETALL hand the
+	 * kernel an unsigned-short array from the call's pool,
+	 * IPC_STAT / SEM_STAT / SEM_STAT_ANY / IPC_INFO /
 	 * SEM_INFO route through ipcctl_post_state_alloc + poison-output
 	 * readback oracle, IPC_SET copies sem_perm.uid/.gid/.mode out of
 	 * an INOUT semid_ds) that cannot ride the gate.
