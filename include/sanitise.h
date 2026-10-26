@@ -79,8 +79,9 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_chec
 /*
  * One-shot parent-side allocator for alloc_iovec()'s iov[] backing
  * buffer.  Allocates a dedicated UIO_MAXIOV-sized MAP_PRIVATE|MAP_ANON
- * mapping and registers it with the shared-region tracker so the mm-
- * syscall sanitisers refuse fuzzed addresses landing inside it.  Called
+ * mapping, with a PROT_NONE guard page behind it, and registers the
+ * mapping with the shared-region tracker so the mm-syscall sanitisers
+ * refuse fuzzed addresses landing inside it.  Called
  * once from init_shm before any child forks; every forked child
  * inherits the mapping via COW and re-uses the same iov[] buffer for
  * the lifetime of the run.  Exits on mmap failure -- without this
@@ -96,8 +97,9 @@ void alloc_iovec_init(void);
 bool range_in_iovec_pool(unsigned long addr, unsigned long len);
 /*
  * One-shot parent-side allocator for get_writable_address()'s backing
- * pool.  Allocates a dedicated MAP_PRIVATE|MAP_ANON region and registers
- * it with the shared-region tracker so the mm-syscall sanitisers refuse
+ * pool.  Allocates a dedicated MAP_PRIVATE|MAP_ANON region, with a
+ * PROT_NONE guard page behind it, and registers the region with the
+ * shared-region tracker so the mm-syscall sanitisers refuse
  * fuzzed addresses landing inside it.  Called once from init_shm before
  * any child forks; every forked child inherits the mapping via COW and
  * bump-allocates from it for the lifetime of the run.  Exits on mmap

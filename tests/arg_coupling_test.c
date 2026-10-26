@@ -2276,6 +2276,50 @@ static void madvise_held(void)
 	fake_this_child = NULL;
 }
 
+/* Whether the kernel can read the byte at @addr: a one-byte pipe write
+ * copies it in, and fails with EFAULT on a page it cannot read. */
+static bool kernel_reads_byte(const char *addr)
+{
+	int fds[2];
+	bool ok;
+
+	if (pipe(fds) != 0)
+		BUG("arg coupling: no pipe to probe a page with");
+	ok = write(fds[1], addr, 1) == 1;
+	close(fds[0]);
+	close(fds[1]);
+	return ok;
+}
+
+/* The writable pool and the iovec pool each end at a page the kernel
+ * cannot touch, so a write that a count only one slot names runs off a
+ * buffer at a pool's end into a fault, not into the next mapping: the
+ * last byte of each pool reads, the byte after it does not.  A request
+ * for the whole writable pool hands out its start, and four iovec arrays
+ * take every slice of the iovec pool, the last one ending it. */
+static void pools_end_at_a_guard_page(void)
+{
+	char *base, *last = NULL, *end;
+	unsigned int i;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	base = get_writable_address(WRITABLE_POOL_BYTES);
+	if (!kernel_reads_byte(base + WRITABLE_POOL_BYTES - 1) ||
+	    kernel_reads_byte(base + WRITABLE_POOL_BYTES))
+		BUG("arg coupling: the writable pool does not end at a guard page");
+
+	for (i = 0; i < 4; i++) {
+		char *slice = (char *) alloc_iovec(1, IOV_KERNEL_WRITE);
+
+		if (slice > last)
+			last = slice;
+	}
+	end = last + UIO_MAXIOV * sizeof(struct iovec);
+	if (!kernel_reads_byte(end - 1) || kernel_reads_byte(end))
+		BUG("arg coupling: the iovec pool does not end at a guard page");
+}
+
 static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
 				   unsigned long advice, bool compat)
 {
@@ -3591,6 +3635,7 @@ void arg_coupling_self_check(void)
 	syslog_read_held_to_mapping();
 	madvise_held();
 	process_madvise_guard_install_held();
+	pools_end_at_a_guard_page();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	vet_final_asked_first();

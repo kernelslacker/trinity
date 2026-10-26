@@ -728,16 +728,39 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 static struct iovec *iovec_pool;
 static unsigned int iovec_pool_cursor;
 
-void writable_pool_init(void)
+/*
+ * A private, zeroed pool of @bytes with a PROT_NONE page behind it.  A
+ * count that only one slot names can't be held inside a buffer at the
+ * pool's end (getdents, msgrcv's mtype header, poll, select), so the page
+ * turns a write the kernel runs off that end into EFAULT instead of a
+ * write into whatever mapping lies next.  It is not tracked: nothing
+ * builds a range there.  Exits on failure, as the pools' callers do.
+ */
+static void *map_guarded_pool(size_t bytes, const char *who)
 {
-	void *p = mmap(NULL, WRITABLE_POOL_BYTES, PROT_READ | PROT_WRITE,
-		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	size_t guard = (bytes + page_size - 1) & PAGE_MASK;
+	void *p;
+
+	p = mmap(NULL, guard + page_size, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
 	if (p == MAP_FAILED) {
-		outputerr("writable_pool_init: mmap %lu failed: %s\n",
-			  WRITABLE_POOL_BYTES, strerror(errno));
+		outputerr("%s: mmap %zu failed: %s\n", who, bytes,
+			  strerror(errno));
 		exit(EXIT_FAILURE);
 	}
-	memset(p, 0, WRITABLE_POOL_BYTES);
+	if (mprotect((char *) p + guard, page_size, PROT_NONE) != 0) {
+		outputerr("%s: guard page mprotect failed: %s\n", who,
+			  strerror(errno));
+		exit(EXIT_FAILURE);
+	}
+	memset(p, 0, bytes);
+	return p;
+}
+
+void writable_pool_init(void)
+{
+	void *p = map_guarded_pool(WRITABLE_POOL_BYTES, __func__);
+
 	track_shared_region((unsigned long)p, WRITABLE_POOL_BYTES);
 	writable_pool = p;
 }
@@ -783,14 +806,7 @@ void alloc_iovec_init(void)
 	 * posture of the other parent-side shared regions (deferred-
 	 * free ring, df_alloc_track[], ...).
 	 */
-	p = mmap(NULL, bytes, PROT_READ | PROT_WRITE,
-		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-	if (p == MAP_FAILED) {
-		outputerr("alloc_iovec_init: mmap %zu failed: %s\n",
-			  bytes, strerror(errno));
-		exit(EXIT_FAILURE);
-	}
-	memset(p, 0, bytes);
+	p = map_guarded_pool(bytes, __func__);
 	track_shared_region((unsigned long)p, bytes);
 	iovec_pool = p;
 }
