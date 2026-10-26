@@ -17,14 +17,16 @@
 #include "utils.h"
 
 /*
- * The pool mapping the sanitiser built its range in, for the final-slot
- * hook to hold the range to.  Lives in rec->post_state, a slot the
- * syscall ABI does not expose.
+ * The pool mapping the sanitiser built its range in, and the file pages
+ * its walkable size covers, for the final-slot hook to hold the range and
+ * the offset to.  Lives in rec->post_state, a slot the syscall ABI does
+ * not expose.
  */
 #define REMAP_FILE_PAGES_POST_STATE_MAGIC	0x524D41505F46505FUL	/* "RMAP_FP_" */
 struct remap_file_pages_post_state {
 	unsigned long magic;
 	struct map *map;
+	unsigned long file_pages;
 };
 
 /*
@@ -41,21 +43,28 @@ struct remap_file_pages_post_state {
  * which are MAP_SHARED and shmem backed.  So the pages the final slots
  * name have to lie inside the mapping the sanitiser picked, as far as the
  * kernel mapped it (see map_range_vet()), whatever the prot: a refusal
- * over a nonzero one fails the call as the kernel would have.  Refused
- * rather than repaired.  A record with no snapshot of ours passes only a
- * range the kernel replaces nothing of.  Shape, then ownership, then
- * magic, as post_state_claim_owned() orders them.
+ * over a nonzero one fails the call as the kernel would have.  Nor does
+ * the kernel look at the file's size: past the end, the pages it maps
+ * SIGBUS the next consumer of the pool mapping.  So the pages from pgoff
+ * on have to lie inside the file pages the snapshot counted, unless pgoff
+ * wraps, which the kernel refuses first.  Refused rather than repaired.
+ * A record with no snapshot of ours passes only a range the kernel
+ * replaces nothing of.  Shape, then ownership, then magic, as
+ * post_state_claim_owned() orders them.
  */
 static int vet_final_remap_file_pages(struct syscallrecord *rec,
 				      const struct syscallentry *entry)
 {
 	struct remap_file_pages_post_state *snap =
 		(struct remap_file_pages_post_state *) rec->post_state;
+	unsigned long pgoff = rec->do32bit ? (unsigned int) rec->a4 : rec->a4;
+	unsigned long npages;
 	const struct map *map;
 	struct page_span pages;
 
 	if (!map_range_pages(rec->a1, rec->a2, rec->do32bit, true, &pages))
 		return 0;
+	npages = (pages.end - pages.start) / page_size;
 
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == REMAP_FILE_PAGES_POST_STATE_MAGIC) {
@@ -63,11 +72,13 @@ static int vet_final_remap_file_pages(struct syscallrecord *rec,
 		if (!is_corrupt_ptr_shape(map) &&
 		    page_span_inside(&pages, (unsigned long) map->ptr,
 				     map->tracked_size > map->size ?
-				     map->tracked_size : map->size))
+				     map->tracked_size : map->size) &&
+		    (pgoff + npages < pgoff ||
+		     pgoff + npages <= snap->file_pages))
 			return 0;
 	}
 
-	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked\n",
+	outputerr("arg-coupling: %s rejected: the range leaves the mapping sanitise picked, or maps past its file\n",
 		  entry->name);
 	return -1;
 }
@@ -155,19 +166,22 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 		rec->a3 = 0;
 
 	/*
-	 * pgoff is in PAGE_SIZE units.  Pick inside [0, file_pages) for
-	 * the success path; an overshoot bucket keeps the past-file-end
-	 * -EINVAL validation path warm.  map->size is clamped to a
-	 * page-aligned in-bounds extent by mmap_fd, so file_pages is the
-	 * number of pages actually backed by the file.
+	 * pgoff is in PAGE_SIZE units, and the size pages from it on have to
+	 * be backed by the file: the kernel maps past its end without a word,
+	 * and those pages SIGBUS the next consumer of the pool mapping.
+	 * map->size is clamped to the in-bounds extent of the file, so the
+	 * pages it covers are backed.  An offset that wraps keeps the
+	 * kernel's one pgoff check warm; a compat call's pgoff is zero
+	 * extended, so it cannot wrap, and gets none.
 	 */
-	file_pages = map->size / page_size;
-	if (file_pages == 0)
-		file_pages = 1;
-	if (ONE_IN(10))
-		offset = file_pages + rnd_modulo_u32(8) + 1;
+	file_pages = (map->size + page_size - 1) / page_size;
+	if (size / page_size > file_pages)
+		size = file_pages * page_size;
+	rec->a2 = size;
+	if (!rec->do32bit && ONE_IN(10))
+		offset = ULONG_MAX - rnd_modulo_u32(size / page_size);
 	else
-		offset = rnd_modulo_u32(file_pages);
+		offset = rnd_modulo_u32(file_pages - size / page_size + 1);
 	rec->a4 = offset;
 
 	/*
@@ -191,6 +205,7 @@ static void sanitise_remap_file_pages(struct syscallrecord *rec)
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = REMAP_FILE_PAGES_POST_STATE_MAGIC;
 		snap->map   = map;
+		snap->file_pages = file_pages;
 		post_state_install(rec, snap);
 	}
 

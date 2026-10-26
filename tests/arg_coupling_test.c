@@ -1849,6 +1849,7 @@ static void remap_file_pages_range_held_to_mapping(void)
 		entry.sanitise(mrec);
 		mrec->a1 = cases[i].addr;
 		mrec->a2 = cases[i].len;
+		mrec->a4 = 0;
 		if (validate_arg_coupling(mrec, mrec->entry) != cases[i].verdict)
 			BUG("remap_file_pages: a rewritten range was judged wrongly");
 		entry.cleanup(mrec);
@@ -1856,8 +1857,12 @@ static void remap_file_pages_range_held_to_mapping(void)
 
 	/* Over a mapping whose size is larger than its tracked size too; a
 	 * compat call over the high mapping is built empty rather than
-	 * refused. */
+	 * refused.  The pages the call maps stay inside the file the
+	 * mapping's walkable size covers, or the offset wraps, which the
+	 * kernel refuses before it maps anything. */
 	for (i = 0; i < MM_DRAWS; i++) {
+		unsigned long npages;
+
 		mrec = remap_call(&entry);
 		if (i & 1)
 			pool_obj.map.size = 2 * whole;
@@ -1865,8 +1870,29 @@ static void remap_file_pages_range_held_to_mapping(void)
 		entry.sanitise(mrec);
 		if (mrec->do32bit && (mrec->a1 != 0 || mrec->a2 != 0))
 			BUG("remap_file_pages: the sanitiser built a compat range its slots cannot carry");
+		npages = mrec->a2 / pg;
+		if (mrec->a2 != 0 && mrec->a4 + npages >= mrec->a4 &&
+		    mrec->a4 + npages > pool_obj.map.size / pg)
+			BUG("remap_file_pages: the sanitiser mapped file pages past the mapping's end");
 		if (validate_arg_coupling(mrec, mrec->entry) != 0)
 			BUG("remap_file_pages: a range the sanitiser built was refused");
+		entry.cleanup(mrec);
+	}
+
+	/* A rewritten offset that maps past the file is refused; one whose
+	 * pages fit, or that wraps, passes. */
+	for (i = 0; i < 4; i++) {
+		static const unsigned long pgoffs[] = {
+			POOL_PAGES - 1, POOL_PAGES + 7, POOL_PAGES - 2, ULONG_MAX,
+		};
+
+		mrec = remap_call(&entry);
+		entry.sanitise(mrec);
+		mrec->a1 = POOL_MAP;
+		mrec->a2 = 2 * pg;
+		mrec->a4 = pgoffs[i];
+		if (validate_arg_coupling(mrec, mrec->entry) != (i < 2 ? -1 : 0))
+			BUG("remap_file_pages: a rewritten offset was judged wrongly");
 		entry.cleanup(mrec);
 	}
 
