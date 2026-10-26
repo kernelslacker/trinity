@@ -38,6 +38,8 @@ struct recv_post_state {
 	unsigned long buf;
 	size_t extent;
 	struct valresult_buf vrb;
+	unsigned long addr;	/* recvfrom's address buffer, */
+	unsigned long addr_len;	/* and the int slot that sizes it */
 };
 
 /*
@@ -50,8 +52,13 @@ struct recv_post_state {
  * slot the buffer moved to, and a pinned ubuf aims it anywhere.  Refused
  * rather than repaired, each slot read once, as the kernel reads it: the
  * low 32 bits for a compat call.  A NULL buffer or a size of 0 takes no
- * write, and a record with no snapshot of ours passes only those.  Shape,
- * then ownership, then magic, as post_state_claim_owned() orders them.
+ * write, and a record with no snapshot of ours passes only those.
+ * recvfrom's kernel also writes the source address through a non-NULL
+ * addr, as far as the int at addr_len allows, and its length back to
+ * addr_len (move_addr_to_user()), so such a call has to name the address
+ * buffer and length slot the sanitiser built: addr_len's argtype takes a
+ * substituted number.  Shape, then ownership, then magic, as
+ * post_state_claim_owned() orders them.
  */
 static int vet_final_recv(struct syscallrecord *rec,
 			  const struct syscallentry *entry)
@@ -59,7 +66,7 @@ static int vet_final_recv(struct syscallrecord *rec,
 	struct recv_post_state *snap =
 		(struct recv_post_state *) rec->post_state;
 	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
-	unsigned long buf = rec->a2 & mask, size = rec->a3 & mask;
+	unsigned long buf = rec->a2 & mask, size = rec->a3 & mask, addr;
 	size_t extent = 0;
 
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
@@ -71,6 +78,15 @@ static int vet_final_recv(struct syscallrecord *rec,
 	/* A size left after the first test fits extent, so snap is ours. */
 	if (buf != 0 && size != 0 && (size > extent || buf != snap->buf)) {
 		outputerr("arg-coupling: %s rejected: the size runs past the buffer sanitise sized, or ubuf is not the one it sized\n",
+			  entry->name);
+		return -1;
+	}
+
+	addr = rec->a5 & mask;
+	if (entry->num_args > 4 && addr != 0 &&
+	    (snap == NULL || addr != snap->addr ||
+	     (rec->a6 & mask) != snap->addr_len)) {
+		outputerr("arg-coupling: %s rejected: the source address goes where sanitise did not build it\n",
 			  entry->name);
 		return -1;
 	}
@@ -165,62 +181,58 @@ static void post_recv(struct syscallrecord *rec)
  * sockaddr_storage capacity.  The kernel reads *lenp as max_addrlen
  * before writing back the actual count.
  *
- * The lenp slot is an a6 value-result slot routed through
- * valresult_alloc() and freed by valresult_free() in cleanup_recv()
- * (via the snapshot-owned vrb).  valresult_alloc() also returns a buf the
- * caller does not use here (a5 has its own get_writable_address()
- * backing); buf and len_io are both released via the snapshot-owned vrb
- * in the cleanup.
+ * The lenp slot is an a6 value-result slot holding the length
+ * valresult_alloc() shaped.  Neither of valresult_alloc()'s buffers goes
+ * to the kernel (a5 and a6 have pool backing of their own); both are
+ * released by valresult_free() in cleanup_recv(), via the snapshot-owned
+ * vrb.
  *
  * Mirrors getsockopt.c.
  */
 static void sanitise_recvfrom(struct syscallrecord *rec)
 {
-	struct sockaddr_storage *addr;
 	struct recv_post_state *snap = zmalloc_tracked(sizeof(*snap));
 	struct valresult_buf vrb;
+	int *addr_len;
 
 	snap->magic = RECV_POST_STATE_MAGIC;
 	recv_buffer(rec, snap);
 
-	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
-	if (addr != NULL)
-		rec->a5 = (unsigned long) addr;
-	else
-		/* On pool exhaustion / mincore failure, leaving the original
-		 * undersized ARG_SOCKADDR buffer would preserve the very
-		 * overflow shape this routine exists to prevent.  Force NULL
-		 * so the kernel returns -EFAULT cleanly. */
-		rec->a5 = 0;
+	/*
+	 * The address buffer and the int that sizes it come from the pool the
+	 * call reaches, the low pool for a compat call.  With no address
+	 * buffer, addr is NULL and the kernel copies no address, which beats
+	 * leaving the undersized ARG_SOCKADDR buffer the generator drew.
+	 */
+	rec->a5 = (unsigned long) get_call_writable_struct(rec,
+				sizeof(struct sockaddr_storage));
 
 	/*
-	 * Allocate the value-result addrlen slot through the shared shape
-	 * catalogue.  The natural capacity is sizeof(struct sockaddr_storage)
-	 * -- the addr buffer above is sized to match -- and the helper
-	 * mutates that into the picked shape (EXACT / UNDER / +1 / HUGE /
-	 * ZERO).  The vrb.buf slot is not consumed here; valresult_free()
-	 * in the cleanup still releases it through the snap.
+	 * The shaped addrlen comes from the shared shape catalogue.  The
+	 * natural capacity is sizeof(struct sockaddr_storage) -- the addr
+	 * buffer above is sized to match -- and the helper mutates that into
+	 * the picked shape (EXACT / UNDER / +1 / HUGE / ZERO).  The kernel
+	 * reads and writes an int through addr_len, so the shaped length is
+	 * copied into the pool slot handed it; the snapshot owns vrb, whose
+	 * buffers cleanup_recv() gives back.  Wired into the post_state
+	 * ownership table via post_state_install() so cleanup_recv() can
+	 * prove the snap belongs to this attempt before any field deref; a
+	 * sibling stomp that redirects rec->post_state at a foreign heap
+	 * chunk happening to carry RECV_POST_STATE_MAGIC is rejected by the
+	 * ownership lookup before the leading-word magic compare ever runs.
 	 */
 	vrb = valresult_alloc(sizeof(struct sockaddr_storage),
 			      valresult_pick_shape());
-	rec->a6 = (unsigned long) vrb.len_io;
-
-	/*
-	 * Snapshot the vrb BEFORE avoid_shared_buffer() runs.  a6 is
-	 * about to be relocated off the libc heap; the cleanup must
-	 * free the zmalloc result, not the relocated pointer (which the
-	 * deferred-free heap-bounds gate rejects).  Wired into the
-	 * post_state ownership table via post_state_install() so
-	 * cleanup_recv() can prove the snap belongs to this attempt
-	 * before any field deref; a sibling stomp that redirects
-	 * rec->post_state at a foreign heap chunk happening to carry
-	 * RECV_POST_STATE_MAGIC is rejected by the ownership lookup
-	 * before the leading-word magic compare ever runs.
-	 */
 	snap->vrb = vrb;
 	post_state_install(rec, snap);
 
-	avoid_shared_buffer_inout(&rec->a6, sizeof(*vrb.len_io));
+	addr_len = get_call_writable_struct(rec, sizeof(*addr_len));
+	if (addr_len != NULL)
+		*addr_len = (int) *vrb.len_io;
+	rec->a6 = (unsigned long) addr_len;
+
+	snap->addr = rec->a5;
+	snap->addr_len = rec->a6;
 }
 
 static void post_recvfrom(struct syscallrecord *rec)

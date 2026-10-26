@@ -548,6 +548,16 @@ static struct syscallrecord *mm_call(struct syscallentry *entry)
 	return mrec;
 }
 
+/* Whether @len bytes at @addr lie where @r's call reaches them: in the
+ * writable pool, or for a compat call below 4 GiB. */
+static bool call_reaches_buffer(const struct syscallrecord *r,
+				unsigned long addr, unsigned long len)
+{
+	if (r->do32bit)
+		return addr != 0 && addr <= (1UL << 32) - len;
+	return range_in_writable_pool(addr, len);
+}
+
 /* shmat's sanitiser picks its mapping with get_map(), whose stand-in
  * hands out this. */
 extern struct map *fake_map_drawn;	/* post_oracle_test.c */
@@ -3282,6 +3292,9 @@ static void recv_compat_slots_truncated(struct syscallentry *entry)
 	mrec->a2 = (unsigned long) &pool_obj.map;
 	mrec->a3 = page_size;
 	entry->sanitise(mrec);
+	/* recvfrom's address slots, built here for a native call, are judged
+	 * in recvfrom_address_slots_held(). */
+	mrec->a5 = 0;
 	mrec->a3 = page_size | upper;
 	if (validate_arg_coupling(mrec, entry) != -1)
 		BUG("recv: a native size's upper half was dropped");
@@ -3320,6 +3333,63 @@ static void recv_compat_slots_truncated(struct syscallentry *entry)
 	}
 }
 
+/* recvfrom's kernel writes the source address through addr, as far as
+ * the int at addr_len allows, and the address's length back to addr_len
+ * (move_addr_to_user()), so a call with a non-NULL addr has to name the
+ * address buffer and the length slot the sanitiser built, both where the
+ * call reaches them.  A rewritten addr or addr_len, a substituted number
+ * in the length slot, whose argtype takes one, among them, is refused; a
+ * NULL addr takes no write and passes whatever addr_len holds, and a
+ * compat call is judged on the slots' low halves. */
+static void recvfrom_address_slots_held(void)
+{
+	struct syscallentry *entry = &syscall_recvfrom;
+	unsigned int c;
+
+	for (c = 0; c < 2; c++) {
+		struct syscallrecord *mrec = mm_call(entry);
+		unsigned long addr, addr_len;
+
+#ifdef ARCH_IS_BIARCH
+		mrec->do32bit = c;
+#endif
+		mrec->a1 = 0;
+		mrec->a2 = (unsigned long) &pool_obj.map;
+		mrec->a3 = page_size;
+		entry->sanitise(mrec);
+		addr = mrec->a5;
+		addr_len = mrec->a6;
+		if (!call_reaches_buffer(mrec, addr, sizeof(struct sockaddr_storage)) ||
+		    !call_reaches_buffer(mrec, addr_len, sizeof(int)))
+			BUG("recvfrom: the address buffer or its length slot lies out of the call's reach");
+		if (validate_arg_coupling(mrec, entry) != 0)
+			BUG("recvfrom: a call the sanitiser built was refused");
+		mrec->a6 = 12345;
+		if (validate_arg_coupling(mrec, entry) != -1)
+			BUG("recvfrom: a number substituted for the length slot was kept");
+		mrec->a6 = addr_len;
+		mrec->a5 = addr + 16;
+		if (validate_arg_coupling(mrec, entry) != -1)
+			BUG("recvfrom: an address buffer moved inside the pool was kept");
+		mrec->a5 = 0x10000000UL;
+		if (validate_arg_coupling(mrec, entry) != -1)
+			BUG("recvfrom: a pinned address buffer was kept");
+		mrec->a5 = 0;
+		mrec->a6 = 12345;
+		if (validate_arg_coupling(mrec, entry) != 0)
+			BUG("recvfrom: a NULL address buffer was refused");
+		if (mrec->do32bit) {
+			mrec->a5 = addr | (1UL << 32);
+			mrec->a6 = addr_len | (1UL << 32);
+			if (validate_arg_coupling(mrec, entry) != 0)
+				BUG("recvfrom: a compat call was judged on the address slots' upper halves");
+		}
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+		entry->cleanup(mrec);
+	}
+}
+
 /* recv's and recvfrom's final size stays inside the buffer their sanitiser
  * made of the picked mapping, and the buffer is that one. */
 static void recv_buffer_held_to_mapping(void)
@@ -3338,6 +3408,7 @@ static void recv_buffer_held_to_mapping(void)
 		recv_needs_its_snapshot(entries[e]);
 		recv_compat_slots_truncated(entries[e]);
 	}
+	recvfrom_address_slots_held();
 	deferred_free_flush();
 	fake_socket_fd_none = false;
 	fake_this_child = NULL;
@@ -4590,16 +4661,6 @@ static void ipc_semget_nsems_held(void)
 	}
 }
 
-/* Whether @len bytes at @addr lie where @rec's call reaches them: in the
- * writable pool, or for a compat call below 4 GiB. */
-static bool ipc_buffer_reachable(const struct syscallrecord *r,
-				 unsigned long addr, unsigned long len)
-{
-	if (r->do32bit)
-		return addr != 0 && addr <= (1UL << 32) - len;
-	return range_in_writable_pool(addr, len);
-}
-
 /* semctl()'s GETALL and SETALL hand the kernel an array of a short for
  * each semaphore, as many as the largest set trinity creates, but the
  * kernel walks the set's own count, and a set trinity did not make can
@@ -4624,7 +4685,7 @@ static void semctl_arrays_from_pool(void)
 		rec.a3 = c;
 		syscall_semctl.sanitise(&rec);
 		arr = (const unsigned short *) rec.a4;
-		if (!ipc_buffer_reachable(&rec, rec.a4,
+		if (!call_reaches_buffer(&rec, rec.a4,
 					  SEMCTL_ARRAY_SLOTS * sizeof(*arr)))
 			BUG("semctl: a GETALL or SETALL array is not in the pool the call reaches");
 		for (c = 0; rec.a3 == KERNEL_SETALL && c < SEMCTL_ARRAY_SLOTS; c++)
@@ -4662,7 +4723,7 @@ static void ipc_semctl_semun_through_ptr(void)
 		syscall_ipc.sanitise(&rec);
 		cmd = (int) rec.a4 & ~KERNEL_IPC_64;
 		slot = rec.a5;
-		if (!ipc_buffer_reachable(&rec, slot, sizeof(unsigned long)))
+		if (!call_reaches_buffer(&rec, slot, sizeof(unsigned long)))
 			BUG("ipc: a SEMCTL's ptr names no slot the call reaches");
 		val = *(unsigned long *) slot;
 
@@ -4674,7 +4735,7 @@ static void ipc_semctl_semun_through_ptr(void)
 		case IPC_INFO:
 		case KERNEL_SEM_INFO:
 			/* A seminfo's ten ints, the smallest of them. */
-			if (!ipc_buffer_reachable(&rec, val, 10 * sizeof(int)))
+			if (!call_reaches_buffer(&rec, val, 10 * sizeof(int)))
 				BUG("ipc: a SEMCTL's semun names no buffer the call reaches");
 			seen_buffer++;
 			break;
@@ -4683,7 +4744,7 @@ static void ipc_semctl_semun_through_ptr(void)
 			const unsigned short *arr = (const unsigned short *) val;
 			unsigned int j;
 
-			if (!ipc_buffer_reachable(&rec, val, 256 * sizeof(*arr)))
+			if (!call_reaches_buffer(&rec, val, 256 * sizeof(*arr)))
 				BUG("ipc: a SEMCTL's array does not hold the largest set");
 			for (j = 0; cmd == KERNEL_SETALL && j < 256; j++)
 				if (arr[j] > KERNEL_SEMVMX)
