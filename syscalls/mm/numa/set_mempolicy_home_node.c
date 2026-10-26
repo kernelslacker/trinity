@@ -4,7 +4,11 @@
  * The range stays inside the pool mapping the sanitiser picked, final
  * slots included (vet_final_set_mempolicy_home_node()).
  */
+#include <linux/mempolicy.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "maps.h"
+#include "random.h"
 #include "sanitise.h"
 #include "trinity.h"
 #include "utils.h"
@@ -54,9 +58,12 @@ static int vet_final_set_mempolicy_home_node(struct syscallrecord *rec,
  * Only a VMA whose policy is MPOL_BIND or MPOL_PREFERRED_MANY takes a
  * home node.  The kernel skips a VMA with no policy, fails with
  * EOPNOTSUPP at one with any other, and fails with ENOENT when the range
- * held no VMA with a policy at all.  Nothing here sets one: the success
- * path rests on a fuzzed mbind(), whose sanitiser picks its range from
- * the same pool mappings, having left such a policy on the mapping picked.
+ * held no VMA with a policy at all.  A pool mapping has such a policy only
+ * if a fuzzed mbind() left one, so half the time the sanitiser binds the
+ * range to node 0 itself first.  The policy only steers which node the
+ * range's pages come from, which no consumer of the pool mapping minds;
+ * a bind that fails, on a kernel without NUMA say, leaves the call to its
+ * error paths.
  */
 static void sanitise_set_mempolicy_home_node(struct syscallrecord *rec)
 {
@@ -84,6 +91,13 @@ static void sanitise_set_mempolicy_home_node(struct syscallrecord *rec)
 	    (rec->do32bit && (rec->a1 > UINT_MAX || rec->a2 > UINT_MAX))) {
 		rec->a1 = 0;
 		rec->a2 = 0;
+	}
+
+	if (rec->a2 != 0 && RAND_BOOL()) {
+		unsigned long node0 = 1;
+
+		(void) syscall(__NR_mbind, rec->a1, rec->a2, MPOL_BIND, &node0,
+			       8 * sizeof(node0), 0);
 	}
 
 	snap = zmalloc_tracked(sizeof(*snap));

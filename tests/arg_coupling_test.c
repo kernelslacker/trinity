@@ -1523,6 +1523,42 @@ static void range_pages_read_as_the_kernel_does(void)
  * the kernel acts on nothing of.  A compat call is built empty over the
  * high mapping and kept over a low one; a call with no mapping passes
  * only an empty range. */
+/* Only a VMA whose policy is MPOL_BIND or MPOL_PREFERRED_MANY takes a home
+ * node, so the sanitiser binds the range it built now and then: over a
+ * real mapping, some draws leave the mapping's first page bound.  A kernel
+ * without NUMA has no policy to read. */
+static void home_node_range_gets_a_policy(void)
+{
+	struct syscallentry entry = syscall_set_mempolicy_home_node;
+	const unsigned long len = POOL_PAGES * page_size;
+	struct syscallrecord *mrec;
+	unsigned int i;
+	char *p;
+	int mode = -1;
+
+	p = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		BUG("home node: no mapping to bind");
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mm_call(&entry);
+		pool_obj.map.ptr = p;
+		entry.sanitise(mrec);
+		entry.cleanup(mrec);
+		if (syscall(__NR_get_mempolicy, &mode, NULL, 0, p,
+			    MPOL_F_ADDR) != 0) {
+			printf("(no memory policy to read, skipping home node's policy check) ");
+			break;
+		}
+		if (mode == MPOL_BIND)
+			break;
+	}
+	if (i == MM_DRAWS)
+		BUG("home node: the sanitiser never left its range a policy that takes a home node");
+	munmap(p, len);
+	fake_this_child = NULL;
+}
+
 static void home_node_range_held_to_mapping(void)
 {
 	struct syscallentry entry = syscall_set_mempolicy_home_node;
@@ -3648,6 +3684,7 @@ void arg_coupling_self_check(void)
 	munmap_range_held_to_mapping();
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();
+	home_node_range_gets_a_policy();
 	mseal_seals_only_its_own_mapping();
 	remap_file_pages_range_held_to_mapping();
 	mprotect_range_held_to_mapping();
