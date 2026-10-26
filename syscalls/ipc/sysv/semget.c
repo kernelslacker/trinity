@@ -1,5 +1,7 @@
 /*
  * SYSCALL_DEFINE3(semget, key_t, key, int, nsems, int, semflg)
+ *
+ * The final nsems stays within SEMGET_NSEMS_CAP (vet_final_semget()).
  */
 #include <limits.h>
 #include <string.h>
@@ -116,24 +118,33 @@ int get_random_sysv_sem(void)
 }
 
 /*
- * Absolute ceiling for nsems.  newary() in the kernel allocates per
- * sem_undo / sem_array storage proportional to nsems before any other
- * gating, so a near-SEMMSL set (SEMMSL == 32000) reliably trips the
- * cgroup OOM-killer.  The .argtype = ARG_RANGE generator already biases
- * toward small values (range.hi = 250), but corpus replay and bit-level
- * mutation can hand us a value far above range.hi after the fact (an
- * OOM'd run was observed at nsems=0x75c0 = 30144).  Clamp at call time
- * so the cap holds for both the initial generator and any post-mutation
- * value handed to the syscall.  256 keeps the allocation path live for
- * coverage without ever approaching SEMMSL.  Values <= cap (including
- * 0 and negatives) are left intact so error-path returns still appear.
+ * Corpus replay and bit-level mutation can hand the sanitiser an nsems far
+ * above the generator's range (an OOM'd run was observed at nsems=0x75c0
+ * = 30144), so it clamps to SEMGET_NSEMS_CAP, compared as the int the
+ * kernel reads.  Values <= cap (including 0 and negatives) are left intact
+ * so error-path returns still appear.
  */
-#define SEMGET_NSEMS_CAP 256
-
 static void sanitise_semget(struct syscallrecord *rec)
 {
-	if ((long) rec->a2 > SEMGET_NSEMS_CAP)
+	if ((int) rec->a2 > SEMGET_NSEMS_CAP)
 		rec->a2 = SEMGET_NSEMS_CAP;
+}
+
+/*
+ * The cap again on the final slots: a count rewritten after the sanitiser
+ * (chain substitution, a RedQueen pin) can still ask for a set near
+ * SEMMSL.  Refused rather than repaired, nsems read as the int the kernel
+ * reads; a negative one the kernel refuses itself.
+ */
+static int vet_final_semget(struct syscallrecord *rec,
+			    const struct syscallentry *entry)
+{
+	if ((int) rec->a2 <= SEMGET_NSEMS_CAP)
+		return 0;
+
+	outputerr("arg-coupling: %s rejected: nsems %d is past the cap sanitise holds it to\n",
+		  entry->name, (int) rec->a2);
+	return -1;
 }
 
 static void post_semget(struct syscallrecord *rec)
@@ -170,6 +181,7 @@ struct syscallentry syscall_semget = {
 	.arg_params[2].list = ARGLIST(ipc_flags),
 	.rettype = RET_BORING,
 	.sanitise = sanitise_semget,
+	.vet_final = vet_final_semget,
 	.post = post_semget,
 	.flags = REEXEC_SANITISE_OK,
 };

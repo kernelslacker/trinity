@@ -32,6 +32,7 @@
 #include "cmsg_build.h"			/* pick_cmsg_kind, cmsg_build */
 #include "debug.h"			/* BUG */
 #include "deferred-free.h"		/* deferred_alloc_track, deferred_free_flush */
+#include "ipc-common.h"			/* SEMGET_NSEMS_CAP */
 #include "files.h"			/* get_rand_pagecache_fd */
 #include "hugepages.h"			/* pick_random_huge_size_encoding */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
@@ -4415,8 +4416,8 @@ int get_random_sysv_shm(void)
 /* ipc()'s call numbers and the SEMCTL commands, flags and fields the tests
  * below use, from <linux/ipc.h> and <linux/sem.h>, which cannot share a
  * file with <sys/shm.h>. */
-enum { IPC_SEMCTL = 3, IPC_MSGRCV = 12, IPC_SHMAT = 21, IPC_SHMDT = 22,
-       IPC_SHMGET = 23 };
+enum { IPC_SEMGET = 2, IPC_SEMCTL = 3, IPC_MSGRCV = 12, IPC_SHMAT = 21,
+       IPC_SHMDT = 22, IPC_SHMGET = 23 };
 enum { KERNEL_IPC_64 = 0x0100, KERNEL_GETALL = 13, KERNEL_SETVAL = 16,
        KERNEL_SETALL = 17, KERNEL_SEM_STAT = 18, KERNEL_SEM_INFO = 19,
        KERNEL_SEM_STAT_ANY = 20, KERNEL_SEMVMX = 32767 };
@@ -4549,6 +4550,43 @@ static void ipc_shmat_held(void)
 		if (validate_arg_coupling(&rec, rec.entry) != 0)
 			BUG("ipc: a call the sanitiser built was refused");
 		syscall_ipc.cleanup(&rec);
+	}
+}
+
+/* semget() holds nsems to SEMGET_NSEMS_CAP, at sanitise time and on the
+ * final slots: newary() sizes its allocation by nsems before any other
+ * check, and a GETALL writes a short for each semaphore into an array of
+ * SEMCTL_ARRAY_SLOTS.  ipc()'s SEMGET is held the same way, its second
+ * argument read as the int ksys_ipc() takes: past the cap it is refused,
+ * at the cap or negative, which the kernel refuses itself, it passes, and
+ * so does a count whose upper half alone is past it.  The semget entry
+ * cannot share this binary with the reaper's fakes, so its own hook, the
+ * same test, is held here through ipc(). */
+static void ipc_semget_nsems_held(void)
+{
+	static const struct {
+		unsigned long nsems;
+		int verdict;
+	} cases[] = {
+		{ 1, 0 },
+		{ SEMGET_NSEMS_CAP, 0 },
+		{ SEMGET_NSEMS_CAP + 1, -1 },
+		{ 32000, -1 },
+		{ (unsigned long) -1, 0 },
+		{ (1UL << 32) | 1, 0 },
+		{ 0xffffffff00001000UL, -1 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ipc;
+		rec.a1 = IPC_SEMGET;
+		rec.a3 = cases[i].nsems;
+		if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict) {
+			fprintf(stderr, "ipc: SEMGET nsems 0x%lx\n", cases[i].nsems);
+			BUG("ipc: a SEMGET's nsems was judged wrongly against the cap");
+		}
 	}
 }
 
@@ -4716,6 +4754,7 @@ void arg_coupling_self_check(void)
 	mmap_fixed_held_to_huge_extent();
 	shmat_remap_held_to_vetted_call();
 	ipc_shmat_held();
+	ipc_semget_nsems_held();
 	ipc_semctl_semun_through_ptr();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();

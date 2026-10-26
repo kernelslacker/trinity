@@ -5,15 +5,22 @@
 struct syscallrecord;
 
 /*
- * Upper bound on the unsigned-short array handed to the kernel for
- * SETALL / GETALL, by semctl() and by ipc()'s SEMCTL.  Has to cover the
- * worst-case nsems we let semget() create (its ARG_RANGE hi is 250);
- * 256 entries == 512 bytes leaves headroom over that without inflating
- * the per-call alloc.  Avoids the OOB-read footgun where the kernel
- * walks N entries from the caller buffer using the set's real nsems,
- * not whatever bound the fuzzer-side allocator thought it was using.
+ * Absolute ceiling for the nsems of a set trinity creates, by semget() or
+ * ipc()'s SEMGET, held at sanitise time and on the final slots.  newary()
+ * in the kernel allocates per sem_undo / sem_array storage proportional
+ * to nsems before any other gating, so a near-SEMMSL set (SEMMSL ==
+ * 32000) reliably trips the cgroup OOM-killer.  256 keeps the allocation
+ * path live for coverage without ever approaching SEMMSL.
  */
-#define SEMCTL_ARRAY_SLOTS	256
+#define SEMGET_NSEMS_CAP	256
+
+/*
+ * Entries in the unsigned-short array handed to the kernel for SETALL /
+ * GETALL, by semctl() and by ipc()'s SEMCTL.  The kernel walks the set's
+ * own nsems, not whatever bound the fuzzer-side allocator thought it was
+ * using, so the array covers the largest set trinity creates.
+ */
+#define SEMCTL_ARRAY_SLOTS	SEMGET_NSEMS_CAP
 
 /*
  * Shared post-state snap for the shmctl/msgctl IPC_STAT / IPC_INFO

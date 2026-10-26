@@ -418,7 +418,8 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
  * and the next 16 its version, of which 1 refuses SHMAT outright, first
  * and second are ints, and a compat call's third and ptr are their low
  * 32 bits.  Shape, then ownership, then magic, as
- * post_state_claim_owned() orders them.
+ * post_state_claim_owned() orders them.  A SEMGET, whose second is nsems,
+ * is held to SEMGET_NSEMS_CAP, as semget() is.
  */
 static int vet_final_ipc(struct syscallrecord *rec,
 			 const struct syscallentry *entry __unused__)
@@ -427,6 +428,12 @@ static int vet_final_ipc(struct syscallrecord *rec,
 		(struct ipc_post_state *) rec->post_state;
 	unsigned int call = (unsigned int) rec->a1;
 	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+
+	if ((call & 0xffff) == SEMGET && (int) rec->a3 > SEMGET_NSEMS_CAP) {
+		outputerr("arg-coupling: ipc rejected: a SEMGET's nsems %d is past the cap semget() is held to\n",
+			  (int) rec->a3);
+		return -1;
+	}
 
 	if ((call & 0xffff) != SHMAT || (call >> 16) == 1 ||
 	    (int) rec->a2 < 0)
