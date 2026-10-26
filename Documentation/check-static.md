@@ -401,8 +401,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
   constant newer than the build host's headers, is skipped with a `SKIP` line
   and a count in the `PASS` line instead of failing; a `TRINITY_LINUS_SRC`
   tree that resolves it gets the value checked as usual.  A baseline symbol
-  with no integer `#define` in the tree is stale and fails.  Symbols no probe
-  resolves are reported as one count: `unresolved-uapi` for the uapi-shaped
+  with no integer `#define` in the tree is stale and fails.
+  The probe header sets are finite, so a symbol whose header is in none of
+  them is out of reach of the compiler.  With a `TRINITY_LINUS_SRC` tree such
+  a macro is read as a `#define` out of the headers the tree installs, and
+  must carry that value (`text-verified` in the `PASS` line, ratcheted by
+  `scripts/check-static/uapi-shim-text-floor.baseline`).  Only an
+  unambiguous reading counts: every definition an integer literal or a
+  single-bit shift, and all agreeing.  A symbol defined as another macro or an
+  expression, or twice with different values, stays unresolved, as do enum
+  members, which only a compile probe sees.  Symbols still unresolved are
+  reported as one count: `unresolved-uapi` for the uapi-shaped
   ones (ALL_CAPS with an underscore) and `not-uapi-shaped` for names with a
   trinity-owned prefix or no underscore, a few of which are real constants.
   `UAPI_SHIM_VALUES_LIST=1` names the uapi-shaped ones.
@@ -410,11 +419,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   asserts that a baseline symbol the host's headers lack is skipped, that one
   with no shim in the tree or a wrong pinned value fails, that a kernel tree
   named by `TRINITY_LINUS_SRC` resolves the otherwise-skipped symbol even when
-  a hook has exported `GIT_DIR`, and that unresolved symbols are one count
-  rather than a line each.  It runs no git (a stub answers the gate's revision
-  lookup).  Without it the gate's verdict can drift back to depending on how
-  old the build host's kernel headers are, and its findings back under a line
-  per unresolved symbol.
+  a hook has exported `GIT_DIR`, that unresolved symbols are one count rather
+  than a line each, and, for the text lookup, that a macro only an installed
+  header declares is verified, that a wrong value fails in each shape
+  (literal, shift, negative, wrapping hex) and names the header, that a symbol
+  with disagreeing or non-literal definitions is not judged, and that a floor
+  above the verified count fails.  It runs no git (a stub answers the gate's
+  revision lookup).  Without it the gate's verdict can drift back to depending
+  on how old the build host's kernel headers are, its findings back under a
+  line per unresolved symbol, and the text lookup into accusing correct shims
+  or passing wrong ones.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

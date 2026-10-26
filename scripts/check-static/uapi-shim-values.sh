@@ -22,9 +22,13 @@
 #                  Symbols the compiler cannot find (trinity-private defines)
 #                  are excluded.  The fixed-symbol final binary is then run to
 #                  obtain the authoritative integer value for each symbol.
+#                  With TRINITY_LINUS_SRC set the probe repeats against that
+#                  kernel tree's installed headers, and a macro still
+#                  unresolved is read out of their text instead (Step 4c).
 #   3. Compare  -- for every compiler-resolved symbol, every occurrence of
 #                  that symbol in trinity's source must carry the compiler's
-#                  value.  A mismatch is a FAIL.
+#                  value, and for every text-resolved one the header's.  A
+#                  mismatch is a FAIL.
 #   4. Baseline -- scripts/check-static/uapi-shim-values.baseline pins
 #                  specific symbol→value pairs.  Each baseline entry is an
 #                  additional cross-check:
@@ -44,6 +48,7 @@ BASELINE="$ROOT/scripts/check-static/uapi-shim-values.baseline"
 PROBED_FLOOR_FILE="$ROOT/scripts/check-static/uapi-shim-probed-floor.baseline"
 TIER1_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-tier1-probed-floor.baseline"
 HARVEST_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-harvest-floor.baseline"
+TEXT_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-text-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -523,14 +528,111 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Step 4c: Tier 2 text -- macros no probe header declares
+# The probe sets are finite, so a symbol whose header is in none of them is
+# checked by nothing.  SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW sat at the wrong
+# value that way: linux/vm_sockets.h is in neither set.  A macro does not need
+# a compiler to be read, though.  When Tier 2 ran, every symbol still
+# unresolved is looked up as a "#define SYM <value>" in the headers the kernel
+# tree installed, and the value found is compared like a compiler's.  The
+# installed copy is read rather than include/uapi because headers_install has
+# already dropped the __KERNEL__ halves and added the host architecture's asm/
+# headers, which is what userspace is built against.
+#
+# Only a reading that cannot be wrong is used.  A value is an integer literal
+# (decimal, hex or octal, signed, with or without a U or L suffix) or a
+# single-bit shift, the shapes the harvest reads from the tree.  A symbol
+# with any other definition (another macro, an expression) or with two that
+# disagree stays unresolved: a wrong accusation against a correct shim costs
+# more than the check is worth.  Enum members are not macros and stay
+# unresolved too; only a compile probe sees them.
+# ---------------------------------------------------------------------------
+TEXT_OBS="$WORKDIR/text-obs.txt"
+TEXT_TABLE="$WORKDIR/text-table.txt"
+TEXT_VERIFIED=0
+TEXT_RAN=0
+: > "$TEXT_TABLE"
+case "$TIER2_STATUS" in
+ran*)
+    if [ -s "$SYMS_BAD" ]; then
+        TEXT_RAN=1
+        # "SYM VALUE FILE" for every object-like #define of an ALL_CAPS name:
+        # VALUE is a signed 32-bit decimal as in the compiler table, or ? for
+        # a definition of any other shape.  Deciding per symbol is left to
+        # awk below, so that xargs cannot split a symbol's definitions
+        # between two perl processes.
+        if ! (set -o pipefail
+              find "$HDR_INSTALL/include" -name '*.h' | sort | \
+              xargs perl -0777 -ne '
+	sub ev {
+		my $r = shift;
+		$r =~ s/^\s+|\s+$//g;
+		while ($r =~ /^(\((?:[^()]++|(?1))*\))$/) {
+			$r = substr($1, 1, -1);
+			$r =~ s/^\s+|\s+$//g;
+		}
+		if ($r =~ /^(-?)\s*(0[xX][0-9a-fA-F]{1,16}|0[0-7]*|[1-9][0-9]{0,18})[uUlL]*$/) {
+			my ($neg, $n) = ($1, $2);
+			$n = $n =~ /^0[xX]/ ? hex($n) : $n =~ /^0/ ? oct($n) : $n + 0;
+			return undef if $neg && $n > 0x7FFFFFFFFFFFFFFF;
+			return $neg ? -$n : $n;
+		}
+		if ($r =~ /^(?:\((?:__u\d+|unsigned long long|unsigned long|unsigned int|unsigned|int|long)\)\s*)?1[uUlL]*\s*<<\s*(0[xX][0-9a-fA-F]{1,2}|[0-9]{1,2})$/) {
+			my $sh = $1;
+			$sh = hex($sh) if $sh =~ /^0[xX]/;
+			return $sh > 63 ? undef : 1 << $sh;
+		}
+		return undef;
+	}
+	s{/\*.*?\*/}{ }gs; s{//[^\n]*}{}g; s{\\\n}{ }g;
+	while (m{^[ \t]*\#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)(?:[ \t]+([^\n]*?))?[ \t]*$}gm) {
+		my ($sym, $rhs) = ($1, $2);
+		my $v = defined $rhs ? ev($rhs) : undef;
+		if (defined $v) {
+			$v &= 0xFFFFFFFF;
+			$v -= 4294967296 if $v >= 2147483648;
+		}
+		printf("%s %s %s\n", $sym, defined $v ? $v : "?", $ARGV);
+	}' > "$TEXT_OBS"); then
+            echo "FAIL: $NAME: Tier-2 text scan of $HDR_INSTALL/include failed"
+            exit 1
+        fi
+        awk -v want_file="$SYMS_BAD" -v root="$HDR_INSTALL/include" '
+            FILENAME == want_file { want[$1]; next }
+            !($1 in want) { next }
+            $2 == "?" { bad[$1]; next }
+            !($1 in val) { val[$1] = $2; src[$1] = $3; next }
+            val[$1] != $2 { bad[$1] }
+            END {
+                for (s in val) {
+                    if (s in bad)
+                        continue
+                    f = src[s]
+                    if (index(f, root "/") == 1)
+                        f = substr(f, length(root) + 2)
+                    print val[s], s, f
+                }
+            }
+        ' "$SYMS_BAD" "$TEXT_OBS" | sort -k2 > "$TEXT_TABLE"
+
+        # A symbol read from text leaves the unresolved set.
+        cut -d' ' -f2 "$TEXT_TABLE" | sort -u > "$WORKDIR/syms-text.txt"
+        comm -23 "$SYMS_BAD" "$WORKDIR/syms-text.txt" > "$WORKDIR/syms-bad-text.txt"
+        cp "$WORKDIR/syms-bad-text.txt" "$SYMS_BAD"
+        TEXT_VERIFIED=$(wc -l < "$TEXT_TABLE" | tr -d ' ')
+    fi
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Unresolved-uapi reporting
-# After both tiers, a symbol still unresolved is either trinity's own or a
-# uapi constant no probe could see: its header is outside the probe sets,
-# newer than the host's, or not a uapi header at all.  Neither is a FAIL,
-# because there is nothing to compare the second kind against.  It is also a
-# large standing property of the tree, and a line per symbol would drown the
-# FAIL lines, so it is reported as one count.  UAPI_SHIM_VALUES_LIST=1 names
-# the uapi-shaped symbols.
+# After both tiers and the text lookup, a symbol still unresolved is either
+# trinity's own or a uapi constant no probe could see: its header is outside
+# the probe sets, newer than the host's, or not a uapi header at all.  Neither
+# is a FAIL, because there is nothing to compare the second kind against.  It
+# is also a large standing property of the tree, and a line per symbol would
+# drown the FAIL lines, so it is reported as one count.
+# UAPI_SHIM_VALUES_LIST=1 names the uapi-shaped symbols.
 #
 # "uapi-shaped" is ALL_CAPS with an underscore that no known-private prefix
 # claims.  Everything else unresolved is only counted (not-uapi-shaped): the
@@ -601,6 +703,18 @@ if [ "$probed_floor" -lt "$tier1_floor" ]; then
     exit 1
 fi
 
+text_floor=0
+if [ -f "$TEXT_FLOOR_FILE" ]; then
+    text_floor=$(grep -oE '^[0-9]+' "$TEXT_FLOOR_FILE" | head -1 || true)
+    text_floor=${text_floor:-0}
+fi
+
+if [ "$text_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: text floor is unseeded (uapi-shim-text-floor.baseline contains 0 or is missing)"
+    echo "FAIL: $NAME: seed it with a real observed text-verified count before enabling the ratchet"
+    exit 1
+fi
+
 # Tier-2 breakage states: the linus tree was present and Tier-2 was entered
 # but failed to produce usable output.  These are not environment differences --
 # they indicate a broken build environment or a regressed probe path.  Fail
@@ -623,7 +737,9 @@ fi
 #                fully-resolved runs are ratcheted even without a linus tree.
 #
 #   ran*         Tier-2 ran and augmented Tier-1 results.  Enforce the
-#                Tier-2-inclusive floor (PROBED_FLOOR_FILE).
+#                Tier-2-inclusive floor (PROBED_FLOOR_FILE), and, when the
+#                text lookup had symbols to read, the count of symbols it
+#                verified (TEXT_FLOOR_FILE).
 #
 #   skipped: linus tree absent
 #                Genuine environment difference; skip both floors.
@@ -631,6 +747,10 @@ case "$TIER2_STATUS" in
 ran*)
     if [ "$probed" -lt "$probed_floor" ]; then
         echo "FAIL: $NAME: coverage ratchet: probed $probed < floor $probed_floor"
+        exit 1
+    fi
+    if [ "$TEXT_RAN" -eq 1 ] && [ "$TEXT_VERIFIED" -lt "$text_floor" ]; then
+        echo "FAIL: $NAME: coverage ratchet: text-verified $TEXT_VERIFIED < text_floor $text_floor"
         exit 1
     fi
     ;;
@@ -652,7 +772,8 @@ esac
 # ---------------------------------------------------------------------------
 # Step 5: Compare trinity values against compiler values
 # For each compiler-resolvable symbol, every occurrence in the harvest must
-# carry the compiler's authoritative value.
+# carry the compiler's authoritative value, and for each symbol read from
+# header text (Step 4c) the value that text gives.
 #
 # Normalisation: both sides are converted to signed 32-bit integer to match
 # what the probe C code does ((int)SYM via printf("%d",...)).  This means:
@@ -667,7 +788,7 @@ MISMATCH_FILE="$WORKDIR/mismatches.txt"
 # int32 normalisation: truncate to 32-bit signed to match C's (int) semantics.
 # Handles hex (0x...), octal (0...), and decimal integers.
 # For hex values longer than 8 digits, only the lower 32 bits are kept.
-awk -v harvest_file="$HARVEST" '
+awk -v harvest_file="$HARVEST" -v text_file="$TEXT_TABLE" '
 # Return numeric value of a single hex digit character (0-9, a-f, A-F)
 function hd(c) {
     return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
@@ -697,7 +818,7 @@ function int32(s,   v, i, c, n) {
     if (v >= 2147483648) v -= 4294967296
     return v
 }
-BEGIN { fail = 0; checked = 0 }
+BEGIN { fail = 0; checked = 0; checked_text = 0 }
 # Pass 1: load harvest into memory (SYM -> space-separated list of values).
 # Use FILENAME == harvest_file rather than the FNR == NR idiom: if the harvest
 # file is empty awk never emits a record for it, so when the first record of
@@ -708,29 +829,33 @@ FILENAME == harvest_file {
     harvest[sym] = (sym in harvest) ? harvest[sym] " " val : val
     next
 }
-# Pass 2: process compiler table (format: DECIMAL_VALUE SYM)
+# Pass 2: process the compiler table (format: DECIMAL_VALUE SYM), then the
+# text table (DECIMAL_VALUE SYM FILE), counting them apart.
 {
     compiler_val = int($1)
     sym = $2
     if (!(sym in harvest)) next  # not a trinity shim -- skip
-    checked++
+    from_text = (FILENAME == text_file)
+    if (from_text) checked_text++; else checked++
+    source = from_text ? "installed header " $3 : "compiler"
     n = split(harvest[sym], tvals)
     for (i = 1; i <= n; i++) {
         tv = tvals[i]
         trinity_val = int32(tv)
         if (trinity_val != compiler_val) {
             fail++
-            printf "FAIL: uapi-shim-values: %s shim wrong: have %s (=%d), want %d (compiler)\n",
-                sym, tv, trinity_val, compiler_val > "/dev/stderr"
+            printf "FAIL: uapi-shim-values: %s shim wrong: have %s (=%d), want %d (%s)\n",
+                sym, tv, trinity_val, compiler_val, source > "/dev/stderr"
         }
     }
 }
-END { print fail, checked }
-' "$HARVEST" "$COMPILER_TABLE" > "$MISMATCH_FILE"
+END { print fail, checked, checked_text }
+' "$HARVEST" "$COMPILER_TABLE" "$TEXT_TABLE" > "$MISMATCH_FILE"
 
-read fail checked < "$MISMATCH_FILE"
+read fail checked checked_text < "$MISMATCH_FILE"
 fail=${fail:-0}
 checked=${checked:-0}
+checked_text=${checked_text:-0}
 
 # ---------------------------------------------------------------------------
 # Step 6: Baseline cross-check
@@ -795,24 +920,31 @@ if [ "$total_fail" -gt 0 ]; then
     exit 1
 fi
 
-# Invariant 1: every harvested symbol is either resolvable or unresolved.
-# harvested = resolvable + total_unresolved; a mismatch indicates a bookkeeping bug.
+# Invariant 1: every harvested symbol is either resolvable, read from header
+# text or unresolved.  harvested = resolvable + text-verified + total_unresolved;
+# a mismatch indicates a bookkeeping bug.
 #
 # Note: the not-uapi-shaped class (names matching KNOWN_MISSING_RE, or with no
 # underscore) is NOT a separate term here.  Those symbols failed the compiler
 # probe and therefore live in SYMS_BAD, folded into total_unresolved.  They are
 # only split out in the *reporting* step (unresolved-uapi count).
-# So the identity is: harvested = resolvable + (unresolved-uapi + not-uapi-shaped)
-#                   = resolvable + total_unresolved  ✓
-if [ "$harvested" -ne $((probed + total_unresolved)) ]; then
-    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + unresolved $total_unresolved" >&2
+# So the identity is: harvested = resolvable + text-verified
+#                                 + (unresolved-uapi + not-uapi-shaped)
+#                   = resolvable + text-verified + total_unresolved  ✓
+if [ "$harvested" -ne $((probed + TEXT_VERIFIED + total_unresolved)) ]; then
+    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + text-verified $TEXT_VERIFIED + unresolved $total_unresolved" >&2
     exit 1
 fi
 
-# Invariant 2: every resolvable symbol must have been verified.
+# Invariant 2: every resolvable symbol must have been verified, and so must
+# every symbol read from text.
 # verified (checked) < resolvable (probed) means symbols were silently skipped.
 if [ "$checked" -ne "$probed" ]; then
     echo "FAIL: $NAME: invariant broken: verified $checked != resolvable $probed ($((probed - checked)) symbol(s) resolved but not verified)" >&2
+    exit 1
+fi
+if [ "$checked_text" -ne "$TEXT_VERIFIED" ]; then
+    echo "FAIL: $NAME: invariant broken: verified from text $checked_text != text-verified $TEXT_VERIFIED" >&2
     exit 1
 fi
 
@@ -821,5 +953,5 @@ case "$TIER1_STATUS" in
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor)"
 exit 0

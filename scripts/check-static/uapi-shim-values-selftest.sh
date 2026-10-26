@@ -4,8 +4,9 @@
 # verdicts that must not depend on the build host or its caller: a baseline
 # entry its headers predate is skipped, a stale one or a wrong value fails, a
 # symbol only the Tier-2 kernel tree resolves is checked even under a hook's
-# GIT_DIR, and unresolved symbols are one count.  No git runs here: a stub
-# answers the gate's revision lookup.
+# GIT_DIR, a macro no probe header declares is compared with its definition in
+# the tree's installed headers, and unresolved symbols are one count.  No git
+# runs here: a stub answers the gate's revision lookup.
 
 set -u
 
@@ -34,7 +35,7 @@ cat > "$tree/shims.h" <<'EOF'
 EOF
 
 # The scratch tree harvests a handful of symbols, so every ratchet floor is 1.
-for floor in harvest probed tier1-probed; do
+for floor in harvest probed tier1-probed text; do
 	echo 1 > "$tree/scripts/check-static/uapi-shim-$floor-floor.baseline"
 done
 
@@ -103,6 +104,8 @@ expect "unresolved symbols: one summary line" \
 	grep -q '^WARN: uapi-shim-values: 1 uapi-shaped symbol(s) unresolved by any probe' "$work/err"
 expect "unresolved symbols: none named by default" \
 	test "$(grep -c -e SELFTEST_NEWER_THAN_HOST -e HAVE_SELFTEST_SWITCH -e SELFTESTNOUNDERSCORE "$work/err")" -eq 0
+expect "unresolved symbols: no kernel tree, nothing verified from header text" \
+	grep -q 'text-verified 0 ' "$work/out"
 
 run_gate "NDA_DST 1" UAPI_SHIM_VALUES_LIST=1
 expect "listing requested: names the uapi-shaped symbol" \
@@ -113,8 +116,10 @@ expect "listing requested: leaves out the other two" \
 # Case 5: the host cannot resolve the symbol but the Tier-2 kernel tree can.
 # The gate keys its header cache on the tree's git revision, so a stub git
 # answers 0123abc and a pre-seeded cache stands in for headers_install; its
-# neighbour.h defines the symbol on top of the host's header.  Like the real
-# git, the stub answers for the caller's repository if GIT_* redirects it.
+# neighbour.h defines the symbol on top of the host's header.  Its
+# selftest_text.h is a header no probe set includes, which only the text
+# lookup of Case 7 reads.  Like the real git, the stub answers for the
+# caller's repository if GIT_* redirects it.
 linus="$work/linus"
 hdrs="$work/cache/trinity/linus-hdrs-0123abc/include"
 mkdir -p "$linus/include/uapi" "$work/bin" "$hdrs/linux"
@@ -130,12 +135,15 @@ chmod +x "$work/bin/git"
 : > "$hdrs/linux/version.h"
 printf '#include_next <linux/neighbour.h>\n#define SELFTEST_NEWER_THAN_HOST 99\n' \
 	> "$hdrs/linux/neighbour.h"
+printf '#define SELFTESTNOUNDERSCORE 7\n' > "$hdrs/linux/selftest_text.h"
 tier2=(TRINITY_LINUS_SRC="$linus" XDG_CACHE_HOME="$work/cache" PATH="$work/bin:$PATH")
 
 run_gate "SELFTEST_NEWER_THAN_HOST 99" "${tier2[@]}"
 expect "tier2-resolved baseline symbol: gate passes" [ "$rc" -eq 0 ]
 expect "tier2-resolved baseline symbol: checked, not skipped" \
 	grep -q 'baseline-skipped 0 ' "$work/out"
+expect "tier2 tree: the one macro only its header text declares is verified" \
+	grep -q 'text-verified 1 ' "$work/out"
 
 run_gate "SELFTEST_NEWER_THAN_HOST 98" "${tier2[@]}"
 expect "tier2-resolved baseline symbol, wrong value: gate fails" [ "$rc" -ne 0 ]
@@ -150,6 +158,68 @@ run_gate "SELFTEST_NEWER_THAN_HOST 99" "${tier2[@]}" GIT_DIR=/nonexistent \
 expect "inherited GIT_DIR: gate still finds the Tier-2 cache" [ "$rc" -eq 0 ]
 expect "inherited GIT_DIR: baseline symbol checked, not skipped" \
 	grep -q 'baseline-skipped 0 ' "$work/out"
+
+# Case 7: a macro no probe header declares is compared with its definition in
+# the headers the kernel tree installs.  The shims are the shapes the harvest
+# reads: a literal, a single-bit shift, a negative, and a hex value that wraps
+# to a negative int.  SELFTEST_TEXT_SAME is defined twice, alike.  The header
+# defines SELFTEST_TEXT_TWICE with two values and SELFTEST_TEXT_ALIAS as
+# another macro, which no text lookup may judge: the shims carry values the
+# header does not.
+cat > "$tree/text-shims.h" <<'EOF'
+#define SELFTEST_TEXT_LITERAL	5
+#define SELFTEST_TEXT_SHIFT	(1<<4)
+#define SELFTEST_TEXT_NEGATIVE	-4
+#define SELFTEST_TEXT_HEX	0x80000001
+#define SELFTEST_TEXT_SAME	12
+#define SELFTEST_TEXT_TWICE	9
+#define SELFTEST_TEXT_ALIAS	6
+EOF
+cat > "$work/text-header.good" <<'EOF'
+#define SELFTESTNOUNDERSCORE 7
+#define SELFTEST_TEXT_LITERAL 5
+#define SELFTEST_TEXT_SHIFT (1 << 4)
+#define SELFTEST_TEXT_NEGATIVE -4
+#define SELFTEST_TEXT_HEX 0x80000001U
+#ifdef SELFTEST_WIDE
+#define SELFTEST_TEXT_SAME 12
+#define SELFTEST_TEXT_TWICE 3
+#else
+#define SELFTEST_TEXT_SAME 12
+#define SELFTEST_TEXT_TWICE 4
+#endif
+#define SELFTEST_TEXT_ALIAS SELFTEST_TEXT_LITERAL
+EOF
+cp "$work/text-header.good" "$hdrs/linux/selftest_text.h"
+
+run_gate "NDA_DST 1" "${tier2[@]}"
+expect "header text matches: gate passes" [ "$rc" -eq 0 ]
+expect "header text matches: six shims verified" \
+	grep -q 'text-verified 6 ' "$work/out"
+expect "header text matches: ambiguous and aliased symbols stay unresolved" \
+	grep -q 'unresolved-uapi 2 / not-uapi-shaped 1 ' "$work/out"
+
+# A wrong value is caught in every shape: each row changes one definition.
+for row in \
+	"SELFTEST_TEXT_LITERAL|TEXT_LITERAL 5|TEXT_LITERAL 6|5 (=5)|6" \
+	"SELFTEST_TEXT_SHIFT|1 << 4|1 << 5|16 (=16)|32" \
+	"SELFTEST_TEXT_NEGATIVE|TEXT_NEGATIVE -4|TEXT_NEGATIVE -5|-4 (=-4)|-5" \
+	"SELFTEST_TEXT_HEX|0x80000001U|0x80000002U|0x80000001 (=-2147483647)|-2147483646"; do
+	IFS='|' read -r sym from to have want <<< "$row"
+	sed "s/$from/$to/" "$work/text-header.good" > "$hdrs/linux/selftest_text.h"
+	run_gate "NDA_DST 1" "${tier2[@]}"
+	expect "header text differs, $sym: gate fails" [ "$rc" -ne 0 ]
+	expect "header text differs, $sym: names the symbol, both values and the header" \
+		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have, want $want (installed header linux/selftest_text.h)" "$work/err"
+done
+
+# The count of verified symbols is ratcheted like the probed one.
+cp "$work/text-header.good" "$hdrs/linux/selftest_text.h"
+echo 99 > "$tree/scripts/check-static/uapi-shim-text-floor.baseline"
+run_gate "NDA_DST 1" "${tier2[@]}"
+expect "text floor above the verified count: gate fails" [ "$rc" -ne 0 ]
+expect "text floor above the verified count: names both numbers" \
+	grep -q 'coverage ratchet: text-verified 6 < text_floor 99' "$work/out"
 
 total=$((pass + fail))
 
