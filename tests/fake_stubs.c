@@ -17,8 +17,10 @@
 
 #include "args-internal.h"
 #include "debug.h"
+#include "fd.h"			/* get_random_fd */
 #include "maps.h"
 #include "minicorpus.h"
+#include "random.h"		/* rand32 */
 #include "rnd.h"
 #include "struct_catalog.h"
 
@@ -137,6 +139,8 @@ int get_random_fd(void)
 
 /* ebpf_gen_program_into signature uses struct bpf_insn * but we avoid
  * pulling in bpf.h here; void * is ABI-equivalent on all supported arches. */
+void ebpf_gen_program_into(void *insns, int max_insns,
+			   int *insn_count, unsigned int prog_type);
 void ebpf_gen_program_into(void *insns, int max_insns,
 			   int *insn_count, unsigned int prog_type)
 {
