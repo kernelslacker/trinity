@@ -13,6 +13,7 @@
 #include <linux/sem.h>
 #include <linux/msg.h>
 #include <linux/shm.h>
+#include <stdint.h>
 #include <string.h>
 #include <unistd.h>
 #include "ipc-common.h"
@@ -81,13 +82,27 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 	rec->a5 = (unsigned long) sops;
 
 	if (call == SEMTIMEDOP) {
-		struct timespec *ts;
-		ts = (struct timespec *) get_call_writable_struct(rec, sizeof(*ts));
-		if (!ts)
-			return;
-		ts->tv_sec = 0;
-		ts->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-		rec->a6 = (unsigned long) ts;
+		long nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
+
+		/* A compat call's kernel reads an old_timespec32, two s32s
+		 * (compat_ksys_semtimedop()). */
+		if (rec->do32bit) {
+			int32_t *ts32 = get_call_writable_struct(rec, 2 * sizeof(*ts32));
+
+			if (!ts32)
+				return;
+			ts32[0] = 0;
+			ts32[1] = nsec;
+			rec->a6 = (unsigned long) ts32;
+		} else {
+			struct timespec *ts = get_call_writable_struct(rec, sizeof(*ts));
+
+			if (!ts)
+				return;
+			ts->tv_sec = 0;
+			ts->tv_nsec = nsec;
+			rec->a6 = (unsigned long) ts;
+		}
 	}
 }
 
@@ -208,14 +223,16 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	 * second=msgsz, third=msgflg
 	 *
 	 * The ipc() mux wraps msgrcv args in a tmp struct.
-	 * Kernel extracts ptr->msgp and ptr->msgtyp from it.
+	 * Kernel extracts ptr->msgp and ptr->msgtyp from it; a compat
+	 * call's reads a compat_ipc_kludge, the two as 32-bit words.
 	 */
 	struct {
 		struct msgbuf *msgp;
 		long msgtyp;
 	} *tmp;
 	struct msgbuf *mb;
-	unsigned long mb_addr;
+	unsigned long mb_addr, kludge;
+	size_t kludge_len;
 
 	mb = (struct msgbuf *) get_call_writable_struct(rec, sizeof(long) + 256);
 	if (!mb)
@@ -229,17 +246,30 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&mb_addr, sizeof(long) + 256);
 	mb = (struct msgbuf *) mb_addr;
 
-	tmp = (void *) get_call_writable_struct(rec, sizeof(*tmp));
-	if (!tmp)
-		return;
-	tmp->msgp = mb;
-	tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
+	if (rec->do32bit) {
+		uint32_t *ck = get_call_writable_struct(rec, 2 * sizeof(*ck));
+
+		if (!ck)
+			return;
+		ck[0] = (uint32_t) mb_addr;
+		ck[1] = rnd_modulo_u32(10);	/* 0=any type */
+		kludge = (unsigned long) ck;
+		kludge_len = 2 * sizeof(*ck);
+	} else {
+		tmp = (void *) get_call_writable_struct(rec, sizeof(*tmp));
+		if (!tmp)
+			return;
+		tmp->msgp = mb;
+		tmp->msgtyp = rnd_modulo_u32(10);	/* 0=any type */
+		kludge = (unsigned long) tmp;
+		kludge_len = sizeof(*tmp);
+	}
 
 	rec->a2 = ONE_IN(5) ? rnd_modulo_u32(1000) : (unsigned long) get_random_sysv_msg();
 	rec->a3 = 256;			/* msgsz */
 	rec->a4 = RAND_BOOL() ? IPC_NOWAIT : 0;
-	rec->a5 = (unsigned long) tmp;
-	avoid_shared_buffer_inout(&rec->a5, sizeof(*tmp));
+	rec->a5 = kludge;
+	avoid_shared_buffer_inout(&rec->a5, kludge_len);
 }
 
 static void sanitise_ipc_msgget(struct syscallrecord *rec)

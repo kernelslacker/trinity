@@ -4487,8 +4487,8 @@ int get_random_sysv_shm(void)
 /* ipc()'s call numbers and the SEMCTL commands, flags and fields the tests
  * below use, from <linux/ipc.h> and <linux/sem.h>, which cannot share a
  * file with <sys/shm.h>. */
-enum { IPC_SEMGET = 2, IPC_SEMCTL = 3, IPC_MSGRCV = 12, IPC_SHMAT = 21,
-       IPC_SHMDT = 22, IPC_SHMGET = 23 };
+enum { IPC_SEMGET = 2, IPC_SEMCTL = 3, IPC_SEMTIMEDOP = 4, IPC_MSGRCV = 12,
+       IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23 };
 enum { KERNEL_IPC_64 = 0x0100, KERNEL_GETALL = 13, KERNEL_SETVAL = 16,
        KERNEL_SETALL = 17, KERNEL_SEM_STAT = 18, KERNEL_SEM_INFO = 19,
        KERNEL_SEM_STAT_ANY = 20, KERNEL_SEMVMX = 32767 };
@@ -4775,11 +4775,49 @@ static void ipc_semctl_semun_through_ptr(void)
 }
 
 #ifdef ARCH_IS_BIARCH
+/* compat_ksys_ipc() reads a MSGRCV's kludge as two 32-bit words, msgp and
+ * msgtyp, and a SEMTIMEDOP's timeout as an old_timespec32, two s32s.  A
+ * compat call gets those layouts: msgp names the msgbuf, msgtyp is one of
+ * the types drawn, and the timeout is under a millisecond, both of which
+ * the draws take past 0, which the native layouts read as 0 never do. */
+static void ipc_compat_layouts(void)
+{
+	bool msgtyp_varied = false, nsec_varied = false;
+	unsigned int i;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		const int32_t *words;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ipc;
+		rec.do32bit = true;
+		rec.a1 = (i & 1) ? IPC_MSGRCV : IPC_SEMTIMEDOP;
+		syscall_ipc.sanitise(&rec);
+		if (rec.a1 == IPC_MSGRCV) {
+			words = (const int32_t *) rec.a5;
+			if (words[1] < 0 || words[1] >= 10 ||
+			    !call_reaches_buffer(&rec, (uint32_t) words[0], 8 + 256))
+				BUG("ipc: a compat MSGRCV's kludge does not read as msgp and msgtyp");
+			msgtyp_varied |= words[1] != 0;
+		} else {
+			words = (const int32_t *) rec.a6;
+			if (words[0] != 0 || words[1] < 0 || words[1] >= 1000000)
+				BUG("ipc: a compat SEMTIMEDOP's timeout does not read as an old_timespec32");
+			nsec_varied |= words[1] != 0;
+		}
+		syscall_ipc.cleanup(&rec);
+	}
+	if (!msgtyp_varied || !nsec_varied)
+		BUG("ipc: a compat MSGRCV's msgtyp or SEMTIMEDOP's timeout only ever reads 0");
+}
+#endif
+
+#ifdef ARCH_IS_BIARCH
 /* ipc() is in the i386 table alone, so on x86-64 every call is compat and
  * reaches compat_ksys_ipc(), which reads each pointer slot as its low 32
  * bits.  Every buffer the sanitiser builds lies where those bits reach:
- * ptr's, a SHMAT's third and a SEMTIMEDOP's fifth, and the msgbuf a
- * MSGRCV's kludge names. */
+ * ptr's, a SHMAT's third and a SEMTIMEDOP's fifth; the msgbuf a MSGRCV's
+ * kludge names is ipc_compat_layouts()'s to check. */
 static void ipc_compat_buffers_reachable(void)
 {
 	const struct arglist *calls = &syscall_ipc.arg_params[0].list;
@@ -4794,9 +4832,7 @@ static void ipc_compat_buffers_reachable(void)
 		rec.a1 = call;
 		syscall_ipc.sanitise(&rec);
 		if (rec.a5 > UINT_MAX || rec.a6 > UINT_MAX ||
-		    (call == IPC_SHMAT && (rec.a4 == 0 || rec.a4 > UINT_MAX)) ||
-		    (call == IPC_MSGRCV &&
-		     (rec.a5 == 0 || *(unsigned long *) rec.a5 > UINT_MAX))) {
+		    (call == IPC_SHMAT && (rec.a4 == 0 || rec.a4 > UINT_MAX))) {
 			fprintf(stderr, "ipc: call %lu, third 0x%lx ptr 0x%lx fifth 0x%lx\n",
 				call, rec.a4, rec.a5, rec.a6);
 			BUG("ipc: a compat call was handed a buffer its slots cannot carry");
@@ -4855,5 +4891,6 @@ void arg_coupling_self_check(void)
 	semctl_arrays_from_pool();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
+	ipc_compat_layouts();
 #endif
 }
