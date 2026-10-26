@@ -4,7 +4,8 @@
  * for a mapping post_mmap() records, one static string, so map_destructor()
  * (mm/maps-lifecycle.c, linked as a parent TU) only clears the pointer.
  * init_child_mappings() and post_mmap() run over fake pools, with
- * alloc_object() and add_object() hooked.
+ * alloc_object() and add_object() hooked.  It also checks what a holed
+ * entry is kept out of: a refill's clones, and its destructor's munmap.
  * Entry point: maps_name_self_check().
  */
 
@@ -13,11 +14,13 @@
 #include <string.h>
 #include <sys/mman.h>
 
+#include "arch.h"		/* page_size */
 #include "child-api.h"		/* init_child_mappings */
 #include "debug.h"		/* BUG */
 #include "deferred-free.h"
 #include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
 #include "maps.h"
+#include "mm/maps-internal.h"	/* clone_global_mmap_pool */
 #include "objects.h"
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
@@ -248,6 +251,52 @@ static void runtime_mappings_borrow_a_static_name(void)
 		BUG("map name: destroying a runtime mapping touched its name");
 }
 
+/*
+ * A refill clones every global entry the local pool lacks, but not one the
+ * child holed: its VMA no longer covers what the entry says.
+ */
+static void refill_skips_a_holed_global(void)
+{
+	struct objhead *anon = &heads[OBJ_LOCAL][0];
+
+	globals[0].map.holed = true;
+	clone_global_mmap_pool(OBJ_MMAP_ANON);
+	if (anon->num_entries != 0)
+		BUG("map name: a refill cloned a global entry the child holed");
+	globals[0].map.holed = false;
+	clone_global_mmap_pool(OBJ_MMAP_ANON);
+	if (anon->num_entries != 1)
+		BUG("map name: a refill skipped a global entry that was whole");
+	free(anon->array[0]);
+	anon->array[0] = NULL;
+	anon->num_entries = 0;
+}
+
+/*
+ * A holed entry's extent can hold anything by the time it is destroyed, so
+ * the destructor leaves even a VMA the entry owns alone.  The mapping is
+ * real, so a munmap would show.
+ */
+static void destructor_leaves_a_holed_mapping_alone(void)
+{
+	struct object obj;
+	unsigned char vec;
+	void *p = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+	if (p == MAP_FAILED)
+		BUG("map name: no mapping for the holed entry");
+	memset(&obj, 0, sizeof(obj));
+	obj.map.ptr = p;
+	obj.map.size = 2 * page_size;
+	obj.map.owns_vma = true;
+	obj.map.holed = true;
+	map_destructor(&obj);
+	if (mincore(p, page_size, &vec) != 0)
+		BUG("map name: the destructor unmapped a holed entry's extent");
+	munmap(p, 2 * page_size);
+}
+
 void maps_name_self_check(void);
 void maps_name_self_check(void)
 {
@@ -258,6 +307,8 @@ void maps_name_self_check(void)
 	clones_borrow_the_global_name();
 	destroying_a_clone_leaves_the_name_alone();
 	runtime_mappings_borrow_a_static_name();
+	refill_skips_a_holed_global();
+	destructor_leaves_a_holed_mapping_alone();
 	fake_get_objhead = saved_hook;
 	fake_alloc_object = NULL;
 	fake_add_object = NULL;

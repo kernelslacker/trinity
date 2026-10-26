@@ -101,6 +101,14 @@ struct map {
 	 * pkey_mprotect() handing the whole mapping key 0 clears it.
 	 */
 	bool keyed;
+	/*
+	 * Set once a syscall took part or all of the VMA this entry
+	 * describes.  The kernel can put anything in that range afterwards,
+	 * a glibc chunk or another pool mapping, so nothing picks the entry
+	 * again, a refill does not clone a global one back into a local
+	 * pool, and map_destructor() unmaps nothing for it.
+	 */
+	bool holed;
 };
 
 #define NR_MAPPING_SIZES 9

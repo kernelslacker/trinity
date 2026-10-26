@@ -173,7 +173,7 @@ static uint32_t * get_futex_mmap(void)
 		scope = OBJ_LOCAL;
 
 	obj = get_random_object(OBJ_MMAP_ANON, scope);
-	if (!obj)
+	if (!obj || obj->map.holed)
 		return NULL;
 
 	map = &obj->map;

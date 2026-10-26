@@ -435,6 +435,10 @@ bool get_map_handle(struct map_handle *h)
 		if (!map_size_in_range(obj, type, scope))
 			continue;
 
+		/* Its extent may hold anything; see struct map's holed. */
+		if (obj->map.holed)
+			continue;
+
 		h->map = &obj->map;
 		h->type = type;
 		h->scope = scope;

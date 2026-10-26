@@ -71,9 +71,10 @@ void map_destructor(struct object *obj)
 	 * and the GB(4) cap on size (maps-pick.c).  Skip the whole
 	 * untrack+munmap pair on miss
 	 * -- leaking the VA for the rest of the run is strictly safer
-	 * than a wild unmap.
+	 * than a wild unmap.  A holed entry is skipped for the same reason:
+	 * its extent may hold anything by now.
 	 */
-	if (map->owns_vma &&
+	if (map->owns_vma && !map->holed &&
 	    map->ptr != NULL &&
 	    (uintptr_t)map->ptr >= 0x10000UL &&
 	    (uintptr_t)map->ptr < 0x800000000000UL &&
@@ -199,6 +200,10 @@ void clone_global_mmap_pool(enum objecttype type)
 				  type);
 			continue;
 		}
+
+		/* This child took part of the VMA; see struct map's holed. */
+		if (m->holed)
+			continue;
 
 		/*
 		 * Dedup by ptr against the local head.  Global ANON ptrs
