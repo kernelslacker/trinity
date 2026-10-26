@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "netlink-attrs.h"
 
 /*
@@ -31,6 +33,10 @@
 struct nfnl_cmd_grammar {
 	unsigned char cmd;
 	const char *name;	/* for debugging only */
+	/* The callback is NFNL_CB_BATCH: nfnetlink dispatches it only
+	 * inside a NFNL_MSG_BATCH_BEGIN ... NFNL_MSG_BATCH_END batch and
+	 * answers -EINVAL to it anywhere else. */
+	bool batch;
 };
 
 struct nfnl_subsys_grammar {
@@ -69,6 +75,18 @@ const struct nfnl_subsys_grammar *nfnl_pick_subsys(void);
  * subsys dispatcher rejects cleanly via -EOPNOTSUPP.
  */
 unsigned char nfnl_pick_cmd(const struct nfnl_subsys_grammar *sub);
+
+/*
+ * Whether nlmsg_type names a command the registry lists as a batch
+ * callback.  False for a subsystem or a command it does not list.
+ */
+bool nfnl_type_is_batch(unsigned short nlmsg_type);
+
+/*
+ * Pick a random batch callback from the subsystem's cmds[] table.  Returns
+ * 0 when it lists none.
+ */
+unsigned char nfnl_pick_batch_cmd(const struct nfnl_subsys_grammar *sub);
 
 /*
  * Bump the per-subsys dispatch counter for sub.  No-op when sub is

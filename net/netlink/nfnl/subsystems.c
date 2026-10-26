@@ -142,6 +142,45 @@ unsigned char nfnl_pick_cmd(const struct nfnl_subsys_grammar *sub)
 	return sub->cmds[rnd_modulo_u32(sub->n_cmds)].cmd;
 }
 
+bool nfnl_type_is_batch(unsigned short nlmsg_type)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(nlmsg_type >> 8);
+	unsigned int i;
+
+	if (sub == NULL)
+		return false;
+	for (i = 0; i < sub->n_cmds; i++) {
+		if (sub->cmds[i].cmd == (nlmsg_type & 0xff))
+			return sub->cmds[i].batch;
+	}
+	return false;
+}
+
+unsigned char nfnl_pick_batch_cmd(const struct nfnl_subsys_grammar *sub)
+{
+	unsigned int batch_count = 0;
+	unsigned int pick;
+	unsigned int i;
+
+	if (!sub)
+		return 0;
+	for (i = 0; i < sub->n_cmds; i++) {
+		if (sub->cmds[i].batch)
+			batch_count++;
+	}
+	if (batch_count == 0)
+		return 0;
+
+	pick = rnd_modulo_u32(batch_count);
+	for (i = 0; i < sub->n_cmds; i++) {
+		if (!sub->cmds[i].batch)
+			continue;
+		if (pick-- == 0)
+			return sub->cmds[i].cmd;
+	}
+	return 0;
+}
+
 void nfnl_subsys_bump_calls(const struct nfnl_subsys_grammar *sub)
 {
 	if (!sub || !sub->call_counter)

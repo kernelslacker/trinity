@@ -6,6 +6,7 @@
  * both valid code paths and error handling in the kernel.
  */
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include <stddef.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -219,7 +220,10 @@ static unsigned short pick_nlmsg_type(int protocol)
  * back to random bytes.
  *
  * ~1 in 4 messages are multi-message batches (2-4 nlmsghdr chained
- * together) to exercise the kernel's NLMSG_NEXT iteration path.
+ * together) to exercise the kernel's NLMSG_NEXT iteration path.  A
+ * NETLINK_NETFILTER buffer that opens with an NFNL_CB_BATCH command is
+ * also bracketed by NFNL_MSG_BATCH_BEGIN and NFNL_MSG_BATCH_END, which
+ * build_nfnl_batch() explains.
  */
 
 /*
@@ -246,7 +250,10 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
 	}
 }
 
-/* Build a single nlmsghdr at msg+offset. Returns new offset (NLMSG_ALIGN'd). */
+/*
+ * Build a single nlmsghdr of the caller's nlmsg_type at msg+offset.  Returns
+ * new offset (NLMSG_ALIGN'd).
+ */
 /*
  * Single iteration of build_one_nlmsg()'s inner attr-append loop.
  * Returns the new offset, or 0 to signal "no progress, caller break".
@@ -298,10 +305,10 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 }
 
 static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
-			      struct socket_triplet *triplet)
+			      struct socket_triplet *triplet,
+			      unsigned short nlmsg_type)
 {
 	struct nlmsghdr *nlh;
-	unsigned short nlmsg_type;
 	size_t body_len;
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
@@ -314,8 +321,6 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	 * Real buffers are >=1280 bytes so this is just a sanity gate. */
 	if (offset + NLMSG_HDRLEN + 8 > buflen)
 		return offset;
-
-	nlmsg_type = pick_nlmsg_type(triplet->protocol);
 
 	/* One message in ten is chaos: its flags are a random word and, for
 	 * genl, its reserved field may be too.  A genl message that is not
@@ -406,11 +411,73 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	return aligned > buflen ? buflen : aligned;
 }
 
+/*
+ * One of the two messages that bracket an nfnetlink batch: an nlmsghdr and
+ * an nfgenmsg whose res_id names the subsystem, and no attributes.  A
+ * NFNL_BATCH_GENID would have to be the current generation or the batch
+ * ends with -ERESTART before a command runs, and the generator cannot know
+ * it.  END needs NLM_F_REQUEST like every message in the batch: the kernel
+ * tests the flag before the type, so without it END is answered -EINVAL and
+ * the batch never ends.  The caller keeps the room.
+ */
+static size_t put_nfnl_batch_marker(unsigned char *msg, size_t offset,
+				    unsigned short type, unsigned char subsys)
+{
+	struct nlmsghdr nlh = {
+		.nlmsg_len = NLMSG_LENGTH(sizeof(struct nfgenmsg)),
+		.nlmsg_type = type,
+		.nlmsg_flags = NLM_F_REQUEST,
+		.nlmsg_seq = rand32(),
+	};
+	struct nfgenmsg nfg = {
+		.nfgen_family = AF_UNSPEC,
+		.version = NFNETLINK_V0,
+		.res_id = htons(subsys),
+	};
+
+	memcpy(msg + offset, &nlh, sizeof(nlh));
+	memcpy(msg + offset + NLMSG_HDRLEN, &nfg, sizeof(nfg));
+	return offset + NLMSG_SPACE(sizeof(nfg));
+}
+
+/*
+ * nfnetlink dispatches an NFNL_CB_BATCH callback, 21 of the 32 nftables
+ * commands, only inside a batch, and answers -EINVAL to one sent alone.
+ * nfnetlink_rcv() hands the whole buffer to nfnetlink_rcv_batch() when its
+ * first message is NFNL_MSG_BATCH_BEGIN, which names the subsystem; the
+ * batch takes only that subsystem's batch callbacks, runs to the first
+ * NFNL_MSG_BATCH_END and commits only if every command in it succeeded.
+ * So this builds BEGIN, then num_msgs commands, the first of type
+ * first_type and the rest picked from the same subsystem's batch
+ * callbacks, then END, all in the buffer the caller sized.
+ */
+static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
+			       struct socket_triplet *triplet,
+			       unsigned short first_type, int num_msgs)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(first_type >> 8);
+	unsigned char subsys = first_type >> 8;
+	unsigned short type = first_type;
+	/* Room for END, and aligned, so it starts where the kernel steps
+	 * to after the last command. */
+	size_t cmds_end = (buflen - NLMSG_SPACE(sizeof(struct nfgenmsg))) &
+			  ~(size_t)(NLMSG_ALIGNTO - 1);
+	size_t offset;
+
+	offset = put_nfnl_batch_marker(msg, 0, NFNL_MSG_BATCH_BEGIN, subsys);
+	while (num_msgs-- > 0 && offset < cmds_end) {
+		offset = build_one_nlmsg(msg, offset, cmds_end, triplet, type);
+		type = (first_type & 0xff00) | nfnl_pick_batch_cmd(sub);
+	}
+	return put_nfnl_batch_marker(msg, offset, NFNL_MSG_BATCH_END, subsys);
+}
+
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 {
 	size_t total_len;
 	size_t offset;
 	unsigned char *msg;
+	unsigned short nlmsg_type;
 	int num_msgs;
 	int is_single;
 
@@ -431,9 +498,20 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 
 	msg = zmalloc(total_len);
 
-	offset = 0;
-	while (num_msgs-- > 0 && offset < total_len)
-		offset = build_one_nlmsg(msg, offset, total_len, triplet);
+	/* A buffer that opens with a batch callback goes out inside a batch
+	 * seven times in eight; the eighth leaves the command alone, which
+	 * nfnetlink answers -EINVAL, so that arm keeps seeing traffic. */
+	nlmsg_type = pick_nlmsg_type(triplet->protocol);
+	if (triplet->protocol == NETLINK_NETFILTER &&
+	    nfnl_type_is_batch(nlmsg_type) && !ONE_IN(8)) {
+		offset = build_nfnl_batch(msg, total_len, triplet, nlmsg_type,
+					  num_msgs);
+	} else {
+		offset = build_one_nlmsg(msg, 0, total_len, triplet, nlmsg_type);
+		while (--num_msgs > 0 && offset < total_len)
+			offset = build_one_nlmsg(msg, offset, total_len, triplet,
+						 pick_nlmsg_type(triplet->protocol));
+	}
 
 	/*
 	 * ACK oracle: for 1-in-32 single-message NETLINK_ROUTE packets,
