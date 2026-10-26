@@ -253,7 +253,7 @@ static void check_buf_count_slot(struct syscallentry *entry)
 	}
 
 	t = entry->argtype[slot - 2];
-	if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS && t != ARG_MMAP) {
+	if (t != ARG_ADDRESS && t != ARG_NON_NULL_ADDRESS) {
 		outputerr("%s: buf_count_slot is %u but slot %u is not an address argtype (%d)\n",
 			  entry->name, slot, slot - 1, t);
 		exit(EXIT_FAILURE);

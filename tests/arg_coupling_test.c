@@ -3,8 +3,9 @@
  * final argument slots to, an entry's own .vet_final rule first: a rewrite
  * after the sanitiser (chain substitution, a RedQueen pin) must not leave
  * the kernel a range the sanitiser would have refused.  A buffer-filling
- * count stays inside its buffer (a recv or recvfrom size inside the one its
- * sanitiser made of the picked mapping), a munmap, mprotect, pkey_mprotect,
+ * count stays inside its buffer (a recv or recvfrom size or a getrandom
+ * count inside the one its sanitiser made of the picked mapping), a munmap,
+ * mprotect, pkey_mprotect,
  * madvise, set_mempolicy_home_node or remap_file_pages range inside the
  * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
  * tracked regions too, a madvise or process_madvise never installs guard
@@ -154,9 +155,10 @@ static struct syscallrecord rec;
 
 /* The entries that set buf_count_slot whose TUs this binary links, with the
  * slot the kernel's own signature puts the count in; the buffer is the slot
- * before it.  getrandom's sanitiser takes a map handle there instead, so
- * its shape is built by hand below; recv's and recvfrom's do too, and
- * their hook holds the count to the buffer in the rule's place. */
+ * before it.  getrandom's, recv's and recvfrom's sanitisers take a map
+ * handle there instead, and the hook of each holds the count to the buffer
+ * in the rule's place; the second slot, which only a count after a map
+ * handle has had, is tried by hand below. */
 static struct {
 	struct syscallentry *entry;
 	unsigned int slot;
@@ -192,13 +194,13 @@ static void count_slot_checked_at_table_init(void)
 	entry.argtype[1] = ARG_NON_NULL_ADDRESS;
 	if (entry_check_status(&entry) != 0)
 		BUG("sanity_check_tables: refused a count slot after a non-null address");
-	entry.argtype[1] = ARG_MMAP;
-	if (entry_check_status(&entry) != 0)
-		BUG("sanity_check_tables: refused a count slot after a map");
 
 	entry.argtype[1] = ARG_PID;
 	if (entry_check_status(&entry) != EXIT_FAILURE)
 		BUG("sanity_check_tables: accepted a count slot after a pid");
+	entry.argtype[1] = ARG_MMAP;
+	if (entry_check_status(&entry) != EXIT_FAILURE)
+		BUG("sanity_check_tables: accepted a count slot after a map");
 	entry.argtype[1] = ARG_ADDRESS;
 	entry.buf_count_slot = 1;
 	if (entry_check_status(&entry) != EXIT_FAILURE)
@@ -282,10 +284,10 @@ static void vetted_count_kept(struct syscallentry *entry, unsigned int slot,
 static void count_held_inside_buffer(void)
 {
 	struct syscallentry unmarked = syscall_read;
-	struct syscallentry getrandom_shape = {
-		.name = "getrandom",
+	struct syscallentry second_slot = {
+		.name = "second_slot_probe",
 		.num_args = 3,
-		.argtype = { ARG_MMAP, ARG_LEN, ARG_LIST },
+		.argtype = { ARG_ADDRESS, ARG_LEN, ARG_LIST },
 		.buf_count_slot = 2,
 	};
 	const unsigned long tail = 0x800;
@@ -355,12 +357,12 @@ static void count_held_inside_buffer(void)
 	if (count_after(&unmarked, 3, end - tail, 0x7ffff000UL) != 0x7ffff000UL)
 		BUG("arg coupling: an entry with no count slot was judged");
 
-	/* getrandom's buffer is a map, so the slots are one earlier. */
-	if (count_after(&getrandom_shape, 2, end - tail, 0x7ffff000UL) != tail)
+	/* The count can be as early as the second slot, the buffer the first. */
+	if (count_after(&second_slot, 2, end - tail, 0x7ffff000UL) != tail)
 		BUG("arg coupling: a count in slot 2 was not held to its buffer");
 	fake_overlaps_shared = true;
-	if (count_after(&getrandom_shape, 2, 0x10000000UL, 0x4000) != 0)
-		BUG("arg coupling: a map buffer reaching a region kept its count");
+	if (count_after(&second_slot, 2, 0x10000000UL, 0x4000) != 0)
+		BUG("arg coupling: a buffer in slot 1 reaching a region kept its count");
 	fake_overlaps_shared = false;
 
 	fake_untrack_regions();
@@ -3314,6 +3316,246 @@ static void recv_buffer_held_to_mapping(void)
 	fake_this_child = NULL;
 }
 
+/* The call getrandom's sanitiser builds over the pool mapping at @base,
+ * @size long, redrawn until its count is neither 0 nor the whole mapping,
+ * so the buffer takes bytes, and the rewrites to either are changes. */
+static struct syscallrecord *getrandom_call(void *base, unsigned long size)
+{
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(&syscall_getrandom);
+		pool_obj.map.ptr = base;
+		pool_obj.map.size = size;
+		pool_obj.map.tracked_size = size;
+		syscall_getrandom.sanitise(mrec);
+		if (mrec->a2 != 0 && mrec->a2 < size)
+			return mrec;
+		mrec->retval = (unsigned long) -1L;
+		syscall_getrandom.post(mrec);
+	}
+	BUG("getrandom: the sanitiser never built the call the case needs");
+}
+
+/* Whatever the sanitiser builds passes, over each state of the picked
+ * mapping: one clear of trinity's regions, one the buffer moves off, a low
+ * one and a high one, and none picked, natively and as a compat call.  A
+ * compat call whose buffer is above 4 GiB is built to write nothing, as
+ * its slot cannot carry the buffer.  @low is NULL with no mapping below
+ * 4 GiB to run over. */
+static void getrandom_sanitised_call_passes(void *high, void *low,
+					    unsigned long size)
+{
+	unsigned int shape, i;
+
+	for (shape = 0; shape < 16; shape++) {
+		if ((shape & 1) && low == NULL)
+			continue;
+		for (i = 0; i < SANITISER_DRAWS / 16; i++) {
+			struct syscallrecord *mrec = mm_call(&syscall_getrandom);
+			void *base = (shape & 1) ? low : high;
+			unsigned long buf, count;
+
+			pool_obj.map.ptr = base;
+			pool_obj.map.size = size;
+			pool_obj.map.tracked_size = size;
+			if (shape & 2)
+				fake_track_region((unsigned long) base, size);
+			if (shape & 8)
+				mrec->a1 = 0;
+			mrec->do32bit = (shape & 4) != 0;
+			syscall_getrandom.sanitise(mrec);
+			fake_untrack_regions();
+			buf = mrec->a1;
+			count = mrec->a2;
+			if (mrec->do32bit && buf > UINT_MAX && count != 0)
+				BUG("getrandom: the sanitiser built a compat call its buffer slot cannot carry");
+			if (validate_arg_coupling(mrec, mrec->entry) != 0 ||
+			    mrec->a1 != buf || mrec->a2 != count)
+				BUG("getrandom: a call the sanitiser built was refused or rewritten");
+			mrec->retval = (unsigned long) -1L;
+			syscall_getrandom.post(mrec);
+		}
+	}
+}
+
+/* A slot rewritten after the sanitiser that has the kernel write past the
+ * buffer, or somewhere else, is refused.  A buffer at the mapping may take
+ * the mapping's size, whatever count the sanitiser drew, and no more: a
+ * byte past it, MAX_RW_COUNT, a pid or an address is refused.  One that
+ * moved to a pool slot may take only the count the slot was sized for.
+ * A buffer pinned elsewhere is refused, inside the mapping too, unless it
+ * is NULL, which takes no write, or the count is 0. */
+static void getrandom_rewritten_slots_held(void *high, unsigned long size)
+{
+	const unsigned long grown[] = {
+		size + 1, 0x7ffff000UL, 3000000UL, 0x7f0000001000UL,
+	};
+	struct syscallrecord *mrec;
+	unsigned long count;
+	unsigned int i;
+
+	mrec = getrandom_call(high, size);
+	if (mrec->a1 != (unsigned long) high)
+		BUG("getrandom: the sanitiser did not build the call the case needs");
+	mrec->a2 = size;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a count covering the mapping was refused");
+	for (i = 0; i < ARRAY_SIZE(grown); i++) {
+		mrec->a2 = grown[i];
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("getrandom: a count grown past the mapping was kept");
+	}
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a count of 0 was refused");
+
+	mrec->a2 = 1;
+	mrec->a1 = (unsigned long) high + page_size;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("getrandom: a buffer moved inside the mapping was kept");
+	mrec->a1 = 0x10000000UL;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("getrandom: a pinned buffer was kept");
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a pinned buffer that is given nothing was refused");
+	mrec->a1 = 0;
+	mrec->a2 = ULONG_MAX;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a NULL buffer was refused");
+	mrec->retval = (unsigned long) -1L;
+	syscall_getrandom.post(mrec);
+
+	/* The pool slot is as long as the count it was moved for. */
+	fake_track_region((unsigned long) high, size);
+	mrec = getrandom_call(high, size);
+	fake_untrack_regions();
+	count = mrec->a2;
+	if (!range_in_writable_pool(mrec->a1, count))
+		BUG("getrandom: the buffer over a tracked mapping did not move into the pool");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a call over a tracked mapping was refused");
+	mrec->a2 = count + 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("getrandom: a count one past its pool slot was kept");
+	mrec->retval = (unsigned long) -1L;
+	syscall_getrandom.post(mrec);
+}
+
+/* A call with no mapping picked is built with a NULL buffer, and passes; a
+ * buffer pinned over it is refused, there being no snapshot to name one.
+ * So is any call whose snapshot is not its own: a pid where the pointer
+ * was, one the ownership table does not hold, or one with another magic. */
+static void getrandom_needs_its_snapshot(void *high, unsigned long size)
+{
+	struct syscallrecord *mrec = mm_call(&syscall_getrandom);
+
+	mrec->a1 = 0;
+	syscall_getrandom.sanitise(mrec);
+	if (mrec->a1 != 0 || mrec->a2 != 0 || mrec->post_state != 0)
+		BUG("getrandom: the sanitiser built a buffer or a snapshot with no mapping");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a call with no mapping was refused");
+	mrec->a1 = (unsigned long) high;
+	mrec->a2 = 5000;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("getrandom: a buffer pinned over no mapping was kept");
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a pinned buffer that is given nothing was refused");
+	mrec->retval = (unsigned long) -1L;
+	syscall_getrandom.post(mrec);
+
+	mrec = getrandom_call(high, size);
+	snapshot_gate_held(mrec, "getrandom");
+	mrec->retval = (unsigned long) -1L;
+	syscall_getrandom.post(mrec);
+}
+
+/* A compat call hands the kernel the low 32 bits of the buffer and the
+ * count, so they are judged on those: an upper half on a count or a buffer
+ * over a low mapping drops, and over a high mapping the low half of the
+ * buffer names an address nobody sized, which no count may be put in,
+ * unless it is 0: NULL takes no write.  @low is NULL with no mapping below
+ * 4 GiB to run over. */
+static void getrandom_compat_slots_truncated(void *high, void *low,
+					     unsigned long size)
+{
+	const unsigned long upper = 1UL << 32;
+	struct syscallrecord *mrec;
+	unsigned long count;
+
+	if (low != NULL) {
+		mrec = getrandom_call(low, size);
+		count = mrec->a2;
+		mrec->a2 = count | upper;
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("getrandom: a native count's upper half was dropped");
+		mrec->do32bit = true;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("getrandom: a compat count was judged on the slot's upper half");
+		mrec->a2 = count;
+		mrec->a1 = (unsigned long) low | upper;
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("getrandom: a compat buffer was judged on the slot's upper half");
+		mrec->do32bit = false;
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("getrandom: a native buffer's upper half was dropped");
+		mrec->retval = (unsigned long) -1L;
+		syscall_getrandom.post(mrec);
+	}
+
+	mrec = mm_call(&syscall_getrandom);
+	pool_obj.map.ptr = high;
+	pool_obj.map.size = size;
+	pool_obj.map.tracked_size = size;
+	mrec->do32bit = true;
+	syscall_getrandom.sanitise(mrec);
+	if (mrec->a2 != 0 || validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("getrandom: a compat call over a high mapping was not built empty, or was refused");
+	mrec->a2 = 1;
+	if (validate_arg_coupling(mrec, mrec->entry) !=
+	    (((unsigned long) high & UINT_MAX) == 0 ? 0 : -1))
+		BUG("getrandom: a count was judged wrongly for a compat buffer its slot cannot carry");
+	mrec->retval = (unsigned long) -1L;
+	syscall_getrandom.post(mrec);
+}
+
+/* getrandom's final count stays inside the buffer its sanitiser made of the
+ * picked mapping, and the buffer is that one.  The sanitiser stamps the
+ * buffer it hands the kernel, so the mappings are real: a high one, and a
+ * low one when the process can have one. */
+static void getrandom_buffer_held_to_mapping(void)
+{
+	const unsigned long size = POOL_PAGES * page_size;
+	void *high, *low;
+
+	high = mmap(NULL, size, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (high == MAP_FAILED)
+		BUG("getrandom: no mapping for the sanitiser to stamp");
+	low = mmap((void *) LOW_POOL_MAP, size, PROT_READ | PROT_WRITE,
+		   MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (low == MAP_FAILED || (unsigned long) low + size > UINT_MAX) {
+		if (low != MAP_FAILED)
+			munmap(low, size);
+		low = NULL;
+		printf("(no mapping below 4 GiB, skipping getrandom's low ones) ");
+	}
+
+	getrandom_sanitised_call_passes(high, low, size);
+	getrandom_rewritten_slots_held(high, size);
+	getrandom_needs_its_snapshot(high, size);
+	getrandom_compat_slots_truncated(high, low, size);
+
+	munmap(high, size);
+	if (low != NULL)
+		munmap(low, size);
+	fake_this_child = NULL;
+}
+
 /* post_mmap() dirties half the mappings it records, and maps_name_test.c
  * has it record some; what the walk writes is no part of a test. */
 void dirty_mapping(struct map *map)
@@ -4017,6 +4259,7 @@ void arg_coupling_self_check(void)
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
 	recv_buffer_held_to_mapping();
+	getrandom_buffer_held_to_mapping();
 	mmap_fixed_held_to_vetted_call();
 	mmap_fixed_off_image();
 	hugetlb_flag_size_read();

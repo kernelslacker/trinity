@@ -247,11 +247,11 @@ static void repair_iovec_extents(struct syscallrecord *rec,
 /*
  * A call that fills the buffer in the slot before its byte count with up
  * to that many bytes (entry->buf_count_slot) writes as far as its source
- * lets it: read() from /dev/zero, getrandom() with nothing to run out
- * of, an xattr value or list up to XATTR_SIZE_MAX.  The sanitiser sizes
- * the count to the buffer and moves the buffer off trinity's regions,
- * and a rewrite of the count afterwards, a substituted return value or a
- * pinned kernel constant, runs the write on past the buffer's end.
+ * lets it: read() from /dev/zero, an xattr value or list up to
+ * XATTR_SIZE_MAX.  The sanitiser sizes the count to the buffer and moves
+ * the buffer off trinity's regions, and a rewrite of the count afterwards,
+ * a substituted return value or a pinned kernel constant, runs the write
+ * on past the buffer's end.
  * Trinity's buffers come from the writable pool, which is itself a
  * tracked region and abuts others, so what a long enough write reaches
  * next is the state every child shares.

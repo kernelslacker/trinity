@@ -505,9 +505,9 @@ PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 		   $(TOP)/syscalls/socket/send.c
 
-# syscalls/hardware/getrandom.c brings getrandom, whose sanitiser
-# arg_coupling_test.c runs over a real mapping, as the sanitiser stamps
-# the buffer it hands the kernel.
+# syscalls/hardware/getrandom.c brings getrandom, whose sanitiser and
+# .vet_final hook arg_coupling_test.c runs over a real mapping, as the
+# sanitiser stamps the buffer it hands the kernel.
 PARENT_SRCS	+= $(TOP)/syscalls/hardware/getrandom.c
 
 # syscalls/syslog.c brings syslog, whose sanitiser arg_coupling_test.c

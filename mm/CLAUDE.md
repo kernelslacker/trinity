@@ -17,7 +17,7 @@ Owns the fuzzed process's synthetic VMA pools (anon/file/testfile mmap objects),
 ## Integration points
 
 - `args/gen_arg_scalar.c`, `rand/random-address.c` — draw addresses from `get_map()`/`get_map_handle()` for ARG_ADDRESS-shaped syscall args
-- `syscalls/mm/munmap.c`, `mprotect.c`, `madvise.c`, `mremap.c`, `mincore.c`, `mlock.c`, `munlock.c`, `mbind.c`, `msync.c`, `remap_file_pages.c`, `syscalls/hardware/getrandom.c` — sanitisers call `common_set_mmap_ptr_len()` to plumb a picked map's (ptr,len) into `rec->a1`/`a2`; `.vet_final` hooks hold a final range to that map with `map_range_vet()`, or with the `map_range_pages()` and `page_span_inside()` it is built on (all in maps-arg.c)
+- `syscalls/mm/munmap.c`, `mprotect.c`, `madvise.c`, `mremap.c`, `mincore.c`, `mlock.c`, `munlock.c`, `mbind.c`, `msync.c`, `remap_file_pages.c`, `syscalls/hardware/getrandom.c` — sanitisers call `common_set_mmap_ptr_len()` to plumb a picked map's (ptr,len) into `rec->a1`/`a2`; `.vet_final` hooks hold a final range to that map with `map_range_vet()`, or with the `map_range_pages()` and `page_span_inside()` it is built on (all in maps-arg.c); getrandom's holds its count to the extent its snapshot records from the buffer
 - `syscalls/mm/mmap.c` calls `dirty_random_mapping()`/pool APIs directly and pulls hugepage encodings from `pick_random_huge_size_encoding()` (shared with `syscalls/mm/memfd/memfd_create.c`)
 - `syscalls/fs/ftruncate.c`, `fallocate.c`, `madvise.c`, `fds/testfiles.c` — call `invalidate_obj_mmap_in_range`/`invalidate_obj_mmap_by_fd` to soft-invalidate pool entries whose backing extent changed (hole-punch, truncate)
 - `syscalls/mm/mmap.c`, `munmap.c`, `mprotect.c` — use `proc_maps_check()` to verify VMA invariants after a syscall

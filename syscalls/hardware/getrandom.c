@@ -1,5 +1,8 @@
 /*
  * SYSCALL_DEFINE3(getrandom, char __user *, buf, size_t, count, unsigned int, flags)
+ *
+ * The final count stays inside the buffer the sanitiser sized, buf
+ * included (vet_final_getrandom()).
  */
 #include <errno.h>
 #include <stdint.h>
@@ -70,6 +73,11 @@ static const unsigned long getrandom_sizes[] = {
  * untouched-buffer arm.  addr == 0 signals buf was NULL and the
  * post handler no-ops that case too since there is nothing to
  * check.
+ *
+ * It is also the record of the buffer the final-slot hook holds the call
+ * to: extent is how many bytes from addr the kernel may write, the
+ * mapping's walkable size, or the count the pool slot addr moved to was
+ * sized for.
  */
 #define GETRANDOM_POST_STATE_MAGIC	0x47524e44UL	/* "GRND" */
 #define GETRANDOM_POISON_PATTERN	0xE9F1E9F1E9F1E9F1ULL
@@ -77,8 +85,46 @@ static const unsigned long getrandom_sizes[] = {
 struct getrandom_post_state {
 	unsigned long magic;
 	unsigned long addr;
+	size_t extent;
 	uint64_t poison_seed;
 };
+
+/*
+ * getrandom fills every byte it is asked for (get_random_bytes_user(), the
+ * count cut to MAX_RW_COUNT by import_ubuf()), so the final count has to
+ * fit the extent the sanitiser recorded, and the slot has to name the
+ * buffer it recorded it for: a count rewritten after the sanitiser (chain
+ * substitution, a RedQueen pin) runs the write on past the mapping, into
+ * whatever the kernel placed beside it, or past the pool slot the buffer
+ * moved to, and a pinned buf aims it anywhere.  Refused rather than
+ * repaired, each slot read once, as the kernel reads it: the low 32 bits
+ * for a compat call.  A NULL buffer or a count of 0 takes no write, and a
+ * record with no snapshot of ours passes only those.  Shape, then
+ * ownership, then magic, as post_state_claim_owned() orders them.
+ */
+static int vet_final_getrandom(struct syscallrecord *rec,
+			       const struct syscallentry *entry)
+{
+	struct getrandom_post_state *snap =
+		(struct getrandom_post_state *) rec->post_state;
+	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+	unsigned long buf = rec->a1 & mask, count = rec->a2 & mask;
+	size_t extent = 0;
+
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == GETRANDOM_POST_STATE_MAGIC)
+		extent = snap->extent;
+	else
+		snap = NULL;
+
+	/* A count left after the first test fits extent, so snap is ours. */
+	if (buf != 0 && count != 0 && (count > extent || buf != snap->addr)) {
+		outputerr("arg-coupling: %s rejected: the count runs past the buffer sanitise sized, or buf is not the one it sized\n",
+			  entry->name);
+		return -1;
+	}
+	return 0;
+}
 
 static void sanitise_getrandom(struct syscallrecord *rec)
 {
@@ -127,6 +173,14 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a1, rec->a2);
 
 	/*
+	 * A compat call's kernel reads the low 32 bits of the buffer slot,
+	 * which for a buffer above them is an address nobody sized: it gets
+	 * no bytes to write.
+	 */
+	if (rec->do32bit && rec->a1 > UINT_MAX)
+		rec->a2 = 0;
+
+	/*
 	 * Stamp a fixed poison pattern across the count bytes the kernel
 	 * writes on success.  The post handler compares the first
 	 * min(retval, CHECK_OUTPUT_STRUCT_SNAP_MAX) bytes byte-for-byte
@@ -152,6 +206,7 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = GETRANDOM_POST_STATE_MAGIC;
 	snap->addr        = rec->a1;
+	snap->extent      = rec->a1 == (unsigned long) map->ptr ? map->size : rec->a2;
 	snap->poison_seed = 0;
 
 	if (rec->a1 != 0 && rec->a2 != 0) {
@@ -218,10 +273,10 @@ struct syscallentry syscall_getrandom = {
 	.argname = { [0] = "buf", [1] = "count", [2] = "flags" },
 	.arg_params[2].list = ARGLIST(getrandom_flags),
 	.sanitise = sanitise_getrandom,
+	.vet_final = vet_final_getrandom,
 	.post = post_getrandom,
 	.group = GROUP_PROCESS,
 	.bound_arg = 2,
-	.buf_count_slot = 2,
 	.rettype = RET_NUM_BYTES,
 	.flags = REEXEC_SANITISE_OK,
 };
