@@ -2,8 +2,8 @@
  * Genetlink family grammar: nfsd (kernel NFS server control plane),
  * targeting fs/nfsd/netlink.c and nfsctl.c.  Every op but RPC_STATUS_GET,
  * SERVER_STATS_GET and the THREADS / VERSION / LISTENER / POOL_MODE
- * getters is GENL_ADMIN_PERM.  Only the NFSD_A_SERVER_* and
- * NFSD_A_RPC_STATUS_* namespaces are listed; the attribute table says why.
+ * getters is GENL_ADMIN_PERM.  An op with a policy has a table of its
+ * own; one without takes no attribute.
  */
 
 #if __has_include(<linux/nfsd_netlink.h>)
@@ -12,97 +12,173 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * The nests of the export cache requests, from nfsd_svc_export_nl_policy,
+ * nfsd_expkey_nl_policy and the policies under them: FSLOCATIONS nests
+ * LOCATION nests HOST and PATH, SECINFO nests PSEUDOFLAVOR and FLAGS.  UUID
+ * is exactly 16 bytes to nfsd_nl_parse_one_export().  FSID is an s32 in
+ * svc_export and a blob in expkey.  The *_FLAGS and XPRTSEC words are masks.
+ */
+static const struct nla_attr_spec nfsd_fslocation_attrs[] = {
+	{ NFSD_A_FSLOCATION_HOST,	NLA_KIND_STRING, 32, 1 },
+	{ NFSD_A_FSLOCATION_PATH,	NLA_KIND_STRING, 64, 1 },
+};
+
+static const struct nla_attr_spec nfsd_fslocations_attrs[] = {
+	{ NFSD_A_FSLOCATIONS_LOCATION,	NLA_KIND_NESTED, 0, 0,
+	  nfsd_fslocation_attrs, ARRAY_SIZE(nfsd_fslocation_attrs) },
+};
+
+static const struct nla_attr_spec nfsd_auth_flavor_attrs[] = {
+	{ NFSD_A_AUTH_FLAVOR_PSEUDOFLAVOR, NLA_KIND_U32, 4 },
+	{ NFSD_A_AUTH_FLAVOR_FLAGS,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec nfsd_svc_export_attrs[] = {
+	{ NFSD_A_SVC_EXPORT_SEQNO,	NLA_KIND_U64,    8 },
+	{ NFSD_A_SVC_EXPORT_CLIENT,	NLA_KIND_STRING, 32, 1 },
+	{ NFSD_A_SVC_EXPORT_PATH,	NLA_KIND_STRING, 64, 1 },
+	{ NFSD_A_SVC_EXPORT_NEGATIVE,	NLA_KIND_FLAG,   0 },
+	{ NFSD_A_SVC_EXPORT_EXPIRY,	NLA_KIND_U64,    8 },
+	{ NFSD_A_SVC_EXPORT_ANON_UID,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SVC_EXPORT_ANON_GID,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SVC_EXPORT_FSLOCATIONS, NLA_KIND_NESTED, 0, 0,
+	  nfsd_fslocations_attrs, ARRAY_SIZE(nfsd_fslocations_attrs) },
+	{ NFSD_A_SVC_EXPORT_UUID,	NLA_KIND_BINARY_FIXED2, 16, 16 },
+	{ NFSD_A_SVC_EXPORT_SECINFO,	NLA_KIND_NESTED, 0, 0,
+	  nfsd_auth_flavor_attrs, ARRAY_SIZE(nfsd_auth_flavor_attrs) },
+	{ NFSD_A_SVC_EXPORT_XPRTSEC,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SVC_EXPORT_FLAGS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SVC_EXPORT_FSID,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec nfsd_expkey_attrs[] = {
+	{ NFSD_A_EXPKEY_SEQNO,		NLA_KIND_U64,    8 },
+	{ NFSD_A_EXPKEY_CLIENT,		NLA_KIND_STRING, 32, 1 },
+	{ NFSD_A_EXPKEY_FSIDTYPE,	NLA_KIND_U8,     1 },
+	{ NFSD_A_EXPKEY_FSID,		NLA_KIND_BINARY, 32 },
+	{ NFSD_A_EXPKEY_NEGATIVE,	NLA_KIND_FLAG,   0 },
+	{ NFSD_A_EXPKEY_EXPIRY,		NLA_KIND_U64,    8 },
+	{ NFSD_A_EXPKEY_PATH,		NLA_KIND_STRING, 64, 1 },
+};
+
+static const struct nla_attr_spec nfsd_version_attrs[] = {
+	{ NFSD_A_VERSION_MAJOR,		NLA_KIND_U32,    4 },
+	{ NFSD_A_VERSION_MINOR,		NLA_KIND_U32,    4 },
+	{ NFSD_A_VERSION_ENABLED,	NLA_KIND_FLAG,   0 },
+};
+
+/* ADDR is a sockaddr_in or a sockaddr_in6, which nfsd_nl_listener_set_doit()
+ * sizes by its family. */
+static const struct nla_attr_spec nfsd_sock_attrs[] = {
+	{ NFSD_A_SOCK_ADDR,		NLA_KIND_BINARY_FIXED2, 28, 16 },
+	{ NFSD_A_SOCK_TRANSPORT_NAME,	NLA_KIND_STRING, 16, 1 },
+};
+
+/*
+ * The ops validate strictly against their nfsd_*_nl_policy, so an id it
+ * has no slot for costs an -EINVAL, and every namespace starts at 1: a
+ * cmd takes only the ids of its own.  The two the replies add, SOCK_RPCBIND
+ * and POOL_MODE_NPOOLS, are not in a request policy.  FH_KEY is exactly
+ * 16 bytes, the rest u32 or NLA_NUL_STRING.
+ */
+static const struct nla_attr_spec nfsd_threads_set_attrs[] = {
+	{ NFSD_A_SERVER_THREADS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_GRACETIME,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_LEASETIME,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_SCOPE,		NLA_KIND_STRING, 16, 1 },
+	{ NFSD_A_SERVER_MIN_THREADS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_FH_KEY,		NLA_KIND_BINARY_FIXED2, 16, 16 },
+};
+
+static const struct nla_attr_spec nfsd_version_set_attrs[] = {
+	{ NFSD_A_SERVER_PROTO_VERSION,	NLA_KIND_NESTED, 0, 0,
+	  nfsd_version_attrs, ARRAY_SIZE(nfsd_version_attrs) },
+};
+
+static const struct nla_attr_spec nfsd_listener_set_attrs[] = {
+	{ NFSD_A_SERVER_SOCK_ADDR,	NLA_KIND_NESTED, 0, 0,
+	  nfsd_sock_attrs, ARRAY_SIZE(nfsd_sock_attrs) },
+	{ NFSD_A_SERVER_SOCK_USERSPACE_RPCBIND, NLA_KIND_FLAG, 0 },
+};
+
+static const struct nla_attr_spec nfsd_pool_mode_set_attrs[] = {
+	{ NFSD_A_POOL_MODE_MODE,	NLA_KIND_STRING, 16, 1 },
+};
+
+static const struct nla_attr_spec nfsd_svc_export_set_reqs_attrs[] = {
+	{ NFSD_A_SVC_EXPORT_REQS_REQUESTS, NLA_KIND_NESTED, 0, 0,
+	  nfsd_svc_export_attrs, ARRAY_SIZE(nfsd_svc_export_attrs) },
+};
+
+static const struct nla_attr_spec nfsd_expkey_set_reqs_attrs[] = {
+	{ NFSD_A_EXPKEY_REQS_REQUESTS,	NLA_KIND_NESTED, 0, 0,
+	  nfsd_expkey_attrs, ARRAY_SIZE(nfsd_expkey_attrs) },
+};
+
+static const struct nla_attr_spec nfsd_cache_flush_attrs[] = {
+	{ NFSD_A_CACHE_FLUSH_MASK,	NLA_KIND_U32,    4 },
+};
+
+/* ADDRESS is NLA_POLICY_MIN_LEN(16): a sockaddr_in or sockaddr_in6. */
+static const struct nla_attr_spec nfsd_unlock_ip_attrs[] = {
+	{ NFSD_A_UNLOCK_IP_ADDRESS,	NLA_KIND_BINARY_FIXED2, 28, 16 },
+};
+
+static const struct nla_attr_spec nfsd_unlock_filesystem_attrs[] = {
+	{ NFSD_A_UNLOCK_FILESYSTEM_PATH, NLA_KIND_STRING, 64, 1 },
+};
+
+static const struct nla_attr_spec nfsd_unlock_export_attrs[] = {
+	{ NFSD_A_UNLOCK_EXPORT_PATH,	NLA_KIND_STRING, 64, 1 },
+};
+
+/*
+ * The getters, the dumps and RPC_STATUS_GET have no policy, which the genl
+ * core gives a reject-all one, so they take no attribute; what the replies
+ * carry, the RPC_STATUS_* and SERVER_STATS_* ids, is not a request's.
+ */
 static const struct genl_cmd_grammar nfsd_cmds[] = {
-	{ NFSD_CMD_RPC_STATUS_GET,      "NFSD_CMD_RPC_STATUS_GET" },
-	{ NFSD_CMD_THREADS_SET,         "NFSD_CMD_THREADS_SET" },
-	{ NFSD_CMD_THREADS_GET,         "NFSD_CMD_THREADS_GET" },
-	{ NFSD_CMD_VERSION_SET,         "NFSD_CMD_VERSION_SET" },
-	{ NFSD_CMD_VERSION_GET,         "NFSD_CMD_VERSION_GET" },
-	{ NFSD_CMD_LISTENER_SET,        "NFSD_CMD_LISTENER_SET" },
-	{ NFSD_CMD_LISTENER_GET,        "NFSD_CMD_LISTENER_GET" },
-	{ NFSD_CMD_POOL_MODE_SET,       "NFSD_CMD_POOL_MODE_SET" },
-	{ NFSD_CMD_POOL_MODE_GET,       "NFSD_CMD_POOL_MODE_GET" },
+	{ NFSD_CMD_RPC_STATUS_GET,      "NFSD_CMD_RPC_STATUS_GET", genl_no_attrs },
+	{ NFSD_CMD_THREADS_SET,         "NFSD_CMD_THREADS_SET",
+	  nfsd_threads_set_attrs, ARRAY_SIZE(nfsd_threads_set_attrs) },
+	{ NFSD_CMD_THREADS_GET,         "NFSD_CMD_THREADS_GET", genl_no_attrs },
+	{ NFSD_CMD_VERSION_SET,         "NFSD_CMD_VERSION_SET",
+	  nfsd_version_set_attrs, ARRAY_SIZE(nfsd_version_set_attrs) },
+	{ NFSD_CMD_VERSION_GET,         "NFSD_CMD_VERSION_GET", genl_no_attrs },
+	{ NFSD_CMD_LISTENER_SET,        "NFSD_CMD_LISTENER_SET",
+	  nfsd_listener_set_attrs, ARRAY_SIZE(nfsd_listener_set_attrs) },
+	{ NFSD_CMD_LISTENER_GET,        "NFSD_CMD_LISTENER_GET", genl_no_attrs },
+	{ NFSD_CMD_POOL_MODE_SET,       "NFSD_CMD_POOL_MODE_SET",
+	  nfsd_pool_mode_set_attrs, ARRAY_SIZE(nfsd_pool_mode_set_attrs) },
+	{ NFSD_CMD_POOL_MODE_GET,       "NFSD_CMD_POOL_MODE_GET", genl_no_attrs },
 	/* Not an op: a kernel-to-user multicast event, so the demuxer
 	 * answers -EOPNOTSUPP.  Kept on purpose: reaching that rejection
 	 * is demuxer coverage, and the id is right if a doit handler
 	 * ever appears. */
-	{ NFSD_CMD_CACHE_NOTIFY,        "NFSD_CMD_CACHE_NOTIFY" },
-	{ NFSD_CMD_SVC_EXPORT_GET_REQS, "NFSD_CMD_SVC_EXPORT_GET_REQS" },
-	{ NFSD_CMD_SVC_EXPORT_SET_REQS, "NFSD_CMD_SVC_EXPORT_SET_REQS" },
-	{ NFSD_CMD_EXPKEY_GET_REQS,     "NFSD_CMD_EXPKEY_GET_REQS" },
-	{ NFSD_CMD_EXPKEY_SET_REQS,     "NFSD_CMD_EXPKEY_SET_REQS" },
-	{ NFSD_CMD_CACHE_FLUSH,         "NFSD_CMD_CACHE_FLUSH" },
-	{ NFSD_CMD_UNLOCK_IP,           "NFSD_CMD_UNLOCK_IP" },
-	{ NFSD_CMD_UNLOCK_FILESYSTEM,   "NFSD_CMD_UNLOCK_FILESYSTEM" },
-	{ NFSD_CMD_UNLOCK_EXPORT,       "NFSD_CMD_UNLOCK_EXPORT" },
-	{ NFSD_CMD_SERVER_STATS_GET,    "NFSD_CMD_SERVER_STATS_GET" },
-};
-
-/*
- * Attribute spec follows the NFSD_A_SERVER_* + NFSD_A_RPC_STATUS_*
- * enums in <linux/nfsd_netlink.h>.  Ids 1..3 are u32 scalars covering
- * the THREADS_SET surface (THREADS = nfsd thread-pool target count,
- * GRACETIME / LEASETIME = NFSv4 grace / lease seconds) that overlap
- * cleanly with the RPC_STATUS dump response u32 ids (XID / FLAGS /
- * PROG).  Id 4 is a NUL_STRING for THREADS_SET's SERVER_SCOPE selector
- * -- the RPC_STATUS_VERSION u32 at id 4 disagrees on kind but is
- * response-only, so the entry follows SCOPE.  The ops validate
- * strictly, so every op but THREADS_SET answers an id 4 with -EINVAL.
- * Ids 5..14 are response-side payloads emitted by RPC_STATUS_GET:
- * PROC and COMPOUND_OPS are u32 RPC opcode selectors, SERVICE_TIME
- * is a u64 nanoseconds counter, PAD is the alignment partner for the
- * SERVICE_TIME u64 (zero-byte payload matches the wire shape), the
- * SADDR4 / DADDR4 pair are __be32 IPv4 endpoint addresses, SADDR6 /
- * DADDR6 are 16-byte IPv6 endpoint addresses, and the SPORT / DPORT
- * pair are __be16 wire-encoded port numbers.  Listing them costs an
- * -EINVAL on every op whose policy has no slot for them; RPC_STATUS_GET,
- * which emits them, has no policy and takes no attributes.
- *
- * NFSD_A_CACHE_NOTIFY_CACHE_TYPE (id 1, U32) and NFSD_A_CACHE_FLUSH_
- * MASK (id 1, U32) are consistent with the existing id 1 U32 entry;
- * no new table slot is required.  NFSD_CMD_CACHE_NOTIFY is a kernel-
- * originated multicast event (mcgrp exportd) with no input policy;
- * NFSD_CMD_CACHE_FLUSH carries the single MASK attr whose masked-U32
- * constraint the existing slot satisfies on kind.
- *
- * Not enumerated: NFSD_A_SERVER_PROTO_VERSION (id 1, NESTED) for
- * VERSION_SET, NFSD_A_SERVER_SOCK_ADDR (id 1, NESTED) for LISTENER_
- * SET, NFSD_A_POOL_MODE_MODE (id 1, NUL_STRING) for POOL_MODE_SET,
- * NFSD_A_SVC_EXPORT_REQS_REQUESTS (id 1, NESTED) for SVC_EXPORT_GET/
- * SET_REQS, NFSD_A_EXPKEY_REQS_REQUESTS (id 1, NESTED) for EXPKEY_
- * GET/SET_REQS, NFSD_A_UNLOCK_IP_ADDRESS (id 1, BINARY) for UNLOCK_
- * IP, NFSD_A_UNLOCK_FILESYSTEM_PATH (id 1, NUL_STRING) for UNLOCK_
- * FILESYSTEM, NFSD_A_UNLOCK_EXPORT_PATH (id 1, NUL_STRING) for
- * UNLOCK_EXPORT, and NFSD_A_SERVER_STATS_RC_HITS (id 1, U64) anchoring
- * the full SERVER_STATS response namespace for SERVER_STATS_GET --
- * every one of these disagrees with NFSD_A_SERVER_THREADS (id 1, U32)
- * on kind and a single flat table cannot carry both.  Per the handshake
- * precedent the larger surface (SERVER_* + RPC_STATUS_*) anchors the
- * grammar and the others wait on a per-command namespace extension.
- */
-static const struct nla_attr_spec nfsd_attrs[] = {
-	{ NFSD_A_SERVER_THREADS,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_SERVER_GRACETIME,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_SERVER_LEASETIME,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_SERVER_SCOPE,		    NLA_KIND_STRING, 16 },
-	{ NFSD_A_RPC_STATUS_PROC,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_RPC_STATUS_SERVICE_TIME,   NLA_KIND_U64,    8 },
-	{ NFSD_A_RPC_STATUS_PAD,	    NLA_KIND_BINARY, 0 },
-	{ NFSD_A_RPC_STATUS_SADDR4,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_RPC_STATUS_DADDR4,	    NLA_KIND_U32,    4 },
-	{ NFSD_A_RPC_STATUS_SADDR6,	    NLA_KIND_BINARY, 16 },
-	{ NFSD_A_RPC_STATUS_DADDR6,	    NLA_KIND_BINARY, 16 },
-	{ NFSD_A_RPC_STATUS_SPORT,	    NLA_KIND_U16,    2 },
-	{ NFSD_A_RPC_STATUS_DPORT,	    NLA_KIND_U16,    2 },
-	{ NFSD_A_RPC_STATUS_COMPOUND_OPS,   NLA_KIND_U32,    4 },
+	{ NFSD_CMD_CACHE_NOTIFY,        "NFSD_CMD_CACHE_NOTIFY", genl_no_attrs },
+	{ NFSD_CMD_SVC_EXPORT_GET_REQS, "NFSD_CMD_SVC_EXPORT_GET_REQS", genl_no_attrs },
+	{ NFSD_CMD_SVC_EXPORT_SET_REQS, "NFSD_CMD_SVC_EXPORT_SET_REQS",
+	  nfsd_svc_export_set_reqs_attrs,
+	  ARRAY_SIZE(nfsd_svc_export_set_reqs_attrs) },
+	{ NFSD_CMD_EXPKEY_GET_REQS,     "NFSD_CMD_EXPKEY_GET_REQS", genl_no_attrs },
+	{ NFSD_CMD_EXPKEY_SET_REQS,     "NFSD_CMD_EXPKEY_SET_REQS",
+	  nfsd_expkey_set_reqs_attrs, ARRAY_SIZE(nfsd_expkey_set_reqs_attrs) },
+	{ NFSD_CMD_CACHE_FLUSH,         "NFSD_CMD_CACHE_FLUSH",
+	  nfsd_cache_flush_attrs, ARRAY_SIZE(nfsd_cache_flush_attrs) },
+	{ NFSD_CMD_UNLOCK_IP,           "NFSD_CMD_UNLOCK_IP",
+	  nfsd_unlock_ip_attrs, ARRAY_SIZE(nfsd_unlock_ip_attrs) },
+	{ NFSD_CMD_UNLOCK_FILESYSTEM,   "NFSD_CMD_UNLOCK_FILESYSTEM",
+	  nfsd_unlock_filesystem_attrs, ARRAY_SIZE(nfsd_unlock_filesystem_attrs) },
+	{ NFSD_CMD_UNLOCK_EXPORT,       "NFSD_CMD_UNLOCK_EXPORT",
+	  nfsd_unlock_export_attrs, ARRAY_SIZE(nfsd_unlock_export_attrs) },
+	{ NFSD_CMD_SERVER_STATS_GET,    "NFSD_CMD_SERVER_STATS_GET", genl_no_attrs },
 };
 
 struct genl_family_grammar fam_nfsd = {
 	.name = NFSD_FAMILY_NAME,
 	.cmds = nfsd_cmds,
 	.n_cmds = ARRAY_SIZE(nfsd_cmds),
-	.attrs = nfsd_attrs,
-	.n_attrs = ARRAY_SIZE(nfsd_attrs),
 	.default_version = NFSD_FAMILY_VERSION,
 };
 

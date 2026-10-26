@@ -52,6 +52,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_VDPA		711
 #define ID_WIREGUARD	712
 #define ID_DPLL		713
+#define ID_NFSD		714
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -338,6 +339,7 @@ struct slot {
 };
 
 #define S_BLOB(id, lo, hi)	{ id, SK_BYTES, lo, hi }
+#define S_FLAG(id)		S_BLOB(id, 0, 0)
 #define S_U8(id)		S_BLOB(id, 1, 1)
 #define S_U16(id)		S_BLOB(id, 2, 2)
 #define S_U32(id)		S_BLOB(id, 4, 4)
@@ -416,6 +418,116 @@ static struct cmd_policy vdpa_cmds[] = {
 	P_CMD(VDPA_CMD_DEV_CONFIG_GET, vdpa_policy),
 	P_CMD(VDPA_CMD_DEV_VSTATS_GET, vdpa_policy),
 	P_CMD(VDPA_CMD_DEV_ATTR_SET, vdpa_policy),
+};
+#endif
+
+#if __has_include(<linux/nfsd_netlink.h>)
+#include "kernel/nfsd_netlink.h"
+
+extern struct genl_family_grammar fam_nfsd;
+
+/* fs/nfsd/netlink.c: the nfsd_*_nl_policy tables */
+static struct slot nfsd_fslocation[] = {
+	S_STR(NFSD_A_FSLOCATION_HOST, 0),
+	S_STR(NFSD_A_FSLOCATION_PATH, 0),
+};
+static struct slot nfsd_fslocations[] = {
+	S_NEST(NFSD_A_FSLOCATIONS_LOCATION, nfsd_fslocation),
+};
+static struct slot nfsd_auth_flavor[] = {
+	S_U32(NFSD_A_AUTH_FLAVOR_PSEUDOFLAVOR),
+	S_U32(NFSD_A_AUTH_FLAVOR_FLAGS),
+};
+static struct slot nfsd_svc_export[] = {
+	S_U64(NFSD_A_SVC_EXPORT_SEQNO),
+	S_STR(NFSD_A_SVC_EXPORT_CLIENT, 0),
+	S_STR(NFSD_A_SVC_EXPORT_PATH, 0),
+	S_FLAG(NFSD_A_SVC_EXPORT_NEGATIVE),
+	S_U64(NFSD_A_SVC_EXPORT_EXPIRY),
+	S_U32(NFSD_A_SVC_EXPORT_ANON_UID),
+	S_U32(NFSD_A_SVC_EXPORT_ANON_GID),
+	S_NEST(NFSD_A_SVC_EXPORT_FSLOCATIONS, nfsd_fslocations),
+	S_BLOB(NFSD_A_SVC_EXPORT_UUID, 0, 0xffff),
+	S_NEST(NFSD_A_SVC_EXPORT_SECINFO, nfsd_auth_flavor),
+	S_U32(NFSD_A_SVC_EXPORT_XPRTSEC),
+	S_U32(NFSD_A_SVC_EXPORT_FLAGS),
+	S_U32(NFSD_A_SVC_EXPORT_FSID),
+};
+static struct slot nfsd_expkey[] = {
+	S_U64(NFSD_A_EXPKEY_SEQNO),
+	S_STR(NFSD_A_EXPKEY_CLIENT, 0),
+	S_U8(NFSD_A_EXPKEY_FSIDTYPE),
+	S_BLOB(NFSD_A_EXPKEY_FSID, 0, 0xffff),
+	S_FLAG(NFSD_A_EXPKEY_NEGATIVE),
+	S_U64(NFSD_A_EXPKEY_EXPIRY),
+	S_STR(NFSD_A_EXPKEY_PATH, 0),
+};
+static struct slot nfsd_version[] = {
+	S_U32(NFSD_A_VERSION_MAJOR),
+	S_U32(NFSD_A_VERSION_MINOR),
+	S_FLAG(NFSD_A_VERSION_ENABLED),
+};
+static struct slot nfsd_sock[] = {
+	S_BLOB(NFSD_A_SOCK_ADDR, 0, 0xffff),
+	S_STR(NFSD_A_SOCK_TRANSPORT_NAME, 0),
+};
+static struct slot nfsd_threads_set[] = {
+	S_U32(NFSD_A_SERVER_THREADS),
+	S_U32(NFSD_A_SERVER_GRACETIME),
+	S_U32(NFSD_A_SERVER_LEASETIME),
+	S_STR(NFSD_A_SERVER_SCOPE, 0),
+	S_U32(NFSD_A_SERVER_MIN_THREADS),
+	S_BLOB(NFSD_A_SERVER_FH_KEY, 16, 16),
+};
+static struct slot nfsd_version_set[] = {
+	S_NEST(NFSD_A_SERVER_PROTO_VERSION, nfsd_version),
+};
+static struct slot nfsd_listener_set[] = {
+	S_NEST(NFSD_A_SERVER_SOCK_ADDR, nfsd_sock),
+	S_FLAG(NFSD_A_SERVER_SOCK_USERSPACE_RPCBIND),
+};
+static struct slot nfsd_pool_mode_set[] = {
+	S_STR(NFSD_A_POOL_MODE_MODE, 0),
+};
+static struct slot nfsd_svc_export_set_reqs[] = {
+	S_NEST(NFSD_A_SVC_EXPORT_REQS_REQUESTS, nfsd_svc_export),
+};
+static struct slot nfsd_expkey_set_reqs[] = {
+	S_NEST(NFSD_A_EXPKEY_REQS_REQUESTS, nfsd_expkey),
+};
+static struct slot nfsd_cache_flush[] = {
+	S_U32(NFSD_A_CACHE_FLUSH_MASK),
+};
+static struct slot nfsd_unlock_ip[] = {
+	S_BLOB(NFSD_A_UNLOCK_IP_ADDRESS, 16, 0xffff),
+};
+static struct slot nfsd_unlock_filesystem[] = {
+	S_STR(NFSD_A_UNLOCK_FILESYSTEM_PATH, 0),
+};
+static struct slot nfsd_unlock_export[] = {
+	S_STR(NFSD_A_UNLOCK_EXPORT_PATH, 0),
+};
+/* The ops with no policy get a reject-all one, so take no attribute. */
+static struct cmd_policy nfsd_cmds[] = {
+	P_CMD_NONE(NFSD_CMD_RPC_STATUS_GET),
+	P_CMD(NFSD_CMD_THREADS_SET, nfsd_threads_set),
+	P_CMD_NONE(NFSD_CMD_THREADS_GET),
+	P_CMD(NFSD_CMD_VERSION_SET, nfsd_version_set),
+	P_CMD_NONE(NFSD_CMD_VERSION_GET),
+	P_CMD(NFSD_CMD_LISTENER_SET, nfsd_listener_set),
+	P_CMD_NONE(NFSD_CMD_LISTENER_GET),
+	P_CMD(NFSD_CMD_POOL_MODE_SET, nfsd_pool_mode_set),
+	P_CMD_NONE(NFSD_CMD_POOL_MODE_GET),
+	P_CMD_NONE(NFSD_CMD_CACHE_NOTIFY),
+	P_CMD_NONE(NFSD_CMD_SVC_EXPORT_GET_REQS),
+	P_CMD(NFSD_CMD_SVC_EXPORT_SET_REQS, nfsd_svc_export_set_reqs),
+	P_CMD_NONE(NFSD_CMD_EXPKEY_GET_REQS),
+	P_CMD(NFSD_CMD_EXPKEY_SET_REQS, nfsd_expkey_set_reqs),
+	P_CMD(NFSD_CMD_CACHE_FLUSH, nfsd_cache_flush),
+	P_CMD(NFSD_CMD_UNLOCK_IP, nfsd_unlock_ip),
+	P_CMD(NFSD_CMD_UNLOCK_FILESYSTEM, nfsd_unlock_filesystem),
+	P_CMD(NFSD_CMD_UNLOCK_EXPORT, nfsd_unlock_export),
+	P_CMD_NONE(NFSD_CMD_SERVER_STATS_GET),
 };
 #endif
 
@@ -547,6 +659,9 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<linux/dpll.h>)
 	{ &fam_dpll, ID_DPLL, dpll_cmds, ARRAY_SIZE(dpll_cmds) },
+#endif
+#if __has_include(<linux/nfsd_netlink.h>)
+	{ &fam_nfsd, ID_NFSD, nfsd_cmds, ARRAY_SIZE(nfsd_cmds) },
 #endif
 };
 
