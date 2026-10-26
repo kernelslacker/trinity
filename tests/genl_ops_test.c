@@ -5,7 +5,9 @@
  * most requests inside the genl core's header check.  The reply is
  * canned and arrives over a unix socketpair standing in for the
  * NETLINK_GENERIC socket; no netlink socket is opened.  Which attribute
- * table a cmd draws from is checked on a grammar of the test's own.
+ * table a cmd draws from is checked on a grammar of the test's own, and the
+ * attributes of the strict families' cmds against mirrors of their kernel
+ * policies.
  */
 
 #include <errno.h>
@@ -46,9 +48,12 @@ extern struct genl_family_grammar fam_binder;
 #define ID_EDGE		704
 #define ID_TRUNCATED	705
 #define ID_OPS_FIRST	706
+#define ID_HANDSHAKE	710
 #define ID_UNREGISTERED	900
 
-#define ROUNDS		30000
+/* Each family whose flags are tallied wants some 3000 messages, and every
+ * family in the canned reply takes a share of the rounds. */
+#define ROUNDS		50000
 
 /* The flag bits the generator's own draws can set.  A random word lies
  * within them one time in 512. */
@@ -309,6 +314,78 @@ static void put_ops_first_family(struct reply *r,
 	put_msg(r, &body);
 }
 
+/* ---------- The families whose attributes are checked ----------------- */
+
+/*
+ * A slot of a kernel nla_policy as far as the generator shapes it: the
+ * attribute's id and the payload lengths it takes.  Values, a flags mask
+ * or an enum range, are not the generator's to shape and are not modelled.
+ * seen counts what the generator emitted, so a slot it never reaches shows
+ * up.
+ */
+struct slot {
+	unsigned short id;
+	unsigned short min, max;	/* payload length */
+	unsigned int seen;
+};
+
+#define S_U32(id)	{ id, 4, 4 }
+
+/* What a cmd's request takes. */
+struct cmd_policy {
+	unsigned char cmd;
+	struct slot *slots;
+	unsigned int n_slots;	/* 0: the cmd takes no attribute */
+	unsigned int msgs;	/* messages checked against it */
+};
+
+#define P_CMD(cmd, tbl)		{ cmd, tbl, ARRAY_SIZE(tbl) }
+#define P_CMD_NONE(cmd)		{ cmd }
+
+struct policy_family {
+	struct genl_family_grammar *fam;
+	unsigned short id;
+	struct cmd_policy *cmds;
+	unsigned int n_cmds;
+};
+
+#if __has_include(<linux/handshake.h>)
+#include "kernel/handshake.h"
+
+extern struct genl_family_grammar fam_handshake;
+
+/* net/handshake/genl.c: handshake_accept_nl_policy, handshake_done_nl_policy */
+static struct slot handshake_accept[] = {
+	S_U32(HANDSHAKE_A_ACCEPT_HANDLER_CLASS),
+};
+static struct slot handshake_done[] = {
+	S_U32(HANDSHAKE_A_DONE_STATUS),
+	S_U32(HANDSHAKE_A_DONE_SOCKFD),
+	S_U32(HANDSHAKE_A_DONE_REMOTE_AUTH),
+};
+static struct cmd_policy handshake_cmds[] = {
+	P_CMD_NONE(HANDSHAKE_CMD_READY),
+	P_CMD(HANDSHAKE_CMD_ACCEPT, handshake_accept),
+	P_CMD(HANDSHAKE_CMD_DONE, handshake_done),
+};
+#endif
+
+static struct policy_family policy_families[] = {
+#if __has_include(<linux/handshake.h>)
+	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
+#endif
+};
+
+/* Every cmd of these families, each with the flags of a doit and a dumpit. */
+static void put_policy_families(struct reply *r)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++)
+		put_grammar_family(r, policy_families[i].fam,
+				   policy_families[i].id, CMD_CAPS);
+}
+
 /*
  * genl_resolve_families() asks once per process, so the one reply carries
  * every case below.
@@ -346,6 +423,7 @@ static void build_reply(struct reply *r)
 	put_edge_family(r, &fam_nlbl_unlabel, ID_EDGE);
 	put_truncated_family(r, &fam_psp, ID_TRUNCATED);
 	put_ops_first_family(r, &fam_binder, ID_OPS_FIRST);
+	put_policy_families(r);
 
 	memcpy(r->buf + r->len, &done, sizeof(done));
 	r->len += NLMSG_LENGTH(sizeof(int));
@@ -643,6 +721,185 @@ static void check_flags(void)
 	check_other_protocol_flags();
 }
 
+/* ---------- Checking the attributes a cmd's policy takes ---------------- */
+
+static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
+			      unsigned short id)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		if (slots[i].id == id)
+			return &slots[i];
+	}
+	return NULL;
+}
+
+/*
+ * What nla_validate() with NL_VALIDATE_STRICT makes of the stream: an id
+ * past the policy, or in a slot it leaves untyped, is refused, as is a
+ * length the slot does not take and a flag on an attribute that is not a
+ * nest.
+ */
+static bool stream_conforms(const unsigned char *p, size_t len,
+			    struct slot *slots, unsigned int n_slots)
+{
+	size_t off = 0;
+
+	while (off < len) {
+		const struct nlattr *nla;
+		struct slot *slot;
+		size_t plen;
+
+		if (len - off < NLA_HDRLEN)
+			return false;
+		nla = (const struct nlattr *) (p + off);
+		if (nla->nla_len < NLA_HDRLEN || nla->nla_len > len - off)
+			return false;
+		slot = find_slot(slots, n_slots, nla->nla_type & NLA_TYPE_MASK);
+		if (slot == NULL)
+			return false;
+
+		plen = nla->nla_len - NLA_HDRLEN;
+		if ((nla->nla_type & NLA_F_NESTED) || plen < slot->min ||
+		    plen > slot->max)
+			return false;
+		slot->seen++;
+		off += NLA_ALIGN(nla->nla_len);
+	}
+	return true;
+}
+
+static struct cmd_policy *find_policy(struct policy_family *pf, unsigned char cmd)
+{
+	unsigned int i;
+
+	for (i = 0; i < pf->n_cmds; i++) {
+		if (pf->cmds[i].cmd == cmd)
+			return &pf->cmds[i];
+	}
+	return NULL;
+}
+
+static struct policy_family *family_by_id(unsigned short id)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		if (policy_families[i].id == id)
+			return &policy_families[i];
+	}
+	return NULL;
+}
+
+static void hexdump(const unsigned char *p, size_t len)
+{
+	size_t i;
+
+	for (i = 0; i < len && i < 256; i++)
+		fprintf(stderr, "%02x%c", p[i], (i % 16 == 15) ? '\n' : ' ');
+	fputc('\n', stderr);
+}
+
+/*
+ * Only a lone message whose nlmsg_len is intact says where its attributes
+ * end, so a batch is left out, and so is a message the generator gave a
+ * corrupt length.  The corruption that doubles the length passes for an
+ * intact one on a batch of two equal halves, whose length is a multiple of
+ * 8; a lone message is 4 modulo 8 half the time and cannot be mistaken.
+ * An attribute that does not fit its buffer is also cut short to fill it,
+ * which no policy takes, so a message as long as the smallest buffer is
+ * left out too.
+ */
+#define SMALLEST_BUFFER	(NLMSG_HDRLEN + 1280)
+#define ATTR_ROUNDS	150000
+#define MIN_MSGS	30
+
+/*
+ * Every attribute of every request to a family above is one its cmd's
+ * policy takes, shaped to pass it, and every slot of every policy turns
+ * up: a table that lost one, or took an id of another cmd's, fails.
+ */
+static void check_attrs_in_policy(void)
+{
+	struct socket_triplet triplet = {
+		.family = PF_NETLINK,
+		.type = SOCK_RAW,
+		.protocol = NETLINK_GENERIC,
+	};
+	unsigned int round, i, j, k;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->fam->n_cmds; j++) {
+			if (find_policy(pf, pf->fam->cmds[j].cmd) == NULL) {
+				fprintf(stderr, "%s: cmd %u has no policy mirror\n",
+					pf->fam->name, pf->fam->cmds[j].cmd);
+				BUG("genl ops: a cmd of a checked family is not mirrored");
+			}
+		}
+	}
+
+	for (round = 0; round < ATTR_ROUNDS; round++) {
+		const struct genlmsghdr *genl;
+		const struct nlmsghdr *nlh;
+		struct policy_family *pf;
+		struct cmd_policy *cp;
+		const unsigned char *attrs;
+		size_t attrs_len;
+		void *buf;
+		size_t len;
+
+		netlink_gen_msg(&triplet, &buf, &len);
+		nlh = buf;
+		if (len < NLMSG_HDRLEN + GENL_HDRLEN || len >= SMALLEST_BUFFER ||
+		    len % 8 != 4 || NLMSG_ALIGN(nlh->nlmsg_len) != len)
+			goto next;
+		pf = family_by_id(nlh->nlmsg_type);
+		if (pf == NULL)
+			goto next;
+
+		genl = NLMSG_DATA(nlh);
+		cp = find_policy(pf, genl->cmd);
+		if (cp == NULL)
+			goto next;
+		cp->msgs++;
+
+		attrs = (const unsigned char *) nlh + NLMSG_HDRLEN + GENL_HDRLEN;
+		attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
+		if (!stream_conforms(attrs, attrs_len, cp->slots, cp->n_slots)) {
+			fprintf(stderr, "%s cmd %u: attributes its policy does not take:\n",
+				pf->fam->name, genl->cmd);
+			hexdump(attrs, attrs_len);
+			BUG("genl ops: a request carries what its cmd's policy refuses");
+		}
+next:
+		free(buf);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		const struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->n_cmds; j++) {
+			const struct cmd_policy *cp = &pf->cmds[j];
+
+			if (cp->msgs < MIN_MSGS) {
+				fprintf(stderr, "%s cmd %u: only %u messages\n",
+					pf->fam->name, cp->cmd, cp->msgs);
+				BUG("genl ops: too few messages to judge a cmd's attributes");
+			}
+			for (k = 0; k < cp->n_slots; k++) {
+				if (cp->slots[k].seen > 0)
+					continue;
+				fprintf(stderr, "%s cmd %u: attribute %u was never emitted\n",
+					pf->fam->name, cp->cmd, cp->slots[k].id);
+				BUG("genl ops: a policy's attribute is out of the generator's reach");
+			}
+		}
+	}
+}
+
 /* ---------- Checking which attribute table a cmd draws from ------------ */
 
 struct table_case {
@@ -744,5 +1001,6 @@ void genl_ops_self_check(void)
 	check_reply_parsed();
 	check_flags();
 	check_cmd_attr_tables();
+	check_attrs_in_policy();
 	close(peer_fd);
 }
