@@ -14,10 +14,10 @@ namespace.
 
 Total admin-gated entries audited: **487**.  The class-1 count of 40 and the
 class-3 count of 261 together represent **301 permanently dead entries** under the
-current child capability model.  Trinity's tables list 300 of the 487 entries (all
-40 of class 1, 63 of class 2 and 197 of class 3), so 237 of the dead entries are
+current child capability model.  Trinity's tables list 302 of the 487 entries (all
+40 of class 1, 63 of class 2 and 199 of class 3), so 239 of the dead entries are
 ones the fuzzer can pick, each a guaranteed `-EPERM` fast-reject that burns fuzz
-budget.  The other 187 (123 class 2, 64 class 3) are gated commands of the same
+budget.  The other 185 (123 class 2, 62 class 3) are gated commands of the same
 families that no grammar lists, which trinity never sends.
 
 Counts and citations were taken against a kernel tree at v7.3-16411-g6b4b543fa187
@@ -113,7 +113,7 @@ coverage.
 | tcmu all 4 cmds | `net/netlink/genl/tcmu.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/target/target_core_user.c:453–471`) | **3** | `SET_FEATURES`, `ADDED/REMOVED/RECONFIG_DEVICE_DONE`; all 4 dead |
 | sunrpc `IP_MAP_{GET,SET}_REQS`, `UNIX_GID_{GET,SET}_REQS`, `CACHE_FLUSH` (all 5 cmds) | `net/netlink/genl/sunrpc.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/sunrpc/netlink.c:52–78`) | **3** | All 5 ops dead; `CACHE_NOTIFY` is kernel-emitted only |
 | dpll all 6 cmds | `net/netlink/genl/dpll.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/dpll/dpll_nl.c:92–147`; handlers in `dpll_netlink.c`) | **3** | `DEVICE_ID_GET`, `DEVICE_GET`, `DEVICE_SET`, `PIN_ID_GET`, `PIN_GET`, `PIN_SET`; all 6 dead |
-| drm-ras all 5 cmds | `net/netlink/genl/drm-ras.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/gpu/drm/drm_ras_nl.c:49–84`) | **3** | `LIST_NODES`, `GET_ERROR_COUNTER`, `CLEAR_ERROR_COUNTER`, `GET_ERROR_THRESHOLD`, `SET_ERROR_THRESHOLD`; all 5 dead.  The grammar lists the first 3 and not the two threshold cmds |
+| drm-ras all 5 cmds | `net/netlink/genl/drm-ras.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`drivers/gpu/drm/drm_ras_nl.c:49–84`) | **3** | `LIST_NODES`, `GET_ERROR_COUNTER`, `CLEAR_ERROR_COUNTER`, `GET_ERROR_THRESHOLD`, `SET_ERROR_THRESHOLD`; all 5 dead, all 5 listed |
 | handshake `ACCEPT`, `DONE` (both cmds) | `net/netlink/genl/handshake.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/handshake/genl.c:34,41`) | **3** | Both user-callable cmds dead; `READY` is kernel-emitted multicast only |
 | net\_shaper `SET`, `DELETE`, `GROUP` (3 of 5 cmds) | `net/netlink/genl/net_shaper.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/shaper/shaper_nl_gen.c:112,121,130`) | **3** | 3 write cmds dead; `CAP_GET` and `GET` are unprivileged and reach handlers |
 | nl802154 34 of 37 cmds | `net/netlink/genl/nl802154.c` | `GENL_ADMIN_PERM` → `&init_user_ns` (`net/ieee802154/nl802154.c:2795–3075`) | **3** | Every cmd but `GET_WPAN_PHY`, `GET_INTERFACE` and `LIST_ASSOCIATIONS`: interface add/del, 13 `SET_*` cmds (channel, PAN id, short address, TX power, CCA, backoff, retries, LBT, ack default, PHY netns, max associations), scan and beacon control, associate / disassociate, and 13 `SEC_*` cmds (`SET_SEC_PARAMS` and the `NEW`/`DEL`/`GET` key, device, devkey and level cmds) that exist only with `CONFIG_IEEE802154_NL802154_EXPERIMENTAL`; 34 dead |
@@ -202,9 +202,9 @@ child-mounted filesystem (so `sb->s_user_ns` reflects the child's user\_ns).
 ### Dead tail magnitude
 
 The 301 permanently-dead entries (class 1 + class 3) represent **62 %** of the
-487 admin-gated entries audited, and trinity's tables list 237 of them.  The bulk
+487 admin-gated entries audited, and trinity's tables list 239 of them.  The bulk
 of the dead tail is:
-- **261 genl commands** across 36 grammars using `GENL_ADMIN_PERM` (class 3), 197 of
+- **261 genl commands** across 36 grammars using `GENL_ADMIN_PERM` (class 3), 199 of
   them listed in a grammar.
 - **32 btrfs ioctl requests** with an unconditional inline `capable()` (class 1):
   30 in `ioctls/btrfs.c` and 2 in `ioctls/btrfs-control.c`.
@@ -212,6 +212,6 @@ of the dead tail is:
 The other 8 class-1 entries are the 2 MSR ioctls and 6 genl commands whose handlers
 test the capability inline (`nbd` 3, `thermal` 3).
 
-Every fuzz iteration that selects one of the 237 listed dead entries returns
+Every fuzz iteration that selects one of the 239 listed dead entries returns
 `-EPERM` from the capability gate before touching any interesting kernel code; the
-64 class-3 commands that no grammar lists are never sent.
+62 class-3 commands that no grammar lists are never sent.

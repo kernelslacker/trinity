@@ -11,7 +11,8 @@
  *
  * The .c side includes this from inside its `#if __has_include(
  * <drm/drm_ras.h>)` gate, so the header itself can include
- * <drm/drm_ras.h> unconditionally.
+ * <drm/drm_ras.h> unconditionally.  The error-threshold ids came later;
+ * configure probes those enum members and emits HAVE_<SYMBOL>.
  */
 #include <drm/drm_ras.h>
 
@@ -30,6 +31,12 @@
 #endif
 #ifndef DRM_RAS_CMD_CLEAR_ERROR_COUNTER
 #define DRM_RAS_CMD_CLEAR_ERROR_COUNTER		3
+#endif
+#ifndef HAVE_DRM_RAS_CMD_GET_ERROR_THRESHOLD
+#define DRM_RAS_CMD_GET_ERROR_THRESHOLD		5
+#endif
+#ifndef HAVE_DRM_RAS_CMD_SET_ERROR_THRESHOLD
+#define DRM_RAS_CMD_SET_ERROR_THRESHOLD		6
 #endif
 
 #ifndef DRM_RAS_A_NODE_ATTRS_NODE_ID
@@ -56,4 +63,7 @@
 #endif
 #ifndef DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_VALUE
 #define DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_VALUE	4
+#endif
+#ifndef HAVE_DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD
+#define DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD	5
 #endif

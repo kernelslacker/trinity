@@ -600,6 +600,11 @@ check_enum_member linux/bpf.h BPF_TRACE_KPROBE_SESSION \
 # other BPF_F_* flags, which are macros.
 check_enum_member linux/bpf.h BPF_F_LOCK
 
+# drm-ras's error-threshold commands and attribute.
+check_enum_member drm/drm_ras.h DRM_RAS_CMD_GET_ERROR_THRESHOLD \
+	DRM_RAS_CMD_SET_ERROR_THRESHOLD \
+	DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

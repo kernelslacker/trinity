@@ -53,6 +53,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_WIREGUARD	712
 #define ID_DPLL		713
 #define ID_NFSD		714
+#define ID_DRM_RAS	715
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -364,6 +365,7 @@ struct cmd_policy {
 
 #define P_CMD(cmd, tbl)		{ cmd, false, tbl, ARRAY_SIZE(tbl) }
 #define P_CMD_NONE(cmd)		{ cmd }
+#define P_DUMP(cmd, tbl)	{ cmd, true, tbl, ARRAY_SIZE(tbl) }
 #define P_DUMP_NONE(cmd)	{ cmd, true }
 
 struct policy_family {
@@ -647,6 +649,43 @@ static struct cmd_policy wireguard_cmds[] = {
 };
 #endif
 
+#if __has_include(<drm/drm_ras.h>)
+#include "kernel/drm_ras.h"
+
+extern struct genl_family_grammar fam_drm_ras;
+
+/* drivers/gpu/drm/drm_ras_nl.c: the drm_ras_*_nl_policy tables */
+static struct slot drm_ras_counter[] = {
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+};
+static struct slot drm_ras_counter_dump[] = {
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
+};
+static struct slot drm_ras_clear_counter[] = {
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+};
+static struct slot drm_ras_get_threshold[] = {
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+};
+static struct slot drm_ras_set_threshold[] = {
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD),
+};
+/* LIST_NODES is a dumpit with no policy, so takes nothing. */
+static struct cmd_policy drm_ras_cmds[] = {
+	P_CMD_NONE(DRM_RAS_CMD_LIST_NODES),
+	P_CMD(DRM_RAS_CMD_GET_ERROR_COUNTER, drm_ras_counter),
+	P_DUMP(DRM_RAS_CMD_GET_ERROR_COUNTER, drm_ras_counter_dump),
+	P_CMD(DRM_RAS_CMD_CLEAR_ERROR_COUNTER, drm_ras_clear_counter),
+	P_CMD(DRM_RAS_CMD_GET_ERROR_THRESHOLD, drm_ras_get_threshold),
+	P_CMD(DRM_RAS_CMD_SET_ERROR_THRESHOLD, drm_ras_set_threshold),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -662,6 +701,9 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<linux/nfsd_netlink.h>)
 	{ &fam_nfsd, ID_NFSD, nfsd_cmds, ARRAY_SIZE(nfsd_cmds) },
+#endif
+#if __has_include(<drm/drm_ras.h>)
+	{ &fam_drm_ras, ID_DRM_RAS, drm_ras_cmds, ARRAY_SIZE(drm_ras_cmds) },
 #endif
 };
 
