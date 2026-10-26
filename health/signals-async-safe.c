@@ -273,6 +273,8 @@ void *fault_beacon_extract_ip(const void *ctx)
 	return (void *)uc->uc_mcontext.pc;
 #elif defined(__riscv) && __riscv_xlen == 64
 	return (void *)uc->uc_mcontext.__gregs[REG_PC];
+#elif defined(__loongarch64)
+	return (void *)uc->uc_mcontext.__pc;
 #else
 	(void)uc;
 	return NULL;
@@ -293,6 +295,8 @@ void *fault_beacon_extract_sp(const void *ctx)
 	return (void *)uc->uc_mcontext.sp;
 #elif defined(__riscv) && __riscv_xlen == 64
 	return (void *)uc->uc_mcontext.__gregs[REG_SP];
+#elif defined(__loongarch64)
+	return (void *)uc->uc_mcontext.__gregs[LARCH_REG_SP];
 #else
 	(void)uc;
 	return NULL;

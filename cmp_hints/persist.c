@@ -719,6 +719,8 @@ const char *cmp_hints_default_path(void)
 	arch = "arm";
 #elif defined(__riscv) && __riscv_xlen == 64
 	arch = "riscv64";
+#elif defined(__loongarch64)
+	arch = "loongarch64";
 #else
 	arch = "unknown";
 #endif
