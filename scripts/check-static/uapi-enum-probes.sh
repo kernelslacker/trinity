@@ -30,7 +30,7 @@ source "$(dirname "$0")/lib.sh"
 
 # Vacuity floor: fewer guards than this means the scan has collapsed.  Far
 # below the real count, so adding or dropping a shim never trips it.
-MIN_GUARDS=2
+MIN_GUARDS=50
 
 work="$(mktemp -d)" || { echo "FAIL: $NAME: mktemp failed"; exit 1; }
 trap 'rm -rf "$work"' EXIT

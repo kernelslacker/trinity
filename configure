@@ -591,6 +591,15 @@ check_enum_member linux/bpf.h BPF_MAP_TYPE_LRU_HASH \
 	BPF_MAP_TYPE_CGRP_STORAGE BPF_MAP_TYPE_ARENA BPF_MAP_TYPE_INSN_ARRAY \
 	BPF_MAP_TYPE_RHASH
 
+# enum bpf_attach_type, from BPF_TRACE_KPROBE_SESSION to the newest.
+check_enum_member linux/bpf.h BPF_TRACE_KPROBE_SESSION \
+	BPF_TRACE_UPROBE_SESSION BPF_TRACE_FSESSION BPF_TRACE_FENTRY_MULTI \
+	BPF_TRACE_FEXIT_MULTI BPF_TRACE_FSESSION_MULTI
+
+# BPF_F_LOCK is a member of the anonymous map-update flags enum, unlike the
+# other BPF_F_* flags, which are macros.
+check_enum_member linux/bpf.h BPF_F_LOCK
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

@@ -2,16 +2,14 @@
 
 /*
  * bpf(2) commands, map types and attach types are enum members upstream,
- * not macros, so #ifndef cannot tell whether <linux/bpf.h> has one.  A
- * fallback under #ifndef HAVE_<SYMBOL> is compile-tested by configure
- * (check_enum_member) and exists only where the header lacks the member,
- * so it never shadows the real one.  The rest still sit under
- * #ifndef <SYMBOL>, which always fires: those macros are the definition on
- * every kernel, and a wrong number is wrong everywhere.  <linux/bpf.h> is
- * included first so the enum bodies are parsed before any macro goes
- * live, whatever the consumer's include order.  The map flags further down
- * are macros upstream, so their guards behave, except BPF_F_LOCK, which is
- * an enum member as well.
+ * not macros, so #ifndef cannot tell whether <linux/bpf.h> has one.
+ * configure compile-tests each (check_enum_member) and emits
+ * HAVE_<SYMBOL>; the fallback below exists only where the header lacks the
+ * member, so it never shadows the real one.  <linux/bpf.h> is still
+ * included first so a probe that misfires cannot put a macro ahead of the
+ * enum bodies, whatever the consumer's include order.  The map flags
+ * further down are macros upstream, so their plain #ifndef guards behave;
+ * BPF_F_LOCK is an enum member and is probed like the rest.
  */
 #include <linux/bpf.h>
 
@@ -122,22 +120,22 @@
  * kprobe / uprobe attach-type pools in struct_catalog/bpf-link.c;
  * shared here so both sites see the same numeric values.
  */
-#ifndef BPF_TRACE_KPROBE_SESSION
+#ifndef HAVE_BPF_TRACE_KPROBE_SESSION
 #define BPF_TRACE_KPROBE_SESSION	56
 #endif
-#ifndef BPF_TRACE_UPROBE_SESSION
+#ifndef HAVE_BPF_TRACE_UPROBE_SESSION
 #define BPF_TRACE_UPROBE_SESSION	57
 #endif
-#ifndef BPF_TRACE_FSESSION
+#ifndef HAVE_BPF_TRACE_FSESSION
 #define BPF_TRACE_FSESSION		58
 #endif
-#ifndef BPF_TRACE_FENTRY_MULTI
+#ifndef HAVE_BPF_TRACE_FENTRY_MULTI
 #define BPF_TRACE_FENTRY_MULTI		59
 #endif
-#ifndef BPF_TRACE_FEXIT_MULTI
+#ifndef HAVE_BPF_TRACE_FEXIT_MULTI
 #define BPF_TRACE_FEXIT_MULTI		60
 #endif
-#ifndef BPF_TRACE_FSESSION_MULTI
+#ifndef HAVE_BPF_TRACE_FSESSION_MULTI
 #define BPF_TRACE_FSESSION_MULTI	61
 #endif
 
@@ -257,6 +255,6 @@
 # define BPF_F_NO_USER_CONV		(1U << 18)
 #endif
 /* Map-update flags that may be absent on older build hosts */
-#ifndef BPF_F_LOCK
-# define BPF_F_LOCK			4
+#ifndef HAVE_BPF_F_LOCK
+#define BPF_F_LOCK			4
 #endif
