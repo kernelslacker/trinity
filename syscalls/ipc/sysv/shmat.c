@@ -167,11 +167,13 @@ static void cleanup_shmat(struct syscallrecord *rec)
  * A SHM_REMAP attach that worked replaced pages of the mapping the
  * sanitiser picked with the segment's, read-only under SHM_RDONLY, so the
  * pool entry no longer describes what lies there, and a consumer that
- * writes through it would fault.  Drop the entry as post_munmap() drops
- * one it punched a hole in: prot 0 keeps get_map_with_prot() off it, and
- * the known_rw skip-cache goes too.  A call whose rewritten slots lost both
- * SHM_REMAP and the address, and so attached where the kernel picked,
- * loses the entry as well, which only costs the pool a mapping.
+ * writes through it would fault.  Retire the entry as post_munmap() does
+ * one it punched a hole in (retire_holed_map()), with nothing to unmap:
+ * the snapshot does not say how far the segment reaches, and its pool is
+ * unknown, so the entry stays where it is, holed.  A call whose rewritten
+ * slots lost both SHM_REMAP and the address, and so attached where the
+ * kernel picked, loses the entry as well, which only costs the pool a
+ * mapping.
  */
 static void post_shmat(struct syscallrecord *rec)
 {
@@ -187,10 +189,8 @@ static void post_shmat(struct syscallrecord *rec)
 	if ((unsigned long) addr & (page_size - 1))
 		post_handler_corrupt_ptr_bump(rec, NULL);
 
-	if (snap != NULL && !looks_like_corrupted_ptr(rec, snap->map)) {
-		snap->map->prot = 0;
-		snap->map->known_rw = false;
-	}
+	if (snap != NULL && !looks_like_corrupted_ptr(rec, snap->map))
+		retire_holed_map(snap->map, OBJ_NONE, 0, 0);
 out:
 	post_state_release(rec, snap);
 }

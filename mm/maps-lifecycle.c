@@ -95,7 +95,9 @@ void map_destructor(struct object *obj)
  * the destructor unmaps nothing for a holed entry.  A borrowed clone leaves
  * its global source's VMA alone, as map_destructor() does, but marks the
  * source so a refill does not clone it back.  The entry leaves its pool when
- * @type names the one it is in, and otherwise stays, holed.
+ * @type names the one it is in, and otherwise stays, holed.  A caller that
+ * cannot say how far the call reached passes a len of 0, and nothing is
+ * unmapped.
  */
 void retire_holed_map(struct map *map, enum objecttype type,
 		      unsigned long addr, unsigned long len)
