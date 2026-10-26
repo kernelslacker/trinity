@@ -51,29 +51,19 @@
  */
 static inline unsigned long maps_pick_read_cycles(void)
 {
+	unsigned long v = 0UL;
 #if defined(__x86_64__) || defined(__i386__)
 	unsigned int lo, hi;
-
 	__asm__ volatile("rdtsc" : "=a"(lo), "=d"(hi));
-	return ((unsigned long)hi << 32) | (unsigned long)lo;
+	v = ((unsigned long)hi << 32) | (unsigned long)lo;
 #elif defined(__aarch64__)
-	unsigned long v;
-
 	__asm__ volatile("mrs %0, cntvct_el0" : "=r"(v));
-	return v;
 #elif defined(__riscv) && __riscv_xlen == 64
-	unsigned long v;
-
 	__asm__ volatile("rdtime %0" : "=r"(v));
-	return v;
 #elif defined(__loongarch64)
-	unsigned long v;
-
 	__asm__ volatile("rdtime.d %0, $zero" : "=r"(v));
-	return v;
-#else
-	return 0UL;
 #endif
+	return v;
 }
 
 /*
