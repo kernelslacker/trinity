@@ -14,6 +14,7 @@
 
 #include "rnd.h"
 #include "rnd_stream_golden.h"		/* rnd_stream_golden_check */
+#include "sanitise.h"			/* alloc_iovec_init */
 #include "struct_catalog.h"		/* struct_field_mutate_self_check */
 
 extern pid_t mainpid;
@@ -91,6 +92,11 @@ int main(int argc, char **argv)
 	 * from main() before any fork; the test binary never forks so
 	 * the current pid is trivially the mainpid for the whole run. */
 	mainpid = getpid();
+
+	/* alloc_iovec()'s pool, made once as init_shm makes it before any
+	 * fork: the arg-coupling and post-oracle suites both draw iovec
+	 * arrays from it. */
+	alloc_iovec_init();
 
 	printf("trinity test-bin: seed=0x%llx\n",
 	       (unsigned long long) seed);

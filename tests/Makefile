@@ -516,6 +516,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/mprotect.c \
 		   $(TOP)/syscalls/mm/madvise.c \
 		   $(TOP)/mm/maps-arg.c
 
+# syscalls/mm/process_madvise.c brings process_madvise, whose .vet_final
+# hook arg_coupling_test.c runs over arrays in the iovec pool, and whose
+# sanitiser it runs with a pidfd for the test process.
+PARENT_SRCS	+= $(TOP)/syscalls/mm/process_madvise.c
+
 # syscalls/mm/mremap.c and mincore.c bring mremap and mincore, whose
 # sanitisers and post handlers arg_coupling_test.c runs over the same
 # fake pool mapping, mmap.c mmap and mmap2, whose sanitiser it runs with

@@ -6,7 +6,7 @@
 |---|---|
 | random.c | Core munged integer generators: `rand16()`/`rand32()`/`rand64()`, bitmask helpers (`set_rand_bitmask`, `rand_single_bit[64]`, `randbits[64]`), byte-repeat (`rept_byte`) |
 | interesting-numbers.c | Static a-priori boundary-value corpus: `get_boundary_value()`, `get_negative_edge_value()`, `get_sizeof_boundary_value()` (overflow-in-multiplication probes), `get_interesting_{8,16,32}bit_value()`, `get_interesting_value()` (64-bit + per-arch canonical/non-canonical address probes) |
-| random-address.c | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
+| random-address.c | Address/buffer generation and safety: writable scratch pool (`get_writable_address`, `get_non_null_address`, `range_in_writable_pool`), shared-buffer/libc-heap relocation (`avoid_shared_buffer_{out,inout}`), iovec array builder (`alloc_iovec`, `range_in_iovec_pool`) with per-entry shape picker (NULL/tiny/pagecross/shared/pool/invalid/valid-map), iovec/msghdr second-pass scrub against sibling-scribble corruption |
 | random-length.c | Length/size generators: `get_len()` (boundary/sizeof-boundary/typesize/masked-random blend), `get_len_relative()` (object-size-capped variant for kernel-WRITES-buffer safety) |
 
 ## Key design decisions

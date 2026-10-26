@@ -1,6 +1,9 @@
 /*
  * SYSCALL_DEFINE5(process_madvise, int, pidfd, const struct iovec __user *, vec,
  *                 size_t, vlen, int, behavior, unsigned int, flags)
+ *
+ * A GUARD_INSTALL acts on no page, final slots included
+ * (vet_final_process_madvise()).
  */
 #include <fcntl.h>
 #include <stdio.h>
@@ -8,6 +11,7 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <sys/uio.h>
+#include "maps.h"
 #include "pids.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -95,6 +99,42 @@ static bool pidfd_is_self(int fd)
 }
 
 /*
+ * A rewrite after the sanitiser can make any advice a GUARD_INSTALL, or
+ * stretch vlen past the iovecs it emptied, so a final GUARD_INSTALL is
+ * refused unless no iovec the kernel reads names a page
+ * (map_range_pages()).  Only an array in the iovec pool can be judged, as
+ * nothing but this child writes it; a compat call reads 32-bit iovecs at
+ * the low 32 bits of the slot, never an array built here.  A count of 0,
+ * or one past UIO_MAXIOV, reads none.  The advice is read as an int.
+ */
+static int vet_final_process_madvise(struct syscallrecord *rec)
+{
+	const struct iovec *iov = (const struct iovec *) rec->a2;
+	unsigned long vlen = rec->do32bit ? (unsigned int) rec->a3 : rec->a3;
+	struct page_span pages;
+	unsigned long i;
+
+	if ((int) rec->a4 != MADV_GUARD_INSTALL || vlen == 0 ||
+	    vlen > UIO_MAXIOV)
+		return 0;
+
+	if (!rec->do32bit &&
+	    range_in_iovec_pool(rec->a2, vlen * sizeof(*iov))) {
+		for (i = 0; i < vlen; i++) {
+			if (map_range_pages((unsigned long) iov[i].iov_base,
+					    iov[i].iov_len, false, false,
+					    &pages))
+				break;
+		}
+		if (i == vlen)
+			return 0;
+	}
+
+	outputerr("arg-coupling: process_madvise rejected: the advice installs guard pages\n");
+	return -1;
+}
+
+/*
  * regular madvise's sanitiser uses range_overlaps_shared() against
  * (rec->a1, rec->a2); process_madvise can't do that because the kernel
  * dereferences vec as an iovec[] rather than treating the addr/len pair
@@ -132,9 +172,11 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 * range that carries no guard PTEs is a kernel fast-path no-op.
 	 *
 	 * Mirrors madvise.c's rec->a1=0; rec->a2=0 neutraliser for the same
-	 * advice on the plain madvise(2) path.
+	 * advice on the plain madvise(2) path.  The kernel reads the advice
+	 * as an int, and vet_final_process_madvise() refuses a GUARD_INSTALL
+	 * a rewrite makes later.
 	 */
-	if (rec->a4 == MADV_GUARD_INSTALL) {
+	if ((int) rec->a4 == MADV_GUARD_INSTALL) {
 		struct iovec *iov = (struct iovec *)rec->a2;
 		unsigned long i, vlen = rec->a3;
 
@@ -156,6 +198,7 @@ struct syscallentry syscall_process_madvise = {
 	.arg_params[4].list = ARGLIST(process_madvise_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_process_madvise,
+	.vet_final = vet_final_process_madvise,
 	.flags = REEXEC_SANITISE_OK,
 	.rettype = RET_NUM_BYTES,
 };

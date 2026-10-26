@@ -453,10 +453,6 @@ void post_oracle_self_check(void)
 		writable_pool_init();
 	out = get_writable_address(sizeof(*out));
 
-	/* recvmsg's sanitiser draws its iovecs from a pool no other suite
-	 * makes. */
-	alloc_iovec_init();
-
 	get_tsc();
 	get_thp_disable();
 	sched_getscheduler_policy();

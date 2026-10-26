@@ -89,6 +89,12 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_chec
  */
 void alloc_iovec_init(void);
 /*
+ * True iff len is non-zero and [addr, addr + len) lies wholly inside the
+ * pool alloc_iovec() carves its arrays from.  Always false before
+ * alloc_iovec_init().
+ */
+bool range_in_iovec_pool(unsigned long addr, unsigned long len);
+/*
  * One-shot parent-side allocator for get_writable_address()'s backing
  * pool.  Allocates a dedicated MAP_PRIVATE|MAP_ANON region and registers
  * it with the shared-region tracker so the mm-syscall sanitisers refuse

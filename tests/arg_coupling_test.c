@@ -6,8 +6,8 @@
  * count stays inside its buffer, a munmap, mprotect, pkey_mprotect,
  * madvise, set_mempolicy_home_node or remap_file_pages range inside the
  * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
- * tracked regions too, a madvise never installs guard pages, and an
- * mseal seals only a mapping its sanitiser made for it.
+ * tracked regions too, a madvise or process_madvise never installs guard
+ * pages, and an mseal seals only a mapping its sanitiser made for it.
  */
 
 #include <errno.h>
@@ -19,6 +19,8 @@
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/shm.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include <linux/mempolicy.h>
 
 #include "arch.h"				/* page_size */
@@ -34,6 +36,7 @@
 #include "net.h"			/* generate_sockaddr */
 #include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
+#include "pids.h"			/* cached_pid */
 #include "rnd.h"			/* rnd_state */
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
 #include "shm.h"			/* shm->stats */
@@ -2092,6 +2095,82 @@ static void madvise_held(void)
 	fake_this_child = NULL;
 }
 
+static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
+				   unsigned long advice, bool compat)
+{
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_process_madvise;
+	rec.do32bit = compat;
+	rec.a2 = (unsigned long) vec;
+	rec.a3 = vlen;
+	rec.a4 = advice;
+	return validate_arg_coupling(&rec, rec.entry);
+}
+
+/* process_madvise refuses a final GUARD_INSTALL, its advice read as an
+ * int, when an iovec the kernel reads names a page, and when it cannot
+ * judge the array: one outside the iovec pool, or any array a compat
+ * call reads.  A count of 0, or one the kernel refuses, reads no iovec.
+ * What its sanitiser builds for a GUARD_INSTALL aimed at the calling
+ * process names no page. */
+static void process_madvise_guard_install_held(void)
+{
+	const unsigned long guard = MADV_GUARD_INSTALL;
+	const struct iovec outside[1] = { { NULL, 0 } };
+	struct iovec *iov = alloc_iovec(3, IOV_KERNEL_WRITE);
+	unsigned int i;
+
+	/* Two iovecs emptied, as the sanitiser leaves them, then a page. */
+	for (i = 0; i < 3; i++) {
+		iov[i].iov_base = (void *) (POOL_MAP + i * page_size);
+		iov[i].iov_len = i == 2 ? page_size : 0;
+	}
+
+	if (process_madvise_verdict(iov, 2, guard, false) != 0 ||
+	    process_madvise_verdict(iov, 0, guard, false) != 0 ||
+	    process_madvise_verdict(iov, UIO_MAXIOV + 1, guard, false) != 0 ||
+	    process_madvise_verdict(iov, 3, MADV_COLD, false) != 0)
+		BUG("process_madvise: a call that installs no guard page was refused");
+	if (process_madvise_verdict(iov, 3, guard, false) != -1 ||
+	    process_madvise_verdict(iov + 2, 1, guard | (1UL << 32), false) != -1)
+		BUG("process_madvise: a guard install over a page was kept");
+	if (process_madvise_verdict(outside, 1, guard, false) != -1 ||
+	    process_madvise_verdict(iov, 2, guard, true) != -1 ||
+	    process_madvise_verdict(iov, (1UL << 32) | 2, guard, true) != -1)
+		BUG("process_madvise: a guard install over an array it cannot judge was kept");
+
+	/* The kernel refuses an unaligned start before it acts on a page. */
+	iov[2].iov_base = (void *) (POOL_MAP + 2 * page_size + 1);
+	if (process_madvise_verdict(iov, 3, guard, false) != 0)
+		BUG("process_madvise: a guard install the kernel acts on nothing of was refused");
+
+#ifdef __NR_pidfd_open
+	{
+		pid_t saved_pid = cached_pid;
+		int self = syscall(__NR_pidfd_open, getpid(), 0);
+
+		if (self < 0)
+			return;
+
+		/* A pidfd for this process takes the sanitiser's self path. */
+		cached_pid = getpid();
+		for (i = 0; i < 3; i++)
+			iov[i].iov_len = page_size;
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_process_madvise;
+		rec.a1 = (unsigned long) self;
+		rec.a2 = (unsigned long) iov;
+		rec.a3 = 3;
+		rec.a4 = guard | (1UL << 32);
+		syscall_process_madvise.sanitise(&rec);
+		if (validate_arg_coupling(&rec, rec.entry) != 0)
+			BUG("process_madvise: a guard install its sanitiser built was refused");
+		cached_pid = saved_pid;
+		close(self);
+	}
+#endif
+}
+
 /* The image table holds the pages of every segment of this binary's own
  * image, text, rodata and data alike, and nothing else: a function, a
  * constant and a variable of the binary are in it, a fresh anonymous
@@ -3247,6 +3326,7 @@ void arg_coupling_self_check(void)
 	getrandom_size_held_to_mapping();
 	syslog_read_held_to_mapping();
 	madvise_held();
+	process_madvise_guard_install_held();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	vet_final_asked_first();

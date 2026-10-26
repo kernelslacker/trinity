@@ -724,6 +724,7 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
  * dedicated mapping over a writable-pool slot.
  */
 #define NR_IOVEC_SLICES 4
+#define IOVEC_POOL_BYTES (NR_IOVEC_SLICES * UIO_MAXIOV * sizeof(struct iovec))
 static struct iovec *iovec_pool;
 static unsigned int iovec_pool_cursor;
 
@@ -743,7 +744,7 @@ void writable_pool_init(void)
 
 void alloc_iovec_init(void)
 {
-	const size_t bytes = NR_IOVEC_SLICES * UIO_MAXIOV * sizeof(struct iovec);
+	const size_t bytes = IOVEC_POOL_BYTES;
 	void *p;
 
 	/*
@@ -792,6 +793,17 @@ void alloc_iovec_init(void)
 	memset(p, 0, bytes);
 	track_shared_region((unsigned long)p, bytes);
 	iovec_pool = p;
+}
+
+bool range_in_iovec_pool(unsigned long addr, unsigned long len)
+{
+	unsigned long base = (unsigned long) iovec_pool;
+
+	if (iovec_pool == NULL || len == 0 || len > IOVEC_POOL_BYTES)
+		return false;
+
+	/* Subtracts, as range_in_writable_pool() does. */
+	return addr >= base && addr - base <= IOVEC_POOL_BYTES - len;
 }
 
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
