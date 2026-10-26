@@ -177,16 +177,18 @@ static void sanitise_epoll_wait(struct syscallrecord *rec)
  * buffer is an EFAULT at copy_to_user time that exercises no interesting
  * eventpoll path, and the call is refused.  maxevents <= 0 is a sanitise
  * bucket that keeps the early EINVAL reject warm, and is left alone.
- * maxevents is judged as the int the kernel reads (do_epoll_wait()).
+ * maxevents is judged as the int the kernel reads (do_epoll_wait()), and
+ * the buffer as a compat call hands it over, its low 32 bits.
  * epoll_pwait and epoll_pwait2 take the two in the same slots and share
  * this.
  */
 int vet_final_epoll_wait(struct syscallrecord *rec,
 			 const struct syscallentry *entry)
 {
+	unsigned long events = rec->do32bit ? (unsigned int) rec->a2 : rec->a2;
 	int maxevents = (int) rec->a3;
 
-	if (maxevents > 0 && rec->a2 == 0) {
+	if (maxevents > 0 && events == 0) {
 		outputerr("arg-coupling: %s rejected: maxevents=%d but events=NULL\n",
 			  entry->name, maxevents);
 		return -1;

@@ -508,7 +508,9 @@ static void vet_final_from_the_dispatched_entry(void)
 /* epoll_wait, epoll_pwait and epoll_pwait2 refuse a positive maxevents with
  * no events buffer, and leave a maxevents of 0 or below, or a buffer, to
  * the kernel, which reads maxevents as an int: a slot whose low 32 bits are
- * 0 is no positive maxevents, and one whose low 32 bits are 1 is. */
+ * 0 is no positive maxevents, and one whose low 32 bits are 1 is.  A compat
+ * call hands over the low 32 bits of the buffer slot, so one whose low 32
+ * bits are 0 is no buffer. */
 static void epoll_wait_events_held(void)
 {
 	struct syscallentry *const entries[] = {
@@ -516,15 +518,19 @@ static void epoll_wait_events_held(void)
 	};
 	static const struct {
 		unsigned long events, maxevents;
+		bool compat;
 		int verdict;
 	} cases[] = {
-		{ 0, 8, -1 },
-		{ 0, 1, -1 },
-		{ 0, 0, 0 },
-		{ 0, (unsigned long) -1L, 0 },
-		{ 0, 1UL << 32, 0 },
-		{ 0, 0xffffffff00000001UL, -1 },
-		{ REGION, 8, 0 },
+		{ 0, 8, false, -1 },
+		{ 0, 1, false, -1 },
+		{ 0, 0, false, 0 },
+		{ 0, (unsigned long) -1L, false, 0 },
+		{ 0, 1UL << 32, false, 0 },
+		{ 0, 0xffffffff00000001UL, false, -1 },
+		{ REGION, 8, false, 0 },
+		{ 1UL << 32, 8, false, 0 },
+		{ 1UL << 32, 8, true, -1 },
+		{ REGION + 0x1000, 8, true, 0 },
 	};
 	unsigned int e, i;
 
@@ -532,6 +538,7 @@ static void epoll_wait_events_held(void)
 		for (i = 0; i < ARRAY_SIZE(cases); i++) {
 			memset(&rec, 0, sizeof(rec));
 			rec.entry = entries[e];
+			rec.do32bit = cases[i].compat;
 			rec.a2 = cases[i].events;
 			rec.a3 = cases[i].maxevents;
 			if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict)
