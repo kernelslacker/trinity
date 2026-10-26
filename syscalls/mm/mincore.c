@@ -10,7 +10,6 @@
 #include "output-poison.h"
 #include "rnd.h"
 #include "sanitise.h"
-#include "deferred-free.h"
 #include "shm.h"
 #include "trinity.h"
 #include "utils.h"
@@ -141,30 +140,23 @@ static void sanitise_mincore(struct syscallrecord *rec)
 	if (len < page_size)
 		len = page_size;
 
+	/*
+	 * vec comes from the pool the call reaches: the writable pool, off
+	 * trinity's regions by construction, or for a compat call, whose
+	 * kernel reads the slot's low 32 bits, the low pool.  With no pool to
+	 * draw from, the call reports no pages and the snapshot has nothing
+	 * to check.  A map is at most GB(4), so its vec fits a pool.
+	 */
 	vec_bytes = (len + page_size - 1) / page_size;
-	vec = zmalloc_tracked(vec_bytes);
+	vec = get_call_writable_struct(rec, vec_bytes);
+	if (vec == NULL) {
+		len = 0;
+		vec_bytes = 0;
+	}
 
 	rec->a1 = start;
 	rec->a2 = len;
 	rec->a3 = (unsigned long) vec;
-
-	avoid_shared_buffer_out(&rec->a3, vec_bytes);
-
-	/* A compat call's kernel would write at the low 32 bits of a vec
-	 * above them, which nobody sized: it gets no pages to report, and
-	 * the snapshot nothing to check. */
-	if (rec->do32bit && rec->a3 > UINT_MAX) {
-		rec->a2 = 0;
-		vec_bytes = 0;
-	}
-
-	/* Hand vec to the per-rec owned-buffer carrier: rec_owned_drain()
-	 * frees it unconditionally after dispatch, capturing the genuine
-	 * tracked pointer here so a sibling scribble of a3 can't strand or
-	 * misdirect the free, and covering the skip-.post paths
-	 * (retfd-rejected / killed EXTRA_FORK grandchild) that previously
-	 * leaked the buffer. */
-	rec_own(rec, vec);
 
 	/*
 	 * Untouched-buffer oracle setup.  Kernel writes exactly vec_bytes
@@ -220,9 +212,9 @@ struct syscallentry syscall_mincore = {
 	.rettype = RET_ZERO_SUCCESS,
 	/*
 	 * SKIP_BLANKET_SCRUB: vec is the only scrubbed slot, and
-	 * vet_final_mincore() holds it to the buffer the sanitiser sized and
-	 * moved off trinity's regions, so a scrub could only move it again
-	 * and turn the call into a refusal.
+	 * vet_final_mincore() holds it to the buffer the sanitiser sized in a
+	 * pool, off trinity's regions, so a scrub could only move it and
+	 * turn the call into a refusal.
 	 */
 	.flags = REEXEC_SANITISE_OK | SKIP_BLANKET_SCRUB,
 };
