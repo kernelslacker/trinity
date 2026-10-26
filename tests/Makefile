@@ -126,6 +126,13 @@ LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 # munmap() unless armed.
 LDFLAGS		+= -Wl,--wrap=munmap
 
+# valresult_alloc() tracking: args/valresult.c is linked for recvfrom's
+# sanitiser, whose value-result buffers valresult_free() hands to deferred
+# free, and that takes only a chunk the alloc-track holds, which this binary's
+# zmalloc_tracked() never registers.  arg_coupling_test.c wraps
+# valresult_alloc() to register both buffers, as production's does.
+LDFLAGS		+= -Wl,--wrap=valresult_alloc
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing

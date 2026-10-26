@@ -28,6 +28,7 @@
 #include "child.h"			/* struct childdata */
 #include "cmsg_build.h"			/* pick_cmsg_kind, cmsg_build */
 #include "debug.h"			/* BUG */
+#include "deferred-free.h"		/* deferred_alloc_track, deferred_free_flush */
 #include "files.h"			/* get_rand_pagecache_fd */
 #include "hugepages.h"			/* pick_random_huge_size_encoding */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
@@ -45,6 +46,7 @@
 #include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
 #include "utils-macros.h"		/* ARRAY_SIZE */
 #include "utils-mem.h"			/* log_mm_syscall_post_gate_heap_slip */
+#include "valresult.h"			/* valresult_alloc */
 
 /* Region tracking in tests/fake_shm.c. */
 void fake_track_region(unsigned long addr, unsigned long size);
@@ -732,6 +734,25 @@ static void get_mempolicy_addr_names_mapping(void)
 
 extern bool fake_socket_fd_none;	/* post_oracle_test.c */
 
+struct valresult_buf __real_valresult_alloc(size_t initial_cap,
+					    enum valresult_shape shape);
+struct valresult_buf __wrap_valresult_alloc(size_t initial_cap,
+					    enum valresult_shape shape);
+
+/* recvfrom's value-result buffers go back through deferred free, which takes
+ * only a chunk the alloc-track holds, and the zmalloc_tracked() of this
+ * binary registers none: left alone it turns them away and they leak.  Both
+ * are registered here, as production's allocator registers them. */
+struct valresult_buf __wrap_valresult_alloc(size_t initial_cap,
+					    enum valresult_shape shape)
+{
+	struct valresult_buf vrb = __real_valresult_alloc(initial_cap, shape);
+
+	deferred_alloc_track(vrb.buf, vrb.cap);
+	deferred_alloc_track(vrb.len_io, sizeof(*vrb.len_io));
+	return vrb;
+}
+
 /* recv's sanitiser, which recvfrom's begins with, turns the ARG_MMAP
  * handle in the buffer slot into the start of the mapping it names, which
  * the kernel writes what it receives to, and never leaves the struct map
@@ -740,44 +761,58 @@ extern bool fake_socket_fd_none;	/* post_oracle_test.c */
  * with no mapping picked there is no buffer.  The kernel fills as much of
  * the buffer as the socket holds, so the count is held to the mapping: one
  * that fits is kept, a longer one cut to the mapping's size, and with no
- * mapping there is nothing to hold it to.  recvfrom's sanitiser is not run
- * itself: its value-result buffers go to deferred free, which in this
- * binary keeps every chunk it is handed. */
+ * mapping there is nothing to hold it to.  recvfrom's sanitiser runs the
+ * same way, and what it adds comes out too: an address buffer in the
+ * writable pool and a value-result length, which its post handler clears.
+ * The buffers it took for the length go back to deferred free, drained at
+ * the end for ASAN to find nothing left. */
 static void recv_buffer_names_mapping(void)
 {
+	struct syscallentry *const entries[] = {
+		&syscall_recv, &syscall_recvfrom,
+	};
 	const unsigned long size = POOL_PAGES * page_size;
 	const unsigned long counts[] = {
 		page_size, size, size + 1, WRITABLE_POOL_BYTES + 1, 0x7ffff000UL,
 	};
-	unsigned int c, n;
+	unsigned int e, c, n;
 
 	if (get_writable_struct(1) == NULL)
 		writable_pool_init();
 	fake_socket_fd_none = true;
-	for (c = 0; c < 3; c++) {
-		for (n = 0; n < ARRAY_SIZE(counts); n++) {
-			struct syscallrecord *mrec = mm_call(&syscall_recv);
-			unsigned long held = counts[n];
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (c = 0; c < 3; c++) {
+			for (n = 0; n < ARRAY_SIZE(counts); n++) {
+				struct syscallrecord *mrec = mm_call(entries[e]);
+				unsigned long held = counts[n];
 
-			if (c != 2 && held > size)
-				held = size;
-			mrec->a1 = 0;
-			mrec->a2 = c == 2 ? 0 : (unsigned long) &pool_obj.map;
-			mrec->a3 = counts[n];
-			if (c == 1)
-				fake_track_region(POOL_MAP, size);
-			syscall_recv.sanitise(mrec);
-			fake_untrack_regions();
-			if ((c == 0 && mrec->a2 != POOL_MAP) ||
-			    (c == 1 && !range_in_writable_pool(mrec->a2, held)) ||
-			    (c == 2 && mrec->a2 != 0))
-				BUG("recv: the buffer is not the mapping the ARG_MMAP handle names");
-			if (mrec->a3 != held)
-				BUG("recv: the count was not held to the mapping");
-			mrec->retval = (unsigned long) -1L;
-			syscall_recv.post(mrec);
+				if (c != 2 && held > size)
+					held = size;
+				mrec->a1 = 0;
+				mrec->a2 = c == 2 ? 0 : (unsigned long) &pool_obj.map;
+				mrec->a3 = counts[n];
+				if (c == 1)
+					fake_track_region(POOL_MAP, size);
+				entries[e]->sanitise(mrec);
+				fake_untrack_regions();
+				if ((c == 0 && mrec->a2 != POOL_MAP) ||
+				    (c == 1 && !range_in_writable_pool(mrec->a2, held)) ||
+				    (c == 2 && mrec->a2 != 0))
+					BUG("recv: the buffer is not the mapping the ARG_MMAP handle names");
+				if (mrec->a3 != held)
+					BUG("recv: the count was not held to the mapping");
+				if (entries[e] == &syscall_recvfrom &&
+				    (!range_in_writable_pool(mrec->a5, sizeof(struct sockaddr_storage)) ||
+				     mrec->a6 == 0))
+					BUG("recvfrom: the address buffer or the length slot was not built");
+				mrec->retval = (unsigned long) -1L;
+				entries[e]->post(mrec);
+				if (mrec->a6 != 0 || mrec->post_state != 0)
+					BUG("recv: the post handler left the length slot or the snapshot");
+			}
 		}
 	}
+	deferred_free_flush();
 	fake_socket_fd_none = false;
 	fake_this_child = NULL;
 }
