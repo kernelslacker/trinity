@@ -51,6 +51,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_HANDSHAKE	710
 #define ID_VDPA		711
 #define ID_WIREGUARD	712
+#define ID_DPLL		713
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -325,7 +326,7 @@ static void put_ops_first_family(struct reply *r,
  * generator's to shape and are not modelled.  seen counts what the
  * generator emitted, so a slot it never reaches shows up.
  */
-enum slot_kind { SK_BYTES, SK_STRING, SK_NEST, SK_ARRAY };
+enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
 
 struct slot {
 	unsigned short id;
@@ -341,20 +342,27 @@ struct slot {
 #define S_U16(id)		S_BLOB(id, 2, 2)
 #define S_U32(id)		S_BLOB(id, 4, 4)
 #define S_U64(id)		S_BLOB(id, 8, 8)
+#define S_SINT(id)		{ id, SK_SINT }
 #define S_STR(id, hi)		{ id, SK_STRING, 1, hi }
 #define S_NEST(id, tbl)		{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl) }
 #define S_ARRAY(id, tbl)	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl) }
 
-/* What a cmd's request takes. */
+/*
+ * What a cmd's request takes.  A cmd with one row is checked the same
+ * whether the request is a dump or not; a dump row, which has to follow the
+ * cmd's other row, is for the dumpit whose policy differs.
+ */
 struct cmd_policy {
 	unsigned char cmd;
+	bool dump;
 	struct slot *slots;
 	unsigned int n_slots;	/* 0: the cmd takes no attribute */
 	unsigned int msgs;	/* messages checked against it */
 };
 
-#define P_CMD(cmd, tbl)		{ cmd, tbl, ARRAY_SIZE(tbl) }
+#define P_CMD(cmd, tbl)		{ cmd, false, tbl, ARRAY_SIZE(tbl) }
 #define P_CMD_NONE(cmd)		{ cmd }
+#define P_DUMP_NONE(cmd)	{ cmd, true }
 
 struct policy_family {
 	struct genl_family_grammar *fam;
@@ -411,6 +419,78 @@ static struct cmd_policy vdpa_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/dpll.h>)
+#include "kernel/dpll.h"
+
+extern struct genl_family_grammar fam_dpll;
+
+/* drivers/dpll/dpll_nl.c: the dpll_*_nl_policy tables */
+static struct slot dpll_parent_device[] = {
+	S_U32(DPLL_A_PIN_PARENT_ID),
+	S_U32(DPLL_A_PIN_DIRECTION),
+	S_U32(DPLL_A_PIN_PRIO),
+	S_U32(DPLL_A_PIN_STATE),
+	S_U32(DPLL_A_PIN_OPERSTATE),
+	S_U64(DPLL_A_PIN_PHASE_OFFSET),
+	S_SINT(DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET),
+	S_SINT(DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET_PPT),
+};
+static struct slot dpll_parent_pin[] = {
+	S_U32(DPLL_A_PIN_PARENT_ID),
+	S_U32(DPLL_A_PIN_STATE),
+};
+static struct slot dpll_reference_sync[] = {
+	S_U32(DPLL_A_PIN_ID),
+	S_U32(DPLL_A_PIN_STATE),
+};
+static struct slot dpll_device_id_get[] = {
+	S_STR(DPLL_A_MODULE_NAME, 0),
+	S_U64(DPLL_A_CLOCK_ID),
+	S_U32(DPLL_A_TYPE),
+};
+static struct slot dpll_device_get[] = {
+	S_U32(DPLL_A_ID),
+};
+static struct slot dpll_device_set[] = {
+	S_U32(DPLL_A_ID),
+	S_U32(DPLL_A_MODE),
+	S_U32(DPLL_A_PHASE_OFFSET_MONITOR),
+	S_U32(DPLL_A_PHASE_OFFSET_AVG_FACTOR),
+	S_U32(DPLL_A_FREQUENCY_MONITOR),
+};
+static struct slot dpll_pin_id_get[] = {
+	S_STR(DPLL_A_PIN_MODULE_NAME, 0),
+	S_U64(DPLL_A_PIN_CLOCK_ID),
+	S_STR(DPLL_A_PIN_BOARD_LABEL, 0),
+	S_STR(DPLL_A_PIN_PANEL_LABEL, 0),
+	S_STR(DPLL_A_PIN_PACKAGE_LABEL, 0),
+	S_U32(DPLL_A_PIN_TYPE),
+};
+static struct slot dpll_pin_get[] = {
+	S_U32(DPLL_A_PIN_ID),
+};
+static struct slot dpll_pin_set[] = {
+	S_U32(DPLL_A_PIN_ID),
+	S_U64(DPLL_A_PIN_FREQUENCY),
+	S_NEST(DPLL_A_PIN_PARENT_DEVICE, dpll_parent_device),
+	S_NEST(DPLL_A_PIN_PARENT_PIN, dpll_parent_pin),
+	S_U32(DPLL_A_PIN_PHASE_ADJUST),
+	S_U64(DPLL_A_PIN_ESYNC_FREQUENCY),
+	S_NEST(DPLL_A_PIN_REFERENCE_SYNC, dpll_reference_sync),
+};
+/* The dumpits of DEVICE_GET and PIN_GET have no policy, so take nothing. */
+static struct cmd_policy dpll_cmds[] = {
+	P_CMD(DPLL_CMD_DEVICE_ID_GET, dpll_device_id_get),
+	P_CMD(DPLL_CMD_DEVICE_GET, dpll_device_get),
+	P_DUMP_NONE(DPLL_CMD_DEVICE_GET),
+	P_CMD(DPLL_CMD_DEVICE_SET, dpll_device_set),
+	P_CMD(DPLL_CMD_PIN_ID_GET, dpll_pin_id_get),
+	P_CMD(DPLL_CMD_PIN_GET, dpll_pin_get),
+	P_DUMP_NONE(DPLL_CMD_PIN_GET),
+	P_CMD(DPLL_CMD_PIN_SET, dpll_pin_set),
+};
+#endif
+
 #if __has_include(<linux/wireguard.h>)
 #include "kernel/wireguard.h"
 
@@ -464,6 +544,9 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<linux/wireguard.h>)
 	{ &fam_wireguard, ID_WIREGUARD, wireguard_cmds, ARRAY_SIZE(wireguard_cmds) },
+#endif
+#if __has_include(<linux/dpll.h>)
+	{ &fam_dpll, ID_DPLL, dpll_cmds, ARRAY_SIZE(dpll_cmds) },
 #endif
 };
 
@@ -890,6 +973,10 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 			if (plen < slot->min || plen > slot->max)
 				return false;
 			break;
+		case SK_SINT:
+			if (plen != 4 && plen != 8)
+				return false;
+			break;
 		case SK_STRING:
 			if (plen < slot->min || (slot->max && plen > slot->max + 1u) ||
 			    p[off + nla->nla_len - 1] != '\0')
@@ -911,15 +998,22 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 	return true;
 }
 
-static struct cmd_policy *find_policy(struct policy_family *pf, unsigned char cmd)
+/* The row for a request: its dump row when it is a dump and there is one. */
+static struct cmd_policy *find_policy(struct policy_family *pf,
+				      unsigned char cmd, bool dump)
 {
+	struct cmd_policy *found = NULL;
 	unsigned int i;
 
 	for (i = 0; i < pf->n_cmds; i++) {
-		if (pf->cmds[i].cmd == cmd)
+		if (pf->cmds[i].cmd != cmd)
+			continue;
+		if (pf->cmds[i].dump == dump)
 			return &pf->cmds[i];
+		if (!pf->cmds[i].dump)
+			found = &pf->cmds[i];
 	}
-	return NULL;
+	return found;
 }
 
 static struct policy_family *family_by_id(unsigned short id)
@@ -989,7 +1083,7 @@ static void check_attrs_in_policy(void)
 		struct policy_family *pf = &policy_families[i];
 
 		for (j = 0; j < pf->fam->n_cmds; j++) {
-			if (find_policy(pf, pf->fam->cmds[j].cmd) == NULL) {
+			if (find_policy(pf, pf->fam->cmds[j].cmd, false) == NULL) {
 				fprintf(stderr, "%s: cmd %u has no policy mirror\n",
 					pf->fam->name, pf->fam->cmds[j].cmd);
 				BUG("genl ops: a cmd of a checked family is not mirrored");
@@ -1017,7 +1111,8 @@ static void check_attrs_in_policy(void)
 			goto next;
 
 		genl = NLMSG_DATA(nlh);
-		cp = find_policy(pf, genl->cmd);
+		cp = find_policy(pf, genl->cmd,
+				 (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP);
 		if (cp == NULL)
 			goto next;
 		cp->msgs++;
@@ -1025,8 +1120,8 @@ static void check_attrs_in_policy(void)
 		attrs = (const unsigned char *) nlh + NLMSG_HDRLEN + GENL_HDRLEN;
 		attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
 		if (!stream_conforms(attrs, attrs_len, cp->slots, cp->n_slots)) {
-			fprintf(stderr, "%s cmd %u: attributes its policy does not take:\n",
-				pf->fam->name, genl->cmd);
+			fprintf(stderr, "%s cmd %u%s: attributes its policy does not take:\n",
+				pf->fam->name, genl->cmd, cp->dump ? " dump" : "");
 			hexdump(attrs, attrs_len);
 			BUG("genl ops: a request carries what its cmd's policy refuses");
 		}
@@ -1042,11 +1137,13 @@ next:
 			char what[64];
 
 			if (cp->msgs < MIN_MSGS) {
-				fprintf(stderr, "%s cmd %u: only %u messages\n",
-					pf->fam->name, cp->cmd, cp->msgs);
+				fprintf(stderr, "%s cmd %u%s: only %u messages\n",
+					pf->fam->name, cp->cmd, cp->dump ? " dump" : "",
+					cp->msgs);
 				BUG("genl ops: too few messages to judge a cmd's attributes");
 			}
-			snprintf(what, sizeof(what), "%s cmd %u", pf->fam->name, cp->cmd);
+			snprintf(what, sizeof(what), "%s cmd %u%s", pf->fam->name,
+				 cp->cmd, cp->dump ? " dump" : "");
 			expect_slots_seen(cp->slots, cp->n_slots, what);
 		}
 	}

@@ -1,7 +1,7 @@
 /*
  * Genetlink family grammar: dpll (Digital PLL subsystem), targeting
  * drivers/dpll/dpll_nl.c and dpll_netlink.c.  All six ops are
- * GENL_ADMIN_PERM; only the device-level DPLL_A_* namespace is listed.
+ * GENL_ADMIN_PERM; each takes a policy of its own, so each a table.
  */
 
 /* Keeps the TU non-empty when the guard below drops the family. */
@@ -15,70 +15,119 @@
 #include "utils.h"
 
 /*
+ * The nests of DPLL_CMD_PIN_SET, from dpll_pin_parent_device_nl_policy,
+ * dpll_pin_parent_pin_nl_policy and dpll_reference_sync_nl_policy.  They
+ * reuse the DPLL_A_PIN_* ids of the pin itself.  PHASE_OFFSET is an s64,
+ * the two fractional offsets NLA_SINT, which takes 4 or 8 bytes.
+ */
+static const struct nla_attr_spec dpll_parent_device_attrs[] = {
+	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_DIRECTION,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_PRIO,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_OPERSTATE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_PHASE_OFFSET,		NLA_KIND_U64,    8 },
+	{ DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET,
+						NLA_KIND_BINARY_FIXED2, 8, 4 },
+	{ DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET_PPT,
+						NLA_KIND_BINARY_FIXED2, 8, 4 },
+};
+
+static const struct nla_attr_spec dpll_parent_pin_attrs[] = {
+	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
+	{ DPLL_A_PIN_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
+};
+
+/*
+ * The ops validate strictly against dpll_*_nl_policy, so an id a cmd's
+ * policy has no slot for costs an -EINVAL; the device and pin namespaces
+ * share ids 1 to 14 and each cmd's policy ends at its own last id.  The
+ * strings are NLA_NUL_STRING, the ids u32, CLOCK_ID and the frequencies
+ * u64.  What the replies carry, the lock status, temperature and the
+ * rest, is not in any request policy.
+ */
+static const struct nla_attr_spec dpll_device_id_get_attrs[] = {
+	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64, 1 },
+	{ DPLL_A_CLOCK_ID,		NLA_KIND_U64,    8 },
+	{ DPLL_A_TYPE,			NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_device_get_attrs[] = {
+	{ DPLL_A_ID,			NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_device_set_attrs[] = {
+	{ DPLL_A_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_MODE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PHASE_OFFSET_MONITOR,	NLA_KIND_U32,    4 },
+	{ DPLL_A_PHASE_OFFSET_AVG_FACTOR, NLA_KIND_U32,  4 },
+	{ DPLL_A_FREQUENCY_MONITOR,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_pin_id_get_attrs[] = {
+	{ DPLL_A_PIN_MODULE_NAME,	NLA_KIND_STRING, 64, 1 },
+	{ DPLL_A_PIN_CLOCK_ID,		NLA_KIND_U64,    8 },
+	{ DPLL_A_PIN_BOARD_LABEL,	NLA_KIND_STRING, 64, 1 },
+	{ DPLL_A_PIN_PANEL_LABEL,	NLA_KIND_STRING, 64, 1 },
+	{ DPLL_A_PIN_PACKAGE_LABEL,	NLA_KIND_STRING, 64, 1 },
+	{ DPLL_A_PIN_TYPE,		NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_pin_get_attrs[] = {
+	{ DPLL_A_PIN_ID,		NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec dpll_pin_set_attrs[] = {
+	{ DPLL_A_PIN_ID,		NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_FREQUENCY,		NLA_KIND_U64,    8 },
+	{ DPLL_A_PIN_PARENT_DEVICE,	NLA_KIND_NESTED, 0, 0,
+	  dpll_parent_device_attrs, ARRAY_SIZE(dpll_parent_device_attrs) },
+	{ DPLL_A_PIN_PARENT_PIN,	NLA_KIND_NESTED, 0, 0,
+	  dpll_parent_pin_attrs, ARRAY_SIZE(dpll_parent_pin_attrs) },
+	{ DPLL_A_PIN_PHASE_ADJUST,	NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_ESYNC_FREQUENCY,	NLA_KIND_U64,    8 },
+	{ DPLL_A_PIN_REFERENCE_SYNC,	NLA_KIND_NESTED, 0, 0,
+	  dpll_reference_sync_attrs, ARRAY_SIZE(dpll_reference_sync_attrs) },
+};
+
+/*
  * dpll exposes six user-callable commands across two object classes:
  * a three-command device surface (DEVICE_ID_GET / DEVICE_GET /
  * DEVICE_SET) and a three-command pin surface (PIN_ID_GET / PIN_GET /
  * PIN_SET).  All six are GENL_ADMIN_PERM, which the genl core checks
  * before the nla_policy walker runs, so listing all six ids exercises
  * every per-cmd parser symmetrically for a child that passes that
- * check.  The six *_NTF notification ids are kernel-to-userspace only
- * and the dispatcher rejects them on input -- they are omitted by
- * design.
+ * check.  DEVICE_GET and PIN_GET have a dumpit with no policy, which the
+ * genl core gives a reject-all one, so a dump of either takes nothing.
+ * The six *_NTF notification ids are kernel-to-userspace only and the
+ * dispatcher rejects them on input -- they are omitted by design.
  */
 static const struct genl_cmd_grammar dpll_cmds[] = {
-	{ DPLL_CMD_DEVICE_ID_GET,	"DPLL_CMD_DEVICE_ID_GET" },
-	{ DPLL_CMD_DEVICE_GET,		"DPLL_CMD_DEVICE_GET" },
-	{ DPLL_CMD_DEVICE_SET,		"DPLL_CMD_DEVICE_SET" },
-	{ DPLL_CMD_PIN_ID_GET,		"DPLL_CMD_PIN_ID_GET" },
-	{ DPLL_CMD_PIN_GET,		"DPLL_CMD_PIN_GET" },
-	{ DPLL_CMD_PIN_SET,		"DPLL_CMD_PIN_SET" },
-};
-
-/*
- * Attribute spec follows the top-level DPLL_A_* enum in <linux/dpll.h>.
- * ID is a u32 device handle that DEVICE_GET / DEVICE_SET key on;
- * CLOCK_ID is the u64 hardware identifier DEVICE_ID_GET / PIN_ID_GET
- * use for lookup; MODULE_NAME is the driver-module string the same
- * GET paths key on alongside CLOCK_ID.  MODE / MODE_SUPPORTED /
- * LOCK_STATUS / LOCK_STATUS_ERROR / TYPE / CLOCK_QUALITY_LEVEL /
- * PHASE_OFFSET_MONITOR are u32 enum selectors; the kernel's
- * dpll_device_set_nl_policy validates PHASE_OFFSET_MONITOR on input,
- * the remainder are response-side payloads emitted by DEVICE_GET.
- * TEMP is a u32-wire signed temperature reading scaled by
- * DPLL_TEMP_DIVIDER.  PAD is the u8 padding slot the YNL generator
- * emits for u64 alignment.  The ops validate strictly, so each
- * response-side id, PAD included, costs an -EINVAL on every command
- * whose policy has no slot for it.
- *
- * The per-pin DPLL_A_PIN_* enum shares id 1..N with the top-level
- * DPLL_A_* namespace and a single flat table cannot disambiguate the
- * overlapping keys -- it is not enumerated here.  A future grammar
- * extension that carries a per-command attribute namespace is the
- * right home for the PIN_* surface (the PIN_GET / PIN_SET commands
- * are still in the cmds[] table above and will start exercising the
- * pin parsers once the per-command namespace lands).
- */
-static const struct nla_attr_spec dpll_attrs[] = {
-	{ DPLL_A_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64 },
-	{ DPLL_A_PAD,			NLA_KIND_U8,     1 },
-	{ DPLL_A_CLOCK_ID,		NLA_KIND_U64,    8 },
-	{ DPLL_A_MODE,			NLA_KIND_U32,    4 },
-	{ DPLL_A_MODE_SUPPORTED,	NLA_KIND_U32,    4 },
-	{ DPLL_A_LOCK_STATUS,		NLA_KIND_U32,    4 },
-	{ DPLL_A_TEMP,			NLA_KIND_U32,    4 },
-	{ DPLL_A_TYPE,			NLA_KIND_U32,    4 },
-	{ DPLL_A_LOCK_STATUS_ERROR,	NLA_KIND_U32,    4 },
-	{ DPLL_A_CLOCK_QUALITY_LEVEL,	NLA_KIND_U32,    4 },
-	{ DPLL_A_PHASE_OFFSET_MONITOR,	NLA_KIND_U32,    4 },
+	{ DPLL_CMD_DEVICE_ID_GET,	"DPLL_CMD_DEVICE_ID_GET",
+	  dpll_device_id_get_attrs, ARRAY_SIZE(dpll_device_id_get_attrs) },
+	{ DPLL_CMD_DEVICE_GET,		"DPLL_CMD_DEVICE_GET",
+	  dpll_device_get_attrs, ARRAY_SIZE(dpll_device_get_attrs),
+	  genl_no_attrs },
+	{ DPLL_CMD_DEVICE_SET,		"DPLL_CMD_DEVICE_SET",
+	  dpll_device_set_attrs, ARRAY_SIZE(dpll_device_set_attrs) },
+	{ DPLL_CMD_PIN_ID_GET,		"DPLL_CMD_PIN_ID_GET",
+	  dpll_pin_id_get_attrs, ARRAY_SIZE(dpll_pin_id_get_attrs) },
+	{ DPLL_CMD_PIN_GET,		"DPLL_CMD_PIN_GET",
+	  dpll_pin_get_attrs, ARRAY_SIZE(dpll_pin_get_attrs),
+	  genl_no_attrs },
+	{ DPLL_CMD_PIN_SET,		"DPLL_CMD_PIN_SET",
+	  dpll_pin_set_attrs, ARRAY_SIZE(dpll_pin_set_attrs) },
 };
 
 struct genl_family_grammar fam_dpll = {
 	.name = DPLL_FAMILY_NAME,
 	.cmds = dpll_cmds,
 	.n_cmds = ARRAY_SIZE(dpll_cmds),
-	.attrs = dpll_attrs,
-	.n_attrs = ARRAY_SIZE(dpll_attrs),
 	.default_version = DPLL_FAMILY_VERSION,
 };
 
