@@ -70,6 +70,11 @@ literals `tables/` copies into shared memory.
    refresh the call's own `post_state` snapshot, and a non-zero return
    refuses the call (`fs/close_range.c` refuses a range other than the
    one its sanitiser vetted).
+   A compat call's kernel reads each pointer slot as its low 32 bits, and
+   the writable pool lies past 4 GiB, so a buffer built for a call that
+   can be compat comes from `get_call_writable_struct(rec, size)`, which
+   draws a compat call's from the MAP_32BIT low pool (`ipc/sysv/ipc.c`,
+   every one of whose calls is compat on x86-64).
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

@@ -62,7 +62,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 	unsigned int nsops, i;
 
 	nsops = 1 + (rnd_modulo_u32(8));
-	sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
+	sops = (struct sembuf *) get_call_writable_struct(rec, nsops * sizeof(*sops));
 	if (!sops)
 		return;
 	for (i = 0; i < nsops; i++) {
@@ -80,7 +80,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 
 	if (call == SEMTIMEDOP) {
 		struct timespec *ts;
-		ts = (struct timespec *) get_writable_struct(sizeof(*ts));
+		ts = (struct timespec *) get_call_writable_struct(rec, sizeof(*ts));
 		if (!ts)
 			return;
 		ts->tv_sec = 0;
@@ -104,7 +104,7 @@ static void sanitise_ipc_semget(struct syscallrecord *rec)
 static void sanitise_semctl_cmd_stat(struct syscallrecord *rec)
 {
 	struct semid_ds *buf;
-	buf = (struct semid_ds *) get_writable_struct(sizeof(*buf));
+	buf = (struct semid_ds *) get_call_writable_struct(rec, sizeof(*buf));
 	if (!buf)
 		return;
 	memset(buf, 0, sizeof(*buf));
@@ -122,7 +122,7 @@ static void sanitise_semctl_cmd_setval(struct syscallrecord *rec)
 	 * so a5 must point at a writable slot holding the value,
 	 * not carry the value itself.
 	 */
-	slot = (unsigned long *) get_writable_struct(sizeof(*slot));
+	slot = (unsigned long *) get_call_writable_struct(rec, sizeof(*slot));
 	if (!slot)
 		return;
 	*slot = rnd_modulo_u32(32768);
@@ -134,7 +134,7 @@ static void sanitise_semctl_cmd_getall(struct syscallrecord *rec)
 	unsigned short *arr;
 	unsigned int nsems = 1 + (rnd_modulo_u32(32));
 	unsigned int j;
-	arr = (unsigned short *) get_writable_struct(nsems * sizeof(*arr));
+	arr = (unsigned short *) get_call_writable_struct(rec, nsems * sizeof(*arr));
 	if (!arr)
 		return;
 	for (j = 0; j < nsems; j++)
@@ -147,7 +147,7 @@ static void sanitise_semctl_cmd_info(struct syscallrecord *rec)
 {
 	/* Kernel writes struct seminfo */
 	void *buf;
-	buf = get_writable_struct(256);
+	buf = get_call_writable_struct(rec, 256);
 	if (!buf)
 		return;
 	memset(buf, 0, 256);
@@ -197,7 +197,7 @@ static void sanitise_ipc_msgsnd(struct syscallrecord *rec)
 	size_t msgsz;
 
 	msgsz = 1 + (rnd_modulo_u32(256));
-	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
+	mb = (struct msgbuf *) get_call_writable_struct(rec, sizeof(long) + msgsz);
 	if (!mb)
 		return;
 	mb->mtype = 1 + (rnd_modulo_u32(100));
@@ -225,7 +225,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	struct msgbuf *mb;
 	unsigned long mb_addr;
 
-	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + 256);
+	mb = (struct msgbuf *) get_call_writable_struct(rec, sizeof(long) + 256);
 	if (!mb)
 		return;
 	memset(mb, 0, sizeof(long) + 256);
@@ -237,7 +237,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&mb_addr, sizeof(long) + 256);
 	mb = (struct msgbuf *) mb_addr;
 
-	tmp = (void *) get_writable_struct(sizeof(*tmp));
+	tmp = (void *) get_call_writable_struct(rec, sizeof(*tmp));
 	if (!tmp)
 		return;
 	tmp->msgp = mb;
@@ -275,7 +275,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	case IPC_SET:
 	case MSG_STAT: {
 		struct msqid_ds *buf;
-		buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
+		buf = (struct msqid_ds *) get_call_writable_struct(rec, sizeof(*buf));
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
@@ -286,7 +286,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case MSG_INFO: {
 		void *buf;
-		buf = get_writable_struct(256);
+		buf = get_call_writable_struct(rec, 256);
 		if (!buf)
 			break;
 		memset(buf, 0, 256);
@@ -324,8 +324,10 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 	 *   return put_user(raddr, (unsigned long __user *)third);
 	 * third must point at a writable slot; a bogus value lets the
 	 * segment attach and then leaks it when put_user returns -EFAULT.
+	 * A compat call's kernel stores through the low 32 bits of third
+	 * (compat_ksys_ipc()), so its slot comes from the low pool.
 	 */
-	raddr = (unsigned long *) get_writable_struct(sizeof(*raddr));
+	raddr = (unsigned long *) get_call_writable_struct(rec, sizeof(*raddr));
 	if (!raddr)
 		return;
 	*raddr = 0;
@@ -343,15 +345,6 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 	rec->a3 = shmflg;
 	rec->a5 = 0;				/* shmaddr=NULL, kernel picks */
 
-	/*
-	 * A compat call's kernel stores through the low 32 bits of third
-	 * (compat_ksys_ipc()), which truncate a pool slot above 4 GiB to an
-	 * address nobody vetted.  A negative shmid has do_shmat() refuse the
-	 * call before it attaches, so nothing is stored.
-	 */
-	if (rec->do32bit && rec->a4 > UINT_MAX)
-		rec->a2 = (unsigned long) -1;
-
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IPC_POST_STATE_MAGIC;
 	snap->raddr = rec->a4;
@@ -361,7 +354,7 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 static void sanitise_ipc_shmdt(struct syscallrecord *rec)
 {
 	/* ptr=shmaddr — use a valid writable page */
-	void *addr = get_writable_struct(4096);
+	void *addr = get_call_writable_struct(rec, 4096);
 
 	if (addr)
 		rec->a5 = (unsigned long) addr;
@@ -393,7 +386,7 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	case IPC_SET:
 	case SHM_STAT: {
 		struct shmid_ds *buf;
-		buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
+		buf = (struct shmid_ds *) get_call_writable_struct(rec, sizeof(*buf));
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
@@ -404,7 +397,7 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case SHM_INFO: {
 		void *buf;
-		buf = get_writable_struct(256);
+		buf = get_call_writable_struct(rec, 256);
 		if (!buf)
 			break;
 		memset(buf, 0, 256);
@@ -419,14 +412,14 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
  * A SHMAT that do_shmat() lets attach has ksys_ipc() store the attach
  * address through third, and one that carries SHM_REMAP replaces
  * whatever lies at shmaddr (do_shmat() maps the segment MAP_FIXED
- * there).  The sanitiser builds third as a writable pool slot and draws
- * no shmaddr, so a final SHMAT whose third is not that slot, or whose
+ * there).  The sanitiser builds third as a pool slot and draws no
+ * shmaddr, so a final SHMAT whose third is not that slot, or whose
  * SHM_REMAP comes with a shmaddr, is a rewrite: chain substitution of
  * call, second or third, which can turn another call's slots, a buffer
  * in ptr among them, into such a SHMAT, or a RedQueen pin of any slot,
  * ptr included.  The generator's slots, which the sanitiser leaves in
- * place when the writable pool cannot supply the result slot, are
- * refused the same way, as is any SHMAT with no snapshot of ours.
+ * place when no pool can supply the result slot, are refused the same
+ * way, as is any SHMAT with no snapshot of ours.
  * Refused rather than repaired.  A negative shmid attaches nothing,
  * do_shmat() refusing it first, and any other call's slots are its own.
  * Read as ksys_ipc() reads them: call's low 16 bits name the operation
@@ -457,6 +450,12 @@ static int vet_final_ipc(struct syscallrecord *rec,
 	return -1;
 }
 
+/*
+ * ipc() is in the i386 table alone, so on x86-64 every call is compat, and
+ * compat_ksys_ipc() reads each pointer it takes, the msgbuf pointer in a
+ * MSGRCV's kludge included, as its low 32 bits: every buffer here comes
+ * from get_call_writable_struct().
+ */
 static void sanitise_ipc(struct syscallrecord *rec)
 {
 	unsigned long call = rec->a1;

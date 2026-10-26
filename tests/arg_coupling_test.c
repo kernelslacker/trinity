@@ -4405,9 +4405,9 @@ int get_random_sysv_shm(void)
 	return 0;
 }
 
-/* ipc()'s call numbers for shmat, shmdt and shmget, from <linux/ipc.h>,
- * which cannot share a file with <sys/shm.h>. */
-enum { IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23 };
+/* ipc()'s call numbers for msgrcv, shmat, shmdt and shmget, from
+ * <linux/ipc.h>, which cannot share a file with <sys/shm.h>. */
+enum { IPC_MSGRCV = 12, IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23 };
 
 /* An ipc() SHMAT call the sanitiser built. */
 static void ipc_shmat_built(bool compat)
@@ -4489,29 +4489,24 @@ static void ipc_shmat_held(void)
 	if (rec.post_state != 0)
 		BUG("ipc: cleanup left the snapshot behind");
 
+#ifdef ARCH_IS_BIARCH
 	/* A compat call's kernel stores through the low 32 bits of third,
-	 * so where the pool lies past 4 GiB the sanitiser gives up the
-	 * attach, and otherwise the upper halves are no part of the call. */
+	 * so its result slot comes from the low pool, which they reach, and
+	 * the call keeps its shmid; the upper halves of third and ptr are no
+	 * part of the call. */
 	ipc_shmat_built(true);
-	if (rec.a4 > UINT_MAX) {
-		if ((int) rec.a2 >= 0)
-			BUG("ipc: a compat SHMAT kept a shmid for a result slot its third cannot carry");
-		if (validate_arg_coupling(&rec, rec.entry) != 0)
-			BUG("ipc: a compat SHMAT that attaches nothing was refused");
-		rec.a2 = 0;
-		if (validate_arg_coupling(&rec, rec.entry) != -1)
-			BUG("ipc: a compat SHMAT storing through a truncated third was kept");
-	} else {
-		rec.a4 |= 1UL << 32;
-		rec.a3 = SHM_REMAP;
-		rec.a5 = 1UL << 32;
-		if (validate_arg_coupling(&rec, rec.entry) != 0)
-			BUG("ipc: a compat SHMAT was judged on the upper halves of third and ptr");
-		rec.a5 |= 0x10000;
-		if (validate_arg_coupling(&rec, rec.entry) != -1)
-			BUG("ipc: a compat SHMAT remapping at a truncated shmaddr was kept");
-	}
+	if (rec.a4 > UINT_MAX || (int) rec.a2 < 0)
+		BUG("ipc: a compat SHMAT was not given a result slot its third can carry");
+	rec.a4 |= 1UL << 32;
+	rec.a3 = SHM_REMAP;
+	rec.a5 = 1UL << 32;
+	if (validate_arg_coupling(&rec, rec.entry) != 0)
+		BUG("ipc: a compat SHMAT was judged on the upper halves of third and ptr");
+	rec.a5 |= 0x10000;
+	if (validate_arg_coupling(&rec, rec.entry) != -1)
+		BUG("ipc: a compat SHMAT remapping at a truncated shmaddr was kept");
 	syscall_ipc.cleanup(&rec);
+#endif
 
 	memset(&rec, 0, sizeof(rec));
 	rec.entry = &syscall_ipc;
@@ -4524,7 +4519,9 @@ static void ipc_shmat_held(void)
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		memset(&rec, 0, sizeof(rec));
 		rec.entry = &syscall_ipc;
+#ifdef ARCH_IS_BIARCH
 		rec.do32bit = (i % 10) == 0;
+#endif
 		rec.a1 = calls->values[i % calls->num];
 		rec.a3 = rnd_u64();
 		rec.a5 = rnd_u64();
@@ -4534,6 +4531,38 @@ static void ipc_shmat_held(void)
 		syscall_ipc.cleanup(&rec);
 	}
 }
+
+#ifdef ARCH_IS_BIARCH
+/* ipc() is in the i386 table alone, so on x86-64 every call is compat and
+ * reaches compat_ksys_ipc(), which reads each pointer slot as its low 32
+ * bits.  Every buffer the sanitiser builds lies where those bits reach:
+ * ptr's, a SHMAT's third and a SEMTIMEDOP's fifth, and the msgbuf a
+ * MSGRCV's kludge names. */
+static void ipc_compat_buffers_reachable(void)
+{
+	const struct arglist *calls = &syscall_ipc.arg_params[0].list;
+	unsigned int i;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		unsigned long call = calls->values[i % calls->num];
+
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_ipc;
+		rec.do32bit = true;
+		rec.a1 = call;
+		syscall_ipc.sanitise(&rec);
+		if (rec.a5 > UINT_MAX || rec.a6 > UINT_MAX ||
+		    (call == IPC_SHMAT && (rec.a4 == 0 || rec.a4 > UINT_MAX)) ||
+		    (call == IPC_MSGRCV &&
+		     (rec.a5 == 0 || *(unsigned long *) rec.a5 > UINT_MAX))) {
+			fprintf(stderr, "ipc: call %lu, third 0x%lx ptr 0x%lx fifth 0x%lx\n",
+				call, rec.a4, rec.a5, rec.a6);
+			BUG("ipc: a compat call was handed a buffer its slots cannot carry");
+		}
+		syscall_ipc.cleanup(&rec);
+	}
+}
+#endif
 
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
@@ -4579,4 +4608,7 @@ void arg_coupling_self_check(void)
 	mmap_fixed_held_to_huge_extent();
 	shmat_remap_held_to_vetted_call();
 	ipc_shmat_held();
+#ifdef ARCH_IS_BIARCH
+	ipc_compat_buffers_reachable();
+#endif
 }
