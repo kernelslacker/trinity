@@ -568,6 +568,7 @@ static struct syscallrecord *mm_call(struct syscallentry *entry)
 	pool_obj.map.size = POOL_PAGES * page_size;
 	pool_obj.map.tracked_size = pool_obj.map.size;
 	pool_obj.map.prot = PROT_READ | PROT_WRITE;
+	pool_obj.map.keyed = false;
 	fake_this_child = &mm_child;
 	return mrec;
 }
@@ -1003,6 +1004,49 @@ static void keyed_range_drops_cached_prot(void)
 		BUG("mprotect: a range left on the default key lost its cached prot");
 	if (prot_after_keyed_call(&plain_copy, LIVE_PKEY, whole) != rw)
 		BUG("mprotect: plain mprotect's fourth slot was taken for a key");
+	fake_this_child = NULL;
+}
+
+/* The mapping's cached prot after @entry worked over the whole of it with
+ * a4 = @key and prot read-write, the mapping as earlier calls left it. */
+static int prot_after_whole_call(struct syscallentry *entry, int key)
+{
+	struct syscallrecord *mrec = &mm_child.syscall;
+
+	memset(mrec, 0, sizeof(*mrec));
+	mrec->entry = entry;
+	mrec->a1 = (unsigned long) &pool_obj.map;
+	mrec->a3 = PROT_READ | PROT_WRITE;
+	pkey_drawn = key;
+	entry->sanitise(mrec);
+	mrec->a1 = (unsigned long) pool_obj.map.ptr;
+	mrec->a2 = pool_obj.map.size;
+	mrec->a4 = (unsigned long) key;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("mprotect: a call over the whole mapping was refused");
+	mrec->retval = 0;
+	entry->post(mrec);
+	pkey_drawn = -1;
+	return pool_obj.map.prot;
+}
+
+/* A plain mprotect leaves every page's key alone, so pages a live key
+ * reached keep it, and the cached prot stays dropped through a later
+ * plain mprotect of the whole mapping.  pkey_mprotect handing the whole
+ * mapping key 0 takes every key off, and the prot is cached again. */
+static void keyed_range_stays_keyed(void)
+{
+	struct syscallentry pkey_copy = syscall_pkey_mprotect;
+	struct syscallentry plain_copy = syscall_mprotect;
+
+	pkey_copy.is_pkey_mprotect = true;
+	if (prot_after_keyed_call(&pkey_copy, LIVE_PKEY,
+				  POOL_PAGES * page_size) != 0)
+		BUG("mprotect: a range given a live key kept its cached prot");
+	if (prot_after_whole_call(&plain_copy, -1) != 0)
+		BUG("mprotect: a plain mprotect re-cached the prot of keyed pages");
+	if (prot_after_whole_call(&pkey_copy, 0) != (PROT_READ | PROT_WRITE))
+		BUG("mprotect: key 0 over the whole mapping left the prot dropped");
 	fake_this_child = NULL;
 }
 
@@ -3392,6 +3436,7 @@ void arg_coupling_self_check(void)
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	keyed_range_known_through_the_dispatched_entry();
+	keyed_range_stays_keyed();
 	munmap_range_held_to_mapping();
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();

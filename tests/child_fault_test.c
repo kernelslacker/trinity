@@ -462,6 +462,35 @@ static void walk_check(void)
 	}
 }
 
+/* The write walk can make a mapping read-write with a plain mprotect(),
+ * which leaves a page's protection key alone, so it leaves the cached
+ * prot of a mapping whose pages carry a key dropped, however often it
+ * runs.  The walk itself writes a real mapping here. */
+static void write_walk_keeps_keyed_prot(void)
+{
+	size_t len = 4 * page_size;
+	struct map map;
+	char *region;
+	unsigned int i;
+
+	region = mmap(NULL, len, PROT_READ | PROT_WRITE,
+		      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (region == MAP_FAILED)
+		BUG("child fault: no mapping for the write walk");
+	memset(&map, 0, sizeof(map));
+	map.ptr = region;
+	map.size = len;
+	map.type = INITIAL_ANON;
+	map.fd = -1;
+	map.keyed = true;
+	for (i = 0; i < 256; i++) {
+		random_map_writefn(&map);
+		if (map.prot != 0)
+			BUG("child fault: the write walk cached a prot for keyed pages");
+	}
+	munmap(region, len);
+}
+
 void child_fault_self_check(void);
 void child_fault_self_check(void)
 {
@@ -478,4 +507,5 @@ void child_fault_self_check(void)
 		}
 	}
 	walk_check();
+	write_walk_keeps_keyed_prot();
 }

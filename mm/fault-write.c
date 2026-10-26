@@ -21,6 +21,11 @@
 #include "pids.h"
 
 #include "kernel/falloc.h"
+/*
+ * A plain mprotect() leaves every page's protection key alone, so pages
+ * pkey_mprotect() gave a key keep it, and the prot cached for a keyed
+ * mapping stays dropped (see struct map's keyed).
+ */
 static bool mark_map_rw(struct map *map)
 {
 	int prot = PROT_READ | PROT_WRITE;
@@ -33,7 +38,8 @@ static bool mark_map_rw(struct map *map)
 		return false;
 	}
 
-	map->prot = prot;
+	if (!map->keyed)
+		map->prot = prot;
 	return true;
 }
 

@@ -229,16 +229,22 @@ static void post_mprotect(struct syscallrecord *rec)
 	 * load and store with SEGV_PKUERR, one with PKEY_DISABLE_WRITE every
 	 * store, and pkey_mprotect draws its keys from the OBJ_PKEY pool.
 	 * The cached prot cannot vouch for those pages, so the entry is
-	 * dropped the way post_munmap drops a holed one.  The kernel reads
-	 * the key as an int.
+	 * dropped the way post_munmap drops a holed one, and stays dropped
+	 * through a later plain mprotect, which leaves every page's key
+	 * alone (struct map's keyed): only key 0 over all of the VMA's pages
+	 * takes the keys off again.  The kernel reads the key as an int.
 	 */
-	if ((int) snap->pkey != -1 && (int) snap->pkey != 0)
+	if ((int) snap->pkey != -1 && (int) snap->pkey != 0) {
+		map->keyed = true;
 		map->prot = 0;
-	else if (snap->range.addr == (unsigned long)map->ptr &&
-		 snap->range.len == map->size)
-		map->prot = snap->prot;
-	else
+	} else if (snap->range.addr == (unsigned long)map->ptr &&
+		   snap->range.len == map->size) {
+		if ((int) snap->pkey == 0 && map->size >= map->tracked_size)
+			map->keyed = false;
+		map->prot = map->keyed ? 0 : snap->prot;
+	} else {
 		map->prot &= snap->prot;
+	}
 
 	/*
 	 * Invalidate the get_writable_address() known_rw skip-cache.  The

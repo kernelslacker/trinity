@@ -93,6 +93,14 @@ struct map {
 	 * first store, so the invalidation hooks above must be exhaustive.
 	 */
 	bool known_rw;
+	/*
+	 * Set once pkey_mprotect() gives any of the mapping's pages a key
+	 * other than 0 (post_mprotect()).  A key's access rights live in each
+	 * thread's PKRU, not in the prot bits, and a plain mprotect() leaves
+	 * every page's key alone, so prot stays 0 while this is set: only a
+	 * pkey_mprotect() handing the whole mapping key 0 clears it.
+	 */
+	bool keyed;
 };
 
 #define NR_MAPPING_SIZES 9
