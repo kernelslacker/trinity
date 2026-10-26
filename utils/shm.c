@@ -498,6 +498,9 @@ static void init_shm_publish_and_subsystems(void)
 	 */
 	writable_pool_init();
 
+	/* And for its MAP_32BIT twin, which compat calls draw from. */
+	low_pool_init();
+
 	/*
 	 * Same pre-fork-allocate / register-once / inherit-via-COW pattern
 	 * for the OBJ_LOCAL objpool arena.  Backs alloc_object() and the

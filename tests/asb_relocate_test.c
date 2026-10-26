@@ -4,6 +4,7 @@
  * any other flagged range moves into it (one whose end wraps the address
  * space included), and a length the pool cannot hold leaves the pointer.
  * get_writable_address() refuses such a size, a wrapping round-up included.
+ * A pointer that starts in the low pool, a compat call's, stays too.
  */
 
 #include <limits.h>
@@ -12,7 +13,7 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
-#include "sanitise.h"		/* writable pool, avoid_shared_buffer_out */
+#include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_overlaps_shared;	/* fake_shm.c */
@@ -25,6 +26,32 @@ struct asb_case {
 	unsigned long len;
 	bool moved;
 };
+
+/* Each case's pointer moves only if it should, and only into the writable
+ * pool. */
+static void run_cases(const struct asb_case *cases, unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		const struct asb_case *c = &cases[i];
+		unsigned long addr = c->addr;
+
+		avoid_shared_buffer_out(&addr, c->len);
+
+		if ((addr != c->addr) != c->moved) {
+			fprintf(stderr, "%s: %s\n", c->what,
+				c->moved ? "left where it was" : "moved");
+			BUG("asb_relocate: wrong verdict on the pool test");
+		}
+		if (c->moved &&
+		    !range_in_writable_pool(addr, c->len ? c->len : page_size)) {
+			fprintf(stderr, "%s: moved to %#lx, outside the pool\n",
+				c->what, addr);
+			BUG("asb_relocate: a range moved out of the pool");
+		}
+	}
+}
 
 static void pool_exemption(unsigned long base)
 {
@@ -67,26 +94,27 @@ static void pool_exemption(unsigned long base)
 		{ "an all-ones length",
 		  (unsigned long) outside, ULONG_MAX, false },
 	};
-	unsigned int i;
 
-	for (i = 0; i < ARRAY_SIZE(cases); i++) {
-		const struct asb_case *c = &cases[i];
-		unsigned long addr = c->addr;
+	run_cases(cases, ARRAY_SIZE(cases));
+}
 
-		avoid_shared_buffer_out(&addr, c->len);
+/* A compat call's buffer comes from the low pool, and a writable pool
+ * replacement would reach its kernel cut to 32 bits, so a pointer that
+ * starts in the low pool stays however far its range runs: the pool ends
+ * at a guard page.  One that starts outside it moves, as before. */
+static void low_pool_exemption(unsigned long base)
+{
+	const unsigned long end = base + WRITABLE_POOL_BYTES;
+	const struct asb_case cases[] = {
+		{ "the low pool's start", base, 64, false },
+		{ "a range running past the low pool's end",
+		  end - 64, 2 * page_size, false },
+		{ "no length, at the low pool's last byte", end - 1, 0, false },
+		{ "a range starting below the low pool", base - 64, 64, true },
+		{ "a range starting at the low pool's end", end, 64, true },
+	};
 
-		if ((addr != c->addr) != c->moved) {
-			fprintf(stderr, "%s: %s\n", c->what,
-				c->moved ? "left where it was" : "moved");
-			BUG("asb_relocate: wrong verdict on the pool test");
-		}
-		if (c->moved &&
-		    !range_in_writable_pool(addr, c->len ? c->len : page_size)) {
-			fprintf(stderr, "%s: moved to %#lx, outside the pool\n",
-				c->what, addr);
-			BUG("asb_relocate: a range moved out of the pool");
-		}
-	}
+	run_cases(cases, ARRAY_SIZE(cases));
 }
 
 /* The sizes either side of the one whose round-up to the 16-byte slot
@@ -118,7 +146,8 @@ static void oversize_refused(void)
 void asb_relocate_self_check(void);
 void asb_relocate_self_check(void)
 {
-	unsigned long base;
+	struct syscallrecord compat = { .do32bit = true };
+	unsigned long base, low;
 
 	/* The pool is made once per process: take it as an earlier suite
 	 * left it.  A request for all of it can only start at its base. */
@@ -128,10 +157,17 @@ void asb_relocate_self_check(void)
 		base = (unsigned long) get_writable_address(WRITABLE_POOL_BYTES);
 	}
 
+	/* Likewise for the low pool, which test_main made; an arch with no
+	 * compat calls has none. */
+	low = (unsigned long) get_call_writable_struct(&compat,
+						       WRITABLE_POOL_BYTES);
+
 	/* Every range above overlaps something tracked, as the pool itself
 	 * does in a run and a range that wraps does by definition. */
 	fake_overlaps_shared = true;
 	pool_exemption(base);
+	if (low != 0)
+		low_pool_exemption(low);
 	fake_overlaps_shared = false;
 
 	oversize_refused();

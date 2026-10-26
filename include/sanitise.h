@@ -36,6 +36,14 @@ void *get_writable_address(unsigned long size);
 void *get_writable_page_aligned(unsigned long size);
 void *get_writable_struct(size_t size);
 /*
+ * A writable struct of @size that @rec's call can carry.  A compat call's
+ * kernel reads each pointer slot as its low 32 bits, which cut a writable
+ * pool address to one nobody vetted, so a compat call draws from the low
+ * pool instead (low_pool_init()).  NULL when a compat call has no low
+ * pool to draw from.
+ */
+void *get_call_writable_struct(const struct syscallrecord *rec, size_t size);
+/*
  * True iff len is non-zero and [addr, addr + len) lies wholly inside the
  * writable pool, so a pointer that passes is mapped, writable scratch.
  * Always false before writable_pool_init().  range_in_tracked_shared()
@@ -107,6 +115,15 @@ bool range_in_iovec_pool(unsigned long addr, unsigned long len);
  * all.
  */
 void writable_pool_init(void);
+/*
+ * One-shot parent-side allocator for the low pool: the writable pool's
+ * twin, with its size, guard page and tracking, but made MAP_32BIT, below
+ * 2 GiB, on the one arch with compat calls.  Called from init_shm before
+ * any child forks.  A failure leaves compat calls without the buffers it
+ * would have given them, not trinity without a pool it cannot run
+ * without, so it is not fatal.
+ */
+void low_pool_init(void);
 unsigned long get_len(void);
 /*
  * Object-size-relative length draw.  Returns a value from a boundary

@@ -58,14 +58,29 @@
 
 static unsigned char *writable_pool;
 
-void * get_writable_address(unsigned long size)
-{
-	struct childdata *child = this_child();
-	unsigned long aligned, cursor, end;
-	static unsigned long parent_cursor;
-	unsigned long *cursor_p;
+/*
+ * The writable pool's twin for compat calls.  Their kernel reads each
+ * pointer slot as its low 32 bits, and the writable pool lies past 4 GiB,
+ * so a buffer from it would reach the kernel as an address nobody
+ * vetted.  low_pool_init() makes this one MAP_32BIT, in the first 2 GiB,
+ * with the same size, guard page and tracking.  Its cursor lives in this
+ * file's .data, which each child's first advance makes its own (COW).
+ * NULL where it could not be made, and on an arch with no compat calls.
+ */
+static unsigned char *low_pool;
+static unsigned long low_pool_cursor;
 
-	if (writable_pool == NULL)
+/*
+ * Bump-allocate @size bytes, WRITABLE_POOL_ALIGN-aligned, from the
+ * WRITABLE_POOL_BYTES pool at @pool, wrapping to its start when what is
+ * left is too short.  A size of 0 asks for a page.
+ */
+static void *pool_bump(unsigned char *pool, unsigned long *cursor_p,
+		       unsigned long size)
+{
+	unsigned long aligned, cursor, end;
+
+	if (pool == NULL)
 		return NULL;
 
 	if (size == 0)
@@ -81,8 +96,6 @@ void * get_writable_address(unsigned long size)
 
 	aligned = (size + (WRITABLE_POOL_ALIGN - 1)) & ~(WRITABLE_POOL_ALIGN - 1);
 
-	cursor_p = (child != NULL) ? &child->writable_pool_cursor
-				   : &parent_cursor;
 	cursor = *cursor_p;
 	end = cursor + aligned;
 	if (end > WRITABLE_POOL_BYTES) {
@@ -90,7 +103,18 @@ void * get_writable_address(unsigned long size)
 		end = aligned;
 	}
 	*cursor_p = end;
-	return writable_pool + cursor;
+	return pool + cursor;
+}
+
+void * get_writable_address(unsigned long size)
+{
+	struct childdata *child = this_child();
+	static unsigned long parent_cursor;
+
+	return pool_bump(writable_pool,
+			 child != NULL ? &child->writable_pool_cursor
+				       : &parent_cursor,
+			 size);
 }
 
 /*
@@ -163,6 +187,13 @@ void * get_non_null_address(void)
 void * get_writable_struct(size_t size)
 {
 	return get_writable_address(size);
+}
+
+void *get_call_writable_struct(const struct syscallrecord *rec, size_t size)
+{
+	if (rec->do32bit)
+		return pool_bump(low_pool, &low_pool_cursor, size);
+	return get_writable_struct(size);
 }
 
 bool range_in_writable_pool(unsigned long addr, unsigned long len)
@@ -274,6 +305,16 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 			     : range_in_writable_pool(*addr, len))
 			return;
 	}
+
+	/*
+	 * A pointer into the low pool is a compat call's buffer, which a
+	 * writable pool replacement would hand the kernel cut to 32 bits.
+	 * Only the start is judged: what follows the pool is its guard
+	 * page, so a range that starts inside runs into nothing of ours.
+	 */
+	if (low_pool != NULL && *addr >= (unsigned long) low_pool &&
+	    *addr - (unsigned long) low_pool < WRITABLE_POOL_BYTES)
+		return;
 
 	replacement = get_writable_address(len ? len : page_size);
 	if (replacement == NULL)
@@ -733,43 +774,49 @@ static unsigned int iovec_pool_cursor;
  * count that only one slot names can't be held inside a buffer at the
  * pool's end (getdents, msgrcv's mtype header, poll, select), so the page
  * turns a write the kernel runs off that end into EFAULT instead of a
- * write into whatever mapping lies next.  It is not tracked: nothing
- * builds a range there.  Exits on failure, as the pools' callers do.
+ * write into whatever mapping lies next.  The pool is tracked; the page
+ * is not, as nothing builds a range there.  @flags join the mmap flags.
+ * NULL on failure.
  */
-static void *map_guarded_pool(size_t bytes, const char *who)
+static void *map_guarded_pool(size_t bytes, int flags, const char *who)
 {
 	size_t guard = (bytes + page_size - 1) & PAGE_MASK;
 	void *p;
 
 	p = mmap(NULL, guard + page_size, PROT_READ | PROT_WRITE,
-		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+		 MAP_PRIVATE | MAP_ANONYMOUS | flags, -1, 0);
 	if (p == MAP_FAILED) {
 		outputerr("%s: mmap %zu failed: %s\n", who, bytes,
 			  strerror(errno));
-		exit(EXIT_FAILURE);
+		return NULL;
 	}
 	if (mprotect((char *) p + guard, page_size, PROT_NONE) != 0) {
 		outputerr("%s: guard page mprotect failed: %s\n", who,
 			  strerror(errno));
-		exit(EXIT_FAILURE);
+		munmap(p, guard + page_size);
+		return NULL;
 	}
 	memset(p, 0, bytes);
+	track_shared_region((unsigned long) p, bytes);
 	return p;
 }
 
 void writable_pool_init(void)
 {
-	void *p = map_guarded_pool(WRITABLE_POOL_BYTES, __func__);
+	writable_pool = map_guarded_pool(WRITABLE_POOL_BYTES, 0, __func__);
+	if (writable_pool == NULL)
+		exit(EXIT_FAILURE);
+}
 
-	track_shared_region((unsigned long)p, WRITABLE_POOL_BYTES);
-	writable_pool = p;
+void low_pool_init(void)
+{
+#if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
+	low_pool = map_guarded_pool(WRITABLE_POOL_BYTES, MAP_32BIT, __func__);
+#endif
 }
 
 void alloc_iovec_init(void)
 {
-	const size_t bytes = IOVEC_POOL_BYTES;
-	void *p;
-
 	/*
 	 * Dedicated MAP_PRIVATE|MAP_ANON mapping for the iov[] array.
 	 *
@@ -806,9 +853,9 @@ void alloc_iovec_init(void)
 	 * posture of the other parent-side shared regions (deferred-
 	 * free ring, df_alloc_track[], ...).
 	 */
-	p = map_guarded_pool(bytes, __func__);
-	track_shared_region((unsigned long)p, bytes);
-	iovec_pool = p;
+	iovec_pool = map_guarded_pool(IOVEC_POOL_BYTES, 0, __func__);
+	if (iovec_pool == NULL)
+		exit(EXIT_FAILURE);
 }
 
 bool range_in_iovec_pool(unsigned long addr, unsigned long len)

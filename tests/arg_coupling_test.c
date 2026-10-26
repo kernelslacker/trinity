@@ -2395,14 +2395,16 @@ static bool kernel_reads_byte(const char *addr)
 	return ok;
 }
 
-/* The writable pool and the iovec pool each end at a page the kernel
- * cannot touch, so a write that a count only one slot names runs off a
- * buffer at a pool's end into a fault, not into the next mapping: the
- * last byte of each pool reads, the byte after it does not.  A request
- * for the whole writable pool hands out its start, and four iovec arrays
- * take every slice of the iovec pool, the last one ending it. */
+/* The writable pool, the low pool and the iovec pool each end at a page
+ * the kernel cannot touch, so a write that a count only one slot names
+ * runs off a buffer at a pool's end into a fault, not into the next
+ * mapping: the last byte of each pool reads, the byte after it does not.
+ * A request for the whole writable or low pool hands out its start, and
+ * four iovec arrays take every slice of the iovec pool, the last one
+ * ending it. */
 static void pools_end_at_a_guard_page(void)
 {
+	struct syscallrecord compat = { .do32bit = true };
 	char *base, *last = NULL, *end;
 	unsigned int i;
 
@@ -2413,6 +2415,12 @@ static void pools_end_at_a_guard_page(void)
 	    kernel_reads_byte(base + WRITABLE_POOL_BYTES))
 		BUG("arg coupling: the writable pool does not end at a guard page");
 
+	base = get_call_writable_struct(&compat, WRITABLE_POOL_BYTES);
+	if (base != NULL &&
+	    (!kernel_reads_byte(base + WRITABLE_POOL_BYTES - 1) ||
+	     kernel_reads_byte(base + WRITABLE_POOL_BYTES)))
+		BUG("arg coupling: the low pool does not end at a guard page");
+
 	for (i = 0; i < 4; i++) {
 		char *slice = (char *) alloc_iovec(1, IOV_KERNEL_WRITE);
 
@@ -2422,6 +2430,39 @@ static void pools_end_at_a_guard_page(void)
 	end = last + UIO_MAXIOV * sizeof(struct iovec);
 	if (!kernel_reads_byte(end - 1) || kernel_reads_byte(end))
 		BUG("arg coupling: the iovec pool does not end at a guard page");
+}
+
+/* A compat call's kernel reads each pointer slot as its low 32 bits, so
+ * the structs it is handed come from the low pool, below 4 GiB, in
+ * 16-byte slots, the pool's own size at most; a native call's come from
+ * the writable pool.  An arch with no compat calls has no low pool, and a
+ * compat call there gets nothing.  A request for the whole pool leaves the
+ * next one to start over at its base. */
+static void call_writable_struct_reachable(void)
+{
+	struct syscallrecord native = { .do32bit = false };
+	struct syscallrecord compat = { .do32bit = true };
+	unsigned long base, a, b;
+
+	a = (unsigned long) get_call_writable_struct(&native, 24);
+	if (!range_in_writable_pool(a, 24))
+		BUG("arg coupling: a native call's struct is not in the writable pool");
+
+	base = (unsigned long) get_call_writable_struct(&compat,
+							WRITABLE_POOL_BYTES);
+	a = (unsigned long) get_call_writable_struct(&compat, 24);
+	b = (unsigned long) get_call_writable_struct(&compat, 24);
+#ifdef ARCH_IS_BIARCH
+	if (base == 0 || base + WRITABLE_POOL_BYTES > (1UL << 32))
+		BUG("arg coupling: a compat call's struct lies where its slots cannot reach");
+	if (a != base || b != base + 32)
+		BUG("arg coupling: the low pool does not vend in 16-byte slots from its base");
+#else
+	if (base != 0 || a != 0 || b != 0)
+		BUG("arg coupling: a compat call got a struct on an arch with no low pool");
+#endif
+	if (get_call_writable_struct(&compat, WRITABLE_POOL_BYTES + 1) != NULL)
+		BUG("arg coupling: the low pool vended more than it holds");
 }
 
 static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
@@ -4506,6 +4547,7 @@ void arg_coupling_self_check(void)
 	madvise_held();
 	process_madvise_guard_install_held();
 	pools_end_at_a_guard_page();
+	call_writable_struct_reachable();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	vet_final_asked_first();
