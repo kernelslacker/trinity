@@ -1,11 +1,13 @@
 #pragma once
 
 /*
- * bpf(2) commands and attach types are enum members upstream, not
- * macros, so the #ifndef guards below always fire and the #defines are
+ * bpf(2) commands, map types and attach types are enum members upstream,
+ * not macros, so the #ifndef guards below always fire and the #defines are
  * the definition on every kernel; a wrong number is wrong everywhere.
  * <linux/bpf.h> is included first so the enum bodies are parsed before
- * the macros go live, whatever the consumer's include order.
+ * the macros go live, whatever the consumer's include order.  The map
+ * flags further down are macros upstream, so their guards behave, except
+ * BPF_F_LOCK, which is an enum member as well.
  */
 #include <linux/bpf.h>
 
@@ -80,7 +82,12 @@
 #define BPF_PROG_ASSOC_STRUCT_OPS	38
 #endif
 
-/* Attach types not present in older bpf.h headers */
+/*
+ * Attach-type fallbacks for older /usr/include/linux/bpf.h.  Consumed
+ * by bpf_attach_types[] in struct_catalog/bpf.c and by the tracing /
+ * kprobe / uprobe attach-type pools in struct_catalog/bpf-link.c;
+ * shared here so both sites see the same numeric values.
+ */
 #ifndef BPF_TRACE_KPROBE_SESSION
 #define BPF_TRACE_KPROBE_SESSION	56
 #endif
@@ -89,4 +96,119 @@
 #endif
 #ifndef BPF_TRACE_FSESSION
 #define BPF_TRACE_FSESSION		58
+#endif
+#ifndef BPF_TRACE_FENTRY_MULTI
+#define BPF_TRACE_FENTRY_MULTI		59
+#endif
+#ifndef BPF_TRACE_FEXIT_MULTI
+#define BPF_TRACE_FEXIT_MULTI		60
+#endif
+#ifndef BPF_TRACE_FSESSION_MULTI
+#define BPF_TRACE_FSESSION_MULTI	61
+#endif
+
+/*
+ * Map-type fallback defines for older /usr/include/linux/bpf.h.  Both
+ * syscalls/bpf-map.c (the map_type draw in sanitise) and
+ * struct_catalog/bpf-map.c (FT_ENUM annotation in the bpf_attr MAP_CREATE
+ * variant) walk the same vocabulary, bpf_map_types[] in
+ * struct_catalog/bpf.c, so the fallback set lives here.
+ */
+#ifndef BPF_MAP_TYPE_LRU_HASH
+#define BPF_MAP_TYPE_LRU_HASH 9
+#define BPF_MAP_TYPE_LRU_PERCPU_HASH 10
+#define BPF_MAP_TYPE_LPM_TRIE 11
+#endif
+#ifndef BPF_MAP_TYPE_ARRAY_OF_MAPS
+#define BPF_MAP_TYPE_ARRAY_OF_MAPS	12
+#define BPF_MAP_TYPE_HASH_OF_MAPS	13
+#endif
+#ifndef BPF_MAP_TYPE_DEVMAP
+#define BPF_MAP_TYPE_DEVMAP		14
+#define BPF_MAP_TYPE_SOCKMAP		15
+#define BPF_MAP_TYPE_CPUMAP		16
+#endif
+#ifndef BPF_MAP_TYPE_XSKMAP
+#define BPF_MAP_TYPE_XSKMAP		17
+#define BPF_MAP_TYPE_SOCKHASH		18
+#endif
+#ifndef BPF_MAP_TYPE_REUSEPORT_SOCKARRAY
+#define BPF_MAP_TYPE_REUSEPORT_SOCKARRAY 20
+#endif
+#ifndef BPF_MAP_TYPE_QUEUE
+#define BPF_MAP_TYPE_QUEUE		22
+#define BPF_MAP_TYPE_STACK		23
+#endif
+#ifndef BPF_MAP_TYPE_SK_STORAGE
+#define BPF_MAP_TYPE_SK_STORAGE		24
+#endif
+#ifndef BPF_MAP_TYPE_DEVMAP_HASH
+#define BPF_MAP_TYPE_DEVMAP_HASH	25
+#endif
+#ifndef BPF_MAP_TYPE_STRUCT_OPS
+#define BPF_MAP_TYPE_STRUCT_OPS		26
+#endif
+#ifndef BPF_MAP_TYPE_RINGBUF
+#define BPF_MAP_TYPE_RINGBUF		27
+#endif
+#ifndef BPF_MAP_TYPE_INODE_STORAGE
+#define BPF_MAP_TYPE_INODE_STORAGE	28
+#endif
+#ifndef BPF_MAP_TYPE_TASK_STORAGE
+#define BPF_MAP_TYPE_TASK_STORAGE	29
+#endif
+#ifndef BPF_MAP_TYPE_BLOOM_FILTER
+#define BPF_MAP_TYPE_BLOOM_FILTER	30
+#endif
+#ifndef BPF_MAP_TYPE_USER_RINGBUF
+#define BPF_MAP_TYPE_USER_RINGBUF	31
+#endif
+#ifndef BPF_MAP_TYPE_CGRP_STORAGE
+#define BPF_MAP_TYPE_CGRP_STORAGE	32
+#endif
+#ifndef BPF_MAP_TYPE_ARENA
+#define BPF_MAP_TYPE_ARENA		33
+#endif
+#ifndef BPF_MAP_TYPE_INSN_ARRAY
+#define BPF_MAP_TYPE_INSN_ARRAY		34
+#endif
+#ifndef BPF_MAP_TYPE_RHASH
+#define BPF_MAP_TYPE_RHASH		35
+#endif
+
+#ifndef BPF_F_NO_COMMON_LRU
+#define BPF_F_NO_COMMON_LRU     (1U << 1)
+#endif
+
+/* Flags referenced from the MAP_CREATE schema annotation. */
+#ifndef BPF_F_MMAPABLE
+# define BPF_F_MMAPABLE			(1U << 10)
+#endif
+#ifndef BPF_F_PRESERVE_ELEMS
+# define BPF_F_PRESERVE_ELEMS		(1U << 11)
+#endif
+#ifndef BPF_F_INNER_MAP
+# define BPF_F_INNER_MAP		(1U << 12)
+#endif
+#ifndef BPF_F_LINK
+# define BPF_F_LINK			(1U << 13)
+#endif
+#ifndef BPF_F_PATH_FD
+# define BPF_F_PATH_FD			(1U << 14)
+#endif
+#ifndef BPF_F_VTYPE_BTF_OBJ_FD
+# define BPF_F_VTYPE_BTF_OBJ_FD		(1U << 15)
+#endif
+#ifndef BPF_F_TOKEN_FD
+# define BPF_F_TOKEN_FD			(1U << 16)
+#endif
+#ifndef BPF_F_SEGV_ON_FAULT
+# define BPF_F_SEGV_ON_FAULT		(1U << 17)
+#endif
+#ifndef BPF_F_NO_USER_CONV
+# define BPF_F_NO_USER_CONV		(1U << 18)
+#endif
+/* Map-update flags that may be absent on older build hosts */
+#ifndef BPF_F_LOCK
+# define BPF_F_LOCK			4
 #endif
