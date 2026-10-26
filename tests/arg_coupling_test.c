@@ -2302,6 +2302,62 @@ static void madvise_range_held_to_mapping(struct syscallentry *madvise_entry)
 }
 
 /* madvise's rules, over a copy of its table entry. */
+/* A madvise the sanitiser built with GUARD_INSTALL kept, and its range. */
+static struct syscallrecord *madvise_guard_drawn(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	for (i = 0; i < 1000; i++) {
+		mrec = mm_call(entry);
+		mrec->a3 = MADV_GUARD_INSTALL;
+		entry->sanitise(mrec);
+		if ((int) mrec->a3 == MADV_GUARD_INSTALL)
+			return mrec;
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+	}
+	BUG("madvise: the sanitiser never kept a GUARD_INSTALL");
+	return NULL;
+}
+
+/* A GUARD_INSTALL the sanitiser keeps gets a throwaway mapping of its own
+ * to plant guard pages in: its range lies in a fresh mapping, never the
+ * pool mapping, the hook passes it, and the post handler, or the cleanup
+ * when the post handler never ran, unmaps the mapping again.  A rewrite
+ * that moves the range onto the pool mapping is refused. */
+static void madvise_guard_install_gets_its_own_mapping(struct syscallentry *entry)
+{
+	const unsigned long pool_end = POOL_MAP + POOL_PAGES * page_size;
+	struct syscallrecord *mrec;
+	unsigned char vec;
+	unsigned int c;
+
+	for (c = 0; c < 3; c++) {
+		unsigned long addr;
+
+		mrec = madvise_guard_drawn(entry);
+		addr = mrec->a1;
+		if (mrec->a2 == 0 || (addr >= POOL_MAP && addr < pool_end) ||
+		    mincore((void *) addr, page_size, &vec) != 0)
+			BUG("madvise: a GUARD_INSTALL was not given a mapping of its own");
+		if (c == 2) {
+			mrec->a1 = POOL_MAP;
+			mrec->a2 = page_size;
+		}
+		if (validate_arg_coupling(mrec, mrec->entry) != (c == 2 ? -1 : 0))
+			BUG("madvise: a GUARD_INSTALL was judged wrongly against its own mapping");
+		if (c == 1) {
+			entry->cleanup(mrec);
+		} else {
+			mrec->retval = c == 0 ? 0 : (unsigned long) -1L;
+			entry->post(mrec);
+		}
+		if (mincore((void *) addr, page_size, &vec) == 0)
+			BUG("madvise: a GUARD_INSTALL's own mapping was left behind");
+	}
+}
+
 static void madvise_held(void)
 {
 	struct syscallentry madvise_entry = syscall_madvise;
@@ -2309,6 +2365,7 @@ static void madvise_held(void)
 	madvise_range_held_off_regions(&madvise_entry);
 	madvise_compat_range_held_off_regions(&madvise_entry);
 	madvise_range_held_to_mapping(&madvise_entry);
+	madvise_guard_install_gets_its_own_mapping(&madvise_entry);
 	fake_this_child = NULL;
 }
 
