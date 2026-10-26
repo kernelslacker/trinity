@@ -5,6 +5,7 @@
  * CTA_*, exp_nla_policy with CTA_EXPECT_*), so each has its own attr table.
  */
 
+#include <linux/netfilter/nf_conntrack_common.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
 
@@ -89,7 +90,8 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
  * CTA_EXPECT_FN are NUL-terminated strings; the kernel bounds only
  * CTA_EXPECT_HELP_NAME (NF_CT_HELPER_NAME_LEN - 1, the non-terminator
  * max the spec records), so the 31 on CTA_EXPECT_FN is the spec's own
- * size, not a policy limit.
+ * size, not a policy limit.  CTA_EXPECT_FLAGS is NLA_POLICY_MASK with the
+ * kernel's NF_CT_EXPECT_MASK, the three flags below.
  */
 static const struct nla_attr_spec ctnetlink_exp_attrs[] = {
 	{ CTA_EXPECT_MASTER,    NLA_KIND_NESTED, 0  },
@@ -99,7 +101,9 @@ static const struct nla_attr_spec ctnetlink_exp_attrs[] = {
 	{ CTA_EXPECT_ID,        NLA_KIND_U32,    4  },
 	{ CTA_EXPECT_HELP_NAME, NLA_KIND_STRING, 15 },
 	{ CTA_EXPECT_ZONE,      NLA_KIND_U32,    4  },
-	{ CTA_EXPECT_FLAGS,     NLA_KIND_U32,    4  },
+	{ CTA_EXPECT_FLAGS,     NLA_KIND_BE32_MASK,
+				NF_CT_EXPECT_PERMANENT | NF_CT_EXPECT_INACTIVE |
+				NF_CT_EXPECT_USERSPACE },
 	{ CTA_EXPECT_CLASS,     NLA_KIND_U32,    4  },
 	{ CTA_EXPECT_NAT,       NLA_KIND_NESTED, 0  },
 	{ CTA_EXPECT_FN,        NLA_KIND_STRING, 31 },

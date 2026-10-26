@@ -25,7 +25,9 @@ static const struct nfnl_cmd_grammar nfqueue_cmds[] = {
 /*
  * CMD and PARAMS are NLA_UNSPEC with a minimum .len in nfqa_cfg_policy;
  * BINARY_FIXED2 at exactly the struct size always clears it, and the random
- * bytes still fuzz .command and .copy_mode.
+ * bytes still fuzz .command and .copy_mode.  FLAGS is NLA_POLICY_MASK with
+ * NFQA_CFG_F_MAX - 1 there, and the handler answers -EINVAL to a FLAGS
+ * without a MASK beside it.
  */
 static const struct nla_attr_spec nfqueue_attrs[] = {
 	{ NFQA_CFG_CMD, NLA_KIND_BINARY_FIXED2,
@@ -35,7 +37,7 @@ static const struct nla_attr_spec nfqueue_attrs[] = {
 	  sizeof(struct nfqnl_msg_config_params),
 	  sizeof(struct nfqnl_msg_config_params) },
 	{ NFQA_CFG_QUEUE_MAXLEN, NLA_KIND_U32, 0, 0 },
-	{ NFQA_CFG_FLAGS,        NLA_KIND_U32, 0, 0 },
+	{ NFQA_CFG_FLAGS,        NLA_KIND_BE32_MASK, NFQA_CFG_F_MAX - 1 },
 	{ NFQA_CFG_MASK,         NLA_KIND_U32, 0, 0 },
 };
 

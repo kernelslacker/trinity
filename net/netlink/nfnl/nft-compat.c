@@ -16,9 +16,12 @@ static const struct nfnl_cmd_grammar nft_compat_cmds[] = {
 	{ NFNL_MSG_COMPAT_GET, "NFNL_MSG_COMPAT_GET" },
 };
 
+/*
+ * NFTA_COMPAT_REV is NLA_POLICY_MAX(NLA_BE32, 255) in nfnl_compat_policy_get.
+ */
 static const struct nla_attr_spec nft_compat_attrs[] = {
 	{ NFTA_COMPAT_NAME, NLA_KIND_STRING, NFT_COMPAT_NAME_MAX - 1 },
-	{ NFTA_COMPAT_REV,  NLA_KIND_U32,    4 },
+	{ NFTA_COMPAT_REV,  NLA_KIND_BE32_MAX, 255 },
 	{ NFTA_COMPAT_TYPE, NLA_KIND_U32,    4 },
 };
 

@@ -32,12 +32,25 @@ enum nla_kind {
 	 * sees plausibly-shaped input.  Use for attrs the kernel feeds
 	 * to those parsers — e.g. taskstats REGISTER_CPUMASK. */
 	NLA_KIND_STRING_CPULIST,
+	/* A scalar the kernel policy bounds, in network byte order, which is
+	 * how the netfilter NLA_BE16 / NLA_BE32 policies read it.  max_len
+	 * holds the bound rather than a length.  The _MASK kinds mirror
+	 * NLA_POLICY_MASK and fill a random subset of the max_len bits, so
+	 * the mask has to fit in 16 bits; NLA_KIND_BE32_MAX mirrors
+	 * NLA_POLICY_MAX and fills a number in [0, max_len].  One draw in
+	 * eight is random bytes, so the policy's reject arm still sees
+	 * traffic. */
+	NLA_KIND_BE16_MASK,
+	NLA_KIND_BE32_MASK,
+	NLA_KIND_BE32_MAX,
 };
 
 struct nla_attr_spec {
 	unsigned short type;
 	unsigned short kind;
-	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds */
+	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds;
+				 * the mask or maximum for the bounded
+				 * scalar kinds */
 	unsigned short min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
 				 * max_len}.  Zero on other kinds. */

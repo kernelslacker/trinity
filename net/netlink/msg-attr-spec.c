@@ -4,7 +4,9 @@
  * kind so the family's policy lets the message reach its handler.  Families
  * without a table use the random emitter in msg-attr-random.c.
  */
+#include <arpa/inet.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
@@ -29,6 +31,11 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_U16:	return 2;
 	case NLA_KIND_U32:	return 4;
 	case NLA_KIND_U64:	return 8;
+	case NLA_KIND_BE16_MASK:
+		return 2;
+	case NLA_KIND_BE32_MASK:
+	case NLA_KIND_BE32_MAX:
+		return 4;
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
@@ -50,9 +57,43 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 }
 
 /*
+ * Fill a scalar the kernel policy bounds: a random subset of the mask bits,
+ * or a number in [0, max], in network byte order as the NLA_BE16 / NLA_BE32
+ * policies read it.  One draw in eight stays random bytes so the policy's
+ * reject arm keeps seeing traffic, as does a payload that a full buffer cut
+ * short of the scalar's width.
+ */
+static void spec_fill_bounded(unsigned char *p, size_t len,
+			      const struct nla_attr_spec *spec)
+{
+	uint32_t v;
+
+	if (len != spec_payload_len(spec) || ONE_IN(8)) {
+		generate_rand_bytes(p, len);
+		return;
+	}
+
+	if (spec->kind == NLA_KIND_BE32_MAX)
+		v = rnd_modulo_u32(spec->max_len + 1U);
+	else
+		v = rnd_u32() & spec->max_len;
+
+	if (spec->kind == NLA_KIND_BE16_MASK) {
+		uint16_t be = htons(v);
+
+		memcpy(p, &be, sizeof(be));
+	} else {
+		uint32_t be = htonl(v);
+
+		memcpy(p, &be, sizeof(be));
+	}
+}
+
+/*
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
- * IFLA_INFO_KIND), everything else gets random bytes.
+ * IFLA_INFO_KIND), the bounded scalars a value their policy accepts, and
+ * everything else gets random bytes.
  */
 static void spec_fill_payload(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -70,6 +111,10 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 		/* Force NUL termination inside the on-wire payload so
 		 * cpulist_parse() can't run past the attribute. */
 		p[len - 1] = '\0';
+	} else if (spec->kind == NLA_KIND_BE16_MASK ||
+		   spec->kind == NLA_KIND_BE32_MASK ||
+		   spec->kind == NLA_KIND_BE32_MAX) {
+		spec_fill_bounded(p, len, spec);
 	} else {
 		generate_rand_bytes(p, len);
 	}

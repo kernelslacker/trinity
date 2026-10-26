@@ -25,13 +25,16 @@ static const struct nfnl_cmd_grammar acct_cmds[] = {
 
 /*
  * NFACCT_USE (emitted only) and NFACCT_PAD (64-bit alignment padding) have no
- * policy entry and are left out.
+ * policy entry and are left out.  nfnl_acct_policy masks NFACCT_FLAGS with
+ * the kernel's NFACCT_F_QUOTA, the two quota bits; NEW then refuses a word
+ * with both set.
  */
 static const struct nla_attr_spec acct_attrs[] = {
 	{ NFACCT_NAME,   NLA_KIND_STRING, NFACCT_NAME_MAX - 1 },
 	{ NFACCT_PKTS,   NLA_KIND_U64,    8 },
 	{ NFACCT_BYTES,  NLA_KIND_U64,    8 },
-	{ NFACCT_FLAGS,  NLA_KIND_U32,    4 },
+	{ NFACCT_FLAGS,  NLA_KIND_BE32_MASK,
+			 NFACCT_F_QUOTA_PKTS | NFACCT_F_QUOTA_BYTES },
 	{ NFACCT_QUOTA,  NLA_KIND_U64,    8 },
 	{ NFACCT_FILTER, NLA_KIND_NESTED, 0 },
 };

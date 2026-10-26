@@ -20,7 +20,8 @@ static const struct nfnl_cmd_grammar ulog_cmds[] = {
 /*
  * CMD and MODE are NLA_UNSPEC with a minimum .len in nfula_cfg_policy;
  * BINARY_FIXED2 at exactly the struct size always clears it, and the random
- * bytes still fuzz .command and .copy_mode.
+ * bytes still fuzz .command and .copy_mode.  FLAGS is NLA_POLICY_MASK of
+ * the three NFULNL_CFG_F_ bits there.
  */
 static const struct nla_attr_spec ulog_attrs[] = {
 	{ NFULA_CFG_CMD, NLA_KIND_BINARY_FIXED2,
@@ -32,7 +33,9 @@ static const struct nla_attr_spec ulog_attrs[] = {
 	{ NFULA_CFG_NLBUFSIZ, NLA_KIND_U32, 0, 0 },
 	{ NFULA_CFG_TIMEOUT,  NLA_KIND_U32, 0, 0 },
 	{ NFULA_CFG_QTHRESH,  NLA_KIND_U32, 0, 0 },
-	{ NFULA_CFG_FLAGS,    NLA_KIND_U16, 0, 0 },
+	{ NFULA_CFG_FLAGS,    NLA_KIND_BE16_MASK,
+			      NFULNL_CFG_F_SEQ | NFULNL_CFG_F_SEQ_GLOBAL |
+			      NFULNL_CFG_F_CONNTRACK },
 };
 
 struct nfnl_subsys_grammar sub_ulog = {

@@ -203,11 +203,14 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
  * untyped slots, and length-checks typed ones.  The chain, obj and flowtable
  * nests are bare NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is
  * an NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.
+ * The FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
+ * bits the uapi header names for it.  NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS
+ * share id 3, so which policy a draw meets depends on the picked command.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
 	/* NFT_MSG_*TABLE */
 	{ NFTA_TABLE_NAME,           NLA_KIND_STRING, 32 },
-	{ NFTA_TABLE_FLAGS,          NLA_KIND_U32,    4 },
+	{ NFTA_TABLE_FLAGS,          NLA_KIND_BE32_MASK, NFT_TABLE_F_MASK },
 	{ NFTA_TABLE_HANDLE,         NLA_KIND_U64,    8 },
 	{ NFTA_TABLE_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*CHAIN */
@@ -217,7 +220,7 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	{ NFTA_CHAIN_HOOK,           NLA_KIND_NESTED, 0 },
 	{ NFTA_CHAIN_POLICY,         NLA_KIND_U32,    4 },
 	{ NFTA_CHAIN_TYPE,           NLA_KIND_STRING, 16 },
-	{ NFTA_CHAIN_FLAGS,          NLA_KIND_U32,    4 },
+	{ NFTA_CHAIN_FLAGS,          NLA_KIND_BE32_MASK, NFT_CHAIN_FLAGS },
 	{ NFTA_CHAIN_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*RULE */
 	{ NFTA_RULE_TABLE,           NLA_KIND_STRING, 32 },
@@ -229,7 +232,10 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	/* NFT_MSG_*SET */
 	{ NFTA_SET_TABLE,            NLA_KIND_STRING, 32 },
 	{ NFTA_SET_NAME,             NLA_KIND_STRING, 32 },
-	{ NFTA_SET_FLAGS,            NLA_KIND_U32,    4 },
+	{ NFTA_SET_FLAGS,            NLA_KIND_BE32_MASK,
+		NFT_SET_ANONYMOUS | NFT_SET_CONSTANT | NFT_SET_INTERVAL |
+		NFT_SET_MAP | NFT_SET_TIMEOUT | NFT_SET_EVAL | NFT_SET_OBJECT |
+		NFT_SET_CONCAT | NFT_SET_EXPR },
 	{ NFTA_SET_KEY_TYPE,         NLA_KIND_U32,    4 },
 	{ NFTA_SET_KEY_LEN,          NLA_KIND_U32,    4 },
 	{ NFTA_SET_DATA_TYPE,        NLA_KIND_U32,    4 },
@@ -240,7 +246,8 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	/* NFT_MSG_*SETELEM */
 	{ NFTA_SET_ELEM_KEY,         NLA_KIND_NESTED, 0 },
 	{ NFTA_SET_ELEM_DATA,        NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_FLAGS,       NLA_KIND_U32,    4 },
+	{ NFTA_SET_ELEM_FLAGS,       NLA_KIND_BE32_MASK,
+		NFT_SET_ELEM_INTERVAL_END | NFT_SET_ELEM_CATCHALL },
 	{ NFTA_SET_ELEM_TIMEOUT,     NLA_KIND_U64,    8 },
 	{ NFTA_SET_ELEM_EXPIRATION,  NLA_KIND_U64,    8 },
 	{ NFTA_SET_ELEM_USERDATA,    NLA_KIND_BINARY, 64 },
@@ -272,7 +279,7 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	{ NFTA_FLOWTABLE_HOOK,       NLA_KIND_NESTED, 0 },
 	{ NFTA_FLOWTABLE_USE,        NLA_KIND_U32,    4 },
 	{ NFTA_FLOWTABLE_HANDLE,     NLA_KIND_U64,    8 },
-	{ NFTA_FLOWTABLE_FLAGS,      NLA_KIND_U32,    4 },
+	{ NFTA_FLOWTABLE_FLAGS,      NLA_KIND_BE32_MASK, NFT_FLOWTABLE_MASK },
 };
 
 struct nfnl_subsys_grammar sub_nftables = {
