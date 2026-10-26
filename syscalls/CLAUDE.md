@@ -57,6 +57,9 @@ literals `tables/` copies into shared memory.
    then cuts a rewritten count (chain substitution, a RedQueen pin) that
    would run the write past the buffer into trinity's own regions, and
    `sanity_check_tables()` refuses a slot with no address argtype before it.
+   A count whose buffer the sanitiser made of a pool mapping is held to how
+   far the mapping runs from that buffer by the entry's `.vet_final` hook
+   instead (`socket/recv.c`).
    A rule the sanitiser's vetting rests on, which a rewrite after it
    (chain substitution, a RedQueen pin) could undo, goes in `.vet_final`:
    `validate_arg_coupling()` runs it once on the slots the kernel is about

@@ -3,7 +3,8 @@
  * final argument slots to, an entry's own .vet_final rule first: a rewrite
  * after the sanitiser (chain substitution, a RedQueen pin) must not leave
  * the kernel a range the sanitiser would have refused.  A buffer-filling
- * count stays inside its buffer, a munmap, mprotect, pkey_mprotect,
+ * count stays inside its buffer (a recv or recvfrom size inside the one its
+ * sanitiser made of the picked mapping), a munmap, mprotect, pkey_mprotect,
  * madvise, set_mempolicy_home_node or remap_file_pages range inside the
  * pool mapping its sanitiser picked, madvise's (addr, len) off trinity's
  * tracked regions too, a madvise or process_madvise never installs guard
@@ -153,9 +154,9 @@ static struct syscallrecord rec;
 
 /* The entries that set buf_count_slot whose TUs this binary links, with the
  * slot the kernel's own signature puts the count in; the buffer is the slot
- * before it.  getrandom's, recv's and recvfrom's sanitisers take a map
- * handle there instead: getrandom's shape is built by hand below, and
- * recv_count_held_inside_buffer() judges the real recv entries. */
+ * before it.  getrandom's sanitiser takes a map handle there instead, so
+ * its shape is built by hand below; recv's and recvfrom's do too, and
+ * their hook holds the count to the buffer in the rule's place. */
 static struct {
 	struct syscallentry *entry;
 	unsigned int slot;
@@ -274,39 +275,6 @@ static void vetted_count_kept(struct syscallentry *entry, unsigned int slot,
 		    *slot_of(slot - 1) != buf || *slot_of(slot) != count)
 			BUG("arg coupling: a count the sanitiser sized was rewritten");
 	}
-}
-
-/* recv and recvfrom fill the buffer their sanitiser makes of the ARG_MMAP
- * handle with as much as the socket holds, up to the count, so the count
- * is held inside the buffer's region as getrandom's is: one running from
- * a tracked region into the next is cut to the region's end, one inside
- * it is kept, and one from an untracked buffer that reaches a region is
- * cut to 0.  The rule judges the final slots, so no sanitiser runs. */
-static void recv_count_held_inside_buffer(void)
-{
-	struct syscallentry *const entries[] = {
-		&syscall_recv, &syscall_recvfrom,
-	};
-	const unsigned long tail = 0x800, end = REGION + REGION_SIZE;
-	unsigned int e;
-
-	fake_untrack_regions();
-	fake_track_region(REGION, REGION_SIZE);
-	fake_track_region(end, 0x10000);
-	for (e = 0; e < ARRAY_SIZE(entries); e++) {
-		if (entries[e]->buf_count_slot != 3 ||
-		    entry_check_status(entries[e]) != 0)
-			BUG("recv: the count slot is not named, or sanity_check_tables() refuses it");
-		if (count_after(entries[e], 3, end - tail, 0x7ffff000UL) != tail)
-			BUG("recv: a count running past the buffer's region was kept");
-		if (count_after(entries[e], 3, end - tail, tail) != tail)
-			BUG("recv: a count inside the buffer's region was cut");
-		fake_overlaps_shared = true;
-		if (count_after(entries[e], 3, 0x10000000UL, 0x4000) != 0)
-			BUG("recv: an untracked buffer reaching a region kept its count");
-		fake_overlaps_shared = false;
-	}
-	fake_untrack_regions();
 }
 
 /* The count is cut where the write would leave the buffer's region for
@@ -764,8 +732,9 @@ struct valresult_buf __wrap_valresult_alloc(size_t initial_cap,
  * mapping there is nothing to hold it to.  recvfrom's sanitiser runs the
  * same way, and what it adds comes out too: an address buffer in the
  * writable pool and a value-result length, which its post handler clears.
- * The buffers it took for the length go back to deferred free, drained at
- * the end for ASAN to find nothing left. */
+ * The cleanup gives the snapshot back, and the buffers recvfrom took for
+ * the length go to deferred free, drained at the end for ASAN to find
+ * nothing left. */
 static void recv_buffer_names_mapping(void)
 {
 	struct syscallentry *const entries[] = {
@@ -807,8 +776,11 @@ static void recv_buffer_names_mapping(void)
 					BUG("recvfrom: the address buffer or the length slot was not built");
 				mrec->retval = (unsigned long) -1L;
 				entries[e]->post(mrec);
-				if (mrec->a6 != 0 || mrec->post_state != 0)
-					BUG("recv: the post handler left the length slot or the snapshot");
+				if (mrec->a6 != 0)
+					BUG("recv: the post handler left the length slot");
+				entries[e]->cleanup(mrec);
+				if (mrec->post_state != 0)
+					BUG("recv: the cleanup left the snapshot");
 			}
 		}
 	}
@@ -3106,6 +3078,242 @@ static void mincore_held_to_vec(void)
 	fake_this_child = NULL;
 }
 
+/* The call recv's or recvfrom's sanitiser builds over the pool mapping from
+ * the generator's @count, mapping in the buffer slot. */
+static struct syscallrecord *recv_call(struct syscallentry *entry,
+				       unsigned long count)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	mrec->a1 = 0;
+	mrec->a2 = (unsigned long) &pool_obj.map;
+	mrec->a3 = count;
+	entry->sanitise(mrec);
+	return mrec;
+}
+
+/* Whatever the sanitiser builds passes, over each state of the picked
+ * mapping: one clear of trinity's regions, one the buffer moves off, a low
+ * one and a high one, and none picked, natively and as a compat call.  A
+ * compat call whose buffer is above 4 GiB is built to receive nothing, as
+ * its slot cannot carry the buffer. */
+static void recv_sanitised_call_passes(struct syscallentry *entry)
+{
+	unsigned int shape, i;
+
+	for (shape = 0; shape < 16; shape++) {
+		for (i = 0; i < SANITISER_DRAWS / 16; i++) {
+			struct syscallrecord *mrec = mm_call(entry);
+			unsigned long buf, count;
+
+			if (shape & 1)
+				pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+			if (shape & 2)
+				fake_track_region((unsigned long) pool_obj.map.ptr,
+						  pool_obj.map.size);
+			mrec->a1 = 0;
+			mrec->a2 = (shape & 8) ? 0 : (unsigned long) &pool_obj.map;
+			mrec->a3 = RAND_ARRAY(generated_counts);
+			mrec->do32bit = (shape & 4) != 0;
+			entry->sanitise(mrec);
+			fake_untrack_regions();
+			buf = mrec->a2;
+			count = mrec->a3;
+			if (mrec->do32bit && buf > UINT_MAX && count != 0)
+				BUG("recv: the sanitiser built a compat call its buffer slot cannot carry");
+			if (validate_arg_coupling(mrec, entry) != 0 ||
+			    mrec->a2 != buf || mrec->a3 != count)
+				BUG("recv: a call the sanitiser built was refused or rewritten");
+			mrec->retval = (unsigned long) -1L;
+			entry->post(mrec);
+			entry->cleanup(mrec);
+		}
+	}
+}
+
+/* A slot rewritten after the sanitiser that has the kernel write past the
+ * buffer, or somewhere else, is refused.  A buffer at the mapping may take
+ * the mapping's size, whatever count the sanitiser drew, and no more: a
+ * byte past it, MAX_RW_COUNT, a pid or an address is refused.  One that
+ * moved to a pool slot may take only the count the slot was sized for.
+ * A buffer pinned elsewhere is refused, inside the mapping too, unless it
+ * is NULL, which takes no write, or the size is 0. */
+static void recv_rewritten_slots_held(struct syscallentry *entry)
+{
+	const unsigned long size = POOL_PAGES * page_size;
+	const unsigned long grown[] = {
+		size + 1, 0x7ffff000UL, 3000000UL, 0x7f0000001000UL,
+	};
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	mrec = recv_call(entry, page_size);
+	if (mrec->a2 != POOL_MAP || mrec->a3 != page_size)
+		BUG("recv: the sanitiser did not build the call the case needs");
+	mrec->a3 = size;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a size covering the mapping was refused");
+	for (i = 0; i < ARRAY_SIZE(grown); i++) {
+		mrec->a3 = grown[i];
+		if (validate_arg_coupling(mrec, entry) != -1)
+			BUG("recv: a size grown past the mapping was kept");
+	}
+	mrec->a3 = 0;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a size of 0 was refused");
+
+	mrec->a3 = page_size;
+	mrec->a2 = POOL_MAP + page_size;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a buffer moved inside the mapping was kept");
+	mrec->a2 = 0x10000000UL;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a pinned buffer was kept");
+	mrec->a3 = 0;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a pinned buffer that receives nothing was refused");
+	mrec->a2 = 0;
+	mrec->a3 = ULONG_MAX;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a NULL buffer was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	entry->cleanup(mrec);
+
+	/* The pool slot is as long as the count it was moved for. */
+	mrec = mm_call(entry);
+	fake_track_region(POOL_MAP, size);
+	mrec->a1 = 0;
+	mrec->a2 = (unsigned long) &pool_obj.map;
+	mrec->a3 = page_size;
+	entry->sanitise(mrec);
+	fake_untrack_regions();
+	if (!range_in_writable_pool(mrec->a2, page_size))
+		BUG("recv: the buffer over a tracked mapping did not move into the pool");
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a call over a tracked mapping was refused");
+	mrec->a3 = page_size + 1;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a size one past its pool slot was kept");
+	mrec->a3 = size;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a size covering the mapping was kept for a pool slot");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	entry->cleanup(mrec);
+}
+
+/* A call with no mapping picked is built with a NULL buffer and the size
+ * the generator drew, and passes; a buffer pinned over it is refused, there
+ * being no snapshot to name one.  So is any call whose snapshot is not its
+ * own: a pid where the pointer was, one the ownership table does not hold,
+ * or one with another magic. */
+static void recv_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+
+	mrec->a1 = 0;
+	mrec->a2 = 0;
+	mrec->a3 = 5000;
+	entry->sanitise(mrec);
+	if (mrec->a2 != 0 || mrec->a3 != 5000)
+		BUG("recv: the sanitiser built a buffer or cut a size with no mapping");
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a call with no mapping was refused");
+	mrec->a2 = POOL_MAP;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a buffer pinned over no mapping was kept");
+	mrec->a3 = 0;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a pinned buffer that receives nothing was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	entry->cleanup(mrec);
+
+	mrec = recv_call(entry, page_size);
+	snapshot_gate_held(mrec, entry->name);
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	entry->cleanup(mrec);
+}
+
+/* A compat call hands the kernel the low 32 bits of the buffer and the
+ * size, so they are judged on those: an upper half on a size or a buffer
+ * over a low mapping drops, and over a high mapping the low half of the
+ * buffer names an address nobody sized, which no size may be put in. */
+static void recv_compat_slots_truncated(struct syscallentry *entry)
+{
+	const unsigned long upper = 1UL << 32;
+	struct syscallrecord *mrec;
+	unsigned int i;
+
+	mrec = mm_call(entry);
+	pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+	mrec->a1 = 0;
+	mrec->a2 = (unsigned long) &pool_obj.map;
+	mrec->a3 = page_size;
+	entry->sanitise(mrec);
+	mrec->a3 = page_size | upper;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a native size's upper half was dropped");
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a compat size was judged on the slot's upper half");
+	mrec->a3 = page_size;
+	mrec->a2 = LOW_POOL_MAP | upper;
+	if (validate_arg_coupling(mrec, entry) != 0)
+		BUG("recv: a compat buffer was judged on the slot's upper half");
+	mrec->do32bit = false;
+	if (validate_arg_coupling(mrec, entry) != -1)
+		BUG("recv: a native buffer's upper half was dropped");
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	entry->cleanup(mrec);
+
+	/* The low half of a high buffer is another address, which no size
+	 * may be put in, unless it is 0: NULL takes no write. */
+	for (i = 0; i < 2; i++) {
+		mrec = mm_call(entry);
+		pool_obj.map.ptr = (void *) (POOL_MAP + (i ? 0x40001000UL : 0));
+		mrec->do32bit = true;
+		mrec->a1 = 0;
+		mrec->a2 = (unsigned long) &pool_obj.map;
+		mrec->a3 = page_size;
+		entry->sanitise(mrec);
+		if (mrec->a3 != 0 || validate_arg_coupling(mrec, entry) != 0)
+			BUG("recv: a compat call over a high mapping was not built empty, or was refused");
+		mrec->a3 = 1;
+		if (validate_arg_coupling(mrec, entry) != (i ? -1 : 0))
+			BUG("recv: a size was judged wrongly for a compat buffer its slot cannot carry");
+		mrec->retval = (unsigned long) -1L;
+		entry->post(mrec);
+		entry->cleanup(mrec);
+	}
+}
+
+/* recv's and recvfrom's final size stays inside the buffer their sanitiser
+ * made of the picked mapping, and the buffer is that one. */
+static void recv_buffer_held_to_mapping(void)
+{
+	struct syscallentry *const entries[] = {
+		&syscall_recv, &syscall_recvfrom,
+	};
+	unsigned int e;
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+	fake_socket_fd_none = true;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		recv_sanitised_call_passes(entries[e]);
+		recv_rewritten_slots_held(entries[e]);
+		recv_needs_its_snapshot(entries[e]);
+		recv_compat_slots_truncated(entries[e]);
+	}
+	deferred_free_flush();
+	fake_socket_fd_none = false;
+	fake_this_child = NULL;
+}
+
 /* post_mmap() dirties half the mappings it records, and maps_name_test.c
  * has it record some; what the walk writes is no part of a test. */
 void dirty_mapping(struct map *map)
@@ -3777,7 +3985,6 @@ static void ipc_shmat_held(void)
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
-	recv_count_held_inside_buffer();
 	shmat_remap_held_to_mapping();
 	get_mempolicy_addr_names_mapping();
 	recv_buffer_names_mapping();
@@ -3809,6 +4016,7 @@ void arg_coupling_self_check(void)
 	mremap_post_follows_mapping();
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
+	recv_buffer_held_to_mapping();
 	mmap_fixed_held_to_vetted_call();
 	mmap_fixed_off_image();
 	hugetlb_flag_size_read();

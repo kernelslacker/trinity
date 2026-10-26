@@ -221,7 +221,9 @@ REAL_SRCS	:= \
 # (prctl and recvmsg through their own sanitisers) with the post_state
 # table, post_snapshot_or_skip() and the corrupt-pointer bump faked;
 # sanitiser_owned_mask_test.c runs prctl's sanitiser too, for the slot it
-# owns.  args/valresult.c is what recvfrom's sanitiser reaches.
+# owns, and arg_coupling_test.c runs the recv and recvfrom sanitisers and
+# their .vet_final hook over the fake pool mapping.  args/valresult.c is
+# what recvfrom's sanitiser reaches.
 # dispatch/syscall-post.c brings enforce_count_bound(), which runs ahead
 # of those handlers.
 # dispatch/syscall.c and dispatch/syscall-exec.c bring do_syscall() with the

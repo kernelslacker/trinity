@@ -2,6 +2,8 @@
    asmlinkage long sys_recv(int fd, void __user *ubuf, size_t size,
 			    unsigned flags)
 
+   The final size stays inside the buffer the sanitiser sized, ubuf
+   included (vet_final_recv()), for recvfrom as well.
  */
 #include <limits.h>
 #include <sys/socket.h>
@@ -20,9 +22,65 @@
 #include "kernel/socket.h"
 #include "kernel/uio.h"
 
-static void sanitise_recv(struct syscallrecord *rec)
+/*
+ * The buffer recv_buffer() made of the ARG_MMAP handle, and how many bytes
+ * from it the kernel may write: the mapping's walkable size, or the count
+ * the pool slot the buffer moved to was sized for.  Captured at sanitise
+ * time for the final-slot hook, which has nothing else to name the buffer
+ * by: a slot rewritten after the sanitiser holds whatever the rewrite put
+ * there.  Lives in rec->post_state, a slot the syscall ABI does not expose.
+ * recvfrom's carries its value-result buffers too, which cleanup_recv()
+ * gives back.
+ */
+#define RECV_POST_STATE_MAGIC	0x524543565F505354UL	/* "RECV_PST" */
+struct recv_post_state {
+	unsigned long magic;
+	unsigned long buf;
+	size_t extent;
+	struct valresult_buf vrb;
+};
+
+/*
+ * The kernel fills ubuf with as much as the socket holds, up to size
+ * (__sys_recvfrom(), which import_ubuf() cuts to MAX_RW_COUNT), so the
+ * final size has to fit the extent the sanitiser recorded, and the slot
+ * has to name the buffer it recorded it for: a size rewritten after the
+ * sanitiser (chain substitution, a RedQueen pin) runs the write on past
+ * the mapping, into whatever the kernel placed beside it, or past the pool
+ * slot the buffer moved to, and a pinned ubuf aims it anywhere.  Refused
+ * rather than repaired, each slot read once, as the kernel reads it: the
+ * low 32 bits for a compat call.  A NULL buffer or a size of 0 takes no
+ * write, and a record with no snapshot of ours passes only those.  Shape,
+ * then ownership, then magic, as post_state_claim_owned() orders them.
+ */
+static int vet_final_recv(struct syscallrecord *rec,
+			  const struct syscallentry *entry)
+{
+	struct recv_post_state *snap =
+		(struct recv_post_state *) rec->post_state;
+	unsigned long mask = rec->do32bit ? UINT_MAX : ULONG_MAX;
+	unsigned long buf = rec->a2 & mask, size = rec->a3 & mask;
+	size_t extent = 0;
+
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == RECV_POST_STATE_MAGIC)
+		extent = snap->extent;
+	else
+		snap = NULL;
+
+	/* A size left after the first test fits extent, so snap is ours. */
+	if (buf != 0 && size != 0 && (size > extent || buf != snap->buf)) {
+		outputerr("arg-coupling: %s rejected: the size runs past the buffer sanitise sized, or ubuf is not the one it sized\n",
+			  entry->name);
+		return -1;
+	}
+	return 0;
+}
+
+static void recv_buffer(struct syscallrecord *rec, struct recv_post_state *snap)
 {
 	struct map *map = (struct map *) rec->a2;
+	unsigned long start = 0;
 
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
@@ -37,11 +95,32 @@ static void sanitise_recv(struct syscallrecord *rec)
 	 * check covers. */
 	rec->a2 = 0;
 	if (map != NULL && !looks_like_corrupted_ptr(rec, map)) {
-		rec->a2 = (unsigned long) map->ptr;
+		start = (unsigned long) map->ptr;
+		rec->a2 = start;
 		if (rec->a3 > map->size)
 			rec->a3 = map->size;
+		snap->extent = map->size;
 	}
 	avoid_shared_buffer_out(&rec->a2, rec->a3);
+	if (rec->a2 != start)
+		snap->extent = rec->a3;
+
+	/* A compat call's kernel reads the low 32 bits of the buffer slot,
+	 * which for a buffer above them is an address nobody sized: it gets
+	 * no bytes to receive. */
+	if (rec->do32bit && rec->a2 > UINT_MAX)
+		rec->a3 = 0;
+
+	snap->buf = rec->a2;
+}
+
+static void sanitise_recv(struct syscallrecord *rec)
+{
+	struct recv_post_state *snap = zmalloc_tracked(sizeof(*snap));
+
+	snap->magic = RECV_POST_STATE_MAGIC;
+	recv_buffer(rec, snap);
+	post_state_install(rec, snap);
 }
 
 /*
@@ -87,27 +166,22 @@ static void post_recv(struct syscallrecord *rec)
  * before writing back the actual count.
  *
  * The lenp slot is an a6 value-result slot routed through
- * valresult_alloc() and freed by valresult_free() in post_recvfrom
- * (via snap-owned vrb).  valresult_alloc() also returns a buf the
+ * valresult_alloc() and freed by valresult_free() in cleanup_recv()
+ * (via the snapshot-owned vrb).  valresult_alloc() also returns a buf the
  * caller does not use here (a5 has its own get_writable_address()
- * backing); buf and len_io are both released via the snap-owned vrb
- * in the post handler.
+ * backing); buf and len_io are both released via the snapshot-owned vrb
+ * in the cleanup.
  *
  * Mirrors getsockopt.c.
  */
-#define RECVFROM_POST_STATE_MAGIC	0x5243564652533230UL	/* "RCVFRS20" */
-struct recvfrom_post_state {
-	unsigned long magic;
-	struct valresult_buf vrb;
-};
-
 static void sanitise_recvfrom(struct syscallrecord *rec)
 {
 	struct sockaddr_storage *addr;
-	struct recvfrom_post_state *snap;
+	struct recv_post_state *snap = zmalloc_tracked(sizeof(*snap));
 	struct valresult_buf vrb;
 
-	sanitise_recv(rec);
+	snap->magic = RECV_POST_STATE_MAGIC;
+	recv_buffer(rec, snap);
 
 	addr = (struct sockaddr_storage *) get_writable_address(sizeof(*addr));
 	if (addr != NULL)
@@ -125,7 +199,7 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	 * -- the addr buffer above is sized to match -- and the helper
 	 * mutates that into the picked shape (EXACT / UNDER / +1 / HUGE /
 	 * ZERO).  The vrb.buf slot is not consumed here; valresult_free()
-	 * in the post handler still releases it through the snap.
+	 * in the cleanup still releases it through the snap.
 	 */
 	vrb = valresult_alloc(sizeof(struct sockaddr_storage),
 			      valresult_pick_shape());
@@ -133,18 +207,16 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 
 	/*
 	 * Snapshot the vrb BEFORE avoid_shared_buffer() runs.  a6 is
-	 * about to be relocated off the libc heap; the post handler must
+	 * about to be relocated off the libc heap; the cleanup must
 	 * free the zmalloc result, not the relocated pointer (which the
 	 * deferred-free heap-bounds gate rejects).  Wired into the
 	 * post_state ownership table via post_state_install() so
-	 * post_recvfrom() can prove the snap belongs to this attempt
+	 * cleanup_recv() can prove the snap belongs to this attempt
 	 * before any field deref; a sibling stomp that redirects
 	 * rec->post_state at a foreign heap chunk happening to carry
-	 * RECVFROM_POST_STATE_MAGIC is rejected by the ownership lookup
+	 * RECV_POST_STATE_MAGIC is rejected by the ownership lookup
 	 * before the leading-word magic compare ever runs.
 	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = RECVFROM_POST_STATE_MAGIC;
 	snap->vrb = vrb;
 	post_state_install(rec, snap);
 
@@ -153,25 +225,29 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 
 static void post_recvfrom(struct syscallrecord *rec)
 {
-	struct recvfrom_post_state *snap;
-
 	post_recv(rec);
 
 	/*
 	 * a6 was the valresult len_io slot; the kernel has either written
-	 * through it or EFAULTed by now.  Clear unconditionally before any
-	 * early-return so a rejected-snap path does not leave a stale
-	 * heap pointer in the ABI slot for replay.
+	 * through it or EFAULTed by now.  Clear it so a stale heap pointer
+	 * is not left in the ABI slot for replay.
 	 */
 	rec->a6 = 0;
+}
 
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- the caller just early-returns on NULL.
-	 */
-	snap = post_state_claim_owned(rec, RECVFROM_POST_STATE_MAGIC, __func__);
+/*
+ * The snapshot is the final-slot hook's, and recvfrom's value-result
+ * buffers ride in it, so it goes back on every path.  Canonical
+ * SNAPSHOT_OWNED bracket: shape -> ownership -> magic, in that order.  The
+ * helper has already cleared rec->post_state, emitted any outputerr()
+ * diagnostic, and bumped the corruption counter on failure -- the caller
+ * just returns on NULL.  recv's vrb is empty, which valresult_free() takes.
+ */
+static void cleanup_recv(struct syscallrecord *rec)
+{
+	struct recv_post_state *snap;
+
+	snap = post_state_claim_owned(rec, RECV_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
@@ -218,12 +294,12 @@ struct syscallentry syscall_recv = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recv,
+	.vet_final = vet_final_recv,
 	.post = post_recv,
+	.cleanup = cleanup_recv,
 	/* size (a3) and flags (a4): the dispatch-time values post_recv()
 	 * bounds the return with. */
 	.arg_snapshot_mask = (1u << 2) | (1u << 3),
-	/* ubuf takes as much as the socket holds, up to size. */
-	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -242,10 +318,11 @@ struct syscallentry syscall_recvfrom = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvfrom,
+	.vet_final = vet_final_recv,
 	.post = post_recvfrom,
+	.cleanup = cleanup_recv,
 	/* size (a3) and flags (a4), as for recv. */
 	.arg_snapshot_mask = (1u << 2) | (1u << 3),
-	.buf_count_slot = 3,
 	.rettype = RET_NUM_BYTES,
 };
 
