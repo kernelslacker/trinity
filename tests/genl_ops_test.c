@@ -547,8 +547,9 @@ static struct slot nfsd_sock[] = {
 };
 static struct slot nfsd_threads_set[] = {
 	S_U32(NFSD_A_SERVER_THREADS, .required = true),
-	S_U32(NFSD_A_SERVER_GRACETIME),
-	S_U32(NFSD_A_SERVER_LEASETIME),
+	/* nfsd_nl_threads_set_doit() refuses either time outside [10, 3600] */
+	S_U32_RANGE(NFSD_A_SERVER_GRACETIME, 10, 3600),
+	S_U32_RANGE(NFSD_A_SERVER_LEASETIME, 10, 3600),
 	S_STR(NFSD_A_SERVER_SCOPE, 0),
 	S_U32(NFSD_A_SERVER_MIN_THREADS),
 	S_BLOB(NFSD_A_SERVER_FH_KEY, 16, 16),

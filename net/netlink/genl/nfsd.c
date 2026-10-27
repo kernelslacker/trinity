@@ -92,14 +92,15 @@ static const struct nla_attr_spec nfsd_sock_attrs[] = {
  * cmd takes only the ids of its own.  The two the replies add, SOCK_RPCBIND
  * and POOL_MODE_NPOOLS, are not in a request policy.  FH_KEY is exactly
  * 16 bytes, the rest u32 or NLA_NUL_STRING.  THREADS_SET answers -EINVAL
- * without THREADS.  The cmds that take one attribute, POOL_MODE_SET and the
- * three UNLOCKs, want it, and a table of one is drawn from by every
- * request that has an attribute, so they mark nothing.
+ * without THREADS, or with a GRACETIME or LEASETIME outside [10, 3600],
+ * which its policy leaves plain u32s.  The cmds that take one attribute,
+ * POOL_MODE_SET and the three UNLOCKs, want it, and a table of one is
+ * drawn from by every request that has an attribute, so they mark nothing.
  */
 static const struct nla_attr_spec nfsd_threads_set_attrs[] = {
 	{ NFSD_A_SERVER_THREADS,	NLA_KIND_U32,    4, .required = true },
-	{ NFSD_A_SERVER_GRACETIME,	NLA_KIND_U32,    4 },
-	{ NFSD_A_SERVER_LEASETIME,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_GRACETIME,	NLA_KIND_U32_RANGE, 3600, 10 },
+	{ NFSD_A_SERVER_LEASETIME,	NLA_KIND_U32_RANGE, 3600, 10 },
 	{ NFSD_A_SERVER_SCOPE,		NLA_KIND_STRING, 16, 1 },
 	{ NFSD_A_SERVER_MIN_THREADS,	NLA_KIND_U32,    4 },
 	{ NFSD_A_SERVER_FH_KEY,		NLA_KIND_BINARY_FIXED2, 16, 16 },
