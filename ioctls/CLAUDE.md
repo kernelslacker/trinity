@@ -13,7 +13,7 @@ Largest / structurally distinct per-device files:
 - `vhost.c` — vhost-net/vsock/scsi/vdpa control ioctls.
 - `firewire.c` — IEEE1394 character device ioctls.
 - `cdrom.c` — CDROM/ATAPI command family.
-- `binder.c` takes its requests from the uapi `<linux/android/binder.h>`, and builds only where configure finds it (`USE_BINDER`).
+- `binder.c` takes its requests from the uapi `<linux/android/binder.h>`, and builds only where configure finds it (`USE_BINDER`); the requests after the first seven are enum members, which configure probes, with fallbacks in `include/kernel/binder.h`.
 
 ## Key design decisions
 

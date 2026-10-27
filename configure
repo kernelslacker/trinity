@@ -605,6 +605,12 @@ check_enum_member drm/drm_ras.h DRM_RAS_CMD_GET_ERROR_THRESHOLD \
 	DRM_RAS_CMD_SET_ERROR_THRESHOLD \
 	DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD
 
+# The binder ioctl requests after the first seven.
+check_enum_member linux/android/binder.h BINDER_GET_NODE_DEBUG_INFO \
+	BINDER_GET_NODE_INFO_FOR_REF BINDER_SET_CONTEXT_MGR_EXT \
+	BINDER_FREEZE BINDER_GET_FROZEN_INFO \
+	BINDER_ENABLE_ONEWAY_SPAM_DETECTION BINDER_GET_EXTENDED_ERROR
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

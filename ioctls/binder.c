@@ -1,10 +1,11 @@
 /*
- * /dev/binder ioctls, from the uapi <linux/android/binder.h>.  The BR_ and
+ * /dev/binder ioctls, from the uapi <linux/android/binder.h>, with
+ * fallbacks for the later requests (include/kernel/binder.h).  The BR_ and
  * BC_ codes are binder protocol words, not ioctl requests, and the driver
  * answers them -EINVAL.
  */
 #ifdef USE_BINDER
-#include <linux/android/binder.h>
+#include "kernel/binder.h"
 
 #include "ioctls.h"
 #include "utils.h"
@@ -17,6 +18,13 @@ static const struct ioctl binder_ioctls[] = {
 	IOCTL(BINDER_SET_CONTEXT_MGR),
 	IOCTL(BINDER_THREAD_EXIT),
 	IOCTL(BINDER_VERSION),
+	IOCTL(BINDER_GET_NODE_DEBUG_INFO),
+	IOCTL(BINDER_GET_NODE_INFO_FOR_REF),
+	IOCTL(BINDER_SET_CONTEXT_MGR_EXT),
+	IOCTL(BINDER_FREEZE),
+	IOCTL(BINDER_GET_FROZEN_INFO),
+	IOCTL(BINDER_ENABLE_ONEWAY_SPAM_DETECTION),
+	IOCTL(BINDER_GET_EXTENDED_ERROR),
 
 	IOCTL(BR_ERROR),
 	IOCTL(BR_OK),
