@@ -20,23 +20,28 @@
  * Every request nests one and the kernel validates it with the request, so
  * a FLAGS outside the policy's mask (ETHTOOL_FLAGS_BASIC, 0x3, or
  * ETHTOOL_FLAGS_STATS, 0x7) or a PHY_INDEX of 0 refuses the whole request.
- * DEV_NAME is an NLA_NUL_STRING of at most 127 bytes.
+ * DEV_NAME is an NLA_NUL_STRING of at most 127 bytes, and
+ * ethnl_parse_header_dev_get() answers -ENODEV to one that names no device
+ * or another than DEV_INDEX does, so it is "lo", which every netns has.
  */
 static const struct nla_attr_spec ethtool_header_attrs[] = {
 	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "lo" },
 	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x3 },
 };
 
 static const struct nla_attr_spec ethtool_header_stats_attrs[] = {
 	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "lo" },
 	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x7 },
 };
 
 static const struct nla_attr_spec ethtool_header_phy_attrs[] = {
 	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "lo" },
 	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x3 },
 	{ ETHTOOL_A_HEADER_PHY_INDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
