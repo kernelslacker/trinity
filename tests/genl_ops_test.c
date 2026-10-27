@@ -558,36 +558,36 @@ extern struct genl_family_grammar fam_dpll;
 /* drivers/dpll/dpll_nl.c: the dpll_*_nl_policy tables */
 static struct slot dpll_parent_device[] = {
 	S_U32(DPLL_A_PIN_PARENT_ID),
-	S_U32(DPLL_A_PIN_DIRECTION),
+	S_U32_RANGE(DPLL_A_PIN_DIRECTION, 1, 2),
 	S_U32(DPLL_A_PIN_PRIO),
-	S_U32(DPLL_A_PIN_STATE),
-	S_U32(DPLL_A_PIN_OPERSTATE),
+	S_U32_RANGE(DPLL_A_PIN_STATE, 1, 3),
+	S_U32_RANGE(DPLL_A_PIN_OPERSTATE, 1, 4),
 	S_U64(DPLL_A_PIN_PHASE_OFFSET),
 	S_SINT(DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET),
 	S_SINT(DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET_PPT),
 };
 static struct slot dpll_parent_pin[] = {
 	S_U32(DPLL_A_PIN_PARENT_ID),
-	S_U32(DPLL_A_PIN_STATE),
+	S_U32_RANGE(DPLL_A_PIN_STATE, 1, 3),
 };
 static struct slot dpll_reference_sync[] = {
 	S_U32(DPLL_A_PIN_ID),
-	S_U32(DPLL_A_PIN_STATE),
+	S_U32_RANGE(DPLL_A_PIN_STATE, 1, 3),
 };
 static struct slot dpll_device_id_get[] = {
 	S_STR(DPLL_A_MODULE_NAME, 0),
 	S_U64(DPLL_A_CLOCK_ID),
-	S_U32(DPLL_A_TYPE),
+	S_U32_RANGE(DPLL_A_TYPE, 1, 3),
 };
 static struct slot dpll_device_get[] = {
 	S_U32(DPLL_A_ID),
 };
 static struct slot dpll_device_set[] = {
 	S_U32(DPLL_A_ID),
-	S_U32(DPLL_A_MODE),
-	S_U32(DPLL_A_PHASE_OFFSET_MONITOR),
+	S_U32_RANGE(DPLL_A_MODE, 1, 2),
+	S_U32_RANGE(DPLL_A_PHASE_OFFSET_MONITOR, 0, 1),
 	S_U32(DPLL_A_PHASE_OFFSET_AVG_FACTOR),
-	S_U32(DPLL_A_FREQUENCY_MONITOR),
+	S_U32_RANGE(DPLL_A_FREQUENCY_MONITOR, 0, 1),
 };
 static struct slot dpll_pin_id_get[] = {
 	S_STR(DPLL_A_PIN_MODULE_NAME, 0),
@@ -595,7 +595,7 @@ static struct slot dpll_pin_id_get[] = {
 	S_STR(DPLL_A_PIN_BOARD_LABEL, 0),
 	S_STR(DPLL_A_PIN_PANEL_LABEL, 0),
 	S_STR(DPLL_A_PIN_PACKAGE_LABEL, 0),
-	S_U32(DPLL_A_PIN_TYPE),
+	S_U32_RANGE(DPLL_A_PIN_TYPE, 1, 6),
 };
 static struct slot dpll_pin_get[] = {
 	S_U32(DPLL_A_PIN_ID),

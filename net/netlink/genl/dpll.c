@@ -18,14 +18,16 @@
  * The nests of DPLL_CMD_PIN_SET, from dpll_pin_parent_device_nl_policy,
  * dpll_pin_parent_pin_nl_policy and dpll_reference_sync_nl_policy.  They
  * reuse the DPLL_A_PIN_* ids of the pin itself.  PHASE_OFFSET is an s64,
- * the two fractional offsets NLA_SINT, which takes 4 or 8 bytes.
+ * the two fractional offsets NLA_SINT, which takes 4 or 8 bytes.  The
+ * enums, DIRECTION, STATE and OPERSTATE, are NLA_POLICY_RANGE(NLA_U32, 1, n);
+ * a range is written upper bound first, as the BINARY_FIXED2 sizes are.
  */
 static const struct nla_attr_spec dpll_parent_device_attrs[] = {
 	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_DIRECTION,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_DIRECTION,			NLA_KIND_U32_RANGE, 2, 1 },
 	{ DPLL_A_PIN_PRIO,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_OPERSTATE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
+	{ DPLL_A_PIN_OPERSTATE,			NLA_KIND_U32_RANGE, 4, 1 },
 	{ DPLL_A_PIN_PHASE_OFFSET,		NLA_KIND_U64,    8 },
 	{ DPLL_A_PIN_FRACTIONAL_FREQUENCY_OFFSET,
 						NLA_KIND_BINARY_FIXED2, 8, 4 },
@@ -35,12 +37,12 @@ static const struct nla_attr_spec dpll_parent_device_attrs[] = {
 
 static const struct nla_attr_spec dpll_parent_pin_attrs[] = {
 	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
 };
 
 static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
 	{ DPLL_A_PIN_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_STATE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
 };
 
 /*
@@ -48,13 +50,15 @@ static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
  * policy has no slot for costs an -EINVAL; the device and pin namespaces
  * share ids 1 to 14 and each cmd's policy ends at its own last id.  The
  * strings are NLA_NUL_STRING, the ids u32, CLOCK_ID and the frequencies
- * u64.  What the replies carry, the lock status, temperature and the
- * rest, is not in any request policy.
+ * u64.  TYPE, MODE and the pin TYPE are NLA_POLICY_RANGE(NLA_U32, 1, n) and
+ * the two monitor switches NLA_POLICY_MAX(NLA_U32, 1).  What the replies
+ * carry, the lock status, temperature and the rest, is not in any request
+ * policy.
  */
 static const struct nla_attr_spec dpll_device_id_get_attrs[] = {
 	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64, 1 },
 	{ DPLL_A_CLOCK_ID,		NLA_KIND_U64,    8 },
-	{ DPLL_A_TYPE,			NLA_KIND_U32,    4 },
+	{ DPLL_A_TYPE,			NLA_KIND_U32_RANGE, 3, 1 },
 };
 
 static const struct nla_attr_spec dpll_device_get_attrs[] = {
@@ -63,10 +67,10 @@ static const struct nla_attr_spec dpll_device_get_attrs[] = {
 
 static const struct nla_attr_spec dpll_device_set_attrs[] = {
 	{ DPLL_A_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_MODE,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PHASE_OFFSET_MONITOR,	NLA_KIND_U32,    4 },
+	{ DPLL_A_MODE,			NLA_KIND_U32_RANGE, 2, 1 },
+	{ DPLL_A_PHASE_OFFSET_MONITOR,	NLA_KIND_U32_RANGE, 1 },
 	{ DPLL_A_PHASE_OFFSET_AVG_FACTOR, NLA_KIND_U32,  4 },
-	{ DPLL_A_FREQUENCY_MONITOR,	NLA_KIND_U32,    4 },
+	{ DPLL_A_FREQUENCY_MONITOR,	NLA_KIND_U32_RANGE, 1 },
 };
 
 static const struct nla_attr_spec dpll_pin_id_get_attrs[] = {
@@ -75,7 +79,7 @@ static const struct nla_attr_spec dpll_pin_id_get_attrs[] = {
 	{ DPLL_A_PIN_BOARD_LABEL,	NLA_KIND_STRING, 64, 1 },
 	{ DPLL_A_PIN_PANEL_LABEL,	NLA_KIND_STRING, 64, 1 },
 	{ DPLL_A_PIN_PACKAGE_LABEL,	NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_PIN_TYPE,		NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_TYPE,		NLA_KIND_U32_RANGE, 6, 1 },
 };
 
 static const struct nla_attr_spec dpll_pin_get_attrs[] = {
