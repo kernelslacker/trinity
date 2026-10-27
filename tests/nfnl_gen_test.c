@@ -7,6 +7,7 @@
  */
 
 #include <arpa/inet.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -20,10 +21,13 @@
 #include "debug.h"		/* BUG */
 #include "netlink-attrs.h"	/* struct nla_attr_spec */
 #include "netlink-nfnl-subsystems.h"
+#include "rnd.h"		/* rnd_modulo_u32 */
 #include "socketinfo.h"		/* struct socket_triplet */
 #include "utils.h"		/* ARRAY_SIZE */
 
 size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
+			     const struct nla_attr_spec *table, size_t nr_specs);
+size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 			     const struct nla_attr_spec *table, size_t nr_specs);
 const struct nla_attr_spec *pick_spec_table(int protocol, const struct nlmsghdr *nlh,
 					    size_t *nr_out);
@@ -294,12 +298,46 @@ static bool has_value(const struct bounded_slot *slot, unsigned int v)
 	return false;
 }
 
-/* The subsystem's spec for the slot's id that declares the slot's kind and
- * bound or values; a plain U32 there would send random bytes. */
+/* The spec for the slot's id in table, or in a nest below it, that declares
+ * the slot's kind and bound or values; a plain U32 there would send random
+ * bytes. */
+static const struct nla_attr_spec *search_slot_spec(const struct nla_attr_spec *table,
+						    size_t n_specs,
+						    const struct bounded_slot *slot)
+{
+	size_t i;
+	unsigned int j;
+
+	for (i = 0; i < n_specs; i++) {
+		const struct nla_attr_spec *spec = &table[i];
+
+		if (spec->type == slot->id && spec->kind == slot->kind &&
+		    spec->max_len == slot->limit && spec->n_oneof == slot->n_values) {
+			for (j = 0; j < spec->n_oneof; j++) {
+				if (!has_value(slot, spec->oneof[j]))
+					break;
+			}
+			if (j == spec->n_oneof)
+				return spec;
+		}
+		if (spec->nest != NULL) {
+			const struct nla_attr_spec *found;
+
+			found = search_slot_spec(spec->nest, spec->n_nest, slot);
+			if (found != NULL)
+				return found;
+		}
+	}
+	return NULL;
+}
+
+/* The slot's spec in the subsystem's table or in the table of one of its
+ * cmds. */
 static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slot)
 {
 	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(slot->subsys);
-	unsigned int i, j;
+	const struct nla_attr_spec *found;
+	unsigned int i;
 
 	if (sub == NULL) {
 		fprintf(stderr, "%s: subsystem %u is not registered\n",
@@ -307,19 +345,11 @@ static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slo
 		BUG("nfnl grammar: a bounded scalar's subsystem is missing");
 	}
 
-	for (i = 0; i < sub->n_attrs; i++) {
-		const struct nla_attr_spec *spec = &sub->attrs[i];
-
-		if (spec->type != slot->id || spec->kind != slot->kind ||
-		    spec->max_len != slot->limit || spec->n_oneof != slot->n_values)
-			continue;
-		for (j = 0; j < spec->n_oneof; j++) {
-			if (!has_value(slot, spec->oneof[j]))
-				break;
-		}
-		if (j == spec->n_oneof)
-			return spec;
-	}
+	found = search_slot_spec(sub->attrs, sub->n_attrs, slot);
+	for (i = 0; found == NULL && i < sub->n_cmds; i++)
+		found = search_slot_spec(sub->cmds[i].attrs, sub->cmds[i].n_attrs, slot);
+	if (found != NULL)
+		return found;
 
 	fprintf(stderr, "%s: no spec of kind %u with bound %#x and %u listed values at id %u\n",
 		slot->name, slot->kind, slot->limit, slot->n_values, slot->id);
@@ -535,9 +565,38 @@ static void check_word_spec(const struct nla_attr_spec *spec)
 	check_slot_fraction(name, matching);
 }
 
+/* The name ids of table must all be the one word; word is the one found so
+ * far, and seen has the ids that have one. */
+static void check_name_specs(const struct nla_attr_spec *table, size_t n_specs,
+			     const char **word, bool *seen)
+{
+	size_t i;
+
+	for (i = 0; i < n_specs; i++) {
+		const struct nla_attr_spec *spec = &table[i];
+
+		if (spec->type < 1 || spec->type > NFT_NAME_ID_MAX)
+			continue;
+		if (spec->kind == NLA_KIND_STRING) {
+			fprintf(stderr, "nftables: the string at id %u is random text\n",
+				spec->type);
+			BUG("nfnl grammar: an nftables name is not the shared word");
+		}
+		if (spec->kind != NLA_KIND_STRING_WORD)
+			continue;
+		if (*word == NULL)
+			*word = spec->word;
+		else if (strcmp(*word, spec->word) != 0)
+			BUG("nfnl grammar: nftables names are not all the same word");
+		seen[spec->type] = true;
+		check_word_spec(spec);
+	}
+}
+
 /*
- * Every string the nftables grammar has at a name id must be the one word,
- * and each of the ids must have one.  Returns the word.
+ * Every string the nftables grammar has at a name id, in its own table or in
+ * a cmd's, must be the one word, and each of the ids must have one.  Returns
+ * the word.
  */
 static const char *check_nftables_names(void)
 {
@@ -549,25 +608,9 @@ static const char *check_nftables_names(void)
 	if (sub == NULL)
 		BUG("nfnl grammar: nftables is not registered");
 
-	for (i = 0; i < sub->n_attrs; i++) {
-		const struct nla_attr_spec *spec = &sub->attrs[i];
-
-		if (spec->type < 1 || spec->type > NFT_NAME_ID_MAX)
-			continue;
-		if (spec->kind == NLA_KIND_STRING) {
-			fprintf(stderr, "nftables: the string at id %u is random text\n",
-				spec->type);
-			BUG("nfnl grammar: an nftables name is not the shared word");
-		}
-		if (spec->kind != NLA_KIND_STRING_WORD)
-			continue;
-		if (word == NULL)
-			word = spec->word;
-		else if (strcmp(word, spec->word) != 0)
-			BUG("nfnl grammar: nftables names are not all the same word");
-		seen[spec->type] = true;
-		check_word_spec(spec);
-	}
+	check_name_specs(sub->attrs, sub->n_attrs, &word, seen);
+	for (i = 0; i < sub->n_cmds; i++)
+		check_name_specs(sub->cmds[i].attrs, sub->cmds[i].n_attrs, &word, seen);
 
 	for (id = 1; id <= NFT_NAME_ID_MAX; id++) {
 		if (!seen[id]) {
@@ -607,6 +650,341 @@ static void check_nftables_families(void)
 		}
 	}
 }
+
+/*
+ * What a cmd's own table must be, as the kernel's policy and the handler
+ * have it: the attributes of the policy that the handler reads, which of
+ * them it cannot do without, and for a nest the grammar types, the policy
+ * of its children.  The ids are the attribute enums' positions.
+ */
+struct pslot {
+	unsigned short id;
+	bool required;		/* the handler returns early without it */
+	bool array;		/* the nest is an NLA_POLICY_NESTED_ARRAY */
+	unsigned short kind;	/* the kind the spec must have; 0 for any */
+	struct pslot *nest;	/* the nest's own policy; NULL if the grammar leaves it untyped */
+	unsigned int n_nest;
+	unsigned int streams;	/* streams of the policy counted, for a required slot */
+	unsigned int present;	/* ... of which held the slot */
+};
+
+#define PS(i, req, k)	{ .id = i, .required = req, .kind = k }
+#define PSN(i, req, n)	{ .id = i, .required = req, .kind = NLA_KIND_NESTED, \
+			  .nest = n, .n_nest = ARRAY_SIZE(n) }
+#define PSA(i, req, n)	{ .id = i, .required = req, .array = true, \
+			  .kind = NLA_KIND_NESTED_ARRAY, .nest = n, .n_nest = ARRAY_SIZE(n) }
+
+/* One cmd, with the policy its own table must hold. */
+struct cmd_row {
+	const char *name;
+	unsigned char subsys;
+	unsigned char cmd;
+	struct pslot *pol;
+	unsigned int n_slots;
+};
+
+/*
+ * The table must hold the policy's attributes, each once, marked required
+ * as the policy's are, of the kind the policy names, and a nest with its own
+ * table exactly where the policy has one.
+ */
+static void expect_declared(const struct nla_attr_spec *specs, size_t n_specs,
+			    const struct pslot *pol, unsigned int n_slots,
+			    const char *what)
+{
+	unsigned long long used = 0;
+	size_t i;
+
+	if (n_specs != n_slots) {
+		fprintf(stderr, "%s: the table holds %zu attributes, the policy %u\n",
+			what, n_specs, n_slots);
+		BUG("nfnl grammar: a cmd's table does not hold the attributes its handler reads");
+	}
+
+	for (i = 0; i < n_specs; i++) {
+		const struct nla_attr_spec *spec = &specs[i];
+		unsigned int j;
+
+		for (j = 0; j < n_slots && pol[j].id != spec->type; j++)
+			;
+		if (j == n_slots || (used & (1ULL << j))) {
+			fprintf(stderr, "%s: attribute %u is %s\n", what, spec->type,
+				j == n_slots ? "not one the handler reads" : "listed twice");
+			BUG("nfnl grammar: a cmd's table does not hold the attributes its handler reads");
+		}
+		used |= 1ULL << j;
+
+		if (spec->required != pol[j].required) {
+			fprintf(stderr, "%s: attribute %u is %smarked required\n", what,
+				spec->type, spec->required ? "" : "not ");
+			BUG("nfnl grammar: a cmd's required attribute is marked wrongly");
+		}
+		if (pol[j].kind != 0 && spec->kind != pol[j].kind) {
+			fprintf(stderr, "%s: attribute %u is of kind %u, want %u\n", what,
+				spec->type, spec->kind, pol[j].kind);
+			BUG("nfnl grammar: a cmd's attribute is of the wrong kind");
+		}
+		if ((spec->nest != NULL) != (pol[j].nest != NULL)) {
+			fprintf(stderr, "%s: attribute %u %s a table of its own\n", what,
+				spec->type, spec->nest ? "has" : "lacks");
+			BUG("nfnl grammar: a nest has the wrong table");
+		}
+		if (pol[j].nest != NULL)
+			expect_declared(spec->nest, spec->n_nest, pol[j].nest,
+					pol[j].n_nest, what);
+	}
+}
+
+static struct pslot *find_pslot(struct pslot *pol, unsigned int n_slots,
+				unsigned short id)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		if (pol[i].id == id)
+			return &pol[i];
+	}
+	return NULL;
+}
+
+static void tally_stream(const unsigned char *p, size_t len,
+			 struct pslot *pol, unsigned int n_slots);
+
+/* The elements of an array, each a stream of the policy the slot names. */
+static void tally_elements(const unsigned char *p, size_t len,
+			   const struct pslot *slot)
+{
+	size_t off = 0;
+
+	while (off + NLA_HDRLEN <= len) {
+		struct nlattr elem;
+
+		memcpy(&elem, p + off, sizeof(elem));
+		if (elem.nla_len < NLA_HDRLEN || off + elem.nla_len > len)
+			return;
+		tally_stream(p + off + NLA_HDRLEN, elem.nla_len - NLA_HDRLEN,
+			     slot->nest, slot->n_nest);
+		off += NLA_ALIGN(elem.nla_len);
+	}
+}
+
+/*
+ * A stream of attributes of a policy of up to 64 slots: every slot marked
+ * required counts the stream, and counts it again if the stream holds the
+ * attribute.  A nest, and each element of an array, is a stream of the
+ * policy its slot names and counts the same way.
+ */
+static void tally_stream(const unsigned char *p, size_t len,
+			 struct pslot *pol, unsigned int n_slots)
+{
+	unsigned long long got = 0;
+	size_t off = 0;
+	unsigned int i;
+
+	while (off + NLA_HDRLEN <= len) {
+		struct nlattr nla;
+		struct pslot *slot;
+
+		memcpy(&nla, p + off, sizeof(nla));
+		if (nla.nla_len < NLA_HDRLEN || off + nla.nla_len > len)
+			break;
+		slot = find_pslot(pol, n_slots, nla.nla_type & NLA_TYPE_MASK);
+		if (slot != NULL) {
+			const unsigned char *payload = p + off + NLA_HDRLEN;
+			size_t plen = nla.nla_len - NLA_HDRLEN;
+
+			got |= 1ULL << (slot - pol);
+			if (slot->nest != NULL && slot->array)
+				tally_elements(payload, plen, slot);
+			else if (slot->nest != NULL)
+				tally_stream(payload, plen, slot->nest, slot->n_nest);
+		}
+		off += NLA_ALIGN(nla.nla_len);
+	}
+
+	for (i = 0; i < n_slots; i++) {
+		if (!pol[i].required)
+			continue;
+		pol[i].streams++;
+		if (got & (1ULL << i))
+			pol[i].present++;
+	}
+}
+
+/* The fewest streams any required slot of pol, or below it, has been counted
+ * in; UINT_MAX when it has none. */
+static unsigned int min_streams(const struct pslot *pol, unsigned int n_slots)
+{
+	unsigned int least = UINT_MAX;
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		unsigned int below;
+
+		if (pol[i].required && pol[i].streams < least)
+			least = pol[i].streams;
+		if (pol[i].nest == NULL)
+			continue;
+		below = min_streams(pol[i].nest, pol[i].n_nest);
+		if (below < least)
+			least = below;
+	}
+	return least;
+}
+
+#define REQUIRED_STREAMS	600
+#define STREAMS_MIN		2000
+#define STREAMS_MAX		400000
+
+/*
+ * A required slot is left out of some streams and is in most of them.  The
+ * emitter skips it one time in eight, and the draws that follow bring some of
+ * those back, so it is in 0.875 of them or more, fewer where a nest has no
+ * room left for it.  Unmarked it would be in 0.2 to 0.75 of the streams of
+ * the tables here.  Over 600 streams the fraction has a standard deviation
+ * under 0.02, so 0.70 is five of them under a rate of 0.80.  A slot that is
+ * never left out leaves the handler's missing-attribute arm without traffic.
+ * A small table gets the slot into most streams unmarked, which is why the
+ * marks are also checked outright.
+ */
+static void expect_required(const struct pslot *pol, unsigned int n_slots,
+			    const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		const struct pslot *slot = &pol[i];
+
+		if (slot->nest != NULL)
+			expect_required(slot->nest, slot->n_nest, what);
+		if (!slot->required)
+			continue;
+
+		if (slot->streams < REQUIRED_STREAMS) {
+			fprintf(stderr, "%s: attribute %u has %u streams, want %u\n",
+				what, slot->id, slot->streams, REQUIRED_STREAMS);
+			BUG("nfnl grammar: too few streams to judge a required attribute");
+		}
+		if (slot->present < slot->streams * 7 / 10) {
+			fprintf(stderr, "%s: attribute %u is in %u of %u streams, want at least 0.70\n",
+				what, slot->id, slot->present, slot->streams);
+			BUG("nfnl grammar: a required attribute is left out too often");
+		}
+		if (slot->present == slot->streams) {
+			fprintf(stderr, "%s: attribute %u is in all %u streams\n",
+				what, slot->id, slot->streams);
+			BUG("nfnl grammar: a required attribute is never left out");
+		}
+	}
+}
+
+/*
+ * What build_one_nlmsg() puts after a message's header: the attributes the
+ * cmd's handler needs, then up to seven drawn from its table.
+ */
+static size_t build_stream(unsigned char *buf, size_t buflen,
+			   const struct nla_attr_spec *table, size_t n_specs)
+{
+	size_t off = append_required_attrs(buf, 0, buflen, table, n_specs);
+	unsigned int draws = rnd_modulo_u32(8);
+
+	while (draws-- > 0 && off < buflen) {
+		size_t new_off = append_specced_nlattr(buf, off, buflen, table, n_specs);
+
+		if (new_off == off)
+			break;
+		off = new_off;
+	}
+	return off;
+}
+
+static const struct nfnl_cmd_grammar *find_cmd(const struct nfnl_subsys_grammar *sub,
+					       unsigned char cmd)
+{
+	unsigned int i;
+
+	for (i = 0; i < sub->n_cmds; i++) {
+		if (sub->cmds[i].cmd == cmd)
+			return &sub->cmds[i];
+	}
+	return NULL;
+}
+
+/*
+ * A cmd with a row has a table of its own that is its policy as the handler
+ * reads it, the generator draws a message of its type from that table, and
+ * the attributes the handler needs are in most of those messages and not in
+ * all.
+ */
+static void check_cmd_row(struct cmd_row *row)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(row->subsys);
+	const struct nfnl_cmd_grammar *cmd;
+	struct nlmsghdr nlh = { .nlmsg_type = (row->subsys << 8) | row->cmd };
+	const struct nla_attr_spec *table;
+	size_t n_table = 0;
+	unsigned int round;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: a cmd's subsystem is not registered");
+	cmd = find_cmd(sub, row->cmd);
+	if (cmd == NULL) {
+		fprintf(stderr, "%s: the grammar does not list it\n", row->name);
+		BUG("nfnl grammar: a command is missing");
+	}
+	if (cmd->attrs == NULL) {
+		fprintf(stderr, "%s: it has no table of its own\n", row->name);
+		BUG("nfnl grammar: a command draws from its subsystem's table");
+	}
+
+	expect_declared(cmd->attrs, cmd->n_attrs, row->pol, row->n_slots, row->name);
+
+	table = pick_spec_table(NETLINK_NETFILTER, &nlh, &n_table);
+	if (table != cmd->attrs || n_table != cmd->n_attrs) {
+		fprintf(stderr, "%s: the generator draws from another table\n", row->name);
+		BUG("nfnl grammar: the generator ignores a cmd's table");
+	}
+
+	for (round = 0; round < STREAMS_MAX &&
+	     (round < STREAMS_MIN || min_streams(row->pol, row->n_slots) < REQUIRED_STREAMS);
+	     round++) {
+		unsigned char buf[1280];
+		size_t end;
+
+		memset(buf, 0, sizeof(buf));
+		end = build_stream(buf, sizeof(buf), cmd->attrs, cmd->n_attrs);
+		tally_stream(buf, end, row->pol, row->n_slots);
+	}
+	expect_required(row->pol, row->n_slots, row->name);
+}
+
+/*
+ * nft_table_policy has the name (1), the flags (2) and the user data (6) that
+ * a table command can use, and the handle (4) a delete may name a table by.
+ * The grammar leaves the handle out.  NEWTABLE and a GETTABLE that is not a
+ * dump answer a missing name -EINVAL; a delete without a name or a handle
+ * flushes the family, so its name is not marked.
+ */
+static struct pslot table_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, false, NLA_KIND_BE32_MASK),
+	PS(6, false, 0),
+};
+static struct pslot table_get[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+};
+static struct pslot table_del[] = {
+	PS(1, false, NLA_KIND_STRING_WORD),
+};
+
+#define NFTABLES	NFNL_SUBSYS_NFTABLES
+
+static struct cmd_row cmd_rows[] = {
+	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
+	{ "NFT_MSG_GETTABLE", NFTABLES, 1, table_get, ARRAY_SIZE(table_get) },
+	{ "NFT_MSG_DELTABLE", NFTABLES, 2, table_del, ARRAY_SIZE(table_del) },
+	{ "NFT_MSG_DESTROYTABLE", NFTABLES, 26, table_del, ARRAY_SIZE(table_del) },
+};
 
 #define BATCH_ROUNDS	60000
 
@@ -914,4 +1292,6 @@ void nfnl_gen_self_check(void)
 	check_nftables_families();
 	check_nftables_batch_flags();
 	check_nftables_batches(word);
+	for (i = 0; i < ARRAY_SIZE(cmd_rows); i++)
+		check_cmd_row(&cmd_rows[i]);
 }

@@ -162,14 +162,67 @@
 #endif
 
 /*
+ * Every name a command carries to find an object by is this one word.  The
+ * table is at id 1 in every namespace, a rule's chain, a set, an object and a
+ * flowtable at id 2, and a chain's own name at 3, all NLA_STRING matched by
+ * their text (nla_strcmp(), or nla_strscpy() into a hash key), and the
+ * namespaces keep apart, so a table, its chain, set, object and flowtable can
+ * all carry the same word.  What one command names, a later command of its
+ * batch then finds.  The word is fixed rather than drawn per batch, so the
+ * next batch names the tables the last one committed instead of piling up new
+ * ones; only the draw in eight that is random makes another.
+ */
+static const char nft_word[] = "trinity";
+
+/*
+ * A command draws its attributes from a table of its own, which holds what
+ * its handler reads of its namespace's policy, and not from the union
+ * nftables_attrs[] below, whose ids mean one thing to a table command and
+ * another to a chain or a set command.  A table marks .required the
+ * attributes its handler returns early without: nft_table_lookup() and its
+ * kin answer -EINVAL to a name that is missing, so a request without one
+ * never reaches the main path.  The handles are left out of every table.  The
+ * kernel numbers tables, chains and the rest itself, so a handle drawn at
+ * random matches none, and a handler that is given one looks the object up by
+ * it in place of its name.
+ */
+
+/*
+ * The table commands.  NEWTABLE reads the name, the flags and the user data
+ * of nft_table_policy and answers -EINVAL without a name; GETTABLE does too,
+ * unless it is a dump.  DELTABLE and DESTROYTABLE take a name or a handle,
+ * and with neither flush every table of the family, which the name left out
+ * of one request in eight still makes them do.
+ */
+static const struct nla_attr_spec nft_newtable_attrs[] = {
+	{ NFTA_TABLE_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_TABLE_FLAGS,    NLA_KIND_BE32_MASK, NFT_TABLE_F_MASK },
+	{ NFTA_TABLE_USERDATA, NLA_KIND_BINARY, 64 },
+};
+
+static const struct nla_attr_spec nft_gettable_attrs[] = {
+	{ NFTA_TABLE_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+};
+
+static const struct nla_attr_spec nft_deltable_attrs[] = {
+	{ NFTA_TABLE_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
 static const struct nfnl_cmd_grammar nftables_cmds[] = {
-	{ NFT_MSG_NEWTABLE,          "NFT_MSG_NEWTABLE", true },
-	{ NFT_MSG_GETTABLE,          "NFT_MSG_GETTABLE" },
-	{ NFT_MSG_DELTABLE,          "NFT_MSG_DELTABLE", true },
-	{ NFT_MSG_DESTROYTABLE,      "NFT_MSG_DESTROYTABLE", true },
+	{ NFT_MSG_NEWTABLE,          "NFT_MSG_NEWTABLE", true,
+	  nft_newtable_attrs, ARRAY_SIZE(nft_newtable_attrs) },
+	{ NFT_MSG_GETTABLE,          "NFT_MSG_GETTABLE", false,
+	  nft_gettable_attrs, ARRAY_SIZE(nft_gettable_attrs) },
+	{ NFT_MSG_DELTABLE,          "NFT_MSG_DELTABLE", true,
+	  nft_deltable_attrs, ARRAY_SIZE(nft_deltable_attrs) },
+	{ NFT_MSG_DESTROYTABLE,      "NFT_MSG_DESTROYTABLE", true,
+	  nft_deltable_attrs, ARRAY_SIZE(nft_deltable_attrs) },
 	{ NFT_MSG_NEWCHAIN,          "NFT_MSG_NEWCHAIN", true },
 	{ NFT_MSG_GETCHAIN,          "NFT_MSG_GETCHAIN" },
 	{ NFT_MSG_DELCHAIN,          "NFT_MSG_DELCHAIN", true },
@@ -211,37 +264,19 @@ static const unsigned char nftables_families[] = {
 };
 
 /*
- * Every name a command carries to find an object by is this one word.  The
- * table is at id 1 in every namespace, a rule's chain, a set, an object and a
- * flowtable at id 2, and a chain's own name at 3, all NLA_STRING matched by
- * their text (nla_strcmp(), or nla_strscpy() into a hash key), and the
- * namespaces keep apart, so a table, its chain, set, object and flowtable can
- * all carry the same word.  What one command names, a later command of its
- * batch then finds.  The word is fixed rather than drawn per batch, so the
- * next batch names the tables the last one committed instead of piling up new
- * ones; only the draw in eight that is random makes another.
- */
-static const char nft_word[] = "trinity";
-
-/*
- * NFTA_* attrs of the table / chain / rule / set / setelem / obj / flowtable
- * namespaces.  Their ids overlap (NFTA_TABLE_NAME and NFTA_CHAIN_TABLE are
- * both 1), so an entry meets whatever slot the picked command's policy has
- * at that id: nfnetlink's liberal parse skips ids past attr_count and
- * untyped slots, and length-checks typed ones.  The chain, obj and flowtable
- * nests are bare NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is
- * an NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.
- * The FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
+ * NFTA_* attrs of the namespaces whose commands name no table of their own.
+ * Their ids overlap (NFTA_CHAIN_TABLE and NFTA_RULE_TABLE are both 1), so an
+ * entry meets whatever slot the picked command's policy has at that id:
+ * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
+ * length-checks typed ones.  The chain, obj and flowtable nests are bare
+ * NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is an
+ * NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.  The
+ * FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
  * bits the uapi header names for it.  NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS
  * share id 3, so which policy a draw meets depends on the picked command.
  * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*TABLE */
-	{ NFTA_TABLE_NAME,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_TABLE_FLAGS,          NLA_KIND_BE32_MASK, NFT_TABLE_F_MASK },
-	{ NFTA_TABLE_HANDLE,         NLA_KIND_U64,    8 },
-	{ NFTA_TABLE_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*CHAIN */
 	{ NFTA_CHAIN_TABLE,          NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_CHAIN_HANDLE,         NLA_KIND_U64,    8 },
