@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <linux/netfilter/nfnetlink.h>
+#include <linux/netfilter/nfnetlink_acct.h>
 #include <linux/netfilter/nfnetlink_cttimeout.h>
 #include <linux/netlink.h>
 
@@ -780,52 +781,68 @@ static const char *check_nftables_names(void)
 	return word;
 }
 
-/* The CTA_TIMEOUT_NAME specs of table, for check_cttimeout_name(). */
-static void check_cttimeout_name_specs(const struct nla_attr_spec *table,
-				       size_t n_specs, unsigned int *words)
+/*
+ * The names that a command finds an object by, which each must be one word
+ * for a later command to find what an earlier one made: cttimeout_get_timeout(),
+ * cttimeout_del_timeout() and the NLM_F_REPLACE arm of cttimeout_new_timeout()
+ * find a timeout with strncmp() on its name, and nfnl_acct_new(), _get() and
+ * _del() find an object the same way.  A name drawn at random would make
+ * another object on each NEW and let nothing else find them.  name_max is
+ * the room the policy's NLA_NUL_STRING has for the name and its NUL.
+ */
+struct word_name {
+	const char *what;
+	unsigned char subsys;
+	unsigned short id;
+	unsigned int name_max;
+};
+
+static const struct word_name word_names[] = {
+	{ "cttimeout", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 1, CTNL_TIMEOUT_NAME_MAX },
+	{ "acct", NFNL_SUBSYS_ACCT, 1, NFACCT_NAME_MAX },
+};
+
+static void check_name_id_specs(const struct word_name *name,
+				const struct nla_attr_spec *table, size_t n_specs,
+				unsigned int *words)
 {
 	size_t i;
 
 	for (i = 0; i < n_specs; i++) {
 		const struct nla_attr_spec *spec = &table[i];
 
-		if (spec->type != 1)
+		if (spec->type != name->id)
 			continue;
 		if (spec->kind == NLA_KIND_STRING) {
-			fprintf(stderr, "cttimeout: the string at id 1 is random text\n");
-			BUG("nfnl grammar: a cttimeout name is not the shared word");
+			fprintf(stderr, "%s: the string at id %u is random text\n",
+				name->what, name->id);
+			BUG("nfnl grammar: a name is not the shared word");
 		}
 		if (spec->kind != NLA_KIND_STRING_WORD)
 			continue;
-		/* nla_policy: NLA_NUL_STRING of up to CTNL_TIMEOUT_NAME_MAX - 1 */
-		if (strlen(spec->word) >= CTNL_TIMEOUT_NAME_MAX)
-			BUG("nfnl grammar: the cttimeout name is longer than its policy takes");
+		if (strlen(spec->word) >= name->name_max)
+			BUG("nfnl grammar: a name is longer than its policy takes");
 		check_word_spec(spec);
 		(*words)++;
 	}
 }
 
-/*
- * cttimeout_get_timeout(), cttimeout_del_timeout() and the NLM_F_REPLACE arm
- * of cttimeout_new_timeout() find a timeout with strncmp() on its name, so a
- * command finds what NEW made only if it names it with the same string, and
- * NEW with a name drawn at random makes another timeout each time instead of
- * finding the last.  CTA_TIMEOUT_NAME is therefore one word wherever it is
- * declared, in the subsystem's table or a command's.
- */
-static void check_cttimeout_name(void)
+/* Every declaration of the name, in the subsystem's table or a command's. */
+static void check_word_name(const struct word_name *name)
 {
-	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK_TIMEOUT);
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(name->subsys);
 	unsigned int i, words = 0;
 
 	if (sub == NULL)
-		BUG("nfnl grammar: cttimeout is not registered");
+		BUG("nfnl grammar: a name's subsystem is not registered");
 
-	check_cttimeout_name_specs(sub->attrs, sub->n_attrs, &words);
+	check_name_id_specs(name, sub->attrs, sub->n_attrs, &words);
 	for (i = 0; i < sub->n_cmds; i++)
-		check_cttimeout_name_specs(sub->cmds[i].attrs, sub->cmds[i].n_attrs, &words);
-	if (words == 0)
-		BUG("nfnl grammar: cttimeout declares no name");
+		check_name_id_specs(name, sub->cmds[i].attrs, sub->cmds[i].n_attrs, &words);
+	if (words == 0) {
+		fprintf(stderr, "%s: declares no name\n", name->what);
+		BUG("nfnl grammar: a subsystem's name is not declared as a word");
+	}
 }
 
 /*
@@ -1440,9 +1457,38 @@ static struct pslot compat_get[] = {
 	PS(3, true, NLA_KIND_BE32_ONEOF),
 };
 
+/*
+ * nfnl_acct_policy types the name (1), PKTS (2), BYTES (3), FLAGS (5), QUOTA
+ * (6) and FILTER (7); 4 is the use count, which only a reply carries.  NEW
+ * answers -EINVAL without a name, and reads the counters, the flags and the
+ * quota.  GET wants a name unless it is a dump; a dump reads FILTER, a nest
+ * whose MASK (1) and VALUE (2) nfnl_acct_start() wants both of, answering
+ * -EINVAL if either is missing.  DEL takes a name, and without one deletes
+ * every object, so its name is not marked.
+ */
+static struct pslot acct_filter[] = {
+	PS(1, true, 0),
+	PS(2, true, 0),
+};
+static struct pslot acct_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, false, 0),
+	PS(3, false, 0),
+	PSB(5, false, NLA_KIND_BE32_MASK, 0, 0x3),
+	PS(6, false, 0),
+};
+static struct pslot acct_get[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PSN(7, false, acct_filter),
+};
+static struct pslot acct_del[] = {
+	PS(1, false, NLA_KIND_STRING_WORD),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 #define CTTIMEOUT	NFNL_SUBSYS_CTNETLINK_TIMEOUT
 #define NFT_COMPAT	NFNL_SUBSYS_NFT_COMPAT
+#define ACCT		NFNL_SUBSYS_ACCT
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1484,6 +1530,9 @@ static struct cmd_row cmd_rows[] = {
 	{ "IPCTNL_MSG_TIMEOUT_DEFAULT_GET", CTTIMEOUT, 4, cttimeout_default_get,
 	  ARRAY_SIZE(cttimeout_default_get) },
 	{ "NFNL_MSG_COMPAT_GET", NFT_COMPAT, 0, compat_get, ARRAY_SIZE(compat_get) },
+	{ "NFNL_MSG_ACCT_NEW", ACCT, 0, acct_new, ARRAY_SIZE(acct_new) },
+	{ "NFNL_MSG_ACCT_GET", ACCT, 1, acct_get, ARRAY_SIZE(acct_get) },
+	{ "NFNL_MSG_ACCT_DEL", ACCT, 3, acct_del, ARRAY_SIZE(acct_del) },
 };
 
 /*
@@ -1915,7 +1964,8 @@ void nfnl_gen_self_check(void)
 		check_oneof_slot(&oneof_slots[i]);
 	word = check_nftables_names();
 	check_nftables_families();
-	check_cttimeout_name();
+	for (i = 0; i < ARRAY_SIZE(word_names); i++)
+		check_word_name(&word_names[i]);
 	check_nftables_batch_flags();
 	check_nftables_batches(word);
 	check_nftables_tables();
