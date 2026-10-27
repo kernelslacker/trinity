@@ -6,6 +6,7 @@
  * against the L4 policy that CTA_TIMEOUT_L4PROTO picks.
  */
 
+#include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_cttimeout.h>
 
@@ -28,6 +29,28 @@ static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
 };
 
 /*
+ * NEW, DEFAULT_SET and DEFAULT_GET look L4PROTO up with nf_ct_l4proto_find()
+ * and answer -EOPNOTSUPP unless the tracker it returns has that l4proto.
+ * ICMP, TCP and UDP always have a tracker, GRE, ICMPv6 and SCTP when the
+ * kernel is built with them, and the generic one answers to 255; any other
+ * number lands on the generic tracker and fails that test.
+ */
+static const unsigned int cttimeout_l4protos[] = {
+	IPPROTO_ICMP, IPPROTO_TCP, IPPROTO_UDP, IPPROTO_GRE, IPPROTO_ICMPV6,
+	IPPROTO_SCTP, 255,
+};
+
+/*
+ * No handler checks L3PROTO.  It is stored as the policy's l3num, which
+ * nf_ct_set_timeout() compares with the family of the xt_CT rule or
+ * openvswitch flow that names the policy, and NEW with NLM_F_REPLACE with
+ * the one it stored, so the numbers worth sending are those families, IPv4
+ * and IPv6.  The handlers read it with ntohs(nla_get_be16()), though the
+ * policy only types it NLA_U16.
+ */
+static const unsigned int cttimeout_l3protos[] = { NFPROTO_IPV4, NFPROTO_IPV6 };
+
+/*
  * The per-L4 ids reuse the outer ones (CTA_TIMEOUT_TCP_SYN_SENT and
  * CTA_TIMEOUT_NAME are both 1), so one flat table holds both and the emitter
  * picks by position.
@@ -36,8 +59,10 @@ static const struct nla_attr_spec cttimeout_attrs[] = {
 	/* Command level (nfnetlink_cttimeout.c). */
 	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING,
 					     CTNL_TIMEOUT_NAME_MAX - 1 },
-	{ CTA_TIMEOUT_L3PROTO,               NLA_KIND_U16,    2 },
-	{ CTA_TIMEOUT_L4PROTO,               NLA_KIND_U8,     1 },
+	{ CTA_TIMEOUT_L3PROTO,               NLA_KIND_BE16_ONEOF, 0, 0,
+	  .oneof = cttimeout_l3protos, .n_oneof = ARRAY_SIZE(cttimeout_l3protos) },
+	{ CTA_TIMEOUT_L4PROTO,               NLA_KIND_U8_ONEOF, 0, 0,
+	  .oneof = cttimeout_l4protos, .n_oneof = ARRAY_SIZE(cttimeout_l4protos) },
 	{ CTA_TIMEOUT_DATA,                  NLA_KIND_NESTED, 0 },
 
 	/* Nested CTA_TIMEOUT_DATA payload — GENERIC arm

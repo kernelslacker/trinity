@@ -28,11 +28,14 @@
 static size_t spec_payload_len(const struct nla_attr_spec *spec)
 {
 	switch (spec->kind) {
-	case NLA_KIND_U8:	return 1;
+	case NLA_KIND_U8:
+	case NLA_KIND_U8_ONEOF:
+		return 1;
 	case NLA_KIND_U16:	return 2;
 	case NLA_KIND_U32:	return 4;
 	case NLA_KIND_U64:	return 8;
 	case NLA_KIND_BE16_MASK:
+	case NLA_KIND_BE16_ONEOF:
 		return 2;
 	case NLA_KIND_BE32_MASK:
 	case NLA_KIND_BE32_MAX:
@@ -58,11 +61,12 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 }
 
 /*
- * Fill a scalar the kernel policy bounds: a random subset of the mask bits,
- * or a number in [0, max], in network byte order as the NLA_BE16 / NLA_BE32
- * policies read it.  One draw in eight stays random bytes so the policy's
- * reject arm keeps seeing traffic, as does a payload that a full buffer cut
- * short of the scalar's width.
+ * Fill a scalar the kernel narrows: a random subset of the policy's mask
+ * bits, a number in [0, max], or one of the values the handler accepts, in
+ * network byte order as the NLA_BE16 / NLA_BE32 policies read it, or the
+ * byte of an NLA_U8.  One draw in eight stays random bytes so the reject
+ * arm keeps seeing traffic, as does a payload that a full buffer cut short
+ * of the scalar's width.
  */
 static void spec_fill_bounded(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -74,12 +78,21 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 		return;
 	}
 
-	if (spec->kind == NLA_KIND_BE32_MAX)
+	switch (spec->kind) {
+	case NLA_KIND_BE32_MAX:
 		v = rnd_modulo_u32(spec->max_len + 1U);
-	else
+		break;
+	case NLA_KIND_U8_ONEOF:
+	case NLA_KIND_BE16_ONEOF:
+		v = spec->oneof[rnd_modulo_u32(spec->n_oneof)];
+		break;
+	default:	/* the mask kinds */
 		v = rnd_u32() & spec->max_len;
+	}
 
-	if (spec->kind == NLA_KIND_BE16_MASK) {
+	if (len == 1) {
+		*p = v;
+	} else if (len == 2) {
 		uint16_t be = htons(v);
 
 		memcpy(p, &be, sizeof(be));
@@ -93,30 +106,37 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 /*
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
- * IFLA_INFO_KIND), the bounded scalars a value their policy accepts, and
- * everything else gets random bytes.
+ * IFLA_INFO_KIND), the bounded scalars a value their policy or handler
+ * accepts, and everything else gets random bytes.
  */
 static void spec_fill_payload(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
 {
+	size_t i;
+
 	if (len == 0)
 		return;
-	if (spec->kind == NLA_KIND_STRING) {
-		size_t i;
 
+	switch (spec->kind) {
+	case NLA_KIND_STRING:
 		for (i = 0; i + 1 < len; i++)
 			p[i] = 'a' + (rnd_modulo_u32(26));
 		p[len - 1] = '\0';
-	} else if (spec->kind == NLA_KIND_STRING_CPULIST) {
+		break;
+	case NLA_KIND_STRING_CPULIST:
 		gen_cpu_list_string((char *)p, (unsigned int)len);
 		/* Force NUL termination inside the on-wire payload so
 		 * cpulist_parse() can't run past the attribute. */
 		p[len - 1] = '\0';
-	} else if (spec->kind == NLA_KIND_BE16_MASK ||
-		   spec->kind == NLA_KIND_BE32_MASK ||
-		   spec->kind == NLA_KIND_BE32_MAX) {
+		break;
+	case NLA_KIND_BE16_MASK:
+	case NLA_KIND_BE32_MASK:
+	case NLA_KIND_BE32_MAX:
+	case NLA_KIND_U8_ONEOF:
+	case NLA_KIND_BE16_ONEOF:
 		spec_fill_bounded(p, len, spec);
-	} else {
+		break;
+	default:
 		generate_rand_bytes(p, len);
 	}
 }

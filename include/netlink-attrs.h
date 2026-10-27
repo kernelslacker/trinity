@@ -43,6 +43,12 @@ enum nla_kind {
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
 	NLA_KIND_BE32_MAX,
+	/* A scalar the handler, not the policy, narrows to a few values,
+	 * which the spec lists in oneof.  Stored as the policy's width reads
+	 * it: a byte, or big-endian.  One draw in eight is random bytes, so
+	 * the handler's reject arm still sees traffic. */
+	NLA_KIND_U8_ONEOF,
+	NLA_KIND_BE16_ONEOF,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.
@@ -69,4 +75,9 @@ struct nla_attr_spec {
 	 * of one without is cut short to fill the window. */
 	const struct nla_attr_spec *nest;
 	unsigned int n_nest;
+
+	/* The *_ONEOF kinds: the n_oneof values the attribute is drawn
+	 * from, in host order. */
+	const unsigned int *oneof;
+	unsigned int n_oneof;
 };

@@ -126,8 +126,10 @@ struct bounded_slot {
 	const char *name;
 	unsigned char subsys;
 	unsigned short id;
-	unsigned short kind;	/* NLA_POLICY_MASK or NLA_POLICY_MAX, and the width */
-	unsigned short limit;
+	unsigned short kind;	/* the kind the grammar declares, which fixes the width */
+	unsigned short limit;	/* the policy's mask or maximum; 0 for a value list */
+	const unsigned int *values;	/* what a *_ONEOF slot's handler accepts */
+	unsigned int n_values;
 };
 
 /*
@@ -157,12 +159,51 @@ static const struct bounded_slot slots[] = {
 	{ "NFTA_FLOWTABLE_FLAGS", NFNL_SUBSYS_NFTABLES, 7, NLA_KIND_BE32_MASK, 0x3 },
 };
 
+/*
+ * nf_ct_l4proto_find() answers l4proto with a tracker whose own l4proto
+ * matches it for ICMP, TCP and UDP, for GRE, ICMPv6 and SCTP when the kernel
+ * is built with them, and for 255, the generic tracker's; any other number
+ * gets the generic tracker, whose 255 differs, and cttimeout_new_timeout(),
+ * cttimeout_default_set() and cttimeout_default_get() answer that
+ * -EOPNOTSUPP.
+ */
+static const unsigned int l4protos[] = { 1, 6, 17, 47, 58, 132, 255 };
+
+/* The families a conntrack timeout policy binds to: NFPROTO_IPV4 and
+ * NFPROTO_IPV6, which nf_ct_set_timeout() compares with the user's. */
+static const unsigned int l3protos[] = { 2, 10 };
+
+/*
+ * The top-level attributes whose handlers accept a few values and no others,
+ * read as a byte or in network byte order, with the values each accepts.
+ * The ids are the attribute enums' positions.
+ */
+static const struct bounded_slot oneof_slots[] = {
+	/* cttimeout_nla_policy types L3PROTO NLA_U16, but the handlers read
+	 * it with ntohs(nla_get_be16()), and none of them checks it */
+	{ "CTA_TIMEOUT_L3PROTO", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 2,
+	  NLA_KIND_BE16_ONEOF, 0, l3protos, ARRAY_SIZE(l3protos) },
+	{ "CTA_TIMEOUT_L4PROTO", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 3,
+	  NLA_KIND_U8_ONEOF, 0, l4protos, ARRAY_SIZE(l4protos) },
+};
+
+static bool has_value(const struct bounded_slot *slot, unsigned int v)
+{
+	unsigned int i;
+
+	for (i = 0; i < slot->n_values; i++) {
+		if (slot->values[i] == v)
+			return true;
+	}
+	return false;
+}
+
 /* The subsystem's spec for the slot's id that declares the slot's kind and
- * bound; a plain U32 there would send random bytes. */
+ * bound or values; a plain U32 there would send random bytes. */
 static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slot)
 {
 	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(slot->subsys);
-	unsigned int i;
+	unsigned int i, j;
 
 	if (sub == NULL) {
 		fprintf(stderr, "%s: subsystem %u is not registered\n",
@@ -173,14 +214,65 @@ static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slo
 	for (i = 0; i < sub->n_attrs; i++) {
 		const struct nla_attr_spec *spec = &sub->attrs[i];
 
-		if (spec->type == slot->id && spec->kind == slot->kind &&
-		    spec->max_len == slot->limit)
+		if (spec->type != slot->id || spec->kind != slot->kind ||
+		    spec->max_len != slot->limit || spec->n_oneof != slot->n_values)
+			continue;
+		for (j = 0; j < spec->n_oneof; j++) {
+			if (!has_value(slot, spec->oneof[j]))
+				break;
+		}
+		if (j == spec->n_oneof)
 			return spec;
 	}
 
-	fprintf(stderr, "%s: no spec of kind %u with bound %#x at id %u\n",
-		slot->name, slot->kind, slot->limit, slot->id);
+	fprintf(stderr, "%s: no spec of kind %u with bound %#x and %u listed values at id %u\n",
+		slot->name, slot->kind, slot->limit, slot->n_values, slot->id);
 	BUG("nfnl grammar: a bounded scalar is not declared with the kernel's bound");
+}
+
+static unsigned int slot_width(unsigned short kind)
+{
+	switch (kind) {
+	case NLA_KIND_U8_ONEOF:
+		return 1;
+	case NLA_KIND_BE16_MASK:
+	case NLA_KIND_BE16_ONEOF:
+		return 2;
+	default:
+		return 4;
+	}
+}
+
+/* One attribute drawn from the slot's spec, held to its width and header,
+ * and its value in host order. */
+static uint32_t draw_slot(const struct nla_attr_spec *spec,
+			  const struct bounded_slot *slot)
+{
+	const unsigned int width = slot_width(slot->kind);
+	unsigned char buf[64];
+	struct nlattr nla;
+
+	memset(buf, 0, sizeof(buf));
+	if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) !=
+	    NLA_ALIGN(NLA_HDRLEN + width))
+		BUG("nfnl grammar: a bounded scalar is not sized to its width");
+	memcpy(&nla, buf, sizeof(nla));
+	if (nla.nla_type != slot->id || nla.nla_len != NLA_HDRLEN + width)
+		BUG("nfnl grammar: a bounded scalar has the wrong header");
+
+	if (width == 1)
+		return buf[NLA_HDRLEN];
+	if (width == 2) {
+		uint16_t be;
+
+		memcpy(&be, buf + NLA_HDRLEN, sizeof(be));
+		return ntohs(be);
+	} else {
+		uint32_t be;
+
+		memcpy(&be, buf + NLA_HDRLEN, sizeof(be));
+		return ntohl(be);
+	}
 }
 
 /*
@@ -188,43 +280,32 @@ static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slo
  * bound and almost none of the rest do.  Over SLOT_ROUNDS draws the fraction
  * has a standard deviation of 0.0024, so the limits 0.80 and 0.95 are 30
  * sigma off; they turn away both a spec that sends nothing but random bytes
- * and one that never leaves the bound.  A mask draw must also set and clear
- * every bit of the mask, and a max draw reach both ends of the range, which
- * an always-zero or always-full word does not.
+ * and one that never leaves the bound.
  */
+static void check_slot_fraction(const struct bounded_slot *slot,
+				unsigned int in_bounds)
+{
+	double frac = (double) in_bounds / SLOT_ROUNDS;
+
+	if (frac < 0.80 || frac > 0.95) {
+		fprintf(stderr, "%s: %u of %u draws inside the bound, want a fraction in [0.80, 0.95]\n",
+			slot->name, in_bounds, SLOT_ROUNDS);
+		BUG("nfnl grammar: a bounded scalar is not drawn from its bound");
+	}
+}
+
+/* A mask draw must also set and clear every bit of the mask, and a max draw
+ * reach both ends of the range, which an always-zero or always-full word
+ * does not. */
 static void check_bounded_slot(const struct bounded_slot *slot)
 {
 	const struct nla_attr_spec *spec = find_slot_spec(slot);
-	const unsigned int width = slot->kind == NLA_KIND_BE16_MASK ? 2 : 4;
 	const bool mask = slot->kind != NLA_KIND_BE32_MAX;
 	uint32_t min_v = UINT32_MAX, max_v = 0, or_all = 0, and_all = UINT32_MAX;
 	unsigned int round, in_bounds = 0;
-	unsigned char buf[64];
-	double frac;
 
 	for (round = 0; round < SLOT_ROUNDS; round++) {
-		struct nlattr nla;
-		uint32_t v;
-
-		memset(buf, 0, sizeof(buf));
-		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) !=
-		    NLA_ALIGN(NLA_HDRLEN + width))
-			BUG("nfnl grammar: a bounded scalar is not sized to its width");
-		memcpy(&nla, buf, sizeof(nla));
-		if (nla.nla_type != slot->id || nla.nla_len != NLA_HDRLEN + width)
-			BUG("nfnl grammar: a bounded scalar has the wrong header");
-
-		if (width == 2) {
-			uint16_t be;
-
-			memcpy(&be, buf + NLA_HDRLEN, sizeof(be));
-			v = ntohs(be);
-		} else {
-			uint32_t be;
-
-			memcpy(&be, buf + NLA_HDRLEN, sizeof(be));
-			v = ntohl(be);
-		}
+		uint32_t v = draw_slot(spec, slot);
 
 		if (mask ? (v & ~(uint32_t) slot->limit) != 0 : v > slot->limit)
 			continue;
@@ -237,19 +318,41 @@ static void check_bounded_slot(const struct bounded_slot *slot)
 			max_v = v;
 	}
 
-	frac = (double) in_bounds / SLOT_ROUNDS;
-	if (frac < 0.80 || frac > 0.95) {
-		fprintf(stderr, "%s: %u of %u draws inside %s %#x, want a fraction in [0.80, 0.95]\n",
-			slot->name, in_bounds, SLOT_ROUNDS,
-			mask ? "mask" : "maximum", slot->limit);
-		BUG("nfnl grammar: a bounded scalar is not drawn from its bound");
-	}
+	check_slot_fraction(slot, in_bounds);
 
 	if (mask ? (or_all != slot->limit || and_all != 0) :
 		   (min_v != 0 || max_v != slot->limit)) {
 		fprintf(stderr, "%s: draws inside the bound span or %#x and %#x, min %u max %u\n",
 			slot->name, or_all, and_all, min_v, max_v);
 		BUG("nfnl grammar: a bounded scalar does not cover its bound");
+	}
+}
+
+/* Every value the handler accepts must be drawn, and a value it does not
+ * accept only as one of the random bytes the fraction allows for. */
+static void check_oneof_slot(const struct bounded_slot *slot)
+{
+	const struct nla_attr_spec *spec = find_slot_spec(slot);
+	unsigned int round, i, in_bounds = 0, seen = 0;
+
+	for (round = 0; round < SLOT_ROUNDS; round++) {
+		uint32_t v = draw_slot(spec, slot);
+
+		if (!has_value(slot, v))
+			continue;
+		in_bounds++;
+		for (i = 0; i < slot->n_values; i++) {
+			if (slot->values[i] == v)
+				seen |= 1U << i;
+		}
+	}
+
+	check_slot_fraction(slot, in_bounds);
+
+	if (seen != (1U << slot->n_values) - 1) {
+		fprintf(stderr, "%s: draws inside the list reached %#x of %#x\n",
+			slot->name, seen, (1U << slot->n_values) - 1);
+		BUG("nfnl grammar: a listed value is never drawn");
 	}
 }
 
@@ -481,6 +584,8 @@ void nfnl_gen_self_check(void)
 	check_cttimeout_commands();
 	for (i = 0; i < ARRAY_SIZE(slots); i++)
 		check_bounded_slot(&slots[i]);
+	for (i = 0; i < ARRAY_SIZE(oneof_slots); i++)
+		check_oneof_slot(&oneof_slots[i]);
 	check_nftables_batch_flags();
 	check_nftables_batches();
 }
