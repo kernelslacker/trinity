@@ -207,13 +207,6 @@ void * get_writable_struct(size_t size)
 	return get_writable_address(size);
 }
 
-void *get_call_writable_struct(const struct syscallrecord *rec, size_t size)
-{
-	if (rec->do32bit)
-		return pool_bump(low_pool, &low_pool_cursor, size);
-	return get_writable_struct(size);
-}
-
 bool range_in_writable_pool(unsigned long addr, unsigned long len)
 {
 	unsigned long base = (unsigned long) writable_pool;

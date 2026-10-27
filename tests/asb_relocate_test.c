@@ -12,11 +12,13 @@
 #include <stdio.h>
 
 #include "arch.h"		/* page_size */
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_overlaps_shared;	/* fake_shm.c */
+extern struct childdata *fake_this_child;	/* fake_shm.c */
 
 static char outside[64];
 
@@ -146,7 +148,7 @@ static void oversize_refused(void)
 void asb_relocate_self_check(void);
 void asb_relocate_self_check(void)
 {
-	struct syscallrecord compat = { .do32bit = true };
+	static struct childdata compat;
 	unsigned long base, low;
 
 	/* The pool is made once per process: take it as an earlier suite
@@ -157,10 +159,12 @@ void asb_relocate_self_check(void)
 		base = (unsigned long) get_writable_address(WRITABLE_POOL_BYTES);
 	}
 
-	/* Likewise for the low pool, which test_main made; an arch with no
-	 * compat calls has none. */
-	low = (unsigned long) get_call_writable_struct(&compat,
-						       WRITABLE_POOL_BYTES);
+	/* Likewise for the low pool, which test_main made and a compat
+	 * call's buffers come from; an arch with no compat calls has none. */
+	compat.syscall.do32bit = true;
+	fake_this_child = &compat;
+	low = (unsigned long) get_writable_address(WRITABLE_POOL_BYTES);
+	fake_this_child = NULL;
 
 	/* Every range above overlaps something tracked, as the pool itself
 	 * does in a run and a range that wraps does by definition. */

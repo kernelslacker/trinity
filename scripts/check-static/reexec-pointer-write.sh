@@ -13,9 +13,8 @@
 #   rec->aN = ... <allocator>(...)        on one line, or
 #   rec->aN = [(cast)] &x                 address-of, or
 #   p = <allocator>(...); ... rec->aN = [(cast)] p
-# where <allocator> is get_writable_*, get_call_writable_struct,
-# get_address, get_non_null_address, zmalloc, malloc, calloc,
-# alloc_shared* or mmap.  The sanitiser is found
+# where <allocator> is get_writable_*, get_address,
+# get_non_null_address, zmalloc, malloc, calloc, alloc_shared* or mmap.  The sanitiser is found
 # by name in the entry's own file; one defined elsewhere is not read.
 #
 # The baseline lists <file>:<entry> pairs and must only shrink: a line
@@ -42,7 +41,7 @@ scan_stream() {
 	# shellcheck disable=SC2016
 	awk '
 	function alloc_call(s) {
-		return s ~ /(get_writable_[A-Za-z0-9_]*|get_call_writable_struct|get_address|get_non_null_address|zmalloc|malloc|calloc|alloc_shared[A-Za-z0-9_]*|mmap)[[:space:]]*\(/
+		return s ~ /(get_writable_[A-Za-z0-9_]*|get_address|get_non_null_address|zmalloc|malloc|calloc|alloc_shared[A-Za-z0-9_]*|mmap)[[:space:]]*\(/
 	}
 	function writes_pointer(text,    n, lines, i, l, v, rhs, ptr) {
 		n = split(text, lines, "\n")
