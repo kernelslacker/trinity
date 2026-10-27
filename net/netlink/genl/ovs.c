@@ -20,13 +20,6 @@
 
 /* ---- ovs_datapath ---- */
 
-static const struct genl_cmd_grammar ovs_dp_cmds[] = {
-	{ OVS_DP_CMD_NEW, "OVS_DP_CMD_NEW" },
-	{ OVS_DP_CMD_DEL, "OVS_DP_CMD_DEL" },
-	{ OVS_DP_CMD_GET, "OVS_DP_CMD_GET" },
-	{ OVS_DP_CMD_SET, "OVS_DP_CMD_SET" },
-};
-
 /*
  * Datapath policy lives in net/openvswitch/datapath.c::datapath_policy.
  * NAME is an NLA_NUL_STRING (IFNAMSIZ - 1), so a byte at least, for the
@@ -49,6 +42,29 @@ static const struct nla_attr_spec ovs_dp_attrs[] = {
 	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 };
 
+/*
+ * What ovs_dp_cmd_new() and the ovs_dp_change() it calls read; it answers
+ * -EINVAL to a request without NAME or UPCALL_PID.
+ */
+static const struct nla_attr_spec ovs_dp_new_attrs[] = {
+	{ OVS_DP_ATTR_NAME,		NLA_KIND_STRING, 15, 1,
+	  .required = true },
+	{ OVS_DP_ATTR_UPCALL_PID,	NLA_KIND_U32,    4,
+	  .required = true },
+	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32,    4 },
+	{ OVS_DP_ATTR_MASKS_CACHE_SIZE,	NLA_KIND_U32_RANGE, 4096, 0 },
+	{ OVS_DP_ATTR_PER_CPU_PIDS,	NLA_KIND_BINARY, 64 },
+	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
+};
+
+static const struct genl_cmd_grammar ovs_dp_cmds[] = {
+	{ OVS_DP_CMD_NEW, "OVS_DP_CMD_NEW",
+	  ovs_dp_new_attrs, ARRAY_SIZE(ovs_dp_new_attrs) },
+	{ OVS_DP_CMD_DEL, "OVS_DP_CMD_DEL" },
+	{ OVS_DP_CMD_GET, "OVS_DP_CMD_GET" },
+	{ OVS_DP_CMD_SET, "OVS_DP_CMD_SET" },
+};
+
 struct genl_family_grammar fam_ovs_datapath = {
 	.name = OVS_DATAPATH_FAMILY,
 	.cmds = ovs_dp_cmds,
@@ -60,13 +76,6 @@ struct genl_family_grammar fam_ovs_datapath = {
 };
 
 /* ---- ovs_vport ---- */
-
-static const struct genl_cmd_grammar ovs_vport_cmds[] = {
-	{ OVS_VPORT_CMD_NEW, "OVS_VPORT_CMD_NEW" },
-	{ OVS_VPORT_CMD_DEL, "OVS_VPORT_CMD_DEL" },
-	{ OVS_VPORT_CMD_GET, "OVS_VPORT_CMD_GET" },
-	{ OVS_VPORT_CMD_SET, "OVS_VPORT_CMD_SET" },
-};
 
 /*
  * The legacy tunnel options OPTIONS holds, a destination port and an
@@ -114,6 +123,29 @@ static const struct nla_attr_spec ovs_vport_attrs[] = {
 	{ OVS_VPORT_ATTR_NETNSID,		NLA_KIND_U32,    4 },
 	{ OVS_VPORT_ATTR_UPCALL_STATS,		NLA_KIND_NESTED, 0, 0,
 	  ovs_vport_upcall_attrs, ARRAY_SIZE(ovs_vport_upcall_attrs) },
+};
+
+/*
+ * What ovs_vport_cmd_new() reads; it answers -EINVAL to a request without
+ * NAME, TYPE or UPCALL_PID.  IFINDEX counts for an internal port alone.
+ */
+static const struct nla_attr_spec ovs_vport_new_attrs[] = {
+	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32,    4 },
+	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32,    4,
+	  .required = true },
+	{ OVS_VPORT_ATTR_NAME,			NLA_KIND_STRING, 15, 1,
+	  .required = true },
+	{ OVS_VPORT_ATTR_UPCALL_PID,		NLA_KIND_BINARY, 64,
+	  .required = true },
+	{ OVS_VPORT_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
+};
+
+static const struct genl_cmd_grammar ovs_vport_cmds[] = {
+	{ OVS_VPORT_CMD_NEW, "OVS_VPORT_CMD_NEW",
+	  ovs_vport_new_attrs, ARRAY_SIZE(ovs_vport_new_attrs) },
+	{ OVS_VPORT_CMD_DEL, "OVS_VPORT_CMD_DEL" },
+	{ OVS_VPORT_CMD_GET, "OVS_VPORT_CMD_GET" },
+	{ OVS_VPORT_CMD_SET, "OVS_VPORT_CMD_SET" },
 };
 
 struct genl_family_grammar fam_ovs_vport = {

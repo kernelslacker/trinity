@@ -1095,8 +1095,18 @@ static struct slot ovs_datapath[] = {
 	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
 	S_U32_RANGE(OVS_DP_ATTR_IFINDEX, 0, INT32_MAX),
 };
+/* What ovs_dp_cmd_new() and its ovs_dp_change() read, NAME and UPCALL_PID
+ * without which it answers -EINVAL. */
+static struct slot ovs_datapath_new[] = {
+	S_STR(OVS_DP_ATTR_NAME, 15, .required = true),
+	S_U32(OVS_DP_ATTR_UPCALL_PID, .required = true),
+	S_U32(OVS_DP_ATTR_USER_FEATURES),
+	S_U32_RANGE(OVS_DP_ATTR_MASKS_CACHE_SIZE, 0, 4096),
+	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
+	S_U32_RANGE(OVS_DP_ATTR_IFINDEX, 0, INT32_MAX),
+};
 static struct cmd_policy ovs_datapath_cmds[] = {
-	P_CMD(OVS_DP_CMD_NEW, ovs_datapath),
+	P_CMD(OVS_DP_CMD_NEW, ovs_datapath_new),
 	P_CMD(OVS_DP_CMD_DEL, ovs_datapath),
 	P_CMD(OVS_DP_CMD_GET, ovs_datapath),
 	P_CMD(OVS_DP_CMD_SET, ovs_datapath),
@@ -1134,8 +1144,17 @@ static struct slot ovs_vport[] = {
 	S_U32(OVS_VPORT_ATTR_NETNSID),
 	S_NEST(OVS_VPORT_ATTR_UPCALL_STATS, ovs_vport_upcall),
 };
+/* What ovs_vport_cmd_new() reads, NAME, TYPE and UPCALL_PID without which
+ * it answers -EINVAL. */
+static struct slot ovs_vport_new[] = {
+	S_U32(OVS_VPORT_ATTR_PORT_NO),
+	S_U32(OVS_VPORT_ATTR_TYPE, .required = true),
+	S_STR(OVS_VPORT_ATTR_NAME, 15, .required = true),
+	S_BLOB(OVS_VPORT_ATTR_UPCALL_PID, 0, 0xffff, .required = true),
+	S_U32_RANGE(OVS_VPORT_ATTR_IFINDEX, 0, INT32_MAX),
+};
 static struct cmd_policy ovs_vport_cmds[] = {
-	P_CMD(OVS_VPORT_CMD_NEW, ovs_vport),
+	P_CMD(OVS_VPORT_CMD_NEW, ovs_vport_new),
 	P_CMD(OVS_VPORT_CMD_DEL, ovs_vport),
 	P_CMD(OVS_VPORT_CMD_GET, ovs_vport),
 	P_CMD(OVS_VPORT_CMD_SET, ovs_vport),
