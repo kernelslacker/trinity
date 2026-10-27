@@ -245,6 +245,12 @@ static const struct bounded_slot slots[] = {
 	  .kind = NLA_KIND_BE32_RANGE, .limit = 64, .lo = 1 },
 	{ .name = "NFTA_SET_DATA_LEN", .subsys = NFNL_SUBSYS_NFTABLES, .id = 7,
 	  .kind = NLA_KIND_BE32_RANGE, .limit = 64, .lo = 1 },
+	/* nf_tables_newobj() reads NFTA_OBJ_TYPE, which nft_obj_policy types
+	 * NLA_U32, with ntohl(), and a number that no object type has costs
+	 * nft_obj_type_get() a request_module(): the types are 1, the counter,
+	 * to NFT_OBJECT_MAX, 10 */
+	{ .name = "NFTA_OBJ_TYPE", .subsys = NFNL_SUBSYS_NFTABLES, .id = 3,
+	  .kind = NLA_KIND_BE32_RANGE, .limit = 10, .lo = 1 },
 };
 
 /*
@@ -1266,6 +1272,30 @@ static struct pslot setelem_del[] = {
 	PSA(3, false, setelem_find),
 };
 
+/*
+ * nft_obj_policy has the table (1), the name (2), the type (3), DATA (4), the
+ * handle (6) and the user data (8); the use count (5) is for replies.
+ * NEWOBJ answers -EINVAL unless the request holds the type, the name and
+ * DATA, and fails a missing table the same way, so it marks all four.
+ * GETOBJ and GETOBJ_RESET need the table, the name and the type, as do
+ * DELOBJ and DESTROYOBJ, which may name the object by its handle instead of
+ * its name; the grammar leaves the handle out, as a number a draw cannot
+ * know.  DATA is a bare nest that the handler parses against the policy of
+ * the object's type, which nothing in a request ties to the type drawn.
+ */
+static struct pslot obj_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PS(3, true, NLA_KIND_BE32_RANGE),
+	PS(4, true, NLA_KIND_NESTED),
+	PS(8, false, 0),
+};
+static struct pslot obj_name[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PS(3, true, NLA_KIND_BE32_RANGE),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1291,6 +1321,11 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETSETELEM_RESET", NFTABLES, 33, setelem_get, ARRAY_SIZE(setelem_get) },
 	{ "NFT_MSG_DELSETELEM", NFTABLES, 14, setelem_del, ARRAY_SIZE(setelem_del) },
 	{ "NFT_MSG_DESTROYSETELEM", NFTABLES, 30, setelem_del, ARRAY_SIZE(setelem_del) },
+	{ "NFT_MSG_NEWOBJ", NFTABLES, 18, obj_new, ARRAY_SIZE(obj_new) },
+	{ "NFT_MSG_GETOBJ", NFTABLES, 19, obj_name, ARRAY_SIZE(obj_name) },
+	{ "NFT_MSG_GETOBJ_RESET", NFTABLES, 21, obj_name, ARRAY_SIZE(obj_name) },
+	{ "NFT_MSG_DELOBJ", NFTABLES, 20, obj_name, ARRAY_SIZE(obj_name) },
+	{ "NFT_MSG_DESTROYOBJ", NFTABLES, 31, obj_name, ARRAY_SIZE(obj_name) },
 };
 
 /*

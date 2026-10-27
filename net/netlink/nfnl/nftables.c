@@ -114,32 +114,8 @@
 #ifndef NFTA_OBJ_DATA
 #define NFTA_OBJ_DATA			4
 #endif
-#ifndef NFTA_OBJ_USE
-#define NFTA_OBJ_USE			5
-#endif
-#ifndef NFTA_OBJ_HANDLE
-#define NFTA_OBJ_HANDLE			6
-#endif
 #ifndef NFTA_OBJ_USERDATA
 #define NFTA_OBJ_USERDATA		8
-#endif
-
-/*
- * CT_TIMEOUT object data attrs (NFTA_CT_TIMEOUT_*, nested under
- * NFTA_OBJ_DATA when NFTA_OBJ_TYPE == NFT_OBJECT_CT_TIMEOUT == 7).
- * The per-l4proto timeout nest (NFTA_CT_TIMEOUT_DATA) carries
- * CTA_TIMEOUT_TCP_* u32 values (seconds) for TCP or CTA_TIMEOUT_UDP_*
- * for UDP - same policy namespace as nfnetlink_cttimeout.
- * Values from include/uapi/linux/netfilter/nf_tables.h.
- */
-#ifndef NFTA_CT_TIMEOUT_L3PROTO
-#define NFTA_CT_TIMEOUT_L3PROTO		1
-#endif
-#ifndef NFTA_CT_TIMEOUT_L4PROTO
-#define NFTA_CT_TIMEOUT_L4PROTO		2
-#endif
-#ifndef NFTA_CT_TIMEOUT_DATA
-#define NFTA_CT_TIMEOUT_DATA		3
 #endif
 
 #ifndef NFTA_FLOWTABLE_TABLE
@@ -443,6 +419,41 @@ static const struct nla_attr_spec nft_delsetelem_attrs[] = {
 };
 
 /*
+ * The object commands.  NEWOBJ answers -EINVAL unless the request holds the
+ * type, the name and DATA, and fails a missing table the same way, so all four
+ * are marked.  GETOBJ and GETOBJ_RESET need the table, the name and the type,
+ * as do DELOBJ and DESTROYOBJ, which may name the object by a handle instead
+ * of its name; the handle is left out as the others are.  The type is read
+ * with ntohl(), and a number that no object type has makes nft_obj_type_get()
+ * ask nft_request_module() for "nft-obj-<type>", which the batch loads with
+ * request_module() before it runs again.  NFTA_OBJ_TYPE is therefore drawn
+ * from the counter, 1, to NFT_OBJECT_MAX.  DATA is a bare nest that the
+ * handler parses against the policy of the object's type, and nothing in a
+ * request ties it to the type drawn; its children come from this table, the
+ * first two of them as the 64-bit words most of those policies start with.
+ * The use count is for replies.
+ */
+static const struct nla_attr_spec nft_newobj_attrs[] = {
+	{ NFTA_OBJ_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_OBJ_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_OBJ_TYPE,     NLA_KIND_BE32_RANGE, NFT_OBJECT_MAX,
+	  NFT_OBJECT_COUNTER, .required = true },
+	{ NFTA_OBJ_DATA,     NLA_KIND_NESTED, 0, .required = true },
+	{ NFTA_OBJ_USERDATA, NLA_KIND_BINARY, 64 },
+};
+
+static const struct nla_attr_spec nft_obj_name_attrs[] = {
+	{ NFTA_OBJ_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_OBJ_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_OBJ_TYPE,     NLA_KIND_BE32_RANGE, NFT_OBJECT_MAX,
+	  NFT_OBJECT_COUNTER, .required = true },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -491,11 +502,16 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_delsetelem_attrs, ARRAY_SIZE(nft_delsetelem_attrs) },
 	{ NFT_MSG_DESTROYSETELEM,    "NFT_MSG_DESTROYSETELEM", true,
 	  nft_delsetelem_attrs, ARRAY_SIZE(nft_delsetelem_attrs) },
-	{ NFT_MSG_NEWOBJ,            "NFT_MSG_NEWOBJ", true },
-	{ NFT_MSG_GETOBJ,            "NFT_MSG_GETOBJ" },
-	{ NFT_MSG_GETOBJ_RESET,      "NFT_MSG_GETOBJ_RESET" },
-	{ NFT_MSG_DELOBJ,            "NFT_MSG_DELOBJ", true },
-	{ NFT_MSG_DESTROYOBJ,        "NFT_MSG_DESTROYOBJ", true },
+	{ NFT_MSG_NEWOBJ,            "NFT_MSG_NEWOBJ", true,
+	  nft_newobj_attrs, ARRAY_SIZE(nft_newobj_attrs) },
+	{ NFT_MSG_GETOBJ,            "NFT_MSG_GETOBJ", false,
+	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
+	{ NFT_MSG_GETOBJ_RESET,      "NFT_MSG_GETOBJ_RESET", false,
+	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
+	{ NFT_MSG_DELOBJ,            "NFT_MSG_DELOBJ", true,
+	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
+	{ NFT_MSG_DESTROYOBJ,        "NFT_MSG_DESTROYOBJ", true,
+	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
 	{ NFT_MSG_NEWFLOWTABLE,      "NFT_MSG_NEWFLOWTABLE", true },
 	{ NFT_MSG_GETFLOWTABLE,      "NFT_MSG_GETFLOWTABLE" },
 	{ NFT_MSG_DELFLOWTABLE,      "NFT_MSG_DELFLOWTABLE", true },
@@ -514,34 +530,13 @@ static const unsigned char nftables_families[] = {
 };
 
 /*
- * NFTA_* attrs of the namespaces whose commands name no table of their own.
- * Their ids overlap (NFTA_OBJ_TABLE and NFTA_FLOWTABLE_TABLE are both 1), so an
- * entry meets whatever slot the picked command's policy has at that id:
- * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
- * length-checks typed ones.  The obj and flowtable nests are bare NLA_NESTED
- * parsed by the handlers.  The FLAGS words are NLA_POLICY_MASK in their
- * policies, each with the flag bits the uapi header names for it.
- * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
+ * NFTA_* attrs of the namespaces whose commands name no table of their own,
+ * now the flowtable's.  The nest is a bare NLA_NESTED parsed by the handler,
+ * and FLAGS is NLA_POLICY_MASK in its policy, with the flag bits the uapi
+ * header names for it.  The strings at ids 1 and 2 are the names that nft_word
+ * stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*OBJ */
-	{ NFTA_OBJ_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_OBJ_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_OBJ_TYPE,             NLA_KIND_U32,    4 },
-	{ NFTA_OBJ_DATA,             NLA_KIND_NESTED, 0 },
-	{ NFTA_OBJ_USE,              NLA_KIND_U32,    4 },
-	{ NFTA_OBJ_HANDLE,           NLA_KIND_U64,    8 },
-	{ NFTA_OBJ_USERDATA,         NLA_KIND_BINARY, 64 },
-	/*
-	 * CT_TIMEOUT object payload (nested under NFTA_OBJ_DATA when
-	 * NFTA_OBJ_TYPE == NFT_OBJECT_CT_TIMEOUT == 7).  The TCP-specific
-	 * timeout states (CTA_TIMEOUT_TCP_*) live in a further nested
-	 * NFTA_CT_TIMEOUT_DATA attr and are validated by the same
-	 * tcp_timeout_nla_policy[] used by nfnetlink_cttimeout.
-	 */
-	{ NFTA_CT_TIMEOUT_L3PROTO,   NLA_KIND_U16,    2 },
-	{ NFTA_CT_TIMEOUT_L4PROTO,   NLA_KIND_U8,     1 },
-	{ NFTA_CT_TIMEOUT_DATA,      NLA_KIND_NESTED, 0 },
 	/* NFT_MSG_*FLOWTABLE */
 	{ NFTA_FLOWTABLE_TABLE,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_FLOWTABLE_NAME,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
