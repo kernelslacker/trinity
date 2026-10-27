@@ -798,7 +798,7 @@ static struct slot sunrpc_unix_gid_set_reqs[] = {
 	S_NEST(SUNRPC_A_UNIX_GID_REQS_REQUESTS, sunrpc_unix_gid),
 };
 static struct slot sunrpc_cache_flush[] = {
-	S_U32(SUNRPC_A_CACHE_FLUSH_MASK),
+	S_U32_MASK(SUNRPC_A_CACHE_FLUSH_MASK, 0x3),
 };
 /* The GET_REQS dumpits have no policy, so take nothing. */
 static struct cmd_policy sunrpc_cmds[] = {

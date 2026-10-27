@@ -37,7 +37,7 @@ static const struct nla_attr_spec sunrpc_unix_gid_attrs[] = {
  * The ops validate strictly against a policy of their own, and every
  * attribute namespace starts at id 1, so a cmd takes only the ids of its
  * own.  REQUESTS is a nest of one entry's attributes, and the mask of
- * CACHE_FLUSH is a u32.
+ * CACHE_FLUSH a u32 the policy holds to its two cache bits.
  */
 static const struct nla_attr_spec sunrpc_ip_map_set_reqs_attrs[] = {
 	{ SUNRPC_A_IP_MAP_REQS_REQUESTS, NLA_KIND_NESTED, 0, 0,
@@ -50,7 +50,7 @@ static const struct nla_attr_spec sunrpc_unix_gid_set_reqs_attrs[] = {
 };
 
 static const struct nla_attr_spec sunrpc_cache_flush_attrs[] = {
-	{ SUNRPC_A_CACHE_FLUSH_MASK,	NLA_KIND_U32,    4 },
+	{ SUNRPC_A_CACHE_FLUSH_MASK,	NLA_KIND_U32_MASK, 0x3 },
 };
 
 /*
