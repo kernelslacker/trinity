@@ -74,7 +74,9 @@ PCH_HDR="$WORKDIR/uapi-probe-headers.h"
 FINAL_C="$WORKDIR/final-probe.c"
 FINAL_BIN="$WORKDIR/final-probe"
 FINAL_ERR="$WORKDIR/final-probe.err"
+COMPILER_RAW="$WORKDIR/compiler-raw.txt"
 COMPILER_TABLE="$WORKDIR/compiler-table.txt"
+WIDE_TABLE="$WORKDIR/wide-table.txt"
 trap 'rm -rf "$WORKDIR"' EXIT
 
 # ---------------------------------------------------------------------------
@@ -264,6 +266,22 @@ extract_bad_syms "$BATCH_DIR"/*.err > "$SYMS_BAD" 2>/dev/null || touch "$SYMS_BA
 # Good symbols = all symbols minus bad ones
 comm -23 "$SYMS_ALL" "$SYMS_BAD" > "$SYMS_GOOD"
 
+# value_statements SYMFILE: the statements of a probe program that report the
+# value of each symbol in SYMFILE.  Every symbol gets a line "VALUE SYM" with
+# the value as an int, the operand of the 32-bit comparison.  A constant of a
+# 64-bit type that is above 0xffffffff gets a second line, "W SYM HEX", with
+# all 64 bits: as an int, CLONE_NNP and CLONE_AUTOREAP are both 0.  The type is
+# part of the test because an int -1 becomes 0xffffffffffffffff when widened,
+# and it still has to match the 32-bit spelling 0xffffffff, while a 64-bit
+# constant of the same value has to match only the 64-bit one.
+value_statements() {
+    awk '{
+        printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1
+        printf "if(sizeof(%s)>4&&(unsigned long long)(%s)>0xffffffffULL)", $1, $1
+        printf "printf(\"W %%s %%016llx\\n\",\"%s\",(unsigned long long)(%s));\n", $1, $1
+    }' "$1"
+}
+
 # ---------------------------------------------------------------------------
 # Step 4: Final compile and run
 # Compile only the good symbols (those resolvable against uapi headers) into
@@ -272,7 +290,7 @@ comm -23 "$SYMS_ALL" "$SYMS_BAD" > "$SYMS_GOOD"
 # ---------------------------------------------------------------------------
 {
     echo 'int main(void){'
-    awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_GOOD"
+    value_statements "$SYMS_GOOD"
     echo 'return 0;}'
 } > "$FINAL_C"
 
@@ -284,7 +302,7 @@ if ! gcc -w -include "$PCH_HDR" -o "$FINAL_BIN" "$FINAL_C" 2>"$FINAL_ERR"; then
         SYMS_GOOD="$WORKDIR/syms-good2.txt"
         {
             echo 'int main(void){'
-            awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_GOOD"
+            value_statements "$SYMS_GOOD"
             echo 'return 0;}'
         } > "$FINAL_C"
         gcc -w -include "$PCH_HDR" -o "$FINAL_BIN" "$FINAL_C" 2>"$FINAL_ERR" || true
@@ -303,7 +321,7 @@ if [ ! -x "$FINAL_BIN" ]; then
     exit 1
 fi
 
-"$FINAL_BIN" > "$COMPILER_TABLE" 2>/dev/null
+"$FINAL_BIN" > "$COMPILER_RAW" 2>/dev/null
 
 # ---------------------------------------------------------------------------
 # Step 4b: Tier 2 fallback — linux-linus source tree (headers built into scratch tmpdir)
@@ -542,18 +560,25 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
             FINAL_ERR2="$WORKDIR/final-probe2.err"
             {
                 echo 'int main(void){'
-                awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$SYMS_TIER2_GOOD"
+                value_statements "$SYMS_TIER2_GOOD"
                 echo 'return 0;}'
             } > "$FINAL_C2"
             if gcc -w -I"$LINUS_HDR_INC" \
                    -include "$PCH_HDR2" \
                    -o "$FINAL_BIN2" "$FINAL_C2" 2>"$FINAL_ERR2"; then
                 # Append Tier 2 authoritative values to the shared compiler table
-                "$FINAL_BIN2" >> "$COMPILER_TABLE" 2>/dev/null
+                "$FINAL_BIN2" >> "$COMPILER_RAW" 2>/dev/null
             fi
         fi
     fi
 fi
+
+# The probes report a constant that needs more than 32 bits on a second line,
+# "W SYM HEX".  Those lines are a table of their own, which the text lookup and
+# the per-header probe add to, so that the compiler table stays one "VALUE SYM"
+# line per symbol.
+grep -v '^W ' "$COMPILER_RAW" > "$COMPILER_TABLE"
+sed -n 's/^W //p' "$COMPILER_RAW" > "$WIDE_TABLE"
 
 # ---------------------------------------------------------------------------
 # Step 4c: Tier 2 text -- macros no probe header declares
@@ -960,46 +985,66 @@ esac
 #   0x80000000 == -2147483648 (32-bit sign-extension)
 #   0xffffffffffffffff == -1 (upper 32 bits masked, lower 32 signed)
 #   02000000 (octal) == 524288 (octal parsed, decimal compared)
+# That is deliberate: a 32-bit unsigned spelling is the same constant as the
+# signed value the header gives it, and 0xffffffff has to match -1.
+#
+# A constant that needs more than 32 bits is the exception.  value_statements
+# gives such a symbol a "W SYM HEX" line, and its shim is compared on all 64
+# bits (two's complement), where the int32 view would see nothing but the low
+# half: CLONE_NNP and CLONE_AUTOREAP are both 0 there.
 #
 # Performance: a single awk pass over both files avoids O(N*M) shell overhead.
 # ---------------------------------------------------------------------------
 MISMATCH_FILE="$WORKDIR/mismatches.txt"
 
-# int32 normalisation: truncate to 32-bit signed to match C's (int) semantics.
-# Handles hex (0x...), octal (0...), and decimal integers.
-# For hex values longer than 8 digits, only the lower 32 bits are kept.
-awk -v harvest_file="$HARVEST" -v text_file="$TEXT_TABLE" -v hdr_file="$HDR_TABLE" '
+awk -v harvest_file="$HARVEST" -v wide_file="$WIDE_TABLE" \
+    -v text_file="$TEXT_TABLE" -v hdr_file="$HDR_TABLE" '
 # Return numeric value of a single hex digit character (0-9, a-f, A-F)
 function hd(c) {
     return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
 }
-# Parse hex, octal, or decimal string; return signed 32-bit int.
-# For hex values wider than 32 bits, mask to lower 32 bits first.
-function int32(s,   v, i, c, n) {
-    if (s ~ /^0[xX]/) {
-        s = substr(s, 3)                          # strip 0x/0X
-        if (length(s) > 8) s = substr(s, length(s) - 7)  # keep lower 32 bits
-        v = 0
-        n = length(s)
-        for (i = 1; i <= n; i++) { c = substr(s, i, 1); v = v * 16 + hd(c) }
-    } else if (s ~ /^0[0-7]+$/) {
-        # octal literal
-        v = 0
-        n = length(s)
-        for (i = 2; i <= n; i++) v = v * 8 + (substr(s, i, 1) + 0)
-        v = v % 4294967296
-    } else {
-        # decimal (may carry sign from -1, etc.)
-        v = int(s) + 0
-        if (v < 0) v = (v % 4294967296) + 4294967296
+# Parse a hex, octal or decimal literal (a decimal one may be negative) as a
+# 64-bit value, wrapping modulo 2^64 like the compiler, left in P_HI and P_LO.
+# The halves stay below 2^32, so that every step is exact in an awk double,
+# which a decimal above 2^53 would not be.
+function parse64(s,   neg, radix, i, carry) {
+    neg = (s ~ /^-/)
+    if (neg) s = substr(s, 2)
+    if (s ~ /^0[xX]/) { radix = 16; s = substr(s, 3) }
+    else if (s ~ /^0[0-7]+$/) { radix = 8; s = substr(s, 2) }
+    else radix = 10
+    P_HI = 0; P_LO = 0
+    for (i = 1; i <= length(s); i++) {
+        P_LO = P_LO * radix + hd(substr(s, i, 1))
+        carry = int(P_LO / 4294967296)
+        P_LO -= carry * 4294967296
+        P_HI = (P_HI * radix + carry) % 4294967296
     }
-    # sign-extend to 32-bit signed
-    v = v % 4294967296
+    if (neg) {
+        P_LO = 4294967296 - P_LO
+        P_HI = 4294967295 - P_HI
+        if (P_LO == 4294967296) { P_LO = 0; P_HI = (P_HI + 1) % 4294967296 }
+    }
+}
+# The low 32 bits of a literal, as a signed int: what (int) makes of it.
+function int32(s,   v) {
+    parse64(s)
+    v = P_LO
     if (v >= 2147483648) v -= 4294967296
     return v
 }
-BEGIN { fail = 0; checked = 0; checked_text = 0; checked_hdr = 0 }
-# Pass 1: load harvest into memory (SYM -> space-separated list of values).
+# Eight hex digits for a number below 2^32.
+function hex8(x,   s, i) {
+    s = ""
+    for (i = 0; i < 8; i++) {
+        s = substr("0123456789abcdef", x % 16 + 1, 1) s
+        x = int(x / 16)
+    }
+    return s
+}
+BEGIN { fail = 0; checked = 0; checked_text = 0; checked_hdr = 0; checked_wide = 0 }
+# Pass 1: load harvest into memory (SYM -> space-separated list of values),
+# then the symbols that need 64 bits (SYM -> HEX).
 # Use FILENAME == harvest_file rather than the FNR == NR idiom: if the harvest
 # file is empty awk never emits a record for it, so when the first record of
 # the compiler table arrives both FNR and NR are 1, causing that record to be
@@ -1009,6 +1054,7 @@ FILENAME == harvest_file {
     harvest[sym] = (sym in harvest) ? harvest[sym] " " val : val
     next
 }
+FILENAME == wide_file { wide[$1] = $2; next }
 # Pass 2: process the compiler table (format: DECIMAL_VALUE SYM), then the
 # text and header tables (DECIMAL_VALUE SYM FILE), counting them apart.
 {
@@ -1026,6 +1072,20 @@ FILENAME == harvest_file {
         source = "compiler"
     }
     n = split(harvest[sym], tvals)
+    if (sym in wide) {
+        checked_wide++
+        for (i = 1; i <= n; i++) {
+            tv = tvals[i]
+            parse64(tv)
+            have = hex8(P_HI) hex8(P_LO)
+            if (have != wide[sym]) {
+                fail++
+                printf "FAIL: uapi-shim-values: %s shim wrong: have %s (=0x%s), want 0x%s (%s)\n",
+                    sym, tv, have, wide[sym], source > "/dev/stderr"
+            }
+        }
+        next
+    }
     for (i = 1; i <= n; i++) {
         tv = tvals[i]
         trinity_val = int32(tv)
@@ -1036,14 +1096,15 @@ FILENAME == harvest_file {
         }
     }
 }
-END { print fail, checked, checked_text, checked_hdr }
-' "$HARVEST" "$COMPILER_TABLE" "$TEXT_TABLE" "$HDR_TABLE" > "$MISMATCH_FILE"
+END { print fail, checked, checked_text, checked_hdr, checked_wide }
+' "$HARVEST" "$WIDE_TABLE" "$COMPILER_TABLE" "$TEXT_TABLE" "$HDR_TABLE" > "$MISMATCH_FILE"
 
-read fail checked checked_text checked_hdr < "$MISMATCH_FILE"
+read fail checked checked_text checked_hdr checked_wide < "$MISMATCH_FILE"
 fail=${fail:-0}
 checked=${checked:-0}
 checked_text=${checked_text:-0}
 checked_hdr=${checked_hdr:-0}
+checked_wide=${checked_wide:-0}
 
 # ---------------------------------------------------------------------------
 # Step 6: Baseline cross-check
@@ -1147,5 +1208,5 @@ case "$TIER1_STATUS" in
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / hdr-verified $HDR_VERIFIED / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor / hdr_floor=$hdr_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / hdr-verified $HDR_VERIFIED / wide-checked $checked_wide / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor / hdr_floor=$hdr_floor)"
 exit 0

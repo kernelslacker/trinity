@@ -5,8 +5,9 @@
 # entry its headers predate is skipped, a stale one or a wrong value fails, a
 # symbol only the Tier-2 kernel tree resolves is checked even under a hook's
 # GIT_DIR, a macro no probe header declares is compared with its definition in
-# the tree's installed headers, and unresolved symbols are one count.  No git
-# runs here: a stub answers the gate's revision lookup.
+# the tree's installed headers, a constant that needs 64 bits is compared on
+# all of them, and unresolved symbols are one count.  No git runs here: a stub
+# answers the gate's revision lookup.
 
 set -u
 
@@ -152,6 +153,19 @@ cat > "$tree/hdr-shims.h" <<'EOF'
 #define SELFTEST_HDR_MASK	40
 #define SELFTEST_HDR_TWO	2
 EOF
+# Constants that need 64 bits are compared on all of them: UINT64_MAX and
+# INT64_MAX from the host's stdint.h, and SELFTEST_WIDE_NEWER from the
+# neighbour.h above, which Tier 2 evaluates.  UINT32_MAX and AT_FDCWD do not
+# need them, and their shims are the 32-bit unsigned spellings of an unsigned
+# int and of an int, which have to go on matching.
+printf '#define SELFTEST_WIDE_NEWER (1ULL << 40)\n' >> "$hdrs/linux/neighbour.h"
+cat > "$tree/wide-shims.h" <<'EOF'
+#define UINT32_MAX	0xffffffff
+#define AT_FDCWD	0xffffff9c
+#define UINT64_MAX	0xffffffffffffffff
+#define INT64_MAX	0x7fffffffffffffff
+#define SELFTEST_WIDE_NEWER	(1ULL<<40)
+EOF
 tier2=(TRINITY_LINUS_SRC="$linus" XDG_CACHE_HOME="$work/cache" PATH="$work/bin:$PATH")
 
 run_gate "SELFTEST_NEWER_THAN_HOST 99" "${tier2[@]}"
@@ -162,11 +176,35 @@ expect "tier2 tree: the one macro only its header text declares is verified" \
 	grep -q 'text-verified 1 ' "$work/out"
 expect "tier2 tree: the expression and the enum member only their header evaluates are verified" \
 	grep -q 'hdr-verified 2 ' "$work/out"
+expect "wide constants: the three that need 64 bits are compared on all of them" \
+	grep -q 'wide-checked 3 ' "$work/out"
 
+# Only the high half of each wide shim is wrong now, which the int view of the
+# constant cannot see: UINT64_MAX spelled as the 32-bit all-ones, INT64_MAX
+# and the Tier-2 constant with a high bit moved.
+cp "$tree/wide-shims.h" "$work/wide-shims.good"
+cat > "$tree/wide-shims.h" <<'EOF'
+#define UINT32_MAX	0xffffffff
+#define AT_FDCWD	0xffffff9c
+#define UINT64_MAX	0xffffffff
+#define INT64_MAX	0x3fffffffffffffff
+#define SELFTEST_WIDE_NEWER	(1ULL<<41)
+EOF
 run_gate "SELFTEST_NEWER_THAN_HOST 98" "${tier2[@]}"
 expect "tier2-resolved baseline symbol, wrong value: gate fails" [ "$rc" -ne 0 ]
 expect "tier2-resolved baseline symbol, wrong value: names both values" \
 	grep -q 'baseline SELFTEST_NEWER_THAN_HOST: compiler says 99, baseline says 98' "$work/err"
+for row in \
+	"UINT64_MAX|0xffffffff|0x00000000ffffffff|0xffffffffffffffff" \
+	"INT64_MAX|0x3fffffffffffffff|0x3fffffffffffffff|0x7fffffffffffffff" \
+	"SELFTEST_WIDE_NEWER|2199023255552|0x0000020000000000|0x0000010000000000"; do
+	IFS='|' read -r sym have norm want <<< "$row"
+	expect "wide constant, $sym: names both 64-bit values" \
+		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have (=$norm), want $want (compiler)" "$work/err"
+done
+expect "wide constants: the narrow ones, spelled unsigned, are not named" \
+	test "$(grep -c -e UINT32_MAX -e AT_FDCWD "$work/err")" -eq 0
+cp "$work/wide-shims.good" "$tree/wide-shims.h"
 
 # Case 6: a hook or rebase exec exports GIT_DIR and friends.  They must not
 # pick the revision the header cache is keyed on, or Tier 2 misses its cache.
