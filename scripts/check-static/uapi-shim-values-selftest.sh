@@ -316,6 +316,11 @@ expect "text floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "text floor above the verified count: names both numbers" \
 	grep -q 'coverage ratchet: text-verified 12 < text_floor 99' "$work/out"
 
+# Case 8 is about the per-header probe.  The text shims have done their work,
+# and left in they cost both compile probes a did-you-mean search apiece for
+# each of their symbols in every run that follows.
+rm "$tree/text-shims.h"
+
 # Case 8: the per-header probe.  What a literal scan cannot read, an enum
 # member or an expression, is evaluated by compiling the header that declares
 # it, alone.  Besides selftest_hdr.h of Case 5:
@@ -347,9 +352,9 @@ printf '#include <selftest_no_such_dependency.h>\n#define SELFTEST_HDR_BAD (4 + 
 run_gate "NDA_DST 1" "${tier2[@]}" UAPI_SHIM_VALUES_LIST=1
 expect "header probe: gate passes" [ "$rc" -eq 0 ]
 expect "header probe: the expression, the enum member, the wide constant and the retried header are verified" \
-	grep -q 'hdr-verified 6 ' "$work/out"
+	grep -q 'hdr-verified 4 ' "$work/out"
 expect "header probe: its wide constant joins the others compared on all 64 bits" \
-	grep -q 'wide-checked 6 ' "$work/out"
+	grep -q 'wide-checked 4 ' "$work/out"
 for sym in SELFTEST_HDR_NOTE SELFTEST_HDR_TWICE SELFTEST_HDR_BAD; do
 	expect "header probe: $sym stays unresolved" \
 		grep -q "^WARN: uapi-shim-values: unresolved uapi-shaped symbol: $sym\$" "$work/err"
@@ -385,7 +390,7 @@ echo 99 > "$tree/scripts/check-static/uapi-shim-hdr-floor.baseline"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "hdr floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "hdr floor above the verified count: names both numbers" \
-	grep -q 'coverage ratchet: hdr-verified 6 < hdr_floor 99' "$work/out"
+	grep -q 'coverage ratchet: hdr-verified 4 < hdr_floor 99' "$work/out"
 
 total=$((pass + fail))
 
