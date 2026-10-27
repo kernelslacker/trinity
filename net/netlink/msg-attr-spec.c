@@ -171,28 +171,20 @@ static size_t append_specced_nested(unsigned char *buf, size_t offset,
 				    size_t nr_specs);
 
 /*
- * Emit a single attribute described by a freshly picked spec.  A nest with
- * a table of its own is built by append_specced_nested(); any other nest is
- * a small binary payload, so children stay one level deep.  own is set when
- * table is a nest's own: a child that does not fit is dropped rather than
- * cut short, since a shortened one fails the nest's policy.
+ * Emit spec, a child of a nest, as an attribute.  A nest with a table of its
+ * own is built by append_specced_nested(); any other nest is a small binary
+ * payload, so children stay one level deep.  own is set when table is a
+ * nest's own: a child that does not fit is dropped rather than cut short,
+ * since a shortened one fails the nest's policy.
  */
-static size_t append_specced_flat(unsigned char *buf, size_t offset,
-				  size_t buflen,
-				  const struct nla_attr_spec *table,
-				  size_t nr_specs, bool own)
+static size_t append_spec_flat(unsigned char *buf, size_t offset, size_t buflen,
+			       const struct nla_attr_spec *spec,
+			       const struct nla_attr_spec *table,
+			       size_t nr_specs, bool own)
 {
-	const struct nla_attr_spec *spec;
 	struct nlattr nla;
 	size_t payload_len;
 	size_t total;
-
-	if (!table || nr_specs == 0)
-		return offset;
-	if (offset + NLA_HDRLEN > buflen)
-		return offset;
-
-	spec = &table[rnd_modulo_u32(nr_specs)];
 
 	if (spec->nest != NULL)
 		return append_specced_nested(buf, offset, buflen, spec,
@@ -224,6 +216,22 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
 	spec_fill_payload(buf + offset + NLA_HDRLEN, payload_len, spec);
 
 	return offset + total;
+}
+
+/* Emit a child of a nest drawn from table at random. */
+static size_t append_specced_flat(unsigned char *buf, size_t offset,
+				  size_t buflen,
+				  const struct nla_attr_spec *table,
+				  size_t nr_specs, bool own)
+{
+	if (!table || nr_specs == 0)
+		return offset;
+	if (offset + NLA_HDRLEN > buflen)
+		return offset;
+
+	return append_spec_flat(buf, offset, buflen,
+				&table[rnd_modulo_u32(nr_specs)], table,
+				nr_specs, own);
 }
 
 /* 1-3 attributes drawn from table into the avail bytes at inner; returns
@@ -335,29 +343,15 @@ static size_t append_specced_nested(unsigned char *buf, size_t offset,
 	return offset + total;
 }
 
-/*
- * Top-level entry for spec-driven attribute emission.  Picks a random
- * spec and delegates to the nested or flat path as appropriate.  Used
- * exclusively by build_one_nlmsg for families with a curated
- * nla_attr_spec table; the legacy random-payload append_nlattr() path
- * still serves families without specs.
- */
-size_t append_specced_nlattr(unsigned char *buf, size_t offset,
-			     size_t buflen,
-			     const struct nla_attr_spec *table,
-			     size_t nr_specs)
+/* Emit spec as an attribute of the message, a nest in the way spec asks. */
+static size_t append_spec_top(unsigned char *buf, size_t offset, size_t buflen,
+			      const struct nla_attr_spec *spec,
+			      const struct nla_attr_spec *table,
+			      size_t nr_specs)
 {
-	const struct nla_attr_spec *spec;
 	struct nlattr nla;
 	size_t payload_len;
 	size_t total;
-
-	if (!table || nr_specs == 0)
-		return offset;
-	if (offset + NLA_HDRLEN > buflen)
-		return offset;
-
-	spec = &table[rnd_modulo_u32(nr_specs)];
 
 	if (spec->kind == NLA_KIND_NESTED || spec->kind == NLA_KIND_NESTED_ARRAY)
 		return append_specced_nested(buf, offset, buflen, spec,
@@ -379,6 +373,28 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 	spec_fill_payload(buf + offset + NLA_HDRLEN, payload_len, spec);
 
 	return offset + total;
+}
+
+/*
+ * Top-level entry for spec-driven attribute emission.  Picks a random
+ * spec and delegates to the nested or flat path as appropriate.  Used
+ * exclusively by build_one_nlmsg for families with a curated
+ * nla_attr_spec table; the legacy random-payload append_nlattr() path
+ * still serves families without specs.
+ */
+size_t append_specced_nlattr(unsigned char *buf, size_t offset,
+			     size_t buflen,
+			     const struct nla_attr_spec *table,
+			     size_t nr_specs)
+{
+	if (!table || nr_specs == 0)
+		return offset;
+	if (offset + NLA_HDRLEN > buflen)
+		return offset;
+
+	return append_spec_top(buf, offset, buflen,
+			       &table[rnd_modulo_u32(nr_specs)], table,
+			       nr_specs);
 }
 
 /*
