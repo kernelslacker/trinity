@@ -599,6 +599,12 @@ sed -n 's/^W //p' "$COMPILER_RAW" > "$WIDE_TABLE"
 # disagree stays unresolved: a wrong accusation against a correct shim costs
 # more than the check is worth.  Enum members are not macros and stay
 # unresolved too; only a compile probe sees them (Step 4d).
+#
+# A literal that needs more than 32 bits keeps all 64, as in a compiler probe
+# (value_statements).  There is no compiler to give it a type, so the type is
+# read off the spelling the way C does: 8 bytes for an L in the suffix, or for
+# more bits than the 4-byte types hold, which are int for a decimal without a
+# suffix and unsigned int for the rest.
 # ---------------------------------------------------------------------------
 TEXT_OBS="$WORKDIR/text-obs.txt"
 TEXT_TABLE="$WORKDIR/text-table.txt"
@@ -609,14 +615,18 @@ case "$TIER2_STATUS" in
 ran*)
     if [ -s "$SYMS_BAD" ]; then
         TEXT_RAN=1
-        # "SYM VALUE FILE" for every object-like #define of an ALL_CAPS name:
-        # VALUE is a signed 32-bit decimal as in the compiler table, or ? for
-        # a definition of any other shape.  Deciding per symbol is left to
-        # awk below, so that xargs cannot split a symbol's definitions
-        # between two perl processes.
+        # "SYM VALUE FILE WIDE" for every object-like #define of an ALL_CAPS
+        # name: VALUE is a signed 32-bit decimal as in the compiler table, or
+        # ? for a definition of any other shape, and WIDE the 64 bits in hex
+        # of a constant that has an 8-byte type and needs them, - for any
+        # other.  Deciding per symbol is left to awk below, so that xargs
+        # cannot split a symbol's definitions between two perl processes.
         if ! (set -o pipefail
               find "$HDR_INSTALL/include" -name '*.h' | sort | \
               xargs perl -0777 -ne '
+	# The value, and whether the constant has an 8-byte type: an L in the
+	# suffix, or more bits than the 4-byte types hold (int for a decimal
+	# without a suffix, unsigned int for the rest).
 	sub ev {
 		my $r = shift;
 		$r =~ s/^\s+|\s+$//g;
@@ -624,38 +634,44 @@ ran*)
 			$r = substr($1, 1, -1);
 			$r =~ s/^\s+|\s+$//g;
 		}
-		if ($r =~ /^(-?)\s*(0[xX][0-9a-fA-F]{1,16}|0[0-7]*|[1-9][0-9]{0,18})[uUlL]*$/) {
-			my ($neg, $n) = ($1, $2);
+		if ($r =~ /^(-?)\s*(0[xX][0-9a-fA-F]{1,16}|0[0-7]*|[1-9][0-9]{0,18})([uUlL]*)$/) {
+			my ($neg, $n, $suf) = ($1, $2, $3);
+			my $unsigned = $n =~ /^0/ || $suf =~ /[uU]/;
 			$n = $n =~ /^0[xX]/ ? hex($n) : $n =~ /^0/ ? oct($n) : $n + 0;
 			return undef if $neg && $n > 0x7FFFFFFFFFFFFFFF;
-			return $neg ? -$n : $n;
+			return ($neg ? -$n : $n, $suf =~ /[lL]/ || $n > ($unsigned ? 0xFFFFFFFF : 0x7FFFFFFF));
 		}
-		if ($r =~ /^(?:\((?:__u\d+|unsigned long long|unsigned long|unsigned int|unsigned|int|long)\)\s*)?1[uUlL]*\s*<<\s*(0[xX][0-9a-fA-F]{1,2}|[0-9]{1,2})$/) {
-			my $sh = $1;
+		if ($r =~ /^(?:\(((?:__u\d+|unsigned long long|unsigned long|unsigned int|unsigned|int|long))\)\s*)?1([uUlL]*)\s*<<\s*(0[xX][0-9a-fA-F]{1,2}|[0-9]{1,2})$/) {
+			my ($type, $suf, $sh) = ($1 // "", $2, $3);
 			$sh = hex($sh) if $sh =~ /^0[xX]/;
-			return $sh > 63 ? undef : 1 << $sh;
+			return undef if $sh > 63;
+			return (1 << $sh, $suf =~ /[lL]/ || $type =~ /^(?:__u64|unsigned long long|unsigned long|long)$/);
 		}
 		return undef;
 	}
 	s{/\*.*?\*/}{ }gs; s{//[^\n]*}{}g; s{\\\n}{ }g;
 	while (m{^[ \t]*\#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)(?:[ \t]+([^\n]*?))?[ \t]*$}gm) {
 		my ($sym, $rhs) = ($1, $2);
-		my $v = defined $rhs ? ev($rhs) : undef;
+		my ($v, $big) = defined $rhs ? ev($rhs) : ();
+		my $w = "-";
 		if (defined $v) {
+			my $u = $v & 0xFFFFFFFFFFFFFFFF;
+			$w = sprintf("%016x", $u) if $big && $u > 0xFFFFFFFF;
 			$v &= 0xFFFFFFFF;
 			$v -= 4294967296 if $v >= 2147483648;
 		}
-		printf("%s %s %s\n", $sym, defined $v ? $v : "?", $ARGV);
+		printf("%s %s %s %s\n", $sym, defined $v ? $v : "?", $ARGV, $w);
 	}' > "$TEXT_OBS"); then
             echo "FAIL: $NAME: Tier-2 text scan of $HDR_INSTALL/include failed"
             exit 1
         fi
-        awk -v want_file="$SYMS_BAD" -v root="$HDR_INSTALL/include" '
+        awk -v want_file="$SYMS_BAD" -v root="$HDR_INSTALL/include" \
+            -v wide_out="$WIDE_TABLE" '
             FILENAME == want_file { want[$1]; next }
             !($1 in want) { next }
             $2 == "?" { bad[$1]; next }
-            !($1 in val) { val[$1] = $2; src[$1] = $3; next }
-            val[$1] != $2 { bad[$1] }
+            !($1 in val) { val[$1] = $2; src[$1] = $3; wid[$1] = $4; next }
+            val[$1] != $2 || wid[$1] != $4 { bad[$1] }
             END {
                 for (s in val) {
                     if (s in bad)
@@ -664,6 +680,8 @@ ran*)
                     if (index(f, root "/") == 1)
                         f = substr(f, length(root) + 2)
                     print val[s], s, f
+                    if (wid[s] != "-")
+                        print s, wid[s] >> wide_out
                 }
             }
         ' "$SYMS_BAD" "$TEXT_OBS" | sort -k2 > "$TEXT_TABLE"

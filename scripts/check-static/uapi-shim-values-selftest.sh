@@ -221,6 +221,9 @@ expect "inherited GIT_DIR: baseline symbol checked, not skipped" \
 # a negative int, a literal with a suffix, one in parentheses and a shift with
 # a suffix.  SELFTEST_TEXT_EXPR is the start of an expression, which is not
 # a literal and is not harvested: read as 4 it would not match the header's 7.
+# SELFTEST_TEXT_WIDE and SELFTEST_TEXT_ONES need 64 bits and are compared on
+# all of them; SELFTEST_TEXT_NARROW is a long that fits 32, which still has to
+# match the int -1 its shim spells.
 # SELFTEST_TEXT_SAME is defined twice, alike.  The header
 # defines SELFTEST_TEXT_TWICE with two values and SELFTEST_TEXT_ALIAS as
 # another macro, which the text lookup may not judge: they are left to the
@@ -235,6 +238,9 @@ cat > "$tree/text-shims.h" <<'EOF'
 #define SELFTEST_TEXT_PAREN	(7)
 #define SELFTEST_TEXT_USHIFT	(1UL << 4)
 #define SELFTEST_TEXT_EXPR	4 + 3
+#define SELFTEST_TEXT_WIDE	0x400000000ULL
+#define SELFTEST_TEXT_ONES	0xffffffffffffffff
+#define SELFTEST_TEXT_NARROW	-1
 #define SELFTEST_TEXT_SAME	12
 #define SELFTEST_TEXT_TWICE	4
 #define SELFTEST_TEXT_ALIAS	5
@@ -249,6 +255,9 @@ cat > "$work/text-header.good" <<'EOF'
 #define SELFTEST_TEXT_PAREN 7
 #define SELFTEST_TEXT_USHIFT 16
 #define SELFTEST_TEXT_EXPR 7
+#define SELFTEST_TEXT_WIDE 0x400000000ULL
+#define SELFTEST_TEXT_ONES 0xffffffffffffffffULL
+#define SELFTEST_TEXT_NARROW 0xffffffffUL
 #ifdef SELFTEST_WIDE
 #define SELFTEST_TEXT_SAME 12
 #define SELFTEST_TEXT_TWICE 3
@@ -262,8 +271,10 @@ cp "$work/text-header.good" "$hdrs/linux/selftest_text.h"
 
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "header text matches: gate passes" [ "$rc" -eq 0 ]
-expect "header text matches: nine shims verified" \
-	grep -q 'text-verified 9 ' "$work/out"
+expect "header text matches: twelve shims verified" \
+	grep -q 'text-verified 12 ' "$work/out"
+expect "header text matches: two of them need 64 bits and are compared on all of them" \
+	grep -q 'wide-checked 5 ' "$work/out"
 expect "header text matches: ambiguous and aliased symbols are left to the header probe" \
 	grep -q 'hdr-verified 4 ' "$work/out"
 expect "header text matches: nothing but the private switch stays unresolved" \
@@ -275,6 +286,8 @@ sed -e 's/TEXT_LITERAL 5/TEXT_LITERAL 6/' -e 's/(1 << 4)/(1 << 5)/' \
 	-e 's/TEXT_NEGATIVE -4/TEXT_NEGATIVE -5/' -e 's/0x80000001U/0x80000002U/' \
 	-e 's/TEXT_SUFFIX 5/TEXT_SUFFIX 6/' -e 's/TEXT_PAREN 7/TEXT_PAREN 8/' \
 	-e 's/TEXT_USHIFT 16/TEXT_USHIFT 32/' \
+	-e 's/TEXT_WIDE 0x400000000ULL/TEXT_WIDE 0x800000000ULL/' \
+	-e 's/TEXT_ONES 0xffffffffffffffffULL/TEXT_ONES 0x7fffffffffffffffULL/' \
 	"$work/text-header.good" > "$hdrs/linux/selftest_text.h"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "header text differs: gate fails" [ "$rc" -ne 0 ]
@@ -285,11 +298,15 @@ for row in \
 	"SELFTEST_TEXT_HEX|0x80000001 (=-2147483647)|-2147483646" \
 	"SELFTEST_TEXT_SUFFIX|5 (=5)|6" \
 	"SELFTEST_TEXT_PAREN|7 (=7)|8" \
-	"SELFTEST_TEXT_USHIFT|16 (=16)|32"; do
+	"SELFTEST_TEXT_USHIFT|16 (=16)|32" \
+	"SELFTEST_TEXT_WIDE|0x400000000 (=0x0000000400000000)|0x0000000800000000" \
+	"SELFTEST_TEXT_ONES|0xffffffffffffffff (=0xffffffffffffffff)|0x7fffffffffffffff"; do
 	IFS='|' read -r sym have want <<< "$row"
 	expect "header text differs, $sym: names the symbol, both values and the header" \
 		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have, want $want (installed header linux/selftest_text.h)" "$work/err"
 done
+expect "header text differs: a long that fits 32 bits, spelled -1, is not named" \
+	test "$(grep -c SELFTEST_TEXT_NARROW "$work/err")" -eq 0
 
 # The count of verified symbols is ratcheted like the probed one.
 cp "$work/text-header.good" "$hdrs/linux/selftest_text.h"
@@ -297,7 +314,7 @@ echo 99 > "$tree/scripts/check-static/uapi-shim-text-floor.baseline"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "text floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "text floor above the verified count: names both numbers" \
-	grep -q 'coverage ratchet: text-verified 9 < text_floor 99' "$work/out"
+	grep -q 'coverage ratchet: text-verified 12 < text_floor 99' "$work/out"
 
 # Case 8: the per-header probe.  What a literal scan cannot read, an enum
 # member or an expression, is evaluated by compiling the header that declares
@@ -331,8 +348,8 @@ run_gate "NDA_DST 1" "${tier2[@]}" UAPI_SHIM_VALUES_LIST=1
 expect "header probe: gate passes" [ "$rc" -eq 0 ]
 expect "header probe: the expression, the enum member, the wide constant and the retried header are verified" \
 	grep -q 'hdr-verified 6 ' "$work/out"
-expect "header probe: the wide constant is compared on all 64 bits" \
-	grep -q 'wide-checked 4 ' "$work/out"
+expect "header probe: its wide constant joins the others compared on all 64 bits" \
+	grep -q 'wide-checked 6 ' "$work/out"
 for sym in SELFTEST_HDR_NOTE SELFTEST_HDR_TWICE SELFTEST_HDR_BAD; do
 	expect "header probe: $sym stays unresolved" \
 		grep -q "^WARN: uapi-shim-values: unresolved uapi-shaped symbol: $sym\$" "$work/err"
