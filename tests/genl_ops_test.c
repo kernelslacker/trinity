@@ -337,9 +337,10 @@ static void put_ops_first_family(struct reply *r,
  * A slot of a kernel nla_policy as far as the generator shapes it: the
  * attribute's id, the payload lengths it takes and, for a nest, the policy
  * its children meet.  A u32 that the policy bounds with a mask or a range
- * says so, and the generator draws inside the bound most of the time, so a
- * draw outside it is tallied rather than refused: the policy's reject arm
- * wants some.  An array whose handler counts its elements against a cap is
+ * says so, and so does one that its handler bounds where the policy leaves
+ * it a plain NLA_U32; the generator draws inside the bound most of the
+ * time, so a draw outside it is tallied rather than refused: the reject
+ * arm wants some.  An array whose handler counts its elements against a cap is
  * bounded the same way, by a range of counts.  Other values are not the
  * generator's to shape and are not modelled.  A slot that the handler needs
  * says so, and the generator puts it in most streams of its policy and
@@ -982,20 +983,22 @@ extern struct genl_family_grammar fam_ethtool;
  * ETHTOOL_FLAG_STATS as well (ETHTOOL_FLAGS_STATS, against
  * ETHTOOL_FLAGS_BASIC), and ethnl_header_policy_phy, and the
  * ethnl_*_get_policy tables.  Most cmds' policy is the HEADER alone, so
- * those rows share a table.
+ * those rows share a table.  DEV_INDEX is bounded to lo's, LOOPBACK_IFINDEX,
+ * since the header's DEV_NAME is "lo" and ethnl_parse_header_dev_get()
+ * refuses an index that names another device.
  */
 static struct slot ethtool_header[] = {
-	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
+	S_U32_RANGE(ETHTOOL_A_HEADER_DEV_INDEX, 1, 1),
 	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
 	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x3),
 };
 static struct slot ethtool_header_stats[] = {
-	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
+	S_U32_RANGE(ETHTOOL_A_HEADER_DEV_INDEX, 1, 1),
 	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
 	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x7),
 };
 static struct slot ethtool_header_phy[] = {
-	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
+	S_U32_RANGE(ETHTOOL_A_HEADER_DEV_INDEX, 1, 1),
 	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
 	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x3),
 	S_U32_RANGE(ETHTOOL_A_HEADER_PHY_INDEX, 1, UINT32_MAX),
@@ -2430,8 +2433,8 @@ static void check_bounded_tables(void)
 
 /*
  * What each spec declares, its bound and whether it is marked required, is
- * what its policy and its handler give: none declares a bound the policy
- * lacks or a mark the handler does not need, and an array is capped where
+ * what its policy and its handler give: none declares a bound that both
+ * lack or a mark the handler does not need, and an array is capped where
  * its handler caps it.  The draws show a bound that is
  * off by a tenth of its width or more, and none that is off by one, as a cap
  * of MAX_ERRNO could be; and a mark lost from a table of two attributes
