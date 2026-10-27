@@ -66,6 +66,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_METER	723
 #define ID_OVS_CT_LIMIT	724
 #define ID_TIPC		725
+#define ID_OVS_FLOW	726
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1251,6 +1252,222 @@ static struct cmd_policy ovs_ct_limit_cmds[] = {
 	P_CMD(OVS_CT_LIMIT_CMD_DEL, ovs_ct_limit),
 	P_CMD(OVS_CT_LIMIT_CMD_GET, ovs_ct_limit),
 };
+
+extern struct genl_family_grammar fam_ovs_flow;
+
+/*
+ * net/openvswitch/flow_netlink.c: the namespaces a flow's nests are parsed
+ * in, each attribute as long as its table gives it: ovs_key_lens for a key
+ * or a mask, ovs_tunnel_key_lens, the NSH key's, the action_lens of
+ * __ovs_nla_copy_actions(), and the nests the actions open, conntrack.c's
+ * ovs_ct_attr_lens and NAT lengths among them.  A variable-length one takes
+ * what its parser does: an MPLS key one to three labels, GENEVE and ERSPAN
+ * options up to IP_TUNNEL_OPTS_MAX, an MD2 up to NSH_CTX_HDRS_MAX_LEN.  A
+ * SET or SET_MASKED action holds one key, the latter's value and mask.
+ * OUTPUT is below DP_MAX_PORTS, TRUNC at least ETH_HLEN and a userspace
+ * PID not 0.  The handlers need a tunnel key's TTL, a userspace action's
+ * PID, a sample's PROBABILITY and ACTIONS, a CHECK_PKT_LEN's PKT_LEN and
+ * both branches, a PSAMPLE's GROUP and a NEW flow's KEY and ACTIONS.
+ */
+#define S_FIXED(id, s, ...) \
+	S_BLOB(id, sizeof(struct s), sizeof(struct s), ##__VA_ARGS__)
+#define S_MASKED(id, s, ...) \
+	S_BLOB(id, 2 * sizeof(s), 2 * sizeof(s), ##__VA_ARGS__)
+static struct slot ovs_vxlan_ext[] = {
+	S_U32(OVS_VXLAN_EXT_GBP),
+};
+static struct slot ovs_tunnel_key[] = {
+	S_U64(OVS_TUNNEL_KEY_ATTR_ID),
+	S_U32(OVS_TUNNEL_KEY_ATTR_IPV4_SRC),
+	S_U32(OVS_TUNNEL_KEY_ATTR_IPV4_DST),
+	S_U8(OVS_TUNNEL_KEY_ATTR_TOS),
+	S_U8(OVS_TUNNEL_KEY_ATTR_TTL, .required = true),
+	S_FLAG(OVS_TUNNEL_KEY_ATTR_DONT_FRAGMENT),
+	S_FLAG(OVS_TUNNEL_KEY_ATTR_CSUM),
+	S_U16(OVS_TUNNEL_KEY_ATTR_TP_SRC),
+	S_U16(OVS_TUNNEL_KEY_ATTR_TP_DST),
+	S_FLAG(OVS_TUNNEL_KEY_ATTR_OAM),
+	S_BLOB(OVS_TUNNEL_KEY_ATTR_GENEVE_OPTS, 0, 252),
+	S_NEST(OVS_TUNNEL_KEY_ATTR_VXLAN_OPTS, ovs_vxlan_ext),
+	S_BLOB(OVS_TUNNEL_KEY_ATTR_IPV6_SRC, 16, 16),
+	S_BLOB(OVS_TUNNEL_KEY_ATTR_IPV6_DST, 16, 16),
+	S_BLOB(OVS_TUNNEL_KEY_ATTR_ERSPAN_OPTS, 0, 255),
+	S_FLAG(OVS_TUNNEL_KEY_ATTR_IPV4_INFO_BRIDGE),
+};
+static struct slot ovs_nsh_key[] = {
+	S_FIXED(OVS_NSH_KEY_ATTR_BASE, ovs_nsh_key_base),
+	S_FIXED(OVS_NSH_KEY_ATTR_MD1, ovs_nsh_key_md1),
+	S_BLOB(OVS_NSH_KEY_ATTR_MD2, 1, 244),
+};
+static struct slot ovs_key[] = {
+	S_U32(OVS_KEY_ATTR_PRIORITY),
+	S_U32(OVS_KEY_ATTR_IN_PORT),
+	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet),
+	S_U16(OVS_KEY_ATTR_VLAN),
+	S_U16(OVS_KEY_ATTR_ETHERTYPE),
+	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4),
+	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6),
+	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp),
+	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp),
+	S_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp),
+	S_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6),
+	S_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp),
+	S_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd),
+	S_U32(OVS_KEY_ATTR_SKB_MARK),
+	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key),
+	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp),
+	S_U16(OVS_KEY_ATTR_TCP_FLAGS),
+	S_U32(OVS_KEY_ATTR_DP_HASH),
+	S_U32(OVS_KEY_ATTR_RECIRC_ID),
+	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12),
+	S_U32(OVS_KEY_ATTR_CT_STATE),
+	S_U16(OVS_KEY_ATTR_CT_ZONE),
+	S_U32(OVS_KEY_ATTR_CT_MARK),
+	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels),
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4),
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6),
+	S_NEST(OVS_KEY_ATTR_NSH, ovs_nsh_key),
+	S_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs),
+};
+static struct slot ovs_set_key[] = {
+	S_U32(OVS_KEY_ATTR_PRIORITY),
+	S_U32(OVS_KEY_ATTR_SKB_MARK),
+	S_U32(OVS_KEY_ATTR_CT_MARK),
+	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels),
+	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet),
+	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key),
+	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4),
+	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6),
+	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp),
+	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp),
+	S_FIXED(OVS_KEY_ATTR_MPLS, ovs_key_mpls),
+	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp),
+};
+static struct slot ovs_set_masked_key[] = {
+	S_MASKED(OVS_KEY_ATTR_PRIORITY, uint32_t),
+	S_MASKED(OVS_KEY_ATTR_SKB_MARK, uint32_t),
+	S_MASKED(OVS_KEY_ATTR_CT_MARK, uint32_t),
+	S_MASKED(OVS_KEY_ATTR_CT_LABELS, struct ovs_key_ct_labels),
+	S_MASKED(OVS_KEY_ATTR_ETHERNET, struct ovs_key_ethernet),
+	S_MASKED(OVS_KEY_ATTR_IPV4, struct ovs_key_ipv4),
+	S_MASKED(OVS_KEY_ATTR_IPV6, struct ovs_key_ipv6),
+	S_MASKED(OVS_KEY_ATTR_TCP, struct ovs_key_tcp),
+	S_MASKED(OVS_KEY_ATTR_UDP, struct ovs_key_udp),
+	S_MASKED(OVS_KEY_ATTR_MPLS, struct ovs_key_mpls),
+	S_MASKED(OVS_KEY_ATTR_SCTP, struct ovs_key_sctp),
+};
+static struct slot ovs_userspace[] = {
+	S_U32_RANGE(OVS_USERSPACE_ATTR_PID, 1, UINT32_MAX, .required = true),
+	S_BLOB(OVS_USERSPACE_ATTR_USERDATA, 0, 0xffff),
+	S_U32(OVS_USERSPACE_ATTR_EGRESS_TUN_PORT),
+	S_FLAG(OVS_USERSPACE_ATTR_ACTIONS),
+};
+static struct slot ovs_nat[] = {
+	S_FLAG(OVS_NAT_ATTR_SRC),
+	S_FLAG(OVS_NAT_ATTR_DST),
+	S_BLOB(OVS_NAT_ATTR_IP_MIN, 4, 16),
+	S_BLOB(OVS_NAT_ATTR_IP_MAX, 4, 16),
+	S_U16(OVS_NAT_ATTR_PROTO_MIN),
+	S_U16(OVS_NAT_ATTR_PROTO_MAX),
+	S_FLAG(OVS_NAT_ATTR_PERSISTENT),
+	S_FLAG(OVS_NAT_ATTR_PROTO_HASH),
+	S_FLAG(OVS_NAT_ATTR_PROTO_RANDOM),
+};
+static struct slot ovs_ct[] = {
+	S_FLAG(OVS_CT_ATTR_COMMIT),
+	S_U16(OVS_CT_ATTR_ZONE),
+	S_BLOB(OVS_CT_ATTR_MARK, 8, 8),
+	S_BLOB(OVS_CT_ATTR_LABELS, 2 * OVS_CT_LABELS_LEN, 2 * OVS_CT_LABELS_LEN),
+	S_STR(OVS_CT_ATTR_HELPER, 15),
+	S_NEST(OVS_CT_ATTR_NAT, ovs_nat),
+	S_FLAG(OVS_CT_ATTR_FORCE_COMMIT),
+	S_U32(OVS_CT_ATTR_EVENTMASK),
+	S_STR(OVS_CT_ATTR_TIMEOUT, 31),
+};
+static struct slot ovs_psample[] = {
+	S_U32(OVS_PSAMPLE_ATTR_GROUP, .required = true),
+	S_BLOB(OVS_PSAMPLE_ATTR_COOKIE, 0, OVS_PSAMPLE_COOKIE_MAX_SIZE),
+};
+#define OVS_LEAF_ACTION_SLOTS \
+	S_U32_RANGE(OVS_ACTION_ATTR_OUTPUT, 0, 65534), \
+	S_NEST(OVS_ACTION_ATTR_USERSPACE, ovs_userspace), \
+	S_NEST_MAX(OVS_ACTION_ATTR_SET, ovs_set_key, 1), \
+	S_FIXED(OVS_ACTION_ATTR_PUSH_VLAN, ovs_action_push_vlan), \
+	S_FLAG(OVS_ACTION_ATTR_POP_VLAN), \
+	S_U32(OVS_ACTION_ATTR_RECIRC), \
+	S_FIXED(OVS_ACTION_ATTR_HASH, ovs_action_hash), \
+	S_FIXED(OVS_ACTION_ATTR_PUSH_MPLS, ovs_action_push_mpls), \
+	S_U16(OVS_ACTION_ATTR_POP_MPLS), \
+	S_NEST_MAX(OVS_ACTION_ATTR_SET_MASKED, ovs_set_masked_key, 1), \
+	S_NEST(OVS_ACTION_ATTR_CT, ovs_ct), \
+	S_U32_RANGE(OVS_ACTION_ATTR_TRUNC, 14, UINT32_MAX), \
+	S_FIXED(OVS_ACTION_ATTR_PUSH_ETH, ovs_action_push_eth), \
+	S_FLAG(OVS_ACTION_ATTR_POP_ETH), \
+	S_FLAG(OVS_ACTION_ATTR_CT_CLEAR), \
+	S_NEST(OVS_ACTION_ATTR_PUSH_NSH, ovs_nsh_key), \
+	S_FLAG(OVS_ACTION_ATTR_POP_NSH), \
+	S_U32(OVS_ACTION_ATTR_METER), \
+	S_FIXED(OVS_ACTION_ATTR_ADD_MPLS, ovs_action_add_mpls), \
+	S_U32(OVS_ACTION_ATTR_DROP), \
+	S_NEST(OVS_ACTION_ATTR_PSAMPLE, ovs_psample)
+static struct slot ovs_leaf_action[] = {
+	OVS_LEAF_ACTION_SLOTS,
+};
+static struct slot ovs_sample[] = {
+	S_U32(OVS_SAMPLE_ATTR_PROBABILITY, .required = true),
+	S_NEST(OVS_SAMPLE_ATTR_ACTIONS, ovs_leaf_action, .required = true),
+};
+static struct slot ovs_check_pkt_len[] = {
+	S_U16(OVS_CHECK_PKT_LEN_ATTR_PKT_LEN, .required = true),
+	S_NEST(OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_GREATER, ovs_leaf_action,
+	       .required = true),
+	S_NEST(OVS_CHECK_PKT_LEN_ATTR_ACTIONS_IF_LESS_EQUAL, ovs_leaf_action,
+	       .required = true),
+};
+static struct slot ovs_dec_ttl[] = {
+	S_NEST(OVS_DEC_TTL_ATTR_ACTION, ovs_leaf_action),
+};
+static struct slot ovs_action[] = {
+	OVS_LEAF_ACTION_SLOTS,
+	S_NEST(OVS_ACTION_ATTR_SAMPLE, ovs_sample),
+	S_NEST(OVS_ACTION_ATTR_CLONE, ovs_leaf_action),
+	S_NEST(OVS_ACTION_ATTR_CHECK_PKT_LEN, ovs_check_pkt_len),
+	S_NEST(OVS_ACTION_ATTR_DEC_TTL, ovs_dec_ttl),
+};
+/* flow_policy, under which UFID is one byte at least. */
+static struct slot ovs_flow_new[] = {
+	S_NEST(OVS_FLOW_ATTR_KEY, ovs_key, .required = true),
+	S_NEST(OVS_FLOW_ATTR_MASK, ovs_key),
+	S_NEST(OVS_FLOW_ATTR_ACTIONS, ovs_action, .required = true),
+	S_FLAG(OVS_FLOW_ATTR_PROBE),
+	S_BLOB(OVS_FLOW_ATTR_UFID, 1, 0xffff),
+	S_U32(OVS_FLOW_ATTR_UFID_FLAGS),
+};
+static struct slot ovs_flow_set[] = {
+	S_NEST(OVS_FLOW_ATTR_KEY, ovs_key),
+	S_NEST(OVS_FLOW_ATTR_MASK, ovs_key),
+	S_NEST(OVS_FLOW_ATTR_ACTIONS, ovs_action),
+	S_FLAG(OVS_FLOW_ATTR_CLEAR),
+	S_FLAG(OVS_FLOW_ATTR_PROBE),
+	S_BLOB(OVS_FLOW_ATTR_UFID, 1, 0xffff),
+	S_U32(OVS_FLOW_ATTR_UFID_FLAGS),
+};
+static struct slot ovs_flow_get[] = {
+	S_NEST(OVS_FLOW_ATTR_KEY, ovs_key),
+	S_FLAG(OVS_FLOW_ATTR_PROBE),
+	S_BLOB(OVS_FLOW_ATTR_UFID, 1, 0xffff),
+	S_U32(OVS_FLOW_ATTR_UFID_FLAGS),
+};
+static struct slot ovs_flow_dump[] = {
+	S_U32(OVS_FLOW_ATTR_UFID_FLAGS),
+};
+static struct cmd_policy ovs_flow_cmds[] = {
+	P_CMD(OVS_FLOW_CMD_NEW, ovs_flow_new),
+	P_CMD(OVS_FLOW_CMD_DEL, ovs_flow_get),
+	P_CMD(OVS_FLOW_CMD_GET, ovs_flow_get),
+	P_DUMP(OVS_FLOW_CMD_GET, ovs_flow_dump),
+	P_CMD(OVS_FLOW_CMD_SET, ovs_flow_set),
+};
 #endif
 
 #if __has_include(<linux/tipc_netlink.h>)
@@ -1402,6 +1619,7 @@ static struct policy_family policy_families[] = {
 	  ARRAY_SIZE(ovs_vport_cmds) },
 	{ &fam_ovs_meter, ID_OVS_METER, ovs_meter_cmds,
 	  ARRAY_SIZE(ovs_meter_cmds) },
+	{ &fam_ovs_flow, ID_OVS_FLOW, ovs_flow_cmds, ARRAY_SIZE(ovs_flow_cmds) },
 	{ &fam_ovs_ct_limit, ID_OVS_CT_LIMIT, ovs_ct_limit_cmds,
 	  ARRAY_SIZE(ovs_ct_limit_cmds) },
 #endif
