@@ -2089,11 +2089,10 @@ static unsigned int min_policy_streams(void)
  * Only a lone message whose nlmsg_len is intact says where its attributes
  * end, so a batch is left out, and so is a message the generator gave a
  * corrupt length.  The corruption that doubles the length passes for an
- * intact one on a batch of two equal halves, whose length is a multiple of
- * 8; a lone message is 4 modulo 8 half the time and cannot be mistaken.
- * An attribute that does not fit its buffer is also cut short to fill it,
- * which no policy takes, so a message as long as the smallest buffer is
- * left out too.
+ * intact one on a batch whose later messages are as long as the first,
+ * which doubled_batch() tells apart.  An attribute that does not fit its
+ * buffer is also cut short to fill it, which no policy takes, so a message
+ * as long as the smallest buffer is left out too.
  */
 #define SMALLEST_BUFFER	(NLMSG_HDRLEN + 1280)
 #define ATTR_ROUNDS	150000
@@ -2103,6 +2102,35 @@ static unsigned int min_policy_streams(void)
  * nest deep in one family's cmd thin out as families are added: the rounds
  * go on, to this many, until each required slot has its REQUIRED_STREAMS. */
 #define ATTR_ROUNDS_MAX	1500000
+
+/*
+ * Whether the len bytes at msg are a batch whose first message claims
+ * twice its length, which then covers the rest.  Its length is a multiple
+ * of 8, and the first message's attributes end halfway, where the next
+ * message's header reads as an attribute of type 0, or of a random type
+ * when that header's length is corrupt too.  An attribute of a lone message
+ * that starts halfway has a type its policy takes, unless the table it came
+ * from is wrong, which then shows at other offsets.
+ */
+static bool doubled_batch(const unsigned char *msg, size_t len, size_t hdrs,
+			  struct slot *slots, unsigned int n_slots)
+{
+	const struct nlattr *nla;
+	size_t off = hdrs;
+
+	if (len % 8 != 0)
+		return false;
+	while (off < len / 2) {
+		nla = (const struct nlattr *) (msg + off);
+		if (nla->nla_len < NLA_HDRLEN)
+			return false;
+		off += NLA_ALIGN(nla->nla_len);
+	}
+	if (off != len / 2)
+		return false;
+	nla = (const struct nlattr *) (msg + off);
+	return find_slot(slots, n_slots, nla->nla_type & NLA_TYPE_MASK) == NULL;
+}
 
 /*
  * Every attribute of every request to a family above is one its cmd's
@@ -2145,7 +2173,7 @@ static void check_attrs_in_policy(void)
 		netlink_gen_msg(&triplet, &buf, &len);
 		nlh = buf;
 		if (len < NLMSG_HDRLEN + GENL_HDRLEN || len >= SMALLEST_BUFFER ||
-		    len % 8 != 4 || NLMSG_ALIGN(nlh->nlmsg_len) != len)
+		    NLMSG_ALIGN(nlh->nlmsg_len) != len)
 			goto next;
 		pf = family_by_id(nlh->nlmsg_type);
 		if (pf == NULL)
@@ -2160,7 +2188,8 @@ static void check_attrs_in_policy(void)
 		genl = NLMSG_DATA(nlh);
 		cp = find_policy(pf, genl->cmd,
 				 (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP);
-		if (cp == NULL)
+		if (cp == NULL ||
+		    doubled_batch(buf, len, hdrs, cp->slots, cp->n_slots))
 			goto next;
 		cp->msgs++;
 
