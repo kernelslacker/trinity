@@ -24,8 +24,9 @@
  *
  * The keys and LAST_HANDSHAKE_TIME are NLA_POLICY_EXACT_LEN.  ENDPOINT and
  * IPADDR are NLA_POLICY_MIN_LEN, but set_peer() takes only a sockaddr_in or
- * sockaddr_in6 (16 or 28 bytes) and set_allowedip() only 4 or 16, the
- * triple of family, ipaddr and cidr that feeds wg_allowedips_insert_v4/v6.
+ * sockaddr_in6 of its family (16 or 28 bytes), which ENDPOINT is drawn as,
+ * and set_allowedip() only 4 or 16, the triple of family, ipaddr and cidr
+ * that feeds wg_allowedips_insert_v4/v6.
  * The FLAGS words are NLA_POLICY_MASK of the flags enums: REPLACE_PEERS for
  * the device, the three peer flags, REMOVE_ME for an allowed ip.
  *
@@ -49,7 +50,7 @@ static const struct nla_attr_spec wireguard_peer_attrs[] = {
 	{ WGPEER_A_PRESHARED_KEY,	NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
 	{ WGPEER_A_FLAGS,		NLA_KIND_U32_MASK,
 	  WGPEER_F_REMOVE_ME | WGPEER_F_REPLACE_ALLOWEDIPS | WGPEER_F_UPDATE_ONLY },
-	{ WGPEER_A_ENDPOINT,		NLA_KIND_BINARY_FIXED2, 28, 16 },
+	{ WGPEER_A_ENDPOINT,		NLA_KIND_SOCKADDR, 0, 0 },
 	{ WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL, NLA_KIND_U16, 2 },
 	{ WGPEER_A_LAST_HANDSHAKE_TIME,	NLA_KIND_BINARY_FIXED2, 16, 16 },
 	{ WGPEER_A_RX_BYTES,		NLA_KIND_U64,    8 },
