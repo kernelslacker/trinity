@@ -179,8 +179,11 @@ expect "inherited GIT_DIR: baseline symbol checked, not skipped" \
 
 # Case 7: a macro no probe header declares is compared with its definition in
 # the headers the kernel tree installs.  The shims are the shapes the harvest
-# reads: a literal, a single-bit shift, a negative, and a hex value that wraps
-# to a negative int.  SELFTEST_TEXT_SAME is defined twice, alike.  The header
+# reads: a literal, a single-bit shift, a negative, a hex value that wraps to
+# a negative int, a literal with a suffix, one in parentheses and a shift with
+# a suffix.  SELFTEST_TEXT_EXPR is the start of an expression, which is not
+# a literal and is not harvested: read as 4 it would not match the header's 7.
+# SELFTEST_TEXT_SAME is defined twice, alike.  The header
 # defines SELFTEST_TEXT_TWICE with two values and SELFTEST_TEXT_ALIAS as
 # another macro, which the text lookup may not judge: they are left to the
 # per-header probe, whose compiler reads the 4 of the branch cpp keeps and
@@ -190,6 +193,10 @@ cat > "$tree/text-shims.h" <<'EOF'
 #define SELFTEST_TEXT_SHIFT	(1<<4)
 #define SELFTEST_TEXT_NEGATIVE	-4
 #define SELFTEST_TEXT_HEX	0x80000001
+#define SELFTEST_TEXT_SUFFIX	5UL
+#define SELFTEST_TEXT_PAREN	(7)
+#define SELFTEST_TEXT_USHIFT	(1UL << 4)
+#define SELFTEST_TEXT_EXPR	4 + 3
 #define SELFTEST_TEXT_SAME	12
 #define SELFTEST_TEXT_TWICE	4
 #define SELFTEST_TEXT_ALIAS	5
@@ -200,6 +207,10 @@ cat > "$work/text-header.good" <<'EOF'
 #define SELFTEST_TEXT_SHIFT (1 << 4)
 #define SELFTEST_TEXT_NEGATIVE -4
 #define SELFTEST_TEXT_HEX 0x80000001U
+#define SELFTEST_TEXT_SUFFIX 5
+#define SELFTEST_TEXT_PAREN 7
+#define SELFTEST_TEXT_USHIFT 16
+#define SELFTEST_TEXT_EXPR 7
 #ifdef SELFTEST_WIDE
 #define SELFTEST_TEXT_SAME 12
 #define SELFTEST_TEXT_TWICE 3
@@ -213,8 +224,8 @@ cp "$work/text-header.good" "$hdrs/linux/selftest_text.h"
 
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "header text matches: gate passes" [ "$rc" -eq 0 ]
-expect "header text matches: six shims verified" \
-	grep -q 'text-verified 6 ' "$work/out"
+expect "header text matches: nine shims verified" \
+	grep -q 'text-verified 9 ' "$work/out"
 expect "header text matches: ambiguous and aliased symbols are left to the header probe" \
 	grep -q 'hdr-verified 4 ' "$work/out"
 expect "header text matches: nothing but the private switch stays unresolved" \
@@ -222,8 +233,10 @@ expect "header text matches: nothing but the private switch stays unresolved" \
 
 # A wrong value is caught in every shape.  One run changes a definition of each
 # shape, and the gate names every shim that no longer matches.
-sed -e 's/TEXT_LITERAL 5/TEXT_LITERAL 6/' -e 's/1 << 4/1 << 5/' \
+sed -e 's/TEXT_LITERAL 5/TEXT_LITERAL 6/' -e 's/(1 << 4)/(1 << 5)/' \
 	-e 's/TEXT_NEGATIVE -4/TEXT_NEGATIVE -5/' -e 's/0x80000001U/0x80000002U/' \
+	-e 's/TEXT_SUFFIX 5/TEXT_SUFFIX 6/' -e 's/TEXT_PAREN 7/TEXT_PAREN 8/' \
+	-e 's/TEXT_USHIFT 16/TEXT_USHIFT 32/' \
 	"$work/text-header.good" > "$hdrs/linux/selftest_text.h"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "header text differs: gate fails" [ "$rc" -ne 0 ]
@@ -231,7 +244,10 @@ for row in \
 	"SELFTEST_TEXT_LITERAL|5 (=5)|6" \
 	"SELFTEST_TEXT_SHIFT|16 (=16)|32" \
 	"SELFTEST_TEXT_NEGATIVE|-4 (=-4)|-5" \
-	"SELFTEST_TEXT_HEX|0x80000001 (=-2147483647)|-2147483646"; do
+	"SELFTEST_TEXT_HEX|0x80000001 (=-2147483647)|-2147483646" \
+	"SELFTEST_TEXT_SUFFIX|5 (=5)|6" \
+	"SELFTEST_TEXT_PAREN|7 (=7)|8" \
+	"SELFTEST_TEXT_USHIFT|16 (=16)|32"; do
 	IFS='|' read -r sym have want <<< "$row"
 	expect "header text differs, $sym: names the symbol, both values and the header" \
 		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have, want $want (installed header linux/selftest_text.h)" "$work/err"
@@ -243,7 +259,7 @@ echo 99 > "$tree/scripts/check-static/uapi-shim-text-floor.baseline"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "text floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "text floor above the verified count: names both numbers" \
-	grep -q 'coverage ratchet: text-verified 6 < text_floor 99' "$work/out"
+	grep -q 'coverage ratchet: text-verified 9 < text_floor 99' "$work/out"
 
 # Case 8: the per-header probe.  What a literal scan cannot read, an enum
 # member or an expression, is evaluated by compiling the header that declares

@@ -402,11 +402,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `#define` names another symbol.  Self-tests a planted tree with each
   mismatch, and with a comment that names a guard and the helper's own
   definition, which must not fire.
-- `uapi-shim-values`: every integer `#define` in the tree (decimal, hex or a
-  single-bit shift) that a probe can resolve, against the installed uapi
+- `uapi-shim-values`: every integer `#define` in the tree (decimal or hex,
+  with an optional U or L suffix and one pair of parentheses, or a single-bit
+  shift) that a probe can resolve, against the installed uapi
   headers or a kernel tree named by `TRINITY_LINUS_SRC`, must carry the
   compiler's value, and so must each pair pinned in
-  `scripts/check-static/uapi-shim-values.baseline`.
+  `scripts/check-static/uapi-shim-values.baseline`.  A literal that is only
+  the start of an expression (`4 + 3`) is not read as a value.
   `#ifndef` guards on enum values are always taken — enums are not macros, so
   the shim is the definition, not a fallback, unless `configure` compile-tests
   the member and the shim sits under `#ifndef HAVE_<SYMBOL>`

@@ -93,13 +93,20 @@ trap 'rm -rf "$WORKDIR"' EXIT
 # FD_NSFS_ROOT -10003, FD_FAILFS_ROOT -10004), they are precisely the
 # constants that have to be exact, and a wrong one aims a syscall at the
 # wrong magic fd instead of failing loudly.
+#
+# A literal may also carry a U or L suffix and sit in one pair of parentheses
+# ("#define SYM (0x10UL)"), which is how the kernel's headers write much of
+# what a shim copies.  The pattern used to skip every such shim, so their
+# values were compared with nothing.  The literal has to end the line: with
+# anything after it ("#define SYM 4 + 3") it is the start of an expression,
+# and reading it as the whole value would accuse a correct shim.
 # Output: "SYM VALUE" pairs, sorted and uniqued.
 # ---------------------------------------------------------------------------
 find "$ROOT" -path "$ROOT/scripts" -prune -o \
     \( -name '*.c' -o -name '*.h' \) -print 2>/dev/null | sort | \
   xargs perl -0777 -pe 's{/\*.*?\*/}{}gs; s{//[^\n]*}{}g' 2>/dev/null | \
-  grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+(0[xX][0-9a-fA-F]+|-?[0-9]+)([[:space:]]|$)' | \
-  sed 's/#[[:space:]]*define[[:space:]]*//' | \
+  grep -oE '#[[:space:]]*define[[:space:]]+[A-Z][A-Z0-9_]+[[:space:]]+\(?(0[xX][0-9a-fA-F]+|-?[0-9]+)[uUlL]*\)?[[:space:]]*$' | \
+  sed -E 's/#[[:space:]]*define[[:space:]]*//; s/\(//; s/\)//; s/([0-9a-fA-F])[uUlL]+[[:space:]]*$/\1/' | \
   awk '{print $1, $2}' | sort -u > "$HARVEST"
 
 # Second harvest pass: single-bit shift shims.
@@ -115,8 +122,9 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
 # because a wrong bit is still a plausible-looking flag -- were the
 # least-checked class in the tree rather than the most.
 #
-# Evaluate only the unambiguous shape: an optional cast, a literal 1, a
-# left shift, a decimal or hex count, nothing else.  Anything with
+# Evaluate only the unambiguous shape: an optional cast, a literal 1 (with
+# an optional U or L suffix), a left shift, a decimal or hex count, nothing
+# else.  Anything with
 # arithmetic, an identifier, or a second term is left alone rather than
 # half-parsed -- a wrong value here would be a false accusation against
 # a correct shim, which is worse than no check at all.  Shifts wider
@@ -128,7 +136,7 @@ find "$ROOT" -path "$ROOT/scripts" -prune -o \
 	s{/\*.*?\*/}{}gs; s{//[^\n]*}{}g;
 	while (m{^[ \t]*\#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)[ \t]+
 		 \(*\s* (?:\((?:__u\d+|unsigned\ long\ long|unsigned\ long|unsigned\ int|unsigned|int|long)\)\s*)?
-		 1 \s*<<\s* (0[xX][0-9a-fA-F]+|[0-9]+) \s*\)*\s*$}gmx) {
+		 1[uUlL]* \s*<<\s* (0[xX][0-9a-fA-F]+|[0-9]+) \s*\)*\s*$}gmx) {
 		my ($sym, $sh) = ($1, $2);
 		$sh = hex($sh) if $sh =~ /^0[xX]/;
 		next if $sh > 63;
