@@ -1038,28 +1038,32 @@ static struct slot ethtool_strset_get[] = {
 	S_NEST(ETHTOOL_A_STRSET_STRINGSETS, ethtool_stringsets),
 	S_FLAG(ETHTOOL_A_STRSET_COUNTS_ONLY),
 };
+/* Every doit but STRSET_GET's refuses a request without its header, so
+ * a table of more than the header marks it. */
 static struct slot ethtool_pause_get[] = {
-	S_NEST(ETHTOOL_A_PAUSE_HEADER, ethtool_header_stats),
+	S_NEST(ETHTOOL_A_PAUSE_HEADER, ethtool_header_stats, .required = true),
 	S_U32_RANGE(ETHTOOL_A_PAUSE_STATS_SRC, 0, ETHTOOL_MAC_STATS_SRC_PMAC),
 };
 static struct slot ethtool_tsinfo_get[] = {
-	S_NEST(ETHTOOL_A_TSINFO_HEADER, ethtool_header_stats),
+	S_NEST(ETHTOOL_A_TSINFO_HEADER, ethtool_header_stats, .required = true),
 	S_NEST(ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, ethtool_ts_provider),
 };
+/* eeprom_parse_request() answers -EINVAL without OFFSET, LENGTH, PAGE or
+ * I2C_ADDRESS. */
 static struct slot ethtool_module_eeprom_get[] = {
-	S_NEST(ETHTOOL_A_MODULE_EEPROM_HEADER, ethtool_header),
-	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_OFFSET, 0, 255),
-	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_LENGTH, 1, 128),
-	S_U8(ETHTOOL_A_MODULE_EEPROM_PAGE),
+	S_NEST(ETHTOOL_A_MODULE_EEPROM_HEADER, ethtool_header, .required = true),
+	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_OFFSET, 0, 255, .required = true),
+	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_LENGTH, 1, 128, .required = true),
+	S_U8(ETHTOOL_A_MODULE_EEPROM_PAGE, .required = true),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_BANK),
-	S_U8(ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS),
+	S_U8(ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, .required = true),
 };
 static struct slot ethtool_stats_get[] = {
-	S_NEST(ETHTOOL_A_STATS_HEADER, ethtool_header),
+	S_NEST(ETHTOOL_A_STATS_HEADER, ethtool_header, .required = true),
 	S_U32_RANGE(ETHTOOL_A_STATS_SRC, 0, ETHTOOL_MAC_STATS_SRC_PMAC),
 };
 static struct slot ethtool_rss_get[] = {
-	S_NEST(ETHTOOL_A_RSS_HEADER, ethtool_header),
+	S_NEST(ETHTOOL_A_RSS_HEADER, ethtool_header, .required = true),
 	S_U32(ETHTOOL_A_RSS_CONTEXT),
 	S_U32(ETHTOOL_A_RSS_START_CONTEXT),
 };

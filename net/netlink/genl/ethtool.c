@@ -100,40 +100,54 @@ static const struct nla_attr_spec ethtool_strset_get_attrs[] = {
 	{ ETHTOOL_A_STRSET_COUNTS_ONLY,	NLA_KIND_FLAG,   0 },
 };
 
+/*
+ * Every doit but STRSET_GET's answers -EINVAL to a request without its
+ * header, so a table of more than the header marks it, and
+ * eeprom_parse_request() does the same without OFFSET, LENGTH, PAGE or
+ * I2C_ADDRESS.
+ */
 static const struct nla_attr_spec ethtool_pause_get_attrs[] = {
 	{ ETHTOOL_A_PAUSE_HEADER,	NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs) },
+	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs),
+	  .required = true },
 	{ ETHTOOL_A_PAUSE_STATS_SRC,	NLA_KIND_U32_RANGE,
 	  ETHTOOL_MAC_STATS_SRC_PMAC, 0 },
 };
 
 static const struct nla_attr_spec ethtool_tsinfo_get_attrs[] = {
 	{ ETHTOOL_A_TSINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs) },
+	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs),
+	  .required = true },
 	{ ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, NLA_KIND_NESTED, 0, 0,
 	  ethtool_ts_provider_attrs, ARRAY_SIZE(ethtool_ts_provider_attrs) },
 };
 
 static const struct nla_attr_spec ethtool_module_eeprom_get_attrs[] = {
 	{ ETHTOOL_A_MODULE_EEPROM_HEADER, NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
-	{ ETHTOOL_A_MODULE_EEPROM_OFFSET, NLA_KIND_U32_RANGE, 255, 0 },
-	{ ETHTOOL_A_MODULE_EEPROM_LENGTH, NLA_KIND_U32_RANGE, 128, 1 },
-	{ ETHTOOL_A_MODULE_EEPROM_PAGE,	NLA_KIND_U8,     1 },
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_MODULE_EEPROM_OFFSET, NLA_KIND_U32_RANGE, 255, 0,
+	  .required = true },
+	{ ETHTOOL_A_MODULE_EEPROM_LENGTH, NLA_KIND_U32_RANGE, 128, 1,
+	  .required = true },
+	{ ETHTOOL_A_MODULE_EEPROM_PAGE,	NLA_KIND_U8,     1, .required = true },
 	{ ETHTOOL_A_MODULE_EEPROM_BANK,	NLA_KIND_U8,     1 },
-	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8, 1 },
+	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8, 1,
+	  .required = true },
 };
 
 static const struct nla_attr_spec ethtool_stats_get_attrs[] = {
 	{ ETHTOOL_A_STATS_HEADER,	NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
 	{ ETHTOOL_A_STATS_SRC,		NLA_KIND_U32_RANGE,
 	  ETHTOOL_MAC_STATS_SRC_PMAC, 0 },
 };
 
 static const struct nla_attr_spec ethtool_rss_get_attrs[] = {
 	{ ETHTOOL_A_RSS_HEADER,		NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
 	{ ETHTOOL_A_RSS_CONTEXT,	NLA_KIND_U32,    4 },
 	{ ETHTOOL_A_RSS_START_CONTEXT,	NLA_KIND_U32,    4 },
 };
