@@ -426,8 +426,18 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `scripts/check-static/uapi-shim-text-floor.baseline`).  Only an
   unambiguous reading counts: every definition an integer literal or a
   single-bit shift, and all agreeing.  A symbol defined as another macro or an
-  expression, or twice with different values, stays unresolved, as do enum
-  members, which only a compile probe sees.  Symbols still unresolved are
+  expression, or twice with different values, stays unresolved there, as do
+  enum members, which only a compile probe sees.
+  What is left is handed to a per-header compile probe, again only with a
+  `TRINITY_LINUS_SRC` tree: every installed header that names such a symbol is
+  compiled alone, behind a base include for the few that are not
+  self-contained, and what it declares must carry the compiler's value
+  (`hdr-verified` in the `PASS` line, ratcheted by
+  `scripts/check-static/uapi-shim-hdr-floor.baseline`).  This is what reaches
+  the enum members of the generic-netlink headers and the expression macros
+  that no probe set holds.  A symbol the header only names in a comment, one
+  two headers evaluate differently, and one whose header no retry compiles
+  stay unresolved.  Symbols still unresolved are
   reported as one count: `unresolved-uapi` for the uapi-shaped
   ones (ALL_CAPS with an underscore) and `not-uapi-shaped` for names with a
   trinity-owned prefix or no underscore, a few of which are real constants.
@@ -441,11 +451,16 @@ update this section to match `ls scripts/check-static/*.sh`.)
   header declares is verified, that a wrong value fails in each shape
   (literal, shift, negative, wrapping hex) and names the header, that a symbol
   with disagreeing or non-literal definitions is not judged, and that a floor
-  above the verified count fails.  It runs no git (a stub answers the gate's
+  above the verified count fails.  For the per-header probe it asserts that
+  an enum member and an expression macro are verified, that a wrong value of
+  either, or of a symbol whose header needs the base include, fails and names
+  the header, that a symbol two headers evaluate differently, one a header
+  only names and one whose header does not compile stay unresolved, and that
+  its own floor is enforced.  It runs no git (a stub answers the gate's
   revision lookup).  Without it the gate's verdict can drift back to depending
   on how old the build host's kernel headers are, its findings back under a
-  line per unresolved symbol, and the text lookup into accusing correct shims
-  or passing wrong ones.
+  line per unresolved symbol, and the text lookup and the header probe into
+  accusing correct shims or passing wrong ones.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

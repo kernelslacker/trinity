@@ -26,12 +26,14 @@
 #                  are excluded.  The fixed-symbol final binary is then run to
 #                  obtain the authoritative integer value for each symbol.
 #                  With TRINITY_LINUS_SRC set the probe repeats against that
-#                  kernel tree's installed headers, and a macro still
-#                  unresolved is read out of their text instead (Step 4c).
+#                  kernel tree's installed headers, a macro still unresolved
+#                  is read out of their text instead (Step 4c), and what is
+#                  left is evaluated by compiling the one installed header
+#                  that declares it (Step 4d).
 #   3. Compare  -- for every compiler-resolved symbol, every occurrence of
 #                  that symbol in trinity's source must carry the compiler's
-#                  value, and for every text-resolved one the header's.  A
-#                  mismatch is a FAIL.
+#                  value, and for every text-resolved or header-compiled one
+#                  the header's.  A mismatch is a FAIL.
 #   4. Baseline -- scripts/check-static/uapi-shim-values.baseline pins
 #                  specific symbol→value pairs.  Each baseline entry is an
 #                  additional cross-check:
@@ -52,6 +54,7 @@ PROBED_FLOOR_FILE="$ROOT/scripts/check-static/uapi-shim-probed-floor.baseline"
 TIER1_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-tier1-probed-floor.baseline"
 HARVEST_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-harvest-floor.baseline"
 TEXT_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-text-floor.baseline"
+HDR_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-hdr-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -548,7 +551,7 @@ fi
 # with any other definition (another macro, an expression) or with two that
 # disagree stays unresolved: a wrong accusation against a correct shim costs
 # more than the check is worth.  Enum members are not macros and stay
-# unresolved too; only a compile probe sees them.
+# unresolved too; only a compile probe sees them (Step 4d).
 # ---------------------------------------------------------------------------
 TEXT_OBS="$WORKDIR/text-obs.txt"
 TEXT_TABLE="$WORKDIR/text-table.txt"
@@ -628,19 +631,153 @@ ran*)
 esac
 
 # ---------------------------------------------------------------------------
+# Step 4d: Tier 2 per-header probe -- enumerators and expression macros
+# What is unresolved here is what neither step above can see.  The text lookup
+# reads a literal, and an enum member, or a macro defined as an expression or
+# as another macro, is not one.  The compile probes see such a symbol only if
+# its header is in the probe set, and some headers cannot join it: they
+# redefine each other's types or need an include of their own first.  Given a
+# translation unit to itself a header evaluates like any other, so when Tier 2
+# ran, every installed header that names a symbol still unresolved is compiled
+# alone against those symbols.  What the header declares is compared like a
+# compiler's value; a symbol it only mentions (in a comment, as a macro
+# argument) is undeclared there and stays unresolved.
+#
+# Most uapi headers are self-contained.  The few that are not are retried
+# behind the includes of HDR_PRELUDES, a rung at a time, and a header no rung
+# compiles (xen/'s need headers that are not uapi) leaves its symbols
+# unresolved.  So does a symbol two headers evaluate differently, since nothing
+# says which one the shim follows.
+#
+# This reads the headers the Tier-2 tree installed, like the text lookup, so it
+# runs only when TRINITY_LINUS_SRC is set: the default run pays nothing for it.
+# ---------------------------------------------------------------------------
+HDR_PRELUDES=("" "linux/types.h" "stdint.h sys/socket.h linux/types.h")
+HDR_OBS="$WORKDIR/hdr-obs.txt"
+HDR_TABLE="$WORKDIR/hdr-table.txt"
+HDR_DIR="$WORKDIR/hdr-probe"
+HDR_VERIFIED=0
+HDR_RAN=0
+: > "$HDR_TABLE"
+
+# write_hdr_probe PRELUDE HEADER SYMFILE: a program that includes the prelude
+# and HEADER, in that order, and prints the value of each symbol in SYMFILE.
+write_hdr_probe() {
+    local inc
+    echo '#include <stdio.h>'
+    for inc in $1; do echo "#include <$inc>"; done
+    echo "#include <$2>"
+    echo 'int main(void){'
+    awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$3"
+    echo 'return 0;}'
+}
+
+# probe_hdr ID: evaluate hdr-probe/ID.syms against the header named in
+# hdr-probe/ID.hdr and write "VALUE SYM HEADER" for each symbol it declares to
+# hdr-probe/ID.tbl.  The first rung of HDR_PRELUDES whose compile reports
+# nothing but undeclared symbols decides; any other error is the header failing
+# to compile there, and none of its symbols was evaluated.
+probe_hdr() {
+    local p="$HDR_DIR/$1" hdr prelude
+    hdr=$(< "$p.hdr")
+    for prelude in "${HDR_PRELUDES[@]}"; do
+        write_hdr_probe "$prelude" "$hdr" "$p.syms" > "$p.c"
+        LC_ALL=C gcc -w -fsyntax-only -fmax-errors=0 -I"$HDR_INSTALL/include" \
+            "$p.c" 2> "$p.err"
+        if grep 'error:' "$p.err" | grep -qvE "error: '[A-Za-z0-9_]+' undeclared"; then
+            continue
+        fi
+        extract_bad_syms "$p.err" > "$p.bad"
+        grep -vxFf "$p.bad" "$p.syms" > "$p.good"
+        [ -s "$p.good" ] || return 0
+        write_hdr_probe "$prelude" "$hdr" "$p.good" > "$p.c"
+        if LC_ALL=C gcc -w -I"$HDR_INSTALL/include" -o "$p.bin" "$p.c" 2> "$p.err"; then
+            "$p.bin" | awk -v h="$hdr" '{print $1, $2, h}' > "$p.tbl"
+            return 0
+        fi
+    done
+}
+
+case "$TIER2_STATUS" in
+ran*)
+    if [ -s "$SYMS_BAD" ]; then
+        HDR_RAN=1
+        mkdir -p "$HDR_DIR"
+        # "SYM FILE" for every installed header that names a symbol still
+        # unresolved, in any role: only the compiler can tell a declaration
+        # from a mention.
+        if ! (set -o pipefail
+              find "$HDR_INSTALL/include" -name '*.h' | sort | \
+              SHIM_WANT="$SYMS_BAD" xargs perl -0777 -ne '
+		BEGIN {
+			open(my $w, "<", $ENV{SHIM_WANT}) or die "$ENV{SHIM_WANT}: $!";
+			local $/ = "\n";
+			chomp(my @s = <$w>);
+			@want{@s} = ();
+		}
+		my %seen;
+		$seen{$1} = 1 while /\b([A-Z][A-Z0-9_]+)\b/g;
+		print "$_ $ARGV\n" for grep { exists $want{$_} } sort keys %seen;' \
+              > "$HDR_OBS"); then
+            echo "FAIL: $NAME: Tier-2 header scan of $HDR_INSTALL/include failed"
+            exit 1
+        fi
+        # One id per header, in path order, with its path and its symbols.
+        awk -v dir="$HDR_DIR" -v root="$HDR_INSTALL/include/" '
+            {
+                h = substr($2, length(root) + 1)
+                if (!(h in id)) {
+                    id[h] = sprintf("%04d", ++n)
+                    print h > (dir "/" id[h] ".hdr")
+                    print id[h] > (dir "/ids")
+                }
+                print $1 > (dir "/" id[h] ".syms")
+            }
+        ' "$HDR_OBS"
+        if [ -s "$HDR_DIR/ids" ]; then
+            njobs=$(nproc 2>/dev/null || echo 4)
+            while read -r id; do
+                probe_hdr "$id" &
+                while [ "$(jobs -rp | wc -l)" -ge "$njobs" ]; do wait -n; done
+            done < "$HDR_DIR/ids"
+            wait
+        fi
+        # "VALUE SYM HEADER": the header that sorts first among those that
+        # agree on the value.
+        find "$HDR_DIR" -name '*.tbl' -exec cat {} + | sort -k3,3 -k2,2 | awk '
+            !($2 in val) { val[$2] = $1; src[$2] = $3; next }
+            val[$2] != $1 { bad[$2] }
+            END {
+                for (s in val)
+                    if (!(s in bad))
+                        print val[s], s, src[s]
+            }
+        ' | sort -k2 > "$HDR_TABLE"
+
+        # A symbol evaluated here leaves the unresolved set.
+        cut -d' ' -f2 "$HDR_TABLE" | sort -u > "$WORKDIR/syms-hdr.txt"
+        comm -23 "$SYMS_BAD" "$WORKDIR/syms-hdr.txt" > "$WORKDIR/syms-bad-hdr.txt"
+        cp "$WORKDIR/syms-bad-hdr.txt" "$SYMS_BAD"
+        HDR_VERIFIED=$(wc -l < "$HDR_TABLE" | tr -d ' ')
+    fi
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Unresolved-uapi reporting
-# After both tiers and the text lookup, a symbol still unresolved is either
-# trinity's own or a uapi constant no probe could see: its header is outside
-# the probe sets, newer than the host's, or not a uapi header at all.  Neither
-# is a FAIL, because there is nothing to compare the second kind against.  It
-# is also a large standing property of the tree, and a line per symbol would
-# drown the FAIL lines, so it is reported as one count.
+# After both tiers, the text lookup and the per-header probe, a symbol still
+# unresolved is either trinity's own or a constant no installed uapi header
+# declares: newer or older than the tree, from a kernel-internal header, or a
+# header no probe compiles.  Neither is a FAIL, because there is nothing to
+# compare the second kind against.  It is also a large standing property of
+# the tree, and a line per symbol would drown the FAIL lines, so it is
+# reported as one count.
 # UAPI_SHIM_VALUES_LIST=1 names the uapi-shaped symbols.
 #
 # "uapi-shaped" is ALL_CAPS with an underscore that no known-private prefix
 # claims.  Everything else unresolved is only counted (not-uapi-shaped): the
 # prefixes below, and names with no underscore, a few of which are real
-# constants (EPOLLEXCLUSIVE, NCCS).  The prefixes are namespaces trinity owns:
+# constants (CLOCKFD).  The prefixes are namespaces trinity owns:
 #   TRINITY_ NR_ MAX_ MIN_ DEFAULT_ __NR_   bookkeeping names
 #   HAVE_ USE_                              configure and per-syscall switches
 #   TAINT_                                  kernel taint bit numbers
@@ -718,6 +855,18 @@ if [ "$text_floor" -eq 0 ]; then
     exit 1
 fi
 
+hdr_floor=0
+if [ -f "$HDR_FLOOR_FILE" ]; then
+    hdr_floor=$(grep -oE '^[0-9]+' "$HDR_FLOOR_FILE" | head -1 || true)
+    hdr_floor=${hdr_floor:-0}
+fi
+
+if [ "$hdr_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: hdr floor is unseeded (uapi-shim-hdr-floor.baseline contains 0 or is missing)"
+    echo "FAIL: $NAME: seed it with a real observed hdr-verified count before enabling the ratchet"
+    exit 1
+fi
+
 # Tier-2 breakage states: the linus tree was present and Tier-2 was entered
 # but failed to produce usable output.  These are not environment differences --
 # they indicate a broken build environment or a regressed probe path.  Fail
@@ -741,8 +890,9 @@ fi
 #
 #   ran*         Tier-2 ran and augmented Tier-1 results.  Enforce the
 #                Tier-2-inclusive floor (PROBED_FLOOR_FILE), and, when the
-#                text lookup had symbols to read, the count of symbols it
-#                verified (TEXT_FLOOR_FILE).
+#                text lookup or the per-header probe had symbols to
+#                resolve, the count each verified (TEXT_FLOOR_FILE,
+#                HDR_FLOOR_FILE).
 #
 #   skipped: linus tree absent
 #                Genuine environment difference; skip both floors.
@@ -754,6 +904,10 @@ ran*)
     fi
     if [ "$TEXT_RAN" -eq 1 ] && [ "$TEXT_VERIFIED" -lt "$text_floor" ]; then
         echo "FAIL: $NAME: coverage ratchet: text-verified $TEXT_VERIFIED < text_floor $text_floor"
+        exit 1
+    fi
+    if [ "$HDR_RAN" -eq 1 ] && [ "$HDR_VERIFIED" -lt "$hdr_floor" ]; then
+        echo "FAIL: $NAME: coverage ratchet: hdr-verified $HDR_VERIFIED < hdr_floor $hdr_floor"
         exit 1
     fi
     ;;
@@ -775,8 +929,9 @@ esac
 # ---------------------------------------------------------------------------
 # Step 5: Compare trinity values against compiler values
 # For each compiler-resolvable symbol, every occurrence in the harvest must
-# carry the compiler's authoritative value, and for each symbol read from
-# header text (Step 4c) the value that text gives.
+# carry the compiler's authoritative value, for each symbol read from header
+# text (Step 4c) the value that text gives, and for each one a header was
+# compiled for (Step 4d) the value that compile gives.
 #
 # Normalisation: both sides are converted to signed 32-bit integer to match
 # what the probe C code does ((int)SYM via printf("%d",...)).  This means:
@@ -791,7 +946,7 @@ MISMATCH_FILE="$WORKDIR/mismatches.txt"
 # int32 normalisation: truncate to 32-bit signed to match C's (int) semantics.
 # Handles hex (0x...), octal (0...), and decimal integers.
 # For hex values longer than 8 digits, only the lower 32 bits are kept.
-awk -v harvest_file="$HARVEST" -v text_file="$TEXT_TABLE" '
+awk -v harvest_file="$HARVEST" -v text_file="$TEXT_TABLE" -v hdr_file="$HDR_TABLE" '
 # Return numeric value of a single hex digit character (0-9, a-f, A-F)
 function hd(c) {
     return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
@@ -821,7 +976,7 @@ function int32(s,   v, i, c, n) {
     if (v >= 2147483648) v -= 4294967296
     return v
 }
-BEGIN { fail = 0; checked = 0; checked_text = 0 }
+BEGIN { fail = 0; checked = 0; checked_text = 0; checked_hdr = 0 }
 # Pass 1: load harvest into memory (SYM -> space-separated list of values).
 # Use FILENAME == harvest_file rather than the FNR == NR idiom: if the harvest
 # file is empty awk never emits a record for it, so when the first record of
@@ -833,14 +988,21 @@ FILENAME == harvest_file {
     next
 }
 # Pass 2: process the compiler table (format: DECIMAL_VALUE SYM), then the
-# text table (DECIMAL_VALUE SYM FILE), counting them apart.
+# text and header tables (DECIMAL_VALUE SYM FILE), counting them apart.
 {
     compiler_val = int($1)
     sym = $2
     if (!(sym in harvest)) next  # not a trinity shim -- skip
-    from_text = (FILENAME == text_file)
-    if (from_text) checked_text++; else checked++
-    source = from_text ? "installed header " $3 : "compiler"
+    if (FILENAME == text_file) {
+        checked_text++
+        source = "installed header " $3
+    } else if (FILENAME == hdr_file) {
+        checked_hdr++
+        source = "compiled with installed header " $3
+    } else {
+        checked++
+        source = "compiler"
+    }
     n = split(harvest[sym], tvals)
     for (i = 1; i <= n; i++) {
         tv = tvals[i]
@@ -852,13 +1014,14 @@ FILENAME == harvest_file {
         }
     }
 }
-END { print fail, checked, checked_text }
-' "$HARVEST" "$COMPILER_TABLE" "$TEXT_TABLE" > "$MISMATCH_FILE"
+END { print fail, checked, checked_text, checked_hdr }
+' "$HARVEST" "$COMPILER_TABLE" "$TEXT_TABLE" "$HDR_TABLE" > "$MISMATCH_FILE"
 
-read fail checked checked_text < "$MISMATCH_FILE"
+read fail checked checked_text checked_hdr < "$MISMATCH_FILE"
 fail=${fail:-0}
 checked=${checked:-0}
 checked_text=${checked_text:-0}
+checked_hdr=${checked_hdr:-0}
 
 # ---------------------------------------------------------------------------
 # Step 6: Baseline cross-check
@@ -924,23 +1087,25 @@ if [ "$total_fail" -gt 0 ]; then
 fi
 
 # Invariant 1: every harvested symbol is either resolvable, read from header
-# text or unresolved.  harvested = resolvable + text-verified + total_unresolved;
-# a mismatch indicates a bookkeeping bug.
+# text, evaluated in its header or unresolved.  harvested = resolvable
+# + text-verified + hdr-verified + total_unresolved; a mismatch indicates a
+# bookkeeping bug.
 #
 # Note: the not-uapi-shaped class (names matching KNOWN_MISSING_RE, or with no
 # underscore) is NOT a separate term here.  Those symbols failed the compiler
 # probe and therefore live in SYMS_BAD, folded into total_unresolved.  They are
 # only split out in the *reporting* step (unresolved-uapi count).
-# So the identity is: harvested = resolvable + text-verified
+# So the identity is: harvested = resolvable + text-verified + hdr-verified
 #                                 + (unresolved-uapi + not-uapi-shaped)
-#                   = resolvable + text-verified + total_unresolved  ✓
-if [ "$harvested" -ne $((probed + TEXT_VERIFIED + total_unresolved)) ]; then
-    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + text-verified $TEXT_VERIFIED + unresolved $total_unresolved" >&2
+#                   = resolvable + text-verified + hdr-verified
+#                                 + total_unresolved  ✓
+if [ "$harvested" -ne $((probed + TEXT_VERIFIED + HDR_VERIFIED + total_unresolved)) ]; then
+    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + text-verified $TEXT_VERIFIED + hdr-verified $HDR_VERIFIED + unresolved $total_unresolved" >&2
     exit 1
 fi
 
 # Invariant 2: every resolvable symbol must have been verified, and so must
-# every symbol read from text.
+# every symbol read from text or evaluated in its header.
 # verified (checked) < resolvable (probed) means symbols were silently skipped.
 if [ "$checked" -ne "$probed" ]; then
     echo "FAIL: $NAME: invariant broken: verified $checked != resolvable $probed ($((probed - checked)) symbol(s) resolved but not verified)" >&2
@@ -950,11 +1115,15 @@ if [ "$checked_text" -ne "$TEXT_VERIFIED" ]; then
     echo "FAIL: $NAME: invariant broken: verified from text $checked_text != text-verified $TEXT_VERIFIED" >&2
     exit 1
 fi
+if [ "$checked_hdr" -ne "$HDR_VERIFIED" ]; then
+    echo "FAIL: $NAME: invariant broken: verified from headers $checked_hdr != hdr-verified $HDR_VERIFIED" >&2
+    exit 1
+fi
 
 case "$TIER1_STATUS" in
     ok) ;;
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / hdr-verified $HDR_VERIFIED / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor / hdr_floor=$hdr_floor)"
 exit 0
