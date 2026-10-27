@@ -19,7 +19,10 @@
  * at most 1); the other HANDSHAKE_A_ACCEPT_* ids are what its reply
  * carries.  DONE's has ids 1 to 3: STATUS (a u32 of at most MAX_ERRNO,
  * 4095), SOCKFD and REMOTE_AUTH (s32).  Both caps are NLA_POLICY_MAX, a
- * range from 0.
+ * range from 0.  handshake_nl_accept_doit() answers -EINVAL without
+ * HANDLER_CLASS, which every request with an attribute carries, as its table
+ * holds nothing else; handshake_nl_done_doit() the same without SOCKFD,
+ * which is marked required.
  */
 static const struct nla_attr_spec handshake_accept_attrs[] = {
 	{ HANDSHAKE_A_ACCEPT_HANDLER_CLASS,	NLA_KIND_U32_RANGE, 1 },
@@ -27,7 +30,7 @@ static const struct nla_attr_spec handshake_accept_attrs[] = {
 
 static const struct nla_attr_spec handshake_done_attrs[] = {
 	{ HANDSHAKE_A_DONE_STATUS,		NLA_KIND_U32_RANGE, 4095 },
-	{ HANDSHAKE_A_DONE_SOCKFD,		NLA_KIND_U32, 4 },
+	{ HANDSHAKE_A_DONE_SOCKFD,		NLA_KIND_U32, 4, .required = true },
 	{ HANDSHAKE_A_DONE_REMOTE_AUTH,		NLA_KIND_U32, 4 },
 };
 

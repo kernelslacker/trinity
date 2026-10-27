@@ -412,7 +412,7 @@ static struct slot handshake_accept[] = {
 };
 static struct slot handshake_done[] = {
 	S_U32_RANGE(HANDSHAKE_A_DONE_STATUS, 0, 4095),
-	S_U32(HANDSHAKE_A_DONE_SOCKFD),
+	S_U32(HANDSHAKE_A_DONE_SOCKFD, .required = true),
 	S_U32(HANDSHAKE_A_DONE_REMOTE_AUTH),
 };
 static struct cmd_policy handshake_cmds[] = {
