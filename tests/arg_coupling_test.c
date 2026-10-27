@@ -4726,6 +4726,32 @@ static void semctl_arrays_from_pool(void)
 	fake_this_child = NULL;
 }
 
+/* An IPC_SET SEMCTL's buffer, at @val, gives the set the caller's uid and
+ * gid and a readable mode, in the layout the command names: a native
+ * call's, or a compat call's with IPC_64, where the native struct has them,
+ * and a compat call's without it as the old compat_ipc_perm's 16-bit
+ * words after the key, which it may be only when the ids fit them. */
+static void ipc_set_ids_held(const struct syscallrecord *r, unsigned long val)
+{
+	if (r->do32bit && !(r->a4 & KERNEL_IPC_64)) {
+		const uint16_t *words = (const uint16_t *) val;
+
+		if (getuid() > 0xffff || getgid() > 0xffff ||
+		    words[2] != getuid() || words[3] != getgid() ||
+		    !(words[6] & 0400))
+			BUG("ipc: an old-layout IPC_SET hands the set someone else's ownership or no read access");
+	} else {
+		const struct kernel_ipc_perm *perm =
+			(const struct kernel_ipc_perm *) val;
+
+		if (perm->uid != getuid() || perm->gid != getgid() ||
+		    !(perm->mode & 0400))
+			BUG("ipc: an IPC_SET hands the set someone else's ownership or no read access");
+		if (!r->do32bit && (r->a4 & KERNEL_IPC_64))
+			BUG("ipc: a native IPC_SET carries IPC_64");
+	}
+}
+
 /* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
  * an unsigned long or a compat call's u32, so every SEMCTL the sanitiser
  * builds has ptr name a slot the call reaches.  For a command that takes
@@ -4734,8 +4760,10 @@ static void semctl_arrays_from_pool(void)
  * since the kernel walks the set's own count: IPC_STAT, IPC_SET,
  * SEM_STAT, SEM_STAT_ANY, IPC_INFO, SEM_INFO, GETALL and SETALL.  SETALL's
  * values and SETVAL's fit SEMVMX.  IPC_SET gives the set the caller's own
- * uid and gid and a readable mode, and a compat IPC_SET carries IPC_64,
- * the layout whose uid, gid and mode lie where the native struct's do. */
+ * uid and gid and a readable mode, in the layout the command names: a
+ * native call's, or a compat call's with IPC_64, has them where the native
+ * struct does, and a compat call's without it, the old compat_ipc_perm,
+ * as 16-bit words after the key, which carry them only when they fit. */
 static void ipc_semctl_semun_through_ptr(void)
 {
 	struct syscallrecord *r;
@@ -4788,22 +4816,82 @@ static void ipc_semctl_semun_through_ptr(void)
 			break;
 		}
 
-		if (cmd == IPC_SET) {
-			const struct kernel_ipc_perm *perm =
-				(const struct kernel_ipc_perm *) val;
-
-			if (perm->uid != getuid() || perm->gid != getgid() ||
-			    !(perm->mode & 0400))
-				BUG("ipc: an IPC_SET hands the set someone else's ownership or no read access");
-			if (r->do32bit != !!(r->a4 & KERNEL_IPC_64))
-				BUG("ipc: an IPC_SET's layout is not the one its buffer has");
-		}
+		if (cmd == IPC_SET)
+			ipc_set_ids_held(r, val);
 		syscall_ipc.cleanup(r);
 	}
 	fake_this_child = NULL;
 	if (seen_buffer == 0)
 		BUG("ipc: the sanitiser never drew a SEMCTL that takes a buffer");
 }
+
+/* getuid() and getgid() as ipc_semctl_set_layouts() sets them (the wraps
+ * in tests/Makefile); left at -1, the real calls answer. */
+static uid_t fake_uid = (uid_t) -1;
+static gid_t fake_gid = (gid_t) -1;
+
+uid_t __real_getuid(void);
+uid_t __wrap_getuid(void);
+uid_t __wrap_getuid(void)
+{
+	return fake_uid != (uid_t) -1 ? fake_uid : __real_getuid();
+}
+
+gid_t __real_getgid(void);
+gid_t __wrap_getgid(void);
+gid_t __wrap_getgid(void)
+{
+	return fake_gid != (gid_t) -1 ? fake_gid : __real_getgid();
+}
+
+#ifdef ARCH_IS_BIARCH
+/* A compat IPC_SET is sent in both layouts while the caller's ids fit the
+ * old one's 16 bits, each holding them as ipc_set_ids_held() reads it, and
+ * with IPC_64 alone once one of them does not. */
+static void ipc_semctl_set_layouts(void)
+{
+	static const struct {
+		uid_t uid;
+		gid_t gid;
+		bool old_layout;
+	} cases[] = {
+		{ 1000, 100, true },
+		{ 0xffff, 0xffff, true },
+		{ 0x10000, 100, false },
+		{ 1000, 0x10000, false },
+	};
+	unsigned int c, i;
+
+	for (c = 0; c < ARRAY_SIZE(cases); c++) {
+		unsigned int sets = 0, old_sets = 0;
+
+		fake_uid = cases[c].uid;
+		fake_gid = cases[c].gid;
+		for (i = 0; i < 20 * SANITISER_DRAWS && sets < 100; i++) {
+			struct syscallrecord *r = child_call(&syscall_ipc, true);
+
+			r->a1 = IPC_SEMCTL;
+			syscall_ipc.sanitise(r);
+			if (((int) r->a4 & ~KERNEL_IPC_64) == IPC_SET) {
+				ipc_set_ids_held(r, *(unsigned long *) r->a5);
+				sets++;
+				old_sets += !(r->a4 & KERNEL_IPC_64);
+			}
+			syscall_ipc.cleanup(r);
+		}
+		if (sets < 100 ||
+		    (cases[c].old_layout ? old_sets == 0 || old_sets == sets
+					 : old_sets != 0)) {
+			fprintf(stderr, "ipc: uid %u gid %u, %u of %u IPC_SETs in the old layout\n",
+				cases[c].uid, cases[c].gid, old_sets, sets);
+			BUG("ipc: compat IPC_SETs pick their layout wrongly for the caller's ids");
+		}
+	}
+	fake_uid = (uid_t) -1;
+	fake_gid = (gid_t) -1;
+	fake_this_child = NULL;
+}
+#endif
 
 #ifdef ARCH_IS_BIARCH
 /* compat_ksys_ipc() reads a MSGRCV's kludge as two 32-bit words, msgp and
@@ -4923,5 +5011,6 @@ void arg_coupling_self_check(void)
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
 	ipc_compat_layouts();
+	ipc_semctl_set_layouts();
 #endif
 }

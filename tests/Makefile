@@ -126,6 +126,11 @@ LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 # munmap() unless armed.
 LDFLAGS		+= -Wl,--wrap=munmap
 
+# getuid() and getgid() stand-ins: arg_coupling_test.c wraps both so a
+# test can try ids that fit 16 bits and ids that do not.  The wrappers
+# forward to the real calls unless armed.
+LDFLAGS		+= -Wl,--wrap=getuid -Wl,--wrap=getgid
+
 # get_map() and get_map_with_prot() stand-ins: mm/maps-pick.c is linked
 # for get_map_handle(), and its wrappers would draw from pools most tests
 # never build.  post_oracle_test.c wraps both: get_map() hands out the

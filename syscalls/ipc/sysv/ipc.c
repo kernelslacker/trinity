@@ -118,6 +118,12 @@ static void sanitise_ipc_semget(struct syscallrecord *rec)
 		rec->a4 |= IPC_EXCL;
 }
 
+/* struct compat_ipc_perm (ipc/util.h): a compat IPC_SET's old layout. */
+struct compat_ipc_perm_old {
+	int32_t key;
+	uint16_t uid, gid, cuid, cgid, mode, seq;
+};
+
 static void sanitise_ipc_semctl(struct syscallrecord *rec)
 {
 	/*
@@ -172,20 +178,37 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 		for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
 			arr[i] = rnd_modulo_u32(SEMVMX + 1);
 	} else if (cmd == IPC_SET) {
-		struct semid_ds *ds = (struct semid_ds *) val;
+		uid_t uid = getuid();
+		gid_t gid = getgid();
+		unsigned short mode =
+			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
 
 		/*
 		 * As semctl()'s IPC_SET: without these the call fires EPERM
 		 * or installs mode 0, which locks the set out of every later
-		 * operation.  A compat call's old layout packs the ids into
-		 * 16 bits; IPC_64's has uid, gid and mode where the native
-		 * struct does (compat_ipc64_perm).
+		 * operation.  compat_ksys_old_semctl() takes the layout from
+		 * IPC_64 in the command: with it, compat_ipc64_perm, whose
+		 * uid, gid and mode lie where the native struct's do; without
+		 * it, the old compat_ipc_perm, which packs them into 16 bits
+		 * and can carry them only when they fit.
 		 */
-		ds->sem_perm.uid = getuid();
-		ds->sem_perm.gid = getgid();
-		ds->sem_perm.mode = mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
-		if (rec->do32bit)
-			rec->a4 |= IPC_64;
+		if (rec->do32bit && uid <= USHRT_MAX && gid <= USHRT_MAX &&
+		    RAND_BOOL()) {
+			struct compat_ipc_perm_old *perm =
+				(struct compat_ipc_perm_old *) val;
+
+			perm->uid = uid;
+			perm->gid = gid;
+			perm->mode = mode;
+		} else {
+			struct semid_ds *ds = (struct semid_ds *) val;
+
+			ds->sem_perm.uid = uid;
+			ds->sem_perm.gid = gid;
+			ds->sem_perm.mode = mode;
+			if (rec->do32bit)
+				rec->a4 |= IPC_64;
+		}
 	}
 
 	slot = (unsigned long *) get_writable_struct(sizeof(*slot));
