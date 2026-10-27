@@ -65,7 +65,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 	unsigned int nsops, i;
 
 	nsops = 1 + (rnd_modulo_u32(8));
-	sops = (struct sembuf *) get_call_writable_struct(rec, nsops * sizeof(*sops));
+	sops = (struct sembuf *) get_writable_struct(nsops * sizeof(*sops));
 	if (!sops)
 		return;
 	for (i = 0; i < nsops; i++) {
@@ -87,7 +87,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 		/* A compat call's kernel reads an old_timespec32, two s32s
 		 * (compat_ksys_semtimedop()). */
 		if (rec->do32bit) {
-			int32_t *ts32 = get_call_writable_struct(rec, 2 * sizeof(*ts32));
+			int32_t *ts32 = get_writable_struct(2 * sizeof(*ts32));
 
 			if (!ts32)
 				return;
@@ -95,7 +95,7 @@ static void sanitise_ipc_semop(struct syscallrecord *rec, unsigned long call)
 			ts32[1] = nsec;
 			rec->a6 = (unsigned long) ts32;
 		} else {
-			struct timespec *ts = get_call_writable_struct(rec, sizeof(*ts));
+			struct timespec *ts = get_writable_struct(sizeof(*ts));
 
 			if (!ts)
 				return;
@@ -157,7 +157,7 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 	}
 
 	if (len != 0) {
-		void *buf = get_call_writable_struct(rec, len);
+		void *buf = get_writable_struct(len);
 
 		if (buf == NULL)
 			return;
@@ -188,7 +188,7 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 			rec->a4 |= IPC_64;
 	}
 
-	slot = (unsigned long *) get_call_writable_struct(rec, sizeof(*slot));
+	slot = (unsigned long *) get_writable_struct(sizeof(*slot));
 	if (slot == NULL)
 		return;
 	*slot = val;
@@ -204,7 +204,7 @@ static void sanitise_ipc_msgsnd(struct syscallrecord *rec)
 	size_t msgsz;
 
 	msgsz = 1 + (rnd_modulo_u32(256));
-	mb = (struct msgbuf *) get_call_writable_struct(rec, sizeof(long) + msgsz);
+	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + msgsz);
 	if (!mb)
 		return;
 	mb->mtype = 1 + (rnd_modulo_u32(100));
@@ -234,7 +234,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	unsigned long mb_addr, kludge;
 	size_t kludge_len;
 
-	mb = (struct msgbuf *) get_call_writable_struct(rec, sizeof(long) + 256);
+	mb = (struct msgbuf *) get_writable_struct(sizeof(long) + 256);
 	if (!mb)
 		return;
 	memset(mb, 0, sizeof(long) + 256);
@@ -247,7 +247,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 	mb = (struct msgbuf *) mb_addr;
 
 	if (rec->do32bit) {
-		uint32_t *ck = get_call_writable_struct(rec, 2 * sizeof(*ck));
+		uint32_t *ck = get_writable_struct(2 * sizeof(*ck));
 
 		if (!ck)
 			return;
@@ -256,7 +256,7 @@ static void sanitise_ipc_msgrcv(struct syscallrecord *rec)
 		kludge = (unsigned long) ck;
 		kludge_len = 2 * sizeof(*ck);
 	} else {
-		tmp = (void *) get_call_writable_struct(rec, sizeof(*tmp));
+		tmp = (void *) get_writable_struct(sizeof(*tmp));
 		if (!tmp)
 			return;
 		tmp->msgp = mb;
@@ -297,7 +297,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	case IPC_SET:
 	case MSG_STAT: {
 		struct msqid_ds *buf;
-		buf = (struct msqid_ds *) get_call_writable_struct(rec, sizeof(*buf));
+		buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
@@ -308,7 +308,7 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case MSG_INFO: {
 		void *buf;
-		buf = get_call_writable_struct(rec, 256);
+		buf = get_writable_struct(256);
 		if (!buf)
 			break;
 		memset(buf, 0, 256);
@@ -349,7 +349,7 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 	 * A compat call's kernel stores through the low 32 bits of third
 	 * (compat_ksys_ipc()), so its slot comes from the low pool.
 	 */
-	raddr = (unsigned long *) get_call_writable_struct(rec, sizeof(*raddr));
+	raddr = (unsigned long *) get_writable_struct(sizeof(*raddr));
 	if (!raddr)
 		return;
 	*raddr = 0;
@@ -376,7 +376,7 @@ static void sanitise_ipc_shmat(struct syscallrecord *rec)
 static void sanitise_ipc_shmdt(struct syscallrecord *rec)
 {
 	/* ptr=shmaddr — use a valid writable page */
-	void *addr = get_call_writable_struct(rec, 4096);
+	void *addr = get_writable_struct(4096);
 
 	if (addr)
 		rec->a5 = (unsigned long) addr;
@@ -408,7 +408,7 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	case IPC_SET:
 	case SHM_STAT: {
 		struct shmid_ds *buf;
-		buf = (struct shmid_ds *) get_call_writable_struct(rec, sizeof(*buf));
+		buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
@@ -419,7 +419,7 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case SHM_INFO: {
 		void *buf;
-		buf = get_call_writable_struct(rec, 256);
+		buf = get_writable_struct(256);
 		if (!buf)
 			break;
 		memset(buf, 0, 256);
@@ -483,7 +483,7 @@ static int vet_final_ipc(struct syscallrecord *rec,
  * ipc() is in the i386 table alone, so on x86-64 every call is compat, and
  * compat_ksys_ipc() reads each pointer it takes, the msgbuf pointer in a
  * MSGRCV's kludge included, as its low 32 bits: every buffer here comes
- * from get_call_writable_struct().
+ * from the low pool, where get_writable_struct() draws a compat call's.
  */
 static void sanitise_ipc(struct syscallrecord *rec)
 {

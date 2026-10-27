@@ -548,6 +548,20 @@ static struct syscallrecord *mm_call(struct syscallentry *entry)
 	return mrec;
 }
 
+/* A call's record, this_child()'s, which a child builds its calls in, so
+ * that the pool its buffers come from follows the call's ABI. */
+static struct syscallrecord *child_call(struct syscallentry *entry,
+					bool compat)
+{
+	struct syscallrecord *r = &mm_child.syscall;
+
+	memset(r, 0, sizeof(*r));
+	r->entry = entry;
+	r->do32bit = compat;
+	fake_this_child = &mm_child;
+	return r;
+}
+
 /* Whether @len bytes at @addr lie where @r's call reaches them: in the
  * writable pool, or for a compat call below 4 GiB. */
 static bool call_reaches_buffer(const struct syscallrecord *r,
@@ -4549,15 +4563,15 @@ struct kernel_ipc_perm {
 };
 
 /* An ipc() SHMAT call the sanitiser built. */
-static void ipc_shmat_built(bool compat)
+static struct syscallrecord *ipc_shmat_built(bool compat)
 {
-	memset(&rec, 0, sizeof(rec));
-	rec.entry = &syscall_ipc;
-	rec.do32bit = compat;
-	rec.a1 = IPC_SHMAT;
-	syscall_ipc.sanitise(&rec);
-	if (rec.a4 == 0 || rec.post_state == 0)
+	struct syscallrecord *r = child_call(&syscall_ipc, compat);
+
+	r->a1 = IPC_SHMAT;
+	syscall_ipc.sanitise(r);
+	if (r->a4 == 0 || r->post_state == 0)
 		BUG("ipc: the sanitiser built a SHMAT with no result slot");
+	return r;
 }
 
 /* ipc() reaches shmat's attach through a SHMAT call.  The kernel stores
@@ -4591,6 +4605,7 @@ static void ipc_shmat_held(void)
 		{ IPC_SHMGET, SHM_REMAP, POOL_MAP, 0 },
 		{ IPC_SHMDT, SHM_REMAP, POOL_MAP, 0 },
 	};
+	struct syscallrecord *r;
 	unsigned long raddr;
 	unsigned int i;
 
@@ -4598,34 +4613,34 @@ static void ipc_shmat_held(void)
 		writable_pool_init();
 
 	for (i = 0; i < ARRAY_SIZE(cases); i++) {
-		ipc_shmat_built(false);
-		rec.a1 = cases[i].call;
-		rec.a3 = cases[i].shmflg;
-		rec.a5 = cases[i].ptr;
-		if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict) {
+		r = ipc_shmat_built(false);
+		r->a1 = cases[i].call;
+		r->a3 = cases[i].shmflg;
+		r->a5 = cases[i].ptr;
+		if (validate_arg_coupling(r, r->entry) != cases[i].verdict) {
 			fprintf(stderr, "ipc: case %u, call 0x%lx shmflg 0x%lx ptr 0x%lx\n",
 				i, cases[i].call, cases[i].shmflg, cases[i].ptr);
 			BUG("ipc: a SHMAT's SHM_REMAP was judged wrongly");
 		}
-		syscall_ipc.cleanup(&rec);
+		syscall_ipc.cleanup(r);
 	}
 
-	ipc_shmat_built(false);
-	raddr = rec.a4;
-	rec.a4 = raddr + sizeof(unsigned long);
-	if (validate_arg_coupling(&rec, rec.entry) != -1)
+	r = ipc_shmat_built(false);
+	raddr = r->a4;
+	r->a4 = raddr + sizeof(unsigned long);
+	if (validate_arg_coupling(r, r->entry) != -1)
 		BUG("ipc: a SHMAT storing its result past the slot sanitise built was kept");
-	rec.a4 = POOL_MAP;
-	if (validate_arg_coupling(&rec, rec.entry) != -1)
+	r->a4 = POOL_MAP;
+	if (validate_arg_coupling(r, r->entry) != -1)
 		BUG("ipc: a SHMAT storing its result at a substituted address was kept");
-	rec.a2 = (unsigned long) -1;
-	if (validate_arg_coupling(&rec, rec.entry) != 0)
+	r->a2 = (unsigned long) -1;
+	if (validate_arg_coupling(r, r->entry) != 0)
 		BUG("ipc: a SHMAT that attaches nothing was refused");
-	rec.a2 = 0;
-	rec.a4 = raddr;
-	snapshot_gate_held(&rec, "ipc");
-	syscall_ipc.cleanup(&rec);
-	if (rec.post_state != 0)
+	r->a2 = 0;
+	r->a4 = raddr;
+	snapshot_gate_held(r, "ipc");
+	syscall_ipc.cleanup(r);
+	if (r->post_state != 0)
 		BUG("ipc: cleanup left the snapshot behind");
 
 #ifdef ARCH_IS_BIARCH
@@ -4633,42 +4648,41 @@ static void ipc_shmat_held(void)
 	 * so its result slot comes from the low pool, which they reach, and
 	 * the call keeps its shmid; the upper halves of third and ptr are no
 	 * part of the call. */
-	ipc_shmat_built(true);
-	if (rec.a4 > UINT_MAX || (int) rec.a2 < 0)
+	r = ipc_shmat_built(true);
+	if (r->a4 > UINT_MAX || (int) r->a2 < 0)
 		BUG("ipc: a compat SHMAT was not given a result slot its third can carry");
-	rec.a4 |= 1UL << 32;
-	rec.a3 = SHM_REMAP;
-	rec.a5 = 1UL << 32;
-	if (validate_arg_coupling(&rec, rec.entry) != 0)
+	r->a4 |= 1UL << 32;
+	r->a3 = SHM_REMAP;
+	r->a5 = 1UL << 32;
+	if (validate_arg_coupling(r, r->entry) != 0)
 		BUG("ipc: a compat SHMAT was judged on the upper halves of third and ptr");
-	rec.a5 |= 0x10000;
-	if (validate_arg_coupling(&rec, rec.entry) != -1)
+	r->a5 |= 0x10000;
+	if (validate_arg_coupling(r, r->entry) != -1)
 		BUG("ipc: a compat SHMAT remapping at a truncated shmaddr was kept");
-	syscall_ipc.cleanup(&rec);
+	syscall_ipc.cleanup(r);
 #endif
 
-	memset(&rec, 0, sizeof(rec));
-	rec.entry = &syscall_ipc;
-	rec.a1 = IPC_SHMDT;
-	syscall_ipc.sanitise(&rec);
-	rec.a1 = IPC_SHMAT;
-	if (validate_arg_coupling(&rec, rec.entry) != -1)
+	r = child_call(&syscall_ipc, false);
+	r->a1 = IPC_SHMDT;
+	syscall_ipc.sanitise(r);
+	r->a1 = IPC_SHMAT;
+	if (validate_arg_coupling(r, r->entry) != -1)
 		BUG("ipc: a SHMAT made from another call's slots was kept");
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_ipc;
+		r = child_call(&syscall_ipc, false);
 #ifdef ARCH_IS_BIARCH
-		rec.do32bit = (i % 10) == 0;
+		r->do32bit = (i % 10) == 0;
 #endif
-		rec.a1 = calls->values[i % calls->num];
-		rec.a3 = rnd_u64();
-		rec.a5 = rnd_u64();
-		syscall_ipc.sanitise(&rec);
-		if (validate_arg_coupling(&rec, rec.entry) != 0)
+		r->a1 = calls->values[i % calls->num];
+		r->a3 = rnd_u64();
+		r->a5 = rnd_u64();
+		syscall_ipc.sanitise(r);
+		if (validate_arg_coupling(r, r->entry) != 0)
 			BUG("ipc: a call the sanitiser built was refused");
-		syscall_ipc.cleanup(&rec);
+		syscall_ipc.cleanup(r);
 	}
+	fake_this_child = NULL;
 }
 
 /* semget() holds nsems to SEMGET_NSEMS_CAP, at sanitise time and on the
@@ -4755,22 +4769,22 @@ static void semctl_arrays_from_pool(void)
  * the layout whose uid, gid and mode lie where the native struct's do. */
 static void ipc_semctl_semun_through_ptr(void)
 {
+	struct syscallrecord *r;
 	unsigned int i, seen_buffer = 0;
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		unsigned long slot, val;
 		int cmd;
 
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_ipc;
+		r = child_call(&syscall_ipc, false);
 #ifdef ARCH_IS_BIARCH
-		rec.do32bit = i & 1;
+		r->do32bit = i & 1;
 #endif
-		rec.a1 = IPC_SEMCTL;
-		syscall_ipc.sanitise(&rec);
-		cmd = (int) rec.a4 & ~KERNEL_IPC_64;
-		slot = rec.a5;
-		if (!call_reaches_buffer(&rec, slot, sizeof(unsigned long)))
+		r->a1 = IPC_SEMCTL;
+		syscall_ipc.sanitise(r);
+		cmd = (int) r->a4 & ~KERNEL_IPC_64;
+		slot = r->a5;
+		if (!call_reaches_buffer(r, slot, sizeof(unsigned long)))
 			BUG("ipc: a SEMCTL's ptr names no slot the call reaches");
 		val = *(unsigned long *) slot;
 
@@ -4782,7 +4796,7 @@ static void ipc_semctl_semun_through_ptr(void)
 		case IPC_INFO:
 		case KERNEL_SEM_INFO:
 			/* A seminfo's ten ints, the smallest of them. */
-			if (!call_reaches_buffer(&rec, val, 10 * sizeof(int)))
+			if (!call_reaches_buffer(r, val, 10 * sizeof(int)))
 				BUG("ipc: a SEMCTL's semun names no buffer the call reaches");
 			seen_buffer++;
 			break;
@@ -4791,7 +4805,7 @@ static void ipc_semctl_semun_through_ptr(void)
 			const unsigned short *arr = (const unsigned short *) val;
 			unsigned int j;
 
-			if (!call_reaches_buffer(&rec, val, 256 * sizeof(*arr)))
+			if (!call_reaches_buffer(r, val, 256 * sizeof(*arr)))
 				BUG("ipc: a SEMCTL's array does not hold the largest set");
 			for (j = 0; cmd == KERNEL_SETALL && j < 256; j++)
 				if (arr[j] > KERNEL_SEMVMX)
@@ -4812,11 +4826,12 @@ static void ipc_semctl_semun_through_ptr(void)
 			if (perm->uid != getuid() || perm->gid != getgid() ||
 			    !(perm->mode & 0400))
 				BUG("ipc: an IPC_SET hands the set someone else's ownership or no read access");
-			if (rec.do32bit != !!(rec.a4 & KERNEL_IPC_64))
+			if (r->do32bit != !!(r->a4 & KERNEL_IPC_64))
 				BUG("ipc: an IPC_SET's layout is not the one its buffer has");
 		}
-		syscall_ipc.cleanup(&rec);
+		syscall_ipc.cleanup(r);
 	}
+	fake_this_child = NULL;
 	if (seen_buffer == 0)
 		BUG("ipc: the sanitiser never drew a SEMCTL that takes a buffer");
 }
@@ -4830,30 +4845,30 @@ static void ipc_semctl_semun_through_ptr(void)
 static void ipc_compat_layouts(void)
 {
 	bool msgtyp_varied = false, nsec_varied = false;
+	struct syscallrecord *r;
 	unsigned int i;
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		const int32_t *words;
 
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_ipc;
-		rec.do32bit = true;
-		rec.a1 = (i & 1) ? IPC_MSGRCV : IPC_SEMTIMEDOP;
-		syscall_ipc.sanitise(&rec);
-		if (rec.a1 == IPC_MSGRCV) {
-			words = (const int32_t *) rec.a5;
+		r = child_call(&syscall_ipc, true);
+		r->a1 = (i & 1) ? IPC_MSGRCV : IPC_SEMTIMEDOP;
+		syscall_ipc.sanitise(r);
+		if (r->a1 == IPC_MSGRCV) {
+			words = (const int32_t *) r->a5;
 			if (words[1] < 0 || words[1] >= 10 ||
-			    !call_reaches_buffer(&rec, (uint32_t) words[0], 8 + 256))
+			    !call_reaches_buffer(r, (uint32_t) words[0], 8 + 256))
 				BUG("ipc: a compat MSGRCV's kludge does not read as msgp and msgtyp");
 			msgtyp_varied |= words[1] != 0;
 		} else {
-			words = (const int32_t *) rec.a6;
+			words = (const int32_t *) r->a6;
 			if (words[0] != 0 || words[1] < 0 || words[1] >= 1000000)
 				BUG("ipc: a compat SEMTIMEDOP's timeout does not read as an old_timespec32");
 			nsec_varied |= words[1] != 0;
 		}
-		syscall_ipc.cleanup(&rec);
+		syscall_ipc.cleanup(r);
 	}
+	fake_this_child = NULL;
 	if (!msgtyp_varied || !nsec_varied)
 		BUG("ipc: a compat MSGRCV's msgtyp or SEMTIMEDOP's timeout only ever reads 0");
 }
@@ -4868,24 +4883,24 @@ static void ipc_compat_layouts(void)
 static void ipc_compat_buffers_reachable(void)
 {
 	const struct arglist *calls = &syscall_ipc.arg_params[0].list;
+	struct syscallrecord *r;
 	unsigned int i;
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		unsigned long call = calls->values[i % calls->num];
 
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_ipc;
-		rec.do32bit = true;
-		rec.a1 = call;
-		syscall_ipc.sanitise(&rec);
-		if (rec.a5 > UINT_MAX || rec.a6 > UINT_MAX ||
-		    (call == IPC_SHMAT && (rec.a4 == 0 || rec.a4 > UINT_MAX))) {
+		r = child_call(&syscall_ipc, true);
+		r->a1 = call;
+		syscall_ipc.sanitise(r);
+		if (r->a5 > UINT_MAX || r->a6 > UINT_MAX ||
+		    (call == IPC_SHMAT && (r->a4 == 0 || r->a4 > UINT_MAX))) {
 			fprintf(stderr, "ipc: call %lu, third 0x%lx ptr 0x%lx fifth 0x%lx\n",
-				call, rec.a4, rec.a5, rec.a6);
+				call, r->a4, r->a5, r->a6);
 			BUG("ipc: a compat call was handed a buffer its slots cannot carry");
 		}
-		syscall_ipc.cleanup(&rec);
+		syscall_ipc.cleanup(r);
 	}
+	fake_this_child = NULL;
 }
 #endif
 
