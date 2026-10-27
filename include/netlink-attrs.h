@@ -68,7 +68,8 @@ enum nla_kind {
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.
 	 * The elements' own types are not checked; they are numbered from
-	 * 0. */
+	 * 0.  A handler that counts the elements against a cap has it in
+	 * max_len, and one draw in eight goes one or two past it. */
 	NLA_KIND_NESTED_ARRAY,
 };
 
@@ -78,7 +79,8 @@ struct nla_attr_spec {
 	unsigned int max_len;	/* upper bound on payload; 0 for fixed kinds;
 				 * the mask or maximum for the bounded
 				 * scalar kinds, which a mask or maximum may
-				 * fill all 32 bits of */
+				 * fill all 32 bits of; the most elements of
+				 * an NLA_KIND_NESTED_ARRAY, 0 for 1-3 */
 	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
 				 * max_len}; for NLA_KIND_U32_RANGE the

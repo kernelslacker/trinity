@@ -339,16 +339,18 @@ static void put_ops_first_family(struct reply *r,
  * its children meet.  A u32 that the policy bounds with a mask or a range
  * says so, and the generator draws inside the bound most of the time, so a
  * draw outside it is tallied rather than refused: the policy's reject arm
- * wants some.  Other values are not the generator's to shape and are not
- * modelled.  A slot that the handler needs says so, and the generator puts
- * it in most streams of its policy and leaves it out of some.  seen counts
- * what the generator emitted, so a slot it never reaches shows up.
+ * wants some.  An array whose handler counts its elements against a cap is
+ * bounded the same way, by a range of counts.  Other values are not the
+ * generator's to shape and are not modelled.  A slot that the handler needs
+ * says so, and the generator puts it in most streams of its policy and
+ * leaves it out of some.  seen counts what the generator emitted, so a slot
+ * it never reaches shows up.
  */
 enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
 
 /* NLA_POLICY_MASK: hi holds the bits a value may set.  NLA_POLICY_RANGE:
  * lo to hi, both inclusive; MAX and MIN are ranges that start at 0 and end
- * at the top of the type. */
+ * at the top of the type.  An array's range is of its elements, from 1. */
 enum slot_bound { SB_NONE, SB_MASK, SB_RANGE };
 
 struct slot {
@@ -358,7 +360,7 @@ struct slot {
 	struct slot *nest;		/* SK_NEST, SK_ARRAY: the children's policy */
 	unsigned int n_nest;
 	unsigned int seen;
-	unsigned char bound;		/* a u32's bound, host order */
+	unsigned char bound;		/* a u32's bound, host order, or an array's */
 	unsigned int lo, hi;
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	unsigned int or_all, and_all, min_v, max_v;
@@ -381,6 +383,9 @@ struct slot {
 	{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl), ##__VA_ARGS__ }
 #define S_ARRAY(id, tbl, ...) \
 	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl), ##__VA_ARGS__ }
+#define S_ARRAY_MAX(id, tbl, cap, ...) \
+	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl), .bound = SB_RANGE, \
+	  .lo = 1, .hi = cap, ##__VA_ARGS__ }
 #define S_U32_MASK(id, bits, ...) \
 	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits, ##__VA_ARGS__ }
 #define S_U32_RANGE(id, from, to, ...) \
@@ -1165,7 +1170,8 @@ extern struct genl_family_grammar fam_ovs_meter;
 /*
  * net/openvswitch/meter.c: meter_policy and band_policy.  STATS has a slot
  * with a length and no type, so exactly that of struct ovs_flow_stats.
- * BANDS is a nest of band nests, which dp_meter_create() walks.
+ * BANDS is a nest of band nests, which dp_meter_create() walks and refuses
+ * past DP_MAX_BANDS, 1.
  */
 static struct slot ovs_meter_band[] = {
 	S_U32(OVS_BAND_ATTR_TYPE),
@@ -1179,7 +1185,7 @@ static struct slot ovs_meter[] = {
 	S_FLAG(OVS_METER_ATTR_KBPS),
 	S_BLOB(OVS_METER_ATTR_STATS, sizeof(struct ovs_flow_stats),
 	       sizeof(struct ovs_flow_stats)),
-	S_ARRAY(OVS_METER_ATTR_BANDS, ovs_meter_band),
+	S_ARRAY_MAX(OVS_METER_ATTR_BANDS, ovs_meter_band, 1),
 	S_U64(OVS_METER_ATTR_USED),
 	S_FLAG(OVS_METER_ATTR_CLEAR),
 	S_U32(OVS_METER_ATTR_MAX_METERS),
@@ -1698,16 +1704,14 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 }
 
 /*
- * Whether the host-order u32 at p is inside the slot's bound.  What is
- * inside is kept apart, with the bits it sets and the ends it reaches, so
- * that a spec which draws from less of the bound than the policy allows
- * shows up as well as one that strays outside it.
+ * Whether v, a host-order u32 or the count of an array's elements, is
+ * inside the slot's bound.  What is inside is kept apart, with the bits it
+ * sets and the ends it reaches, so that a spec which draws from less of the
+ * bound than the policy allows shows up as well as one that strays outside
+ * it.
  */
-static void tally_bound(struct slot *slot, const unsigned char *p)
+static void tally_bound(struct slot *slot, uint32_t v)
 {
-	uint32_t v;
-
-	memcpy(&v, p, sizeof(v));
 	if (slot->bound == SB_MASK ? (v & ~slot->hi) != 0 :
 				     (v < slot->lo || v > slot->hi))
 		return;
@@ -1735,8 +1739,9 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 static bool array_conforms(const unsigned char *p, size_t len, struct slot *slot)
 {
 	size_t off = 0;
+	uint32_t count = 0;
 
-	while (off < len) {
+	for (; off < len; count++) {
 		const struct nlattr *elem;
 
 		if (len - off < NLA_HDRLEN)
@@ -1751,6 +1756,8 @@ static bool array_conforms(const unsigned char *p, size_t len, struct slot *slot
 			return false;
 		off += NLA_ALIGN(elem->nla_len);
 	}
+	if (slot->bound != SB_NONE)
+		tally_bound(slot, count);
 	return true;
 }
 
@@ -1787,8 +1794,12 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 		case SK_BYTES:
 			if (plen < slot->min || plen > slot->max)
 				return false;
-			if (slot->bound != SB_NONE)
-				tally_bound(slot, p + off + NLA_HDRLEN);
+			if (slot->bound != SB_NONE) {
+				uint32_t v;
+
+				memcpy(&v, p + off + NLA_HDRLEN, sizeof(v));
+				tally_bound(slot, v);
+			}
 			break;
 		case SK_SINT:
 			if (plen != 4 && plen != 8)
@@ -1876,7 +1887,8 @@ static void expect_slots_seen(const struct slot *slots, unsigned int n_slots,
  * of the 2^32 values, so the fraction inside is 0.875 plus that share of
  * 0.125.  Over the 1000 draws or more asked for it has a standard deviation
  * of about 0.01, so 0.06 either way turns away a spec that never strays
- * outside the bound and one that never settles inside it.  The draws inside
+ * outside the bound and one that never settles inside it.  An array's
+ * eighth draw goes past its cap, so never lands inside.  The draws inside
  * must also span the bound, which a spec with a narrower one than the
  * policy's does not: a mask sets and clears each of its bits, and a range
  * reaches to within a tenth of its width of both ends.
@@ -1901,7 +1913,9 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 			BUG("genl ops: too few draws to judge a bounded attribute");
 		}
 
-		if (slot->bound == SB_MASK)
+		if (slot->kind == SK_ARRAY)
+			share = 0;
+		else if (slot->bound == SB_MASK)
 			share = (double) (1ULL << __builtin_popcount(slot->hi)) / 4294967296.0;
 		else
 			share = ((double) slot->hi - slot->lo + 1) / 4294967296.0;
@@ -2315,24 +2329,30 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
 /*
  * Each bounded kind through the emitter: a mask of one bit and one of
  * eighteen, as wide as nfsd's export flags; a range from 1 and one from 0,
- * which is NLA_POLICY_MAX; and one that runs to the top of the type, as
- * NLA_POLICY_MIN does.
+ * which is NLA_POLICY_MAX; one that runs to the top of the type, as
+ * NLA_POLICY_MIN does; and an array of two elements at most.
  */
 static void check_bounded_tables(void)
 {
+	static const struct nla_attr_spec leaf[] = {
+		{ 1, NLA_KIND_U32, 4 },
+	};
 	static const struct nla_attr_spec specs[] = {
 		{ 1, NLA_KIND_U32_MASK, 0x1 },
 		{ 2, NLA_KIND_U32_MASK, 0x3ffff },
 		{ 3, NLA_KIND_U32_RANGE, 6, 1 },
 		{ 4, NLA_KIND_U32_RANGE, 4095 },
 		{ 5, NLA_KIND_U32_RANGE, UINT32_MAX, 68 },
+		{ 6, NLA_KIND_NESTED_ARRAY, 2, 0, leaf, ARRAY_SIZE(leaf) },
 	};
+	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
 		S_U32_MASK(1, 0x1),
 		S_U32_MASK(2, 0x3ffff),
 		S_U32_RANGE(3, 1, 6),
 		S_U32_RANGE(4, 0, 4095),
 		S_U32_RANGE(5, 68, UINT32_MAX),
+		S_ARRAY_MAX(6, leaf_mirror, 2),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -2342,7 +2362,8 @@ static void check_bounded_tables(void)
 /*
  * What each spec declares, its bound and whether it is marked required, is
  * what its policy and its handler give: none declares a bound the policy
- * lacks or a mark the handler does not need.  The draws show a bound that is
+ * lacks or a mark the handler does not need, and an array is capped where
+ * its handler caps it.  The draws show a bound that is
  * off by a tenth of its width or more, and none that is off by one, as a cap
  * of MAX_ERRNO could be; and a mark lost from a table of two attributes
  * leaves a rate of presence that they cannot tell from the marked one.
@@ -2379,10 +2400,13 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 		}
 
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
-			  spec->kind == NLA_KIND_U32_RANGE;
+			  spec->kind == NLA_KIND_U32_RANGE ||
+			  (spec->kind == NLA_KIND_NESTED_ARRAY && spec->max_len != 0);
 		if (slot->bound == SB_NONE && !bounded)
 			continue;
-		if (slot->bound == SB_MASK ? spec->kind == NLA_KIND_U32_MASK &&
+		if (slot->kind == SK_ARRAY ? spec->kind == NLA_KIND_NESTED_ARRAY &&
+					     spec->max_len == slot->hi :
+		    slot->bound == SB_MASK ? spec->kind == NLA_KIND_U32_MASK &&
 					     spec->max_len == slot->hi :
 					     spec->kind == NLA_KIND_U32_RANGE &&
 					     spec->max_len == slot->hi &&

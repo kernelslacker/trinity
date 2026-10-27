@@ -280,16 +280,25 @@ static size_t append_nest_children(unsigned char *inner, size_t avail,
 }
 
 /*
- * 1-3 elements of an NLA_POLICY_NESTED_ARRAY: each an NLA_F_NESTED
- * attribute, numbered from 0, that holds children drawn from table.
+ * The elements of an NLA_POLICY_NESTED_ARRAY: each an NLA_F_NESTED
+ * attribute, numbered from 0, that holds children drawn from table.  There
+ * are 1-3 of them, or 1 to cap when the handler counts them against one,
+ * but one time in eight one or two past it, for the handler's too-many arm.
  */
 static size_t append_nest_elements(unsigned char *inner, size_t avail,
 				   const struct nla_attr_spec *table,
-				   size_t nr_specs, bool own)
+				   size_t nr_specs, bool own, unsigned int cap)
 {
 	size_t off = 0;
-	int elem_count = RAND_RANGE(1, 3);
+	unsigned int elem_count;
 	unsigned short elem_no = 0;
+
+	if (cap == 0)
+		elem_count = RAND_RANGE(1, 3);
+	else if (ONE_IN(8))
+		elem_count = cap + RAND_RANGE(1, 2);
+	else
+		elem_count = RAND_RANGE(1U, cap);
 
 	while (elem_count-- > 0) {
 		struct nlattr nla;
@@ -314,7 +323,7 @@ static size_t append_nest_elements(unsigned char *inner, size_t avail,
 /*
  * Emit a NLA_F_NESTED outer attr whose payload is 1-3 children drawn
  * from the spec's nest table, or from table, the one the spec is in, when it
- * names none; an array's payload is 1-3 elements holding such children.
+ * names none; an array's payload is elements holding such children.
  * Mirrors append_nested_attr_container() but walks a typed spec table for
  * kind/max_len information.  Increments the same nested counter so the dump
  * output stays consistent across spec-driven and pick_attr_hint-driven
@@ -347,7 +356,8 @@ static size_t append_specced_nested(unsigned char *buf, size_t offset,
 	}
 	if (spec->kind == NLA_KIND_NESTED_ARRAY)
 		inner_off = append_nest_elements(inner, inner_avail,
-						 table, nr_specs, own);
+						 table, nr_specs, own,
+						 spec->max_len);
 	else
 		inner_off = append_nest_children(inner, inner_avail,
 						 table, nr_specs, own);

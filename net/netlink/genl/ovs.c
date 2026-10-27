@@ -417,15 +417,16 @@ static const struct nla_attr_spec ovs_meter_band_attrs[] = {
  * packets/sec and kbits/sec.  BANDS is a nest of band nests, each a
  * band_policy stream under any attribute type, which dp_meter_create()
  * walks and counts against DP_MAX_BANDS, which is 1, so it refuses a second
- * element.  The band attributes sit in the table of the nest: on the top
- * level they met KBPS, a flag, and STATS, which wants 16 bytes.
+ * element: the array is capped there.  The band attributes sit in the table
+ * of the nest: on the top level they met KBPS, a flag, and STATS, which
+ * wants 16 bytes.
  */
 static const struct nla_attr_spec ovs_meter_attrs[] = {
 	{ OVS_METER_ATTR_ID,		NLA_KIND_U32,    4 },
 	{ OVS_METER_ATTR_KBPS,		NLA_KIND_FLAG,   0 },
 	{ OVS_METER_ATTR_STATS,		NLA_KIND_BINARY_FIXED2,
 	  sizeof(struct ovs_flow_stats), sizeof(struct ovs_flow_stats) },
-	{ OVS_METER_ATTR_BANDS,		NLA_KIND_NESTED_ARRAY, 0, 0,
+	{ OVS_METER_ATTR_BANDS,		NLA_KIND_NESTED_ARRAY, 1, 0,
 	  ovs_meter_band_attrs, ARRAY_SIZE(ovs_meter_band_attrs) },
 	{ OVS_METER_ATTR_USED,		NLA_KIND_U64,    8 },
 	{ OVS_METER_ATTR_CLEAR,		NLA_KIND_FLAG,   0 },
