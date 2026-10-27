@@ -814,6 +814,8 @@ struct pslot {
 	bool required;		/* the handler returns early without it */
 	bool array;		/* the nest is an NLA_POLICY_NESTED_ARRAY */
 	unsigned short kind;	/* the kind the spec must have; 0 for any */
+	bool bounded;		/* a mask or a range: the spec's min_len and max_len */
+	unsigned int lo, hi;	/* ... are lo and hi; a mask is from 0 to its bits */
 	struct pslot *nest;	/* the nest's own policy; NULL if the grammar leaves it untyped */
 	unsigned int n_nest;
 	unsigned int streams;	/* streams of the policy counted, for a required slot */
@@ -821,6 +823,9 @@ struct pslot {
 };
 
 #define PS(i, req, k)	{ .id = i, .required = req, .kind = k }
+#define PSB(i, req, k, l, h) \
+			{ .id = i, .required = req, .kind = k, .bounded = true, \
+			  .lo = l, .hi = h }
 #define PSN(i, req, n)	{ .id = i, .required = req, .kind = NLA_KIND_NESTED, \
 			  .nest = n, .n_nest = ARRAY_SIZE(n) }
 #define PSA(i, req, n)	{ .id = i, .required = req, .array = true, \
@@ -875,6 +880,13 @@ static void expect_declared(const struct nla_attr_spec *specs, size_t n_specs,
 			fprintf(stderr, "%s: attribute %u is of kind %u, want %u\n", what,
 				spec->type, spec->kind, pol[j].kind);
 			BUG("nfnl grammar: a cmd's attribute is of the wrong kind");
+		}
+		if (pol[j].bounded &&
+		    (spec->min_len != pol[j].lo || spec->max_len != pol[j].hi)) {
+			fprintf(stderr, "%s: attribute %u is bounded %u to %#x, want %u to %#x\n",
+				what, spec->type, spec->min_len, spec->max_len,
+				pol[j].lo, pol[j].hi);
+			BUG("nfnl grammar: a cmd's attribute has the wrong bound");
 		}
 		if ((spec->nest != NULL) != (pol[j].nest != NULL)) {
 			fprintf(stderr, "%s: attribute %u %s a table of its own\n", what,
@@ -1120,7 +1132,7 @@ static void check_cmd_row(struct cmd_row *row)
  */
 static struct pslot table_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
-	PS(2, false, NLA_KIND_BE32_MASK),
+	PSB(2, false, NLA_KIND_BE32_MASK, 0, 0x7),
 	PS(6, false, 0),
 };
 static struct pslot table_get[] = {
@@ -1155,7 +1167,7 @@ static struct pslot chain_new[] = {
 	PS(5, false, NLA_KIND_BE32_ONEOF),
 	PS(7, false, NLA_KIND_STRING_ONEOF),
 	PSN(8, false, chain_counters),
-	PS(10, false, NLA_KIND_BE32_MASK),
+	PSB(10, false, NLA_KIND_BE32_MASK, 0, 0x7),
 	PS(12, false, 0),
 };
 static struct pslot chain_name[] = {
@@ -1206,11 +1218,11 @@ static struct pslot rule_del[] = {
 static struct pslot set_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
-	PS(3, false, NLA_KIND_BE32_MASK),
+	PSB(3, false, NLA_KIND_BE32_MASK, 0, 0x1ff),
 	PS(4, false, 0),
-	PS(5, true, NLA_KIND_BE32_RANGE),
+	PSB(5, true, NLA_KIND_BE32_RANGE, 1, 64),
 	PS(6, false, 0),
-	PS(7, false, NLA_KIND_BE32_RANGE),
+	PSB(7, false, NLA_KIND_BE32_RANGE, 1, 64),
 	PS(8, false, NLA_KIND_BE32_ONEOF),
 	PS(10, true, 0),
 	PS(11, false, 0),
@@ -1246,7 +1258,7 @@ static struct pslot setelem_key[] = {
 static struct pslot setelem_add[] = {
 	PSN(1, true, setelem_key),
 	PS(2, false, NLA_KIND_NESTED),
-	PS(3, false, NLA_KIND_BE32_MASK),
+	PSB(3, false, NLA_KIND_BE32_MASK, 0, 0x3),
 	PS(4, false, 0),
 	PS(5, false, 0),
 	PS(6, false, 0),
@@ -1257,7 +1269,7 @@ static struct pslot setelem_add[] = {
 };
 static struct pslot setelem_find[] = {
 	PSN(1, true, setelem_key),
-	PS(3, false, NLA_KIND_BE32_MASK),
+	PSB(3, false, NLA_KIND_BE32_MASK, 0, 0x3),
 	PSN(10, false, setelem_key),
 };
 static struct pslot setelem_new[] = {
@@ -1291,14 +1303,14 @@ static struct pslot setelem_del[] = {
 static struct pslot obj_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
-	PS(3, true, NLA_KIND_BE32_RANGE),
+	PSB(3, true, NLA_KIND_BE32_RANGE, 1, 10),
 	PS(4, true, NLA_KIND_NESTED),
 	PS(8, false, 0),
 };
 static struct pslot obj_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
-	PS(3, true, NLA_KIND_BE32_RANGE),
+	PSB(3, true, NLA_KIND_BE32_RANGE, 1, 10),
 };
 
 /*
@@ -1320,7 +1332,7 @@ static struct pslot flowtable_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
 	PSN(3, true, flowtable_hook),
-	PS(7, false, NLA_KIND_BE32_MASK),
+	PSB(7, false, NLA_KIND_BE32_MASK, 0, 0x3),
 };
 static struct pslot flowtable_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
