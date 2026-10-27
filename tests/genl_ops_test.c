@@ -1518,16 +1518,24 @@ static struct slot tipc_prop[] = {
 	S_U32(TIPC_NLA_PROP_BROADCAST),
 	S_U32_RANGE(TIPC_NLA_PROP_BROADCAST_RATIO, 1, 100),
 };
+/* tipc_udp_enable() wants both addresses, a UDP bearer's add the remote
+ * one, and both its UDP_OPTS. */
 static struct slot tipc_udp[] = {
-	S_BLOB(TIPC_NLA_UDP_LOCAL, 0, sizeof(struct sockaddr_storage)),
-	S_BLOB(TIPC_NLA_UDP_REMOTE, 0, sizeof(struct sockaddr_storage)),
+	S_BLOB(TIPC_NLA_UDP_LOCAL, 0, sizeof(struct sockaddr_storage),
+	       .required = true),
+	S_BLOB(TIPC_NLA_UDP_REMOTE, 0, sizeof(struct sockaddr_storage),
+	       .required = true),
 	S_FLAG(TIPC_NLA_UDP_MULTI_REMOTEIP),
 };
 static struct slot tipc_bearer[] = {
 	S_STR(TIPC_NLA_BEARER_NAME, TIPC_MAX_BEARER_NAME, .required = true),
 	S_NEST(TIPC_NLA_BEARER_PROP, tipc_prop),
+};
+static struct slot tipc_bearer_udp[] = {
+	S_STR(TIPC_NLA_BEARER_NAME, TIPC_MAX_BEARER_NAME, .required = true),
+	S_NEST(TIPC_NLA_BEARER_PROP, tipc_prop),
 	S_U32(TIPC_NLA_BEARER_DOMAIN),
-	S_NEST(TIPC_NLA_BEARER_UDP_OPTS, tipc_udp),
+	S_NEST(TIPC_NLA_BEARER_UDP_OPTS, tipc_udp, .required = true),
 };
 static struct slot tipc_sock[] = {
 	S_U32(TIPC_NLA_SOCK_REF),
@@ -1562,6 +1570,9 @@ static struct slot tipc_node_key[] = {
 	S_U32(TIPC_NLA_NODE_REKEYING),
 };
 static struct slot tipc_bearer_req[] = { S_NEST(TIPC_NLA_BEARER, tipc_bearer) };
+static struct slot tipc_bearer_udp_req[] = {
+	S_NEST(TIPC_NLA_BEARER, tipc_bearer_udp),
+};
 static struct slot tipc_sock_req[] = { S_NEST(TIPC_NLA_SOCK, tipc_sock) };
 static struct slot tipc_link_req[] = { S_NEST(TIPC_NLA_LINK, tipc_link) };
 static struct slot tipc_link_dump[] = { S_NEST(TIPC_NLA_LINK, tipc_link_bcast) };
@@ -1571,12 +1582,12 @@ static struct slot tipc_mon_req[] = { S_NEST(TIPC_NLA_MON, tipc_mon) };
 static struct slot tipc_mon_peer_req[] = { S_NEST(TIPC_NLA_MON, tipc_mon_peer) };
 static struct slot tipc_node_req[] = { S_NEST(TIPC_NLA_NODE, tipc_node_key) };
 static struct cmd_policy tipc_cmds[] = {
-	P_CMD(TIPC_NL_BEARER_ENABLE, tipc_bearer_req),
+	P_CMD(TIPC_NL_BEARER_ENABLE, tipc_bearer_udp_req),
 	P_CMD(TIPC_NL_BEARER_DISABLE, tipc_bearer_req),
 	P_CMD(TIPC_NL_BEARER_GET, tipc_bearer_req),
 	P_DUMP_NONE(TIPC_NL_BEARER_GET),
 	P_CMD(TIPC_NL_BEARER_SET, tipc_bearer_req),
-	P_CMD(TIPC_NL_BEARER_ADD, tipc_bearer_req),
+	P_CMD(TIPC_NL_BEARER_ADD, tipc_bearer_udp_req),
 	P_CMD(TIPC_NL_UDP_GET_REMOTEIP, tipc_bearer_req),
 	P_CMD_NONE(TIPC_NL_NET_GET),
 	P_CMD(TIPC_NL_NET_SET, tipc_net_req),

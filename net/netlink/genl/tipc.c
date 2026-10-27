@@ -20,8 +20,9 @@
  * The inner namespaces, each from the tipc_nl_*_policy the handlers parse
  * its nest under with nla_parse_nested_deprecated().  The three PROP nests
  * share tipc_nl_prop_policy.  The UDP policy has no slot for MULTI_REMOTEIP,
- * but udp_media.c reads it as a flag.  The two addresses are
- * sockaddr_storage.  LINK_NAME and BEARER_NAME are NLA_NUL_STRING, so a
+ * but udp_media.c reads it as a flag.  The two addresses are a
+ * sockaddr_storage at most, which tipc_parse_udp_addr() reads by its
+ * family.  LINK_NAME and BEARER_NAME are NLA_NUL_STRING, so a
  * byte at least, and MEDIA_NAME an NLA_STRING.  A PROP nest's MTU is at
  * most U16_MAX (tipc_nl_mtu_range), and tipc_nl_parse_link_prop(), which
  * every PROP nest goes through, refuses a PRIO, TOL or WIN outside the
@@ -46,9 +47,16 @@ static const struct nla_attr_spec tipc_prop_attrs[] = {
 	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32_RANGE, 100, 1 },
 };
 
+/*
+ * A UDP bearer's addresses: tipc_udp_enable() wants both, the local one on
+ * a device of the netns, as the loopback address is, and a UDP bearer's
+ * add the remote one.
+ */
 static const struct nla_attr_spec tipc_udp_attrs[] = {
-	{ TIPC_NLA_UDP_LOCAL,		NLA_KIND_BINARY, sizeof(struct sockaddr_storage) },
-	{ TIPC_NLA_UDP_REMOTE,		NLA_KIND_BINARY, sizeof(struct sockaddr_storage) },
+	{ TIPC_NLA_UDP_LOCAL,		NLA_KIND_SOCKADDR, 0, 0,
+	  .required = true },
+	{ TIPC_NLA_UDP_REMOTE,		NLA_KIND_SOCKADDR, 0, 0,
+	  .required = true },
 	{ TIPC_NLA_UDP_MULTI_REMOTEIP,	NLA_KIND_FLAG,   0 },
 };
 
@@ -57,9 +65,18 @@ static const struct nla_attr_spec tipc_bearer_attrs[] = {
 	  .word = "udp:trinity", .required = true },
 	{ TIPC_NLA_BEARER_PROP,		NLA_KIND_NESTED, 0, 0,
 	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
+};
+
+/* What ENABLE reads, and ADD: a UDP bearer has no enable or add without
+ * its UDP_OPTS. */
+static const struct nla_attr_spec tipc_bearer_udp_attrs[] = {
+	{ TIPC_NLA_BEARER_NAME,		NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "udp:trinity", .required = true },
+	{ TIPC_NLA_BEARER_PROP,		NLA_KIND_NESTED, 0, 0,
+	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 	{ TIPC_NLA_BEARER_DOMAIN,	NLA_KIND_U32,    4 },
 	{ TIPC_NLA_BEARER_UDP_OPTS,	NLA_KIND_NESTED, 0, 0,
-	  tipc_udp_attrs, ARRAY_SIZE(tipc_udp_attrs) },
+	  tipc_udp_attrs, ARRAY_SIZE(tipc_udp_attrs), .required = true },
 };
 
 static const struct nla_attr_spec tipc_sock_attrs[] = {
@@ -132,6 +149,11 @@ static const struct nla_attr_spec tipc_bearer_req_attrs[] = {
 	  tipc_bearer_attrs, ARRAY_SIZE(tipc_bearer_attrs) },
 };
 
+static const struct nla_attr_spec tipc_bearer_udp_req_attrs[] = {
+	{ TIPC_NLA_BEARER,		NLA_KIND_NESTED, 0, 0,
+	  tipc_bearer_udp_attrs, ARRAY_SIZE(tipc_bearer_udp_attrs) },
+};
+
 static const struct nla_attr_spec tipc_sock_req_attrs[] = {
 	{ TIPC_NLA_SOCK,		NLA_KIND_NESTED, 0, 0,
 	  tipc_sock_attrs, ARRAY_SIZE(tipc_sock_attrs) },
@@ -174,7 +196,7 @@ static const struct nla_attr_spec tipc_node_req_attrs[] = {
 
 static const struct genl_cmd_grammar tipc_cmds[] = {
 	{ TIPC_NL_BEARER_ENABLE,	"TIPC_NL_BEARER_ENABLE",
-	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
+	  tipc_bearer_udp_req_attrs, ARRAY_SIZE(tipc_bearer_udp_req_attrs) },
 	{ TIPC_NL_BEARER_DISABLE,	"TIPC_NL_BEARER_DISABLE",
 	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
 	{ TIPC_NL_BEARER_GET,		"TIPC_NL_BEARER_GET",
@@ -183,7 +205,7 @@ static const struct genl_cmd_grammar tipc_cmds[] = {
 	{ TIPC_NL_BEARER_SET,		"TIPC_NL_BEARER_SET",
 	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
 	{ TIPC_NL_BEARER_ADD,		"TIPC_NL_BEARER_ADD",
-	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
+	  tipc_bearer_udp_req_attrs, ARRAY_SIZE(tipc_bearer_udp_req_attrs) },
 	{ TIPC_NL_UDP_GET_REMOTEIP,	"TIPC_NL_UDP_GET_REMOTEIP",
 	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
 	{ TIPC_NL_NET_GET,		"TIPC_NL_NET_GET", genl_no_attrs },
