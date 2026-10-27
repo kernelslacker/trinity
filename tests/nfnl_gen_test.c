@@ -223,8 +223,6 @@ struct bounded_slot {
 static const struct bounded_slot slots[] = {
 	/* nfnl_acct_policy, NFACCT_F_QUOTA: both quota bits */
 	{ "NFACCT_FLAGS", NFNL_SUBSYS_ACCT, 5, NLA_KIND_BE32_MASK, 0x3 },
-	/* nfnl_compat_policy_get */
-	{ "NFTA_COMPAT_REV", NFNL_SUBSYS_NFT_COMPAT, 2, NLA_KIND_BE32_MAX, 255 },
 	/* nfqa_cfg_policy, NFQA_CFG_F_MAX - 1 */
 	{ "NFQA_CFG_FLAGS", NFNL_SUBSYS_QUEUE, 5, NLA_KIND_BE32_MASK, 0x1f },
 	/* nfula_cfg_policy: SEQ, SEQ_GLOBAL and CONNTRACK */
@@ -275,6 +273,14 @@ static const unsigned int l3protos[] = { 2, 10 };
 static const unsigned int compat_types[] = { 0, 1 };
 
 /*
+ * xt_find_revision() reaches nfnl_compat_fill_info() only for a revision the
+ * extension has, and answers any other -EPROTONOSUPPORT.  The extensions that
+ * the grammar names have revisions 0 to 3: xt_conntrack's and xt_NFQUEUE's
+ * run to 3, and no other goes past 2.  nfnl_compat_policy_get takes up to 255.
+ */
+static const unsigned int compat_revs[] = { 0, 1, 2, 3 };
+
+/*
  * nfnl_hook_entries_head() answers a hook number past the family's array
  * -EINVAL.  IPv4, IPv6 and bridge, the families gen_nfnl_body() names that it
  * knows, have NF_INET_NUMHOOKS entries; nfnl_hook_nla_policy only caps the
@@ -311,9 +317,11 @@ static const struct bounded_slot oneof_slots[] = {
 	/* nfnl_hook_nla_policy: NLA_POLICY_MAX(NLA_BE32, 255) */
 	{ "NFNLA_HOOK_HOOKNUM", NFNL_SUBSYS_HOOK, 1,
 	  NLA_KIND_BE32_ONEOF, 0, hooknums, ARRAY_SIZE(hooknums) },
-	/* nfnl_compat_policy_get types TYPE NLA_U32 */
+	/* nfnl_compat_policy_get types TYPE NLA_U32 and REV NLA_POLICY_MAX(255) */
 	{ "NFTA_COMPAT_TYPE", NFNL_SUBSYS_NFT_COMPAT, 3,
 	  NLA_KIND_BE32_ONEOF, 0, compat_types, ARRAY_SIZE(compat_types) },
+	{ "NFTA_COMPAT_REV", NFNL_SUBSYS_NFT_COMPAT, 2,
+	  NLA_KIND_BE32_ONEOF, 0, compat_revs, ARRAY_SIZE(compat_revs) },
 	/* nft_hook_policy and nft_chain_policy type both NLA_U32 */
 	{ "NFTA_HOOK_HOOKNUM", NFNL_SUBSYS_NFTABLES, 1,
 	  NLA_KIND_BE32_ONEOF, 0, hooknums, ARRAY_SIZE(hooknums) },
@@ -1429,7 +1437,7 @@ static struct pslot cttimeout_default_get[] = {
  */
 static struct pslot compat_get[] = {
 	PS(1, true, NLA_KIND_STRING_ONEOF),
-	PSB(2, true, NLA_KIND_BE32_MAX, 0, 255),
+	PS(2, true, NLA_KIND_BE32_ONEOF),
 	PS(3, true, NLA_KIND_BE32_ONEOF),
 };
 

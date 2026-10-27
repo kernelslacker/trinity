@@ -37,15 +37,27 @@ static const char *const nft_compat_names[] = {
 };
 
 /*
+ * NFTA_COMPAT_REV is NLA_POLICY_MAX(NLA_BE32, 255) in nfnl_compat_policy_get,
+ * but xt_find_revision() has an extension only at the revision it registers
+ * and answers any other -EPROTONOSUPPORT, and nfnl_compat_get_rcu() reaches
+ * nfnl_compat_fill_info() only with one that exists.  The extensions above
+ * have revisions 0 to 3, xt_conntrack and xt_NFQUEUE running to 3 and no
+ * other past 2, so those are the numbers worth sending; the draw in eight
+ * that is random bytes is over 255 almost every time and meets the policy.
+ */
+static const unsigned int nft_compat_revs[] = { 0, 1, 2, 3 };
+
+/*
  * The one command's table.  nfnl_compat_get_rcu() answers -EINVAL unless the
- * name, REV and TYPE are all there, so all three are marked.  NFTA_COMPAT_REV
- * is NLA_POLICY_MAX(NLA_BE32, 255) in nfnl_compat_policy_get.
+ * name, REV and TYPE are all there, so all three are marked.
  */
 static const struct nla_attr_spec nft_compat_attrs[] = {
 	{ NFTA_COMPAT_NAME, NLA_KIND_STRING_ONEOF, 0, 0,
 	  .words = nft_compat_names, .n_words = ARRAY_SIZE(nft_compat_names),
 	  .required = true },
-	{ NFTA_COMPAT_REV,  NLA_KIND_BE32_MAX, 255, 0, .required = true },
+	{ NFTA_COMPAT_REV,  NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = nft_compat_revs, .n_oneof = ARRAY_SIZE(nft_compat_revs),
+	  .required = true },
 	{ NFTA_COMPAT_TYPE, NLA_KIND_BE32_ONEOF, 0, 0,
 	  .oneof = nft_compat_types, .n_oneof = ARRAY_SIZE(nft_compat_types),
 	  .required = true },
