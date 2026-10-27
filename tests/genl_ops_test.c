@@ -330,8 +330,9 @@ static void put_ops_first_family(struct reply *r,
  * says so, and the generator draws inside the bound most of the time, so a
  * draw outside it is tallied rather than refused: the policy's reject arm
  * wants some.  Other values are not the generator's to shape and are not
- * modelled.  seen counts what the generator emitted, so a slot it never
- * reaches shows up.
+ * modelled.  A slot that the handler needs says so, and the generator puts
+ * it in most streams of its policy and leaves it out of some.  seen counts
+ * what the generator emitted, so a slot it never reaches shows up.
  */
 enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
 
@@ -351,21 +352,29 @@ struct slot {
 	unsigned int lo, hi;
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	unsigned int or_all, and_all, min_v, max_v;
+	bool required;			/* its handler needs it */
+	unsigned int streams;		/* the streams of its policy built, */
+	unsigned int present;		/* and the ones that held it */
 };
 
-#define S_BLOB(id, lo, hi)	{ id, SK_BYTES, lo, hi }
-#define S_FLAG(id)		S_BLOB(id, 0, 0)
-#define S_U8(id)		S_BLOB(id, 1, 1)
-#define S_U16(id)		S_BLOB(id, 2, 2)
-#define S_U32(id)		S_BLOB(id, 4, 4)
-#define S_U64(id)		S_BLOB(id, 8, 8)
-#define S_SINT(id)		{ id, SK_SINT }
-#define S_STR(id, hi)		{ id, SK_STRING, 1, hi }
-#define S_NEST(id, tbl)		{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl) }
-#define S_ARRAY(id, tbl)	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl) }
-#define S_U32_MASK(id, bits)	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits }
-#define S_U32_RANGE(id, from, to) \
-	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to }
+/* Each takes designated initializers after its own arguments, as in
+ * S_U32(id, .required = true). */
+#define S_BLOB(id, lo, hi, ...)	{ id, SK_BYTES, lo, hi, ##__VA_ARGS__ }
+#define S_FLAG(id, ...)		S_BLOB(id, 0, 0, ##__VA_ARGS__)
+#define S_U8(id, ...)		S_BLOB(id, 1, 1, ##__VA_ARGS__)
+#define S_U16(id, ...)		S_BLOB(id, 2, 2, ##__VA_ARGS__)
+#define S_U32(id, ...)		S_BLOB(id, 4, 4, ##__VA_ARGS__)
+#define S_U64(id, ...)		S_BLOB(id, 8, 8, ##__VA_ARGS__)
+#define S_SINT(id, ...)		{ id, SK_SINT, ##__VA_ARGS__ }
+#define S_STR(id, hi, ...)	{ id, SK_STRING, 1, hi, ##__VA_ARGS__ }
+#define S_NEST(id, tbl, ...) \
+	{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl), ##__VA_ARGS__ }
+#define S_ARRAY(id, tbl, ...) \
+	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl), ##__VA_ARGS__ }
+#define S_U32_MASK(id, bits, ...) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits, ##__VA_ARGS__ }
+#define S_U32_RANGE(id, from, to, ...) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 
 /*
  * What a cmd's request takes.  A cmd with one row is checked the same
@@ -1316,6 +1325,107 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 	}
 }
 
+static void tally_required(const unsigned char *p, size_t len,
+			   struct slot *slots, unsigned int n_slots);
+
+/* The elements of an array, each a stream of the policy the slot names. */
+static void tally_elements(const unsigned char *p, size_t len,
+			   const struct slot *slot)
+{
+	size_t off = 0;
+
+	while (off + NLA_HDRLEN <= len) {
+		const struct nlattr *elem = (const struct nlattr *) (p + off);
+
+		tally_required(p + off + NLA_HDRLEN, elem->nla_len - NLA_HDRLEN,
+			       slot->nest, slot->n_nest);
+		off += NLA_ALIGN(elem->nla_len);
+	}
+}
+
+/*
+ * A stream that is known to conform, against its policy of up to 64 slots:
+ * every slot marked required counts the stream, and counts it again if the
+ * stream holds the attribute.  A nest and each element of an array is a
+ * stream of the policy its slot names, and counts the same way.
+ */
+static void tally_required(const unsigned char *p, size_t len,
+			   struct slot *slots, unsigned int n_slots)
+{
+	unsigned long long got = 0;
+	size_t off = 0;
+	unsigned int i;
+
+	while (off + NLA_HDRLEN <= len) {
+		const struct nlattr *nla = (const struct nlattr *) (p + off);
+		struct slot *slot = find_slot(slots, n_slots,
+					      nla->nla_type & NLA_TYPE_MASK);
+
+		if (slot != NULL) {
+			size_t plen = nla->nla_len - NLA_HDRLEN;
+
+			got |= 1ULL << (slot - slots);
+			if (slot->kind == SK_NEST)
+				tally_required(p + off + NLA_HDRLEN, plen,
+					       slot->nest, slot->n_nest);
+			else if (slot->kind == SK_ARRAY)
+				tally_elements(p + off + NLA_HDRLEN, plen, slot);
+		}
+		off += NLA_ALIGN(nla->nla_len);
+	}
+
+	for (i = 0; i < n_slots; i++) {
+		if (!slots[i].required)
+			continue;
+		slots[i].streams++;
+		if (got & (1ULL << i))
+			slots[i].present++;
+	}
+}
+
+#define REQUIRED_STREAMS	600
+
+/*
+ * A required slot is left out of some streams and is in most of them.  The
+ * emitter skips it one time in eight, and the draws that follow bring some
+ * of those back, so it is in 0.875 of them or more, fewer where a nest deep
+ * in the message has no room left for it.  Unmarked it would be in 0.2 to
+ * 0.75 of the streams of the tables here.  Over 600 streams the fraction has
+ * a standard deviation under 0.02, so 0.70 is five of them under a rate of
+ * 0.80 and turns the unmarked case away for any table of more than two
+ * attributes.  A slot that is never left out leaves the handler's
+ * missing-attribute arm without traffic.
+ */
+static void expect_slots_required(const struct slot *slots, unsigned int n_slots,
+				  const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		const struct slot *slot = &slots[i];
+
+		expect_slots_required(slot->nest, slot->n_nest, what);
+		if (!slot->required)
+			continue;
+
+		if (slot->streams < REQUIRED_STREAMS) {
+			fprintf(stderr, "%s: attribute %u has %u streams, want %u\n",
+				what, slot->id, slot->streams, REQUIRED_STREAMS);
+			BUG("genl ops: too few streams to judge a required attribute");
+		}
+		if (slot->present < slot->streams * 7 / 10) {
+			fprintf(stderr, "%s: attribute %u is in %u of %u streams, want at least 0.70\n",
+				what, slot->id, slot->present, slot->streams);
+			BUG("genl ops: a required attribute is left out too often");
+		}
+		if (slot->present == slot->streams) {
+			fprintf(stderr, "%s: attribute %u is in all %u streams\n",
+				what, slot->id, slot->streams);
+			BUG("genl ops: a required attribute is never left out");
+		}
+	}
+}
+
 /*
  * Only a lone message whose nlmsg_len is intact says where its attributes
  * end, so a batch is left out, and so is a message the generator gave a
@@ -1648,6 +1758,137 @@ static void check_policy_values(void)
 	}
 }
 
+/* ---------- Checking the attributes a handler requires ------------------- */
+
+size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
+			     const struct nla_attr_spec *table, size_t nr_specs);
+
+#define REQUIRED_ROUNDS	20000
+
+/*
+ * Tables of the test's own, with marks, drawn through the emitter and held
+ * to mirrors of what they stand for.  append_required_attrs() draws nothing
+ * but the one-in-eight skip, so it puts each marked attribute of a table in
+ * seven calls in eight.  Over the rounds here that fraction, 0.875, has a
+ * standard deviation of 0.0023, so the bounds of 0.84 and 0.91 are 15 of
+ * them out.  It puts in no unmarked one, and the marked children of a nest
+ * with a table of its own are in most of its elements.  A table with no
+ * marks takes nothing from the RNG, which is why the bytes generated for the
+ * grammars that mark nothing are as they were.
+ */
+static void check_required_tables(void)
+{
+	static const struct nla_attr_spec leaf[] = {
+		{ 1, NLA_KIND_U16, 2, .required = true },
+		{ 2, NLA_KIND_BINARY_FIXED2, 6, 6 },
+		{ 3, NLA_KIND_U32, 4 },
+	};
+	static const struct nla_attr_spec top[] = {
+		{ 1, NLA_KIND_U8, 1, .required = true },
+		{ 2, NLA_KIND_U32, 4 },
+		{ 3, NLA_KIND_STRING, 15, 1 },
+		{ 4, NLA_KIND_NESTED_ARRAY, 0, 0, leaf, ARRAY_SIZE(leaf),
+		  .required = true },
+		{ 5, NLA_KIND_NESTED, 0, 0, leaf, ARRAY_SIZE(leaf) },
+	};
+	static const struct nla_attr_spec plain[] = {
+		{ 1, NLA_KIND_U8, 1 },
+		{ 2, NLA_KIND_U32, 4 },
+	};
+	static struct slot leaf_mirror[] = {
+		S_U16(1, .required = true), S_BLOB(2, 6, 6), S_U32(3),
+	};
+	static struct slot top_mirror[] = {
+		S_U8(1, .required = true), S_U32(2), S_STR(3, 15),
+		S_ARRAY(4, leaf_mirror, .required = true),
+		S_NEST(5, leaf_mirror),
+	};
+	unsigned char buf[2048];
+	unsigned int round, i;
+	uint64_t state;
+
+	for (round = 0; round < REQUIRED_ROUNDS; round++) {
+		size_t end;
+
+		memset(buf, 0, sizeof(buf));
+		end = append_required_attrs(buf, 0, sizeof(buf), top,
+					    ARRAY_SIZE(top));
+		if (!stream_conforms(buf, end, top_mirror, ARRAY_SIZE(top_mirror))) {
+			fprintf(stderr, "required tables:\n");
+			hexdump(buf, end);
+			BUG("genl ops: a required attribute is built out of shape");
+		}
+		tally_required(buf, end, top_mirror, ARRAY_SIZE(top_mirror));
+	}
+
+	for (i = 0; i < ARRAY_SIZE(top_mirror); i++) {
+		const struct slot *slot = &top_mirror[i];
+		double frac = (double) slot->present / REQUIRED_ROUNDS;
+
+		if (!slot->required) {
+			if (slot->seen != 0)
+				BUG("genl ops: an attribute no mark names was emitted");
+			continue;
+		}
+		if (frac < 0.84 || frac > 0.91) {
+			fprintf(stderr, "required tables: attribute %u in %u of %u calls, want a fraction in [0.84, 0.91]\n",
+				slot->id, slot->present, REQUIRED_ROUNDS);
+			BUG("genl ops: a marked attribute is not left out one time in eight");
+		}
+	}
+	expect_slots_required(top_mirror, ARRAY_SIZE(top_mirror), "required tables");
+
+	state = rnd_state;
+	if (append_required_attrs(buf, 0, sizeof(buf), plain, ARRAY_SIZE(plain)) != 0 ||
+	    rnd_state != state)
+		BUG("genl ops: a table with no marks emitted or drew something");
+}
+
+/*
+ * A nest without a table of its own is filled from the table it is in,
+ * whose ids belong to the outer policy and whose marks are the outer
+ * handler's, so it takes the random draws alone: a child of a three-spec
+ * table is in 0.53 of the nests of one to three children.  Marked it would
+ * be in 0.94.
+ */
+static void check_required_not_inherited(void)
+{
+	static const struct nla_attr_spec flat[] = {
+		{ 7, NLA_KIND_U8, 1, .required = true },
+		{ 8, NLA_KIND_NESTED, 0 },
+		{ 9, NLA_KIND_U16, 2 },
+	};
+	static struct slot flat_inside[] = {
+		S_U8(7, .required = true), S_BLOB(8, 16, 16), S_U16(9),
+	};
+	static struct slot flat_mirror[] = {
+		S_U8(7), S_NEST(8, flat_inside), S_U16(9),
+	};
+	unsigned char buf[2048];
+	unsigned int round;
+
+	for (round = 0; round < REQUIRED_ROUNDS; round++) {
+		size_t end;
+
+		memset(buf, 0, sizeof(buf));
+		end = append_specced_nlattr(buf, 0, sizeof(buf), flat,
+					    ARRAY_SIZE(flat));
+		if (!stream_conforms(buf, end, flat_mirror, ARRAY_SIZE(flat_mirror))) {
+			fprintf(stderr, "required, not inherited:\n");
+			hexdump(buf, end);
+			BUG("genl ops: a nest without a table is built out of shape");
+		}
+		tally_required(buf, end, flat_mirror, ARRAY_SIZE(flat_mirror));
+	}
+
+	if (flat_inside[0].streams < 1000 ||
+	    flat_inside[0].present * 4 >= flat_inside[0].streams * 3) {
+		fprintf(stderr, "required, not inherited: %u of %u nests hold the outer table's marked attribute, want under 0.75\n",
+			flat_inside[0].present, flat_inside[0].streams);
+		BUG("genl ops: a nest takes the marks of a table that is not its own");
+	}
+}
+
 /* ---------- Checking which attribute table a cmd draws from ------------ */
 
 struct table_case {
@@ -1751,6 +1992,8 @@ void genl_ops_self_check(void)
 	check_cmd_attr_tables();
 	check_nest_tables();
 	check_bounded_tables();
+	check_required_tables();
+	check_required_not_inherited();
 	check_attrs_in_policy();
 	check_policy_values();
 	close(peer_fd);

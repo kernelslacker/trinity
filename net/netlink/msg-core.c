@@ -309,7 +309,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			      struct socket_triplet *triplet,
 			      unsigned short nlmsg_type, int nfgen_family)
 {
+	const struct nla_attr_spec *spec_table;
 	struct nlmsghdr *nlh;
+	size_t nr_specs = 0;
 	size_t body_len;
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
@@ -372,22 +374,21 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	 * cmd's table depends on its cmd and dump flag, both set above.
 	 * Audit messages don't use nlattr — skip for that protocol. */
 	num_attrs = (triplet->protocol == NETLINK_AUDIT) ? 0 : rnd_modulo_u32(8);
-	if (num_attrs > 0) {
-		const struct nla_attr_spec *spec_table;
-		size_t nr_specs = 0;
+	spec_table = pick_spec_table(triplet->protocol, nlh, &nr_specs);
 
-		spec_table = pick_spec_table(triplet->protocol, nlh, &nr_specs);
+	/* What the cmd's handler cannot do without goes in ahead of the
+	 * random draws, and so is in most requests, not the few that happen
+	 * to draw it. */
+	offset = append_required_attrs(msg, offset, buflen, spec_table, nr_specs);
 
-		while (num_attrs-- > 0 && offset < buflen) {
-			size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
-							 spec_table, nr_specs,
-							 triplet, nlmsg_type,
-							 body_family,
-							 rtnl_group);
-			if (new_off == 0)
-				break;
-			offset = new_off;
-		}
+	while (num_attrs-- > 0 && offset < buflen) {
+		size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
+						 spec_table, nr_specs,
+						 triplet, nlmsg_type,
+						 body_family, rtnl_group);
+		if (new_off == 0)
+			break;
+		offset = new_off;
 	}
 
 	/* Set nlmsg_len — usually correct, sometimes corrupted */

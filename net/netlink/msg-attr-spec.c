@@ -234,8 +234,32 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
 				nr_specs, own);
 }
 
-/* 1-3 attributes drawn from table into the avail bytes at inner; returns
- * the bytes used. */
+/*
+ * The children of a nest that its handler needs: each spec of the nest's own
+ * table marked required, left out one time in eight so the handler's
+ * missing-attribute arm keeps seeing traffic.  An unmarked spec draws nothing
+ * from the RNG, so a table with no marks is emitted as it was.
+ */
+static size_t append_required_children(unsigned char *inner, size_t avail,
+				       const struct nla_attr_spec *table,
+				       size_t nr_specs)
+{
+	size_t off = 0;
+	size_t i;
+
+	for (i = 0; i < nr_specs; i++) {
+		if (!table[i].required || ONE_IN(8))
+			continue;
+		off = append_spec_flat(inner, off, avail, &table[i], table,
+				       nr_specs, true);
+	}
+	return off;
+}
+
+/* The children a nest's handler needs, if it has a table of its own, and
+ * then 1-3 attributes drawn from table into the avail bytes at inner;
+ * returns the bytes used.  A nest without a table is drawn from the outer
+ * policy's, whose marks are not its own. */
 static size_t append_nest_children(unsigned char *inner, size_t avail,
 				   const struct nla_attr_spec *table,
 				   size_t nr_specs, bool own)
@@ -243,6 +267,8 @@ static size_t append_nest_children(unsigned char *inner, size_t avail,
 	size_t off = 0;
 	int child_count = RAND_RANGE(1, 3);
 
+	if (own)
+		off = append_required_children(inner, avail, table, nr_specs);
 	while (child_count-- > 0) {
 		size_t new_off = append_specced_flat(inner, off, avail,
 						     table, nr_specs, own);
@@ -395,6 +421,29 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 	return append_spec_top(buf, offset, buflen,
 			       &table[rnd_modulo_u32(nr_specs)], table,
 			       nr_specs);
+}
+
+/*
+ * The attributes of table that its handler needs: each spec marked
+ * required, left out one time in eight so the handler's missing-attribute
+ * arm keeps seeing traffic.  build_one_nlmsg emits them ahead of the random
+ * draws, which can bring a left-out one back, so a request lacks one a
+ * little less often than that.  An unmarked spec draws nothing from the RNG,
+ * so a table with no marks is emitted as it was.
+ */
+size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
+			     const struct nla_attr_spec *table,
+			     size_t nr_specs)
+{
+	size_t i;
+
+	for (i = 0; i < nr_specs; i++) {
+		if (!table[i].required || ONE_IN(8))
+			continue;
+		offset = append_spec_top(buf, offset, buflen, &table[i], table,
+					 nr_specs);
+	}
+	return offset;
 }
 
 /*

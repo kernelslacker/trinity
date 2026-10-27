@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 /*
  * Per-attribute kind metadata used by the netlink message generator's
  * spec-driven attribute path.  Lives in its own header so per-genetlink
@@ -98,4 +100,15 @@ struct nla_attr_spec {
 
 	/* NLA_KIND_STRING_WORD: the string the attribute carries. */
 	const char *word;
+
+	/* Set when the attribute's handler returns early, or skips the nest
+	 * that holds it, unless it is there: a GENL_REQ_ATTR_CHECK() or an
+	 * "if (!attrs[X]) return -EINVAL".  The emitter puts such an
+	 * attribute in each request, and in each element of a nest with a
+	 * table of its own, but one time in eight, so the handler's
+	 * missing-attribute arm still sees traffic.  Only a table of several
+	 * attributes needs it: the random draws leave a given one out of
+	 * most requests there, where a table of one is drawn from every
+	 * time. */
+	bool required;
 };
