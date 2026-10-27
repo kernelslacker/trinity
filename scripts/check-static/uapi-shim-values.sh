@@ -450,16 +450,13 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
     mkdir -p "$BATCH2_DIR"
     split -l 100 "$SYMS_BAD" "$BATCH2_DIR/batch-"
 
-    # Run batches serially so we can inspect the per-batch exit status and
-    # error output.  A batch that exits non-zero with a 'fatal error:' line
-    # (even alongside undeclared-identifier diagnostics) did not fully evaluate
-    # its symbols; those symbols must remain unresolved rather than be silently
-    # counted as resolved.
-    TIER2_OK=0
-    FATAL_SYMS="$WORKDIR/tier2-fatal-syms.txt"
-    touch "$FATAL_SYMS"
-
-    for batch in "$BATCH2_DIR"/batch-*; do
+    # Compile the batches in parallel, as Tier 1 does.  A batch spends its time
+    # in gcc's did-you-mean search for each undeclared symbol, about 20ms
+    # apiece, which made one batch after another the longest step of the whole
+    # gate.  Each leaves its exit status next to its diagnostics, so the
+    # inspection below can still tell the batches apart.
+    batches=("$BATCH2_DIR"/batch-*)
+    for batch in "${batches[@]}"; do
         [ -f "$batch" ] || continue
         bname=$(basename "$batch")
         {
@@ -467,13 +464,30 @@ if [ -n "$HDR_INSTALL" ] && [ -s "$SYMS_BAD" ]; then
             awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$batch"
             echo 'return 0;}'
         } > "$BATCH2_DIR/${bname}.c"
-        gcc -w -fmax-errors=200 \
-            -I"$LINUS_HDR_INC" \
-            -include "$PCH_HDR2" \
-            -o "$BATCH2_DIR/${bname}.out" "$BATCH2_DIR/${bname}.c" \
-            2>"$BATCH2_DIR/${bname}.err"
-        batch_exit=$?
-        if [ $batch_exit -ne 0 ]; then
+        (
+            gcc -w -fmax-errors=200 \
+                -I"$LINUS_HDR_INC" \
+                -include "$PCH_HDR2" \
+                -o "$BATCH2_DIR/${bname}.out" "$BATCH2_DIR/${bname}.c" \
+                2>"$BATCH2_DIR/${bname}.err"
+            echo $? > "$BATCH2_DIR/${bname}.rc"
+        ) &
+    done
+    wait
+
+    # A batch that exits non-zero with a 'fatal error:' line (even alongside
+    # undeclared-identifier diagnostics) did not fully evaluate its symbols;
+    # those symbols must remain unresolved rather than be silently counted as
+    # resolved.
+    TIER2_OK=0
+    FATAL_SYMS="$WORKDIR/tier2-fatal-syms.txt"
+    touch "$FATAL_SYMS"
+
+    for batch in "${batches[@]}"; do
+        [ -f "$batch" ] || continue
+        bname=$(basename "$batch")
+        batch_exit=$(< "$BATCH2_DIR/${bname}.rc")
+        if [ "$batch_exit" -ne 0 ]; then
             # A 'fatal error:' means the compiler stopped mid-translation-unit;
             # symbols after the cutoff were never evaluated.  Treat any non-zero
             # exit that carries a fatal error as a full batch failure regardless
