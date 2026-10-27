@@ -34,18 +34,16 @@ enum nla_kind {
 	 * sees plausibly-shaped input.  Use for attrs the kernel feeds
 	 * to those parsers — e.g. taskstats REGISTER_CPUMASK. */
 	NLA_KIND_STRING_CPULIST,
-	/* A scalar the kernel policy bounds, in network byte order, which is
-	 * how the netfilter NLA_BE16 / NLA_BE32 policies read it.  max_len
-	 * holds the bound rather than a length.  The _MASK kinds mirror
-	 * NLA_POLICY_MASK and fill a random subset of the max_len bits;
-	 * NLA_KIND_BE32_MAX mirrors NLA_POLICY_MAX and fills a number in
-	 * [0, max_len].  NLA_KIND_BE32_RANGE fills a number in [min_len,
-	 * max_len], both ends inclusive, for a word that the handler bounds
-	 * where the policy leaves it a plain NLA_U32.  One draw in eight is
-	 * random bytes, so the reject arm still sees traffic. */
+	/* A scalar the kernel bounds, in network byte order, which is how the
+	 * netfilter NLA_BE16 / NLA_BE32 policies read it.  max_len holds the
+	 * bound rather than a length.  The _MASK kinds mirror NLA_POLICY_MASK
+	 * and fill a random subset of the max_len bits; NLA_KIND_BE32_RANGE
+	 * fills a number in [min_len, max_len], both ends inclusive, which with
+	 * a min_len of 0 is an NLA_POLICY_MAX, and which a handler may put on
+	 * a word whose policy is a plain NLA_U32.  One draw in eight is random
+	 * bytes, so the reject arm still sees traffic. */
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
-	NLA_KIND_BE32_MAX,
 	NLA_KIND_BE32_RANGE,
 	/* The same for a u32 the genl policies read in host byte order.
 	 * NLA_KIND_U32_MASK mirrors NLA_POLICY_MASK(NLA_U32, max_len);

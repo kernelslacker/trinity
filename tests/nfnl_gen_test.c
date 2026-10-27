@@ -468,16 +468,15 @@ static void check_slot_fraction(const char *name, unsigned int in_bounds)
 	}
 }
 
-/* A mask draw must also set and clear every bit of the mask, and a max or
- * range draw reach both ends of the range, which an always-zero or
- * always-full word does not.  Under a small floor the only draws are random
- * bytes, which come out under it about once in 2^16 draws or less, so a
- * range that is drawn from under its floor shows at once. */
+/* A mask draw must also set and clear every bit of the mask, and a range
+ * draw reach both ends of the range, which an always-zero or always-full
+ * word does not.  Under a small floor the only draws are random bytes, which
+ * come out under it about once in 2^16 draws or less, so a range that is
+ * drawn from under its floor shows at once. */
 static void check_bounded_spec(const struct nla_attr_spec *spec,
 			       const struct bounded_slot *slot)
 {
-	const bool mask = slot->kind != NLA_KIND_BE32_MAX &&
-			  slot->kind != NLA_KIND_BE32_RANGE;
+	const bool mask = slot->kind != NLA_KIND_BE32_RANGE;
 	uint32_t min_v = UINT32_MAX, max_v = 0, or_all = 0, and_all = UINT32_MAX;
 	unsigned int round, in_bounds = 0, below = 0;
 
