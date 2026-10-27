@@ -1237,6 +1237,7 @@ static struct cmd_policy ovs_ct_limit_cmds[] = {
 
 #if __has_include(<linux/tipc_netlink.h>)
 #include <linux/tipc.h>
+#include <linux/tipc_config.h>
 #include <linux/tipc_netlink.h>
 
 extern struct genl_family_grammar fam_tipc;
@@ -1251,13 +1252,15 @@ extern struct genl_family_grammar fam_tipc;
  * BROADCAST and MON_PEER_GET's to a MON nest without REF.  KEY_SET parses
  * its NODE nest strictly.  What only replies carry is not listed.
  */
+/* tipc_nl_parse_link_prop() bounds PRIO, TOL and WIN, the broadcast link
+ * BROADCAST_RATIO, and the policy MTU. */
 static struct slot tipc_prop[] = {
-	S_U32(TIPC_NLA_PROP_PRIO),
-	S_U32(TIPC_NLA_PROP_TOL),
-	S_U32(TIPC_NLA_PROP_WIN),
+	S_U32_RANGE(TIPC_NLA_PROP_PRIO, 0, TIPC_MAX_LINK_PRI),
+	S_U32_RANGE(TIPC_NLA_PROP_TOL, TIPC_MIN_LINK_TOL, TIPC_MAX_LINK_TOL),
+	S_U32_RANGE(TIPC_NLA_PROP_WIN, TIPC_DEF_LINK_WIN, TIPC_MAX_LINK_WIN),
 	S_U32_RANGE(TIPC_NLA_PROP_MTU, 0, 65535),
 	S_U32(TIPC_NLA_PROP_BROADCAST),
-	S_U32(TIPC_NLA_PROP_BROADCAST_RATIO),
+	S_U32_RANGE(TIPC_NLA_PROP_BROADCAST_RATIO, 1, 100),
 };
 static struct slot tipc_udp[] = {
 	S_BLOB(TIPC_NLA_UDP_LOCAL, 0, sizeof(struct sockaddr_storage)),

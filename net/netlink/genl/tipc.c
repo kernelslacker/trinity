@@ -10,6 +10,7 @@
 
 #include <sys/socket.h>
 #include <linux/tipc.h>
+#include <linux/tipc_config.h>
 #include <linux/tipc_netlink.h>
 
 #include "netlink-genl-families.h"
@@ -22,7 +23,10 @@
  * but udp_media.c reads it as a flag.  The two addresses are
  * sockaddr_storage.  LINK_NAME and BEARER_NAME are NLA_NUL_STRING, so a
  * byte at least, and MEDIA_NAME an NLA_STRING.  A PROP nest's MTU is at
- * most U16_MAX (tipc_nl_mtu_range).  Every handler of a bearer, link or
+ * most U16_MAX (tipc_nl_mtu_range), and tipc_nl_parse_link_prop(), which
+ * every PROP nest goes through, refuses a PRIO, TOL or WIN outside the
+ * TIPC_*_LINK_* bounds, as the broadcast link does a BROADCAST_RATIO
+ * outside 1 to 100.  Every handler of a bearer, link or
  * media nest answers -EINVAL to one without its NAME, and PUBL_GET's
  * dumpit to a SOCK nest without REF, the one attribute of the nest that a
  * request is read for.  A NAME is one the handlers find: "broadcast-link",
@@ -32,12 +36,14 @@
  * out.
  */
 static const struct nla_attr_spec tipc_prop_attrs[] = {
-	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32,    4 },
-	{ TIPC_NLA_PROP_TOL,		NLA_KIND_U32,    4 },
-	{ TIPC_NLA_PROP_WIN,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_PRI, 0 },
+	{ TIPC_NLA_PROP_TOL,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_TOL,
+	  TIPC_MIN_LINK_TOL },
+	{ TIPC_NLA_PROP_WIN,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_WIN,
+	  TIPC_DEF_LINK_WIN },
 	{ TIPC_NLA_PROP_MTU,		NLA_KIND_U32_RANGE, 65535, 0 },
 	{ TIPC_NLA_PROP_BROADCAST,	NLA_KIND_U32,    4 },
-	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32,   4 },
+	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32_RANGE, 100, 1 },
 };
 
 static const struct nla_attr_spec tipc_udp_attrs[] = {
