@@ -494,41 +494,34 @@ struct genl_family_grammar fam_ovs_flow = {
 
 /* ---- ovs_packet ---- */
 
-static const struct genl_cmd_grammar ovs_packet_cmds[] = {
-	{ OVS_PACKET_CMD_EXECUTE, "OVS_PACKET_CMD_EXECUTE" },
-};
-
 /*
- * Packet inject path.  Userspace sends OVS_PACKET_CMD_EXECUTE with a
- * packet blob, the flow key the kernel should treat the packet as
- * having, and an action list to execute.  KEY and ACTIONS reuse the
- * OVS_KEY_ATTR_* / OVS_ACTION_ATTR_* sub-namespaces — the same
- * machinery the flow family parses, but reached via a separate per-cmd
- * policy in net/openvswitch/datapath.c::packet_policy.  Listing only
- * the outer OVS_PACKET_ATTR_* here keeps this table small: KEY and
- * ACTIONS are bare NLA_NESTED in packet_policy, and the generator
- * fills them with children drawn from this table, not with
- * OVS_KEY_ATTR_* / OVS_ACTION_ATTR_* ones.
+ * packet_policy, which EXECUTE validates liberally: PACKET is ETH_HLEN
+ * bytes at least, and ovs_packet_cmd_execute() answers -EINVAL without
+ * PACKET, KEY or ACTIONS, the last two parsed in a flow's key and action
+ * namespaces.  USERDATA, EGRESS_TUN_KEY and LEN are an upcall's.
  */
-static const struct nla_attr_spec ovs_packet_attrs[] = {
-	{ OVS_PACKET_ATTR_PACKET,		NLA_KIND_BINARY, 256 },
-	{ OVS_PACKET_ATTR_KEY,			NLA_KIND_NESTED, 0 },
-	{ OVS_PACKET_ATTR_ACTIONS,		NLA_KIND_NESTED, 0 },
-	{ OVS_PACKET_ATTR_USERDATA,		NLA_KIND_BINARY, 32 },
-	{ OVS_PACKET_ATTR_EGRESS_TUN_KEY,	NLA_KIND_NESTED, 0 },
+static const struct nla_attr_spec ovs_packet_execute_attrs[] = {
+	{ OVS_PACKET_ATTR_PACKET,		NLA_KIND_BINARY, 256, ETH_HLEN,
+	  .required = true },
+	{ OVS_PACKET_ATTR_KEY,			NLA_KIND_NESTED, 0, 0,
+	  ovs_key_attrs, ARRAY_SIZE(ovs_key_attrs), .required = true },
+	{ OVS_PACKET_ATTR_ACTIONS,		NLA_KIND_NESTED, 0, 0,
+	  ovs_action_attrs, ARRAY_SIZE(ovs_action_attrs), .required = true },
 	{ OVS_PACKET_ATTR_PROBE,		NLA_KIND_FLAG,   0 },
 	{ OVS_PACKET_ATTR_MRU,			NLA_KIND_U16,    2 },
-	{ OVS_PACKET_ATTR_LEN,			NLA_KIND_U32,    4 },
 	{ OVS_PACKET_ATTR_HASH,			NLA_KIND_U64,    8 },
 	{ OVS_PACKET_ATTR_UPCALL_PID,		NLA_KIND_U32,    4 },
+};
+
+static const struct genl_cmd_grammar ovs_packet_cmds[] = {
+	{ OVS_PACKET_CMD_EXECUTE, "OVS_PACKET_CMD_EXECUTE",
+	  ovs_packet_execute_attrs, ARRAY_SIZE(ovs_packet_execute_attrs) },
 };
 
 struct genl_family_grammar fam_ovs_packet = {
 	.name = OVS_PACKET_FAMILY,
 	.cmds = ovs_packet_cmds,
 	.n_cmds = ARRAY_SIZE(ovs_packet_cmds),
-	.attrs = ovs_packet_attrs,
-	.n_attrs = ARRAY_SIZE(ovs_packet_attrs),
 	.default_version = OVS_PACKET_VERSION,
 	.hdrsize = OVS_FAM_HDRSIZE,
 };

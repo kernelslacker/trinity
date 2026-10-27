@@ -67,6 +67,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_CT_LIMIT	724
 #define ID_TIPC		725
 #define ID_OVS_FLOW	726
+#define ID_OVS_PACKET	727
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1468,6 +1469,24 @@ static struct cmd_policy ovs_flow_cmds[] = {
 	P_DUMP(OVS_FLOW_CMD_GET, ovs_flow_dump),
 	P_CMD(OVS_FLOW_CMD_SET, ovs_flow_set),
 };
+
+extern struct genl_family_grammar fam_ovs_packet;
+
+/* net/openvswitch/datapath.c: packet_policy, under which PACKET is
+ * ETH_HLEN bytes at least.  ovs_packet_cmd_execute() answers -EINVAL
+ * without PACKET, KEY or ACTIONS, the last two a flow's key and actions. */
+static struct slot ovs_packet_execute[] = {
+	S_BLOB(OVS_PACKET_ATTR_PACKET, ETH_HLEN, 0xffff, .required = true),
+	S_NEST(OVS_PACKET_ATTR_KEY, ovs_key, .required = true),
+	S_NEST(OVS_PACKET_ATTR_ACTIONS, ovs_action, .required = true),
+	S_FLAG(OVS_PACKET_ATTR_PROBE),
+	S_U16(OVS_PACKET_ATTR_MRU),
+	S_U64(OVS_PACKET_ATTR_HASH),
+	S_U32(OVS_PACKET_ATTR_UPCALL_PID),
+};
+static struct cmd_policy ovs_packet_cmds[] = {
+	P_CMD(OVS_PACKET_CMD_EXECUTE, ovs_packet_execute),
+};
 #endif
 
 #if __has_include(<linux/tipc_netlink.h>)
@@ -1620,6 +1639,8 @@ static struct policy_family policy_families[] = {
 	{ &fam_ovs_meter, ID_OVS_METER, ovs_meter_cmds,
 	  ARRAY_SIZE(ovs_meter_cmds) },
 	{ &fam_ovs_flow, ID_OVS_FLOW, ovs_flow_cmds, ARRAY_SIZE(ovs_flow_cmds) },
+	{ &fam_ovs_packet, ID_OVS_PACKET, ovs_packet_cmds,
+	  ARRAY_SIZE(ovs_packet_cmds) },
 	{ &fam_ovs_ct_limit, ID_OVS_CT_LIMIT, ovs_ct_limit_cmds,
 	  ARRAY_SIZE(ovs_ct_limit_cmds) },
 #endif
