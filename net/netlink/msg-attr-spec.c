@@ -40,6 +40,8 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_BE32_MASK:
 	case NLA_KIND_BE32_MAX:
 	case NLA_KIND_BE32_ONEOF:
+	case NLA_KIND_U32_MASK:
+	case NLA_KIND_U32_RANGE:
 		return 4;
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING_WORD:
@@ -65,11 +67,12 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 
 /*
  * Fill a scalar the kernel narrows: a random subset of the policy's mask
- * bits, a number in [0, max], or one of the values the handler accepts, in
- * network byte order as the NLA_BE16 / NLA_BE32 policies read it, or the
- * byte of an NLA_U8.  One draw in eight stays random bytes so the reject
- * arm keeps seeing traffic, as does a payload that a full buffer cut short
- * of the scalar's width.
+ * bits, a number in [0, max] or [min, max], or one of the values the
+ * handler accepts.  The netfilter NLA_BE16 / NLA_BE32 policies read it in
+ * network byte order, the genl NLA_U32 ones in host order, and an NLA_U8
+ * is a byte.  One draw in eight stays random bytes so the reject arm keeps
+ * seeing traffic, as does a payload that a full buffer cut short of the
+ * scalar's width.
  */
 static void spec_fill_bounded(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -85,6 +88,9 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 	case NLA_KIND_BE32_MAX:
 		v = rnd_modulo_u32(spec->max_len + 1U);
 		break;
+	case NLA_KIND_U32_RANGE:
+		v = spec->min_len + rnd_modulo_u32(spec->max_len - spec->min_len + 1U);
+		break;
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
 	case NLA_KIND_BE32_ONEOF:
@@ -94,7 +100,9 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 		v = rnd_u32() & spec->max_len;
 	}
 
-	if (len == 1) {
+	if (spec->kind == NLA_KIND_U32_MASK || spec->kind == NLA_KIND_U32_RANGE) {
+		memcpy(p, &v, sizeof(v));
+	} else if (len == 1) {
 		*p = v;
 	} else if (len == 2) {
 		uint16_t be = htons(v);
@@ -144,6 +152,8 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	case NLA_KIND_BE16_MASK:
 	case NLA_KIND_BE32_MASK:
 	case NLA_KIND_BE32_MAX:
+	case NLA_KIND_U32_MASK:
+	case NLA_KIND_U32_RANGE:
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
 	case NLA_KIND_BE32_ONEOF:

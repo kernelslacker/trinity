@@ -12,6 +12,7 @@
 
 #include <errno.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -324,11 +325,19 @@ static void put_ops_first_family(struct reply *r,
 /*
  * A slot of a kernel nla_policy as far as the generator shapes it: the
  * attribute's id, the payload lengths it takes and, for a nest, the policy
- * its children meet.  Values, a flags mask or an enum range, are not the
- * generator's to shape and are not modelled.  seen counts what the
- * generator emitted, so a slot it never reaches shows up.
+ * its children meet.  A u32 that the policy bounds with a mask or a range
+ * says so, and the generator draws inside the bound most of the time, so a
+ * draw outside it is tallied rather than refused: the policy's reject arm
+ * wants some.  Other values are not the generator's to shape and are not
+ * modelled.  seen counts what the generator emitted, so a slot it never
+ * reaches shows up.
  */
 enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
+
+/* NLA_POLICY_MASK: hi holds the bits a value may set.  NLA_POLICY_RANGE:
+ * lo to hi, both inclusive; MAX and MIN are ranges that start at 0 and end
+ * at the top of the type. */
+enum slot_bound { SB_NONE, SB_MASK, SB_RANGE };
 
 struct slot {
 	unsigned short id;
@@ -337,6 +346,10 @@ struct slot {
 	struct slot *nest;		/* SK_NEST, SK_ARRAY: the children's policy */
 	unsigned int n_nest;
 	unsigned int seen;
+	unsigned char bound;		/* a u32's bound, host order */
+	unsigned int lo, hi;
+	unsigned int in_bound;		/* draws inside it, and what they span: */
+	unsigned int or_all, and_all, min_v, max_v;
 };
 
 #define S_BLOB(id, lo, hi)	{ id, SK_BYTES, lo, hi }
@@ -349,6 +362,9 @@ struct slot {
 #define S_STR(id, hi)		{ id, SK_STRING, 1, hi }
 #define S_NEST(id, tbl)		{ id, SK_NEST, 0, 0, tbl, ARRAY_SIZE(tbl) }
 #define S_ARRAY(id, tbl)	{ id, SK_ARRAY, 0, 0, tbl, ARRAY_SIZE(tbl) }
+#define S_U32_MASK(id, bits)	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits }
+#define S_U32_RANGE(id, from, to) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to }
 
 /*
  * What a cmd's request takes.  A cmd with one row is checked the same
@@ -1066,6 +1082,33 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 	return NULL;
 }
 
+/*
+ * Whether the host-order u32 at p is inside the slot's bound.  What is
+ * inside is kept apart, with the bits it sets and the ends it reaches, so
+ * that a spec which draws from less of the bound than the policy allows
+ * shows up as well as one that strays outside it.
+ */
+static void tally_bound(struct slot *slot, const unsigned char *p)
+{
+	uint32_t v;
+
+	memcpy(&v, p, sizeof(v));
+	if (slot->bound == SB_MASK ? (v & ~slot->hi) != 0 :
+				     (v < slot->lo || v > slot->hi))
+		return;
+
+	if (slot->in_bound++ == 0) {
+		slot->or_all = slot->and_all = slot->min_v = slot->max_v = v;
+		return;
+	}
+	slot->or_all |= v;
+	slot->and_all &= v;
+	if (v < slot->min_v)
+		slot->min_v = v;
+	if (v > slot->max_v)
+		slot->max_v = v;
+}
+
 static bool stream_conforms(const unsigned char *p, size_t len,
 			    struct slot *slots, unsigned int n_slots);
 
@@ -1129,6 +1172,8 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 		case SK_BYTES:
 			if (plen < slot->min || plen > slot->max)
 				return false;
+			if (slot->bound != SB_NONE)
+				tally_bound(slot, p + off + NLA_HDRLEN);
 			break;
 		case SK_SINT:
 			if (plen != 4 && plen != 8)
@@ -1205,6 +1250,68 @@ static void expect_slots_seen(const struct slot *slots, unsigned int n_slots,
 			BUG("genl ops: a policy's attribute is out of the generator's reach");
 		}
 		expect_slots_seen(slots[i].nest, slots[i].n_nest, what);
+	}
+}
+
+#define BOUND_SAMPLES	1000
+
+/*
+ * A bounded slot is filled inside its bound seven draws in eight; the
+ * eighth is random bytes, which land inside as often as the bound's share
+ * of the 2^32 values, so the fraction inside is 0.875 plus that share of
+ * 0.125.  Over the 1000 draws or more asked for it has a standard deviation
+ * of about 0.01, so 0.06 either way turns away a spec that never strays
+ * outside the bound and one that never settles inside it.  The draws inside
+ * must also span the bound, which a spec with a narrower one than the
+ * policy's does not: a mask sets and clears each of its bits, and a range
+ * reaches to within a tenth of its width of both ends.
+ */
+static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
+				 const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		const struct slot *slot = &slots[i];
+		double share, want, frac;
+		bool spans;
+
+		expect_slots_bounded(slot->nest, slot->n_nest, what);
+		if (slot->bound == SB_NONE)
+			continue;
+
+		if (slot->seen < BOUND_SAMPLES) {
+			fprintf(stderr, "%s: attribute %u drawn %u times, want %u\n",
+				what, slot->id, slot->seen, BOUND_SAMPLES);
+			BUG("genl ops: too few draws to judge a bounded attribute");
+		}
+
+		if (slot->bound == SB_MASK)
+			share = (double) (1ULL << __builtin_popcount(slot->hi)) / 4294967296.0;
+		else
+			share = ((double) slot->hi - slot->lo + 1) / 4294967296.0;
+		want = 0.875 + 0.125 * share;
+		frac = (double) slot->in_bound / slot->seen;
+		if (frac < want - 0.06 || frac > want + 0.06) {
+			fprintf(stderr, "%s: %u of %u draws of attribute %u inside the bound, want a fraction near %.3f\n",
+				what, slot->in_bound, slot->seen, slot->id, want);
+			BUG("genl ops: a bounded attribute is not drawn from its bound");
+		}
+
+		if (slot->bound == SB_MASK) {
+			spans = slot->or_all == slot->hi && slot->and_all == 0;
+		} else {
+			uint32_t slack = (slot->hi - slot->lo) / 10;
+
+			spans = slot->min_v - slot->lo <= slack &&
+				slot->hi - slot->max_v <= slack;
+		}
+		if (!spans) {
+			fprintf(stderr, "%s: draws of attribute %u inside the bound set %#x and keep %#x, from %u to %u\n",
+				what, slot->id, slot->or_all, slot->and_all,
+				slot->min_v, slot->max_v);
+			BUG("genl ops: a bounded attribute does not cover its bound");
+		}
 	}
 }
 
@@ -1381,6 +1488,64 @@ static void check_nest_tables(void)
 	}
 }
 
+/* ---------- Checking the values of the bounded scalars ------------------- */
+
+#define BOUND_ROUNDS	20000
+
+/*
+ * BOUND_ROUNDS attributes drawn from table, each held to the mirror of the
+ * policy the table stands for, and then the bounded slots they filled held
+ * to their bounds.  The 2048 bytes leave an attribute room, so none is cut
+ * short.
+ */
+static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_table,
+				struct slot *mirror, unsigned int n_mirror,
+				const char *what)
+{
+	unsigned char buf[2048];
+	unsigned int round;
+
+	for (round = 0; round < BOUND_ROUNDS; round++) {
+		size_t end;
+
+		memset(buf, 0, sizeof(buf));
+		end = append_specced_nlattr(buf, 0, sizeof(buf), table, n_table);
+		if (stream_conforms(buf, end, mirror, n_mirror))
+			continue;
+		fprintf(stderr, "%s:\n", what);
+		hexdump(buf, end);
+		BUG("genl ops: a draw carries what its policy refuses");
+	}
+	expect_slots_bounded(mirror, n_mirror, what);
+}
+
+/*
+ * Each bounded kind through the emitter: a mask of one bit and one of
+ * eighteen, as wide as nfsd's export flags; a range from 1 and one from 0,
+ * which is NLA_POLICY_MAX; and one that runs to the top of the type, as
+ * NLA_POLICY_MIN does.
+ */
+static void check_bounded_tables(void)
+{
+	static const struct nla_attr_spec specs[] = {
+		{ 1, NLA_KIND_U32_MASK, 0x1 },
+		{ 2, NLA_KIND_U32_MASK, 0x3ffff },
+		{ 3, NLA_KIND_U32_RANGE, 6, 1 },
+		{ 4, NLA_KIND_U32_RANGE, 4095 },
+		{ 5, NLA_KIND_U32_RANGE, UINT32_MAX, 68 },
+	};
+	static struct slot mirror[] = {
+		S_U32_MASK(1, 0x1),
+		S_U32_MASK(2, 0x3ffff),
+		S_U32_RANGE(3, 1, 6),
+		S_U32_RANGE(4, 0, 4095),
+		S_U32_RANGE(5, 68, UINT32_MAX),
+	};
+
+	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
+			    "bounded tables");
+}
+
 /* ---------- Checking which attribute table a cmd draws from ------------ */
 
 struct table_case {
@@ -1483,6 +1648,7 @@ void genl_ops_self_check(void)
 	check_flags();
 	check_cmd_attr_tables();
 	check_nest_tables();
+	check_bounded_tables();
 	check_attrs_in_policy();
 	close(peer_fd);
 }

@@ -35,14 +35,21 @@ enum nla_kind {
 	/* A scalar the kernel policy bounds, in network byte order, which is
 	 * how the netfilter NLA_BE16 / NLA_BE32 policies read it.  max_len
 	 * holds the bound rather than a length.  The _MASK kinds mirror
-	 * NLA_POLICY_MASK and fill a random subset of the max_len bits, so
-	 * the mask has to fit in 16 bits; NLA_KIND_BE32_MAX mirrors
-	 * NLA_POLICY_MAX and fills a number in [0, max_len].  One draw in
-	 * eight is random bytes, so the policy's reject arm still sees
-	 * traffic. */
+	 * NLA_POLICY_MASK and fill a random subset of the max_len bits;
+	 * NLA_KIND_BE32_MAX mirrors NLA_POLICY_MAX and fills a number in
+	 * [0, max_len].  One draw in eight is random bytes, so the policy's
+	 * reject arm still sees traffic. */
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
 	NLA_KIND_BE32_MAX,
+	/* The same for a u32 the genl policies read in host byte order.
+	 * NLA_KIND_U32_MASK mirrors NLA_POLICY_MASK(NLA_U32, max_len);
+	 * NLA_KIND_U32_RANGE mirrors NLA_POLICY_RANGE(NLA_U32, min_len,
+	 * max_len) and fills a number in [min_len, max_len], both ends
+	 * inclusive, so NLA_POLICY_MAX is a min_len of 0 and NLA_POLICY_MIN
+	 * a max_len of UINT32_MAX.  One draw in eight is random bytes. */
+	NLA_KIND_U32_MASK,
+	NLA_KIND_U32_RANGE,
 	/* A scalar the handler, not the policy, narrows to a few values,
 	 * which the spec lists in oneof.  Stored as the policy's width reads
 	 * it: a byte, or big-endian.  One draw in eight is random bytes, so
@@ -66,12 +73,14 @@ enum nla_kind {
 struct nla_attr_spec {
 	unsigned short type;
 	unsigned short kind;
-	unsigned short max_len;	/* upper bound on payload; 0 for fixed kinds;
+	unsigned int max_len;	/* upper bound on payload; 0 for fixed kinds;
 				 * the mask or maximum for the bounded
-				 * scalar kinds */
-	unsigned short min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
+				 * scalar kinds, which a mask or maximum may
+				 * fill all 32 bits of */
+	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
-				 * max_len}.  Zero on other kinds. */
+				 * max_len}; for NLA_KIND_U32_RANGE the
+				 * smallest number.  Zero on other kinds. */
 
 	/* NLA_KIND_NESTED, NLA_KIND_NESTED_ARRAY: the table the nest's
 	 * children are drawn from, n_nest long, typed as the nest's own
