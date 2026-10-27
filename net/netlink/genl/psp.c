@@ -24,38 +24,38 @@ static const struct nla_attr_spec psp_keys_attrs[] = {
  * no slot for costs an -EINVAL, and every namespace starts at 1: a cmd takes
  * only the ids of its own.  What the replies carry, the version
  * capabilities, the association list, RX_KEY and the counters, is not in a
- * request policy.  NSID is an s32; VERSIONS_ENA is a mask and VERSION is
- * capped, which a plain u32 does not honour.
+ * request policy.  NSID is an s32, a device id is at least 1,
+ * VERSIONS_ENA a mask of the four versions and VERSION at most 3.
  */
 static const struct nla_attr_spec psp_dev_id_attrs[] = {
-	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec psp_dev_set_attrs[] = {
-	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
-	{ PSP_A_DEV_PSP_VERSIONS_ENA,	NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ PSP_A_DEV_PSP_VERSIONS_ENA,	NLA_KIND_U32_MASK, 0xf },
 };
 
 static const struct nla_attr_spec psp_rx_assoc_attrs[] = {
-	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32,    4 },
-	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32,    4 },
+	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0 },
 	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
 };
 
 static const struct nla_attr_spec psp_tx_assoc_attrs[] = {
-	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32,    4 },
-	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32,    4 },
+	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0 },
 	{ PSP_A_ASSOC_TX_KEY,		NLA_KIND_NESTED, 0, 0,
 	  psp_keys_attrs, ARRAY_SIZE(psp_keys_attrs) },
 	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
 };
 
 static const struct nla_attr_spec psp_get_stats_attrs[] = {
-	{ PSP_A_STATS_DEV_ID,		NLA_KIND_U32,    4 },
+	{ PSP_A_STATS_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec psp_dev_assoc_attrs[] = {
-	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ PSP_A_DEV_IFINDEX,		NLA_KIND_U32,    4 },
 	{ PSP_A_DEV_NSID,		NLA_KIND_U32,    4 },
 };
