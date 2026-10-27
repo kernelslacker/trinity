@@ -624,6 +624,15 @@ check_enum_member linux/sunrpc_netlink.h SUNRPC_A_IP_MAP_SEQNO \
 # psp's device netns id, taken by DEV_ASSOC and DEV_DISASSOC.
 check_enum_member linux/psp.h PSP_A_DEV_NSID
 
+# netdev's attributes added since v6.12, and the cmds of page pools, NAPI
+# configuration and queue leasing.
+check_enum_member linux/netdev.h NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT \
+	NETDEV_A_NAPI_THREADED NETDEV_A_DMABUF_RX_PAGE_SIZE \
+	NETDEV_A_QUEUE_LEASE NETDEV_A_LEASE_IFINDEX NETDEV_A_LEASE_QUEUE \
+	NETDEV_A_LEASE_NETNS_ID NETDEV_CMD_PAGE_POOL_GET \
+	NETDEV_CMD_PAGE_POOL_STATS_GET NETDEV_CMD_NAPI_SET \
+	NETDEV_CMD_QUEUE_CREATE
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

@@ -59,6 +59,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_LOCKD	716
 #define ID_SUNRPC	717
 #define ID_PSP		718
+#define ID_NETDEV	719
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -861,6 +862,99 @@ static struct cmd_policy psp_cmds[] = {
 	P_CMD(PSP_CMD_DEV_DISASSOC, psp_dev_disassoc),
 };
 
+#if __has_include(<linux/netdev.h>)
+#include "kernel/netdev.h"
+
+extern struct genl_family_grammar fam_netdev;
+
+/*
+ * net/core/netdev-genl-gen.c: the netdev_*_nl_policy tables.  An NLA_UINT
+ * takes 4 or 8 bytes, as an NLA_SINT does.
+ */
+static struct slot netdev_queue_id[] = {
+	S_U32(NETDEV_A_QUEUE_ID),
+	S_U32(NETDEV_A_QUEUE_TYPE),
+};
+static struct slot netdev_page_pool_info[] = {
+	S_SINT(NETDEV_A_PAGE_POOL_ID),
+	S_U32(NETDEV_A_PAGE_POOL_IFINDEX),
+};
+static struct slot netdev_lease[] = {
+	S_U32(NETDEV_A_LEASE_IFINDEX),
+	S_NEST(NETDEV_A_LEASE_QUEUE, netdev_queue_id),
+	S_U32(NETDEV_A_LEASE_NETNS_ID),
+};
+static struct slot netdev_dev_get[] = {
+	S_U32(NETDEV_A_DEV_IFINDEX),
+};
+static struct slot netdev_page_pool_get_do[] = {
+	S_SINT(NETDEV_A_PAGE_POOL_ID),
+};
+static struct slot netdev_page_pool_get_dump[] = {
+	S_U32(NETDEV_A_PAGE_POOL_IFINDEX),
+};
+static struct slot netdev_page_pool_stats_get[] = {
+	S_NEST(NETDEV_A_PAGE_POOL_STATS_INFO, netdev_page_pool_info),
+};
+static struct slot netdev_queue_get_do[] = {
+	S_U32(NETDEV_A_QUEUE_IFINDEX),
+	S_U32(NETDEV_A_QUEUE_TYPE),
+	S_U32(NETDEV_A_QUEUE_ID),
+};
+static struct slot netdev_queue_get_dump[] = {
+	S_U32(NETDEV_A_QUEUE_IFINDEX),
+};
+static struct slot netdev_napi_get_do[] = {
+	S_U32(NETDEV_A_NAPI_ID),
+};
+static struct slot netdev_napi_get_dump[] = {
+	S_U32(NETDEV_A_NAPI_IFINDEX),
+};
+static struct slot netdev_qstats_get[] = {
+	S_U32(NETDEV_A_QSTATS_IFINDEX),
+	S_SINT(NETDEV_A_QSTATS_SCOPE),
+};
+static struct slot netdev_bind_rx[] = {
+	S_U32(NETDEV_A_DMABUF_IFINDEX),
+	S_U32(NETDEV_A_DMABUF_FD),
+	S_NEST(NETDEV_A_DMABUF_QUEUES, netdev_queue_id),
+	S_U32(NETDEV_A_DMABUF_RX_PAGE_SIZE),
+};
+static struct slot netdev_napi_set[] = {
+	S_U32(NETDEV_A_NAPI_ID),
+	S_U32(NETDEV_A_NAPI_DEFER_HARD_IRQS),
+	S_SINT(NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT),
+	S_SINT(NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT),
+	S_U32(NETDEV_A_NAPI_THREADED),
+};
+static struct slot netdev_bind_tx[] = {
+	S_U32(NETDEV_A_DMABUF_IFINDEX),
+	S_U32(NETDEV_A_DMABUF_FD),
+};
+static struct slot netdev_queue_create[] = {
+	S_U32(NETDEV_A_QUEUE_IFINDEX),
+	S_U32(NETDEV_A_QUEUE_TYPE),
+	S_NEST(NETDEV_A_QUEUE_LEASE, netdev_lease),
+};
+/* The dumpit of DEV_GET has no policy, so takes nothing. */
+static struct cmd_policy netdev_cmds[] = {
+	P_CMD(NETDEV_CMD_DEV_GET, netdev_dev_get),
+	P_DUMP_NONE(NETDEV_CMD_DEV_GET),
+	P_CMD(NETDEV_CMD_PAGE_POOL_GET, netdev_page_pool_get_do),
+	P_DUMP(NETDEV_CMD_PAGE_POOL_GET, netdev_page_pool_get_dump),
+	P_CMD(NETDEV_CMD_PAGE_POOL_STATS_GET, netdev_page_pool_stats_get),
+	P_CMD(NETDEV_CMD_QUEUE_GET, netdev_queue_get_do),
+	P_DUMP(NETDEV_CMD_QUEUE_GET, netdev_queue_get_dump),
+	P_CMD(NETDEV_CMD_QUEUE_CREATE, netdev_queue_create),
+	P_CMD(NETDEV_CMD_NAPI_GET, netdev_napi_get_do),
+	P_DUMP(NETDEV_CMD_NAPI_GET, netdev_napi_get_dump),
+	P_CMD(NETDEV_CMD_NAPI_SET, netdev_napi_set),
+	P_CMD(NETDEV_CMD_QSTATS_GET, netdev_qstats_get),
+	P_CMD(NETDEV_CMD_BIND_RX, netdev_bind_rx),
+	P_CMD(NETDEV_CMD_BIND_TX, netdev_bind_tx),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -887,6 +981,9 @@ static struct policy_family policy_families[] = {
 	{ &fam_sunrpc, ID_SUNRPC, sunrpc_cmds, ARRAY_SIZE(sunrpc_cmds) },
 #endif
 	{ &fam_psp, ID_PSP, psp_cmds, ARRAY_SIZE(psp_cmds) },
+#if __has_include(<linux/netdev.h>)
+	{ &fam_netdev, ID_NETDEV, netdev_cmds, ARRAY_SIZE(netdev_cmds) },
+#endif
 };
 
 /* Every cmd of these families, each with the flags of a doit and a dumpit. */

@@ -52,21 +52,54 @@
 #ifndef NETDEV_A_QSTATS_SCOPE
 #define NETDEV_A_QSTATS_SCOPE		4
 #endif
-#ifndef NETDEV_A_PAGE_POOL_NAPI_ID
-#define NETDEV_A_PAGE_POOL_NAPI_ID	3
-#endif
 #ifndef NETDEV_A_DMABUF_QUEUES
 #define NETDEV_A_DMABUF_QUEUES		2
 #endif
 #ifndef NETDEV_A_DMABUF_FD
 #define NETDEV_A_DMABUF_FD		3
 #endif
-#ifndef NETDEV_A_DMABUF_ID
-#define NETDEV_A_DMABUF_ID		4
-#endif
 #ifndef NETDEV_A_NAPI_DEFER_HARD_IRQS
 #define NETDEV_A_NAPI_DEFER_HARD_IRQS	5
 #endif
 #ifndef NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT
 #define NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT	6
+#endif
+
+/*
+ * Enum members the shims above leave out, the cmds of page pools, NAPI
+ * configuration and queue leasing and the attributes that came after
+ * v6.12.  configure probes each of them and emits HAVE_<SYMBOL>.
+ */
+#ifndef HAVE_NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT
+#define NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT	7
+#endif
+#ifndef HAVE_NETDEV_A_NAPI_THREADED
+#define NETDEV_A_NAPI_THREADED			8
+#endif
+#ifndef HAVE_NETDEV_A_DMABUF_RX_PAGE_SIZE
+#define NETDEV_A_DMABUF_RX_PAGE_SIZE		5
+#endif
+#ifndef HAVE_NETDEV_A_QUEUE_LEASE
+#define NETDEV_A_QUEUE_LEASE			8
+#endif
+#ifndef HAVE_NETDEV_A_LEASE_IFINDEX
+#define NETDEV_A_LEASE_IFINDEX			1
+#endif
+#ifndef HAVE_NETDEV_A_LEASE_QUEUE
+#define NETDEV_A_LEASE_QUEUE			2
+#endif
+#ifndef HAVE_NETDEV_A_LEASE_NETNS_ID
+#define NETDEV_A_LEASE_NETNS_ID			3
+#endif
+#ifndef HAVE_NETDEV_CMD_PAGE_POOL_GET
+#define NETDEV_CMD_PAGE_POOL_GET		5
+#endif
+#ifndef HAVE_NETDEV_CMD_PAGE_POOL_STATS_GET
+#define NETDEV_CMD_PAGE_POOL_STATS_GET		9
+#endif
+#ifndef HAVE_NETDEV_CMD_NAPI_SET
+#define NETDEV_CMD_NAPI_SET			14
+#endif
+#ifndef HAVE_NETDEV_CMD_QUEUE_CREATE
+#define NETDEV_CMD_QUEUE_CREATE			16
 #endif
