@@ -114,11 +114,10 @@ static void build_semun_arg(struct syscallrecord *rec)
 		 * trinity did not make can exceed the array, so the array
 		 * comes from the pool the call reaches, never the heap: an
 		 * overrun runs into pool scratch or the pool's guard page.
-		 * A compat call takes arg as a 32-bit pointer, which the low
-		 * pool carries; with none, arg is NULL and the call faults.
+		 * A compat call takes arg as a 32-bit pointer, which carries
+		 * the low pool get_writable_struct() draws its array from.
 		 */
-		array = get_call_writable_struct(rec,
-				SEMCTL_ARRAY_SLOTS * sizeof(*array));
+		array = get_writable_struct(SEMCTL_ARRAY_SLOTS * sizeof(*array));
 		if (array != NULL && cmd == SETALL) {
 			for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
 				array[i] = (unsigned short) rnd_modulo_u32(SEMVMX + 1);

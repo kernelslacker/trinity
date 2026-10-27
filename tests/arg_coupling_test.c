@@ -4732,29 +4732,30 @@ static void ipc_semget_nsems_held(void)
 static void semctl_arrays_from_pool(void)
 {
 	static const int cmds[] = { KERNEL_GETALL, KERNEL_SETALL };
+	struct syscallrecord *r;
 	unsigned int i, c;
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		const unsigned short *arr;
 
 		c = cmds[i % ARRAY_SIZE(cmds)];
-		memset(&rec, 0, sizeof(rec));
-		rec.entry = &syscall_semctl;
+		r = child_call(&syscall_semctl, false);
 #ifdef ARCH_IS_BIARCH
-		rec.do32bit = (i / ARRAY_SIZE(cmds)) & 1;
+		r->do32bit = (i / ARRAY_SIZE(cmds)) & 1;
 #endif
-		rec.a3 = c;
-		syscall_semctl.sanitise(&rec);
-		arr = (const unsigned short *) rec.a4;
-		if (!call_reaches_buffer(&rec, rec.a4,
+		r->a3 = c;
+		syscall_semctl.sanitise(r);
+		arr = (const unsigned short *) r->a4;
+		if (!call_reaches_buffer(r, r->a4,
 					  SEMCTL_ARRAY_SLOTS * sizeof(*arr)))
 			BUG("semctl: a GETALL or SETALL array is not in the pool the call reaches");
-		for (c = 0; rec.a3 == KERNEL_SETALL && c < SEMCTL_ARRAY_SLOTS; c++)
+		for (c = 0; r->a3 == KERNEL_SETALL && c < SEMCTL_ARRAY_SLOTS; c++)
 			if (arr[c] > KERNEL_SEMVMX)
 				BUG("semctl: a SETALL value is past SEMVMX");
-		rec.retval = (unsigned long) -1L;
-		syscall_semctl.post(&rec);
+		r->retval = (unsigned long) -1L;
+		syscall_semctl.post(r);
 	}
+	fake_this_child = NULL;
 }
 
 /* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
