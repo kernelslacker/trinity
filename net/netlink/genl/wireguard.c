@@ -56,7 +56,8 @@ static const struct nla_attr_spec wireguard_peer_attrs[] = {
 	{ WGPEER_A_TX_BYTES,		NLA_KIND_U64,    8 },
 	{ WGPEER_A_ALLOWEDIPS,		NLA_KIND_NESTED_ARRAY, 0, 0,
 	  wireguard_allowedip_attrs, ARRAY_SIZE(wireguard_allowedip_attrs) },
-	{ WGPEER_A_PROTOCOL_VERSION,	NLA_KIND_U32,    4 },
+	/* set_peer() answers -EPFNOSUPPORT to any version but 1 */
+	{ WGPEER_A_PROTOCOL_VERSION,	NLA_KIND_U32_RANGE, 1, 1 },
 };
 
 /* IFNAME is an NLA_NUL_STRING of at most IFNAMSIZ - 1 bytes. */

@@ -699,7 +699,8 @@ static struct slot wireguard_peer[] = {
 	S_U64(WGPEER_A_RX_BYTES),
 	S_U64(WGPEER_A_TX_BYTES),
 	S_ARRAY(WGPEER_A_ALLOWEDIPS, wireguard_allowedip),
-	S_U32(WGPEER_A_PROTOCOL_VERSION),
+	/* set_peer() answers -EPFNOSUPPORT to any version but 1 */
+	S_U32_RANGE(WGPEER_A_PROTOCOL_VERSION, 1, 1),
 };
 static struct slot wireguard_get_device[] = {
 	S_U32(WGDEVICE_A_IFINDEX),
