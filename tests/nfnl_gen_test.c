@@ -1094,6 +1094,35 @@ static struct pslot chain_name[] = {
 	PS(3, true, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nft_rule_policy has the table (1), the chain (2), the handle (3), the
+ * expressions (4), COMPAT (5), POSITION (6), the user data (7), the id (9),
+ * POSITION_ID (10) and CHAIN_ID (11).  NEWRULE reads the table and the chain,
+ * and answers -EINVAL to a request without a table or with neither a chain
+ * nor a chain id; it also reads the expressions, the user data and the id.
+ * GETRULE and GETRULE_RESET read the table and the chain, and a dump takes
+ * them as the filters of what it lists.  DELRULE and DESTROYRULE need the
+ * table, and with no chain delete the rules of every chain in it.  The
+ * grammar leaves out the handle, POSITION, POSITION_ID and CHAIN_ID, which
+ * name a rule or a chain by a number that a draw cannot know, and COMPAT, which
+ * only the nft_compat expressions read.
+ */
+static struct pslot rule_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PS(4, false, NLA_KIND_NESTED),
+	PS(7, false, 0),
+	PS(9, false, 0),
+};
+static struct pslot rule_get[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+};
+static struct pslot rule_del[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, false, NLA_KIND_STRING_WORD),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1105,6 +1134,11 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETCHAIN", NFTABLES, 4, chain_name, ARRAY_SIZE(chain_name) },
 	{ "NFT_MSG_DELCHAIN", NFTABLES, 5, chain_name, ARRAY_SIZE(chain_name) },
 	{ "NFT_MSG_DESTROYCHAIN", NFTABLES, 27, chain_name, ARRAY_SIZE(chain_name) },
+	{ "NFT_MSG_NEWRULE", NFTABLES, 6, rule_new, ARRAY_SIZE(rule_new) },
+	{ "NFT_MSG_GETRULE", NFTABLES, 7, rule_get, ARRAY_SIZE(rule_get) },
+	{ "NFT_MSG_GETRULE_RESET", NFTABLES, 25, rule_get, ARRAY_SIZE(rule_get) },
+	{ "NFT_MSG_DELRULE", NFTABLES, 8, rule_del, ARRAY_SIZE(rule_del) },
+	{ "NFT_MSG_DESTROYRULE", NFTABLES, 28, rule_del, ARRAY_SIZE(rule_del) },
 };
 
 /*

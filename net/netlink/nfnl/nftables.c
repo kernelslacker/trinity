@@ -276,6 +276,49 @@ static const struct nla_attr_spec nft_chain_name_attrs[] = {
 };
 
 /*
+ * The rule commands.  NEWRULE reads the table and the chain's name of
+ * nft_rule_policy, and answers -EINVAL to a request without a table or with
+ * neither a chain nor a chain id; it reads the expressions, the user data and
+ * the rule's id as well.  GETRULE and GETRULE_RESET need the table and the
+ * chain, and a dump takes them as the filters of what it lists.  DELRULE and
+ * DESTROYRULE need the table, and without a chain delete the rules of every
+ * chain in it.  The handle, POSITION, POSITION_ID and CHAIN_ID are left out:
+ * each names a rule or a chain by a number that a draw cannot know, fails the
+ * request -ENOENT when none matches, and a handle makes NEWRULE replace a rule
+ * where it would add one.  GETRULE then ends in the -EINVAL that asks for the
+ * handle, and a delete deletes the chain's rules, not one.  COMPAT is read
+ * only by the nft_compat expressions.
+ *
+ * NFTA_RULE_EXPRESSIONS is a nest with no table of its own.  An element must
+ * be of type NFTA_LIST_ELEM and name a registered expression
+ * (nf_tables_expr_parse() answers -EINVAL to one without a name), which
+ * nothing drawn from this table does, so a NEWRULE that carries the
+ * attribute is refused.
+ */
+static const struct nla_attr_spec nft_newrule_attrs[] = {
+	{ NFTA_RULE_TABLE,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_RULE_EXPRESSIONS, NLA_KIND_NESTED, 0 },
+	{ NFTA_RULE_USERDATA,    NLA_KIND_BINARY, 64 },
+	{ NFTA_RULE_ID,          NLA_KIND_U32, 4 },
+};
+
+static const struct nla_attr_spec nft_getrule_attrs[] = {
+	{ NFTA_RULE_TABLE,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+};
+
+static const struct nla_attr_spec nft_delrule_attrs[] = {
+	{ NFTA_RULE_TABLE,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -296,11 +339,16 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_chain_name_attrs, ARRAY_SIZE(nft_chain_name_attrs) },
 	{ NFT_MSG_DESTROYCHAIN,      "NFT_MSG_DESTROYCHAIN", true,
 	  nft_chain_name_attrs, ARRAY_SIZE(nft_chain_name_attrs) },
-	{ NFT_MSG_NEWRULE,           "NFT_MSG_NEWRULE", true },
-	{ NFT_MSG_GETRULE,           "NFT_MSG_GETRULE" },
-	{ NFT_MSG_GETRULE_RESET,     "NFT_MSG_GETRULE_RESET" },
-	{ NFT_MSG_DELRULE,           "NFT_MSG_DELRULE", true },
-	{ NFT_MSG_DESTROYRULE,       "NFT_MSG_DESTROYRULE", true },
+	{ NFT_MSG_NEWRULE,           "NFT_MSG_NEWRULE", true,
+	  nft_newrule_attrs, ARRAY_SIZE(nft_newrule_attrs) },
+	{ NFT_MSG_GETRULE,           "NFT_MSG_GETRULE", false,
+	  nft_getrule_attrs, ARRAY_SIZE(nft_getrule_attrs) },
+	{ NFT_MSG_GETRULE_RESET,     "NFT_MSG_GETRULE_RESET", false,
+	  nft_getrule_attrs, ARRAY_SIZE(nft_getrule_attrs) },
+	{ NFT_MSG_DELRULE,           "NFT_MSG_DELRULE", true,
+	  nft_delrule_attrs, ARRAY_SIZE(nft_delrule_attrs) },
+	{ NFT_MSG_DESTROYRULE,       "NFT_MSG_DESTROYRULE", true,
+	  nft_delrule_attrs, ARRAY_SIZE(nft_delrule_attrs) },
 	{ NFT_MSG_NEWSET,            "NFT_MSG_NEWSET", true },
 	{ NFT_MSG_GETSET,            "NFT_MSG_GETSET" },
 	{ NFT_MSG_DELSET,            "NFT_MSG_DELSET", true },
@@ -334,25 +382,17 @@ static const unsigned char nftables_families[] = {
 
 /*
  * NFTA_* attrs of the namespaces whose commands name no table of their own.
- * Their ids overlap (NFTA_RULE_TABLE and NFTA_SET_TABLE are both 1), so an
+ * Their ids overlap (NFTA_SET_TABLE and NFTA_OBJ_TABLE are both 1), so an
  * entry meets whatever slot the picked command's policy has at that id:
  * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
- * length-checks typed ones.  The obj and flowtable nests are bare
- * NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is an
- * NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.  The
- * FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
- * bits the uapi header names for it.  NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS
- * share id 3, so which policy a draw meets depends on the picked command.
+ * length-checks typed ones.  The obj and flowtable nests are bare NLA_NESTED
+ * parsed by the handlers.  The FLAGS words are NLA_POLICY_MASK in their
+ * policies, each with the flag bits the uapi header names for it.
+ * NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS share id 3, so which policy a draw
+ * meets depends on the picked command.
  * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*RULE */
-	{ NFTA_RULE_TABLE,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_RULE_CHAIN,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_RULE_HANDLE,          NLA_KIND_U64,    8 },
-	{ NFTA_RULE_EXPRESSIONS,     NLA_KIND_NESTED, 0 },
-	{ NFTA_RULE_POSITION,        NLA_KIND_U64,    8 },
-	{ NFTA_RULE_USERDATA,        NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*SET */
 	{ NFTA_SET_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_SET_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
