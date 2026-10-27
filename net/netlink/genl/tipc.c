@@ -25,7 +25,11 @@
  * most U16_MAX (tipc_nl_mtu_range).  Every handler of a bearer, link or
  * media nest answers -EINVAL to one without its NAME, and PUBL_GET's
  * dumpit to a SOCK nest without REF, the one attribute of the nest that a
- * request is read for.  What only replies carry is left out.
+ * request is read for.  A NAME is one the handlers find: "broadcast-link",
+ * the link every node has and the one the link handlers serve by name; the
+ * UDP media, which alone takes a PROP MTU; and a bearer on that media,
+ * which bearer_name_validate() passes.  What only replies carry is left
+ * out.
  */
 static const struct nla_attr_spec tipc_prop_attrs[] = {
 	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32,    4 },
@@ -43,8 +47,8 @@ static const struct nla_attr_spec tipc_udp_attrs[] = {
 };
 
 static const struct nla_attr_spec tipc_bearer_attrs[] = {
-	{ TIPC_NLA_BEARER_NAME,		NLA_KIND_STRING, TIPC_MAX_BEARER_NAME, 1,
-	  .required = true },
+	{ TIPC_NLA_BEARER_NAME,		NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "udp:trinity", .required = true },
 	{ TIPC_NLA_BEARER_PROP,		NLA_KIND_NESTED, 0, 0,
 	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 	{ TIPC_NLA_BEARER_DOMAIN,	NLA_KIND_U32,    4 },
@@ -57,8 +61,8 @@ static const struct nla_attr_spec tipc_sock_attrs[] = {
 };
 
 static const struct nla_attr_spec tipc_link_attrs[] = {
-	{ TIPC_NLA_LINK_NAME,		NLA_KIND_STRING, TIPC_MAX_LINK_NAME, 1,
-	  .required = true },
+	{ TIPC_NLA_LINK_NAME,		NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "broadcast-link", .required = true },
 	{ TIPC_NLA_LINK_PROP,		NLA_KIND_NESTED, 0, 0,
 	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 };
@@ -70,8 +74,8 @@ static const struct nla_attr_spec tipc_link_bcast_attrs[] = {
 };
 
 static const struct nla_attr_spec tipc_media_attrs[] = {
-	{ TIPC_NLA_MEDIA_NAME,		NLA_KIND_STRING, TIPC_MAX_MEDIA_NAME, 1,
-	  .required = true },
+	{ TIPC_NLA_MEDIA_NAME,		NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "udp", .required = true },
 	{ TIPC_NLA_MEDIA_PROP,		NLA_KIND_NESTED, 0, 0,
 	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 };
