@@ -135,4 +135,10 @@ struct nla_attr_spec {
 	 * most requests there, where a table of one is drawn from every
 	 * time. */
 	bool required;
+
+	/* Set when the handler refuses the attribute given twice, as dpll's
+	 * id lookups do: the emitter puts it in a request once at most.  It
+	 * is read at the top level of a request whose table holds 64
+	 * attributes at most. */
+	bool once;
 };

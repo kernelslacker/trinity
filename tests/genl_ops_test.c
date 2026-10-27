@@ -347,10 +347,11 @@ static void put_ops_first_family(struct reply *r,
  * arm wants some.  An array whose handler counts its elements against a
  * cap, or a nest whose parser takes a few children at most, is bounded the
  * same way, by a range of counts.  Other values are not the generator's to
- * shape and are not modelled.  A slot that the handler needs
- * says so, and the generator puts it in most streams of its policy and
- * leaves it out of some.  seen counts what the generator emitted, so a slot
- * it never reaches shows up.
+ * shape and are not modelled.  A slot that the handler needs says so, and
+ * the generator puts it in most streams of its policy and leaves it out of
+ * some; one that the handler refuses twice says so, and is in a stream
+ * once at most.  seen counts what the generator emitted, so a slot it
+ * never reaches shows up.
  */
 enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
 
@@ -372,6 +373,7 @@ struct slot {
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	unsigned int or_all, and_all, min_v, max_v;
 	bool required;			/* its handler needs it */
+	bool once;			/* and refuses it twice */
 	unsigned int streams;		/* the streams of its policy built, */
 	unsigned int present;		/* and the ones that held it */
 };
@@ -639,10 +641,11 @@ static struct slot dpll_reference_sync[] = {
 	S_U32(DPLL_A_PIN_ID, .required = true),
 	S_U32_RANGE(DPLL_A_PIN_STATE, 1, 3, .required = true),
 };
+/* The ID_GET lookups refuse an attribute given twice. */
 static struct slot dpll_device_id_get[] = {
-	S_STR(DPLL_A_MODULE_NAME, 0),
-	S_U64(DPLL_A_CLOCK_ID),
-	S_U32_RANGE(DPLL_A_TYPE, 1, 3),
+	S_STR(DPLL_A_MODULE_NAME, 0, .once = true),
+	S_U64(DPLL_A_CLOCK_ID, .once = true),
+	S_U32_RANGE(DPLL_A_TYPE, 1, 3, .once = true),
 };
 static struct slot dpll_device_get[] = {
 	S_U32(DPLL_A_ID),
@@ -655,12 +658,12 @@ static struct slot dpll_device_set[] = {
 	S_U32_RANGE(DPLL_A_FREQUENCY_MONITOR, 0, 1),
 };
 static struct slot dpll_pin_id_get[] = {
-	S_STR(DPLL_A_PIN_MODULE_NAME, 0),
-	S_U64(DPLL_A_PIN_CLOCK_ID),
-	S_STR(DPLL_A_PIN_BOARD_LABEL, 0),
-	S_STR(DPLL_A_PIN_PANEL_LABEL, 0),
-	S_STR(DPLL_A_PIN_PACKAGE_LABEL, 0),
-	S_U32_RANGE(DPLL_A_PIN_TYPE, 1, 6),
+	S_STR(DPLL_A_PIN_MODULE_NAME, 0, .once = true),
+	S_U64(DPLL_A_PIN_CLOCK_ID, .once = true),
+	S_STR(DPLL_A_PIN_BOARD_LABEL, 0, .once = true),
+	S_STR(DPLL_A_PIN_PANEL_LABEL, 0, .once = true),
+	S_STR(DPLL_A_PIN_PACKAGE_LABEL, 0, .once = true),
+	S_U32_RANGE(DPLL_A_PIN_TYPE, 1, 6, .once = true),
 };
 static struct slot dpll_pin_get[] = {
 	S_U32(DPLL_A_PIN_ID),
@@ -2099,6 +2102,7 @@ static bool array_conforms(const unsigned char *p, size_t len, struct slot *slot
 static bool stream_conforms(const unsigned char *p, size_t len,
 			    struct slot *slots, unsigned int n_slots)
 {
+	uint64_t once_seen = 0;
 	size_t off = 0;
 
 	while (off < len) {
@@ -2114,6 +2118,13 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 		slot = find_slot(slots, n_slots, nla->nla_type & NLA_TYPE_MASK);
 		if (slot == NULL)
 			return false;
+		if (slot->once) {
+			uint64_t bit = 1ULL << (slot - slots);
+
+			if (once_seen & bit)
+				return false;
+			once_seen |= bit;
+		}
 
 		plen = nla->nla_len - NLA_HDRLEN;
 		if (!!(nla->nla_type & NLA_F_NESTED) !=
@@ -2561,7 +2572,8 @@ next:
 /* ---------- Checking how a nest is filled -------------------------------- */
 
 size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
-			     const struct nla_attr_spec *table, size_t nr_specs);
+			     const struct nla_attr_spec *table, size_t nr_specs,
+			     uint64_t *used);
 
 #define NEST_ROUNDS	20000
 
@@ -2624,7 +2636,8 @@ static void check_nest_tables(void)
 
 			memset(buf, 0, sizeof(buf));
 			end = append_specced_nlattr(buf, 0, sizeof(buf),
-						    cases[i].specs, cases[i].n_specs);
+						    cases[i].specs, cases[i].n_specs,
+						    NULL);
 			if (stream_conforms(buf, end, cases[i].mirror, cases[i].n_mirror))
 				continue;
 			fprintf(stderr, "nest table %u:\n", i);
@@ -2680,7 +2693,8 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
 		    min_bounded_seen(mirror, n_mirror) >= BOUND_SAMPLES)
 			break;
 		memset(buf, 0, sizeof(buf));
-		end = append_specced_nlattr(buf, 0, sizeof(buf), table, n_table);
+		end = append_specced_nlattr(buf, 0, sizeof(buf), table, n_table,
+					    NULL);
 		if (stream_conforms(buf, end, mirror, n_mirror))
 			continue;
 		fprintf(stderr, "%s:\n", what);
@@ -2752,7 +2766,7 @@ static void check_sockaddr_kind(void)
 
 		memset(buf, 0, sizeof(buf));
 		if (append_specced_nlattr(buf, 0, sizeof(buf), spec,
-					  ARRAY_SIZE(spec)) == 0)
+					  ARRAY_SIZE(spec), NULL) == 0)
 			BUG("genl ops: a sockaddr spec emitted nothing");
 		memcpy(&nla, buf, sizeof(nla));
 		memcpy(&family, p, sizeof(family));
@@ -2820,6 +2834,12 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 				what, slot->id, spec->required ? "" : "not ",
 				slot->required ? "needs" : "does not need");
 			BUG("genl ops: a spec does not mark what its handler requires");
+		}
+		if (spec->once != slot->once) {
+			fprintf(stderr, "%s: attribute %u is %smarked once, and its handler %s it twice\n",
+				what, slot->id, spec->once ? "" : "not ",
+				slot->once ? "refuses" : "takes");
+			BUG("genl ops: a spec does not mark what its handler refuses twice");
 		}
 
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
@@ -2931,7 +2951,8 @@ static void check_policy_required(void)
 }
 
 size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
-			     const struct nla_attr_spec *table, size_t nr_specs);
+			     const struct nla_attr_spec *table, size_t nr_specs,
+			     uint64_t *used);
 
 #define REQUIRED_ROUNDS	20000
 
@@ -2982,7 +3003,7 @@ static void check_required_tables(void)
 
 		memset(buf, 0, sizeof(buf));
 		end = append_required_attrs(buf, 0, sizeof(buf), top,
-					    ARRAY_SIZE(top));
+					    ARRAY_SIZE(top), NULL);
 		if (!stream_conforms(buf, end, top_mirror, ARRAY_SIZE(top_mirror))) {
 			fprintf(stderr, "required tables:\n");
 			hexdump(buf, end);
@@ -3009,7 +3030,8 @@ static void check_required_tables(void)
 	expect_slots_required(top_mirror, ARRAY_SIZE(top_mirror), "required tables");
 
 	state = rnd_state;
-	if (append_required_attrs(buf, 0, sizeof(buf), plain, ARRAY_SIZE(plain)) != 0 ||
+	if (append_required_attrs(buf, 0, sizeof(buf), plain, ARRAY_SIZE(plain),
+				  NULL) != 0 ||
 	    rnd_state != state)
 		BUG("genl ops: a table with no marks emitted or drew something");
 }
@@ -3042,7 +3064,7 @@ static void check_required_not_inherited(void)
 
 		memset(buf, 0, sizeof(buf));
 		end = append_specced_nlattr(buf, 0, sizeof(buf), flat,
-					    ARRAY_SIZE(flat));
+					    ARRAY_SIZE(flat), NULL);
 		if (!stream_conforms(buf, end, flat_mirror, ARRAY_SIZE(flat_mirror))) {
 			fprintf(stderr, "required, not inherited:\n");
 			hexdump(buf, end);

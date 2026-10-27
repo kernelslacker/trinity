@@ -499,20 +499,38 @@ static size_t append_spec_top(unsigned char *buf, size_t offset, size_t buflen,
  * spec and delegates to the nested or flat path as appropriate.  Used
  * exclusively by build_one_nlmsg for families with a curated
  * nla_attr_spec table; the legacy random-payload append_nlattr() path
- * still serves families without specs.
+ * still serves families without specs.  The pick passes over a spec
+ * marked once that *used records, and records the one it takes; a table
+ * without such a spec draws as it would without used.
  */
 size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 			     size_t buflen,
 			     const struct nla_attr_spec *table,
-			     size_t nr_specs)
+			     size_t nr_specs, uint64_t *used)
 {
+	uint64_t skip = 0;
+	size_t i, eligible, pick;
+
 	if (!table || nr_specs == 0)
 		return offset;
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
 
-	return append_spec_top(buf, offset, buflen,
-			       &table[rnd_modulo_u32(nr_specs)], table,
+	for (i = 0; used != NULL && i < nr_specs && i < 64; i++) {
+		if (table[i].once && (*used >> i & 1))
+			skip |= 1ULL << i;
+	}
+	eligible = nr_specs - __builtin_popcountll(skip);
+	if (eligible == 0)
+		return offset;
+
+	pick = rnd_modulo_u32(eligible);
+	for (i = 0; (i < 64 && (skip >> i & 1)) || pick-- != 0; i++)
+		;
+	if (used != NULL && table[i].once && i < 64)
+		*used |= 1ULL << i;
+
+	return append_spec_top(buf, offset, buflen, &table[i], table,
 			       nr_specs);
 }
 
@@ -526,7 +544,7 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
  */
 size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 			     const struct nla_attr_spec *table,
-			     size_t nr_specs)
+			     size_t nr_specs, uint64_t *used)
 {
 	size_t i;
 
@@ -535,6 +553,8 @@ size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 			continue;
 		offset = append_spec_top(buf, offset, buflen, &table[i], table,
 					 nr_specs);
+		if (used != NULL && table[i].once && i < 64)
+			*used |= 1ULL << i;
 	}
 	return offset;
 }

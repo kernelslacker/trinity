@@ -27,9 +27,11 @@
 #include "utils.h"		/* ARRAY_SIZE */
 
 size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
-			     const struct nla_attr_spec *table, size_t nr_specs);
+			     const struct nla_attr_spec *table, size_t nr_specs,
+			     uint64_t *used);
 size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
-			     const struct nla_attr_spec *table, size_t nr_specs);
+			     const struct nla_attr_spec *table, size_t nr_specs,
+			     uint64_t *used);
 const struct nla_attr_spec *pick_spec_table(int protocol, const struct nlmsghdr *nlh,
 					    size_t *nr_out);
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
@@ -80,7 +82,8 @@ static void check_no_rejected_attr(void)
 
 	for (round = 0; round < ROUNDS; round++) {
 		memset(buf, 0, sizeof(buf));
-		if (append_specced_nlattr(buf, 0, sizeof(buf), sub->attrs, sub->n_attrs) == 0)
+		if (append_specced_nlattr(buf, 0, sizeof(buf), sub->attrs,
+					  sub->n_attrs, NULL) == 0)
 			BUG("nfnl grammar: the ctnetlink table emitted nothing");
 		if (carries_type(buf, KERNEL_CTA_TIMESTAMP_EVENT))
 			hits++;
@@ -429,7 +432,7 @@ static uint32_t draw_slot(const struct nla_attr_spec *spec,
 	struct nlattr nla;
 
 	memset(buf, 0, sizeof(buf));
-	if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) !=
+	if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1, NULL) !=
 	    NLA_ALIGN(NLA_HDRLEN + width))
 		BUG("nfnl grammar: a bounded scalar is not sized to its width");
 	memcpy(&nla, buf, sizeof(nla));
@@ -634,7 +637,7 @@ static void check_word_spec(const struct nla_attr_spec *spec)
 		struct nlattr nla;
 
 		memset(buf, 0, sizeof(buf));
-		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) !=
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1, NULL) !=
 		    NLA_ALIGN(NLA_HDRLEN + wlen))
 			BUG("nfnl grammar: a word is not sized to its length");
 		memcpy(&nla, buf, sizeof(nla));
@@ -703,7 +706,7 @@ static void check_word_draws(const char *name, const struct nla_attr_spec *spec)
 		bool matched = false, sized = false;
 
 		memset(buf, 0, sizeof(buf));
-		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) == 0)
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1, NULL) == 0)
 			BUG("nfnl grammar: a word list emitted nothing");
 		memcpy(&nla, buf, sizeof(nla));
 		plen = nla.nla_len - NLA_HDRLEN;
@@ -1122,11 +1125,13 @@ static void expect_required(const struct pslot *pol, unsigned int n_slots,
 static size_t build_stream(unsigned char *buf, size_t buflen,
 			   const struct nla_attr_spec *table, size_t n_specs)
 {
-	size_t off = append_required_attrs(buf, 0, buflen, table, n_specs);
+	uint64_t used = 0;
+	size_t off = append_required_attrs(buf, 0, buflen, table, n_specs, &used);
 	unsigned int draws = rnd_modulo_u32(8);
 
 	while (draws-- > 0 && off < buflen) {
-		size_t new_off = append_specced_nlattr(buf, off, buflen, table, n_specs);
+		size_t new_off = append_specced_nlattr(buf, off, buflen, table,
+						       n_specs, &used);
 
 		if (new_off == off)
 			break;

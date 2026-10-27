@@ -67,12 +67,13 @@ static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
  * table has several attributes and marks the id; GET's is a table of one,
  * which every request with an attribute carries.  The two ID_GET handlers
  * want at least one of a few attributes, the clock id and the names among
- * them, and refuse one that is given twice, which a mark cannot say.
+ * them, which a mark cannot say, and refuse one given twice, so each is
+ * marked once.
  */
 static const struct nla_attr_spec dpll_device_id_get_attrs[] = {
-	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_CLOCK_ID,		NLA_KIND_U64,    8 },
-	{ DPLL_A_TYPE,			NLA_KIND_U32_RANGE, 3, 1 },
+	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64, 1, .once = true },
+	{ DPLL_A_CLOCK_ID,		NLA_KIND_U64,    8, .once = true },
+	{ DPLL_A_TYPE,			NLA_KIND_U32_RANGE, 3, 1, .once = true },
 };
 
 static const struct nla_attr_spec dpll_device_get_attrs[] = {
@@ -88,12 +89,12 @@ static const struct nla_attr_spec dpll_device_set_attrs[] = {
 };
 
 static const struct nla_attr_spec dpll_pin_id_get_attrs[] = {
-	{ DPLL_A_PIN_MODULE_NAME,	NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_PIN_CLOCK_ID,		NLA_KIND_U64,    8 },
-	{ DPLL_A_PIN_BOARD_LABEL,	NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_PIN_PANEL_LABEL,	NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_PIN_PACKAGE_LABEL,	NLA_KIND_STRING, 64, 1 },
-	{ DPLL_A_PIN_TYPE,		NLA_KIND_U32_RANGE, 6, 1 },
+	{ DPLL_A_PIN_MODULE_NAME,	NLA_KIND_STRING, 64, 1, .once = true },
+	{ DPLL_A_PIN_CLOCK_ID,		NLA_KIND_U64,    8, .once = true },
+	{ DPLL_A_PIN_BOARD_LABEL,	NLA_KIND_STRING, 64, 1, .once = true },
+	{ DPLL_A_PIN_PANEL_LABEL,	NLA_KIND_STRING, 64, 1, .once = true },
+	{ DPLL_A_PIN_PACKAGE_LABEL,	NLA_KIND_STRING, 64, 1, .once = true },
+	{ DPLL_A_PIN_TYPE,		NLA_KIND_U32_RANGE, 6, 1, .once = true },
 };
 
 static const struct nla_attr_spec dpll_pin_get_attrs[] = {

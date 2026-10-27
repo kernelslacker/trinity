@@ -263,7 +263,7 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
  */
 static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 			      const struct nla_attr_spec *spec_table,
-			      size_t nr_specs,
+			      size_t nr_specs, uint64_t *used,
 			      struct socket_triplet *triplet,
 			      unsigned short nlmsg_type,
 			      unsigned char body_family,
@@ -278,7 +278,7 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 	 * EINVAL rejection rate at the family's nla_policy gate. */
 	if (spec_table) {
 		new_off = append_specced_nlattr(msg, offset, buflen,
-						spec_table, nr_specs);
+						spec_table, nr_specs, used);
 		if (new_off == offset)
 			return 0;
 		return new_off;
@@ -319,6 +319,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	bool chaos;
 	int rtnl_group = -1;
 	int num_attrs;
+	uint64_t once_used = 0;
 
 	/* Floor: nlmsghdr + genlmsghdr + a small per-family fixed header.
 	 * Real buffers are >=1280 bytes so this is just a sanity gate. */
@@ -379,11 +380,13 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	/* What the cmd's handler cannot do without goes in ahead of the
 	 * random draws, and so is in most requests, not the few that happen
 	 * to draw it. */
-	offset = append_required_attrs(msg, offset, buflen, spec_table, nr_specs);
+	offset = append_required_attrs(msg, offset, buflen, spec_table, nr_specs,
+				       &once_used);
 
 	while (num_attrs-- > 0 && offset < buflen) {
 		size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
 						 spec_table, nr_specs,
+						 &once_used,
 						 triplet, nlmsg_type,
 						 body_family, rtnl_group);
 		if (new_off == 0)

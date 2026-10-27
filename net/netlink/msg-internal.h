@@ -26,6 +26,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/xfrm.h>
@@ -269,7 +270,9 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
  * internal 1-3 child container: one with a nest table of its own draws
  * its children from that, one without keeps them one level deep.
  * append_required_attrs() emits the entries of the table that are marked
- * required, most of the time, ahead of the random ones.
+ * required, most of the time, ahead of the random ones.  Both record in
+ * *used the entries marked once that they emitted, which the random draws
+ * then leave alone; a NULL used keeps no record.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,
@@ -277,10 +280,10 @@ const struct nla_attr_spec *pick_spec_table(int protocol,
 size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 			     size_t buflen,
 			     const struct nla_attr_spec *table,
-			     size_t nr_specs);
+			     size_t nr_specs, uint64_t *used);
 size_t append_required_attrs(unsigned char *buf, size_t offset,
 			     size_t buflen,
 			     const struct nla_attr_spec *table,
-			     size_t nr_specs);
+			     size_t nr_specs, uint64_t *used);
 
 #endif /* NET_NETLINK_MSG_INTERNAL_H */
