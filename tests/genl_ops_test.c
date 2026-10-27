@@ -63,6 +63,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_ETHTOOL	720
 #define ID_OVS_DATAPATH	721
 #define ID_OVS_VPORT	722
+#define ID_OVS_METER	723
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1124,6 +1125,38 @@ static struct cmd_policy ovs_vport_cmds[] = {
 	P_CMD(OVS_VPORT_CMD_GET, ovs_vport),
 	P_CMD(OVS_VPORT_CMD_SET, ovs_vport),
 };
+
+extern struct genl_family_grammar fam_ovs_meter;
+
+/*
+ * net/openvswitch/meter.c: meter_policy and band_policy.  STATS has a slot
+ * with a length and no type, so exactly that of struct ovs_flow_stats.
+ * BANDS is a nest of band nests, which dp_meter_create() walks.
+ */
+static struct slot ovs_meter_band[] = {
+	S_U32(OVS_BAND_ATTR_TYPE),
+	S_U32(OVS_BAND_ATTR_RATE),
+	S_U32(OVS_BAND_ATTR_BURST),
+	S_BLOB(OVS_BAND_ATTR_STATS, sizeof(struct ovs_flow_stats),
+	       sizeof(struct ovs_flow_stats)),
+};
+static struct slot ovs_meter[] = {
+	S_U32(OVS_METER_ATTR_ID),
+	S_FLAG(OVS_METER_ATTR_KBPS),
+	S_BLOB(OVS_METER_ATTR_STATS, sizeof(struct ovs_flow_stats),
+	       sizeof(struct ovs_flow_stats)),
+	S_ARRAY(OVS_METER_ATTR_BANDS, ovs_meter_band),
+	S_U64(OVS_METER_ATTR_USED),
+	S_FLAG(OVS_METER_ATTR_CLEAR),
+	S_U32(OVS_METER_ATTR_MAX_METERS),
+	S_U32(OVS_METER_ATTR_MAX_BANDS),
+};
+static struct cmd_policy ovs_meter_cmds[] = {
+	P_CMD(OVS_METER_CMD_FEATURES, ovs_meter),
+	P_CMD(OVS_METER_CMD_SET, ovs_meter),
+	P_CMD(OVS_METER_CMD_DEL, ovs_meter),
+	P_CMD(OVS_METER_CMD_GET, ovs_meter),
+};
 #endif
 
 static struct policy_family policy_families[] = {
@@ -1163,6 +1196,8 @@ static struct policy_family policy_families[] = {
 	  ARRAY_SIZE(ovs_datapath_cmds) },
 	{ &fam_ovs_vport, ID_OVS_VPORT, ovs_vport_cmds,
 	  ARRAY_SIZE(ovs_vport_cmds) },
+	{ &fam_ovs_meter, ID_OVS_METER, ovs_meter_cmds,
+	  ARRAY_SIZE(ovs_meter_cmds) },
 #endif
 };
 
