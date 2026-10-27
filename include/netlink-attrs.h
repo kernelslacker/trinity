@@ -39,11 +39,14 @@ enum nla_kind {
 	 * holds the bound rather than a length.  The _MASK kinds mirror
 	 * NLA_POLICY_MASK and fill a random subset of the max_len bits;
 	 * NLA_KIND_BE32_MAX mirrors NLA_POLICY_MAX and fills a number in
-	 * [0, max_len].  One draw in eight is random bytes, so the policy's
-	 * reject arm still sees traffic. */
+	 * [0, max_len].  NLA_KIND_BE32_RANGE fills a number in [min_len,
+	 * max_len], both ends inclusive, for a word that the handler bounds
+	 * where the policy leaves it a plain NLA_U32.  One draw in eight is
+	 * random bytes, so the reject arm still sees traffic. */
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
 	NLA_KIND_BE32_MAX,
+	NLA_KIND_BE32_RANGE,
 	/* The same for a u32 the genl policies read in host byte order.
 	 * NLA_KIND_U32_MASK mirrors NLA_POLICY_MASK(NLA_U32, max_len);
 	 * NLA_KIND_U32_RANGE mirrors NLA_POLICY_RANGE(NLA_U32, min_len,
@@ -90,8 +93,9 @@ struct nla_attr_spec {
 				 * an NLA_KIND_NESTED_ARRAY, 0 for 1-3 */
 	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
-				 * max_len}; for NLA_KIND_U32_RANGE the
-				 * smallest number.  Zero on other kinds. */
+				 * max_len}; for NLA_KIND_U32_RANGE and
+				 * NLA_KIND_BE32_RANGE the smallest number.
+				 * Zero on other kinds. */
 
 	/* NLA_KIND_NESTED, NLA_KIND_NESTED_ARRAY: the table the nest's
 	 * children are drawn from, n_nest long, typed as the nest's own

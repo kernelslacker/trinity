@@ -211,6 +211,7 @@ struct bounded_slot {
 	unsigned short limit;	/* the policy's mask or maximum; 0 for a value list */
 	const unsigned int *values;	/* what a *_ONEOF slot's handler accepts */
 	unsigned int n_values;
+	unsigned int lo;	/* a range's smallest number; 0 for the rest */
 };
 
 /*
@@ -323,7 +324,8 @@ static const struct nla_attr_spec *search_slot_spec(const struct nla_attr_spec *
 		const struct nla_attr_spec *spec = &table[i];
 
 		if (spec->type == slot->id && spec->kind == slot->kind &&
-		    spec->max_len == slot->limit && spec->n_oneof == slot->n_values) {
+		    spec->max_len == slot->limit && spec->min_len == slot->lo &&
+		    spec->n_oneof == slot->n_values) {
 			for (j = 0; j < spec->n_oneof; j++) {
 				if (!has_value(slot, spec->oneof[j]))
 					break;
@@ -362,8 +364,8 @@ static const struct nla_attr_spec *find_slot_spec(const struct bounded_slot *slo
 	if (found != NULL)
 		return found;
 
-	fprintf(stderr, "%s: no spec of kind %u with bound %#x and %u listed values at id %u\n",
-		slot->name, slot->kind, slot->limit, slot->n_values, slot->id);
+	fprintf(stderr, "%s: no spec of kind %u with bound %#x from %u and %u listed values at id %u\n",
+		slot->name, slot->kind, slot->limit, slot->lo, slot->n_values, slot->id);
 	BUG("nfnl grammar: a bounded scalar is not declared with the kernel's bound");
 }
 
@@ -430,20 +432,26 @@ static void check_slot_fraction(const char *name, unsigned int in_bounds)
 	}
 }
 
-/* A mask draw must also set and clear every bit of the mask, and a max draw
- * reach both ends of the range, which an always-zero or always-full word
- * does not. */
-static void check_bounded_slot(const struct bounded_slot *slot)
+/* A mask draw must also set and clear every bit of the mask, and a max or
+ * range draw reach both ends of the range, which an always-zero or
+ * always-full word does not.  Under a small floor the only draws are random
+ * bytes, which come out under it about once in 2^16 draws or less, so a
+ * range that is drawn from under its floor shows at once. */
+static void check_bounded_spec(const struct nla_attr_spec *spec,
+			       const struct bounded_slot *slot)
 {
-	const struct nla_attr_spec *spec = find_slot_spec(slot);
-	const bool mask = slot->kind != NLA_KIND_BE32_MAX;
+	const bool mask = slot->kind != NLA_KIND_BE32_MAX &&
+			  slot->kind != NLA_KIND_BE32_RANGE;
 	uint32_t min_v = UINT32_MAX, max_v = 0, or_all = 0, and_all = UINT32_MAX;
-	unsigned int round, in_bounds = 0;
+	unsigned int round, in_bounds = 0, below = 0;
 
 	for (round = 0; round < SLOT_ROUNDS; round++) {
 		uint32_t v = draw_slot(spec, slot);
 
-		if (mask ? (v & ~(uint32_t) slot->limit) != 0 : v > slot->limit)
+		if (v < slot->lo)
+			below++;
+		if (mask ? (v & ~(uint32_t) slot->limit) != 0 :
+			   (v < slot->lo || v > slot->limit))
 			continue;
 		in_bounds++;
 		or_all |= v;
@@ -456,12 +464,46 @@ static void check_bounded_slot(const struct bounded_slot *slot)
 
 	check_slot_fraction(slot->name, in_bounds);
 
+	if (slot->lo != 0 && slot->lo < 65536 && below != 0) {
+		fprintf(stderr, "%s: %u draws under the floor %u\n",
+			slot->name, below, slot->lo);
+		BUG("nfnl grammar: a range is drawn from under its floor");
+	}
 	if (mask ? (or_all != slot->limit || and_all != 0) :
-		   (min_v != 0 || max_v != slot->limit)) {
+		   (min_v != slot->lo || max_v != slot->limit)) {
 		fprintf(stderr, "%s: draws inside the bound span or %#x and %#x, min %u max %u\n",
 			slot->name, or_all, and_all, min_v, max_v);
 		BUG("nfnl grammar: a bounded scalar does not cover its bound");
 	}
+}
+
+static void check_bounded_slot(const struct bounded_slot *slot)
+{
+	check_bounded_spec(find_slot_spec(slot), slot);
+}
+
+/*
+ * NLA_KIND_BE32_RANGE fills a number from min_len to max_len, both ends
+ * included, in network byte order: seven draws in eight inside, both ends
+ * reached, and read back with ntohl() as a handler does.
+ */
+static void check_be32_range(void)
+{
+	const struct nla_attr_spec spec = {
+		.type = 9,
+		.kind = NLA_KIND_BE32_RANGE,
+		.max_len = 64,
+		.min_len = 1,
+	};
+	const struct bounded_slot slot = {
+		.name = "the range",
+		.id = 9,
+		.kind = NLA_KIND_BE32_RANGE,
+		.limit = 64,
+		.lo = 1,
+	};
+
+	check_bounded_spec(&spec, &slot);
 }
 
 /* Every value the handler accepts must be drawn, and a value it does not
@@ -1492,6 +1534,7 @@ void nfnl_gen_self_check(void)
 	check_cmd_attrs_lookup();
 	check_spec_table_dispatch();
 	check_string_oneof();
+	check_be32_range();
 	check_cttimeout_commands();
 	for (i = 0; i < ARRAY_SIZE(slots); i++)
 		check_bounded_slot(&slots[i]);
