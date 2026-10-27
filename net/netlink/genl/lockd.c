@@ -22,10 +22,13 @@ static const struct genl_cmd_grammar lockd_cmds[] = {
 /*
  * lockd_server_set_nl_policy, which SERVER_SET alone draws from.  The op
  * validates strictly: GRACETIME is a u32 seconds counter, the TCP and UDP
- * listener ports are u16.
+ * listener ports are u16.  lockd_nl_server_set_doit() answers -EINVAL
+ * without GRACETIME, or with one past nlm_grace_period_max, 240, a bound
+ * the policy leaves to it.
  */
 static const struct nla_attr_spec lockd_attrs[] = {
-	{ LOCKD_A_SERVER_GRACETIME,	NLA_KIND_U32, 4 },
+	{ LOCKD_A_SERVER_GRACETIME,	NLA_KIND_U32_RANGE, 240, 0,
+	  .required = true },
 	{ LOCKD_A_SERVER_TCP_PORT,	NLA_KIND_U16, 2 },
 	{ LOCKD_A_SERVER_UDP_PORT,	NLA_KIND_U16, 2 },
 };

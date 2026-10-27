@@ -765,9 +765,11 @@ static struct cmd_policy drm_ras_cmds[] = {
 
 extern struct genl_family_grammar fam_lockd;
 
-/* fs/lockd/netlink.c: lockd_server_set_nl_policy */
+/* fs/lockd/netlink.c: lockd_server_set_nl_policy.  lockd_nl_server_set_doit()
+ * answers -EINVAL without GRACETIME or with one past nlm_grace_period_max,
+ * 240 seconds. */
 static struct slot lockd_server_set[] = {
-	S_U32(LOCKD_A_SERVER_GRACETIME),
+	S_U32_RANGE(LOCKD_A_SERVER_GRACETIME, 0, 240, .required = true),
 	S_U16(LOCKD_A_SERVER_TCP_PORT),
 	S_U16(LOCKD_A_SERVER_UDP_PORT),
 };
