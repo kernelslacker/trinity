@@ -13,10 +13,6 @@
 #include "netlink-nfnl-subsystems.h"
 #include "utils.h"
 
-static const struct nfnl_cmd_grammar hook_cmds[] = {
-	{ NFNL_MSG_HOOK_GET, "NFNL_MSG_HOOK_GET" },
-};
-
 /*
  * HOOKNUM is NLA_POLICY_MAX(NLA_BE32, 255) in the policy, but the hook arrays
  * behind it are shorter, and nfnl_hook_entries_head() answers a number past
@@ -33,15 +29,20 @@ static const unsigned int hook_hooknums[] = {
 /*
  * The request path reads only HOOKNUM and DEV; PRIORITY, FUNCTION_NAME and
  * MODULE_NAME are reply-only (nfnl_hook_dump_one()) and never read by the
- * handler.
+ * handler, so GET's table does not hold them.  nfnl_hook_get() answers
+ * -EINVAL without HOOKNUM, which is marked .required; DEV is not, since only
+ * a NFPROTO_NETDEV request reads it.
  */
-static const struct nla_attr_spec hook_attrs[] = {
+static const struct nla_attr_spec hook_get_attrs[] = {
 	{ NFNLA_HOOK_HOOKNUM,		NLA_KIND_BE32_ONEOF, 0, 0,
-	  .oneof = hook_hooknums, .n_oneof = ARRAY_SIZE(hook_hooknums) },
-	{ NFNLA_HOOK_PRIORITY,		NLA_KIND_U32,    4 },
+	  .oneof = hook_hooknums, .n_oneof = ARRAY_SIZE(hook_hooknums),
+	  .required = true },
 	{ NFNLA_HOOK_DEV,		NLA_KIND_STRING, 15 },
-	{ NFNLA_HOOK_FUNCTION_NAME,	NLA_KIND_STRING, 127 },
-	{ NFNLA_HOOK_MODULE_NAME,	NLA_KIND_STRING, 63 },
+};
+
+static const struct nfnl_cmd_grammar hook_cmds[] = {
+	{ NFNL_MSG_HOOK_GET, "NFNL_MSG_HOOK_GET", false,
+	  hook_get_attrs, ARRAY_SIZE(hook_get_attrs) },
 };
 
 struct nfnl_subsys_grammar sub_hook = {
@@ -49,6 +50,4 @@ struct nfnl_subsys_grammar sub_hook = {
 	.subsys_id = NFNL_SUBSYS_HOOK,
 	.cmds = hook_cmds,
 	.n_cmds = ARRAY_SIZE(hook_cmds),
-	.attrs = hook_attrs,
-	.n_attrs = ARRAY_SIZE(hook_attrs),
 };

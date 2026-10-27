@@ -1485,10 +1485,23 @@ static struct pslot acct_del[] = {
 	PS(1, false, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nfnl_hook_nla_policy has HOOKNUM (1), PRIORITY (2), DEV (3), FUNCTION_NAME
+ * (4), MODULE_NAME (5) and CHAIN_INFO (6).  nfnl_hook_get() answers -EINVAL
+ * without HOOKNUM, and nfnl_hook_dump_start() reads DEV only for
+ * NFPROTO_NETDEV, so DEV is not marked.  The other four are what a reply
+ * carries, and no handler reads them.
+ */
+static struct pslot hook_get[] = {
+	PS(1, true, NLA_KIND_BE32_ONEOF),
+	PS(3, false, NLA_KIND_STRING),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 #define CTTIMEOUT	NFNL_SUBSYS_CTNETLINK_TIMEOUT
 #define NFT_COMPAT	NFNL_SUBSYS_NFT_COMPAT
 #define ACCT		NFNL_SUBSYS_ACCT
+#define HOOK		NFNL_SUBSYS_HOOK
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1533,6 +1546,7 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFNL_MSG_ACCT_NEW", ACCT, 0, acct_new, ARRAY_SIZE(acct_new) },
 	{ "NFNL_MSG_ACCT_GET", ACCT, 1, acct_get, ARRAY_SIZE(acct_get) },
 	{ "NFNL_MSG_ACCT_DEL", ACCT, 3, acct_del, ARRAY_SIZE(acct_del) },
+	{ "NFNL_MSG_HOOK_GET", HOOK, 0, hook_get, ARRAY_SIZE(hook_get) },
 };
 
 /*
