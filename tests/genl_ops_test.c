@@ -399,10 +399,10 @@ extern struct genl_family_grammar fam_handshake;
 
 /* net/handshake/genl.c: handshake_accept_nl_policy, handshake_done_nl_policy */
 static struct slot handshake_accept[] = {
-	S_U32(HANDSHAKE_A_ACCEPT_HANDLER_CLASS),
+	S_U32_RANGE(HANDSHAKE_A_ACCEPT_HANDLER_CLASS, 0, 1),
 };
 static struct slot handshake_done[] = {
-	S_U32(HANDSHAKE_A_DONE_STATUS),
+	S_U32_RANGE(HANDSHAKE_A_DONE_STATUS, 0, 4095),
 	S_U32(HANDSHAKE_A_DONE_SOCKFD),
 	S_U32(HANDSHAKE_A_DONE_REMOTE_AUTH),
 };
@@ -1571,6 +1571,53 @@ static void check_bounded_tables(void)
 }
 
 /*
+ * The bound each spec declares is the one its policy gives, and no spec
+ * declares one the policy lacks.  The draws show a bound that is off by a
+ * tenth of its width or more, and none that is off by one, as a cap of
+ * MAX_ERRNO could be.
+ */
+static void expect_bounds_declared(const struct nla_attr_spec *specs, size_t n_specs,
+				   const struct slot *slots, unsigned int n_slots,
+				   const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		const struct slot *slot = &slots[i];
+		const struct nla_attr_spec *spec = NULL;
+		size_t j;
+		bool bounded;
+
+		for (j = 0; j < n_specs; j++) {
+			if (specs[j].type == slot->id)
+				spec = &specs[j];
+		}
+		if (spec == NULL) {
+			fprintf(stderr, "%s: attribute %u has no spec\n", what, slot->id);
+			BUG("genl ops: a policy's attribute has no spec");
+		}
+		if (spec->nest != NULL)
+			expect_bounds_declared(spec->nest, spec->n_nest,
+					       slot->nest, slot->n_nest, what);
+
+		bounded = spec->kind == NLA_KIND_U32_MASK ||
+			  spec->kind == NLA_KIND_U32_RANGE;
+		if (slot->bound == SB_NONE && !bounded)
+			continue;
+		if (slot->bound == SB_MASK ? spec->kind == NLA_KIND_U32_MASK &&
+					     spec->max_len == slot->hi :
+					     spec->kind == NLA_KIND_U32_RANGE &&
+					     spec->max_len == slot->hi &&
+					     spec->min_len == slot->lo)
+			continue;
+		fprintf(stderr, "%s: attribute %u is declared kind %u from %u to %u, its policy has bound %u from %u to %u\n",
+			what, slot->id, spec->kind, spec->min_len, spec->max_len,
+			slot->bound, slot->lo, slot->hi);
+		BUG("genl ops: a spec does not declare its policy's bound");
+	}
+}
+
+/*
  * The bounded scalars of the families above, drawn through the table their
  * cmd takes.  This runs after the messages are checked, so that the draws
  * made here do not count towards a slot that no message reaches.
@@ -1595,6 +1642,7 @@ static void check_policy_values(void)
 			table = genl_cmd_attrs(pf->fam, cp->cmd, cp->dump, &n_table);
 			if (table == NULL)
 				BUG("genl ops: a cmd with bounded values draws from no table");
+			expect_bounds_declared(table, n_table, cp->slots, cp->n_slots, what);
 			check_bounded_draws(table, n_table, cp->slots, cp->n_slots, what);
 		}
 	}
