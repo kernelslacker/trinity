@@ -412,9 +412,9 @@ update this section to match `ls scripts/check-static/*.sh`.)
   Values are compared as 32-bit ints, so that a 32-bit unsigned spelling
   matches the signed value the header gives (`0xffffffff` for `-1`).  A
   constant of a 64-bit type that needs more than 32 bits, as the compiler
-  probes see it (the `CLONE_*` flags above bit 31, `LSMT_ROOT`), is
-  compared on all 64 (`wide-checked` in the `PASS` line), since the low half
-  of such a constant says nothing of the high one.
+  probes and the per-header probe see it (the `CLONE_*` flags above bit 31,
+  `LSMT_ROOT`), is compared on all 64 (`wide-checked` in the `PASS` line),
+  since the low half of such a constant says nothing of the high one.
   `#ifndef` guards on enum values are always taken — enums are not macros, so
   the shim is the definition, not a fallback, unless `configure` compile-tests
   the member and the shim sits under `#ifndef HAVE_<SYMBOL>`
@@ -465,15 +465,15 @@ update this section to match `ls scripts/check-static/*.sh`.)
   the header, that a symbol two headers evaluate differently, one a header
   only names and one whose header does not compile stay unresolved, and that
   its own floor is enforced.  For the 64-bit comparison it asserts that
-  constants the host's and the kernel tree's headers give 64 bits are
-  compared on all of them, so that a shim with only a high bit wrong, or the
-  32-bit all-ones for a 64-bit one, fails and names both values, while the
-  32-bit unsigned spelling of an int still matches.  It runs no git (a stub
-  answers the gate's revision lookup).  Without it the gate's verdict can
-  drift back to depending on how old the build host's kernel headers are, its
-  findings back under a line per unresolved symbol, and the text lookup, the
-  header probe and the 64-bit comparison into accusing correct shims or
-  passing wrong ones.
+  constants the host's headers, the kernel tree's headers and a header
+  compiled alone give 64 bits are compared on all of them, so that a shim
+  with only a high bit wrong, or the 32-bit all-ones for a 64-bit one, fails
+  and names both values, while the 32-bit unsigned spelling of an int still
+  matches.  It runs no git (a stub answers the gate's revision lookup).
+  Without it the gate's verdict can drift back to depending on how old the
+  build host's kernel headers are, its findings back under a line per
+  unresolved symbol, and the text lookup, the header probe and the 64-bit
+  comparison into accusing correct shims or passing wrong ones.
 - `variant-address-walk`: verify both the static reachability walker
   (`struct_desc_has_address_field_depth()` in
   `struct_catalog/address.c`) and the runtime nested-address scrub

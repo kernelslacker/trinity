@@ -307,17 +307,20 @@ expect "text floor above the verified count: names both numbers" \
 #                            include
 #   selftest_hdr_a.h, _b.h   declare SELFTEST_HDR_TWICE as 1 and as 2
 #   selftest_hdr_bad.h       includes a header that does not exist
-# and selftest_hdr.h names SELFTEST_HDR_NOTE in a comment only.  The three
-# symbols no header evaluates keep shims that match nothing a header says, so
-# a probe that judged them anyway would fail.
+# and selftest_hdr.h names SELFTEST_HDR_NOTE in a comment only, and declares
+# SELFTEST_HDR_WIDE, a constant that needs 64 bits, as an expression the text
+# lookup cannot read.  The three symbols no header evaluates keep shims that
+# match nothing a header says, so a probe that judged them anyway would fail.
 echo 1 > "$tree/scripts/check-static/uapi-shim-text-floor.baseline"
 cat > "$tree/hdr-more-shims.h" <<'EOF'
 #define SELFTEST_HDR_NOTE	3
 #define SELFTEST_HDR_CAST	12
 #define SELFTEST_HDR_TWICE	3
 #define SELFTEST_HDR_BAD	7
+#define SELFTEST_HDR_WIDE	(1ULL<<40)
 EOF
 printf '/* SELFTEST_HDR_NOTE is only named here */\n' >> "$hdrs/linux/selftest_hdr.h"
+printf '#define SELFTEST_HDR_WIDE ((1ULL << 40) + 0)\n' >> "$hdrs/linux/selftest_hdr.h"
 printf '#define SELFTEST_HDR_CAST ((__u32)12)\n' > "$hdrs/linux/selftest_hdr_cast.h"
 printf '#define SELFTEST_HDR_TWICE (0 + 1)\n' > "$hdrs/linux/selftest_hdr_a.h"
 printf '#define SELFTEST_HDR_TWICE (0 + 2)\n' > "$hdrs/linux/selftest_hdr_b.h"
@@ -326,8 +329,10 @@ printf '#include <selftest_no_such_dependency.h>\n#define SELFTEST_HDR_BAD (4 + 
 
 run_gate "NDA_DST 1" "${tier2[@]}" UAPI_SHIM_VALUES_LIST=1
 expect "header probe: gate passes" [ "$rc" -eq 0 ]
-expect "header probe: the expression, the enum member and the retried header are verified" \
-	grep -q 'hdr-verified 5 ' "$work/out"
+expect "header probe: the expression, the enum member, the wide constant and the retried header are verified" \
+	grep -q 'hdr-verified 6 ' "$work/out"
+expect "header probe: the wide constant is compared on all 64 bits" \
+	grep -q 'wide-checked 4 ' "$work/out"
 for sym in SELFTEST_HDR_NOTE SELFTEST_HDR_TWICE SELFTEST_HDR_BAD; do
 	expect "header probe: $sym stays unresolved" \
 		grep -q "^WARN: uapi-shim-values: unresolved uapi-shaped symbol: $sym\$" "$work/err"
@@ -335,12 +340,13 @@ done
 expect "header probe: the verified ones are not listed as unresolved" \
 	test "$(grep -c 'unresolved uapi-shaped symbol' "$work/err")" -eq 3
 
-# One run catches a wrong value for each of the three kinds of symbol the
-# probe evaluates: an expression, an enum member and a symbol whose header
-# needs the retry.
+# One run catches a wrong value for each of the kinds of symbol the probe
+# evaluates: an expression, an enum member, a symbol whose header needs the
+# retry and a constant that needs 64 bits, wrong in its high half only.
 cp "$tree/hdr-shims.h" "$work/hdr-shims.good"
 cp "$tree/hdr-more-shims.h" "$work/hdr-more-shims.good"
-sed -i -E 's/^(#define SELFTEST_HDR_(MASK|TWO|CAST)[[:space:]]+)[0-9]+$/\199/' \
+sed -i -E -e 's/^(#define SELFTEST_HDR_(MASK|TWO|CAST)[[:space:]]+)[0-9]+$/\199/' \
+	-e 's/^(#define SELFTEST_HDR_WIDE[[:space:]]+)\(1ULL<<40\)$/\1(1ULL<<41)/' \
 	"$tree/hdr-shims.h" "$tree/hdr-more-shims.h"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "header values differ: gate fails" [ "$rc" -ne 0 ]
@@ -352,6 +358,8 @@ for row in \
 	expect "header value differs, $sym: names the symbol, both values and the header" \
 		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have 99 (=99), want $want (compiled with installed header linux/$header)" "$work/err"
 done
+expect "header value differs, SELFTEST_HDR_WIDE: names both 64-bit values and the header" \
+	grep -qF "FAIL: uapi-shim-values: SELFTEST_HDR_WIDE shim wrong: have 2199023255552 (=0x0000020000000000), want 0x0000010000000000 (compiled with installed header linux/selftest_hdr.h)" "$work/err"
 
 # The count of symbols evaluated in a header is ratcheted like the others.
 cp "$work/hdr-shims.good" "$tree/hdr-shims.h"
@@ -360,7 +368,7 @@ echo 99 > "$tree/scripts/check-static/uapi-shim-hdr-floor.baseline"
 run_gate "NDA_DST 1" "${tier2[@]}"
 expect "hdr floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "hdr floor above the verified count: names both numbers" \
-	grep -q 'coverage ratchet: hdr-verified 5 < hdr_floor 99' "$work/out"
+	grep -q 'coverage ratchet: hdr-verified 6 < hdr_floor 99' "$work/out"
 
 total=$((pass + fail))
 

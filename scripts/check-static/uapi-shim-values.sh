@@ -693,8 +693,9 @@ esac
 # Most uapi headers are self-contained.  The few that are not are retried
 # behind the includes of HDR_PRELUDES, a rung at a time, and a header no rung
 # compiles (xen/'s need headers that are not uapi) leaves its symbols
-# unresolved.  So does a symbol two headers evaluate differently, since nothing
-# says which one the shim follows.
+# unresolved.  So does a symbol two headers evaluate differently, in its 32 bits
+# or in the 64 of a constant that needs them, since nothing says which one the
+# shim follows.
 #
 # This reads the headers the Tier-2 tree installed, like the text lookup, so it
 # runs only when TRINITY_LINUS_SRC is set: the default run pays nothing for it.
@@ -708,22 +709,24 @@ HDR_RAN=0
 : > "$HDR_TABLE"
 
 # write_hdr_probe PRELUDE HEADER SYMFILE: a program that includes the prelude
-# and HEADER, in that order, and prints the value of each symbol in SYMFILE.
+# and HEADER, in that order, and reports the value of each symbol in SYMFILE
+# the way value_statements does.
 write_hdr_probe() {
     local inc
     echo '#include <stdio.h>'
     for inc in $1; do echo "#include <$inc>"; done
     echo "#include <$2>"
     echo 'int main(void){'
-    awk '{printf "printf(\"%%d %%s\\n\",(int)%s,\"%s\");\n", $1, $1}' "$3"
+    value_statements "$3"
     echo 'return 0;}'
 }
 
 # probe_hdr ID: evaluate hdr-probe/ID.syms against the header named in
-# hdr-probe/ID.hdr and write "VALUE SYM HEADER" for each symbol it declares to
-# hdr-probe/ID.tbl.  The first rung of HDR_PRELUDES whose compile reports
-# nothing but undeclared symbols decides; any other error is the header failing
-# to compile there, and none of its symbols was evaluated.
+# hdr-probe/ID.hdr and write "VALUE SYM HEADER WIDE" for each symbol it
+# declares to hdr-probe/ID.tbl, WIDE being the 64 bits of a constant that
+# needs them and - for any other.  The first rung of HDR_PRELUDES whose compile
+# reports nothing but undeclared symbols decides; any other error is the header
+# failing to compile there, and none of its symbols was evaluated.
 probe_hdr() {
     local p="$HDR_DIR/$1" hdr prelude
     hdr=$(< "$p.hdr")
@@ -739,7 +742,14 @@ probe_hdr() {
         [ -s "$p.good" ] || return 0
         write_hdr_probe "$prelude" "$hdr" "$p.good" > "$p.c"
         if LC_ALL=C gcc -w -I"$HDR_INSTALL/include" -o "$p.bin" "$p.c" 2> "$p.err"; then
-            "$p.bin" | awk -v h="$hdr" '{print $1, $2, h}' > "$p.tbl"
+            "$p.bin" | awk -v h="$hdr" '
+                $1 == "W" { wide[$2] = $3; next }
+                { val[$2] = $1 }
+                END {
+                    for (s in val)
+                        print val[s], s, h, (s in wide ? wide[s] : "-")
+                }
+            ' > "$p.tbl"
             return 0
         fi
     done
@@ -790,14 +800,20 @@ ran*)
             wait
         fi
         # "VALUE SYM HEADER": the header that sorts first among those that
-        # agree on the value.
-        find "$HDR_DIR" -name '*.tbl' -exec cat {} + | sort -k3,3 -k2,2 | awk '
-            !($2 in val) { val[$2] = $1; src[$2] = $3; next }
-            val[$2] != $1 { bad[$2] }
+        # agree on the value, and on its 64 bits where it has them.  Those go
+        # to the wide table.
+        find "$HDR_DIR" -name '*.tbl' -exec cat {} + | sort -k3,3 -k2,2 | \
+            awk -v wide_out="$WIDE_TABLE" '
+            !($2 in val) { val[$2] = $1; src[$2] = $3; wid[$2] = $4; next }
+            val[$2] != $1 || wid[$2] != $4 { bad[$2] }
             END {
-                for (s in val)
-                    if (!(s in bad))
-                        print val[s], s, src[s]
+                for (s in val) {
+                    if (s in bad)
+                        continue
+                    print val[s], s, src[s]
+                    if (wid[s] != "-")
+                        print s, wid[s] >> wide_out
+                }
             }
         ' | sort -k2 > "$HDR_TABLE"
 
