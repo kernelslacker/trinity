@@ -855,25 +855,34 @@ static void check_word_name(const struct word_name *name)
  */
 static const unsigned char nft_families[] = { 1, 2, 3, 5, 7, 10 };
 
-static void check_nftables_families(void)
+/*
+ * nfnl_hook_entries_head() takes NFPROTO_IPV4, IPV6, ARP, BRIDGE and
+ * NETDEV, the last the one family that reads DEV, and answers any other
+ * -EPROTONOSUPPORT.
+ */
+static const unsigned char hook_families[] = { 2, 3, 5, 7, 10 };
+
+/* The subsystem lists exactly the families its handlers take. */
+static void expect_families(unsigned char subsys_id, const char *name,
+			    const unsigned char *want, unsigned int n_want)
 {
-	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_NFTABLES);
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(subsys_id);
 	unsigned int i, j;
 
-	if (sub == NULL)
-		BUG("nfnl grammar: nftables is not registered");
-	if (sub->n_families != ARRAY_SIZE(nft_families))
-		BUG("nfnl grammar: nftables lists a different set of families");
+	if (sub == NULL || sub->n_families != n_want) {
+		fprintf(stderr, "%s: lists %u families, want %u\n", name,
+			sub != NULL ? sub->n_families : 0, n_want);
+		BUG("nfnl grammar: a subsystem lists a different set of families");
+	}
 
-	for (i = 0; i < ARRAY_SIZE(nft_families); i++) {
+	for (i = 0; i < n_want; i++) {
 		for (j = 0; j < sub->n_families; j++) {
-			if (sub->families[j] == nft_families[i])
+			if (sub->families[j] == want[i])
 				break;
 		}
 		if (j == sub->n_families) {
-			fprintf(stderr, "nftables: family %u is not listed\n",
-				nft_families[i]);
-			BUG("nfnl grammar: nftables leaves out a family it supports");
+			fprintf(stderr, "%s: family %u is not listed\n", name, want[i]);
+			BUG("nfnl grammar: a subsystem leaves out a family it supports");
 		}
 	}
 }
@@ -1547,12 +1556,12 @@ static struct pslot acct_del[] = {
  * nfnl_hook_nla_policy has HOOKNUM (1), PRIORITY (2), DEV (3), FUNCTION_NAME
  * (4), MODULE_NAME (5) and CHAIN_INFO (6).  nfnl_hook_get() answers -EINVAL
  * without HOOKNUM, and nfnl_hook_dump_start() reads DEV only for
- * NFPROTO_NETDEV, so DEV is not marked.  The other four are what a reply
- * carries, and no handler reads them.
+ * NFPROTO_NETDEV, so DEV is not marked; it names lo.  The other four are
+ * what a reply carries, and no handler reads them.
  */
 static struct pslot hook_get[] = {
 	PS(1, true, NLA_KIND_BE32_ONEOF),
-	PS(3, false, NLA_KIND_STRING),
+	PS(3, false, NLA_KIND_STRING_WORD),
 };
 
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
@@ -2035,7 +2044,10 @@ void nfnl_gen_self_check(void)
 	for (i = 0; i < ARRAY_SIZE(oneof_slots); i++)
 		check_oneof_slot(&oneof_slots[i]);
 	word = check_nftables_names();
-	check_nftables_families();
+	expect_families(NFNL_SUBSYS_NFTABLES, "nftables", nft_families,
+			ARRAY_SIZE(nft_families));
+	expect_families(NFNL_SUBSYS_HOOK, "hook", hook_families,
+			ARRAY_SIZE(hook_families));
 	check_nftables_lone_families();
 	for (i = 0; i < ARRAY_SIZE(word_names); i++)
 		check_word_name(&word_names[i]);

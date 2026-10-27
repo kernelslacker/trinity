@@ -16,10 +16,9 @@
 /*
  * HOOKNUM is NLA_POLICY_MAX(NLA_BE32, 255) in the policy, but the hook arrays
  * behind it are shorter, and nfnl_hook_entries_head() answers a number past
- * one -EINVAL.  IPv4, IPv6 and bridge, the families the body generator names
- * that it knows, hold NF_INET_NUMHOOKS entries; ARP and netdev hold fewer.
- * So the grammar draws the inet hooks; the numbers from there up to 255,
- * which only that refusal answers, go undrawn.
+ * one -EINVAL.  IPv4, IPv6 and bridge hold NF_INET_NUMHOOKS entries; ARP
+ * and netdev hold fewer.  So the grammar draws the inet hooks; the numbers
+ * from there up to 255, which only that refusal answers, go undrawn.
  */
 static const unsigned int hook_hooknums[] = {
 	NF_INET_PRE_ROUTING, NF_INET_LOCAL_IN, NF_INET_FORWARD,
@@ -31,13 +30,14 @@ static const unsigned int hook_hooknums[] = {
  * MODULE_NAME are reply-only (nfnl_hook_dump_one()) and never read by the
  * handler, so GET's table does not hold them.  nfnl_hook_get() answers
  * -EINVAL without HOOKNUM, which is marked .required; DEV is not, since only
- * a NFPROTO_NETDEV request reads it.
+ * a NFPROTO_NETDEV request reads it, and it names lo, which every netns
+ * has, for dev_get_by_name_rcu() to find.
  */
 static const struct nla_attr_spec hook_get_attrs[] = {
 	{ NFNLA_HOOK_HOOKNUM,		NLA_KIND_BE32_ONEOF, 0, 0,
 	  .oneof = hook_hooknums, .n_oneof = ARRAY_SIZE(hook_hooknums),
 	  .required = true },
-	{ NFNLA_HOOK_DEV,		NLA_KIND_STRING, 15 },
+	{ NFNLA_HOOK_DEV,		NLA_KIND_STRING_WORD, 0, 0, .word = "lo" },
 };
 
 static const struct nfnl_cmd_grammar hook_cmds[] = {
@@ -45,9 +45,18 @@ static const struct nfnl_cmd_grammar hook_cmds[] = {
 	  hook_get_attrs, ARRAY_SIZE(hook_get_attrs) },
 };
 
+/* nfnl_hook_entries_head() takes these five and answers any other family
+ * -EPROTONOSUPPORT; NETDEV is the one that reads DEV. */
+static const unsigned char hook_families[] = {
+	NFPROTO_IPV4, NFPROTO_ARP, NFPROTO_NETDEV, NFPROTO_BRIDGE,
+	NFPROTO_IPV6,
+};
+
 struct nfnl_subsys_grammar sub_hook = {
 	.name = "hook",
 	.subsys_id = NFNL_SUBSYS_HOOK,
 	.cmds = hook_cmds,
 	.n_cmds = ARRAY_SIZE(hook_cmds),
+	.families = hook_families,
+	.n_families = ARRAY_SIZE(hook_families),
 };
