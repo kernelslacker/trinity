@@ -621,6 +621,9 @@ check_enum_member linux/sunrpc_netlink.h SUNRPC_A_IP_MAP_SEQNO \
 	SUNRPC_A_UNIX_GID_NEGATIVE SUNRPC_A_UNIX_GID_EXPIRY \
 	SUNRPC_A_CACHE_FLUSH_MASK
 
+# psp's device netns id, taken by DEV_ASSOC and DEV_DISASSOC.
+check_enum_member linux/psp.h PSP_A_DEV_NSID
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

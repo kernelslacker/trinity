@@ -1,70 +1,94 @@
 /*
  * Genetlink family grammar: psp (PSP Security Protocol), targeting
  * net/psp/psp-nl-gen.c and psp_nl.c.  DEV_SET, KEY_ROTATE, DEV_ASSOC and
- * DEV_DISASSOC are GENL_ADMIN_PERM, the other four ops are not.  One flat
- * table spans the four attribute namespaces.
+ * DEV_DISASSOC are GENL_ADMIN_PERM, the other four ops are not.  An op with
+ * a policy has a table of its own.
  */
 
 #include "kernel/psp.h"
 #include "netlink-genl-families.h"
 #include "utils.h"
 
-static const struct genl_cmd_grammar psp_cmds[] = {
-	{ PSP_CMD_DEV_GET,	"PSP_CMD_DEV_GET" },
-	{ PSP_CMD_DEV_SET,	"PSP_CMD_DEV_SET" },
-	{ PSP_CMD_KEY_ROTATE,	"PSP_CMD_KEY_ROTATE" },
-	{ PSP_CMD_RX_ASSOC,	"PSP_CMD_RX_ASSOC" },
-	{ PSP_CMD_TX_ASSOC,	"PSP_CMD_TX_ASSOC" },
-	{ PSP_CMD_GET_STATS,	"PSP_CMD_GET_STATS" },
-	{ PSP_CMD_DEV_ASSOC,	"PSP_CMD_DEV_ASSOC" },
-	{ PSP_CMD_DEV_DISASSOC,	"PSP_CMD_DEV_DISASSOC" },
+/*
+ * psp_keys_nl_policy, the nest of TX_ASSOC's TX_KEY.  Its KEY takes any
+ * length, but psp_nl_parse_key() wants exactly the version's key size, 16
+ * bytes for the 128-bit versions and 32 for the 256-bit ones.
+ */
+static const struct nla_attr_spec psp_keys_attrs[] = {
+	{ PSP_A_KEYS_KEY,		NLA_KIND_BINARY_FIXED2, 32, 16 },
+	{ PSP_A_KEYS_SPI,		NLA_KIND_U32,    4 },
 };
 
 /*
- * Attribute spec follows the per-nest enums in <linux/psp.h>.
- * Numeric ids intentionally overlap across the four namespaces, so an
- * id is checked against whichever per-command policy, or KEYS nest, it
- * lands in.  Of the two NESTED entries only TX_KEY is in a policy
- * (psp_tx_assoc_nl_policy, as NLA_POLICY_NESTED(psp_keys_nl_policy));
- * no policy lists RX_KEY, so the kernel rejects it as unsupported.
+ * The ops validate strictly against a policy of their own, so an id it has
+ * no slot for costs an -EINVAL, and every namespace starts at 1: a cmd takes
+ * only the ids of its own.  What the replies carry, the version
+ * capabilities, the association list, RX_KEY and the counters, is not in a
+ * request policy.  NSID is an s32; VERSIONS_ENA is a mask and VERSION is
+ * capped, which a plain u32 does not honour.
  */
-static const struct nla_attr_spec psp_attrs[] = {
-	/* PSP_A_DEV_* -- DEV_GET / DEV_SET selector + reply payload */
+static const struct nla_attr_spec psp_dev_id_attrs[] = {
 	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
-	{ PSP_A_DEV_IFINDEX,		NLA_KIND_U32,    4 },
-	{ PSP_A_DEV_PSP_VERSIONS_CAP,	NLA_KIND_U32,    4 },
-	{ PSP_A_DEV_PSP_VERSIONS_ENA,	NLA_KIND_U32,    4 },
+};
 
-	/* PSP_A_ASSOC_* -- RX_ASSOC / TX_ASSOC request + reply payload */
+static const struct nla_attr_spec psp_dev_set_attrs[] = {
+	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_PSP_VERSIONS_ENA,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec psp_rx_assoc_attrs[] = {
 	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32,    4 },
 	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32,    4 },
-	{ PSP_A_ASSOC_RX_KEY,		NLA_KIND_NESTED, 0 },
-	{ PSP_A_ASSOC_TX_KEY,		NLA_KIND_NESTED, 0 },
 	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
+};
 
-	/* PSP_A_KEYS_* -- nested under RX_KEY / TX_KEY containers above */
-	{ PSP_A_KEYS_KEY,		NLA_KIND_BINARY, 64 },
-	{ PSP_A_KEYS_SPI,		NLA_KIND_U32,    4 },
+static const struct nla_attr_spec psp_tx_assoc_attrs[] = {
+	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32,    4 },
+	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32,    4 },
+	{ PSP_A_ASSOC_TX_KEY,		NLA_KIND_NESTED, 0, 0,
+	  psp_keys_attrs, ARRAY_SIZE(psp_keys_attrs) },
+	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
+};
 
-	/* PSP_A_STATS_* -- GET_STATS reply payload (device counters) */
+static const struct nla_attr_spec psp_get_stats_attrs[] = {
 	{ PSP_A_STATS_DEV_ID,		NLA_KIND_U32,    4 },
-	{ PSP_A_STATS_KEY_ROTATIONS,	NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_STALE_EVENTS,	NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_RX_PACKETS,	NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_RX_BYTES,		NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_RX_AUTH_FAIL,	NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_RX_ERROR,		NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_RX_BAD,		NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_TX_PACKETS,	NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_TX_BYTES,		NLA_KIND_U64,    8 },
-	{ PSP_A_STATS_TX_ERROR,		NLA_KIND_U64,    8 },
+};
+
+static const struct nla_attr_spec psp_dev_assoc_attrs[] = {
+	{ PSP_A_DEV_ID,			NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_IFINDEX,		NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_NSID,		NLA_KIND_U32,    4 },
+};
+
+/*
+ * The dumpits of DEV_GET and GET_STATS have no policy, which the genl core
+ * gives a reject-all one, so a dump takes no attribute.  DEV_DISASSOC's
+ * policy has the slots of DEV_ASSOC's.
+ */
+static const struct genl_cmd_grammar psp_cmds[] = {
+	{ PSP_CMD_DEV_GET,	"PSP_CMD_DEV_GET",
+	  psp_dev_id_attrs, ARRAY_SIZE(psp_dev_id_attrs),
+	  genl_no_attrs },
+	{ PSP_CMD_DEV_SET,	"PSP_CMD_DEV_SET",
+	  psp_dev_set_attrs, ARRAY_SIZE(psp_dev_set_attrs) },
+	{ PSP_CMD_KEY_ROTATE,	"PSP_CMD_KEY_ROTATE",
+	  psp_dev_id_attrs, ARRAY_SIZE(psp_dev_id_attrs) },
+	{ PSP_CMD_RX_ASSOC,	"PSP_CMD_RX_ASSOC",
+	  psp_rx_assoc_attrs, ARRAY_SIZE(psp_rx_assoc_attrs) },
+	{ PSP_CMD_TX_ASSOC,	"PSP_CMD_TX_ASSOC",
+	  psp_tx_assoc_attrs, ARRAY_SIZE(psp_tx_assoc_attrs) },
+	{ PSP_CMD_GET_STATS,	"PSP_CMD_GET_STATS",
+	  psp_get_stats_attrs, ARRAY_SIZE(psp_get_stats_attrs),
+	  genl_no_attrs },
+	{ PSP_CMD_DEV_ASSOC,	"PSP_CMD_DEV_ASSOC",
+	  psp_dev_assoc_attrs, ARRAY_SIZE(psp_dev_assoc_attrs) },
+	{ PSP_CMD_DEV_DISASSOC,	"PSP_CMD_DEV_DISASSOC",
+	  psp_dev_assoc_attrs, ARRAY_SIZE(psp_dev_assoc_attrs) },
 };
 
 struct genl_family_grammar fam_psp = {
 	.name = PSP_FAMILY_NAME,
 	.cmds = psp_cmds,
 	.n_cmds = ARRAY_SIZE(psp_cmds),
-	.attrs = psp_attrs,
-	.n_attrs = ARRAY_SIZE(psp_attrs),
 	.default_version = PSP_FAMILY_VERSION,
 };

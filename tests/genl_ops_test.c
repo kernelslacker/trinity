@@ -37,7 +37,7 @@ extern struct genl_family_grammar fam_nlbl_calipso;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_unlabel;
-extern struct genl_family_grammar fam_psp;
+extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_binder;
 
 #define CMD_CAPS	(GENL_CMD_CAP_DO | GENL_CMD_CAP_DUMP)
@@ -58,6 +58,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_DRM_RAS	715
 #define ID_LOCKD	716
 #define ID_SUNRPC	717
+#define ID_PSP		718
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -803,6 +804,63 @@ static struct cmd_policy sunrpc_cmds[] = {
 };
 #endif
 
+#include "kernel/psp.h"
+
+extern struct genl_family_grammar fam_psp;
+
+/* net/psp/psp-nl-gen.c: the psp_*_nl_policy tables */
+static struct slot psp_keys[] = {
+	S_BLOB(PSP_A_KEYS_KEY, 0, 0xffff),
+	S_U32(PSP_A_KEYS_SPI),
+};
+static struct slot psp_dev_get[] = {
+	S_U32(PSP_A_DEV_ID),
+};
+static struct slot psp_dev_set[] = {
+	S_U32(PSP_A_DEV_ID),
+	S_U32(PSP_A_DEV_PSP_VERSIONS_ENA),
+};
+static struct slot psp_key_rotate[] = {
+	S_U32(PSP_A_DEV_ID),
+};
+static struct slot psp_rx_assoc[] = {
+	S_U32(PSP_A_ASSOC_DEV_ID),
+	S_U32(PSP_A_ASSOC_VERSION),
+	S_U32(PSP_A_ASSOC_SOCK_FD),
+};
+static struct slot psp_tx_assoc[] = {
+	S_U32(PSP_A_ASSOC_DEV_ID),
+	S_U32(PSP_A_ASSOC_VERSION),
+	S_NEST(PSP_A_ASSOC_TX_KEY, psp_keys),
+	S_U32(PSP_A_ASSOC_SOCK_FD),
+};
+static struct slot psp_get_stats[] = {
+	S_U32(PSP_A_STATS_DEV_ID),
+};
+static struct slot psp_dev_assoc[] = {
+	S_U32(PSP_A_DEV_ID),
+	S_U32(PSP_A_DEV_IFINDEX),
+	S_U32(PSP_A_DEV_NSID),
+};
+static struct slot psp_dev_disassoc[] = {
+	S_U32(PSP_A_DEV_ID),
+	S_U32(PSP_A_DEV_IFINDEX),
+	S_U32(PSP_A_DEV_NSID),
+};
+/* The dumpits of DEV_GET and GET_STATS have no policy, so take nothing. */
+static struct cmd_policy psp_cmds[] = {
+	P_CMD(PSP_CMD_DEV_GET, psp_dev_get),
+	P_DUMP_NONE(PSP_CMD_DEV_GET),
+	P_CMD(PSP_CMD_DEV_SET, psp_dev_set),
+	P_CMD(PSP_CMD_KEY_ROTATE, psp_key_rotate),
+	P_CMD(PSP_CMD_RX_ASSOC, psp_rx_assoc),
+	P_CMD(PSP_CMD_TX_ASSOC, psp_tx_assoc),
+	P_CMD(PSP_CMD_GET_STATS, psp_get_stats),
+	P_DUMP_NONE(PSP_CMD_GET_STATS),
+	P_CMD(PSP_CMD_DEV_ASSOC, psp_dev_assoc),
+	P_CMD(PSP_CMD_DEV_DISASSOC, psp_dev_disassoc),
+};
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -828,6 +886,7 @@ static struct policy_family policy_families[] = {
 #if __has_include(<linux/sunrpc_netlink.h>)
 	{ &fam_sunrpc, ID_SUNRPC, sunrpc_cmds, ARRAY_SIZE(sunrpc_cmds) },
 #endif
+	{ &fam_psp, ID_PSP, psp_cmds, ARRAY_SIZE(psp_cmds) },
 };
 
 /* Every cmd of these families, each with the flags of a doit and a dumpit. */
@@ -875,7 +934,7 @@ static void build_reply(struct reply *r)
 	put_msg(r, &body);
 
 	put_edge_family(r, &fam_nlbl_unlabel, ID_EDGE);
-	put_truncated_family(r, &fam_psp, ID_TRUNCATED);
+	put_truncated_family(r, &fam_devlink, ID_TRUNCATED);
 	put_ops_first_family(r, &fam_binder, ID_OPS_FIRST);
 	put_policy_families(r);
 
@@ -938,7 +997,7 @@ static void check_reply_parsed(void)
 	expect_caps(&fam_nlbl_unlabel, ID_EDGE, want, "edge ops");
 
 	memset(want, 0, sizeof(want));
-	expect_caps(&fam_psp, ID_TRUNCATED, want, "op list past the message");
+	expect_caps(&fam_devlink, ID_TRUNCATED, want, "op list past the message");
 
 	want[5] = GENL_CMD_CAP_DUMP;
 	want[6] = GENL_CMD_CAP_DO;

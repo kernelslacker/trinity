@@ -133,3 +133,10 @@
 #ifndef PSP_CMD_DEV_DISASSOC
 #define PSP_CMD_DEV_DISASSOC		12
 #endif
+
+/* DEV_ASSOC and DEV_DISASSOC also take PSP_A_DEV_NSID, the netns id of the
+ * device.  It is an enum member the older headers lack, so configure probes
+ * it and emits HAVE_PSP_A_DEV_NSID. */
+#ifndef HAVE_PSP_A_DEV_NSID
+#define PSP_A_DEV_NSID			6
+#endif
