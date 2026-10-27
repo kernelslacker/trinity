@@ -64,6 +64,13 @@ enum nla_kind {
 	 * One draw in eight is random lowercase letters of the word's length,
 	 * for the lookups that miss. */
 	NLA_KIND_STRING_WORD,
+	/* A NUL-terminated string that is one of the spec's words, for an
+	 * attribute the handler looks up in a registry of names, such as the
+	 * chain types or the xt extensions: a name that is not in it can cost
+	 * the kernel a request_module().  One draw in eight is random
+	 * lowercase letters as long as one of the words, for the lookups that
+	 * miss. */
+	NLA_KIND_STRING_ONEOF,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.
@@ -100,8 +107,11 @@ struct nla_attr_spec {
 	const unsigned int *oneof;
 	unsigned int n_oneof;
 
-	/* NLA_KIND_STRING_WORD: the string the attribute carries. */
+	/* NLA_KIND_STRING_WORD: the string the attribute carries.
+	 * NLA_KIND_STRING_ONEOF: the n_words strings it is drawn from. */
 	const char *word;
+	const char *const *words;
+	unsigned int n_words;
 
 	/* Set when the attribute's handler returns early, or skips the nest
 	 * that holds it, unless it is there: a GENL_REQ_ATTR_CHECK() or an

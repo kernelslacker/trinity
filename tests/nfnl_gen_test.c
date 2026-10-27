@@ -594,6 +594,65 @@ static void check_name_specs(const struct nla_attr_spec *table, size_t n_specs,
 }
 
 /*
+ * A NLA_KIND_STRING_ONEOF attribute is one of the spec's words, NUL-terminated,
+ * on seven draws in eight and random lowercase letters as long as a word on the
+ * eighth.  Each word is about 4400 of the 20000 draws, the two of the same
+ * length among them, and a tenth of the draws is a wide floor that a word
+ * which only the random letters ever spell does not reach.
+ */
+static void check_string_oneof(void)
+{
+	static const char *const words[] = { "ab", "cde", "fghi", "jk" };
+	const struct nla_attr_spec spec = {
+		.type = 7,
+		.kind = NLA_KIND_STRING_ONEOF,
+		.words = words,
+		.n_words = ARRAY_SIZE(words),
+	};
+	unsigned int round, i, in_list = 0, seen[ARRAY_SIZE(words)] = { 0 };
+
+	for (round = 0; round < SLOT_ROUNDS; round++) {
+		unsigned char buf[64];
+		struct nlattr nla;
+		size_t plen;
+		bool matched = false;
+
+		memset(buf, 0, sizeof(buf));
+		if (append_specced_nlattr(buf, 0, sizeof(buf), &spec, 1) == 0)
+			BUG("nfnl grammar: a word list emitted nothing");
+		memcpy(&nla, buf, sizeof(nla));
+		plen = nla.nla_len - NLA_HDRLEN;
+		if (nla.nla_type != 7 || buf[NLA_HDRLEN + plen - 1] != '\0')
+			BUG("nfnl grammar: a word from a list is not a NUL-terminated string");
+		for (i = 0; i + 1 < plen; i++) {
+			if (buf[NLA_HDRLEN + i] < 'a' || buf[NLA_HDRLEN + i] > 'z')
+				BUG("nfnl grammar: a word from a list draws something but lowercase letters");
+		}
+
+		for (i = 0; i < ARRAY_SIZE(words); i++) {
+			if (plen == strlen(words[i]) + 1 &&
+			    memcmp(buf + NLA_HDRLEN, words[i], plen) == 0) {
+				matched = true;
+				seen[i]++;
+			}
+		}
+		if (matched)
+			in_list++;
+		else if (plen != 3 && plen != 4 && plen != 5)
+			BUG("nfnl grammar: a word from a list is as long as none of them");
+	}
+
+	check_slot_fraction("the word list", in_list);
+	for (i = 0; i < ARRAY_SIZE(words); i++) {
+		if (seen[i] >= SLOT_ROUNDS / 10)
+			continue;
+		fprintf(stderr, "the word list: \"%s\" drawn %u times in %u\n",
+			words[i], seen[i], SLOT_ROUNDS);
+		BUG("nfnl grammar: a word of a list is hardly drawn");
+	}
+}
+
+/*
  * Every string the nftables grammar has at a name id, in its own table or in
  * a cmd's, must be the one word, and each of the ids must have one.  Returns
  * the word.
@@ -1283,6 +1342,7 @@ void nfnl_gen_self_check(void)
 	check_no_rejected_attr();
 	check_cmd_attrs_lookup();
 	check_spec_table_dispatch();
+	check_string_oneof();
 	check_cttimeout_commands();
 	for (i = 0; i < ARRAY_SIZE(slots); i++)
 		check_bounded_slot(&slots[i]);

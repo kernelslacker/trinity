@@ -46,6 +46,8 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING_WORD:
 		return strlen(spec->word) + 1;
+	case NLA_KIND_STRING_ONEOF:
+		return strlen(spec->words[rnd_modulo_u32(spec->n_words)]) + 1;
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY: {
@@ -116,10 +118,35 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 }
 
 /*
+ * A word of a STRING_ONEOF spec that len bytes hold with its NUL, one of
+ * those that long picked at random, or NULL when a full buffer cut the
+ * attribute shorter than any.
+ */
+static const char *spec_word_of_len(const struct nla_attr_spec *spec, size_t len)
+{
+	unsigned int i, n = 0, pick;
+
+	for (i = 0; i < spec->n_words; i++) {
+		if (strlen(spec->words[i]) + 1 == len)
+			n++;
+	}
+	if (n == 0)
+		return NULL;
+
+	pick = rnd_modulo_u32(n);
+	for (i = 0; i < spec->n_words; i++) {
+		if (strlen(spec->words[i]) + 1 == len && pick-- == 0)
+			return spec->words[i];
+	}
+	return NULL;
+}
+
+/*
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
- * IFLA_INFO_KIND), a WORD its word, the bounded scalars a value their policy
- * or handler accepts, and everything else gets random bytes.
+ * IFLA_INFO_KIND), a WORD its word and a word list one of its words, the
+ * bounded scalars a value their policy or handler accepts, and everything
+ * else gets random bytes.
  */
 static void spec_fill_payload(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -131,13 +158,19 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 
 	switch (spec->kind) {
 	case NLA_KIND_STRING_WORD:
+	case NLA_KIND_STRING_ONEOF:
 	case NLA_KIND_STRING:
 		/* A word's len is its own, less only when a full buffer cut
-		 * the attribute short; the draw in eight that is not the word
+		 * the attribute short; the draw in eight that is not a word
 		 * is the random string a STRING is. */
-		if (spec->kind == NLA_KIND_STRING_WORD && !ONE_IN(8)) {
-			memcpy(p, spec->word, len);
-			break;
+		if (spec->kind != NLA_KIND_STRING && !ONE_IN(8)) {
+			const char *word = spec->kind == NLA_KIND_STRING_WORD ?
+					   spec->word : spec_word_of_len(spec, len);
+
+			if (word != NULL) {
+				memcpy(p, word, len);
+				break;
+			}
 		}
 		for (i = 0; i + 1 < len; i++)
 			p[i] = 'a' + (rnd_modulo_u32(26));
