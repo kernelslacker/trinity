@@ -22,19 +22,19 @@
  */
 static const struct nla_attr_spec netdev_queue_id_attrs[] = {
 	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
 };
 
 static const struct nla_attr_spec netdev_page_pool_info_attrs[] = {
 	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_BINARY_FIXED2, 8, 4 },
-	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32_RANGE, INT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_lease_attrs[] = {
-	{ NETDEV_A_LEASE_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_LEASE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ NETDEV_A_LEASE_QUEUE,		NLA_KIND_NESTED, 0, 0,
 	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs) },
-	{ NETDEV_A_LEASE_NETNS_ID,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_LEASE_NETNS_ID,	NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 };
 
 /*
@@ -42,12 +42,14 @@ static const struct nla_attr_spec netdev_lease_attrs[] = {
  * apart from its doit's, and each ends at its own last id, so a request
  * meets only the ids of its cmd's: a dump of QUEUE_GET has no QUEUE_ID and
  * a NAPI_GET doit no IFINDEX.  What the replies carry, the counters, the
- * XDP features and the ids of a queue's NAPI, is not in a request policy,
- * and the bounded values, an ifindex of 1 or more and a queue type of 0 or
- * 1 among them, are plain here.
+ * XDP features and the ids of a queue's NAPI, is not in a request policy.
+ * The bounded u32s draw inside their bounds, an ifindex from 1 and a queue
+ * type of 0 or 1 among them, and the NETNS_ID s32 from 0; an NLA_UINT's
+ * bound, and RX_PAGE_SIZE's floor, the kernel's PAGE_SIZE, are not
+ * modelled.
  */
 static const struct nla_attr_spec netdev_dev_get_attrs[] = {
-	{ NETDEV_A_DEV_IFINDEX,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_DEV_IFINDEX,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_page_pool_get_attrs[] = {
@@ -55,7 +57,7 @@ static const struct nla_attr_spec netdev_page_pool_get_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_page_pool_get_dump_attrs[] = {
-	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32_RANGE, INT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_page_pool_stats_get_attrs[] = {
@@ -65,17 +67,17 @@ static const struct nla_attr_spec netdev_page_pool_stats_get_attrs[] = {
 
 static const struct nla_attr_spec netdev_queue_get_attrs[] = {
 	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
 };
 
 static const struct nla_attr_spec netdev_queue_get_dump_attrs[] = {
-	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_queue_create_attrs[] = {
-	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
 	{ NETDEV_A_QUEUE_LEASE,		NLA_KIND_NESTED, 0, 0,
 	  netdev_lease_attrs, ARRAY_SIZE(netdev_lease_attrs) },
 };
@@ -85,26 +87,26 @@ static const struct nla_attr_spec netdev_napi_get_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_napi_get_dump_attrs[] = {
-	{ NETDEV_A_NAPI_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_NAPI_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 /* The two timeouts are NLA_UINT, 4 or 8 bytes. */
 static const struct nla_attr_spec netdev_napi_set_attrs[] = {
 	{ NETDEV_A_NAPI_ID,		NLA_KIND_U32,    4 },
-	{ NETDEV_A_NAPI_DEFER_HARD_IRQS, NLA_KIND_U32,   4 },
+	{ NETDEV_A_NAPI_DEFER_HARD_IRQS, NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 	{ NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT, NLA_KIND_BINARY_FIXED2, 8, 4 },
 	{ NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT, NLA_KIND_BINARY_FIXED2, 8, 4 },
-	{ NETDEV_A_NAPI_THREADED,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_NAPI_THREADED,	NLA_KIND_U32_RANGE, 2, 0 },
 };
 
 /* QSTATS_GET is a dumpit alone.  SCOPE is an NLA_UINT, 4 or 8 bytes. */
 static const struct nla_attr_spec netdev_qstats_get_attrs[] = {
-	{ NETDEV_A_QSTATS_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_QSTATS_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ NETDEV_A_QSTATS_SCOPE,	NLA_KIND_BINARY_FIXED2, 8, 4 },
 };
 
 static const struct nla_attr_spec netdev_bind_rx_attrs[] = {
-	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ NETDEV_A_DMABUF_QUEUES,	NLA_KIND_NESTED, 0, 0,
 	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs) },
 	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4 },
@@ -112,7 +114,7 @@ static const struct nla_attr_spec netdev_bind_rx_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_bind_tx_attrs[] = {
-	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4 },
 };
 

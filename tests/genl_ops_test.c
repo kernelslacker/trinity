@@ -876,71 +876,72 @@ extern struct genl_family_grammar fam_netdev;
 
 /*
  * net/core/netdev-genl-gen.c: the netdev_*_nl_policy tables.  An NLA_UINT
- * takes 4 or 8 bytes, as an NLA_SINT does.
+ * takes 4 or 8 bytes, as an NLA_SINT does, so its bounds go unmirrored, as
+ * does RX_PAGE_SIZE's, whose floor is the kernel's PAGE_SIZE.
  */
 static struct slot netdev_queue_id[] = {
 	S_U32(NETDEV_A_QUEUE_ID),
-	S_U32(NETDEV_A_QUEUE_TYPE),
+	S_U32_RANGE(NETDEV_A_QUEUE_TYPE, 0, 1),
 };
 static struct slot netdev_page_pool_info[] = {
 	S_SINT(NETDEV_A_PAGE_POOL_ID),
-	S_U32(NETDEV_A_PAGE_POOL_IFINDEX),
+	S_U32_RANGE(NETDEV_A_PAGE_POOL_IFINDEX, 1, INT32_MAX),
 };
 static struct slot netdev_lease[] = {
-	S_U32(NETDEV_A_LEASE_IFINDEX),
+	S_U32_RANGE(NETDEV_A_LEASE_IFINDEX, 1, UINT32_MAX),
 	S_NEST(NETDEV_A_LEASE_QUEUE, netdev_queue_id),
-	S_U32(NETDEV_A_LEASE_NETNS_ID),
+	S_U32_RANGE(NETDEV_A_LEASE_NETNS_ID, 0, INT32_MAX),
 };
 static struct slot netdev_dev_get[] = {
-	S_U32(NETDEV_A_DEV_IFINDEX),
+	S_U32_RANGE(NETDEV_A_DEV_IFINDEX, 1, UINT32_MAX),
 };
 static struct slot netdev_page_pool_get_do[] = {
 	S_SINT(NETDEV_A_PAGE_POOL_ID),
 };
 static struct slot netdev_page_pool_get_dump[] = {
-	S_U32(NETDEV_A_PAGE_POOL_IFINDEX),
+	S_U32_RANGE(NETDEV_A_PAGE_POOL_IFINDEX, 1, INT32_MAX),
 };
 static struct slot netdev_page_pool_stats_get[] = {
 	S_NEST(NETDEV_A_PAGE_POOL_STATS_INFO, netdev_page_pool_info),
 };
 static struct slot netdev_queue_get_do[] = {
-	S_U32(NETDEV_A_QUEUE_IFINDEX),
-	S_U32(NETDEV_A_QUEUE_TYPE),
+	S_U32_RANGE(NETDEV_A_QUEUE_IFINDEX, 1, UINT32_MAX),
+	S_U32_RANGE(NETDEV_A_QUEUE_TYPE, 0, 1),
 	S_U32(NETDEV_A_QUEUE_ID),
 };
 static struct slot netdev_queue_get_dump[] = {
-	S_U32(NETDEV_A_QUEUE_IFINDEX),
+	S_U32_RANGE(NETDEV_A_QUEUE_IFINDEX, 1, UINT32_MAX),
 };
 static struct slot netdev_napi_get_do[] = {
 	S_U32(NETDEV_A_NAPI_ID),
 };
 static struct slot netdev_napi_get_dump[] = {
-	S_U32(NETDEV_A_NAPI_IFINDEX),
+	S_U32_RANGE(NETDEV_A_NAPI_IFINDEX, 1, UINT32_MAX),
 };
 static struct slot netdev_qstats_get[] = {
-	S_U32(NETDEV_A_QSTATS_IFINDEX),
+	S_U32_RANGE(NETDEV_A_QSTATS_IFINDEX, 1, UINT32_MAX),
 	S_SINT(NETDEV_A_QSTATS_SCOPE),
 };
 static struct slot netdev_bind_rx[] = {
-	S_U32(NETDEV_A_DMABUF_IFINDEX),
+	S_U32_RANGE(NETDEV_A_DMABUF_IFINDEX, 1, UINT32_MAX),
 	S_U32(NETDEV_A_DMABUF_FD),
 	S_NEST(NETDEV_A_DMABUF_QUEUES, netdev_queue_id),
 	S_U32(NETDEV_A_DMABUF_RX_PAGE_SIZE),
 };
 static struct slot netdev_napi_set[] = {
 	S_U32(NETDEV_A_NAPI_ID),
-	S_U32(NETDEV_A_NAPI_DEFER_HARD_IRQS),
+	S_U32_RANGE(NETDEV_A_NAPI_DEFER_HARD_IRQS, 0, INT32_MAX),
 	S_SINT(NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT),
 	S_SINT(NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT),
-	S_U32(NETDEV_A_NAPI_THREADED),
+	S_U32_RANGE(NETDEV_A_NAPI_THREADED, 0, 2),
 };
 static struct slot netdev_bind_tx[] = {
-	S_U32(NETDEV_A_DMABUF_IFINDEX),
+	S_U32_RANGE(NETDEV_A_DMABUF_IFINDEX, 1, UINT32_MAX),
 	S_U32(NETDEV_A_DMABUF_FD),
 };
 static struct slot netdev_queue_create[] = {
-	S_U32(NETDEV_A_QUEUE_IFINDEX),
-	S_U32(NETDEV_A_QUEUE_TYPE),
+	S_U32_RANGE(NETDEV_A_QUEUE_IFINDEX, 1, UINT32_MAX),
+	S_U32_RANGE(NETDEV_A_QUEUE_TYPE, 0, 1),
 	S_NEST(NETDEV_A_QUEUE_LEASE, netdev_lease),
 };
 /* The dumpit of DEV_GET has no policy, so takes nothing. */
