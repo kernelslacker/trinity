@@ -611,6 +611,16 @@ check_enum_member linux/android/binder.h BINDER_GET_NODE_DEBUG_INFO \
 	BINDER_FREEZE BINDER_GET_FROZEN_INFO \
 	BINDER_ENABLE_ONEWAY_SPAM_DETECTION BINDER_GET_EXTENDED_ERROR
 
+# sunrpc's entry-nest and cache-flush attributes, which landed after the
+# family itself.
+check_enum_member linux/sunrpc_netlink.h SUNRPC_A_IP_MAP_SEQNO \
+	SUNRPC_A_IP_MAP_CLASS SUNRPC_A_IP_MAP_ADDR SUNRPC_A_IP_MAP_DOMAIN \
+	SUNRPC_A_IP_MAP_NEGATIVE SUNRPC_A_IP_MAP_EXPIRY \
+	SUNRPC_A_UNIX_GID_REQS_REQUESTS SUNRPC_A_UNIX_GID_SEQNO \
+	SUNRPC_A_UNIX_GID_UID SUNRPC_A_UNIX_GID_GIDS \
+	SUNRPC_A_UNIX_GID_NEGATIVE SUNRPC_A_UNIX_GID_EXPIRY \
+	SUNRPC_A_CACHE_FLUSH_MASK
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

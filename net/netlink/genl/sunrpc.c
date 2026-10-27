@@ -1,8 +1,8 @@
 /*
  * Genetlink family grammar: sunrpc (SUNRPC cache upcall control plane),
  * targeting the policies and handlers in net/sunrpc/netlink.c.  Its ops are
- * all GENL_ADMIN_PERM and only the NESTED REQUESTS attribute is listed; the
- * reasons sit at the two tables below.
+ * all GENL_ADMIN_PERM; an op with a policy has a table of its own, one
+ * without takes no attribute.
  */
 
 #if __has_include(<linux/sunrpc_netlink.h>)
@@ -12,49 +12,83 @@
 #include "utils.h"
 
 /*
+ * The nests of the two SET_REQS ops, from sunrpc_ip_map_nl_policy and
+ * sunrpc_unix_gid_nl_policy.  The three ip_map strings are NLA_NUL_STRING
+ * and GIDS repeats once per gid, a single one being enough to pass.
+ */
+static const struct nla_attr_spec sunrpc_ip_map_attrs[] = {
+	{ SUNRPC_A_IP_MAP_SEQNO,	NLA_KIND_U64,    8 },
+	{ SUNRPC_A_IP_MAP_CLASS,	NLA_KIND_STRING, 32, 1 },
+	{ SUNRPC_A_IP_MAP_ADDR,		NLA_KIND_STRING, 64, 1 },
+	{ SUNRPC_A_IP_MAP_DOMAIN,	NLA_KIND_STRING, 32, 1 },
+	{ SUNRPC_A_IP_MAP_NEGATIVE,	NLA_KIND_FLAG,   0 },
+	{ SUNRPC_A_IP_MAP_EXPIRY,	NLA_KIND_U64,    8 },
+};
+
+static const struct nla_attr_spec sunrpc_unix_gid_attrs[] = {
+	{ SUNRPC_A_UNIX_GID_SEQNO,	NLA_KIND_U64,    8 },
+	{ SUNRPC_A_UNIX_GID_UID,	NLA_KIND_U32,    4 },
+	{ SUNRPC_A_UNIX_GID_GIDS,	NLA_KIND_U32,    4 },
+	{ SUNRPC_A_UNIX_GID_NEGATIVE,	NLA_KIND_FLAG,   0 },
+	{ SUNRPC_A_UNIX_GID_EXPIRY,	NLA_KIND_U64,    8 },
+};
+
+/*
+ * The ops validate strictly against a policy of their own, and every
+ * attribute namespace starts at id 1, so a cmd takes only the ids of its
+ * own.  REQUESTS is a nest of one entry's attributes, and the mask of
+ * CACHE_FLUSH is a u32.
+ */
+static const struct nla_attr_spec sunrpc_ip_map_set_reqs_attrs[] = {
+	{ SUNRPC_A_IP_MAP_REQS_REQUESTS, NLA_KIND_NESTED, 0, 0,
+	  sunrpc_ip_map_attrs, ARRAY_SIZE(sunrpc_ip_map_attrs) },
+};
+
+static const struct nla_attr_spec sunrpc_unix_gid_set_reqs_attrs[] = {
+	{ SUNRPC_A_UNIX_GID_REQS_REQUESTS, NLA_KIND_NESTED, 0, 0,
+	  sunrpc_unix_gid_attrs, ARRAY_SIZE(sunrpc_unix_gid_attrs) },
+};
+
+static const struct nla_attr_spec sunrpc_cache_flush_attrs[] = {
+	{ SUNRPC_A_CACHE_FLUSH_MASK,	NLA_KIND_U32,    4 },
+};
+
+/*
  * The four *_REQS commands and CACHE_FLUSH are GENL_ADMIN_PERM, which
  * genl_family_rcv_msg() checks before parsing attributes: a child without
  * CAP_NET_ADMIN in the initial user namespace gets -EPERM, while one that
  * holds it reaches every per-cmd parser once the message carries a real
  * family_id.
+ *
+ * The two GET_REQS ops are dumpits with no policy, which the genl core
+ * gives a reject-all one, so they take no attribute; the entries their
+ * replies carry are not a request's.
  */
 static const struct genl_cmd_grammar sunrpc_cmds[] = {
 	/* Not an op: a kernel-to-user multicast event, so the demuxer
 	 * answers -EOPNOTSUPP.  Kept on purpose: reaching that rejection
 	 * is demuxer coverage, and the id is right if a doit handler
 	 * ever appears. */
-	{ SUNRPC_CMD_CACHE_NOTIFY,	  "SUNRPC_CMD_CACHE_NOTIFY" },
-	{ SUNRPC_CMD_IP_MAP_GET_REQS,	  "SUNRPC_CMD_IP_MAP_GET_REQS" },
-	{ SUNRPC_CMD_IP_MAP_SET_REQS,	  "SUNRPC_CMD_IP_MAP_SET_REQS" },
-	{ SUNRPC_CMD_UNIX_GID_GET_REQS,	  "SUNRPC_CMD_UNIX_GID_GET_REQS" },
-	{ SUNRPC_CMD_UNIX_GID_SET_REQS,	  "SUNRPC_CMD_UNIX_GID_SET_REQS" },
-	{ SUNRPC_CMD_CACHE_FLUSH,	  "SUNRPC_CMD_CACHE_FLUSH" },
-};
-
-/*
- * A flat table cannot hold namespaces whose id 1 disagrees on kind, so
- * only the NESTED REQUESTS surface is listed.  SUNRPC_A_IP_MAP_REQS_
- * REQUESTS and SUNRPC_A_UNIX_GID_REQS_REQUESTS are both wire id 1 NESTED,
- * so this one entry covers the outer validators of all four *_REQS
- * commands (the wire id is what the generator emits).
- *
- * Not listed until the grammar carries a per-command attribute
- * namespace: SUNRPC_A_CACHE_NOTIFY_CACHE_TYPE and SUNRPC_A_CACHE_FLUSH_
- * MASK (id 1, U32) and the inner SUNRPC_A_IP_MAP_* / SUNRPC_A_UNIX_GID_*
- * namespaces (ids 1..6 / 1..5), which only appear nested inside
- * REQUESTS.  The two u32-anchored commands stay in cmds[] so the family
- * demuxer still sees them, but their attributes are not modelled.
- */
-static const struct nla_attr_spec sunrpc_attrs[] = {
-	{ SUNRPC_A_IP_MAP_REQS_REQUESTS,	NLA_KIND_NESTED, 0 },
+	{ SUNRPC_CMD_CACHE_NOTIFY,	  "SUNRPC_CMD_CACHE_NOTIFY",
+	  genl_no_attrs },
+	{ SUNRPC_CMD_IP_MAP_GET_REQS,	  "SUNRPC_CMD_IP_MAP_GET_REQS",
+	  genl_no_attrs },
+	{ SUNRPC_CMD_IP_MAP_SET_REQS,	  "SUNRPC_CMD_IP_MAP_SET_REQS",
+	  sunrpc_ip_map_set_reqs_attrs,
+	  ARRAY_SIZE(sunrpc_ip_map_set_reqs_attrs) },
+	{ SUNRPC_CMD_UNIX_GID_GET_REQS,	  "SUNRPC_CMD_UNIX_GID_GET_REQS",
+	  genl_no_attrs },
+	{ SUNRPC_CMD_UNIX_GID_SET_REQS,	  "SUNRPC_CMD_UNIX_GID_SET_REQS",
+	  sunrpc_unix_gid_set_reqs_attrs,
+	  ARRAY_SIZE(sunrpc_unix_gid_set_reqs_attrs) },
+	{ SUNRPC_CMD_CACHE_FLUSH,	  "SUNRPC_CMD_CACHE_FLUSH",
+	  sunrpc_cache_flush_attrs, ARRAY_SIZE(sunrpc_cache_flush_attrs) },
 };
 
 struct genl_family_grammar fam_sunrpc __attribute__((used)) = {
 	.name = SUNRPC_FAMILY_NAME,
 	.cmds = sunrpc_cmds,
 	.n_cmds = ARRAY_SIZE(sunrpc_cmds),
-	.attrs = sunrpc_attrs,
-	.n_attrs = ARRAY_SIZE(sunrpc_attrs),
 	.default_version = SUNRPC_FAMILY_VERSION,
 };
 

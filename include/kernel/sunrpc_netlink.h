@@ -44,3 +44,50 @@
 #ifndef SUNRPC_A_IP_MAP_REQS_REQUESTS
 #define SUNRPC_A_IP_MAP_REQS_REQUESTS	1
 #endif
+
+/*
+ * The ids of the two entry nests and of CACHE_FLUSH came with the later
+ * ops.  They are enum members, so configure probes them and emits
+ * HAVE_<SYMBOL>.
+ */
+#ifndef HAVE_SUNRPC_A_IP_MAP_SEQNO
+#define SUNRPC_A_IP_MAP_SEQNO		1
+#endif
+#ifndef HAVE_SUNRPC_A_IP_MAP_CLASS
+#define SUNRPC_A_IP_MAP_CLASS		2
+#endif
+#ifndef HAVE_SUNRPC_A_IP_MAP_ADDR
+#define SUNRPC_A_IP_MAP_ADDR		3
+#endif
+#ifndef HAVE_SUNRPC_A_IP_MAP_DOMAIN
+#define SUNRPC_A_IP_MAP_DOMAIN		4
+#endif
+#ifndef HAVE_SUNRPC_A_IP_MAP_NEGATIVE
+#define SUNRPC_A_IP_MAP_NEGATIVE	5
+#endif
+#ifndef HAVE_SUNRPC_A_IP_MAP_EXPIRY
+#define SUNRPC_A_IP_MAP_EXPIRY		6
+#endif
+
+#ifndef HAVE_SUNRPC_A_UNIX_GID_REQS_REQUESTS
+#define SUNRPC_A_UNIX_GID_REQS_REQUESTS	1
+#endif
+#ifndef HAVE_SUNRPC_A_UNIX_GID_SEQNO
+#define SUNRPC_A_UNIX_GID_SEQNO		1
+#endif
+#ifndef HAVE_SUNRPC_A_UNIX_GID_UID
+#define SUNRPC_A_UNIX_GID_UID		2
+#endif
+#ifndef HAVE_SUNRPC_A_UNIX_GID_GIDS
+#define SUNRPC_A_UNIX_GID_GIDS		3
+#endif
+#ifndef HAVE_SUNRPC_A_UNIX_GID_NEGATIVE
+#define SUNRPC_A_UNIX_GID_NEGATIVE	4
+#endif
+#ifndef HAVE_SUNRPC_A_UNIX_GID_EXPIRY
+#define SUNRPC_A_UNIX_GID_EXPIRY	5
+#endif
+
+#ifndef HAVE_SUNRPC_A_CACHE_FLUSH_MASK
+#define SUNRPC_A_CACHE_FLUSH_MASK	1
+#endif

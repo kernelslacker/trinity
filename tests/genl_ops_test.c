@@ -57,6 +57,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_NFSD		714
 #define ID_DRM_RAS	715
 #define ID_LOCKD	716
+#define ID_SUNRPC	717
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -761,6 +762,47 @@ static struct cmd_policy lockd_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/sunrpc_netlink.h>)
+#include "kernel/sunrpc_netlink.h"
+
+extern struct genl_family_grammar fam_sunrpc;
+
+/* net/sunrpc/netlink.c: the sunrpc_*_nl_policy tables */
+static struct slot sunrpc_ip_map[] = {
+	S_U64(SUNRPC_A_IP_MAP_SEQNO),
+	S_STR(SUNRPC_A_IP_MAP_CLASS, 0),
+	S_STR(SUNRPC_A_IP_MAP_ADDR, 0),
+	S_STR(SUNRPC_A_IP_MAP_DOMAIN, 0),
+	S_FLAG(SUNRPC_A_IP_MAP_NEGATIVE),
+	S_U64(SUNRPC_A_IP_MAP_EXPIRY),
+};
+static struct slot sunrpc_unix_gid[] = {
+	S_U64(SUNRPC_A_UNIX_GID_SEQNO),
+	S_U32(SUNRPC_A_UNIX_GID_UID),
+	S_U32(SUNRPC_A_UNIX_GID_GIDS),
+	S_FLAG(SUNRPC_A_UNIX_GID_NEGATIVE),
+	S_U64(SUNRPC_A_UNIX_GID_EXPIRY),
+};
+static struct slot sunrpc_ip_map_set_reqs[] = {
+	S_NEST(SUNRPC_A_IP_MAP_REQS_REQUESTS, sunrpc_ip_map),
+};
+static struct slot sunrpc_unix_gid_set_reqs[] = {
+	S_NEST(SUNRPC_A_UNIX_GID_REQS_REQUESTS, sunrpc_unix_gid),
+};
+static struct slot sunrpc_cache_flush[] = {
+	S_U32(SUNRPC_A_CACHE_FLUSH_MASK),
+};
+/* The GET_REQS dumpits have no policy, so take nothing. */
+static struct cmd_policy sunrpc_cmds[] = {
+	P_CMD_NONE(SUNRPC_CMD_CACHE_NOTIFY),
+	P_CMD_NONE(SUNRPC_CMD_IP_MAP_GET_REQS),
+	P_CMD(SUNRPC_CMD_IP_MAP_SET_REQS, sunrpc_ip_map_set_reqs),
+	P_CMD_NONE(SUNRPC_CMD_UNIX_GID_GET_REQS),
+	P_CMD(SUNRPC_CMD_UNIX_GID_SET_REQS, sunrpc_unix_gid_set_reqs),
+	P_CMD(SUNRPC_CMD_CACHE_FLUSH, sunrpc_cache_flush),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -782,6 +824,9 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<linux/lockd_netlink.h>)
 	{ &fam_lockd, ID_LOCKD, lockd_cmds, ARRAY_SIZE(lockd_cmds) },
+#endif
+#if __has_include(<linux/sunrpc_netlink.h>)
+	{ &fam_sunrpc, ID_SUNRPC, sunrpc_cmds, ARRAY_SIZE(sunrpc_cmds) },
 #endif
 };
 
