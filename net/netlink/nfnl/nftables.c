@@ -367,6 +367,82 @@ static const struct nla_attr_spec nft_set_name_attrs[] = {
 };
 
 /*
+ * The set-element commands.  NEWSETELEM answers -EINVAL without
+ * NFTA_SET_ELEM_LIST_ELEMENTS, then without the table, then without the set,
+ * for which the set's id can stand in.  GETSETELEM wants the elements unless
+ * it is a dump, and then the table and the set; DELSETELEM and
+ * DESTROYSETELEM want the table and the set, and without elements empty the
+ * set, so theirs are not marked.  Only NEWSETELEM reads the id.
+ *
+ * ELEMENTS is an NLA_POLICY_NESTED_ARRAY of nft_set_elem_policy.  Adding an
+ * element reads all of it and answers -EINVAL to one without a KEY, unless its
+ * flags say it is the catch-all; getting and deleting one read the key, the
+ * flags and KEY_END, which are what their tables hold.  A key is a nest
+ * of nft_data_policy that must hold a VALUE, whose length has to be the set's
+ * KEY_LEN, as nft_value_init() sees to; no length is known to the draw, so one
+ * element in sixty-four or so gets by.  The DATA, EXPR and EXPRESSIONS of an
+ * element are nests the grammar leaves to the table of the element.
+ */
+static const struct nla_attr_spec nft_set_data_attrs[] = {
+	{ NFTA_DATA_VALUE,         NLA_KIND_BINARY, NFT_DATA_VALUE_MAXLEN, 1,
+	  .required = true },
+};
+
+static const struct nla_attr_spec nft_set_elem_attrs[] = {
+	{ NFTA_SET_ELEM_KEY,         NLA_KIND_NESTED, 0, 0,
+	  nft_set_data_attrs, ARRAY_SIZE(nft_set_data_attrs), .required = true },
+	{ NFTA_SET_ELEM_DATA,        NLA_KIND_NESTED, 0 },
+	{ NFTA_SET_ELEM_FLAGS,       NLA_KIND_BE32_MASK,
+		NFT_SET_ELEM_INTERVAL_END | NFT_SET_ELEM_CATCHALL },
+	{ NFTA_SET_ELEM_TIMEOUT,     NLA_KIND_U64,    8 },
+	{ NFTA_SET_ELEM_EXPIRATION,  NLA_KIND_U64,    8 },
+	{ NFTA_SET_ELEM_USERDATA,    NLA_KIND_BINARY, 64 },
+	{ NFTA_SET_ELEM_EXPR,        NLA_KIND_NESTED, 0 },
+	{ NFTA_SET_ELEM_OBJREF,      NLA_KIND_STRING, 32 },
+	{ NFTA_SET_ELEM_KEY_END,     NLA_KIND_NESTED, 0, 0,
+	  nft_set_data_attrs, ARRAY_SIZE(nft_set_data_attrs) },
+	{ NFTA_SET_ELEM_EXPRESSIONS, NLA_KIND_NESTED, 0 },
+};
+
+static const struct nla_attr_spec nft_set_elem_key_attrs[] = {
+	{ NFTA_SET_ELEM_KEY,         NLA_KIND_NESTED, 0, 0,
+	  nft_set_data_attrs, ARRAY_SIZE(nft_set_data_attrs), .required = true },
+	{ NFTA_SET_ELEM_FLAGS,       NLA_KIND_BE32_MASK,
+		NFT_SET_ELEM_INTERVAL_END | NFT_SET_ELEM_CATCHALL },
+	{ NFTA_SET_ELEM_KEY_END,     NLA_KIND_NESTED, 0, 0,
+	  nft_set_data_attrs, ARRAY_SIZE(nft_set_data_attrs) },
+};
+
+static const struct nla_attr_spec nft_newsetelem_attrs[] = {
+	{ NFTA_SET_ELEM_LIST_TABLE,    NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_SET,      NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_ELEMENTS, NLA_KIND_NESTED_ARRAY, 0, 0,
+	  nft_set_elem_attrs, ARRAY_SIZE(nft_set_elem_attrs), .required = true },
+	{ NFTA_SET_ELEM_LIST_SET_ID,   NLA_KIND_U32, 4 },
+};
+
+static const struct nla_attr_spec nft_getsetelem_attrs[] = {
+	{ NFTA_SET_ELEM_LIST_TABLE,    NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_SET,      NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_ELEMENTS, NLA_KIND_NESTED_ARRAY, 0, 0,
+	  nft_set_elem_key_attrs, ARRAY_SIZE(nft_set_elem_key_attrs),
+	  .required = true },
+};
+
+static const struct nla_attr_spec nft_delsetelem_attrs[] = {
+	{ NFTA_SET_ELEM_LIST_TABLE,    NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_SET,      NLA_KIND_STRING_WORD, 0, 0,
+	  .word = nft_word, .required = true },
+	{ NFTA_SET_ELEM_LIST_ELEMENTS, NLA_KIND_NESTED_ARRAY, 0, 0,
+	  nft_set_elem_key_attrs, ARRAY_SIZE(nft_set_elem_key_attrs) },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -405,11 +481,16 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_set_name_attrs, ARRAY_SIZE(nft_set_name_attrs) },
 	{ NFT_MSG_DESTROYSET,        "NFT_MSG_DESTROYSET", true,
 	  nft_set_name_attrs, ARRAY_SIZE(nft_set_name_attrs) },
-	{ NFT_MSG_NEWSETELEM,        "NFT_MSG_NEWSETELEM", true },
-	{ NFT_MSG_GETSETELEM,        "NFT_MSG_GETSETELEM" },
-	{ NFT_MSG_GETSETELEM_RESET,  "NFT_MSG_GETSETELEM_RESET" },
-	{ NFT_MSG_DELSETELEM,        "NFT_MSG_DELSETELEM", true },
-	{ NFT_MSG_DESTROYSETELEM,    "NFT_MSG_DESTROYSETELEM", true },
+	{ NFT_MSG_NEWSETELEM,        "NFT_MSG_NEWSETELEM", true,
+	  nft_newsetelem_attrs, ARRAY_SIZE(nft_newsetelem_attrs) },
+	{ NFT_MSG_GETSETELEM,        "NFT_MSG_GETSETELEM", false,
+	  nft_getsetelem_attrs, ARRAY_SIZE(nft_getsetelem_attrs) },
+	{ NFT_MSG_GETSETELEM_RESET,  "NFT_MSG_GETSETELEM_RESET", false,
+	  nft_getsetelem_attrs, ARRAY_SIZE(nft_getsetelem_attrs) },
+	{ NFT_MSG_DELSETELEM,        "NFT_MSG_DELSETELEM", true,
+	  nft_delsetelem_attrs, ARRAY_SIZE(nft_delsetelem_attrs) },
+	{ NFT_MSG_DESTROYSETELEM,    "NFT_MSG_DESTROYSETELEM", true,
+	  nft_delsetelem_attrs, ARRAY_SIZE(nft_delsetelem_attrs) },
 	{ NFT_MSG_NEWOBJ,            "NFT_MSG_NEWOBJ", true },
 	{ NFT_MSG_GETOBJ,            "NFT_MSG_GETOBJ" },
 	{ NFT_MSG_GETOBJ_RESET,      "NFT_MSG_GETOBJ_RESET" },
@@ -434,7 +515,7 @@ static const unsigned char nftables_families[] = {
 
 /*
  * NFTA_* attrs of the namespaces whose commands name no table of their own.
- * Their ids overlap (NFTA_SET_ELEM_KEY and NFTA_OBJ_TABLE are both 1), so an
+ * Their ids overlap (NFTA_OBJ_TABLE and NFTA_FLOWTABLE_TABLE are both 1), so an
  * entry meets whatever slot the picked command's policy has at that id:
  * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
  * length-checks typed ones.  The obj and flowtable nests are bare NLA_NESTED
@@ -443,18 +524,6 @@ static const unsigned char nftables_families[] = {
  * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*SETELEM */
-	{ NFTA_SET_ELEM_KEY,         NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_DATA,        NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_FLAGS,       NLA_KIND_BE32_MASK,
-		NFT_SET_ELEM_INTERVAL_END | NFT_SET_ELEM_CATCHALL },
-	{ NFTA_SET_ELEM_TIMEOUT,     NLA_KIND_U64,    8 },
-	{ NFTA_SET_ELEM_EXPIRATION,  NLA_KIND_U64,    8 },
-	{ NFTA_SET_ELEM_USERDATA,    NLA_KIND_BINARY, 64 },
-	{ NFTA_SET_ELEM_EXPR,        NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_OBJREF,      NLA_KIND_STRING, 32 },
-	{ NFTA_SET_ELEM_KEY_END,     NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_EXPRESSIONS, NLA_KIND_NESTED, 0 },
 	/* NFT_MSG_*OBJ */
 	{ NFTA_OBJ_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_OBJ_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },

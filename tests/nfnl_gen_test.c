@@ -984,12 +984,13 @@ static unsigned int min_streams(const struct pslot *pol, unsigned int n_slots)
  * room left for it.  Unmarked it would be in 0.2 to 0.75 of the streams of
  * the tables here.  Over 600 streams the fraction has a standard deviation
  * under 0.02, so 0.70 is five of them under a rate of 0.80.  A slot that is
- * never left out leaves the handler's missing-attribute arm without traffic.
- * A small table gets the slot into most streams unmarked, which is why the
- * marks are also checked outright.
+ * never left out leaves the handler's missing-attribute arm without traffic;
+ * a nest is never emitted empty, so the one attribute of a nest of one has no
+ * arm of that kind.  A small table gets the slot into most streams unmarked,
+ * which is why the marks are also checked outright.
  */
 static void expect_required(const struct pslot *pol, unsigned int n_slots,
-			    const char *what)
+			    const char *what, bool nested)
 {
 	unsigned int i;
 
@@ -997,7 +998,7 @@ static void expect_required(const struct pslot *pol, unsigned int n_slots,
 		const struct pslot *slot = &pol[i];
 
 		if (slot->nest != NULL)
-			expect_required(slot->nest, slot->n_nest, what);
+			expect_required(slot->nest, slot->n_nest, what, true);
 		if (!slot->required)
 			continue;
 
@@ -1011,7 +1012,7 @@ static void expect_required(const struct pslot *pol, unsigned int n_slots,
 				what, slot->id, slot->present, slot->streams);
 			BUG("nfnl grammar: a required attribute is left out too often");
 		}
-		if (slot->present == slot->streams) {
+		if (slot->present == slot->streams && !(nested && n_slots == 1)) {
 			fprintf(stderr, "%s: attribute %u is in all %u streams\n",
 				what, slot->id, slot->streams);
 			BUG("nfnl grammar: a required attribute is never left out");
@@ -1096,7 +1097,7 @@ static void check_cmd_row(struct cmd_row *row)
 		end = build_stream(buf, sizeof(buf), cmd->attrs, cmd->n_attrs);
 		tally_stream(buf, end, row->pol, row->n_slots);
 	}
-	expect_required(row->pol, row->n_slots, row->name);
+	expect_required(row->pol, row->n_slots, row->name, false);
 }
 
 /*
@@ -1211,6 +1212,60 @@ static struct pslot set_name[] = {
 	PS(2, true, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nft_set_elem_list_policy has the table (1), the set's name (2), ELEMENTS
+ * (3), an array of nft_set_elem_policy, and the set's id (4).  NEWSETELEM
+ * answers -EINVAL without ELEMENTS, then without the table, then without the
+ * set, which the id can stand in for.  GETSETELEM wants ELEMENTS unless it is
+ * a dump, and then the table and the set; DELSETELEM and DESTROYSETELEM want
+ * the table and the set, and without ELEMENTS empty the set.  Only NEWSETELEM
+ * reads the id.
+ *
+ * An element is nft_set_elem_policy's KEY (1), DATA (2), FLAGS (3), TIMEOUT
+ * (4), EXPIRATION (5), the user data (6), EXPR (7), OBJREF (9), KEY_END (10)
+ * and EXPRESSIONS (11).  Adding one reads all of them and answers -EINVAL
+ * without a KEY unless the flags say CATCHALL; getting and deleting one read
+ * the KEY, the flags and KEY_END.  A key is nft_data_policy's VALUE (1), which
+ * it must hold, the VERDICT (2) being no key.  The grammar types the key
+ * nests and leaves DATA, EXPR and EXPRESSIONS to the table the element is in.
+ */
+static struct pslot setelem_key[] = {
+	PS(1, true, 0),
+};
+static struct pslot setelem_add[] = {
+	PSN(1, true, setelem_key),
+	PS(2, false, NLA_KIND_NESTED),
+	PS(3, false, NLA_KIND_BE32_MASK),
+	PS(4, false, 0),
+	PS(5, false, 0),
+	PS(6, false, 0),
+	PS(7, false, NLA_KIND_NESTED),
+	PS(9, false, NLA_KIND_STRING),
+	PSN(10, false, setelem_key),
+	PS(11, false, NLA_KIND_NESTED),
+};
+static struct pslot setelem_find[] = {
+	PSN(1, true, setelem_key),
+	PS(3, false, NLA_KIND_BE32_MASK),
+	PSN(10, false, setelem_key),
+};
+static struct pslot setelem_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PSA(3, true, setelem_add),
+	PS(4, false, 0),
+};
+static struct pslot setelem_get[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PSA(3, true, setelem_find),
+};
+static struct pslot setelem_del[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PSA(3, false, setelem_find),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1231,6 +1286,11 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETSET", NFTABLES, 10, set_name, ARRAY_SIZE(set_name) },
 	{ "NFT_MSG_DELSET", NFTABLES, 11, set_name, ARRAY_SIZE(set_name) },
 	{ "NFT_MSG_DESTROYSET", NFTABLES, 29, set_name, ARRAY_SIZE(set_name) },
+	{ "NFT_MSG_NEWSETELEM", NFTABLES, 12, setelem_new, ARRAY_SIZE(setelem_new) },
+	{ "NFT_MSG_GETSETELEM", NFTABLES, 13, setelem_get, ARRAY_SIZE(setelem_get) },
+	{ "NFT_MSG_GETSETELEM_RESET", NFTABLES, 33, setelem_get, ARRAY_SIZE(setelem_get) },
+	{ "NFT_MSG_DELSETELEM", NFTABLES, 14, setelem_del, ARRAY_SIZE(setelem_del) },
+	{ "NFT_MSG_DESTROYSETELEM", NFTABLES, 30, setelem_del, ARRAY_SIZE(setelem_del) },
 };
 
 /*
