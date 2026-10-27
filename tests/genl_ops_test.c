@@ -19,6 +19,8 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 
@@ -2714,6 +2716,62 @@ static void check_bounded_tables(void)
 }
 
 /*
+ * NLA_KIND_SOCKADDR through the emitter: seven draws in eight a
+ * sockaddr_in or sockaddr_in6 at its own length, both families about as
+ * often, on the loopback address seven times in eight and with a port
+ * above the privileged ones; the eighth random bytes.  Over 4000 draws the
+ * fraction well formed has a standard deviation of about 0.005.
+ */
+#define SOCKADDR_DRAWS	4000
+
+static void check_sockaddr_kind(void)
+{
+	static const struct nla_attr_spec spec[] = {
+		{ 1, NLA_KIND_SOCKADDR },
+	};
+	unsigned int i, good = 0, v4 = 0, loopback = 0;
+	unsigned char buf[256];
+
+	for (i = 0; i < SOCKADDR_DRAWS; i++) {
+		const unsigned char *p = buf + NLA_HDRLEN;
+		struct sockaddr_in6 sin6;
+		struct sockaddr_in sin;
+		struct nlattr nla;
+		sa_family_t family;
+
+		memset(buf, 0, sizeof(buf));
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec,
+					  ARRAY_SIZE(spec)) == 0)
+			BUG("genl ops: a sockaddr spec emitted nothing");
+		memcpy(&nla, buf, sizeof(nla));
+		memcpy(&family, p, sizeof(family));
+		if (nla.nla_len == NLA_HDRLEN + sizeof(sin) && family == AF_INET) {
+			memcpy(&sin, p, sizeof(sin));
+			if (ntohs(sin.sin_port) < 1024)
+				continue;
+			v4++;
+			loopback += sin.sin_addr.s_addr == htonl(INADDR_LOOPBACK);
+		} else if (nla.nla_len == NLA_HDRLEN + sizeof(sin6) &&
+			   family == AF_INET6) {
+			memcpy(&sin6, p, sizeof(sin6));
+			if (ntohs(sin6.sin6_port) < 1024)
+				continue;
+			loopback += IN6_IS_ADDR_LOOPBACK(&sin6.sin6_addr);
+		} else {
+			continue;
+		}
+		good++;
+	}
+	if (good < SOCKADDR_DRAWS * 0.84 || good > SOCKADDR_DRAWS * 0.91 ||
+	    v4 < good * 0.4 || v4 > good * 0.6 ||
+	    loopback < good * 0.84 || loopback > good * 0.91) {
+		fprintf(stderr, "sockaddr kind: %u of %u well formed, %u IPv4, %u on loopback\n",
+			good, SOCKADDR_DRAWS, v4, loopback);
+		BUG("genl ops: a sockaddr is not drawn as its family's");
+	}
+}
+
+/*
  * What each spec declares, its bound and whether it is marked required, is
  * what its policy and its handler give: none declares a bound that both
  * lack or a mark the handler does not need, and an array is capped where
@@ -3093,6 +3151,7 @@ void genl_ops_self_check(void)
 	check_cmd_attr_tables();
 	check_nest_tables();
 	check_bounded_tables();
+	check_sockaddr_kind();
 	check_required_tables();
 	check_required_not_inherited();
 	check_attrs_in_policy();

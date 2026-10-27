@@ -5,6 +5,7 @@
  * without a table use the random emitter in msg-attr-random.c.
  */
 #include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -48,6 +49,9 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 		return strlen(spec->word) + 1;
 	case NLA_KIND_STRING_ONEOF:
 		return strlen(spec->words[rnd_modulo_u32(spec->n_words)]) + 1;
+	case NLA_KIND_SOCKADDR:
+		return RAND_BOOL() ? sizeof(struct sockaddr_in) :
+				     sizeof(struct sockaddr_in6);
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY: {
@@ -140,6 +144,42 @@ static const char *spec_word_of_len(const struct nla_attr_spec *spec, size_t len
 }
 
 /*
+ * A sockaddr_in or sockaddr_in6 as long as len, on the loopback address
+ * seven times in eight, with a port above the privileged ones.  One draw
+ * in eight, and a len cut short of both, stays random bytes.
+ */
+static void spec_fill_sockaddr(unsigned char *p, size_t len)
+{
+	in_port_t port = htons(RAND_RANGE(1024, 65535));
+
+	generate_rand_bytes(p, len);
+	if (ONE_IN(8))
+		return;
+
+	if (len == sizeof(struct sockaddr_in)) {
+		struct sockaddr_in sin = {
+			.sin_family = AF_INET,
+			.sin_port = port,
+			.sin_addr.s_addr = ONE_IN(8) ? rnd_u32() :
+						       htonl(INADDR_LOOPBACK),
+		};
+
+		memcpy(p, &sin, sizeof(sin));
+	} else if (len == sizeof(struct sockaddr_in6)) {
+		struct sockaddr_in6 sin6 = {
+			.sin6_family = AF_INET6,
+			.sin6_port = port,
+			.sin6_addr = in6addr_loopback,
+		};
+
+		if (ONE_IN(8))
+			generate_rand_bytes((unsigned char *) &sin6.sin6_addr,
+					    sizeof(sin6.sin6_addr));
+		memcpy(p, &sin6, sizeof(sin6));
+	}
+}
+
+/*
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
  * IFLA_INFO_KIND), a WORD its word and a word list one of its words, the
@@ -189,6 +229,9 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	case NLA_KIND_BE16_ONEOF:
 	case NLA_KIND_BE32_ONEOF:
 		spec_fill_bounded(p, len, spec);
+		break;
+	case NLA_KIND_SOCKADDR:
+		spec_fill_sockaddr(p, len);
 		break;
 	default:
 		generate_rand_bytes(p, len);

@@ -75,6 +75,12 @@ enum nla_kind {
 	 * lowercase letters as long as one of the words, for the lookups that
 	 * miss. */
 	NLA_KIND_STRING_ONEOF,
+	/* A struct sockaddr_in or sockaddr_in6, at its family's length, for
+	 * an attribute the kernel reads as a socket address: on the loopback
+	 * address, which every netns has, seven times in eight, with a port
+	 * above the privileged ones.  One draw in eight is random bytes, as
+	 * is a payload a full buffer cut short. */
+	NLA_KIND_SOCKADDR,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.
