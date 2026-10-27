@@ -38,13 +38,14 @@ static const struct genl_cmd_grammar tipc_cmds[] = {
  * share tipc_nl_prop_policy.  The UDP policy has no slot for MULTI_REMOTEIP,
  * but udp_media.c reads it as a flag.  The two addresses are
  * sockaddr_storage.  LINK_NAME and BEARER_NAME are NLA_NUL_STRING, so a
- * byte at least, and MEDIA_NAME an NLA_STRING.
+ * byte at least, and MEDIA_NAME an NLA_STRING.  A PROP nest's MTU is at
+ * most U16_MAX (tipc_nl_mtu_range).
  */
 static const struct nla_attr_spec tipc_prop_attrs[] = {
 	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32,    4 },
 	{ TIPC_NLA_PROP_TOL,		NLA_KIND_U32,    4 },
 	{ TIPC_NLA_PROP_WIN,		NLA_KIND_U32,    4 },
-	{ TIPC_NLA_PROP_MTU,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_MTU,		NLA_KIND_U32_RANGE, 65535, 0 },
 	{ TIPC_NLA_PROP_BROADCAST,	NLA_KIND_U32,    4 },
 	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32,   4 },
 };
