@@ -301,14 +301,13 @@ static uint32_t draw_slot(const struct nla_attr_spec *spec,
  * sigma off; they turn away both a spec that sends nothing but random bytes
  * and one that never leaves the bound.
  */
-static void check_slot_fraction(const struct bounded_slot *slot,
-				unsigned int in_bounds)
+static void check_slot_fraction(const char *name, unsigned int in_bounds)
 {
 	double frac = (double) in_bounds / SLOT_ROUNDS;
 
 	if (frac < 0.80 || frac > 0.95) {
 		fprintf(stderr, "%s: %u of %u draws inside the bound, want a fraction in [0.80, 0.95]\n",
-			slot->name, in_bounds, SLOT_ROUNDS);
+			name, in_bounds, SLOT_ROUNDS);
 		BUG("nfnl grammar: a bounded scalar is not drawn from its bound");
 	}
 }
@@ -337,7 +336,7 @@ static void check_bounded_slot(const struct bounded_slot *slot)
 			max_v = v;
 	}
 
-	check_slot_fraction(slot, in_bounds);
+	check_slot_fraction(slot->name, in_bounds);
 
 	if (mask ? (or_all != slot->limit || and_all != 0) :
 		   (min_v != 0 || max_v != slot->limit)) {
@@ -366,7 +365,7 @@ static void check_oneof_slot(const struct bounded_slot *slot)
 		}
 	}
 
-	check_slot_fraction(slot, in_bounds);
+	check_slot_fraction(slot->name, in_bounds);
 
 	if (seen != (1U << slot->n_values) - 1) {
 		fprintf(stderr, "%s: draws inside the list reached %#x of %#x\n",
@@ -409,6 +408,129 @@ static void check_nftables_batch_flags(void)
 	}
 }
 
+/*
+ * nf_tables_api.c finds what a command names by name.  The table is the
+ * attribute at id 1 in every namespace (NFTA_TABLE_NAME, NFTA_CHAIN_TABLE,
+ * NFTA_RULE_TABLE, NFTA_SET_TABLE, NFTA_SET_ELEM_LIST_TABLE, NFTA_OBJ_TABLE,
+ * NFTA_FLOWTABLE_TABLE); inside it the rule's chain, the set, the object and
+ * the flowtable are at id 2 (NFTA_RULE_CHAIN, NFTA_SET_NAME,
+ * NFTA_SET_ELEM_LIST_SET, NFTA_OBJ_NAME, NFTA_FLOWTABLE_NAME), and a chain's
+ * own name is at 3 (NFTA_CHAIN_NAME).  All are NLA_STRING, matched by their
+ * text in nft_table_lookup() and its kin (nla_strcmp(), or nla_strscpy() into
+ * a hash key), so a command finds what an earlier one made only when its
+ * string is that one's.
+ */
+#define NFT_NAME_ID_MAX		3
+
+/*
+ * One word at every name id, which a table, a chain, a set, an object and a
+ * flowtable can all carry since nf_tables keeps them in separate namespaces,
+ * for seven draws in eight; the eighth is random lowercase letters.
+ */
+static void check_word_spec(const struct nla_attr_spec *spec)
+{
+	const size_t wlen = strlen(spec->word) + 1;
+	unsigned int round, i, matching = 0;
+	char name[48];
+
+	for (round = 0; round < SLOT_ROUNDS; round++) {
+		unsigned char buf[64];
+		struct nlattr nla;
+
+		memset(buf, 0, sizeof(buf));
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) !=
+		    NLA_ALIGN(NLA_HDRLEN + wlen))
+			BUG("nfnl grammar: a word is not sized to its length");
+		memcpy(&nla, buf, sizeof(nla));
+		if (nla.nla_type != spec->type || nla.nla_len != NLA_HDRLEN + wlen)
+			BUG("nfnl grammar: a word has the wrong header");
+		if (buf[NLA_HDRLEN + wlen - 1] != '\0')
+			BUG("nfnl grammar: a word is not NUL-terminated");
+		for (i = 0; i + 1 < wlen; i++) {
+			if (buf[NLA_HDRLEN + i] < 'a' || buf[NLA_HDRLEN + i] > 'z')
+				BUG("nfnl grammar: a word draws something but lowercase letters");
+		}
+		if (memcmp(buf + NLA_HDRLEN, spec->word, wlen) == 0)
+			matching++;
+	}
+
+	snprintf(name, sizeof(name), "the word at nftables id %u", spec->type);
+	check_slot_fraction(name, matching);
+}
+
+/*
+ * Every string the nftables grammar has at a name id must be the one word,
+ * and each of the ids must have one.  Returns the word.
+ */
+static const char *check_nftables_names(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_NFTABLES);
+	bool seen[NFT_NAME_ID_MAX + 1] = { false };
+	const char *word = NULL;
+	unsigned int i, id;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: nftables is not registered");
+
+	for (i = 0; i < sub->n_attrs; i++) {
+		const struct nla_attr_spec *spec = &sub->attrs[i];
+
+		if (spec->type < 1 || spec->type > NFT_NAME_ID_MAX)
+			continue;
+		if (spec->kind == NLA_KIND_STRING) {
+			fprintf(stderr, "nftables: the string at id %u is random text\n",
+				spec->type);
+			BUG("nfnl grammar: an nftables name is not the shared word");
+		}
+		if (spec->kind != NLA_KIND_STRING_WORD)
+			continue;
+		if (word == NULL)
+			word = spec->word;
+		else if (strcmp(word, spec->word) != 0)
+			BUG("nfnl grammar: nftables names are not all the same word");
+		seen[spec->type] = true;
+		check_word_spec(spec);
+	}
+
+	for (id = 1; id <= NFT_NAME_ID_MAX; id++) {
+		if (!seen[id]) {
+			fprintf(stderr, "nftables: no word at id %u\n", id);
+			BUG("nfnl grammar: an nftables name id has no word");
+		}
+	}
+	return word;
+}
+
+/*
+ * nft_supported_family() takes NFPROTO_INET, IPV4, ARP, NETDEV, BRIDGE and
+ * IPV6 and nothing else, and a table is found by its family and name
+ * together, so these are the families a batch can name its table in.
+ */
+static const unsigned char nft_families[] = { 1, 2, 3, 5, 7, 10 };
+
+static void check_nftables_families(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_NFTABLES);
+	unsigned int i, j;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: nftables is not registered");
+	if (sub->n_families != ARRAY_SIZE(nft_families))
+		BUG("nfnl grammar: nftables lists a different set of families");
+
+	for (i = 0; i < ARRAY_SIZE(nft_families); i++) {
+		for (j = 0; j < sub->n_families; j++) {
+			if (sub->families[j] == nft_families[i])
+				break;
+		}
+		if (j == sub->n_families) {
+			fprintf(stderr, "nftables: family %u is not listed\n",
+				nft_families[i]);
+			BUG("nfnl grammar: nftables leaves out a family it supports");
+		}
+	}
+}
+
 #define BATCH_ROUNDS	60000
 
 /* BEGIN or END at buf: just the header and an nfgenmsg, and a request. */
@@ -422,6 +544,42 @@ static bool is_marker(const unsigned char *buf, unsigned short type)
 	       (nlh.nlmsg_flags & NLM_F_REQUEST);
 }
 
+#define MAX_CMDS	8	/* the generator puts at most four in a batch */
+
+/* What the commands of a batch hold, when every length ran true. */
+struct batch_cmds {
+	const char *word;		/* in: the word the names should be */
+	unsigned int n;			/* commands; 0 when a length did not run true */
+	bool stray;			/* one of them is no batch command */
+	unsigned char family[MAX_CMDS];	/* each one's nfgen_family */
+	unsigned int named;		/* attributes at id 1 as long as the word */
+	unsigned int matching;		/* ... of which are the word */
+};
+
+/* Count the attributes at id 1 of the command at msg, len long, that are as
+ * long as the word, which makes them table names, and those that are the
+ * word. */
+static void count_names(const unsigned char *msg, size_t len,
+			struct batch_cmds *cmds)
+{
+	const size_t wlen = strlen(cmds->word) + 1;
+	size_t off = NLMSG_SPACE(sizeof(struct nfgenmsg));
+
+	while (off + NLA_HDRLEN <= len) {
+		struct nlattr nla;
+
+		memcpy(&nla, msg + off, sizeof(nla));
+		if (nla.nla_len < NLA_HDRLEN || off + nla.nla_len > len)
+			return;
+		if (nla.nla_type == 1 && nla.nla_len == NLA_HDRLEN + wlen) {
+			cmds->named++;
+			if (memcmp(msg + off + NLA_HDRLEN, cmds->word, wlen) == 0)
+				cmds->matching++;
+		}
+		off += NLA_ALIGN(nla.nla_len);
+	}
+}
+
 /*
  * Check what lies after BEGIN in a buffer that opens with it, up to END, or to
  * the end of the buffer when ended is false.  BEGIN names nftables in
@@ -432,19 +590,16 @@ static bool is_marker(const unsigned char *buf, unsigned short type)
  * before it put it, which a length the generator corrupted on purpose throws
  * off into the bytes of another message, and what is read there is noise.  So
  * the later commands are judged only when every length ran true and the chain
- * ended exactly where the commands do, and then only reported: *cmds is their
- * number and *stray whether one is no batch command.  Returns the first
- * command's type, or 0 when there is none.
+ * ended exactly where the commands do, and then only reported, in *out.
+ * Returns the first command's type, or 0 when there is none.
  */
 static unsigned short check_batch_buffer(const unsigned char *buf, size_t len,
-					 bool ended, unsigned int *cmds,
-					 bool *stray)
+					 bool ended, struct batch_cmds *out)
 {
 	const size_t marker = NLMSG_SPACE(sizeof(struct nfgenmsg));
 	const size_t end_off = ended ? len - marker : len;
+	struct batch_cmds seen = { .word = out->word };
 	unsigned short first = 0;
-	bool any_stray = false;
-	unsigned int n = 0;
 	struct nfgenmsg nfg;
 	size_t off = marker;
 
@@ -452,8 +607,7 @@ static unsigned short check_batch_buffer(const unsigned char *buf, size_t len,
 	if (nfg.res_id != htons(NFNL_SUBSYS_NFTABLES))
 		BUG("nfnl batch: BEGIN does not name the nftables subsystem");
 
-	*cmds = 0;
-	*stray = false;
+	out->n = 0;
 	while (off + NLMSG_HDRLEN <= end_off) {
 		struct nlmsghdr nlh;
 		bool batch_cmd, holds;
@@ -461,30 +615,31 @@ static unsigned short check_batch_buffer(const unsigned char *buf, size_t len,
 		memcpy(&nlh, buf + off, sizeof(nlh));
 		holds = nlh.nlmsg_len >= NLMSG_LENGTH(sizeof(struct nfgenmsg)) &&
 			nlh.nlmsg_len <= end_off - off;
-		if (n > 0 && !holds)
+		if (seen.n > 0 && !holds)
 			return first;
 
 		batch_cmd = NFNL_SUBSYS_ID(nlh.nlmsg_type) == NFNL_SUBSYS_NFTABLES &&
 			    nfnl_type_is_batch(nlh.nlmsg_type);
-		if (n == 0) {
+		if (seen.n == 0) {
 			first = nlh.nlmsg_type;
 			if (!batch_cmd) {
 				fprintf(stderr, "nfnl batch: type %#x opens a batch\n", first);
 				BUG("nfnl batch: the first message is no nftables batch command");
 			}
 		} else if (!batch_cmd) {
-			any_stray = true;
+			seen.stray = true;
 		}
-		n++;
 		if (!holds)
 			return first;
+		if (seen.n < MAX_CMDS)
+			seen.family[seen.n] = buf[off + NLMSG_HDRLEN];
+		seen.n++;
+		count_names(buf + off, nlh.nlmsg_len, &seen);
 		off += NLMSG_ALIGN(nlh.nlmsg_len);
 	}
 
-	if (off == end_off) {
-		*cmds = n;
-		*stray = any_stray;
-	}
+	if (off == end_off && seen.n <= MAX_CMDS)
+		*out = seen;
 	return first;
 }
 
@@ -494,6 +649,12 @@ struct batch_tally {
 	unsigned int bare;	/* opens with a batch command, nothing around it */
 	unsigned int multi;	/* opens with BEGIN, two commands or more, every length true */
 	unsigned int stray;	/* ... of which hold a message that is no batch command */
+	unsigned int same;	/* ... of which send every command in one family */
+	unsigned int counted;	/* opens with BEGIN, one command or more, every length true */
+	unsigned int named;	/* ... table names in them */
+	unsigned int matching;	/* ... of which are the word */
+	unsigned int family[256];	/* ... by the family of the first command */
+	const char *word;
 	bool led[256];		/* batch commands that opened a batch, by id */
 };
 
@@ -510,19 +671,29 @@ static void tally_buffer(struct batch_tally *t, const unsigned char *buf,
 	if (len >= marker && is_marker(buf, NFNL_MSG_BATCH_BEGIN)) {
 		bool ended = len >= 2 * marker &&
 			     is_marker(buf + len - marker, NFNL_MSG_BATCH_END);
+		struct batch_cmds cmds = { .word = t->word };
 		unsigned short first;
-		unsigned int cmds;
-		bool stray;
+		unsigned int i;
 
-		first = check_batch_buffer(buf, len, ended, &cmds, &stray);
+		first = check_batch_buffer(buf, len, ended, &cmds);
 		if (ended)
 			t->wrapped++;
 		else
 			t->unended++;
-		if (cmds >= 2) {
+		if (cmds.n >= 1) {
+			t->counted++;
+			t->named += cmds.named;
+			t->matching += cmds.matching;
+			t->family[cmds.family[0]]++;
+		}
+		if (cmds.n >= 2) {
 			t->multi++;
-			if (stray)
+			if (cmds.stray)
 				t->stray++;
+			for (i = 1; i < cmds.n && cmds.family[i] == cmds.family[0]; i++)
+				;
+			if (i == cmds.n)
+				t->same++;
 		}
 		if (first != 0)
 			t->led[first & 0xff] = true;
@@ -547,8 +718,18 @@ static void tally_buffer(struct batch_tally *t, const unsigned char *buf,
  * first message of any buffer is, nearly every such batch would hold some
  * other message, where as built none does, so a tenth is a wide limit.  And
  * each of the 21 batch commands must open some batch.
+ *
+ * Of the batches whose lengths all ran true, a run has about 1200 table names
+ * in them, and a command names its table with the word seven times in eight,
+ * so the fraction has a standard deviation of 0.01 and the limits 0.80 and
+ * 0.95 are 8 sigma off.  A batch of two commands or more keeps one family
+ * unless a command draws its own, about 0.7 of some 480 batches, with a
+ * standard deviation of 0.02; commands that each drew a family share one about
+ * 0.08 of the time and ones that never drew their own always, so the limits
+ * 0.50 and 0.90 are 10 sigma off.  A sixth of the batches open in each of the
+ * six families, and a twentieth is a wide floor.
  */
-static void check_nftables_batches(void)
+static void check_nftables_batches(const char *word)
 {
 	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_NFTABLES);
 	struct socket_triplet triplet = {
@@ -556,7 +737,7 @@ static void check_nftables_batches(void)
 		.type = SOCK_RAW,
 		.protocol = NETLINK_NETFILTER,
 	};
-	struct batch_tally t = { 0 };
+	struct batch_tally t = { .word = word };
 	unsigned int round, i, opened, led = 0;
 	double frac;
 
@@ -611,11 +792,37 @@ static void check_nftables_batches(void)
 	}
 	if (led != 21)
 		BUG("nfnl batch: a batch command is never wrapped");
+
+	if (t.named < 500) {
+		fprintf(stderr, "nftables: %u table names in %u batches\n",
+			t.named, t.counted);
+		BUG("nfnl batch: too few table names to judge the vocabulary");
+	}
+	frac = (double) t.matching / t.named;
+	if (frac < 0.80 || frac > 0.95) {
+		fprintf(stderr, "nftables: %u of %u table names in batches are the word, want a fraction in [0.80, 0.95]\n",
+			t.matching, t.named);
+		BUG("nfnl batch: a batch does not name its table with the word most of the time");
+	}
+	frac = (double) t.same / t.multi;
+	if (frac < 0.50 || frac > 0.90) {
+		fprintf(stderr, "nftables: %u of %u batches of two commands or more send every command in one family, want a fraction in [0.50, 0.90]\n",
+			t.same, t.multi);
+		BUG("nfnl batch: the commands of a batch do not share a family most of the time");
+	}
+	for (i = 0; i < ARRAY_SIZE(nft_families); i++) {
+		if (t.family[nft_families[i]] * 20 >= t.counted)
+			continue;
+		fprintf(stderr, "nftables: %u of %u batches open in family %u\n",
+			t.family[nft_families[i]], t.counted, nft_families[i]);
+		BUG("nfnl batch: a family opens too few batches");
+	}
 }
 
 void nfnl_gen_self_check(void);
 void nfnl_gen_self_check(void)
 {
+	const char *word;
 	unsigned int i;
 
 	check_no_rejected_attr();
@@ -624,6 +831,8 @@ void nfnl_gen_self_check(void)
 		check_bounded_slot(&slots[i]);
 	for (i = 0; i < ARRAY_SIZE(oneof_slots); i++)
 		check_oneof_slot(&oneof_slots[i]);
+	word = check_nftables_names();
+	check_nftables_families();
 	check_nftables_batch_flags();
-	check_nftables_batches();
+	check_nftables_batches(word);
 }

@@ -193,12 +193,14 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
  * rtnetlink builders.  The genl builder also reports, in *cmd_caps,
  * the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the controller gave the
  * cmd it picked (0 when unknown); build_one_nlmsg sets the dump flags
- * from them.  It leaves the reserved word 0 unless chaos is set.
+ * from them.  It leaves the reserved word 0 unless chaos is set.  The nfnl
+ * builder takes the nfgen_family a batch pins on its commands, or -1 to
+ * draw one.
  */
 size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
 		     size_t buflen, bool chaos, unsigned char *cmd_caps);
 size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen);
+		     size_t buflen, int family);
 size_t gen_xfrm_body(unsigned char *body, unsigned short nlmsg_type,
 		     size_t buflen);
 size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,

@@ -181,6 +181,13 @@ unsigned char nfnl_pick_batch_cmd(const struct nfnl_subsys_grammar *sub)
 	return 0;
 }
 
+int nfnl_pick_family(const struct nfnl_subsys_grammar *sub)
+{
+	if (!sub || sub->n_families == 0)
+		return -1;
+	return sub->families[rnd_modulo_u32(sub->n_families)];
+}
+
 void nfnl_subsys_bump_calls(const struct nfnl_subsys_grammar *sub)
 {
 	if (!sub || !sub->call_counter)

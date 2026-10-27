@@ -5,6 +5,7 @@
  * nftables_attrs[] is one flat union (see the comment on it).
  */
 
+#include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nf_tables.h>
 
@@ -200,6 +201,29 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 };
 
 /*
+ * nft_supported_family() takes these six, each when the kernel is built with
+ * it, and a table is found by its family and name together, so a batch sends
+ * all its commands in one of them.
+ */
+static const unsigned char nftables_families[] = {
+	NFPROTO_INET, NFPROTO_IPV4, NFPROTO_ARP, NFPROTO_NETDEV,
+	NFPROTO_BRIDGE, NFPROTO_IPV6,
+};
+
+/*
+ * Every name a command carries to find an object by is this one word.  The
+ * table is at id 1 in every namespace, a rule's chain, a set, an object and a
+ * flowtable at id 2, and a chain's own name at 3, all NLA_STRING matched by
+ * their text (nla_strcmp(), or nla_strscpy() into a hash key), and the
+ * namespaces keep apart, so a table, its chain, set, object and flowtable can
+ * all carry the same word.  What one command names, a later command of its
+ * batch then finds.  The word is fixed rather than drawn per batch, so the
+ * next batch names the tables the last one committed instead of piling up new
+ * ones; only the draw in eight that is random makes another.
+ */
+static const char nft_word[] = "trinity";
+
+/*
  * NFTA_* attrs of the table / chain / rule / set / setelem / obj / flowtable
  * namespaces.  Their ids overlap (NFTA_TABLE_NAME and NFTA_CHAIN_TABLE are
  * both 1), so an entry meets whatever slot the picked command's policy has
@@ -210,32 +234,33 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
  * The FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
  * bits the uapi header names for it.  NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS
  * share id 3, so which policy a draw meets depends on the picked command.
+ * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
 	/* NFT_MSG_*TABLE */
-	{ NFTA_TABLE_NAME,           NLA_KIND_STRING, 32 },
+	{ NFTA_TABLE_NAME,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_TABLE_FLAGS,          NLA_KIND_BE32_MASK, NFT_TABLE_F_MASK },
 	{ NFTA_TABLE_HANDLE,         NLA_KIND_U64,    8 },
 	{ NFTA_TABLE_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*CHAIN */
-	{ NFTA_CHAIN_TABLE,          NLA_KIND_STRING, 32 },
+	{ NFTA_CHAIN_TABLE,          NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_CHAIN_HANDLE,         NLA_KIND_U64,    8 },
-	{ NFTA_CHAIN_NAME,           NLA_KIND_STRING, 32 },
+	{ NFTA_CHAIN_NAME,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_CHAIN_HOOK,           NLA_KIND_NESTED, 0 },
 	{ NFTA_CHAIN_POLICY,         NLA_KIND_U32,    4 },
 	{ NFTA_CHAIN_TYPE,           NLA_KIND_STRING, 16 },
 	{ NFTA_CHAIN_FLAGS,          NLA_KIND_BE32_MASK, NFT_CHAIN_FLAGS },
 	{ NFTA_CHAIN_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*RULE */
-	{ NFTA_RULE_TABLE,           NLA_KIND_STRING, 32 },
-	{ NFTA_RULE_CHAIN,           NLA_KIND_STRING, 32 },
+	{ NFTA_RULE_TABLE,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_RULE_CHAIN,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_RULE_HANDLE,          NLA_KIND_U64,    8 },
 	{ NFTA_RULE_EXPRESSIONS,     NLA_KIND_NESTED, 0 },
 	{ NFTA_RULE_POSITION,        NLA_KIND_U64,    8 },
 	{ NFTA_RULE_USERDATA,        NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*SET */
-	{ NFTA_SET_TABLE,            NLA_KIND_STRING, 32 },
-	{ NFTA_SET_NAME,             NLA_KIND_STRING, 32 },
+	{ NFTA_SET_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_SET_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_SET_FLAGS,            NLA_KIND_BE32_MASK,
 		NFT_SET_ANONYMOUS | NFT_SET_CONSTANT | NFT_SET_INTERVAL |
 		NFT_SET_MAP | NFT_SET_TIMEOUT | NFT_SET_EVAL | NFT_SET_OBJECT |
@@ -260,8 +285,8 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	{ NFTA_SET_ELEM_KEY_END,     NLA_KIND_NESTED, 0 },
 	{ NFTA_SET_ELEM_EXPRESSIONS, NLA_KIND_NESTED, 0 },
 	/* NFT_MSG_*OBJ */
-	{ NFTA_OBJ_TABLE,            NLA_KIND_STRING, 32 },
-	{ NFTA_OBJ_NAME,             NLA_KIND_STRING, 32 },
+	{ NFTA_OBJ_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_OBJ_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_OBJ_TYPE,             NLA_KIND_U32,    4 },
 	{ NFTA_OBJ_DATA,             NLA_KIND_NESTED, 0 },
 	{ NFTA_OBJ_USE,              NLA_KIND_U32,    4 },
@@ -278,8 +303,8 @@ static const struct nla_attr_spec nftables_attrs[] = {
 	{ NFTA_CT_TIMEOUT_L4PROTO,   NLA_KIND_U8,     1 },
 	{ NFTA_CT_TIMEOUT_DATA,      NLA_KIND_NESTED, 0 },
 	/* NFT_MSG_*FLOWTABLE */
-	{ NFTA_FLOWTABLE_TABLE,      NLA_KIND_STRING, 32 },
-	{ NFTA_FLOWTABLE_NAME,       NLA_KIND_STRING, 32 },
+	{ NFTA_FLOWTABLE_TABLE,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_FLOWTABLE_NAME,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_FLOWTABLE_HOOK,       NLA_KIND_NESTED, 0 },
 	{ NFTA_FLOWTABLE_USE,        NLA_KIND_U32,    4 },
 	{ NFTA_FLOWTABLE_HANDLE,     NLA_KIND_U64,    8 },
@@ -293,4 +318,6 @@ struct nfnl_subsys_grammar sub_nftables = {
 	.n_cmds = ARRAY_SIZE(nftables_cmds),
 	.attrs = nftables_attrs,
 	.n_attrs = ARRAY_SIZE(nftables_attrs),
+	.families = nftables_families,
+	.n_families = ARRAY_SIZE(nftables_families),
 };

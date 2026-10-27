@@ -50,6 +50,11 @@ enum nla_kind {
 	NLA_KIND_U8_ONEOF,
 	NLA_KIND_BE16_ONEOF,
 	NLA_KIND_BE32_ONEOF,
+	/* A NUL-terminated string that is the spec's word, so that attributes
+	 * which name one another (an nftables table and what is in it) agree.
+	 * One draw in eight is random lowercase letters of the word's length,
+	 * for the lookups that miss. */
+	NLA_KIND_STRING_WORD,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.
@@ -81,4 +86,7 @@ struct nla_attr_spec {
 	 * from, in host order. */
 	const unsigned int *oneof;
 	unsigned int n_oneof;
+
+	/* NLA_KIND_STRING_WORD: the string the attribute carries. */
+	const char *word;
 };

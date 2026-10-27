@@ -42,6 +42,8 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_BE32_ONEOF:
 		return 4;
 	case NLA_KIND_FLAG:	return 0;
+	case NLA_KIND_STRING_WORD:
+		return strlen(spec->word) + 1;
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY: {
@@ -108,8 +110,8 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 /*
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
- * IFLA_INFO_KIND), the bounded scalars a value their policy or handler
- * accepts, and everything else gets random bytes.
+ * IFLA_INFO_KIND), a WORD its word, the bounded scalars a value their policy
+ * or handler accepts, and everything else gets random bytes.
  */
 static void spec_fill_payload(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -120,7 +122,15 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 		return;
 
 	switch (spec->kind) {
+	case NLA_KIND_STRING_WORD:
 	case NLA_KIND_STRING:
+		/* A word's len is its own, less only when a full buffer cut
+		 * the attribute short; the draw in eight that is not the word
+		 * is the random string a STRING is. */
+		if (spec->kind == NLA_KIND_STRING_WORD && !ONE_IN(8)) {
+			memcpy(p, spec->word, len);
+			break;
+		}
 		for (i = 0; i + 1 < len; i++)
 			p[i] = 'a' + (rnd_modulo_u32(26));
 		p[len - 1] = '\0';

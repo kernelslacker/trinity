@@ -252,7 +252,8 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
 
 /*
  * Build a single nlmsghdr of the caller's nlmsg_type at msg+offset.  Returns
- * new offset (NLMSG_ALIGN'd).
+ * new offset (NLMSG_ALIGN'd).  nfgen_family is the family a batch pins on the
+ * nfgenmsg of a NETLINK_NETFILTER command, or -1 to draw one.
  */
 /*
  * Single iteration of build_one_nlmsg()'s inner attr-append loop.
@@ -306,7 +307,7 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 
 static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 			      struct socket_triplet *triplet,
-			      unsigned short nlmsg_type)
+			      unsigned short nlmsg_type, int nfgen_family)
 {
 	struct nlmsghdr *nlh;
 	size_t body_len;
@@ -346,7 +347,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 					 buflen - offset, chaos, &genl_caps);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		body_len = gen_nfnl_body(msg + offset, nlmsg_type,
-					 buflen - offset);
+					 buflen - offset, nfgen_family);
 	} else if (triplet->protocol == NETLINK_XFRM) {
 		body_len = gen_xfrm_body(msg + offset, nlmsg_type,
 					 buflen - offset);
@@ -452,7 +453,10 @@ static size_t put_nfnl_batch_marker(unsigned char *msg, size_t offset,
  * callbacks, then END, all in the buffer the caller sized.  One batch in
  * eight leaves END off: the walk ends with the buffer, and when no command
  * failed nfnetlink_rcv_batch() aborts with NFNL_ABORT_VALIDATE, which
- * validates the transaction and then rolls it back.
+ * validates the transaction and then rolls it back.  A command finds what
+ * an earlier one made by name, inside a table that nf_tables finds by family
+ * and name together, so the commands of a batch share one family, which the
+ * subsystem's grammar lists, and the attribute grammar gives them one name.
  */
 static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
 			       struct socket_triplet *triplet,
@@ -461,6 +465,7 @@ static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
 	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(first_type >> 8);
 	unsigned char subsys = first_type >> 8;
 	unsigned short type = first_type;
+	int family = nfnl_pick_family(sub);
 	/* Room for END, and aligned, so it starts where the kernel steps
 	 * to after the last command. */
 	size_t cmds_end = (buflen - NLMSG_SPACE(sizeof(struct nfgenmsg))) &
@@ -469,7 +474,8 @@ static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
 
 	offset = put_nfnl_batch_marker(msg, 0, NFNL_MSG_BATCH_BEGIN, subsys);
 	while (num_msgs-- > 0 && offset < cmds_end) {
-		offset = build_one_nlmsg(msg, offset, cmds_end, triplet, type);
+		offset = build_one_nlmsg(msg, offset, cmds_end, triplet, type,
+					 family);
 		type = (first_type & 0xff00) | nfnl_pick_batch_cmd(sub);
 	}
 	if (ONE_IN(8))
@@ -512,10 +518,12 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len)
 		offset = build_nfnl_batch(msg, total_len, triplet, nlmsg_type,
 					  num_msgs);
 	} else {
-		offset = build_one_nlmsg(msg, 0, total_len, triplet, nlmsg_type);
+		offset = build_one_nlmsg(msg, 0, total_len, triplet, nlmsg_type,
+					 -1);
 		while (--num_msgs > 0 && offset < total_len)
 			offset = build_one_nlmsg(msg, offset, total_len, triplet,
-						 pick_nlmsg_type(triplet->protocol));
+						 pick_nlmsg_type(triplet->protocol),
+						 -1);
 	}
 
 	/*

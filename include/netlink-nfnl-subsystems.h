@@ -47,6 +47,14 @@ struct nfnl_subsys_grammar {
 	const struct nla_attr_spec *attrs;
 	unsigned int n_attrs;
 
+	/* The nfgen_family values the subsystem's commands act on, for a
+	 * subsystem that finds its objects by family and name together: a
+	 * batch sends every command in one of them, so that a command can
+	 * find what an earlier one made.  Empty for a subsystem that has no
+	 * use for the family. */
+	const unsigned char *families;
+	unsigned int n_families;
+
 	/* Pointer into shm->stats stamped lazily on first use via a
 	 * static name->offset table maintained alongside the registry
 	 * (so the per-subsys grammar files don't have to pull in
@@ -87,6 +95,12 @@ bool nfnl_type_is_batch(unsigned short nlmsg_type);
  * 0 when it lists none.
  */
 unsigned char nfnl_pick_batch_cmd(const struct nfnl_subsys_grammar *sub);
+
+/*
+ * Pick a random nfgen_family from the subsystem's families[] table.
+ * Returns -1 when it lists none.
+ */
+int nfnl_pick_family(const struct nfnl_subsys_grammar *sub);
 
 /*
  * Bump the per-subsys dispatch counter for sub.  No-op when sub is

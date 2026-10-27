@@ -101,14 +101,15 @@ unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
 /*
  * Generate body for NETLINK_NETFILTER messages.
  * nfnetlink messages have a nfgenmsg (4 bytes) after nlmsghdr.
- * The nlmsg_type encodes subsystem << 8 | message.  After building
- * the body, bump the per-subsys dispatch counter so the live
- * subsystem mix is visible in the periodic stats dump and end-of-run
- * summary; bump degrades to a no-op when nlmsg_type's high byte
- * doesn't match any registered subsys.
+ * The nlmsg_type encodes subsystem << 8 | message.  A family of 0 or more
+ * is the one a batch sends all its commands in, kept seven times in eight;
+ * the rest draw their own.  After building the body, bump the per-subsys
+ * dispatch counter so the live subsystem mix is visible in the periodic
+ * stats dump and end-of-run summary; bump degrades to a no-op when
+ * nlmsg_type's high byte doesn't match any registered subsys.
  */
 size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
-		     size_t buflen)
+		     size_t buflen, int family)
 {
 	struct nfgenmsg nfg;
 	static const unsigned char nf_families[] = {
@@ -118,7 +119,9 @@ size_t gen_nfnl_body(unsigned char *body, unsigned short nlmsg_type,
 	if (sizeof(nfg) > buflen)
 		return 0;
 
-	if (ONE_IN(8))
+	if (family >= 0 && !ONE_IN(8))
+		nfg.nfgen_family = family;
+	else if (ONE_IN(8))
 		nfg.nfgen_family = rnd_modulo_u32(256);
 	else
 		nfg.nfgen_family = RAND_ARRAY(nf_families);
