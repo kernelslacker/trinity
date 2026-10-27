@@ -51,14 +51,23 @@ static const unsigned int cttimeout_l4protos[] = {
 static const unsigned int cttimeout_l3protos[] = { NFPROTO_IPV4, NFPROTO_IPV6 };
 
 /*
+ * GET, DELETE and the NLM_F_REPLACE arm of NEW find a timeout by strncmp()ing
+ * its name, so a command finds what NEW made only if it carries the same
+ * string.  Every name is this one word, which NEW's policy, an NLA_NUL_STRING
+ * of up to CTNL_TIMEOUT_NAME_MAX - 1 characters, takes; the draw in eight
+ * that is random letters makes another timeout or misses.
+ */
+static const char cttimeout_word[] = "trinity";
+
+/*
  * The per-L4 ids reuse the outer ones (CTA_TIMEOUT_TCP_SYN_SENT and
  * CTA_TIMEOUT_NAME are both 1), so one flat table holds both and the emitter
  * picks by position.
  */
 static const struct nla_attr_spec cttimeout_attrs[] = {
 	/* Command level (nfnetlink_cttimeout.c). */
-	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING,
-					     CTNL_TIMEOUT_NAME_MAX - 1 },
+	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING_WORD, 0, 0,
+					     .word = cttimeout_word },
 	{ CTA_TIMEOUT_L3PROTO,               NLA_KIND_BE16_ONEOF, 0, 0,
 	  .oneof = cttimeout_l3protos, .n_oneof = ARRAY_SIZE(cttimeout_l3protos) },
 	{ CTA_TIMEOUT_L4PROTO,               NLA_KIND_U8_ONEOF, 0, 0,

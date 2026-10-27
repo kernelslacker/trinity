@@ -773,6 +773,54 @@ static const char *check_nftables_names(void)
 	return word;
 }
 
+/* The CTA_TIMEOUT_NAME specs of table, for check_cttimeout_name(). */
+static void check_cttimeout_name_specs(const struct nla_attr_spec *table,
+				       size_t n_specs, unsigned int *words)
+{
+	size_t i;
+
+	for (i = 0; i < n_specs; i++) {
+		const struct nla_attr_spec *spec = &table[i];
+
+		if (spec->type != 1)
+			continue;
+		if (spec->kind == NLA_KIND_STRING) {
+			fprintf(stderr, "cttimeout: the string at id 1 is random text\n");
+			BUG("nfnl grammar: a cttimeout name is not the shared word");
+		}
+		if (spec->kind != NLA_KIND_STRING_WORD)
+			continue;
+		/* nla_policy: NLA_NUL_STRING of up to CTNL_TIMEOUT_NAME_MAX - 1 */
+		if (strlen(spec->word) >= CTNL_TIMEOUT_NAME_MAX)
+			BUG("nfnl grammar: the cttimeout name is longer than its policy takes");
+		check_word_spec(spec);
+		(*words)++;
+	}
+}
+
+/*
+ * cttimeout_get_timeout(), cttimeout_del_timeout() and the NLM_F_REPLACE arm
+ * of cttimeout_new_timeout() find a timeout with strncmp() on its name, so a
+ * command finds what NEW made only if it names it with the same string, and
+ * NEW with a name drawn at random makes another timeout each time instead of
+ * finding the last.  CTA_TIMEOUT_NAME is therefore one word wherever it is
+ * declared, in the subsystem's table or a command's.
+ */
+static void check_cttimeout_name(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK_TIMEOUT);
+	unsigned int i, words = 0;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: cttimeout is not registered");
+
+	check_cttimeout_name_specs(sub->attrs, sub->n_attrs, &words);
+	for (i = 0; i < sub->n_cmds; i++)
+		check_cttimeout_name_specs(sub->cmds[i].attrs, sub->cmds[i].n_attrs, &words);
+	if (words == 0)
+		BUG("nfnl grammar: cttimeout declares no name");
+}
+
 /*
  * nft_supported_family() takes NFPROTO_INET, IPV4, ARP, NETDEV, BRIDGE and
  * IPV6 and nothing else, and a table is found by its family and name
@@ -1788,6 +1836,7 @@ void nfnl_gen_self_check(void)
 		check_oneof_slot(&oneof_slots[i]);
 	word = check_nftables_names();
 	check_nftables_families();
+	check_cttimeout_name();
 	check_nftables_batch_flags();
 	check_nftables_batches(word);
 	check_nftables_tables();
