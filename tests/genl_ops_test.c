@@ -712,24 +712,24 @@ extern struct genl_family_grammar fam_drm_ras;
 
 /* drivers/gpu/drm/drm_ras_nl.c: the drm_ras_*_nl_policy tables */
 static struct slot drm_ras_counter[] = {
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID, .required = true),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID, .required = true),
 };
 static struct slot drm_ras_counter_dump[] = {
 	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
 };
 static struct slot drm_ras_clear_counter[] = {
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID, .required = true),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID, .required = true),
 };
 static struct slot drm_ras_get_threshold[] = {
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID, .required = true),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID, .required = true),
 };
 static struct slot drm_ras_set_threshold[] = {
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID),
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID),
-	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID, .required = true),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID, .required = true),
+	S_U32(DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD, .required = true),
 };
 /* LIST_NODES is a dumpit with no policy, so takes nothing. */
 static struct cmd_policy drm_ras_cmds[] = {

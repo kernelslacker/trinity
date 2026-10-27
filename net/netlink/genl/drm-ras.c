@@ -18,10 +18,16 @@
  * take NODE_ID and ERROR_ID, GET_ERROR_COUNTER's dumpit only NODE_ID, and
  * SET_ERROR_THRESHOLD the threshold as well.  LIST_NODES, a dumpit with
  * no policy, takes nothing.  The node attributes are reply-only.
+ *
+ * Each doit answers -EINVAL to a request that lacks any attribute its policy
+ * takes, so those are marked required.  The dumpit wants NODE_ID alone, a
+ * table of one that every request with an attribute carries.
  */
 static const struct nla_attr_spec drm_ras_counter_attrs[] = {
-	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID,	NLA_KIND_U32, 4 },
-	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID,	NLA_KIND_U32, 4 },
+	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID,	NLA_KIND_U32, 4,
+	  .required = true },
+	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID,	NLA_KIND_U32, 4,
+	  .required = true },
 };
 
 static const struct nla_attr_spec drm_ras_node_attrs[] = {
@@ -29,9 +35,12 @@ static const struct nla_attr_spec drm_ras_node_attrs[] = {
 };
 
 static const struct nla_attr_spec drm_ras_set_threshold_attrs[] = {
-	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID,	NLA_KIND_U32, 4 },
-	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID,	NLA_KIND_U32, 4 },
-	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD, NLA_KIND_U32, 4 },
+	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_NODE_ID,	NLA_KIND_U32, 4,
+	  .required = true },
+	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_ID,	NLA_KIND_U32, 4,
+	  .required = true },
+	{ DRM_RAS_A_ERROR_COUNTER_ATTRS_ERROR_THRESHOLD, NLA_KIND_U32, 4,
+	  .required = true },
 };
 
 static const struct genl_cmd_grammar drm_ras_cmds[] = {
