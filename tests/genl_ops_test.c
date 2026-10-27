@@ -638,13 +638,13 @@ extern struct genl_family_grammar fam_wireguard;
 
 /* drivers/net/wireguard/generated/netlink.c: the wireguard_*_nl_policy tables */
 static struct slot wireguard_allowedip[] = {
-	S_U16(WGALLOWEDIP_A_FAMILY),
-	S_BLOB(WGALLOWEDIP_A_IPADDR, 4, 0xffff),
-	S_U8(WGALLOWEDIP_A_CIDR_MASK),
+	S_U16(WGALLOWEDIP_A_FAMILY, .required = true),
+	S_BLOB(WGALLOWEDIP_A_IPADDR, 4, 0xffff, .required = true),
+	S_U8(WGALLOWEDIP_A_CIDR_MASK, .required = true),
 	S_U32_MASK(WGALLOWEDIP_A_FLAGS, 0x1),
 };
 static struct slot wireguard_peer[] = {
-	S_BLOB(WGPEER_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN),
+	S_BLOB(WGPEER_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN, .required = true),
 	S_BLOB(WGPEER_A_PRESHARED_KEY, WG_KEY_LEN, WG_KEY_LEN),
 	S_U32_MASK(WGPEER_A_FLAGS, 0x7),
 	S_BLOB(WGPEER_A_ENDPOINT, 16, 0xffff),
@@ -1426,6 +1426,46 @@ static void expect_slots_required(const struct slot *slots, unsigned int n_slots
 	}
 }
 
+/* The fewest streams any required slot in the mirror, nests included, has
+ * been counted in; UINT_MAX when it has none. */
+static unsigned int min_required_streams(const struct slot *slots,
+					 unsigned int n_slots)
+{
+	unsigned int least = UINT_MAX;
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		unsigned int streams = min_required_streams(slots[i].nest,
+							    slots[i].n_nest);
+
+		if (slots[i].required && slots[i].streams < streams)
+			streams = slots[i].streams;
+		if (streams < least)
+			least = streams;
+	}
+	return least;
+}
+
+/* The same over the mirrors of every cmd of the families the test checks. */
+static unsigned int min_policy_streams(void)
+{
+	unsigned int least = UINT_MAX;
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		const struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->n_cmds; j++) {
+			unsigned int streams = min_required_streams(pf->cmds[j].slots,
+								    pf->cmds[j].n_slots);
+
+			if (streams < least)
+				least = streams;
+		}
+	}
+	return least;
+}
+
 /*
  * Only a lone message whose nlmsg_len is intact says where its attributes
  * end, so a batch is left out, and so is a message the generator gave a
@@ -1439,6 +1479,11 @@ static void expect_slots_required(const struct slot *slots, unsigned int n_slots
 #define SMALLEST_BUFFER	(NLMSG_HDRLEN + 1280)
 #define ATTR_ROUNDS	150000
 #define MIN_MSGS	30
+
+/* Every family in the reply takes a share of the rounds, so the streams of a
+ * nest deep in one family's cmd thin out as families are added: the rounds
+ * go on, to this many, until each required slot has its REQUIRED_STREAMS. */
+#define ATTR_ROUNDS_MAX	1500000
 
 /*
  * Every attribute of every request to a family above is one its cmd's
@@ -1466,7 +1511,9 @@ static void check_attrs_in_policy(void)
 		}
 	}
 
-	for (round = 0; round < ATTR_ROUNDS; round++) {
+	for (round = 0; round < ATTR_ROUNDS ||
+	     (round < ATTR_ROUNDS_MAX && min_policy_streams() < REQUIRED_STREAMS);
+	     round++) {
 		const struct genlmsghdr *genl;
 		const struct nlmsghdr *nlh;
 		struct policy_family *pf;
@@ -1500,6 +1547,7 @@ static void check_attrs_in_policy(void)
 			hexdump(attrs, attrs_len);
 			BUG("genl ops: a request carries what its cmd's policy refuses");
 		}
+		tally_required(attrs, attrs_len, cp->slots, cp->n_slots);
 next:
 		free(buf);
 	}
@@ -1681,14 +1729,16 @@ static void check_bounded_tables(void)
 }
 
 /*
- * The bound each spec declares is the one its policy gives, and no spec
- * declares one the policy lacks.  The draws show a bound that is off by a
- * tenth of its width or more, and none that is off by one, as a cap of
- * MAX_ERRNO could be.
+ * What each spec declares, its bound and whether it is marked required, is
+ * what its policy and its handler give: none declares a bound the policy
+ * lacks or a mark the handler does not need.  The draws show a bound that is
+ * off by a tenth of its width or more, and none that is off by one, as a cap
+ * of MAX_ERRNO could be; and a mark lost from a table of two attributes
+ * leaves a rate of presence that they cannot tell from the marked one.
  */
-static void expect_bounds_declared(const struct nla_attr_spec *specs, size_t n_specs,
-				   const struct slot *slots, unsigned int n_slots,
-				   const char *what)
+static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_specs,
+				  const struct slot *slots, unsigned int n_slots,
+				  const char *what)
 {
 	unsigned int i;
 
@@ -1707,8 +1757,15 @@ static void expect_bounds_declared(const struct nla_attr_spec *specs, size_t n_s
 			BUG("genl ops: a policy's attribute has no spec");
 		}
 		if (spec->nest != NULL)
-			expect_bounds_declared(spec->nest, spec->n_nest,
-					       slot->nest, slot->n_nest, what);
+			expect_specs_declared(spec->nest, spec->n_nest,
+					      slot->nest, slot->n_nest, what);
+
+		if (spec->required != slot->required) {
+			fprintf(stderr, "%s: attribute %u is %smarked required, and its handler %s it\n",
+				what, slot->id, spec->required ? "" : "not ",
+				slot->required ? "needs" : "does not need");
+			BUG("genl ops: a spec does not mark what its handler requires");
+		}
 
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
 			  spec->kind == NLA_KIND_U32_RANGE;
@@ -1752,13 +1809,65 @@ static void check_policy_values(void)
 			table = genl_cmd_attrs(pf->fam, cp->cmd, cp->dump, &n_table);
 			if (table == NULL)
 				BUG("genl ops: a cmd with bounded values draws from no table");
-			expect_bounds_declared(table, n_table, cp->slots, cp->n_slots, what);
 			check_bounded_draws(table, n_table, cp->slots, cp->n_slots, what);
 		}
 	}
 }
 
+/*
+ * Every cmd of the families above, for what the specs of the table it draws
+ * from declare.
+ */
+static void check_policy_specs(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		const struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->n_cmds; j++) {
+			const struct cmd_policy *cp = &pf->cmds[j];
+			const struct nla_attr_spec *table;
+			size_t n_table = 0;
+			char what[64];
+
+			snprintf(what, sizeof(what), "%s cmd %u%s", pf->fam->name,
+				 cp->cmd, cp->dump ? " dump" : "");
+			table = genl_cmd_attrs(pf->fam, cp->cmd, cp->dump, &n_table);
+			if (table == NULL && cp->n_slots != 0)
+				BUG("genl ops: a cmd with a policy draws from no table");
+			if (table != NULL)
+				expect_specs_declared(table, n_table, cp->slots,
+						      cp->n_slots, what);
+		}
+	}
+}
+
 /* ---------- Checking the attributes a handler requires ------------------- */
+
+/*
+ * The attributes that the handlers of the families above need, as the
+ * messages carried them: the tallies are the ones check_attrs_in_policy()
+ * made, so a table the messages build carries its marks only if
+ * build_one_nlmsg() emits them.
+ */
+static void check_policy_required(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		const struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->n_cmds; j++) {
+			const struct cmd_policy *cp = &pf->cmds[j];
+			char what[64];
+
+			snprintf(what, sizeof(what), "%s cmd %u%s", pf->fam->name,
+				 cp->cmd, cp->dump ? " dump" : "");
+			expect_slots_required(cp->slots, cp->n_slots, what);
+		}
+	}
+}
 
 size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 			     const struct nla_attr_spec *table, size_t nr_specs);
@@ -1995,6 +2104,8 @@ void genl_ops_self_check(void)
 	check_required_tables();
 	check_required_not_inherited();
 	check_attrs_in_policy();
+	check_policy_specs();
+	check_policy_required();
 	check_policy_values();
 	close(peer_fd);
 }

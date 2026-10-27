@@ -28,16 +28,24 @@
  * triple of family, ipaddr and cidr that feeds wg_allowedips_insert_v4/v6.
  * The FLAGS words are NLA_POLICY_MASK of the flags enums: REPLACE_PEERS for
  * the device, the three peer flags, REMOVE_ME for an allowed ip.
+ *
+ * set_peer() answers a peer without a PUBLIC_KEY -EINVAL, and
+ * set_allowedip() an allowed ip that lacks any of FAMILY, IPADDR and
+ * CIDR_MASK, so those are marked required.  The device lookup wants exactly
+ * one of IFINDEX and IFNAME, which a mark cannot say; both ops leave the two
+ * to the random draws.
  */
 static const struct nla_attr_spec wireguard_allowedip_attrs[] = {
-	{ WGALLOWEDIP_A_FAMILY,		NLA_KIND_U16,    2 },
-	{ WGALLOWEDIP_A_IPADDR,		NLA_KIND_BINARY_FIXED2, 16, 4 },
-	{ WGALLOWEDIP_A_CIDR_MASK,	NLA_KIND_U8,     1 },
+	{ WGALLOWEDIP_A_FAMILY,		NLA_KIND_U16,    2, .required = true },
+	{ WGALLOWEDIP_A_IPADDR,		NLA_KIND_BINARY_FIXED2, 16, 4,
+	  .required = true },
+	{ WGALLOWEDIP_A_CIDR_MASK,	NLA_KIND_U8,     1, .required = true },
 	{ WGALLOWEDIP_A_FLAGS,		NLA_KIND_U32_MASK, WGALLOWEDIP_F_REMOVE_ME },
 };
 
 static const struct nla_attr_spec wireguard_peer_attrs[] = {
-	{ WGPEER_A_PUBLIC_KEY,		NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
+	{ WGPEER_A_PUBLIC_KEY,		NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN,
+	  .required = true },
 	{ WGPEER_A_PRESHARED_KEY,	NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
 	{ WGPEER_A_FLAGS,		NLA_KIND_U32_MASK,
 	  WGPEER_F_REMOVE_ME | WGPEER_F_REPLACE_ALLOWEDIPS | WGPEER_F_UPDATE_ONLY },
