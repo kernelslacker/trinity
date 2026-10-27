@@ -427,7 +427,10 @@ static struct cmd_policy handshake_cmds[] = {
 
 extern struct genl_family_grammar fam_vdpa;
 
-/* drivers/vdpa/vdpa.c: vdpa_nl_policy, which every op shares */
+/*
+ * drivers/vdpa/vdpa.c: vdpa_nl_policy, which every op shares, as far as each
+ * op's handler reads it; no dumpit reads any, so a dump takes all eight.
+ */
 static struct slot vdpa_policy[] = {
 	S_STR(VDPA_ATTR_MGMTDEV_BUS_NAME, 0),
 	S_STR(VDPA_ATTR_MGMTDEV_DEV_NAME, 0),
@@ -438,14 +441,41 @@ static struct slot vdpa_policy[] = {
 	S_U32(VDPA_ATTR_DEV_QUEUE_INDEX),
 	S_U64(VDPA_ATTR_DEV_FEATURES),
 };
+static struct slot vdpa_mgmtdev_get[] = {
+	S_STR(VDPA_ATTR_MGMTDEV_BUS_NAME, 0),
+	S_STR(VDPA_ATTR_MGMTDEV_DEV_NAME, 0, .required = true),
+};
+static struct slot vdpa_dev_new[] = {
+	S_STR(VDPA_ATTR_MGMTDEV_BUS_NAME, 0),
+	S_STR(VDPA_ATTR_MGMTDEV_DEV_NAME, 0, .required = true),
+	S_STR(VDPA_ATTR_DEV_NAME, 0, .required = true),
+	S_BLOB(VDPA_ATTR_DEV_NET_CFG_MACADDR, 6, 6),
+	S_U16(VDPA_ATTR_DEV_NET_CFG_MAX_VQP),
+	S_U16(VDPA_ATTR_DEV_NET_CFG_MTU),
+	S_U64(VDPA_ATTR_DEV_FEATURES),
+};
+static struct slot vdpa_dev_name[] = {
+	S_STR(VDPA_ATTR_DEV_NAME, 0),
+};
+static struct slot vdpa_dev_vstats[] = {
+	S_STR(VDPA_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(VDPA_ATTR_DEV_QUEUE_INDEX, .required = true),
+};
+static struct slot vdpa_dev_attr_set[] = {
+	S_STR(VDPA_ATTR_DEV_NAME, 0, .required = true),
+	S_BLOB(VDPA_ATTR_DEV_NET_CFG_MACADDR, 6, 6),
+};
 static struct cmd_policy vdpa_cmds[] = {
-	P_CMD(VDPA_CMD_MGMTDEV_GET, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_NEW, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_DEL, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_GET, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_CONFIG_GET, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_VSTATS_GET, vdpa_policy),
-	P_CMD(VDPA_CMD_DEV_ATTR_SET, vdpa_policy),
+	P_CMD(VDPA_CMD_MGMTDEV_GET, vdpa_mgmtdev_get),
+	P_DUMP(VDPA_CMD_MGMTDEV_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_NEW, vdpa_dev_new),
+	P_CMD(VDPA_CMD_DEV_DEL, vdpa_dev_name),
+	P_CMD(VDPA_CMD_DEV_GET, vdpa_dev_name),
+	P_DUMP(VDPA_CMD_DEV_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_CONFIG_GET, vdpa_dev_name),
+	P_DUMP(VDPA_CMD_DEV_CONFIG_GET, vdpa_policy),
+	P_CMD(VDPA_CMD_DEV_VSTATS_GET, vdpa_dev_vstats),
+	P_CMD(VDPA_CMD_DEV_ATTR_SET, vdpa_dev_attr_set),
 };
 #endif
 
