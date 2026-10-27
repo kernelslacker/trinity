@@ -1,8 +1,9 @@
 /*
  * Genetlink family grammar: TIPC (Transparent Inter-Process Communication,
  * family "TIPCv2"), targeting net/tipc/netlink.c and the per-command
- * handlers in bearer.c, link.c, net.c and node.c.  Every top-level
- * attribute is a nest that the handler parses against its own policy.
+ * handlers in bearer.c, net.c, node.c, socket.c and udp_media.c.  Every
+ * top-level attribute is a nest that the handler parses against its own
+ * policy.
  */
 
 #if __has_include(<linux/tipc_netlink.h>)
@@ -86,6 +87,27 @@ static const struct nla_attr_spec tipc_mon_attrs[] = {
 	{ TIPC_NLA_MON_ACTIVATION_THRESHOLD, NLA_KIND_U32, 4 },
 };
 
+/* MON_PEER_GET's dumpit refuses a MON nest without REF, the bearer whose
+ * monitor peers it lists. */
+static const struct nla_attr_spec tipc_mon_peer_attrs[] = {
+	{ TIPC_NLA_MON_REF,		NLA_KIND_U32,    4 },
+};
+
+/*
+ * KEY_SET's nest, which it parses strictly against tipc_nl_node_policy.  ID
+ * is at most TIPC_NODEID_LEN bytes and the handler wants that many; KEY is
+ * a struct tipc_aead_key and its key, at most TIPC_AEAD_KEY_SIZE_MAX bytes.
+ * The handler needs KEY or REKEYING, which a mark cannot say.
+ */
+static const struct nla_attr_spec tipc_node_attrs[] = {
+	{ TIPC_NLA_NODE_ID,		NLA_KIND_BINARY, TIPC_NODEID_LEN,
+	  TIPC_NODEID_LEN },
+	{ TIPC_NLA_NODE_KEY,		NLA_KIND_BINARY, TIPC_AEAD_KEY_SIZE_MAX,
+	  sizeof(struct tipc_aead_key) },
+	{ TIPC_NLA_NODE_KEY_MASTER,	NLA_KIND_FLAG,   0 },
+	{ TIPC_NLA_NODE_REKEYING,	NLA_KIND_U32,    4 },
+};
+
 /*
  * tipc_nl_policy, the one policy of the ops, whose validation is liberal;
  * it types nine ids NLA_NESTED, which an attribute holds empty or with
@@ -130,6 +152,16 @@ static const struct nla_attr_spec tipc_mon_req_attrs[] = {
 	  tipc_mon_attrs, ARRAY_SIZE(tipc_mon_attrs) },
 };
 
+static const struct nla_attr_spec tipc_mon_peer_req_attrs[] = {
+	{ TIPC_NLA_MON,			NLA_KIND_NESTED, 0, 0,
+	  tipc_mon_peer_attrs, ARRAY_SIZE(tipc_mon_peer_attrs) },
+};
+
+static const struct nla_attr_spec tipc_node_req_attrs[] = {
+	{ TIPC_NLA_NODE,		NLA_KIND_NESTED, 0, 0,
+	  tipc_node_attrs, ARRAY_SIZE(tipc_node_attrs) },
+};
+
 static const struct genl_cmd_grammar tipc_cmds[] = {
 	{ TIPC_NL_BEARER_ENABLE,	"TIPC_NL_BEARER_ENABLE",
 	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
@@ -140,9 +172,16 @@ static const struct genl_cmd_grammar tipc_cmds[] = {
 	  genl_no_attrs },
 	{ TIPC_NL_BEARER_SET,		"TIPC_NL_BEARER_SET",
 	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
+	{ TIPC_NL_BEARER_ADD,		"TIPC_NL_BEARER_ADD",
+	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
+	{ TIPC_NL_UDP_GET_REMOTEIP,	"TIPC_NL_UDP_GET_REMOTEIP",
+	  tipc_bearer_req_attrs, ARRAY_SIZE(tipc_bearer_req_attrs) },
 	{ TIPC_NL_NET_GET,		"TIPC_NL_NET_GET", genl_no_attrs },
 	{ TIPC_NL_NET_SET,		"TIPC_NL_NET_SET",
 	  tipc_net_req_attrs, ARRAY_SIZE(tipc_net_req_attrs) },
+	{ TIPC_NL_PEER_REMOVE,		"TIPC_NL_PEER_REMOVE",
+	  tipc_net_req_attrs, ARRAY_SIZE(tipc_net_req_attrs) },
+	{ TIPC_NL_NODE_GET,		"TIPC_NL_NODE_GET", genl_no_attrs },
 	{ TIPC_NL_LINK_GET,		"TIPC_NL_LINK_GET",
 	  tipc_link_req_attrs, ARRAY_SIZE(tipc_link_req_attrs),
 	  tipc_link_dump_attrs, ARRAY_SIZE(tipc_link_dump_attrs) },
@@ -157,9 +196,17 @@ static const struct genl_cmd_grammar tipc_cmds[] = {
 	{ TIPC_NL_MEDIA_GET,		"TIPC_NL_MEDIA_GET",
 	  tipc_media_req_attrs, ARRAY_SIZE(tipc_media_req_attrs),
 	  genl_no_attrs },
+	{ TIPC_NL_MEDIA_SET,		"TIPC_NL_MEDIA_SET",
+	  tipc_media_req_attrs, ARRAY_SIZE(tipc_media_req_attrs) },
 	{ TIPC_NL_MON_GET,		"TIPC_NL_MON_GET", genl_no_attrs },
 	{ TIPC_NL_MON_SET,		"TIPC_NL_MON_SET",
 	  tipc_mon_req_attrs, ARRAY_SIZE(tipc_mon_req_attrs) },
+	{ TIPC_NL_MON_PEER_GET,		"TIPC_NL_MON_PEER_GET",
+	  tipc_mon_peer_req_attrs, ARRAY_SIZE(tipc_mon_peer_req_attrs) },
+	{ TIPC_NL_KEY_SET,		"TIPC_NL_KEY_SET",
+	  tipc_node_req_attrs, ARRAY_SIZE(tipc_node_req_attrs) },
+	{ TIPC_NL_KEY_FLUSH,		"TIPC_NL_KEY_FLUSH", genl_no_attrs },
+	{ TIPC_NL_ADDR_LEGACY_GET,	"TIPC_NL_ADDR_LEGACY_GET", genl_no_attrs },
 };
 
 struct genl_family_grammar fam_tipc = {

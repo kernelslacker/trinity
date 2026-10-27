@@ -1240,8 +1240,9 @@ extern struct genl_family_grammar fam_tipc;
  * under.  MULTI_REMOTEIP has no slot in the UDP policy but the media code
  * reads it.  Each op reads one nest, or none, and the handler of a bearer,
  * link or media op answers -EINVAL to a nest without its NAME, PUBL_GET's
- * to a SOCK nest without REF and LINK_GET's dumpit to a LINK nest without
- * BROADCAST.  What only replies carry is not listed.
+ * to a SOCK nest without REF, LINK_GET's dumpit to a LINK nest without
+ * BROADCAST and MON_PEER_GET's to a MON nest without REF.  KEY_SET parses
+ * its NODE nest strictly.  What only replies carry is not listed.
  */
 static struct slot tipc_prop[] = {
 	S_U32(TIPC_NLA_PROP_PRIO),
@@ -1285,6 +1286,15 @@ static struct slot tipc_net[] = {
 static struct slot tipc_mon[] = {
 	S_U32(TIPC_NLA_MON_ACTIVATION_THRESHOLD),
 };
+static struct slot tipc_mon_peer[] = {
+	S_U32(TIPC_NLA_MON_REF),
+};
+static struct slot tipc_node_key[] = {
+	S_BLOB(TIPC_NLA_NODE_ID, 0, TIPC_NODEID_LEN),
+	S_BLOB(TIPC_NLA_NODE_KEY, 0, TIPC_AEAD_KEY_SIZE_MAX),
+	S_FLAG(TIPC_NLA_NODE_KEY_MASTER),
+	S_U32(TIPC_NLA_NODE_REKEYING),
+};
 static struct slot tipc_bearer_req[] = { S_NEST(TIPC_NLA_BEARER, tipc_bearer) };
 static struct slot tipc_sock_req[] = { S_NEST(TIPC_NLA_SOCK, tipc_sock) };
 static struct slot tipc_link_req[] = { S_NEST(TIPC_NLA_LINK, tipc_link) };
@@ -1292,14 +1302,20 @@ static struct slot tipc_link_dump[] = { S_NEST(TIPC_NLA_LINK, tipc_link_bcast) }
 static struct slot tipc_media_req[] = { S_NEST(TIPC_NLA_MEDIA, tipc_media) };
 static struct slot tipc_net_req[] = { S_NEST(TIPC_NLA_NET, tipc_net) };
 static struct slot tipc_mon_req[] = { S_NEST(TIPC_NLA_MON, tipc_mon) };
+static struct slot tipc_mon_peer_req[] = { S_NEST(TIPC_NLA_MON, tipc_mon_peer) };
+static struct slot tipc_node_req[] = { S_NEST(TIPC_NLA_NODE, tipc_node_key) };
 static struct cmd_policy tipc_cmds[] = {
 	P_CMD(TIPC_NL_BEARER_ENABLE, tipc_bearer_req),
 	P_CMD(TIPC_NL_BEARER_DISABLE, tipc_bearer_req),
 	P_CMD(TIPC_NL_BEARER_GET, tipc_bearer_req),
 	P_DUMP_NONE(TIPC_NL_BEARER_GET),
 	P_CMD(TIPC_NL_BEARER_SET, tipc_bearer_req),
+	P_CMD(TIPC_NL_BEARER_ADD, tipc_bearer_req),
+	P_CMD(TIPC_NL_UDP_GET_REMOTEIP, tipc_bearer_req),
 	P_CMD_NONE(TIPC_NL_NET_GET),
 	P_CMD(TIPC_NL_NET_SET, tipc_net_req),
+	P_CMD(TIPC_NL_PEER_REMOVE, tipc_net_req),
+	P_CMD_NONE(TIPC_NL_NODE_GET),
 	P_CMD(TIPC_NL_LINK_GET, tipc_link_req),
 	P_DUMP(TIPC_NL_LINK_GET, tipc_link_dump),
 	P_CMD(TIPC_NL_LINK_SET, tipc_link_req),
@@ -1309,8 +1325,13 @@ static struct cmd_policy tipc_cmds[] = {
 	P_CMD_NONE(TIPC_NL_SOCK_GET),
 	P_CMD(TIPC_NL_MEDIA_GET, tipc_media_req),
 	P_DUMP_NONE(TIPC_NL_MEDIA_GET),
+	P_CMD(TIPC_NL_MEDIA_SET, tipc_media_req),
 	P_CMD_NONE(TIPC_NL_MON_GET),
 	P_CMD(TIPC_NL_MON_SET, tipc_mon_req),
+	P_CMD(TIPC_NL_MON_PEER_GET, tipc_mon_peer_req),
+	P_CMD(TIPC_NL_KEY_SET, tipc_node_req),
+	P_CMD_NONE(TIPC_NL_KEY_FLUSH),
+	P_CMD_NONE(TIPC_NL_ADDR_LEGACY_GET),
 };
 #endif
 
