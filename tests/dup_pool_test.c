@@ -2553,19 +2553,50 @@ static unsigned long post_openat_path(int fd)
 	return shm->stats.oracle.fd_oracle_anomalies - before;
 }
 
+/*
+ * openat (AT_FDCWD, @path, @flags) through the sanitiser and the post
+ * handler, as a call that returned an fd on @fd_path, left in *@fdp, and
+ * the anomalies counted.  The call is made again until its two lookups
+ * agree: an entry another process makes or removes in a directory on the
+ * path, /tmp among them, changes that directory's ctime between them, which
+ * the oracle cannot tell from the path moving.
+ */
+#define HELD_TRIES	16
+
+static unsigned long held_openat_path(const char *path, unsigned long flags,
+				      const char *fd_path, int *fdp)
+{
+	unsigned int tries;
+
+	for (tries = 0; tries < HELD_TRIES; tries++) {
+		unsigned long inconclusive = OPENAT_INCONCLUSIVE, anomalies;
+
+		memset(&open_rec, 0, sizeof(open_rec));
+		open_rec.a1 = (unsigned long) AT_FDCWD;
+		open_rec.a2 = (unsigned long) path;
+		open_rec.a3 = flags;
+		sanitise_openat_rec();
+		*fdp = open_o_path(fd_path);
+		anomalies = post_openat_path(*fdp);
+		if (OPENAT_INCONCLUSIVE == inconclusive)
+			return anomalies;
+		close(*fdp);
+	}
+	BUG("fd pool: the O_PATH oracle never found a binding that held");
+	return 0;
+}
+
 /* The fd is the file the path names, or another file with the path
  * holding still: the oracle clears the first and fires on the second, and
- * pools the file either way. */
+ * pools the file either way.  A binding that holds is judged, never
+ * counted as inconclusive, or held_openat_path() runs out of calls. */
 static void openat_oracle_compares_the_inode(void)
 {
-	unsigned long inconclusive = OPENAT_INCONCLUSIVE;
 	int fd;
 
 	oracle_files();
-	sanitise_openat_path(oracle_a);
-	fd = open_o_path(oracle_a);
 	check("the O_PATH oracle fired on the file the path names", "openat",
-	      post_openat_path(fd) == 0);
+	      held_openat_path(oracle_a, O_PATH, oracle_a, &fd) == 0);
 	check("a file the oracle cleared was not pooled", "openat",
 	      published == 1 && pool_count(fd) == 1);
 	close(fd);
@@ -2573,26 +2604,16 @@ static void openat_oracle_compares_the_inode(void)
 	/* O_NOFOLLOW changes only what a trailing symlink opens, so a call
 	 * on a regular file is judged with it as well. */
 	oracle_files();
-	memset(&open_rec, 0, sizeof(open_rec));
-	open_rec.a1 = (unsigned long) AT_FDCWD;
-	open_rec.a2 = (unsigned long) oracle_a;
-	open_rec.a3 = O_PATH | O_NOFOLLOW;
-	sanitise_openat_rec();
-	fd = open_o_path(oracle_b);
 	check("the O_PATH oracle did not judge an O_NOFOLLOW call", "openat",
-	      post_openat_path(fd) == 1);
+	      held_openat_path(oracle_a, O_PATH | O_NOFOLLOW, oracle_b, &fd) == 1);
 	close(fd);
 
 	oracle_files();
-	sanitise_openat_path(oracle_a);
-	fd = open_o_path(oracle_b);
 	check("the O_PATH oracle missed an inode mismatch", "openat",
-	      post_openat_path(fd) == 1);
+	      held_openat_path(oracle_a, O_PATH, oracle_b, &fd) == 1);
 	check("a file the oracle flagged was not pooled", "openat",
 	      published == 1 && pool_count(fd) == 1);
 	close(fd);
-	check("a binding that held was counted as inconclusive", "openat",
-	      OPENAT_INCONCLUSIVE == inconclusive);
 	oracle_files_remove();
 }
 
@@ -2764,6 +2785,101 @@ static void openat_oracle_ignores_a_path_that_moved(void)
 	close(fd);
 	check("a call that was not judged was counted as inconclusive",
 	      "openat", OPENAT_INCONCLUSIVE == inconclusive);
+	oracle_files_remove();
+}
+
+/* A directory on the path, rather than the file it ends in, moves away and
+ * comes back inside the window, so the open finds another directory's file
+ * while both lookups of the whole path find the first file, its ctime
+ * untouched.  Each directory the path walks through is looked up either
+ * side as well, so the move shows in the ctime of the one it went
+ * through, and the call is inconclusive.  A symlink on the way can be
+ * repointed and restored past what any lookup sees, a procfs magic link
+ * among them, so a path through one is not judged at all. */
+static void openat_oracle_holds_the_directories(void)
+{
+	char d[sizeof(oracle_template) + 2], e[sizeof(d)], f[sizeof(d)];
+	char l[sizeof(d)], da[sizeof(d) + 2], ea[sizeof(da)], la[sizeof(da)];
+	char magic[64];
+	unsigned long inconclusive;
+	int fd, dfd, efd, slot;
+
+	oracle_files();
+	snprintf(d, sizeof(d), "%s/d", oracle_dir);
+	snprintf(e, sizeof(e), "%s/e", oracle_dir);
+	snprintf(f, sizeof(f), "%s/f", oracle_dir);
+	snprintf(l, sizeof(l), "%s/l", oracle_dir);
+	snprintf(da, sizeof(da), "%s/a", d);
+	snprintf(ea, sizeof(ea), "%s/a", e);
+	snprintf(la, sizeof(la), "%s/a", l);
+	if (mkdir(d, 0700) != 0 || mkdir(e, 0700) != 0 ||
+	    (fd = open(da, O_CREAT | O_WRONLY, 0600)) < 0)
+		BUG("fd pool: cannot make the O_PATH oracle's directories");
+	close(fd);
+	if ((fd = open(ea, O_CREAT | O_WRONLY, 0600)) < 0)
+		BUG("fd pool: cannot make the O_PATH oracle's directories");
+	close(fd);
+
+	/* d moves to f and e takes its name for the open, then back.  A tick
+	 * of the coarse clock passes first, as for a file that moved. */
+	sanitise_openat_path(da);
+	nanosleep(&(const struct timespec) { 0, 20 * 1000 * 1000 }, NULL);
+	if (rename(d, f) != 0 || rename(e, d) != 0)
+		BUG("fd pool: cannot move the O_PATH oracle's directory away");
+	fd = open_o_path(da);
+	if (rename(d, e) != 0 || rename(f, d) != 0)
+		BUG("fd pool: cannot move the O_PATH oracle's directory back");
+	inconclusive = OPENAT_INCONCLUSIVE;
+	check("a directory that moved away and back was reported", "openat",
+	      post_openat_path(fd) == 0);
+	check("a directory that moved away and back was not counted as inconclusive",
+	      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
+	close(fd);
+
+	/* l names d for both lookups and e for the open. */
+	if (symlink(d, l) != 0)
+		BUG("fd pool: cannot make a symlink for the O_PATH oracle");
+	sanitise_openat_path(la);
+	if (unlink(l) != 0 || symlink(e, l) != 0)
+		BUG("fd pool: cannot repoint the O_PATH oracle's symlink");
+	fd = open_o_path(la);
+	if (unlink(l) != 0 || symlink(d, l) != 0)
+		BUG("fd pool: cannot restore the O_PATH oracle's symlink");
+	inconclusive = OPENAT_INCONCLUSIVE;
+	check("a path through a symlink that moved and came back was reported",
+	      "openat", post_openat_path(fd) == 0);
+	check("a path through a symlink was judged", "openat",
+	      OPENAT_INCONCLUSIVE == inconclusive);
+	close(fd);
+
+	/* The same with a magic link, which moves with a dup2(). */
+	dfd = open(d, O_PATH | O_DIRECTORY);
+	efd = open(e, O_PATH | O_DIRECTORY);
+	slot = dfd >= 0 ? dup(dfd) : -1;
+	if (efd < 0 || slot < 0)
+		BUG("fd pool: cannot open the O_PATH oracle's directories");
+	snprintf(magic, sizeof(magic), "/proc/self/fd/%d/a", slot);
+	sanitise_openat_path(magic);
+	if (dup2(efd, slot) < 0)
+		BUG("fd pool: cannot move a magic link");
+	fd = open_o_path(magic);
+	if (dup2(dfd, slot) < 0)
+		BUG("fd pool: cannot move a magic link back");
+	inconclusive = OPENAT_INCONCLUSIVE;
+	check("a path through a magic link that moved and came back was reported",
+	      "openat", post_openat_path(fd) == 0);
+	check("a path through a magic link was judged", "openat",
+	      OPENAT_INCONCLUSIVE == inconclusive);
+	close(fd);
+	close(slot);
+	close(dfd);
+	close(efd);
+
+	unlink(l);
+	unlink(da);
+	unlink(ea);
+	rmdir(d);
+	rmdir(e);
 	oracle_files_remove();
 }
 
@@ -3493,6 +3609,7 @@ void dup_pool_self_check(void)
 	open_oracle_reports_a_dead_fd();
 	openat_oracle_compares_the_inode();
 	openat_oracle_ignores_a_path_that_moved();
+	openat_oracle_holds_the_directories();
 	openat_oracle_needs_the_lookup_of_its_call();
 	openat_releases_the_lookup_it_took();
 	open_result_is_pooled_by_kind();

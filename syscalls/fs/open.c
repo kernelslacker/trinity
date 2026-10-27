@@ -1,5 +1,6 @@
 #include <errno.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <linux/magic.h>
 #include <stdio.h>
 #include <string.h>
@@ -81,9 +82,21 @@ static void sanitise_open(struct syscallrecord *rec)
 }
 
 /*
+ * The directories a judged path may walk through, the one it starts in
+ * included; a deeper path is not judged.
+ */
+#define OPENAT_ORACLE_DIRS	16
+
+struct openat_dir_seen {
+	dev_t dev;
+	ino_t ino;
+	struct timespec ctime;
+};
+
+/*
  * What sanitise_openat() saw for the oracle in post_openat(): the inode the
- * path named before the call and its ctime, and the (dfd, path, flags) of
- * that call.
+ * path named before the call and its ctime, the directories it walked
+ * through, and the (dfd, path, flags) of that call.
  */
 #define OPENAT_POST_STATE_MAGIC	0x4F504154UL	/* "OPAT" */
 struct openat_post_state {
@@ -94,7 +107,72 @@ struct openat_post_state {
 	dev_t dev;
 	ino_t ino;
 	struct timespec ctime;
+	unsigned int ndirs;
+	struct openat_dir_seen dirs[OPENAT_ORACLE_DIRS];
 };
+
+/*
+ * Record in @snap, or with @check compare with what it recorded, each
+ * directory @path walks through before its last component: / or the
+ * working directory it starts in, then the prefix up to each '/'.  A
+ * directory that moves away and comes back changes the ctime of the one it
+ * moved through, which the lookups of the whole path never look at.  Every
+ * prefix has to be a directory: a symlink there, a procfs magic link
+ * among them, can be repointed and restored past what any lookup sees.
+ * False when the path cannot be judged, and when checking, when a
+ * directory differs from what was recorded.
+ */
+static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
+			     bool check)
+{
+	char prefix[PATH_MAX];
+	size_t len = strnlen(path, sizeof(prefix)), end, i;
+	const char *last;
+	unsigned int n = 0;
+
+	if (len == sizeof(prefix))
+		return false;
+	memcpy(prefix, path, len + 1);
+	last = strrchr(prefix, '/');
+	end = last != NULL ? (size_t) (last - prefix) : 0;
+
+	for (i = 0; i <= end; i++) {
+		struct openat_dir_seen *seen;
+		struct stat st;
+		int ret;
+
+		if (i != 0 && (prefix[i] != '/' || prefix[i - 1] == '/'))
+			continue;
+		if (n == OPENAT_ORACLE_DIRS || (check && n == snap->ndirs))
+			return false;
+
+		if (i == 0) {
+			ret = lstat(prefix[0] == '/' ? "/" : ".", &st);
+		} else {
+			prefix[i] = '\0';
+			ret = lstat(prefix, &st);
+			prefix[i] = '/';
+		}
+		if (ret != 0 || !S_ISDIR(st.st_mode))
+			return false;
+
+		seen = &snap->dirs[n++];
+		if (!check) {
+			seen->dev = st.st_dev;
+			seen->ino = st.st_ino;
+			seen->ctime = st.st_ctim;
+		} else if (seen->dev != st.st_dev || seen->ino != st.st_ino ||
+			   seen->ctime.tv_sec != st.st_ctim.tv_sec ||
+			   seen->ctime.tv_nsec != st.st_ctim.tv_nsec) {
+			return false;
+		}
+	}
+
+	if (check)
+		return n == snap->ndirs;
+	snap->ndirs = n;
+	return true;
+}
 
 /*
  * Whether @path ends in a name.  A last component that is empty, "." or
@@ -163,21 +241,27 @@ static void sanitise_openat(struct syscallrecord *rec)
 
 	/*
 	 * Look the path up for the oracle in post_openat(), for the shape it
-	 * judges.  A symlink is left out: a procfs magic link can move and
-	 * come back between two lookups, and its fd is the target's, which
-	 * fstatfs() cannot place.  So is a path that does not end in a name,
-	 * whose lookup follows a final symlink as the open does, past what
-	 * S_ISLNK() can see.  The name is read only once lstat() has, so the
-	 * kernel has seen a string there.  O_NOFOLLOW changes only what a
-	 * trailing symlink opens, so any other path is judged with it or
-	 * without.
+	 * judges, and the directories it walks through with it.  A symlink is
+	 * left out: a procfs magic link can move and come back between two
+	 * lookups, and its fd is the target's, which fstatfs() cannot place.
+	 * So is a path through one (openat_dirs_seen()), and a path that does
+	 * not end in a name, whose lookup follows a final symlink as the open
+	 * does, past what S_ISLNK() can see.  The name is read only once
+	 * lstat() has, so the kernel has seen a string there.  O_NOFOLLOW
+	 * changes only what a trailing symlink opens, so any other path is
+	 * judged with it or without.
 	 */
 	if ((rec->a3 & O_PATH) &&
 	    (int) rec->a1 == AT_FDCWD && rec->a2 != 0 &&
 	    lstat((const char *) rec->a2, &st) == 0 && !S_ISLNK(st.st_mode) &&
 	    path_ends_in_a_name((const char *) rec->a2)) {
-		struct openat_post_state *snap = zmalloc_tracked(sizeof(*snap));
+		struct openat_post_state seen = { 0 }, *snap;
 
+		if (!openat_dirs_seen((const char *) rec->a2, &seen, false))
+			return;
+
+		snap = zmalloc_tracked(sizeof(*snap));
+		*snap = seen;
 		snap->magic = OPENAT_POST_STATE_MAGIC;
 		snap->dfd = rec->a1;
 		snap->path = rec->a2;
@@ -244,14 +328,16 @@ struct syscallentry syscall_open = {
  * path names.  The open and a later lookup are separate walks, so the path is
  * looked up before the call too: a mismatch counts only when both lookups
  * agree and the fd differs from both, and lookups that disagree are
- * inconclusive.  They have to agree on the inode's ctime as well: the path
- * can name another inode for the open and the first one again by the later
- * lookup only if that one was renamed away and back or linked there again,
- * and either sets its ctime (a write in the window does too, and leaves the
- * call unjudged).  Symlinks and procfs fds are skipped.
+ * inconclusive.  They have to agree on the inode's ctime as well, and on the
+ * directories the path walks through: the path can name another inode for
+ * the open and the first one again by the later lookup only if that one, or
+ * a directory on the way, was renamed away and back or linked there again,
+ * and either sets a ctime the lookups compare (a write in the window does
+ * too, and leaves the call unjudged).  Symlinks, paths through them and
+ * procfs fds are skipped.
  */
 static void openat_path_oracle(const struct syscallrecord *rec,
-			       const struct openat_post_state *snap,
+			       struct openat_post_state *snap,
 			       int fd, const struct stat *st_fd)
 {
 	struct stat st_path;
@@ -271,7 +357,8 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 	if (lstat((const char *) snap->path, &st_path) != 0 ||
 	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino ||
 	    st_path.st_ctim.tv_sec != snap->ctime.tv_sec ||
-	    st_path.st_ctim.tv_nsec != snap->ctime.tv_nsec) {
+	    st_path.st_ctim.tv_nsec != snap->ctime.tv_nsec ||
+	    !openat_dirs_seen((const char *) snap->path, snap, true)) {
 		__atomic_add_fetch(
 			&shm->stats.oracle.openat_oracle_inconclusive,
 			1, __ATOMIC_RELAXED);
