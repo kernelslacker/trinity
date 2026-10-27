@@ -14,23 +14,33 @@
 /*
  * The nests of the two SET_REQS ops, from sunrpc_ip_map_nl_policy and
  * sunrpc_unix_gid_nl_policy.  The three ip_map strings are NLA_NUL_STRING
- * and GIDS repeats once per gid, a single one being enough to pass.
+ * and GIDS repeats once per gid, a single one being enough to pass.  The
+ * entry parsers in net/sunrpc/svcauth_unix.c answer -EINVAL to an ip_map
+ * without its CLASS, ADDR or EXPIRY, to a CLASS longer than 8 bytes and to
+ * an ADDR that rpc_pton() cannot read, so CLASS is "nfsd", the class nfsd
+ * keys its entries by, and ADDR the loopback address; a unix_gid needs its
+ * UID and EXPIRY.
  */
 static const struct nla_attr_spec sunrpc_ip_map_attrs[] = {
 	{ SUNRPC_A_IP_MAP_SEQNO,	NLA_KIND_U64,    8 },
-	{ SUNRPC_A_IP_MAP_CLASS,	NLA_KIND_STRING, 32, 1 },
-	{ SUNRPC_A_IP_MAP_ADDR,		NLA_KIND_STRING, 64, 1 },
+	{ SUNRPC_A_IP_MAP_CLASS,	NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "nfsd", .required = true },
+	{ SUNRPC_A_IP_MAP_ADDR,		NLA_KIND_STRING_WORD, 0, 0,
+	  .word = "127.0.0.1", .required = true },
 	{ SUNRPC_A_IP_MAP_DOMAIN,	NLA_KIND_STRING, 32, 1 },
 	{ SUNRPC_A_IP_MAP_NEGATIVE,	NLA_KIND_FLAG,   0 },
-	{ SUNRPC_A_IP_MAP_EXPIRY,	NLA_KIND_U64,    8 },
+	{ SUNRPC_A_IP_MAP_EXPIRY,	NLA_KIND_U64,    8,
+	  .required = true },
 };
 
 static const struct nla_attr_spec sunrpc_unix_gid_attrs[] = {
 	{ SUNRPC_A_UNIX_GID_SEQNO,	NLA_KIND_U64,    8 },
-	{ SUNRPC_A_UNIX_GID_UID,	NLA_KIND_U32,    4 },
+	{ SUNRPC_A_UNIX_GID_UID,	NLA_KIND_U32,    4,
+	  .required = true },
 	{ SUNRPC_A_UNIX_GID_GIDS,	NLA_KIND_U32,    4 },
 	{ SUNRPC_A_UNIX_GID_NEGATIVE,	NLA_KIND_FLAG,   0 },
-	{ SUNRPC_A_UNIX_GID_EXPIRY,	NLA_KIND_U64,    8 },
+	{ SUNRPC_A_UNIX_GID_EXPIRY,	NLA_KIND_U64,    8,
+	  .required = true },
 };
 
 /*

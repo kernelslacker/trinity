@@ -780,21 +780,23 @@ static struct cmd_policy lockd_cmds[] = {
 
 extern struct genl_family_grammar fam_sunrpc;
 
-/* net/sunrpc/netlink.c: the sunrpc_*_nl_policy tables */
+/* net/sunrpc/netlink.c: the sunrpc_*_nl_policy tables.  The parsers of an
+ * entry in net/sunrpc/svcauth_unix.c answer -EINVAL to an ip_map without
+ * its CLASS, ADDR or EXPIRY and to a unix_gid without its UID or EXPIRY. */
 static struct slot sunrpc_ip_map[] = {
 	S_U64(SUNRPC_A_IP_MAP_SEQNO),
-	S_STR(SUNRPC_A_IP_MAP_CLASS, 0),
-	S_STR(SUNRPC_A_IP_MAP_ADDR, 0),
+	S_STR(SUNRPC_A_IP_MAP_CLASS, 0, .required = true),
+	S_STR(SUNRPC_A_IP_MAP_ADDR, 0, .required = true),
 	S_STR(SUNRPC_A_IP_MAP_DOMAIN, 0),
 	S_FLAG(SUNRPC_A_IP_MAP_NEGATIVE),
-	S_U64(SUNRPC_A_IP_MAP_EXPIRY),
+	S_U64(SUNRPC_A_IP_MAP_EXPIRY, .required = true),
 };
 static struct slot sunrpc_unix_gid[] = {
 	S_U64(SUNRPC_A_UNIX_GID_SEQNO),
-	S_U32(SUNRPC_A_UNIX_GID_UID),
+	S_U32(SUNRPC_A_UNIX_GID_UID, .required = true),
 	S_U32(SUNRPC_A_UNIX_GID_GIDS),
 	S_FLAG(SUNRPC_A_UNIX_GID_NEGATIVE),
-	S_U64(SUNRPC_A_UNIX_GID_EXPIRY),
+	S_U64(SUNRPC_A_UNIX_GID_EXPIRY, .required = true),
 };
 static struct slot sunrpc_ip_map_set_reqs[] = {
 	S_NEST(SUNRPC_A_IP_MAP_REQS_REQUESTS, sunrpc_ip_map),
