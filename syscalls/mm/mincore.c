@@ -141,14 +141,14 @@ static void sanitise_mincore(struct syscallrecord *rec)
 		len = page_size;
 
 	/*
-	 * vec comes from the pool the call reaches: the writable pool, off
-	 * trinity's regions by construction, or for a compat call, whose
-	 * kernel reads the slot's low 32 bits, the low pool.  With no pool to
-	 * draw from, the call reports no pages and the snapshot has nothing
-	 * to check.  A map is at most GB(4), so its vec fits a pool.
+	 * vec comes from the pool the call reaches, off trinity's regions by
+	 * construction: get_writable_struct() draws a compat call's, whose
+	 * kernel reads the slot's low 32 bits, from the low pool.  A map is
+	 * at most GB(4), so its vec fits a pool; were it refused, the call
+	 * would report no pages and the snapshot would have nothing to check.
 	 */
 	vec_bytes = (len + page_size - 1) / page_size;
-	vec = get_call_writable_struct(rec, vec_bytes);
+	vec = get_writable_struct(vec_bytes);
 	if (vec == NULL) {
 		len = 0;
 		vec_bytes = 0;
