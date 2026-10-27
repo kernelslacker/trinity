@@ -11,6 +11,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -631,12 +632,12 @@ static struct slot wireguard_allowedip[] = {
 	S_U16(WGALLOWEDIP_A_FAMILY),
 	S_BLOB(WGALLOWEDIP_A_IPADDR, 4, 0xffff),
 	S_U8(WGALLOWEDIP_A_CIDR_MASK),
-	S_U32(WGALLOWEDIP_A_FLAGS),
+	S_U32_MASK(WGALLOWEDIP_A_FLAGS, 0x1),
 };
 static struct slot wireguard_peer[] = {
 	S_BLOB(WGPEER_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN),
 	S_BLOB(WGPEER_A_PRESHARED_KEY, WG_KEY_LEN, WG_KEY_LEN),
-	S_U32(WGPEER_A_FLAGS),
+	S_U32_MASK(WGPEER_A_FLAGS, 0x7),
 	S_BLOB(WGPEER_A_ENDPOINT, 16, 0xffff),
 	S_U16(WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL),
 	S_BLOB(WGPEER_A_LAST_HANDSHAKE_TIME, 16, 16),
@@ -654,7 +655,7 @@ static struct slot wireguard_set_device[] = {
 	S_STR(WGDEVICE_A_IFNAME, 15),
 	S_BLOB(WGDEVICE_A_PRIVATE_KEY, WG_KEY_LEN, WG_KEY_LEN),
 	S_BLOB(WGDEVICE_A_PUBLIC_KEY, WG_KEY_LEN, WG_KEY_LEN),
-	S_U32(WGDEVICE_A_FLAGS),
+	S_U32_MASK(WGDEVICE_A_FLAGS, 0x1),
 	S_U16(WGDEVICE_A_LISTEN_PORT),
 	S_U32(WGDEVICE_A_FWMARK),
 	S_ARRAY(WGDEVICE_A_PEERS, wireguard_peer),
@@ -1490,13 +1491,33 @@ static void check_nest_tables(void)
 
 /* ---------- Checking the values of the bounded scalars ------------------- */
 
-#define BOUND_ROUNDS	20000
+/* The fewest draws of any bounded slot in the mirror, nests included;
+ * UINT_MAX when it has none. */
+static unsigned int min_bounded_seen(const struct slot *slots, unsigned int n_slots)
+{
+	unsigned int least = UINT_MAX;
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		unsigned int seen = min_bounded_seen(slots[i].nest, slots[i].n_nest);
+
+		if (slots[i].bound != SB_NONE && slots[i].seen < seen)
+			seen = slots[i].seen;
+		if (seen < least)
+			least = seen;
+	}
+	return least;
+}
+
+/* A slot deep in a nest is drawn rarely, so the rounds run until every
+ * bounded slot has its BOUND_SAMPLES, or to this many. */
+#define BOUND_ROUNDS	400000
 
 /*
- * BOUND_ROUNDS attributes drawn from table, each held to the mirror of the
- * policy the table stands for, and then the bounded slots they filled held
- * to their bounds.  The 2048 bytes leave an attribute room, so none is cut
- * short.
+ * Attributes drawn from table, each held to the mirror of the policy the
+ * table stands for, until the bounded slots have their draws, and then
+ * those slots held to their bounds.  The 2048 bytes leave an attribute
+ * room, so none is cut short.
  */
 static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_table,
 				struct slot *mirror, unsigned int n_mirror,
@@ -1508,6 +1529,9 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
 	for (round = 0; round < BOUND_ROUNDS; round++) {
 		size_t end;
 
+		if (round % 256 == 0 &&
+		    min_bounded_seen(mirror, n_mirror) >= BOUND_SAMPLES)
+			break;
 		memset(buf, 0, sizeof(buf));
 		end = append_specced_nlattr(buf, 0, sizeof(buf), table, n_table);
 		if (stream_conforms(buf, end, mirror, n_mirror))
@@ -1544,6 +1568,36 @@ static void check_bounded_tables(void)
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
 			    "bounded tables");
+}
+
+/*
+ * The bounded scalars of the families above, drawn through the table their
+ * cmd takes.  This runs after the messages are checked, so that the draws
+ * made here do not count towards a slot that no message reaches.
+ */
+static void check_policy_values(void)
+{
+	unsigned int i, j;
+
+	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
+		const struct policy_family *pf = &policy_families[i];
+
+		for (j = 0; j < pf->n_cmds; j++) {
+			struct cmd_policy *cp = &pf->cmds[j];
+			const struct nla_attr_spec *table;
+			size_t n_table = 0;
+			char what[64];
+
+			if (min_bounded_seen(cp->slots, cp->n_slots) == UINT_MAX)
+				continue;
+			snprintf(what, sizeof(what), "%s cmd %u%s", pf->fam->name,
+				 cp->cmd, cp->dump ? " dump" : "");
+			table = genl_cmd_attrs(pf->fam, cp->cmd, cp->dump, &n_table);
+			if (table == NULL)
+				BUG("genl ops: a cmd with bounded values draws from no table");
+			check_bounded_draws(table, n_table, cp->slots, cp->n_slots, what);
+		}
+	}
 }
 
 /* ---------- Checking which attribute table a cmd draws from ------------ */
@@ -1650,5 +1704,6 @@ void genl_ops_self_check(void)
 	check_nest_tables();
 	check_bounded_tables();
 	check_attrs_in_policy();
+	check_policy_values();
 	close(peer_fd);
 }

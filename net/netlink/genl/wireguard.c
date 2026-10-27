@@ -26,19 +26,21 @@
  * IPADDR are NLA_POLICY_MIN_LEN, but set_peer() takes only a sockaddr_in or
  * sockaddr_in6 (16 or 28 bytes) and set_allowedip() only 4 or 16, the
  * triple of family, ipaddr and cidr that feeds wg_allowedips_insert_v4/v6.
- * The FLAGS words are masks, which are not shaped.
+ * The FLAGS words are NLA_POLICY_MASK of the flags enums: REPLACE_PEERS for
+ * the device, the three peer flags, REMOVE_ME for an allowed ip.
  */
 static const struct nla_attr_spec wireguard_allowedip_attrs[] = {
 	{ WGALLOWEDIP_A_FAMILY,		NLA_KIND_U16,    2 },
 	{ WGALLOWEDIP_A_IPADDR,		NLA_KIND_BINARY_FIXED2, 16, 4 },
 	{ WGALLOWEDIP_A_CIDR_MASK,	NLA_KIND_U8,     1 },
-	{ WGALLOWEDIP_A_FLAGS,		NLA_KIND_U32,    4 },
+	{ WGALLOWEDIP_A_FLAGS,		NLA_KIND_U32_MASK, WGALLOWEDIP_F_REMOVE_ME },
 };
 
 static const struct nla_attr_spec wireguard_peer_attrs[] = {
 	{ WGPEER_A_PUBLIC_KEY,		NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
 	{ WGPEER_A_PRESHARED_KEY,	NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
-	{ WGPEER_A_FLAGS,		NLA_KIND_U32,    4 },
+	{ WGPEER_A_FLAGS,		NLA_KIND_U32_MASK,
+	  WGPEER_F_REMOVE_ME | WGPEER_F_REPLACE_ALLOWEDIPS | WGPEER_F_UPDATE_ONLY },
 	{ WGPEER_A_ENDPOINT,		NLA_KIND_BINARY_FIXED2, 28, 16 },
 	{ WGPEER_A_PERSISTENT_KEEPALIVE_INTERVAL, NLA_KIND_U16, 2 },
 	{ WGPEER_A_LAST_HANDSHAKE_TIME,	NLA_KIND_BINARY_FIXED2, 16, 16 },
@@ -60,7 +62,7 @@ static const struct nla_attr_spec wireguard_set_device_attrs[] = {
 	{ WGDEVICE_A_IFNAME,		NLA_KIND_STRING, 15, 1 },
 	{ WGDEVICE_A_PRIVATE_KEY,	NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
 	{ WGDEVICE_A_PUBLIC_KEY,	NLA_KIND_BINARY_FIXED2, WG_KEY_LEN, WG_KEY_LEN },
-	{ WGDEVICE_A_FLAGS,		NLA_KIND_U32,    4 },
+	{ WGDEVICE_A_FLAGS,		NLA_KIND_U32_MASK, WGDEVICE_F_REPLACE_PEERS },
 	{ WGDEVICE_A_LISTEN_PORT,	NLA_KIND_U16,    2 },
 	{ WGDEVICE_A_FWMARK,		NLA_KIND_U32,    4 },
 	{ WGDEVICE_A_PEERS,		NLA_KIND_NESTED_ARRAY, 0, 0,
