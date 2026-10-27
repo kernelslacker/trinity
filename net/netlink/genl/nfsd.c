@@ -17,7 +17,9 @@
  * nfsd_expkey_nl_policy and the policies under them: FSLOCATIONS nests
  * LOCATION nests HOST and PATH, SECINFO nests PSEUDOFLAVOR and FLAGS.  UUID
  * is exactly 16 bytes to nfsd_nl_parse_one_export().  FSID is an s32 in
- * svc_export and a blob in expkey.  The *_FLAGS and XPRTSEC words are masks.
+ * svc_export and a blob in expkey.  The *_FLAGS and XPRTSEC words are
+ * NLA_POLICY_MASK: 0x3ffff, one bit for each of the 18 export flags, on both
+ * FLAGS words, and 0x7, the three xprtsec modes, on XPRTSEC.
  */
 static const struct nla_attr_spec nfsd_fslocation_attrs[] = {
 	{ NFSD_A_FSLOCATION_HOST,	NLA_KIND_STRING, 32, 1 },
@@ -31,7 +33,7 @@ static const struct nla_attr_spec nfsd_fslocations_attrs[] = {
 
 static const struct nla_attr_spec nfsd_auth_flavor_attrs[] = {
 	{ NFSD_A_AUTH_FLAVOR_PSEUDOFLAVOR, NLA_KIND_U32, 4 },
-	{ NFSD_A_AUTH_FLAVOR_FLAGS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_AUTH_FLAVOR_FLAGS,	NLA_KIND_U32_MASK, 0x3ffff },
 };
 
 static const struct nla_attr_spec nfsd_svc_export_attrs[] = {
@@ -47,8 +49,8 @@ static const struct nla_attr_spec nfsd_svc_export_attrs[] = {
 	{ NFSD_A_SVC_EXPORT_UUID,	NLA_KIND_BINARY_FIXED2, 16, 16 },
 	{ NFSD_A_SVC_EXPORT_SECINFO,	NLA_KIND_NESTED, 0, 0,
 	  nfsd_auth_flavor_attrs, ARRAY_SIZE(nfsd_auth_flavor_attrs) },
-	{ NFSD_A_SVC_EXPORT_XPRTSEC,	NLA_KIND_U32,    4 },
-	{ NFSD_A_SVC_EXPORT_FLAGS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SVC_EXPORT_XPRTSEC,	NLA_KIND_U32_MASK, 0x7 },
+	{ NFSD_A_SVC_EXPORT_FLAGS,	NLA_KIND_U32_MASK, 0x3ffff },
 	{ NFSD_A_SVC_EXPORT_FSID,	NLA_KIND_U32,    4 },
 };
 
@@ -116,8 +118,9 @@ static const struct nla_attr_spec nfsd_expkey_set_reqs_attrs[] = {
 	  nfsd_expkey_attrs, ARRAY_SIZE(nfsd_expkey_attrs) },
 };
 
+/* MASK holds one bit for each cache type: svc_export and expkey. */
 static const struct nla_attr_spec nfsd_cache_flush_attrs[] = {
-	{ NFSD_A_CACHE_FLUSH_MASK,	NLA_KIND_U32,    4 },
+	{ NFSD_A_CACHE_FLUSH_MASK,	NLA_KIND_U32_MASK, 0x3 },
 };
 
 /* ADDRESS is NLA_POLICY_MIN_LEN(16): a sockaddr_in or sockaddr_in6. */

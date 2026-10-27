@@ -455,7 +455,7 @@ static struct slot nfsd_fslocations[] = {
 };
 static struct slot nfsd_auth_flavor[] = {
 	S_U32(NFSD_A_AUTH_FLAVOR_PSEUDOFLAVOR),
-	S_U32(NFSD_A_AUTH_FLAVOR_FLAGS),
+	S_U32_MASK(NFSD_A_AUTH_FLAVOR_FLAGS, 0x3ffff),
 };
 static struct slot nfsd_svc_export[] = {
 	S_U64(NFSD_A_SVC_EXPORT_SEQNO),
@@ -468,8 +468,8 @@ static struct slot nfsd_svc_export[] = {
 	S_NEST(NFSD_A_SVC_EXPORT_FSLOCATIONS, nfsd_fslocations),
 	S_BLOB(NFSD_A_SVC_EXPORT_UUID, 0, 0xffff),
 	S_NEST(NFSD_A_SVC_EXPORT_SECINFO, nfsd_auth_flavor),
-	S_U32(NFSD_A_SVC_EXPORT_XPRTSEC),
-	S_U32(NFSD_A_SVC_EXPORT_FLAGS),
+	S_U32_MASK(NFSD_A_SVC_EXPORT_XPRTSEC, 0x7),
+	S_U32_MASK(NFSD_A_SVC_EXPORT_FLAGS, 0x3ffff),
 	S_U32(NFSD_A_SVC_EXPORT_FSID),
 };
 static struct slot nfsd_expkey[] = {
@@ -515,7 +515,7 @@ static struct slot nfsd_expkey_set_reqs[] = {
 	S_NEST(NFSD_A_EXPKEY_REQS_REQUESTS, nfsd_expkey),
 };
 static struct slot nfsd_cache_flush[] = {
-	S_U32(NFSD_A_CACHE_FLUSH_MASK),
+	S_U32_MASK(NFSD_A_CACHE_FLUSH_MASK, 0x3),
 };
 static struct slot nfsd_unlock_ip[] = {
 	S_BLOB(NFSD_A_UNLOCK_IP_ADDRESS, 16, 0xffff),
