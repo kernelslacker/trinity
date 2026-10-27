@@ -292,6 +292,10 @@ static const unsigned int policies[] = { 0, 1 };
  * answers any other policy -EOPNOTSUPP. */
 static const unsigned int set_policies[] = { 0, 1 };
 
+/* nft_flowtable_parse_hook() takes NF_NETDEV_INGRESS and no other hook number
+ * for a new flowtable, and answers -EOPNOTSUPP to the rest. */
+static const unsigned int flowtable_hooknums[] = { 0 };
+
 /*
  * The top-level attributes whose handlers accept a few values and no others,
  * read as a byte or in network byte order, with the values each accepts.
@@ -318,6 +322,9 @@ static const struct bounded_slot oneof_slots[] = {
 	/* nft_set_policy types POLICY NLA_U32 */
 	{ "NFTA_SET_POLICY", NFNL_SUBSYS_NFTABLES, 8,
 	  NLA_KIND_BE32_ONEOF, 0, set_policies, ARRAY_SIZE(set_policies) },
+	/* nft_flowtable_hook_policy types NUM NLA_U32 */
+	{ "NFTA_FLOWTABLE_HOOK_NUM", NFNL_SUBSYS_NFTABLES, 1,
+	  NLA_KIND_BE32_ONEOF, 0, flowtable_hooknums, ARRAY_SIZE(flowtable_hooknums) },
 };
 
 static bool has_value(const struct bounded_slot *slot, unsigned int v)
@@ -741,9 +748,8 @@ static void check_string_oneof(void)
 }
 
 /*
- * Every string the nftables grammar has at a name id, in its own table or in
- * a cmd's, must be the one word, and each of the ids must have one.  Returns
- * the word.
+ * Every string the nftables grammar has at a name id, in a cmd's table, must
+ * be the one word, and each of the ids must have one.  Returns the word.
  */
 static const char *check_nftables_names(void)
 {
@@ -755,7 +761,6 @@ static const char *check_nftables_names(void)
 	if (sub == NULL)
 		BUG("nfnl grammar: nftables is not registered");
 
-	check_name_specs(sub->attrs, sub->n_attrs, &word, seen);
 	for (i = 0; i < sub->n_cmds; i++)
 		check_name_specs(sub->cmds[i].attrs, sub->cmds[i].n_attrs, &word, seen);
 
@@ -1296,6 +1301,32 @@ static struct pslot obj_name[] = {
 	PS(3, true, NLA_KIND_BE32_RANGE),
 };
 
+/*
+ * nft_flowtable_policy has the table (1), the name (2), HOOK (3), the handle
+ * (5) and the flags (7); the use count (4) is for replies.  NEWFLOWTABLE
+ * answers -EINVAL unless the request holds the table, the name and HOOK, so it
+ * marks all three.  HOOK is nft_flowtable_hook_policy's NUM (1), PRIORITY (2)
+ * and DEVS (3): nft_flowtable_parse_hook() answers -ENOENT unless it has the
+ * first two, and the grammar leaves DEVS out, since a flowtable without
+ * devices is accepted.  GETFLOWTABLE needs the name and the table, and the
+ * deletes the table and the name or the handle, which the grammar leaves out;
+ * a HOOK in a delete takes devices out of the flowtable, so it is left out too.
+ */
+static struct pslot flowtable_hook[] = {
+	PS(1, true, NLA_KIND_BE32_ONEOF),
+	PS(2, true, 0),
+};
+static struct pslot flowtable_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PSN(3, true, flowtable_hook),
+	PS(7, false, NLA_KIND_BE32_MASK),
+};
+static struct pslot flowtable_name[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1326,7 +1357,65 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETOBJ_RESET", NFTABLES, 21, obj_name, ARRAY_SIZE(obj_name) },
 	{ "NFT_MSG_DELOBJ", NFTABLES, 20, obj_name, ARRAY_SIZE(obj_name) },
 	{ "NFT_MSG_DESTROYOBJ", NFTABLES, 31, obj_name, ARRAY_SIZE(obj_name) },
+	{ "NFT_MSG_NEWFLOWTABLE", NFTABLES, 22, flowtable_new, ARRAY_SIZE(flowtable_new) },
+	{ "NFT_MSG_GETFLOWTABLE", NFTABLES, 23, flowtable_name, ARRAY_SIZE(flowtable_name) },
+	{ "NFT_MSG_DELFLOWTABLE", NFTABLES, 24, flowtable_name, ARRAY_SIZE(flowtable_name) },
+	{ "NFT_MSG_DESTROYFLOWTABLE", NFTABLES, 32, flowtable_name, ARRAY_SIZE(flowtable_name) },
 };
+
+/*
+ * Every command that has a table of its own has a mirror of its policy in
+ * cmd_rows[], which is what holds the table to the kernel's.
+ */
+static void check_rows_cover_tables(void)
+{
+	unsigned int id, i, j;
+
+	for (id = 0; id < 256; id++) {
+		const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(id);
+
+		for (i = 0; sub != NULL && i < sub->n_cmds; i++) {
+			if (sub->cmds[i].attrs == NULL)
+				continue;
+			for (j = 0; j < ARRAY_SIZE(cmd_rows); j++) {
+				if (cmd_rows[j].subsys == id &&
+				    cmd_rows[j].cmd == sub->cmds[i].cmd)
+					break;
+			}
+			if (j == ARRAY_SIZE(cmd_rows)) {
+				fprintf(stderr, "%s: has a table and no mirror of its policy\n",
+					sub->cmds[i].name);
+				BUG("nfnl grammar: a command's table is not held to a policy");
+			}
+		}
+	}
+}
+
+/*
+ * nf_tables_cb[] gives every nftables command but NFT_MSG_GETGEN a policy,
+ * and the grammar a table for each; GETGEN takes no attribute at all, so it
+ * has none and the subsystem has no union to fall back on.
+ */
+static void check_nftables_tables(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_NFTABLES);
+	unsigned int i;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: nftables is not registered");
+	if (sub->n_attrs != 0)
+		BUG("nfnl grammar: nftables draws from a union again");
+
+	for (i = 0; i < sub->n_cmds; i++) {
+		bool getgen = sub->cmds[i].cmd == 16;
+
+		if ((sub->cmds[i].attrs == NULL) != getgen) {
+			fprintf(stderr, "%s: %s a table of its own\n", sub->cmds[i].name,
+				getgen ? "has" : "lacks");
+			BUG("nfnl grammar: an nftables command has the wrong table");
+		}
+	}
+}
 
 /*
  * The names a handler looks up in a registry, which a word list must hold and
@@ -1689,6 +1778,8 @@ void nfnl_gen_self_check(void)
 	check_nftables_families();
 	check_nftables_batch_flags();
 	check_nftables_batches(word);
+	check_nftables_tables();
+	check_rows_cover_tables();
 	for (i = 0; i < ARRAY_SIZE(cmd_rows); i++)
 		check_cmd_row(&cmd_rows[i]);
 	for (i = 0; i < ARRAY_SIZE(word_slots); i++)

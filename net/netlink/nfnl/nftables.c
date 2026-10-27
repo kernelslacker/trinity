@@ -1,8 +1,10 @@
 /*
  * NETLINK_NETFILTER subsystem grammar: nftables (NFNL_SUBSYS_NFTABLES),
  * targeting net/netfilter/nf_tables_api.c.  nftables_cmds[] lists every
- * callback in nf_tables_cb[]; the namespaces' attribute ids overlap, so
- * nftables_attrs[] is one flat union (see the comment on it).
+ * callback in nf_tables_cb[], each but NFT_MSG_GETGEN, which reads no
+ * attribute, with a table of the attributes its handler reads: the
+ * namespaces' attribute ids overlap, so there is no one table that serves
+ * them (see the comment above the tables).
  */
 
 #include <linux/netfilter.h>
@@ -127,12 +129,6 @@
 #ifndef NFTA_FLOWTABLE_HOOK
 #define NFTA_FLOWTABLE_HOOK		3
 #endif
-#ifndef NFTA_FLOWTABLE_USE
-#define NFTA_FLOWTABLE_USE		4
-#endif
-#ifndef NFTA_FLOWTABLE_HANDLE
-#define NFTA_FLOWTABLE_HANDLE		5
-#endif
 #ifndef NFTA_FLOWTABLE_FLAGS
 #define NFTA_FLOWTABLE_FLAGS		7
 #endif
@@ -152,15 +148,15 @@ static const char nft_word[] = "trinity";
 
 /*
  * A command draws its attributes from a table of its own, which holds what
- * its handler reads of its namespace's policy, and not from the union
- * nftables_attrs[] below, whose ids mean one thing to a table command and
- * another to a chain or a set command.  A table marks .required the
- * attributes its handler returns early without: nft_table_lookup() and its
- * kin answer -EINVAL to a name that is missing, so a request without one
- * never reaches the main path.  The handles are left out of every table.  The
- * kernel numbers tables, chains and the rest itself, so a handle drawn at
- * random matches none, and a handler that is given one looks the object up by
- * it in place of its name.
+ * its handler reads of its namespace's policy.  The namespaces number their
+ * attributes from 1 each, so an id means one thing to a table command and
+ * another to a chain or a set command, and no one table can serve them all.
+ * A table marks .required the attributes its handler returns early without:
+ * nft_table_lookup() and its kin answer -EINVAL to a name that is missing, so
+ * a request without one never reaches the main path.  The handles are left
+ * out of every table.  The kernel numbers tables, chains and the rest itself,
+ * so a handle drawn at random matches none, and a handler that is given one
+ * looks the object up by it in place of its name.
  */
 
 /*
@@ -454,6 +450,45 @@ static const struct nla_attr_spec nft_obj_name_attrs[] = {
 };
 
 /*
+ * The flowtable commands.  NEWFLOWTABLE answers -EINVAL unless the request
+ * holds the table, the name and HOOK, so all three are marked.  HOOK is
+ * nft_flowtable_hook_policy's number, priority and devices:
+ * nft_flowtable_parse_hook() answers -ENOENT unless it has the first two, and
+ * -EOPNOTSUPP to a number other than NF_NETDEV_INGRESS.  The devices are
+ * left out, since a flowtable without any is accepted and naming one that
+ * exists is not something the draw can do.  GETFLOWTABLE needs the name and
+ * the table, and DELFLOWTABLE and DESTROYFLOWTABLE the table and a name or a
+ * handle, which is left out like the others; a HOOK in a delete takes devices
+ * out of the flowtable instead of deleting it, so it is left out as well.
+ */
+static const unsigned int nft_flowtable_hooknums[] = { NF_NETDEV_INGRESS };
+
+static const struct nla_attr_spec nft_flowtable_hook_attrs[] = {
+	{ NFTA_FLOWTABLE_HOOK_NUM,      NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = nft_flowtable_hooknums,
+	  .n_oneof = ARRAY_SIZE(nft_flowtable_hooknums), .required = true },
+	{ NFTA_FLOWTABLE_HOOK_PRIORITY, NLA_KIND_U32, 4, .required = true },
+};
+
+static const struct nla_attr_spec nft_newflowtable_attrs[] = {
+	{ NFTA_FLOWTABLE_TABLE, NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_FLOWTABLE_NAME,  NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_FLOWTABLE_HOOK,  NLA_KIND_NESTED, 0, 0,
+	  nft_flowtable_hook_attrs, ARRAY_SIZE(nft_flowtable_hook_attrs),
+	  .required = true },
+	{ NFTA_FLOWTABLE_FLAGS, NLA_KIND_BE32_MASK, NFT_FLOWTABLE_MASK },
+};
+
+static const struct nla_attr_spec nft_flowtable_name_attrs[] = {
+	{ NFTA_FLOWTABLE_TABLE, NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_FLOWTABLE_NAME,  NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -512,10 +547,16 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
 	{ NFT_MSG_DESTROYOBJ,        "NFT_MSG_DESTROYOBJ", true,
 	  nft_obj_name_attrs, ARRAY_SIZE(nft_obj_name_attrs) },
-	{ NFT_MSG_NEWFLOWTABLE,      "NFT_MSG_NEWFLOWTABLE", true },
-	{ NFT_MSG_GETFLOWTABLE,      "NFT_MSG_GETFLOWTABLE" },
-	{ NFT_MSG_DELFLOWTABLE,      "NFT_MSG_DELFLOWTABLE", true },
-	{ NFT_MSG_DESTROYFLOWTABLE,  "NFT_MSG_DESTROYFLOWTABLE", true },
+	{ NFT_MSG_NEWFLOWTABLE,      "NFT_MSG_NEWFLOWTABLE", true,
+	  nft_newflowtable_attrs, ARRAY_SIZE(nft_newflowtable_attrs) },
+	{ NFT_MSG_GETFLOWTABLE,      "NFT_MSG_GETFLOWTABLE", false,
+	  nft_flowtable_name_attrs, ARRAY_SIZE(nft_flowtable_name_attrs) },
+	{ NFT_MSG_DELFLOWTABLE,      "NFT_MSG_DELFLOWTABLE", true,
+	  nft_flowtable_name_attrs, ARRAY_SIZE(nft_flowtable_name_attrs) },
+	{ NFT_MSG_DESTROYFLOWTABLE,  "NFT_MSG_DESTROYFLOWTABLE", true,
+	  nft_flowtable_name_attrs, ARRAY_SIZE(nft_flowtable_name_attrs) },
+	/* No policy: nf_tables_cb[] gives it attr_count 0, so it reads no
+	 * attribute and has no table. */
 	{ NFT_MSG_GETGEN,            "NFT_MSG_GETGEN" },
 };
 
@@ -529,30 +570,11 @@ static const unsigned char nftables_families[] = {
 	NFPROTO_BRIDGE, NFPROTO_IPV6,
 };
 
-/*
- * NFTA_* attrs of the namespaces whose commands name no table of their own,
- * now the flowtable's.  The nest is a bare NLA_NESTED parsed by the handler,
- * and FLAGS is NLA_POLICY_MASK in its policy, with the flag bits the uapi
- * header names for it.  The strings at ids 1 and 2 are the names that nft_word
- * stands for.
- */
-static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*FLOWTABLE */
-	{ NFTA_FLOWTABLE_TABLE,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_FLOWTABLE_NAME,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_FLOWTABLE_HOOK,       NLA_KIND_NESTED, 0 },
-	{ NFTA_FLOWTABLE_USE,        NLA_KIND_U32,    4 },
-	{ NFTA_FLOWTABLE_HANDLE,     NLA_KIND_U64,    8 },
-	{ NFTA_FLOWTABLE_FLAGS,      NLA_KIND_BE32_MASK, NFT_FLOWTABLE_MASK },
-};
-
 struct nfnl_subsys_grammar sub_nftables = {
 	.name = "nftables",
 	.subsys_id = NFNL_SUBSYS_NFTABLES,
 	.cmds = nftables_cmds,
 	.n_cmds = ARRAY_SIZE(nftables_cmds),
-	.attrs = nftables_attrs,
-	.n_attrs = ARRAY_SIZE(nftables_attrs),
 	.families = nftables_families,
 	.n_families = ARRAY_SIZE(nftables_families),
 };
