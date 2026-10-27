@@ -21,9 +21,13 @@
  * the two fractional offsets NLA_SINT, which takes 4 or 8 bytes.  The
  * enums, DIRECTION, STATE and OPERSTATE, are NLA_POLICY_RANGE(NLA_U32, 1, n);
  * a range is written upper bound first, as the BINARY_FIXED2 sizes are.
+ * dpll_pin_parent_device_set() and dpll_pin_parent_pin_set() answer -EINVAL
+ * to a nest with no PARENT_ID, and dpll_pin_ref_sync_set() to one without
+ * both PIN_ID and STATE, so those are marked required.
  */
 static const struct nla_attr_spec dpll_parent_device_attrs[] = {
-	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4,
+						.required = true },
 	{ DPLL_A_PIN_DIRECTION,			NLA_KIND_U32_RANGE, 2, 1 },
 	{ DPLL_A_PIN_PRIO,			NLA_KIND_U32,    4 },
 	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
@@ -36,13 +40,16 @@ static const struct nla_attr_spec dpll_parent_device_attrs[] = {
 };
 
 static const struct nla_attr_spec dpll_parent_pin_attrs[] = {
-	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_PARENT_ID,			NLA_KIND_U32,    4,
+						.required = true },
 	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
 };
 
 static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
-	{ DPLL_A_PIN_ID,			NLA_KIND_U32,    4 },
-	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1 },
+	{ DPLL_A_PIN_ID,			NLA_KIND_U32,    4,
+						.required = true },
+	{ DPLL_A_PIN_STATE,			NLA_KIND_U32_RANGE, 3, 1,
+						.required = true },
 };
 
 /*
@@ -54,6 +61,13 @@ static const struct nla_attr_spec dpll_reference_sync_attrs[] = {
  * the two monitor switches NLA_POLICY_MAX(NLA_U32, 1).  What the replies
  * carry, the lock status, temperature and the rest, is not in any request
  * policy.
+ *
+ * dpll_pre_doit() answers DEVICE_GET and DEVICE_SET -EINVAL without DPLL_A_ID,
+ * and dpll_pin_pre_doit() PIN_GET and PIN_SET without DPLL_A_PIN_ID.  SET's
+ * table has several attributes and marks the id; GET's is a table of one,
+ * which every request with an attribute carries.  The two ID_GET handlers
+ * want at least one of a few attributes, the clock id and the names among
+ * them, and refuse one that is given twice, which a mark cannot say.
  */
 static const struct nla_attr_spec dpll_device_id_get_attrs[] = {
 	{ DPLL_A_MODULE_NAME,		NLA_KIND_STRING, 64, 1 },
@@ -66,7 +80,7 @@ static const struct nla_attr_spec dpll_device_get_attrs[] = {
 };
 
 static const struct nla_attr_spec dpll_device_set_attrs[] = {
-	{ DPLL_A_ID,			NLA_KIND_U32,    4 },
+	{ DPLL_A_ID,			NLA_KIND_U32,    4, .required = true },
 	{ DPLL_A_MODE,			NLA_KIND_U32_RANGE, 2, 1 },
 	{ DPLL_A_PHASE_OFFSET_MONITOR,	NLA_KIND_U32_RANGE, 1 },
 	{ DPLL_A_PHASE_OFFSET_AVG_FACTOR, NLA_KIND_U32,  4 },
@@ -87,7 +101,7 @@ static const struct nla_attr_spec dpll_pin_get_attrs[] = {
 };
 
 static const struct nla_attr_spec dpll_pin_set_attrs[] = {
-	{ DPLL_A_PIN_ID,		NLA_KIND_U32,    4 },
+	{ DPLL_A_PIN_ID,		NLA_KIND_U32,    4, .required = true },
 	{ DPLL_A_PIN_FREQUENCY,		NLA_KIND_U64,    8 },
 	{ DPLL_A_PIN_PARENT_DEVICE,	NLA_KIND_NESTED, 0, 0,
 	  dpll_parent_device_attrs, ARRAY_SIZE(dpll_parent_device_attrs) },
