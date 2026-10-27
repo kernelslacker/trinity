@@ -56,6 +56,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_DPLL		713
 #define ID_NFSD		714
 #define ID_DRM_RAS	715
+#define ID_LOCKD	716
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -742,6 +743,24 @@ static struct cmd_policy drm_ras_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/lockd_netlink.h>)
+#include "kernel/lockd_netlink.h"
+
+extern struct genl_family_grammar fam_lockd;
+
+/* fs/lockd/netlink.c: lockd_server_set_nl_policy */
+static struct slot lockd_server_set[] = {
+	S_U32(LOCKD_A_SERVER_GRACETIME),
+	S_U16(LOCKD_A_SERVER_TCP_PORT),
+	S_U16(LOCKD_A_SERVER_UDP_PORT),
+};
+/* SERVER_GET has no policy, so the genl core gives it a reject-all one. */
+static struct cmd_policy lockd_cmds[] = {
+	P_CMD(LOCKD_CMD_SERVER_SET, lockd_server_set),
+	P_CMD_NONE(LOCKD_CMD_SERVER_GET),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -760,6 +779,9 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<drm/drm_ras.h>)
 	{ &fam_drm_ras, ID_DRM_RAS, drm_ras_cmds, ARRAY_SIZE(drm_ras_cmds) },
+#endif
+#if __has_include(<linux/lockd_netlink.h>)
+	{ &fam_lockd, ID_LOCKD, lockd_cmds, ARRAY_SIZE(lockd_cmds) },
 #endif
 };
 

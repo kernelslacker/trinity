@@ -10,18 +10,19 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
+/*
+ * SERVER_GET is a split op with no policy, which the genl core gives a
+ * reject-all one: any attribute at all is an -EINVAL, so it takes none.
+ */
 static const struct genl_cmd_grammar lockd_cmds[] = {
 	{ LOCKD_CMD_SERVER_SET, "LOCKD_CMD_SERVER_SET" },
-	{ LOCKD_CMD_SERVER_GET, "LOCKD_CMD_SERVER_GET" },
+	{ LOCKD_CMD_SERVER_GET, "LOCKD_CMD_SERVER_GET", genl_no_attrs },
 };
 
 /*
- * Attribute spec follows the LOCKD_A_SERVER_* enum in
- * <linux/lockd_netlink.h>.  GRACETIME is a u32 seconds counter; the
- * TCP and UDP listener ports are u16 wire-encoded port numbers.
- * SERVER_GET takes no attributes and responds with the current values,
- * SERVER_SET ingests them, so a single flat table covers the whole
- * family with no per-command namespace needed.
+ * lockd_server_set_nl_policy, which SERVER_SET alone draws from.  The op
+ * validates strictly: GRACETIME is a u32 seconds counter, the TCP and UDP
+ * listener ports are u16.
  */
 static const struct nla_attr_spec lockd_attrs[] = {
 	{ LOCKD_A_SERVER_GRACETIME,	NLA_KIND_U32, 4 },
