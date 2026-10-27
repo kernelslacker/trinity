@@ -8,28 +8,37 @@
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 
+#include <linux/ethtool.h>
 #include "kernel/ethtool_netlink_generated.h"
 
 #include "netlink-genl-families.h"
 #include "utils.h"
 
 /*
- * The request header, from ethnl_header_policy and, for the cmds whose
- * policy nests it, ethnl_header_policy_phy.  The stats variants of both
- * differ in the mask of FLAGS only, which a plain u32 does not honour.
+ * The request header, from ethnl_header_policy, ethnl_header_policy_stats
+ * for the cmds that can report statistics, and ethnl_header_policy_phy.
+ * Every request nests one and the kernel validates it with the request, so
+ * a FLAGS outside the policy's mask (ETHTOOL_FLAGS_BASIC, 0x3, or
+ * ETHTOOL_FLAGS_STATS, 0x7) or a PHY_INDEX of 0 refuses the whole request.
  * DEV_NAME is an NLA_NUL_STRING of at most 127 bytes.
  */
 static const struct nla_attr_spec ethtool_header_attrs[] = {
 	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
 	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
-	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x3 },
+};
+
+static const struct nla_attr_spec ethtool_header_stats_attrs[] = {
+	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x7 },
 };
 
 static const struct nla_attr_spec ethtool_header_phy_attrs[] = {
 	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
 	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
-	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_HEADER_PHY_INDEX,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32_MASK, 0x3 },
+	{ ETHTOOL_A_HEADER_PHY_INDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 /*
@@ -56,14 +65,20 @@ static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
  * ends at its own last id, so a request meets only the ids of its cmd's.
  * Most of those policies are the HEADER alone, and every *_HEADER is
  * attribute 1 but STATS_GET's, which follows a PAD, so one table stands for
- * them; the cmds that nest the PHY-aware header have a table of theirs.
- * The values the policies bound, the stats source of PAUSE_GET and
- * STATS_GET and the EEPROM offset, length and I2C address, are plain here,
- * and STATS_GET's GROUPS, a bitset nest, is left out.
+ * them; the cmds that nest the stats or the PHY-aware header have tables
+ * of theirs.  The stats sources go up to ETHTOOL_MAC_STATS_SRC_PMAC and the
+ * EEPROM offset and length stay within a page pair and a page; the I2C
+ * address, an NLA_U8 range, is plain, and STATS_GET's GROUPS, a bitset
+ * nest, is left out.
  */
 static const struct nla_attr_spec ethtool_get_attrs[] = {
 	{ ETHTOOL_A_LINKINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
 	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+};
+
+static const struct nla_attr_spec ethtool_get_stats_attrs[] = {
+	{ ETHTOOL_A_LINKSTATE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs) },
 };
 
 static const struct nla_attr_spec ethtool_get_phy_attrs[] = {
@@ -81,13 +96,14 @@ static const struct nla_attr_spec ethtool_strset_get_attrs[] = {
 
 static const struct nla_attr_spec ethtool_pause_get_attrs[] = {
 	{ ETHTOOL_A_PAUSE_HEADER,	NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
-	{ ETHTOOL_A_PAUSE_STATS_SRC,	NLA_KIND_U32,    4 },
+	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs) },
+	{ ETHTOOL_A_PAUSE_STATS_SRC,	NLA_KIND_U32_RANGE,
+	  ETHTOOL_MAC_STATS_SRC_PMAC, 0 },
 };
 
 static const struct nla_attr_spec ethtool_tsinfo_get_attrs[] = {
 	{ ETHTOOL_A_TSINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
-	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	  ethtool_header_stats_attrs, ARRAY_SIZE(ethtool_header_stats_attrs) },
 	{ ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, NLA_KIND_NESTED, 0, 0,
 	  ethtool_ts_provider_attrs, ARRAY_SIZE(ethtool_ts_provider_attrs) },
 };
@@ -95,8 +111,8 @@ static const struct nla_attr_spec ethtool_tsinfo_get_attrs[] = {
 static const struct nla_attr_spec ethtool_module_eeprom_get_attrs[] = {
 	{ ETHTOOL_A_MODULE_EEPROM_HEADER, NLA_KIND_NESTED, 0, 0,
 	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
-	{ ETHTOOL_A_MODULE_EEPROM_OFFSET, NLA_KIND_U32,  4 },
-	{ ETHTOOL_A_MODULE_EEPROM_LENGTH, NLA_KIND_U32,  4 },
+	{ ETHTOOL_A_MODULE_EEPROM_OFFSET, NLA_KIND_U32_RANGE, 255, 0 },
+	{ ETHTOOL_A_MODULE_EEPROM_LENGTH, NLA_KIND_U32_RANGE, 128, 1 },
 	{ ETHTOOL_A_MODULE_EEPROM_PAGE,	NLA_KIND_U8,     1 },
 	{ ETHTOOL_A_MODULE_EEPROM_BANK,	NLA_KIND_U8,     1 },
 	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8, 1 },
@@ -105,7 +121,8 @@ static const struct nla_attr_spec ethtool_module_eeprom_get_attrs[] = {
 static const struct nla_attr_spec ethtool_stats_get_attrs[] = {
 	{ ETHTOOL_A_STATS_HEADER,	NLA_KIND_NESTED, 0, 0,
 	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
-	{ ETHTOOL_A_STATS_SRC,		NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_STATS_SRC,		NLA_KIND_U32_RANGE,
+	  ETHTOOL_MAC_STATS_SRC_PMAC, 0 },
 };
 
 static const struct nla_attr_spec ethtool_rss_get_attrs[] = {
@@ -123,7 +140,7 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_LINKMODES_GET,     "ETHTOOL_MSG_LINKMODES_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_LINKSTATE_GET,     "ETHTOOL_MSG_LINKSTATE_GET",
-	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
 	{ ETHTOOL_MSG_DEBUG_GET,         "ETHTOOL_MSG_DEBUG_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_WOL_GET,           "ETHTOOL_MSG_WOL_GET",
@@ -147,7 +164,7 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET",
-	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
 	{ ETHTOOL_MSG_MODULE_EEPROM_GET, "ETHTOOL_MSG_MODULE_EEPROM_GET",
 	  ethtool_module_eeprom_get_attrs,
 	  ARRAY_SIZE(ethtool_module_eeprom_get_attrs) },
@@ -166,7 +183,7 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_PLCA_GET_STATUS,   "ETHTOOL_MSG_PLCA_GET_STATUS",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET",
-	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
 	{ ETHTOOL_MSG_PHY_GET,           "ETHTOOL_MSG_PHY_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET",

@@ -962,26 +962,34 @@ static struct cmd_policy netdev_cmds[] = {
 #endif
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
+#include <linux/ethtool.h>		/* ETHTOOL_MAC_STATS_SRC_PMAC */
 #include "kernel/ethtool_netlink_generated.h"
 
 extern struct genl_family_grammar fam_ethtool;
 
 /*
- * net/ethtool: the header policies the read-side cmds nest, ethnl_header_policy
- * and ethnl_header_policy_phy, which the stats variants match but for the
- * flags mask, and the ethnl_*_get_policy tables.  Most cmds' policy is the
- * HEADER alone, so those rows share a table.
+ * net/ethtool: the header policies the read-side cmds nest,
+ * ethnl_header_policy, ethnl_header_policy_stats, whose FLAGS mask takes
+ * ETHTOOL_FLAG_STATS as well (ETHTOOL_FLAGS_STATS, against
+ * ETHTOOL_FLAGS_BASIC), and ethnl_header_policy_phy, and the
+ * ethnl_*_get_policy tables.  Most cmds' policy is the HEADER alone, so
+ * those rows share a table.
  */
 static struct slot ethtool_header[] = {
 	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
 	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
-	S_U32(ETHTOOL_A_HEADER_FLAGS),
+	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x3),
+};
+static struct slot ethtool_header_stats[] = {
+	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
+	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
+	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x7),
 };
 static struct slot ethtool_header_phy[] = {
 	S_U32(ETHTOOL_A_HEADER_DEV_INDEX),
 	S_STR(ETHTOOL_A_HEADER_DEV_NAME, 127),
-	S_U32(ETHTOOL_A_HEADER_FLAGS),
-	S_U32(ETHTOOL_A_HEADER_PHY_INDEX),
+	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x3),
+	S_U32_RANGE(ETHTOOL_A_HEADER_PHY_INDEX, 1, UINT32_MAX),
 };
 static struct slot ethtool_stringset[] = {
 	S_U32(ETHTOOL_A_STRINGSET_ID),
@@ -996,6 +1004,9 @@ static struct slot ethtool_ts_provider[] = {
 static struct slot ethtool_get[] = {
 	S_NEST(ETHTOOL_A_LINKINFO_HEADER, ethtool_header),
 };
+static struct slot ethtool_get_stats[] = {
+	S_NEST(ETHTOOL_A_LINKSTATE_HEADER, ethtool_header_stats),
+};
 static struct slot ethtool_get_phy[] = {
 	S_NEST(ETHTOOL_A_PSE_HEADER, ethtool_header_phy),
 };
@@ -1005,24 +1016,24 @@ static struct slot ethtool_strset_get[] = {
 	S_FLAG(ETHTOOL_A_STRSET_COUNTS_ONLY),
 };
 static struct slot ethtool_pause_get[] = {
-	S_NEST(ETHTOOL_A_PAUSE_HEADER, ethtool_header),
-	S_U32(ETHTOOL_A_PAUSE_STATS_SRC),
+	S_NEST(ETHTOOL_A_PAUSE_HEADER, ethtool_header_stats),
+	S_U32_RANGE(ETHTOOL_A_PAUSE_STATS_SRC, 0, ETHTOOL_MAC_STATS_SRC_PMAC),
 };
 static struct slot ethtool_tsinfo_get[] = {
-	S_NEST(ETHTOOL_A_TSINFO_HEADER, ethtool_header),
+	S_NEST(ETHTOOL_A_TSINFO_HEADER, ethtool_header_stats),
 	S_NEST(ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, ethtool_ts_provider),
 };
 static struct slot ethtool_module_eeprom_get[] = {
 	S_NEST(ETHTOOL_A_MODULE_EEPROM_HEADER, ethtool_header),
-	S_U32(ETHTOOL_A_MODULE_EEPROM_OFFSET),
-	S_U32(ETHTOOL_A_MODULE_EEPROM_LENGTH),
+	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_OFFSET, 0, 255),
+	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_LENGTH, 1, 128),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_PAGE),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_BANK),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS),
 };
 static struct slot ethtool_stats_get[] = {
 	S_NEST(ETHTOOL_A_STATS_HEADER, ethtool_header),
-	S_U32(ETHTOOL_A_STATS_SRC),
+	S_U32_RANGE(ETHTOOL_A_STATS_SRC, 0, ETHTOOL_MAC_STATS_SRC_PMAC),
 };
 static struct slot ethtool_rss_get[] = {
 	S_NEST(ETHTOOL_A_RSS_HEADER, ethtool_header),
@@ -1033,7 +1044,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_LINKMODES_GET, ethtool_get),
-	P_CMD(ETHTOOL_MSG_LINKSTATE_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_LINKSTATE_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_DEBUG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_WOL_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEATURES_GET, ethtool_get),
@@ -1045,7 +1056,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_EEE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),
-	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_MODULE_EEPROM_GET, ethtool_module_eeprom_get),
 	P_CMD(ETHTOOL_MSG_STATS_GET, ethtool_stats_get),
 	P_CMD(ETHTOOL_MSG_PHC_VCLOCKS_GET, ethtool_get),
@@ -1054,7 +1065,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_CFG, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_STATUS, ethtool_get_phy),
-	P_CMD(ETHTOOL_MSG_MM_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_MM_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_PHY_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSCONFIG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MSE_GET, ethtool_get_phy),
