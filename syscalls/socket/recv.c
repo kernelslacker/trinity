@@ -200,12 +200,13 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 
 	/*
 	 * The address buffer and the int that sizes it come from the pool the
-	 * call reaches, the low pool for a compat call.  With no address
-	 * buffer, addr is NULL and the kernel copies no address, which beats
-	 * leaving the undersized ARG_SOCKADDR buffer the generator drew.
+	 * call reaches, the low pool for a compat call (get_writable_struct()).
+	 * With no address buffer, addr is NULL and the kernel copies no
+	 * address, which beats leaving the undersized ARG_SOCKADDR buffer the
+	 * generator drew.
 	 */
-	rec->a5 = (unsigned long) get_call_writable_struct(rec,
-				sizeof(struct sockaddr_storage));
+	rec->a5 = (unsigned long)
+		get_writable_struct(sizeof(struct sockaddr_storage));
 
 	/*
 	 * The shaped addrlen comes from the shared shape catalogue.  The
@@ -226,7 +227,7 @@ static void sanitise_recvfrom(struct syscallrecord *rec)
 	snap->vrb = vrb;
 	post_state_install(rec, snap);
 
-	addr_len = get_call_writable_struct(rec, sizeof(*addr_len));
+	addr_len = get_writable_struct(sizeof(*addr_len));
 	if (addr_len != NULL)
 		*addr_len = (int) *vrb.len_io;
 	rec->a6 = (unsigned long) addr_len;
