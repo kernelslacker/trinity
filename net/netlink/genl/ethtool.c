@@ -1,7 +1,9 @@
 /*
  * Genetlink family grammar: ethtool, targeting net/ethtool/netlink.c and
  * the per-command files beside it.  Only the read-side commands are listed;
- * each is keyed on the nested *_HEADER attribute that names the net_device.
+ * WOL_GET and MODULE_EEPROM_GET are GENL_UNS_ADMIN_PERM, the rest carry no
+ * flag.  Each is keyed on the nested *_HEADER attribute that names the
+ * net_device, and takes the table of its own policy.
  */
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
@@ -11,76 +13,172 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
-static const struct genl_cmd_grammar ethtool_cmds[] = {
-	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET" },
-	{ ETHTOOL_MSG_LINKINFO_GET,      "ETHTOOL_MSG_LINKINFO_GET" },
-	{ ETHTOOL_MSG_LINKMODES_GET,     "ETHTOOL_MSG_LINKMODES_GET" },
-	{ ETHTOOL_MSG_LINKSTATE_GET,     "ETHTOOL_MSG_LINKSTATE_GET" },
-	{ ETHTOOL_MSG_DEBUG_GET,         "ETHTOOL_MSG_DEBUG_GET" },
-	{ ETHTOOL_MSG_WOL_GET,           "ETHTOOL_MSG_WOL_GET" },
-	{ ETHTOOL_MSG_FEATURES_GET,      "ETHTOOL_MSG_FEATURES_GET" },
-	{ ETHTOOL_MSG_PRIVFLAGS_GET,     "ETHTOOL_MSG_PRIVFLAGS_GET" },
-	{ ETHTOOL_MSG_RINGS_GET,         "ETHTOOL_MSG_RINGS_GET" },
-	{ ETHTOOL_MSG_CHANNELS_GET,      "ETHTOOL_MSG_CHANNELS_GET" },
-	{ ETHTOOL_MSG_COALESCE_GET,      "ETHTOOL_MSG_COALESCE_GET" },
-	{ ETHTOOL_MSG_PAUSE_GET,         "ETHTOOL_MSG_PAUSE_GET" },
-	{ ETHTOOL_MSG_EEE_GET,           "ETHTOOL_MSG_EEE_GET" },
-	{ ETHTOOL_MSG_TSINFO_GET,        "ETHTOOL_MSG_TSINFO_GET" },
-	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET" },
-	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET" },
-	{ ETHTOOL_MSG_MODULE_EEPROM_GET, "ETHTOOL_MSG_MODULE_EEPROM_GET" },
-	{ ETHTOOL_MSG_STATS_GET,         "ETHTOOL_MSG_STATS_GET" },
-	{ ETHTOOL_MSG_PHC_VCLOCKS_GET,   "ETHTOOL_MSG_PHC_VCLOCKS_GET" },
-	{ ETHTOOL_MSG_MODULE_GET,        "ETHTOOL_MSG_MODULE_GET" },
-	{ ETHTOOL_MSG_PSE_GET,           "ETHTOOL_MSG_PSE_GET" },
-	{ ETHTOOL_MSG_RSS_GET,           "ETHTOOL_MSG_RSS_GET" },
-	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG" },
-	{ ETHTOOL_MSG_PLCA_GET_STATUS,   "ETHTOOL_MSG_PLCA_GET_STATUS" },
-	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET" },
-	{ ETHTOOL_MSG_PHY_GET,           "ETHTOOL_MSG_PHY_GET" },
-	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET" },
-	{ ETHTOOL_MSG_MSE_GET,           "ETHTOOL_MSG_MSE_GET" },
+/*
+ * The request header, from ethnl_header_policy and, for the cmds whose
+ * policy nests it, ethnl_header_policy_phy.  The stats variants of both
+ * differ in the mask of FLAGS only, which a plain u32 does not honour.
+ * DEV_NAME is an NLA_NUL_STRING of at most 127 bytes.
+ */
+static const struct nla_attr_spec ethtool_header_attrs[] = {
+	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec ethtool_header_phy_attrs[] = {
+	{ ETHTOOL_A_HEADER_DEV_INDEX,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_DEV_NAME,	NLA_KIND_STRING, 127, 1 },
+	{ ETHTOOL_A_HEADER_FLAGS,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_HEADER_PHY_INDEX,	NLA_KIND_U32,    4 },
 };
 
 /*
- * Attribute spec table.  Position 1 is always *_HEADER for every
- * starter command (ETHTOOL_A_RINGS_HEADER = ETHTOOL_A_LINKINFO_HEADER
- * = ... = 1) so a single NESTED entry at type 1 covers them all.  The
- * command policies declare it NLA_POLICY_NESTED over an
- * ethnl_header_policy variant, so the kernel checks the children the
- * generator draws from this table against that policy by id.
- * Positions 2-4 are intentionally seeded with values that match the
- * shared ETHTOOL_A_HEADER_* child namespace so nested-child generation
- * has a chance of producing valid header contents:
- *   1: HEADER outer (NESTED); HEADER_DEV_INDEX (U32) has no entry here
- *   2: per-cmd MAX/RX_MAX (U32) / HEADER_DEV_NAME child (NUL_STRING)
- *   3: per-cmd RX_MINI_MAX (U32) / HEADER_FLAGS child (U32)
- *   4: per-cmd RX_JUMBO_MAX (U32) / HEADER_PHY_INDEX child (U32)
+ * The nests of STRSET_GET's STRINGSETS, which strset_parse_request() walks
+ * as a nest of STRINGSET nests holding an ID each, and of TSINFO_GET's
+ * HWTSTAMP_PROVIDER, from ethnl_ts_hwtst_prov_policy.
  */
-static const struct nla_attr_spec ethtool_attrs[] = {
-	{ ETHTOOL_A_RINGS_HEADER,        NLA_KIND_NESTED, 0 },
-	{ ETHTOOL_A_HEADER_DEV_NAME,     NLA_KIND_STRING, 16 },
-	{ ETHTOOL_A_HEADER_FLAGS,        NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_HEADER_PHY_INDEX,    NLA_KIND_U32,    4 },
-	/* A handful of per-cmd numeric attrs that are common across the
-	 * starter command set; the kernel's per-cmd policy gate accepts
-	 * U32-shaped attrs at most positions and lets the message reach
-	 * the deeper handler. */
-	{ ETHTOOL_A_RINGS_RX,            NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_RINGS_TX,            NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_CHANNELS_RX_COUNT,   NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_CHANNELS_TX_COUNT,   NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_LINKMODES_AUTONEG,   NLA_KIND_U8,     1 },
-	{ ETHTOOL_A_LINKMODES_SPEED,     NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_LINKMODES_DUPLEX,    NLA_KIND_U8,     1 },
+static const struct nla_attr_spec ethtool_stringset_attrs[] = {
+	{ ETHTOOL_A_STRINGSET_ID,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec ethtool_stringsets_attrs[] = {
+	{ ETHTOOL_A_STRINGSETS_STRINGSET, NLA_KIND_NESTED, 0, 0,
+	  ethtool_stringset_attrs, ARRAY_SIZE(ethtool_stringset_attrs) },
+};
+
+static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
+	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER,	NLA_KIND_U32, 4 },
+};
+
+/*
+ * The ops validate strictly against an ethnl_*_get_policy of their own that
+ * ends at its own last id, so a request meets only the ids of its cmd's.
+ * Most of those policies are the HEADER alone, and every *_HEADER is
+ * attribute 1 but STATS_GET's, which follows a PAD, so one table stands for
+ * them; the cmds that nest the PHY-aware header have a table of theirs.
+ * The values the policies bound, the stats source of PAUSE_GET and
+ * STATS_GET and the EEPROM offset, length and I2C address, are plain here,
+ * and STATS_GET's GROUPS, a bitset nest, is left out.
+ */
+static const struct nla_attr_spec ethtool_get_attrs[] = {
+	{ ETHTOOL_A_LINKINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+};
+
+static const struct nla_attr_spec ethtool_get_phy_attrs[] = {
+	{ ETHTOOL_A_PSE_HEADER,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs) },
+};
+
+static const struct nla_attr_spec ethtool_strset_get_attrs[] = {
+	{ ETHTOOL_A_STRSET_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs) },
+	{ ETHTOOL_A_STRSET_STRINGSETS,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_stringsets_attrs, ARRAY_SIZE(ethtool_stringsets_attrs) },
+	{ ETHTOOL_A_STRSET_COUNTS_ONLY,	NLA_KIND_FLAG,   0 },
+};
+
+static const struct nla_attr_spec ethtool_pause_get_attrs[] = {
+	{ ETHTOOL_A_PAUSE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	{ ETHTOOL_A_PAUSE_STATS_SRC,	NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec ethtool_tsinfo_get_attrs[] = {
+	{ ETHTOOL_A_TSINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	{ ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, NLA_KIND_NESTED, 0, 0,
+	  ethtool_ts_provider_attrs, ARRAY_SIZE(ethtool_ts_provider_attrs) },
+};
+
+static const struct nla_attr_spec ethtool_module_eeprom_get_attrs[] = {
+	{ ETHTOOL_A_MODULE_EEPROM_HEADER, NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	{ ETHTOOL_A_MODULE_EEPROM_OFFSET, NLA_KIND_U32,  4 },
+	{ ETHTOOL_A_MODULE_EEPROM_LENGTH, NLA_KIND_U32,  4 },
+	{ ETHTOOL_A_MODULE_EEPROM_PAGE,	NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_MODULE_EEPROM_BANK,	NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8, 1 },
+};
+
+static const struct nla_attr_spec ethtool_stats_get_attrs[] = {
+	{ ETHTOOL_A_STATS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	{ ETHTOOL_A_STATS_SRC,		NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec ethtool_rss_get_attrs[] = {
+	{ ETHTOOL_A_RSS_HEADER,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
+	{ ETHTOOL_A_RSS_CONTEXT,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RSS_START_CONTEXT,	NLA_KIND_U32,    4 },
+};
+
+static const struct genl_cmd_grammar ethtool_cmds[] = {
+	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
+	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
+	{ ETHTOOL_MSG_LINKINFO_GET,      "ETHTOOL_MSG_LINKINFO_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_LINKMODES_GET,     "ETHTOOL_MSG_LINKMODES_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_LINKSTATE_GET,     "ETHTOOL_MSG_LINKSTATE_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_DEBUG_GET,         "ETHTOOL_MSG_DEBUG_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_WOL_GET,           "ETHTOOL_MSG_WOL_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_FEATURES_GET,      "ETHTOOL_MSG_FEATURES_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_PRIVFLAGS_GET,     "ETHTOOL_MSG_PRIVFLAGS_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_RINGS_GET,         "ETHTOOL_MSG_RINGS_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_CHANNELS_GET,      "ETHTOOL_MSG_CHANNELS_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_COALESCE_GET,      "ETHTOOL_MSG_COALESCE_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_PAUSE_GET,         "ETHTOOL_MSG_PAUSE_GET",
+	  ethtool_pause_get_attrs, ARRAY_SIZE(ethtool_pause_get_attrs) },
+	{ ETHTOOL_MSG_EEE_GET,           "ETHTOOL_MSG_EEE_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_TSINFO_GET,        "ETHTOOL_MSG_TSINFO_GET",
+	  ethtool_tsinfo_get_attrs, ARRAY_SIZE(ethtool_tsinfo_get_attrs) },
+	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_MODULE_EEPROM_GET, "ETHTOOL_MSG_MODULE_EEPROM_GET",
+	  ethtool_module_eeprom_get_attrs,
+	  ARRAY_SIZE(ethtool_module_eeprom_get_attrs) },
+	{ ETHTOOL_MSG_STATS_GET,         "ETHTOOL_MSG_STATS_GET",
+	  ethtool_stats_get_attrs, ARRAY_SIZE(ethtool_stats_get_attrs) },
+	{ ETHTOOL_MSG_PHC_VCLOCKS_GET,   "ETHTOOL_MSG_PHC_VCLOCKS_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_MODULE_GET,        "ETHTOOL_MSG_MODULE_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_PSE_GET,           "ETHTOOL_MSG_PSE_GET",
+	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_RSS_GET,           "ETHTOOL_MSG_RSS_GET",
+	  ethtool_rss_get_attrs, ARRAY_SIZE(ethtool_rss_get_attrs) },
+	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG",
+	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_PLCA_GET_STATUS,   "ETHTOOL_MSG_PLCA_GET_STATUS",
+	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_PHY_GET,           "ETHTOOL_MSG_PHY_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET",
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_MSE_GET,           "ETHTOOL_MSG_MSE_GET",
+	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 };
 
 struct genl_family_grammar fam_ethtool = {
 	.name = ETHTOOL_GENL_NAME,
 	.cmds = ethtool_cmds,
 	.n_cmds = ARRAY_SIZE(ethtool_cmds),
-	.attrs = ethtool_attrs,
-	.n_attrs = ARRAY_SIZE(ethtool_attrs),
 	.default_version = ETHTOOL_GENL_VERSION,
 };
 

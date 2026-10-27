@@ -633,6 +633,12 @@ check_enum_member linux/netdev.h NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT \
 	NETDEV_CMD_PAGE_POOL_STATS_GET NETDEV_CMD_NAPI_SET \
 	NETDEV_CMD_QUEUE_CREATE
 
+# ethtool's hardware timestamp provider, which TSINFO_GET nests.
+check_enum_member linux/ethtool_netlink_generated.h \
+	ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER \
+	ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX \
+	ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
