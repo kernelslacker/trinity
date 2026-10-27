@@ -4,7 +4,7 @@
 
 #ifndef DCCP_SOCKOPT_PACKET_SIZE
 #define DCCP_SOCKOPT_PACKET_SIZE        1
-#define DCCP_SOCKOPT_SERVICE_CODE       2
+#define DCCP_SOCKOPT_SERVICE            2
 #define DCCP_SOCKOPT_CHANGE_L           3
 #define DCCP_SOCKOPT_CHANGE_R           4
 #define DCCP_SOCKOPT_GET_CUR_MPS        5
