@@ -1091,9 +1091,9 @@ static struct slot ovs_datapath[] = {
 	S_BLOB(OVS_DP_ATTR_STATS, 0, 0xffff),
 	S_BLOB(OVS_DP_ATTR_MEGAFLOW_STATS, 0, 0xffff),
 	S_U32(OVS_DP_ATTR_USER_FEATURES),
-	S_U32(OVS_DP_ATTR_MASKS_CACHE_SIZE),
+	S_U32_RANGE(OVS_DP_ATTR_MASKS_CACHE_SIZE, 0, 4096),
 	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
-	S_U32(OVS_DP_ATTR_IFINDEX),
+	S_U32_RANGE(OVS_DP_ATTR_IFINDEX, 0, INT32_MAX),
 };
 static struct cmd_policy ovs_datapath_cmds[] = {
 	P_CMD(OVS_DP_CMD_NEW, ovs_datapath),
@@ -1130,7 +1130,7 @@ static struct slot ovs_vport[] = {
 	S_BLOB(OVS_VPORT_ATTR_UPCALL_PID, 0, 0xffff),
 	S_BLOB(OVS_VPORT_ATTR_STATS, sizeof(struct ovs_vport_stats),
 	       sizeof(struct ovs_vport_stats)),
-	S_U32(OVS_VPORT_ATTR_IFINDEX),
+	S_U32_RANGE(OVS_VPORT_ATTR_IFINDEX, 0, INT32_MAX),
 	S_U32(OVS_VPORT_ATTR_NETNSID),
 	S_NEST(OVS_VPORT_ATTR_UPCALL_STATS, ovs_vport_upcall),
 };

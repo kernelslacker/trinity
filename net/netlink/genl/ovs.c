@@ -34,7 +34,9 @@ static const struct genl_cmd_grammar ovs_dp_cmds[] = {
  * per-cpu array of u32 PIDs (cap at a small multiple to keep payloads
  * bounded).  STATS / MEGAFLOW_STATS are pure response payloads but we
  * list them so SET paths exercise the validator's "ignore on input"
- * branch.
+ * branch.  MASKS_CACHE_SIZE is held to PCPU_MIN_UNIT_SIZE over the size of
+ * a mask_cache_entry, 4096 with 4 KiB pages (more with larger ones), and
+ * IFINDEX is an s32 of 0 or more, as is a vport's.
  */
 static const struct nla_attr_spec ovs_dp_attrs[] = {
 	{ OVS_DP_ATTR_NAME,		NLA_KIND_STRING, 15, 1 },
@@ -42,9 +44,9 @@ static const struct nla_attr_spec ovs_dp_attrs[] = {
 	{ OVS_DP_ATTR_STATS,		NLA_KIND_BINARY, sizeof(struct ovs_dp_stats) },
 	{ OVS_DP_ATTR_MEGAFLOW_STATS,	NLA_KIND_BINARY, sizeof(struct ovs_dp_megaflow_stats) },
 	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32,    4 },
-	{ OVS_DP_ATTR_MASKS_CACHE_SIZE,	NLA_KIND_U32,    4 },
+	{ OVS_DP_ATTR_MASKS_CACHE_SIZE,	NLA_KIND_U32_RANGE, 4096, 0 },
 	{ OVS_DP_ATTR_PER_CPU_PIDS,	NLA_KIND_BINARY, 64 },
-	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32,    4 },
+	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 };
 
 struct genl_family_grammar fam_ovs_datapath = {
@@ -108,7 +110,7 @@ static const struct nla_attr_spec ovs_vport_attrs[] = {
 	{ OVS_VPORT_ATTR_UPCALL_PID,		NLA_KIND_BINARY, 64 },
 	{ OVS_VPORT_ATTR_STATS,			NLA_KIND_BINARY_FIXED2,
 	  sizeof(struct ovs_vport_stats), sizeof(struct ovs_vport_stats) },
-	{ OVS_VPORT_ATTR_IFINDEX,		NLA_KIND_U32,    4 },
+	{ OVS_VPORT_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 	{ OVS_VPORT_ATTR_NETNSID,		NLA_KIND_U32,    4 },
 	{ OVS_VPORT_ATTR_UPCALL_STATS,		NLA_KIND_NESTED, 0, 0,
 	  ovs_vport_upcall_attrs, ARRAY_SIZE(ovs_vport_upcall_attrs) },
