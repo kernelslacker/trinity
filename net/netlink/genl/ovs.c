@@ -28,14 +28,15 @@ static const struct genl_cmd_grammar ovs_dp_cmds[] = {
 
 /*
  * Datapath policy lives in net/openvswitch/datapath.c::datapath_policy.
- * NAME is a NUL-terminated string (IFNAMSIZ - 1).  UPCALL_PID and
- * USER_FEATURES are u32.  PER_CPU_PIDS is a per-cpu array of u32 PIDs
- * (cap at a small multiple to keep payloads bounded).  STATS /
- * MEGAFLOW_STATS are pure response payloads but we list them so SET
- * paths exercise the validator's "ignore on input" branch.
+ * NAME is an NLA_NUL_STRING (IFNAMSIZ - 1), so a byte at least, for the
+ * terminator.  UPCALL_PID and USER_FEATURES are u32.  PER_CPU_PIDS is a
+ * per-cpu array of u32 PIDs (cap at a small multiple to keep payloads
+ * bounded).  STATS / MEGAFLOW_STATS are pure response payloads but we
+ * list them so SET paths exercise the validator's "ignore on input"
+ * branch.
  */
 static const struct nla_attr_spec ovs_dp_attrs[] = {
-	{ OVS_DP_ATTR_NAME,		NLA_KIND_STRING, 15 },
+	{ OVS_DP_ATTR_NAME,		NLA_KIND_STRING, 15, 1 },
 	{ OVS_DP_ATTR_UPCALL_PID,	NLA_KIND_U32,    4 },
 	{ OVS_DP_ATTR_STATS,		NLA_KIND_BINARY, sizeof(struct ovs_dp_stats) },
 	{ OVS_DP_ATTR_MEGAFLOW_STATS,	NLA_KIND_BINARY, sizeof(struct ovs_dp_megaflow_stats) },

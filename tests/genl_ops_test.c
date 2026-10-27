@@ -61,6 +61,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_PSP		718
 #define ID_NETDEV	719
 #define ID_ETHTOOL	720
+#define ID_OVS_DATAPATH	721
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1056,6 +1057,35 @@ static struct cmd_policy ethtool_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/openvswitch.h>)
+#include "kernel/openvswitch.h"
+
+extern struct genl_family_grammar fam_ovs_datapath;
+
+/*
+ * net/openvswitch/datapath.c: datapath_policy, the one policy of the ops,
+ * which validate liberally, so an id with no slot is ignored and takes any
+ * length.  The two stats have none, and PER_CPU_PIDS has none either but
+ * ovs_dp_change() reads it.
+ */
+static struct slot ovs_datapath[] = {
+	S_STR(OVS_DP_ATTR_NAME, 15),
+	S_U32(OVS_DP_ATTR_UPCALL_PID),
+	S_BLOB(OVS_DP_ATTR_STATS, 0, 0xffff),
+	S_BLOB(OVS_DP_ATTR_MEGAFLOW_STATS, 0, 0xffff),
+	S_U32(OVS_DP_ATTR_USER_FEATURES),
+	S_U32(OVS_DP_ATTR_MASKS_CACHE_SIZE),
+	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
+	S_U32(OVS_DP_ATTR_IFINDEX),
+};
+static struct cmd_policy ovs_datapath_cmds[] = {
+	P_CMD(OVS_DP_CMD_NEW, ovs_datapath),
+	P_CMD(OVS_DP_CMD_DEL, ovs_datapath),
+	P_CMD(OVS_DP_CMD_GET, ovs_datapath),
+	P_CMD(OVS_DP_CMD_SET, ovs_datapath),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -1087,6 +1117,10 @@ static struct policy_family policy_families[] = {
 #endif
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 	{ &fam_ethtool, ID_ETHTOOL, ethtool_cmds, ARRAY_SIZE(ethtool_cmds) },
+#endif
+#if __has_include(<linux/openvswitch.h>)
+	{ &fam_ovs_datapath, ID_OVS_DATAPATH, ovs_datapath_cmds,
+	  ARRAY_SIZE(ovs_datapath_cmds) },
 #endif
 };
 
@@ -1876,7 +1910,7 @@ static void check_attrs_in_policy(void)
 		struct policy_family *pf;
 		struct cmd_policy *cp;
 		const unsigned char *attrs;
-		size_t attrs_len;
+		size_t attrs_len, hdrs;
 		void *buf;
 		size_t len;
 
@@ -1889,6 +1923,12 @@ static void check_attrs_in_policy(void)
 		if (pf == NULL)
 			goto next;
 
+		/* A family with a fixed header of its own, openvswitch's, has
+		 * its attributes after that. */
+		hdrs = NLMSG_HDRLEN + GENL_HDRLEN + pf->fam->hdrsize;
+		if (nlh->nlmsg_len < hdrs)
+			goto next;
+
 		genl = NLMSG_DATA(nlh);
 		cp = find_policy(pf, genl->cmd,
 				 (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP);
@@ -1896,8 +1936,8 @@ static void check_attrs_in_policy(void)
 			goto next;
 		cp->msgs++;
 
-		attrs = (const unsigned char *) nlh + NLMSG_HDRLEN + GENL_HDRLEN;
-		attrs_len = nlh->nlmsg_len - NLMSG_HDRLEN - GENL_HDRLEN;
+		attrs = (const unsigned char *) nlh + hdrs;
+		attrs_len = nlh->nlmsg_len - hdrs;
 		if (!stream_conforms(attrs, attrs_len, cp->slots, cp->n_slots)) {
 			fprintf(stderr, "%s cmd %u%s: attributes its policy does not take:\n",
 				pf->fam->name, genl->cmd, cp->dump ? " dump" : "");
