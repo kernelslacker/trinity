@@ -1423,8 +1423,19 @@ static struct pslot cttimeout_default_get[] = {
 	PS(3, true, NLA_KIND_U8_ONEOF),
 };
 
+/*
+ * nfnl_compat_policy_get has the name (1), REV (2) and TYPE (3), and
+ * nfnl_compat_get_rcu() answers -EINVAL unless all three are there.
+ */
+static struct pslot compat_get[] = {
+	PS(1, true, NLA_KIND_STRING),
+	PSB(2, true, NLA_KIND_BE32_MAX, 0, 255),
+	PS(3, true, NLA_KIND_BE32_ONEOF),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 #define CTTIMEOUT	NFNL_SUBSYS_CTNETLINK_TIMEOUT
+#define NFT_COMPAT	NFNL_SUBSYS_NFT_COMPAT
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1465,6 +1476,7 @@ static struct cmd_row cmd_rows[] = {
 	  ARRAY_SIZE(cttimeout_default_set) },
 	{ "IPCTNL_MSG_TIMEOUT_DEFAULT_GET", CTTIMEOUT, 4, cttimeout_default_get,
 	  ARRAY_SIZE(cttimeout_default_get) },
+	{ "NFNL_MSG_COMPAT_GET", NFT_COMPAT, 0, compat_get, ARRAY_SIZE(compat_get) },
 };
 
 /*
