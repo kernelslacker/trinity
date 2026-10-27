@@ -391,22 +391,19 @@ struct genl_family_grammar fam_ovs_packet = {
 
 /* ---- ovs_meter ---- */
 
-static const struct genl_cmd_grammar ovs_meter_cmds[] = {
-	{ OVS_METER_CMD_FEATURES, "OVS_METER_CMD_FEATURES" },
-	{ OVS_METER_CMD_SET,	  "OVS_METER_CMD_SET" },
-	{ OVS_METER_CMD_DEL,	  "OVS_METER_CMD_DEL" },
-	{ OVS_METER_CMD_GET,	  "OVS_METER_CMD_GET" },
-};
-
 /*
  * band_policy in net/openvswitch/meter.c, the policy of one band.  STATS is
  * a slot with a length and no type, so exactly struct ovs_flow_stats: a
- * shorter payload is refused.
+ * shorter payload is refused.  dp_meter_create() answers -EINVAL to a band
+ * without TYPE, RATE or BURST.
  */
 static const struct nla_attr_spec ovs_meter_band_attrs[] = {
-	{ OVS_BAND_ATTR_TYPE,		NLA_KIND_U32,    4 },
-	{ OVS_BAND_ATTR_RATE,		NLA_KIND_U32,    4 },
-	{ OVS_BAND_ATTR_BURST,		NLA_KIND_U32,    4 },
+	{ OVS_BAND_ATTR_TYPE,		NLA_KIND_U32,    4,
+	  .required = true },
+	{ OVS_BAND_ATTR_RATE,		NLA_KIND_U32,    4,
+	  .required = true },
+	{ OVS_BAND_ATTR_BURST,		NLA_KIND_U32,    4,
+	  .required = true },
 	{ OVS_BAND_ATTR_STATS,		NLA_KIND_BINARY_FIXED2,
 	  sizeof(struct ovs_flow_stats), sizeof(struct ovs_flow_stats) },
 };
@@ -432,6 +429,37 @@ static const struct nla_attr_spec ovs_meter_attrs[] = {
 	{ OVS_METER_ATTR_CLEAR,		NLA_KIND_FLAG,   0 },
 	{ OVS_METER_ATTR_MAX_METERS,	NLA_KIND_U32,    4 },
 	{ OVS_METER_ATTR_MAX_BANDS,	NLA_KIND_U32,    4 },
+};
+
+/*
+ * What ovs_meter_cmd_set() and the dp_meter_create() it calls read; they
+ * answer -EINVAL to a request without ID or BANDS.  GET and DEL read ID
+ * alone.
+ */
+static const struct nla_attr_spec ovs_meter_set_attrs[] = {
+	{ OVS_METER_ATTR_ID,		NLA_KIND_U32,    4,
+	  .required = true },
+	{ OVS_METER_ATTR_KBPS,		NLA_KIND_FLAG,   0 },
+	{ OVS_METER_ATTR_STATS,		NLA_KIND_BINARY_FIXED2,
+	  sizeof(struct ovs_flow_stats), sizeof(struct ovs_flow_stats) },
+	{ OVS_METER_ATTR_BANDS,		NLA_KIND_NESTED_ARRAY, 1, 0,
+	  ovs_meter_band_attrs, ARRAY_SIZE(ovs_meter_band_attrs),
+	  .required = true },
+	{ OVS_METER_ATTR_CLEAR,		NLA_KIND_FLAG,   0 },
+};
+
+static const struct nla_attr_spec ovs_meter_id_attrs[] = {
+	{ OVS_METER_ATTR_ID,		NLA_KIND_U32,    4 },
+};
+
+static const struct genl_cmd_grammar ovs_meter_cmds[] = {
+	{ OVS_METER_CMD_FEATURES, "OVS_METER_CMD_FEATURES" },
+	{ OVS_METER_CMD_SET,	  "OVS_METER_CMD_SET",
+	  ovs_meter_set_attrs, ARRAY_SIZE(ovs_meter_set_attrs) },
+	{ OVS_METER_CMD_DEL,	  "OVS_METER_CMD_DEL",
+	  ovs_meter_id_attrs, ARRAY_SIZE(ovs_meter_id_attrs) },
+	{ OVS_METER_CMD_GET,	  "OVS_METER_CMD_GET",
+	  ovs_meter_id_attrs, ARRAY_SIZE(ovs_meter_id_attrs) },
 };
 
 struct genl_family_grammar fam_ovs_meter = {

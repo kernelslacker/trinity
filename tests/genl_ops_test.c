@@ -1171,12 +1171,12 @@ extern struct genl_family_grammar fam_ovs_meter;
  * net/openvswitch/meter.c: meter_policy and band_policy.  STATS has a slot
  * with a length and no type, so exactly that of struct ovs_flow_stats.
  * BANDS is a nest of band nests, which dp_meter_create() walks and refuses
- * past DP_MAX_BANDS, 1.
+ * past DP_MAX_BANDS, 1, or when a band lacks its TYPE, RATE or BURST.
  */
 static struct slot ovs_meter_band[] = {
-	S_U32(OVS_BAND_ATTR_TYPE),
-	S_U32(OVS_BAND_ATTR_RATE),
-	S_U32(OVS_BAND_ATTR_BURST),
+	S_U32(OVS_BAND_ATTR_TYPE, .required = true),
+	S_U32(OVS_BAND_ATTR_RATE, .required = true),
+	S_U32(OVS_BAND_ATTR_BURST, .required = true),
 	S_BLOB(OVS_BAND_ATTR_STATS, sizeof(struct ovs_flow_stats),
 	       sizeof(struct ovs_flow_stats)),
 };
@@ -1191,11 +1191,24 @@ static struct slot ovs_meter[] = {
 	S_U32(OVS_METER_ATTR_MAX_METERS),
 	S_U32(OVS_METER_ATTR_MAX_BANDS),
 };
+/* What ovs_meter_cmd_set() and its dp_meter_create() read, ID and BANDS
+ * without which they answer -EINVAL; GET and DEL read ID alone. */
+static struct slot ovs_meter_set[] = {
+	S_U32(OVS_METER_ATTR_ID, .required = true),
+	S_FLAG(OVS_METER_ATTR_KBPS),
+	S_BLOB(OVS_METER_ATTR_STATS, sizeof(struct ovs_flow_stats),
+	       sizeof(struct ovs_flow_stats)),
+	S_ARRAY_MAX(OVS_METER_ATTR_BANDS, ovs_meter_band, 1, .required = true),
+	S_FLAG(OVS_METER_ATTR_CLEAR),
+};
+static struct slot ovs_meter_id[] = {
+	S_U32(OVS_METER_ATTR_ID),
+};
 static struct cmd_policy ovs_meter_cmds[] = {
 	P_CMD(OVS_METER_CMD_FEATURES, ovs_meter),
-	P_CMD(OVS_METER_CMD_SET, ovs_meter),
-	P_CMD(OVS_METER_CMD_DEL, ovs_meter),
-	P_CMD(OVS_METER_CMD_GET, ovs_meter),
+	P_CMD(OVS_METER_CMD_SET, ovs_meter_set),
+	P_CMD(OVS_METER_CMD_DEL, ovs_meter_id),
+	P_CMD(OVS_METER_CMD_GET, ovs_meter_id),
 };
 
 extern struct genl_family_grammar fam_ovs_ct_limit;
