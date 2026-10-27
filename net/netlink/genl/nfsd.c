@@ -76,13 +76,19 @@ static const struct nla_attr_spec nfsd_version_attrs[] = {
 	{ NFSD_A_VERSION_ENABLED,	NLA_KIND_FLAG,   0 },
 };
 
-/* ADDR is a sockaddr_in or a sockaddr_in6, which nfsd_nl_listener_set_doit()
- * sizes by its family.  nfsd_nl_validate_listeners() answers a socket
- * without both ADDR and TRANSPORT_NAME -EINVAL. */
+/*
+ * nfsd_nl_validate_listeners() refuses the whole request over a socket
+ * without both ADDR and TRANSPORT_NAME, with an ADDR shorter than its
+ * family's struct or of neither inet family, or with a TRANSPORT_NAME
+ * other than the three nfsd_nl_transport_supported() takes.
+ */
+static const char *const nfsd_transports[] = { "rdma", "tcp", "udp" };
+
 static const struct nla_attr_spec nfsd_sock_attrs[] = {
-	{ NFSD_A_SOCK_ADDR,		NLA_KIND_BINARY_FIXED2, 28, 16,
+	{ NFSD_A_SOCK_ADDR,		NLA_KIND_SOCKADDR, 0, 0,
 	  .required = true },
-	{ NFSD_A_SOCK_TRANSPORT_NAME,	NLA_KIND_STRING, 16, 1,
+	{ NFSD_A_SOCK_TRANSPORT_NAME,	NLA_KIND_STRING_ONEOF, 0, 0,
+	  .words = nfsd_transports, .n_words = ARRAY_SIZE(nfsd_transports),
 	  .required = true },
 };
 
