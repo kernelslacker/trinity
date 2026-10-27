@@ -376,13 +376,12 @@ static void sanitise_mmap(struct syscallrecord *rec)
 
 	/*
 	 * Build old_mmap()'s struct from the slots as vetted, where a1 can
-	 * carry it, and leave the slots holding what it holds, cut to its
-	 * 32-bit words, for the post handler to record.  With no pool to
-	 * draw from, a1 stays NULL and the call faults.
+	 * carry it (get_writable_struct() draws a compat call's buffers from
+	 * the low pool), and leave the slots holding what it holds, cut to
+	 * its 32-bit words, for the post handler to record.
 	 */
 	if (mmap_takes_arg_struct(rec, rec->entry)) {
-		struct old_mmap_args *args =
-			get_call_writable_struct(rec, sizeof(*args));
+		struct old_mmap_args *args = get_writable_struct(sizeof(*args));
 
 		if (args != NULL) {
 			args->addr   = rec->a1;
