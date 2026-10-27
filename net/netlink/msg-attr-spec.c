@@ -229,8 +229,9 @@ static size_t append_spec_flat(unsigned char *buf, size_t offset, size_t buflen,
 	/* Cap any single child inside a nested container at 64 bytes so
 	 * one greedy STRING/BINARY can't push out the rest of the
 	 * children.  The kernel-side nla_strlen / max_len gates only care
-	 * about the upper bound of each individual attr, not the sum. */
-	if (payload_len > 64)
+	 * about the upper bound of each individual attr, not the sum.  A
+	 * fixed-size child keeps its size, which a cut would make wrong. */
+	if (payload_len > 64 && spec->kind != NLA_KIND_BINARY_FIXED2)
 		payload_len = 64;
 
 	total = NLA_ALIGN(NLA_HDRLEN + payload_len);

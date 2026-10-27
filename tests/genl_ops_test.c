@@ -2315,16 +2315,17 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 
 /*
  * Nests of the generator's own tables and mirrors of what each must hold.
- * A nest with a table of its own gets its children from it, an array gets
- * flagged elements that hold a stream apiece, and the nests of a table
- * without any hold what the table holds, a NESTED child among them a
- * placeholder of 16 bytes.
+ * A nest with a table of its own gets its children from it, a fixed-size
+ * one at its size however long, an array gets flagged elements that hold a
+ * stream apiece, and the nests of a table without any hold what the table
+ * holds, a NESTED child among them a placeholder of 16 bytes.
  */
 static void check_nest_tables(void)
 {
 	static const struct nla_attr_spec leaf[] = {
 		{ 1, NLA_KIND_U16, 2 },
 		{ 2, NLA_KIND_BINARY_FIXED2, 6, 6 },
+		{ 3, NLA_KIND_BINARY_FIXED2, 80, 80 },
 	};
 	static const struct nla_attr_spec elem[] = {
 		{ 1, NLA_KIND_U32, 4 },
@@ -2340,7 +2341,9 @@ static void check_nest_tables(void)
 		{ 7, NLA_KIND_NESTED, 0 },
 		{ 8, NLA_KIND_U16, 2 },
 	};
-	static struct slot leaf_mirror[] = { S_U16(1), S_BLOB(2, 6, 6) };
+	static struct slot leaf_mirror[] = {
+		S_U16(1), S_BLOB(2, 6, 6), S_BLOB(3, 80, 80),
+	};
 	static struct slot elem_mirror[] = {
 		S_U32(1), S_ARRAY(2, leaf_mirror), S_NEST(3, leaf_mirror),
 	};
