@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/vfs.h>
 #include <unistd.h>
 #include "csfu.h"
@@ -20,6 +21,7 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/stat.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pin lands
  * inside the same trinity-testfile<N> inodes the rest of the path-pinned
@@ -95,8 +97,9 @@ struct openat_dir_seen {
 
 /*
  * What sanitise_openat() saw for the oracle in post_openat(): the inode the
- * path named before the call and its ctime, the directories it walked
- * through, and the (dfd, path, flags) of that call.
+ * path named before the call and its ctime, the mount it lay on (0 when
+ * statx() could not say), the directories it walked through, and the
+ * (dfd, path, flags) of that call.
  */
 #define OPENAT_POST_STATE_MAGIC	0x4F504154UL	/* "OPAT" */
 struct openat_post_state {
@@ -107,6 +110,7 @@ struct openat_post_state {
 	dev_t dev;
 	ino_t ino;
 	struct timespec ctime;
+	unsigned long long mnt_id;
 	unsigned int ndirs;
 	struct openat_dir_seen dirs[OPENAT_ORACLE_DIRS];
 };
@@ -172,6 +176,20 @@ static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 		return n == snap->ndirs;
 	snap->ndirs = n;
 	return true;
+}
+
+/*
+ * The mount the lookup of @path from @dfd ends on, @flags as statx() takes
+ * them, or 0 where statx() cannot say.
+ */
+static unsigned long long openat_mnt_id(int dfd, const char *path, int flags)
+{
+	struct statx stx;
+
+	if (syscall(SYS_statx, dfd, path, flags, STATX_MNT_ID, &stx) != 0 ||
+	    !(stx.stx_mask & STATX_MNT_ID))
+		return 0;
+	return stx.stx_mnt_id;
 }
 
 /*
@@ -259,6 +277,8 @@ static void sanitise_openat(struct syscallrecord *rec)
 
 		if (!openat_dirs_seen((const char *) rec->a2, &seen, false))
 			return;
+		seen.mnt_id = openat_mnt_id(AT_FDCWD, (const char *) rec->a2,
+					    AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT);
 
 		snap = zmalloc_tracked(sizeof(*snap));
 		*snap = seen;
@@ -333,8 +353,9 @@ struct syscallentry syscall_open = {
  * the open and the first one again by the later lookup only if that one, or
  * a directory on the way, was renamed away and back or linked there again,
  * and either sets a ctime the lookups compare (a write in the window does
- * too, and leaves the call unjudged).  Symlinks, paths through them and
- * procfs fds are skipped.
+ * too, and leaves the call unjudged).  A mount over the path for the open
+ * alone changes no lookup, so the fd has to lie on the path's mount as
+ * well.  Symlinks, paths through them and procfs fds are skipped.
  */
 static void openat_path_oracle(const struct syscallrecord *rec,
 			       struct openat_post_state *snap,
@@ -367,6 +388,20 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 
 	if (st_fd->st_dev == snap->dev && st_fd->st_ino == snap->ino)
 		return;
+
+	/*
+	 * A mount that covers the path, or a directory on it, for the open
+	 * alone puts the fd on another mount than the lookup before the call
+	 * ended on, and changes neither lookup: an fd on another mount than
+	 * the path's is no evidence either way.
+	 */
+	if (snap->mnt_id != 0 &&
+	    openat_mnt_id(fd, "", AT_EMPTY_PATH) != snap->mnt_id) {
+		__atomic_add_fetch(
+			&shm->stats.oracle.openat_oracle_inconclusive,
+			1, __ATOMIC_RELAXED);
+		return;
+	}
 
 	/*
 	 * An automount trigger opened with O_DIRECTORY puts the fd on the root

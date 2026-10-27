@@ -16,9 +16,12 @@
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/eventfd.h>
+#include <sched.h>
 #include <sys/mman.h>
+#include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -42,6 +45,7 @@
 #include "syscall-internal.h"	/* register_returned_fd */
 #include "syscalls/syscalls.h"	/* syscall_dup, syscall_close, ... */
 #include "unblocker.h"		/* accept_unblocker_fire */
+#include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
@@ -2883,6 +2887,82 @@ static void openat_oracle_holds_the_directories(void)
 	oracle_files_remove();
 }
 
+/* Write @text to the /proc/self file @path, for a user namespace's maps. */
+static bool write_proc_self(const char *path, const char *text)
+{
+	int fd = open(path, O_WRONLY);
+	bool ok;
+
+	if (fd < 0)
+		return false;
+	ok = write(fd, text, strlen(text)) == (ssize_t) strlen(text);
+	close(fd);
+	return ok;
+}
+
+/* A mount that covers a directory on the path for the open alone puts the
+ * fd on another file, on another mount, while the lookups either side of
+ * it find the first file with nothing changed: the call is inconclusive.
+ * It runs in a child of its own, in its own user and mount namespace, so
+ * that the mount needs no privilege and goes away with the child, which
+ * reports through its exit status; a host without user namespaces skips
+ * it (77). */
+static void openat_oracle_ignores_a_mount_for_the_open(void)
+{
+	char d[sizeof(oracle_template) + 2], da[sizeof(d) + 2], ids[64];
+	int status, fd;
+	pid_t pid;
+
+	oracle_files();
+	snprintf(d, sizeof(d), "%s/d", oracle_dir);
+	snprintf(da, sizeof(da), "%s/a", d);
+	if (mkdir(d, 0700) != 0 || (fd = open(da, O_CREAT | O_WRONLY, 0600)) < 0)
+		BUG("fd pool: cannot make the O_PATH oracle's directory");
+	close(fd);
+
+	pid = fork();
+	if (pid == 0) {
+		uid_t uid = getuid();
+		gid_t gid = getgid();
+		unsigned long inconclusive;
+		int afd;
+
+		if (unshare(CLONE_NEWUSER | CLONE_NEWNS) != 0)
+			_exit(77);
+		snprintf(ids, sizeof(ids), "%u %u 1", uid, uid);
+		if (!write_proc_self("/proc/self/setgroups", "deny") ||
+		    !write_proc_self("/proc/self/uid_map", ids))
+			_exit(77);
+		snprintf(ids, sizeof(ids), "%u %u 1", gid, gid);
+		if (!write_proc_self("/proc/self/gid_map", ids) ||
+		    mount("none", "/", NULL, MS_REC | MS_PRIVATE, NULL) != 0)
+			_exit(77);
+
+		sanitise_openat_path(da);
+		if (mount("none", d, "tmpfs", 0, NULL) != 0)
+			_exit(77);
+		afd = open(da, O_CREAT | O_WRONLY, 0600);
+		fd = open(da, O_PATH);
+		if (afd < 0 || fd < 0 || umount2(d, MNT_DETACH) != 0)
+			_exit(2);
+		close(afd);
+		inconclusive = OPENAT_INCONCLUSIVE;
+		_exit(post_openat_path(fd) == 0 &&
+		      OPENAT_INCONCLUSIVE == inconclusive + 1 ? 0 : 1);
+	}
+	if (pid < 0 || waitpid_eintr(pid, &status, 0) != pid ||
+	    !WIFEXITED(status))
+		BUG("fd pool: the O_PATH oracle's mount case did not run");
+	if (WEXITSTATUS(status) == 77)
+		fprintf(stderr, "fd pool: openat: no user namespace here, the mount case was skipped\n");
+	check("a mount over the path for the open alone was reported, or the case failed",
+	      "openat", WEXITSTATUS(status) == 0 || WEXITSTATUS(status) == 77);
+
+	unlink(da);
+	rmdir(d);
+	oracle_files_remove();
+}
+
 /* A call the oracle has no lookup for is not judged: one the sanitiser
  * never saw, one a chain substitution or a RedQueen pin rewrote after it,
  * and one relative to a directory fd, a shape it never looks at.  Each is
@@ -3610,6 +3690,7 @@ void dup_pool_self_check(void)
 	openat_oracle_compares_the_inode();
 	openat_oracle_ignores_a_path_that_moved();
 	openat_oracle_holds_the_directories();
+	openat_oracle_ignores_a_mount_for_the_open();
 	openat_oracle_needs_the_lookup_of_its_call();
 	openat_releases_the_lookup_it_took();
 	open_result_is_pooled_by_kind();
