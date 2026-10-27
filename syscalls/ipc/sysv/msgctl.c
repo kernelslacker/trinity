@@ -51,7 +51,8 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		 * keeps read access to the queue after the SET -- without
 		 * this guard a later msgrcv / msgctl(IPC_STAT) from the
 		 * same child trips EACCES, defeating the point of fixing
-		 * the coverage gap.
+		 * the coverage gap.  msg_qbytes becomes the queue's byte
+		 * limit (IPC_SET_MSG_QBYTES).
 		 */
 		static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
 		struct msqid_ds *ds;
@@ -63,6 +64,7 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		ds->msg_perm.gid = getgid();
 		ds->msg_perm.mode =
 			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
+		ds->msg_qbytes = IPC_SET_MSG_QBYTES;
 		input_buf = true;
 		break;
 	}

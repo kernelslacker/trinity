@@ -505,11 +505,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 # of post_oracle_test.c hands out, and a SysV segment of the test's own,
 # and ipc.c the ipc() multiplexer, whose sanitiser, .vet_final hook and
 # .cleanup it runs with the sysv id pickers faked there.  semctl.c brings
-# semctl, whose array-building sanitiser it runs too, and ipc-common.c
-# the post-state helpers semctl's post handler reaches.
+# semctl, whose array-building sanitiser it runs too, msgctl.c msgctl,
+# whose IPC_SET buffer it checks, and ipc-common.c the post-state helpers
+# their post handlers reach.
 PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
 		   $(TOP)/syscalls/ipc/sysv/ipc.c \
 		   $(TOP)/syscalls/ipc/sysv/semctl.c \
+		   $(TOP)/syscalls/ipc/sysv/msgctl.c \
 		   $(TOP)/syscalls/ipc/sysv/ipc-common.c
 
 # syscalls/mm/numa/get_mempolicy.c brings get_mempolicy, whose sanitiser

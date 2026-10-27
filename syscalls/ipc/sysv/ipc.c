@@ -125,6 +125,29 @@ struct compat_ipc_perm_old {
 };
 
 /*
+ * A compat MSGCTL IPC_SET's msqid_ds up to msg_qbytes: struct
+ * compat_msqid64_ds (asm-generic/compat.h) with IPC_64, after a 36-byte
+ * compat_ipc64_perm and three times of two words each, and the old struct
+ * compat_msqid_ds (ipc/msg.c) without it.
+ */
+struct compat_msqid64_head {
+	unsigned char msg_perm[36];
+	uint32_t times[6];
+	uint32_t msg_cbytes, msg_qnum, msg_qbytes;
+};
+struct compat_msqid_old_head {
+	struct compat_ipc_perm_old msg_perm;
+	uint32_t msg_first, msg_last;
+	int32_t msg_stime, msg_rtime, msg_ctime;
+	uint32_t msg_lcbytes, msg_lqbytes;
+	uint16_t msg_cbytes, msg_qnum, msg_qbytes;
+};
+_Static_assert(offsetof(struct compat_msqid64_head, msg_qbytes) == 68,
+	       "compat_msqid64_ds puts msg_qbytes at 68");
+_Static_assert(offsetof(struct compat_msqid_old_head, msg_qbytes) == 48,
+	       "compat_msqid_ds puts msg_qbytes at 48");
+
+/*
  * Give the object an IPC_SET's @buf names the caller's own uid and gid and
  * a readable mode, as semctl(), msgctl() and shmctl() do theirs: a zeroed
  * buffer hands the object to uid 0 with mode 0, which ipc_update_perm()
@@ -331,8 +354,18 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
-		if (cmd == IPC_SET)
+		if (cmd == IPC_SET) {
+			/* With room for messages: IPC_SET_MSG_QBYTES. */
 			ipc_set_perm(rec, buf, &rec->a3);
+			if (!rec->do32bit)
+				buf->msg_qbytes = IPC_SET_MSG_QBYTES;
+			else if (rec->a3 & IPC_64)
+				((struct compat_msqid64_head *) buf)->msg_qbytes =
+					IPC_SET_MSG_QBYTES;
+			else
+				((struct compat_msqid_old_head *) buf)->msg_qbytes =
+					IPC_SET_MSG_QBYTES;
+		}
 		rec->a5 = (unsigned long) buf;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 		break;

@@ -23,6 +23,16 @@ struct syscallrecord;
 #define SEMCTL_ARRAY_SLOTS	SEMGET_NSEMS_CAP
 
 /*
+ * The msg_qbytes an IPC_SET hands a queue, by msgctl() and by ipc()'s
+ * MSGCTL: msgctl_down() stores it as the queue's byte limit, so the zero
+ * a cleared buffer holds leaves a queue that takes no message.  This is
+ * MSGMNB, the default limit, which msg_ctlmnb allows without
+ * CAP_SYS_RESOURCE; <linux/msg.h>, which has it, cannot share a file with
+ * <sys/msg.h>.
+ */
+#define IPC_SET_MSG_QBYTES	16384
+
+/*
  * Shared post-state snap for the shmctl/msgctl IPC_STAT / IPC_INFO
  * out-buffer path.  Fields:
  *   magic       - cookie verified in the post handler after the

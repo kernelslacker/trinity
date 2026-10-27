@@ -20,6 +20,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/msg.h>
 #include <sys/shm.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -4519,6 +4520,10 @@ int get_random_sysv_shm(void)
 enum { IPC_SEMGET = 2, IPC_SEMCTL = 3, IPC_SEMTIMEDOP = 4, IPC_MSGRCV = 12,
        IPC_MSGCTL = 14, IPC_SHMAT = 21, IPC_SHMDT = 22, IPC_SHMGET = 23,
        IPC_SHMCTL = 24 };
+/* Where a compat MSGCTL IPC_SET's msg_qbytes lies: a u32 in struct
+ * compat_msqid64_ds (asm-generic/compat.h), a u16 in the old struct
+ * compat_msqid_ds (ipc/msg.c). */
+enum { KERNEL_COMPAT_MSQID64_QBYTES = 68, KERNEL_COMPAT_MSQID_QBYTES = 48 };
 enum { KERNEL_IPC_64 = 0x0100, KERNEL_GETALL = 13, KERNEL_SETVAL = 16,
        KERNEL_SETALL = 17, KERNEL_SEM_STAT = 18, KERNEL_SEM_INFO = 19,
        KERNEL_SEM_STAT_ANY = 20, KERNEL_SEMVMX = 32767 };
@@ -4754,6 +4759,37 @@ static void ipc_set_ids_held(const struct syscallrecord *r, unsigned long cmd,
 	}
 }
 
+/* msgctl()'s IPC_SET hands the queue the caller's ids, a readable mode
+ * and room for messages: msgctl_down() stores msg_qbytes as the queue's
+ * limit, so the zero a cleared buffer holds would leave one that takes no
+ * message, and msg_ctlmnb allows up to MSGMNB without CAP_SYS_RESOURCE. */
+static void msgctl_set_leaves_the_queue_room(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < 20; i++) {
+		struct syscallrecord *r = child_call(&syscall_msgctl, false);
+		const struct msqid_ds *ds;
+
+		r->a2 = IPC_SET;
+		syscall_msgctl.sanitise(r);
+		ds = (const struct msqid_ds *) r->a3;
+		/* The post handler gives the buffer back through deferred
+		 * free, which takes only what the alloc-track holds, and this
+		 * binary's zmalloc_tracked() registers nothing. */
+		deferred_alloc_track((void *) ds, sizeof(*ds));
+		if (ds->msg_perm.uid != getuid() || ds->msg_perm.gid != getgid() ||
+		    !(ds->msg_perm.mode & 0400))
+			BUG("msgctl: an IPC_SET hands the queue someone else's ownership or no read access");
+		if (ds->msg_qbytes == 0 || ds->msg_qbytes > 16384)
+			BUG("msgctl: an IPC_SET leaves the queue no room, or more than msg_ctlmnb allows");
+		r->retval = (unsigned long) -1L;
+		syscall_msgctl.post(r);
+	}
+	deferred_free_flush();
+	fake_this_child = NULL;
+}
+
 /* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
  * an unsigned long or a compat call's u32, so every SEMCTL the sanitiser
  * builds has ptr name a slot the call reaches.  For a command that takes
@@ -4850,9 +4886,10 @@ gid_t __wrap_getgid(void)
 /* SEMCTL, MSGCTL and SHMCTL each send a compat IPC_SET in both layouts
  * while the caller's ids fit the old one's 16 bits, holding them as
  * ipc_set_ids_held() reads it, and with IPC_64 alone once one of them does
- * not.  SEMCTL takes its command in third and its buffer through the semun
- * slot ptr names, the other two the command in second and the buffer in
- * ptr itself. */
+ * not; a MSGCTL's leaves the queue room for messages, msgctl_down()
+ * storing msg_qbytes as its limit.  SEMCTL takes its command in third and
+ * its buffer through the semun slot ptr names, the other two the command
+ * in second and the buffer in ptr itself. */
 static void ipc_set_layouts(void)
 {
 	static const struct {
@@ -4886,6 +4923,11 @@ static void ipc_set_layouts(void)
 					buf = calls[k] == IPC_SEMCTL ?
 						*(unsigned long *) r->a5 : r->a5;
 					ipc_set_ids_held(r, cmd, buf);
+					if (calls[k] == IPC_MSGCTL &&
+					    ((cmd & KERNEL_IPC_64) ?
+					     *(const uint32_t *) (buf + KERNEL_COMPAT_MSQID64_QBYTES) :
+					     *(const uint16_t *) (buf + KERNEL_COMPAT_MSQID_QBYTES)) == 0)
+						BUG("ipc: a compat MSGCTL IPC_SET leaves the queue no room");
 					sets++;
 					old_sets += !(cmd & KERNEL_IPC_64);
 				}
@@ -5022,6 +5064,7 @@ void arg_coupling_self_check(void)
 	ipc_semget_nsems_held();
 	ipc_semctl_semun_through_ptr();
 	semctl_arrays_from_pool();
+	msgctl_set_leaves_the_queue_room();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
 	ipc_compat_layouts();
