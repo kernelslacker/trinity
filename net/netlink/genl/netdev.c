@@ -18,22 +18,28 @@
 /*
  * The nests, from netdev_queue_id_nl_policy, netdev_page_pool_info_nl_policy
  * and netdev_lease_nl_policy.  A page pool's id is an NLA_UINT, so 4 or 8
- * bytes.
+ * bytes.  The handlers answer -EINVAL to a queue nest without its id and
+ * type, a lease without its ifindex and queue, and a page pool stats
+ * request without the pool's id, so those are marked required.
  */
 static const struct nla_attr_spec netdev_queue_id_attrs[] = {
-	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
+	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4, .required = true },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0,
+	  .required = true },
 };
 
 static const struct nla_attr_spec netdev_page_pool_info_attrs[] = {
-	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_BINARY_FIXED2, 8, 4 },
+	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_BINARY_FIXED2, 8, 4,
+	  .required = true },
 	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32_RANGE, INT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_lease_attrs[] = {
-	{ NETDEV_A_LEASE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ NETDEV_A_LEASE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
 	{ NETDEV_A_LEASE_QUEUE,		NLA_KIND_NESTED, 0, 0,
-	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs) },
+	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs),
+	  .required = true },
 	{ NETDEV_A_LEASE_NETNS_ID,	NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 };
 
@@ -46,7 +52,9 @@ static const struct nla_attr_spec netdev_lease_attrs[] = {
  * The bounded u32s draw inside their bounds, an ifindex from 1 and a queue
  * type of 0 or 1 among them, and the NETNS_ID s32 from 0; an NLA_UINT's
  * bound, and RX_PAGE_SIZE's floor, the kernel's PAGE_SIZE, are not
- * modelled.
+ * modelled.  QUEUE_GET's doit, QUEUE_CREATE, NAPI_SET and the two binds
+ * answer -EINVAL without the attributes they look up, which are marked
+ * required; the single-attribute tables need no mark.
  */
 static const struct nla_attr_spec netdev_dev_get_attrs[] = {
 	{ NETDEV_A_DEV_IFINDEX,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
@@ -66,9 +74,11 @@ static const struct nla_attr_spec netdev_page_pool_stats_get_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_queue_get_attrs[] = {
-	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4 },
-	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
+	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4, .required = true },
+	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0,
+	  .required = true },
 };
 
 static const struct nla_attr_spec netdev_queue_get_dump_attrs[] = {
@@ -76,10 +86,13 @@ static const struct nla_attr_spec netdev_queue_get_dump_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_queue_create_attrs[] = {
-	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0 },
+	{ NETDEV_A_QUEUE_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ NETDEV_A_QUEUE_TYPE,		NLA_KIND_U32_RANGE, 1, 0,
+	  .required = true },
 	{ NETDEV_A_QUEUE_LEASE,		NLA_KIND_NESTED, 0, 0,
-	  netdev_lease_attrs, ARRAY_SIZE(netdev_lease_attrs) },
+	  netdev_lease_attrs, ARRAY_SIZE(netdev_lease_attrs),
+	  .required = true },
 };
 
 static const struct nla_attr_spec netdev_napi_get_attrs[] = {
@@ -92,7 +105,7 @@ static const struct nla_attr_spec netdev_napi_get_dump_attrs[] = {
 
 /* The two timeouts are NLA_UINT, 4 or 8 bytes. */
 static const struct nla_attr_spec netdev_napi_set_attrs[] = {
-	{ NETDEV_A_NAPI_ID,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_NAPI_ID,		NLA_KIND_U32,    4, .required = true },
 	{ NETDEV_A_NAPI_DEFER_HARD_IRQS, NLA_KIND_U32_RANGE, INT32_MAX, 0 },
 	{ NETDEV_A_NAPI_GRO_FLUSH_TIMEOUT, NLA_KIND_BINARY_FIXED2, 8, 4 },
 	{ NETDEV_A_NAPI_IRQ_SUSPEND_TIMEOUT, NLA_KIND_BINARY_FIXED2, 8, 4 },
@@ -106,16 +119,19 @@ static const struct nla_attr_spec netdev_qstats_get_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_bind_rx_attrs[] = {
-	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
 	{ NETDEV_A_DMABUF_QUEUES,	NLA_KIND_NESTED, 0, 0,
-	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs) },
-	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4 },
+	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs),
+	  .required = true },
+	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4, .required = true },
 	{ NETDEV_A_DMABUF_RX_PAGE_SIZE,	NLA_KIND_U32,    4 },
 };
 
 static const struct nla_attr_spec netdev_bind_tx_attrs[] = {
-	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4 },
+	{ NETDEV_A_DMABUF_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4, .required = true },
 };
 
 /* The dumpit of DEV_GET has no policy, which the genl core gives a
