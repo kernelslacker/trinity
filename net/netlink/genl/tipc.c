@@ -7,6 +7,8 @@
 
 #if __has_include(<linux/tipc_netlink.h>)
 
+#include <sys/socket.h>
+#include <linux/tipc.h>
 #include <linux/tipc_netlink.h>
 
 #include "netlink-genl-families.h"
@@ -31,41 +33,92 @@ static const struct genl_cmd_grammar tipc_cmds[] = {
 };
 
 /*
- * Attribute spec follows the per-nest enums in tipc_netlink.h.  The
- * outer namespace (TIPC_NLA_BEARER / TIPC_NLA_NET / TIPC_NLA_LINK /
- * TIPC_NLA_NAME_TABLE / TIPC_NLA_MEDIA / TIPC_NLA_MON / TIPC_NLA_SOCK)
- * is all NESTED — TIPC's controller dispatches per-cmd to a different
- * inner policy on each.  The inner attrs we list below are positioned
- * by numeric value within the same flat array; this is the same shape
- * mptcp_pm uses, and lets the single-table spec emitter produce nested
- * payloads whose tag values match whichever nest the cmd's policy is
- * walking.  The most common inner attributes (NAME strings, ID/ADDR
- * u32, BEARER UDP_OPTS / DOMAIN, NET_NODEID) are present so the bulk
- * of bearer/net/link bring-up payloads survive the inner validator.
+ * The inner namespaces, each from the tipc_nl_*_policy the handlers parse
+ * its nest under with nla_parse_nested_deprecated().  The three PROP nests
+ * share tipc_nl_prop_policy.  The UDP policy has no slot for MULTI_REMOTEIP,
+ * but udp_media.c reads it as a flag.  The two addresses are
+ * sockaddr_storage.  LINK_NAME and BEARER_NAME are NLA_NUL_STRING, so a
+ * byte at least, and MEDIA_NAME an NLA_STRING.
  */
-static const struct nla_attr_spec tipc_attrs[] = {
-	{ TIPC_NLA_BEARER,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_NET,			NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_LINK,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_NAME_TABLE,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_MEDIA,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_MON,			NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_SOCK,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_NODE,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_PUBL,		NLA_KIND_NESTED, 0 },
+static const struct nla_attr_spec tipc_prop_attrs[] = {
+	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_TOL,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_WIN,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_MTU,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_BROADCAST,	NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32,   4 },
+};
 
-	{ TIPC_NLA_BEARER_NAME,		NLA_KIND_STRING, 31 },
+static const struct nla_attr_spec tipc_udp_attrs[] = {
+	{ TIPC_NLA_UDP_LOCAL,		NLA_KIND_BINARY, sizeof(struct sockaddr_storage) },
+	{ TIPC_NLA_UDP_REMOTE,		NLA_KIND_BINARY, sizeof(struct sockaddr_storage) },
+	{ TIPC_NLA_UDP_MULTI_REMOTEIP,	NLA_KIND_FLAG,   0 },
+};
+
+static const struct nla_attr_spec tipc_bearer_attrs[] = {
+	{ TIPC_NLA_BEARER_NAME,		NLA_KIND_STRING, TIPC_MAX_BEARER_NAME, 1 },
+	{ TIPC_NLA_BEARER_PROP,		NLA_KIND_NESTED, 0, 0,
+	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 	{ TIPC_NLA_BEARER_DOMAIN,	NLA_KIND_U32,    4 },
-	{ TIPC_NLA_BEARER_PROP,		NLA_KIND_NESTED, 0 },
-	{ TIPC_NLA_BEARER_UDP_OPTS,	NLA_KIND_NESTED, 0 },
+	{ TIPC_NLA_BEARER_UDP_OPTS,	NLA_KIND_NESTED, 0, 0,
+	  tipc_udp_attrs, ARRAY_SIZE(tipc_udp_attrs) },
+};
 
+static const struct nla_attr_spec tipc_sock_attrs[] = {
+	{ TIPC_NLA_SOCK_ADDR,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_SOCK_REF,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_SOCK_HAS_PUBL,	NLA_KIND_FLAG,   0 },
+};
+
+static const struct nla_attr_spec tipc_link_attrs[] = {
+	{ TIPC_NLA_LINK_NAME,		NLA_KIND_STRING, TIPC_MAX_LINK_NAME, 1 },
+	{ TIPC_NLA_LINK_PROP,		NLA_KIND_NESTED, 0, 0,
+	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
+};
+
+static const struct nla_attr_spec tipc_media_attrs[] = {
+	{ TIPC_NLA_MEDIA_NAME,		NLA_KIND_STRING, TIPC_MAX_MEDIA_NAME, 1 },
+	{ TIPC_NLA_MEDIA_PROP,		NLA_KIND_NESTED, 0, 0,
+	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
+};
+
+static const struct nla_attr_spec tipc_net_attrs[] = {
 	{ TIPC_NLA_NET_ID,		NLA_KIND_U32,    4 },
 	{ TIPC_NLA_NET_ADDR,		NLA_KIND_U32,    4 },
 	{ TIPC_NLA_NET_NODEID,		NLA_KIND_U64,    8 },
 	{ TIPC_NLA_NET_NODEID_W1,	NLA_KIND_U64,    8 },
+	{ TIPC_NLA_NET_ADDR_LEGACY,	NLA_KIND_FLAG,   0 },
+};
 
-	{ TIPC_NLA_LINK_NAME,		NLA_KIND_STRING, 59 },
-	{ TIPC_NLA_LINK_PROP,		NLA_KIND_NESTED, 0 },
+static const struct nla_attr_spec tipc_mon_attrs[] = {
+	{ TIPC_NLA_MON_ACTIVATION_THRESHOLD, NLA_KIND_U32, 4 },
+	{ TIPC_NLA_MON_REF,		NLA_KIND_U32,    4 },
+};
+
+/*
+ * tipc_nl_policy, the one policy of the ops, whose validation is liberal;
+ * it types nine ids NLA_NESTED, which an attribute holds empty or with
+ * NLA_HDRLEN bytes at least.  What a nest takes is its namespace's own, so
+ * each is a table of its own: the inner ids that shared the flat table
+ * sat on the ids of the other nests, where a name of one to three bytes is
+ * refused as too short for a nest, and a handler found its nest filled
+ * from another namespace.  NODE, NAME_TABLE and PUBL are left out: only
+ * KEY_SET, which is not listed, reads NODE, and replies alone carry the
+ * other two.
+ */
+static const struct nla_attr_spec tipc_attrs[] = {
+	{ TIPC_NLA_BEARER,		NLA_KIND_NESTED, 0, 0,
+	  tipc_bearer_attrs, ARRAY_SIZE(tipc_bearer_attrs) },
+	{ TIPC_NLA_SOCK,		NLA_KIND_NESTED, 0, 0,
+	  tipc_sock_attrs, ARRAY_SIZE(tipc_sock_attrs) },
+	{ TIPC_NLA_LINK,		NLA_KIND_NESTED, 0, 0,
+	  tipc_link_attrs, ARRAY_SIZE(tipc_link_attrs) },
+	{ TIPC_NLA_MEDIA,		NLA_KIND_NESTED, 0, 0,
+	  tipc_media_attrs, ARRAY_SIZE(tipc_media_attrs) },
+	{ TIPC_NLA_NET,			NLA_KIND_NESTED, 0, 0,
+	  tipc_net_attrs, ARRAY_SIZE(tipc_net_attrs) },
+	{ TIPC_NLA_MON,			NLA_KIND_NESTED, 0, 0,
+	  tipc_mon_attrs, ARRAY_SIZE(tipc_mon_attrs) },
 };
 
 struct genl_family_grammar fam_tipc = {

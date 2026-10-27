@@ -65,6 +65,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_VPORT	722
 #define ID_OVS_METER	723
 #define ID_OVS_CT_LIMIT	724
+#define ID_TIPC		725
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1176,6 +1177,88 @@ static struct cmd_policy ovs_ct_limit_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/tipc_netlink.h>)
+#include <linux/tipc.h>
+#include <linux/tipc_netlink.h>
+
+extern struct genl_family_grammar fam_tipc;
+
+/*
+ * net/tipc/netlink.c: tipc_nl_policy, which every op shares and validates
+ * liberally, and the tipc_nl_*_policy tables the handlers parse its nests
+ * under.  MULTI_REMOTEIP has no slot in the UDP policy but the media code
+ * reads it.  A nest nothing reads is not listed.
+ */
+static struct slot tipc_prop[] = {
+	S_U32(TIPC_NLA_PROP_PRIO),
+	S_U32(TIPC_NLA_PROP_TOL),
+	S_U32(TIPC_NLA_PROP_WIN),
+	S_U32(TIPC_NLA_PROP_MTU),
+	S_U32(TIPC_NLA_PROP_BROADCAST),
+	S_U32(TIPC_NLA_PROP_BROADCAST_RATIO),
+};
+static struct slot tipc_udp[] = {
+	S_BLOB(TIPC_NLA_UDP_LOCAL, 0, sizeof(struct sockaddr_storage)),
+	S_BLOB(TIPC_NLA_UDP_REMOTE, 0, sizeof(struct sockaddr_storage)),
+	S_FLAG(TIPC_NLA_UDP_MULTI_REMOTEIP),
+};
+static struct slot tipc_bearer[] = {
+	S_STR(TIPC_NLA_BEARER_NAME, TIPC_MAX_BEARER_NAME),
+	S_NEST(TIPC_NLA_BEARER_PROP, tipc_prop),
+	S_U32(TIPC_NLA_BEARER_DOMAIN),
+	S_NEST(TIPC_NLA_BEARER_UDP_OPTS, tipc_udp),
+};
+static struct slot tipc_sock[] = {
+	S_U32(TIPC_NLA_SOCK_ADDR),
+	S_U32(TIPC_NLA_SOCK_REF),
+	S_FLAG(TIPC_NLA_SOCK_HAS_PUBL),
+};
+static struct slot tipc_link[] = {
+	S_STR(TIPC_NLA_LINK_NAME, TIPC_MAX_LINK_NAME),
+	S_NEST(TIPC_NLA_LINK_PROP, tipc_prop),
+};
+static struct slot tipc_media[] = {
+	S_STR(TIPC_NLA_MEDIA_NAME, 0),
+	S_NEST(TIPC_NLA_MEDIA_PROP, tipc_prop),
+};
+static struct slot tipc_net[] = {
+	S_U32(TIPC_NLA_NET_ID),
+	S_U32(TIPC_NLA_NET_ADDR),
+	S_U64(TIPC_NLA_NET_NODEID),
+	S_U64(TIPC_NLA_NET_NODEID_W1),
+	S_FLAG(TIPC_NLA_NET_ADDR_LEGACY),
+};
+static struct slot tipc_mon[] = {
+	S_U32(TIPC_NLA_MON_ACTIVATION_THRESHOLD),
+	S_U32(TIPC_NLA_MON_REF),
+};
+static struct slot tipc_policy[] = {
+	S_NEST(TIPC_NLA_BEARER, tipc_bearer),
+	S_NEST(TIPC_NLA_SOCK, tipc_sock),
+	S_NEST(TIPC_NLA_LINK, tipc_link),
+	S_NEST(TIPC_NLA_MEDIA, tipc_media),
+	S_NEST(TIPC_NLA_NET, tipc_net),
+	S_NEST(TIPC_NLA_MON, tipc_mon),
+};
+static struct cmd_policy tipc_cmds[] = {
+	P_CMD(TIPC_NL_BEARER_ENABLE, tipc_policy),
+	P_CMD(TIPC_NL_BEARER_DISABLE, tipc_policy),
+	P_CMD(TIPC_NL_BEARER_GET, tipc_policy),
+	P_CMD(TIPC_NL_BEARER_SET, tipc_policy),
+	P_CMD(TIPC_NL_NET_GET, tipc_policy),
+	P_CMD(TIPC_NL_NET_SET, tipc_policy),
+	P_CMD(TIPC_NL_LINK_GET, tipc_policy),
+	P_CMD(TIPC_NL_LINK_SET, tipc_policy),
+	P_CMD(TIPC_NL_LINK_RESET_STATS, tipc_policy),
+	P_CMD(TIPC_NL_NAME_TABLE_GET, tipc_policy),
+	P_CMD(TIPC_NL_PUBL_GET, tipc_policy),
+	P_CMD(TIPC_NL_SOCK_GET, tipc_policy),
+	P_CMD(TIPC_NL_MEDIA_GET, tipc_policy),
+	P_CMD(TIPC_NL_MON_GET, tipc_policy),
+	P_CMD(TIPC_NL_MON_SET, tipc_policy),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -1217,6 +1300,9 @@ static struct policy_family policy_families[] = {
 	  ARRAY_SIZE(ovs_meter_cmds) },
 	{ &fam_ovs_ct_limit, ID_OVS_CT_LIMIT, ovs_ct_limit_cmds,
 	  ARRAY_SIZE(ovs_ct_limit_cmds) },
+#endif
+#if __has_include(<linux/tipc_netlink.h>)
+	{ &fam_tipc, ID_TIPC, tipc_cmds, ARRAY_SIZE(tipc_cmds) },
 #endif
 };
 
