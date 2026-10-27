@@ -220,16 +220,19 @@ expect "header text matches: ambiguous and aliased symbols are left to the heade
 expect "header text matches: nothing but the private switch stays unresolved" \
 	grep -q 'unresolved-uapi 0 / not-uapi-shaped 1 ' "$work/out"
 
-# A wrong value is caught in every shape: each row changes one definition.
+# A wrong value is caught in every shape.  One run changes a definition of each
+# shape, and the gate names every shim that no longer matches.
+sed -e 's/TEXT_LITERAL 5/TEXT_LITERAL 6/' -e 's/1 << 4/1 << 5/' \
+	-e 's/TEXT_NEGATIVE -4/TEXT_NEGATIVE -5/' -e 's/0x80000001U/0x80000002U/' \
+	"$work/text-header.good" > "$hdrs/linux/selftest_text.h"
+run_gate "NDA_DST 1" "${tier2[@]}"
+expect "header text differs: gate fails" [ "$rc" -ne 0 ]
 for row in \
-	"SELFTEST_TEXT_LITERAL|TEXT_LITERAL 5|TEXT_LITERAL 6|5 (=5)|6" \
-	"SELFTEST_TEXT_SHIFT|1 << 4|1 << 5|16 (=16)|32" \
-	"SELFTEST_TEXT_NEGATIVE|TEXT_NEGATIVE -4|TEXT_NEGATIVE -5|-4 (=-4)|-5" \
-	"SELFTEST_TEXT_HEX|0x80000001U|0x80000002U|0x80000001 (=-2147483647)|-2147483646"; do
-	IFS='|' read -r sym from to have want <<< "$row"
-	sed "s/$from/$to/" "$work/text-header.good" > "$hdrs/linux/selftest_text.h"
-	run_gate "NDA_DST 1" "${tier2[@]}"
-	expect "header text differs, $sym: gate fails" [ "$rc" -ne 0 ]
+	"SELFTEST_TEXT_LITERAL|5 (=5)|6" \
+	"SELFTEST_TEXT_SHIFT|16 (=16)|32" \
+	"SELFTEST_TEXT_NEGATIVE|-4 (=-4)|-5" \
+	"SELFTEST_TEXT_HEX|0x80000001 (=-2147483647)|-2147483646"; do
+	IFS='|' read -r sym have want <<< "$row"
 	expect "header text differs, $sym: names the symbol, both values and the header" \
 		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have, want $want (installed header linux/selftest_text.h)" "$work/err"
 done
