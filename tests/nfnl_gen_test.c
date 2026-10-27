@@ -1387,7 +1387,44 @@ static struct pslot flowtable_name[] = {
 	PS(2, true, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * cttimeout_nla_policy has the name (1), L3PROTO (2), L4PROTO (3) and DATA (4);
+ * the use count (5) is for replies.  NEW answers -EINVAL unless the request
+ * holds the first four.  GET wants the name unless it is a dump.  DELETE takes
+ * a name, and without one deletes every timeout, so its name is not marked.
+ * DEFAULT_SET wants L4PROTO and DATA and DEFAULT_GET wants L3PROTO and
+ * L4PROTO; neither reads a name.  DATA is parsed against the policy of the L4
+ * protocol, each of which is NLA_U32 timeouts numbered from 1, TCP's 11 the
+ * most, so one table of 11 serves them all.
+ */
+static struct pslot cttimeout_data[] = {
+	PS(1, false, 0), PS(2, false, 0), PS(3, false, 0), PS(4, false, 0),
+	PS(5, false, 0), PS(6, false, 0), PS(7, false, 0), PS(8, false, 0),
+	PS(9, false, 0), PS(10, false, 0), PS(11, false, 0),
+};
+static struct pslot cttimeout_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_BE16_ONEOF),
+	PS(3, true, NLA_KIND_U8_ONEOF),
+	PSN(4, true, cttimeout_data),
+};
+static struct pslot cttimeout_get[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+};
+static struct pslot cttimeout_del[] = {
+	PS(1, false, NLA_KIND_STRING_WORD),
+};
+static struct pslot cttimeout_default_set[] = {
+	PS(3, true, NLA_KIND_U8_ONEOF),
+	PSN(4, true, cttimeout_data),
+};
+static struct pslot cttimeout_default_get[] = {
+	PS(2, true, NLA_KIND_BE16_ONEOF),
+	PS(3, true, NLA_KIND_U8_ONEOF),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
+#define CTTIMEOUT	NFNL_SUBSYS_CTNETLINK_TIMEOUT
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1421,6 +1458,13 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETFLOWTABLE", NFTABLES, 23, flowtable_name, ARRAY_SIZE(flowtable_name) },
 	{ "NFT_MSG_DELFLOWTABLE", NFTABLES, 24, flowtable_name, ARRAY_SIZE(flowtable_name) },
 	{ "NFT_MSG_DESTROYFLOWTABLE", NFTABLES, 32, flowtable_name, ARRAY_SIZE(flowtable_name) },
+	{ "IPCTNL_MSG_TIMEOUT_NEW", CTTIMEOUT, 0, cttimeout_new, ARRAY_SIZE(cttimeout_new) },
+	{ "IPCTNL_MSG_TIMEOUT_GET", CTTIMEOUT, 1, cttimeout_get, ARRAY_SIZE(cttimeout_get) },
+	{ "IPCTNL_MSG_TIMEOUT_DELETE", CTTIMEOUT, 2, cttimeout_del, ARRAY_SIZE(cttimeout_del) },
+	{ "IPCTNL_MSG_TIMEOUT_DEFAULT_SET", CTTIMEOUT, 3, cttimeout_default_set,
+	  ARRAY_SIZE(cttimeout_default_set) },
+	{ "IPCTNL_MSG_TIMEOUT_DEFAULT_GET", CTTIMEOUT, 4, cttimeout_default_get,
+	  ARRAY_SIZE(cttimeout_default_get) },
 };
 
 /*

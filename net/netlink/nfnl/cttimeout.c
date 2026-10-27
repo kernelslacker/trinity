@@ -15,20 +15,6 @@
 #include "utils.h"
 
 /*
- * All five callbacks carry cttimeout_nla_policy, so one attribute table
- * serves them.  DEFAULT_SET needs L4PROTO and DATA and DEFAULT_GET L3PROTO
- * and L4PROTO; neither reads a NAME, because they act on the netns's
- * default timeouts for the protocol, not on a timeout object.
- */
-static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
-	{ IPCTNL_MSG_TIMEOUT_NEW,         "IPCTNL_MSG_TIMEOUT_NEW" },
-	{ IPCTNL_MSG_TIMEOUT_GET,         "IPCTNL_MSG_TIMEOUT_GET" },
-	{ IPCTNL_MSG_TIMEOUT_DELETE,      "IPCTNL_MSG_TIMEOUT_DELETE" },
-	{ IPCTNL_MSG_TIMEOUT_DEFAULT_SET, "IPCTNL_MSG_TIMEOUT_DEFAULT_SET" },
-	{ IPCTNL_MSG_TIMEOUT_DEFAULT_GET, "IPCTNL_MSG_TIMEOUT_DEFAULT_GET" },
-};
-
-/*
  * NEW, DEFAULT_SET and DEFAULT_GET look L4PROTO up with nf_ct_l4proto_find()
  * and answer -EOPNOTSUPP unless the tracker it returns has that l4proto.
  * ICMP, TCP and UDP always have a tracker, GRE, ICMPv6 and SCTP when the
@@ -60,71 +46,90 @@ static const unsigned int cttimeout_l3protos[] = { NFPROTO_IPV4, NFPROTO_IPV6 };
 static const char cttimeout_word[] = "trinity";
 
 /*
- * The per-L4 ids reuse the outer ones (CTA_TIMEOUT_TCP_SYN_SENT and
- * CTA_TIMEOUT_NAME are both 1), so one flat table holds both and the emitter
- * picks by position.
+ * DATA is parsed against the policy of the L4 protocol that L4PROTO picks,
+ * and each of those is a run of NLA_U32 timeouts numbered from 1: TCP has the
+ * most, 11, SCTP 9, UDP and GRE 2, and ICMP, ICMPv6 and the generic tracker
+ * 1 (the uapi header still has DCCP's 7, though the kernel no longer has the
+ * tracker).  An id past a policy's last is skipped, so one table of 11 serves
+ * them all, and no timeout is one that a handler needs.
  */
-static const struct nla_attr_spec cttimeout_attrs[] = {
-	/* Command level (nfnetlink_cttimeout.c). */
-	{ CTA_TIMEOUT_NAME,                  NLA_KIND_STRING_WORD, 0, 0,
-					     .word = cttimeout_word },
-	{ CTA_TIMEOUT_L3PROTO,               NLA_KIND_BE16_ONEOF, 0, 0,
-	  .oneof = cttimeout_l3protos, .n_oneof = ARRAY_SIZE(cttimeout_l3protos) },
-	{ CTA_TIMEOUT_L4PROTO,               NLA_KIND_U8_ONEOF, 0, 0,
-	  .oneof = cttimeout_l4protos, .n_oneof = ARRAY_SIZE(cttimeout_l4protos) },
-	{ CTA_TIMEOUT_DATA,                  NLA_KIND_NESTED, 0 },
+static const struct nla_attr_spec cttimeout_data_attrs[] = {
+	{ CTA_TIMEOUT_TCP_SYN_SENT,   NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_SYN_RECV,   NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_ESTABLISHED, NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_FIN_WAIT,   NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_CLOSE_WAIT, NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_LAST_ACK,   NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_TIME_WAIT,  NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_CLOSE,      NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_SYN_SENT2,  NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_RETRANS,    NLA_KIND_U32, 4 },
+	{ CTA_TIMEOUT_TCP_UNACK,      NLA_KIND_U32, 4 },
+};
 
-	/* Nested CTA_TIMEOUT_DATA payload — GENERIC arm
-	 * (nf_conntrack_proto_generic.c generic_timeout_nla_policy). */
-	{ CTA_TIMEOUT_GENERIC_TIMEOUT,       NLA_KIND_U32,    4 },
+/*
+ * All five callbacks carry cttimeout_nla_policy but read different parts of
+ * it, so each has a table of its own, which marks .required what the handler
+ * answers -EINVAL without.  NEW needs all four of its attributes.  GET needs
+ * the name unless it is a dump.  DELETE takes a name, and without one deletes
+ * every timeout, so its name is not marked.  DEFAULT_SET needs L4PROTO and
+ * DATA and DEFAULT_GET L3PROTO and L4PROTO; neither reads a NAME, because
+ * they act on the netns's default timeouts for the protocol, not on a
+ * timeout object.
+ */
+static const struct nla_attr_spec cttimeout_new_attrs[] = {
+	{ CTA_TIMEOUT_NAME,   NLA_KIND_STRING_WORD, 0, 0,
+	  .word = cttimeout_word, .required = true },
+	{ CTA_TIMEOUT_L3PROTO, NLA_KIND_BE16_ONEOF, 0, 0,
+	  .oneof = cttimeout_l3protos, .n_oneof = ARRAY_SIZE(cttimeout_l3protos),
+	  .required = true },
+	{ CTA_TIMEOUT_L4PROTO, NLA_KIND_U8_ONEOF, 0, 0,
+	  .oneof = cttimeout_l4protos, .n_oneof = ARRAY_SIZE(cttimeout_l4protos),
+	  .required = true },
+	{ CTA_TIMEOUT_DATA,   NLA_KIND_NESTED, 0, 0,
+	  cttimeout_data_attrs, ARRAY_SIZE(cttimeout_data_attrs),
+	  .required = true },
+};
 
-	/* TCP arm (nf_conntrack_proto_tcp.c tcp_timeout_nla_policy). */
-	{ CTA_TIMEOUT_TCP_SYN_SENT,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_SYN_RECV,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_ESTABLISHED,       NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_FIN_WAIT,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_CLOSE_WAIT,        NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_LAST_ACK,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_TIME_WAIT,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_CLOSE,             NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_SYN_SENT2,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_RETRANS,           NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_TCP_UNACK,             NLA_KIND_U32,    4 },
+static const struct nla_attr_spec cttimeout_get_attrs[] = {
+	{ CTA_TIMEOUT_NAME,   NLA_KIND_STRING_WORD, 0, 0,
+	  .word = cttimeout_word, .required = true },
+};
 
-	/* UDP arm (nf_conntrack_proto_udp.c udp_timeout_nla_policy). */
-	{ CTA_TIMEOUT_UDP_UNREPLIED,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_UDP_REPLIED,           NLA_KIND_U32,    4 },
+static const struct nla_attr_spec cttimeout_delete_attrs[] = {
+	{ CTA_TIMEOUT_NAME,   NLA_KIND_STRING_WORD, 0, 0,
+	  .word = cttimeout_word },
+};
 
-	/* ICMP arm (nf_conntrack_proto_icmp.c icmp_timeout_nla_policy). */
-	{ CTA_TIMEOUT_ICMP_TIMEOUT,          NLA_KIND_U32,    4 },
+static const struct nla_attr_spec cttimeout_default_set_attrs[] = {
+	{ CTA_TIMEOUT_L4PROTO, NLA_KIND_U8_ONEOF, 0, 0,
+	  .oneof = cttimeout_l4protos, .n_oneof = ARRAY_SIZE(cttimeout_l4protos),
+	  .required = true },
+	{ CTA_TIMEOUT_DATA,   NLA_KIND_NESTED, 0, 0,
+	  cttimeout_data_attrs, ARRAY_SIZE(cttimeout_data_attrs),
+	  .required = true },
+};
 
-	/* DCCP ids: the uapi header still defines them, but a kernel
-	 * without the DCCP tracker answers an L4PROTO of IPPROTO_DCCP
-	 * with -EOPNOTSUPP before parsing any of these. */
-	{ CTA_TIMEOUT_DCCP_REQUEST,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_RESPOND,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_PARTOPEN,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_OPEN,             NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_CLOSEREQ,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_CLOSING,          NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_DCCP_TIMEWAIT,         NLA_KIND_U32,    4 },
+static const struct nla_attr_spec cttimeout_default_get_attrs[] = {
+	{ CTA_TIMEOUT_L3PROTO, NLA_KIND_BE16_ONEOF, 0, 0,
+	  .oneof = cttimeout_l3protos, .n_oneof = ARRAY_SIZE(cttimeout_l3protos),
+	  .required = true },
+	{ CTA_TIMEOUT_L4PROTO, NLA_KIND_U8_ONEOF, 0, 0,
+	  .oneof = cttimeout_l4protos, .n_oneof = ARRAY_SIZE(cttimeout_l4protos),
+	  .required = true },
+};
 
-	/* SCTP arm (nf_conntrack_proto_sctp.c sctp_timeout_nla_policy).
-	 * HEARTBEAT_ACKED is still validated by the kernel policy even
-	 * though the state slot is no longer consumed. */
-	{ CTA_TIMEOUT_SCTP_CLOSED,           NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_COOKIE_WAIT,      NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_COOKIE_ECHOED,    NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_ESTABLISHED,      NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_SHUTDOWN_SENT,    NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_SHUTDOWN_RECD,    NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_SHUTDOWN_ACK_SENT, NLA_KIND_U32,   4 },
-	{ CTA_TIMEOUT_SCTP_HEARTBEAT_SENT,   NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_SCTP_HEARTBEAT_ACKED,  NLA_KIND_U32,    4 },
-
-	/* GRE arm (nf_conntrack_proto_gre.c gre_timeout_nla_policy). */
-	{ CTA_TIMEOUT_GRE_UNREPLIED,         NLA_KIND_U32,    4 },
-	{ CTA_TIMEOUT_GRE_REPLIED,           NLA_KIND_U32,    4 },
+static const struct nfnl_cmd_grammar cttimeout_cmds[] = {
+	{ IPCTNL_MSG_TIMEOUT_NEW,         "IPCTNL_MSG_TIMEOUT_NEW", false,
+	  cttimeout_new_attrs, ARRAY_SIZE(cttimeout_new_attrs) },
+	{ IPCTNL_MSG_TIMEOUT_GET,         "IPCTNL_MSG_TIMEOUT_GET", false,
+	  cttimeout_get_attrs, ARRAY_SIZE(cttimeout_get_attrs) },
+	{ IPCTNL_MSG_TIMEOUT_DELETE,      "IPCTNL_MSG_TIMEOUT_DELETE", false,
+	  cttimeout_delete_attrs, ARRAY_SIZE(cttimeout_delete_attrs) },
+	{ IPCTNL_MSG_TIMEOUT_DEFAULT_SET, "IPCTNL_MSG_TIMEOUT_DEFAULT_SET", false,
+	  cttimeout_default_set_attrs, ARRAY_SIZE(cttimeout_default_set_attrs) },
+	{ IPCTNL_MSG_TIMEOUT_DEFAULT_GET, "IPCTNL_MSG_TIMEOUT_DEFAULT_GET", false,
+	  cttimeout_default_get_attrs, ARRAY_SIZE(cttimeout_default_get_attrs) },
 };
 
 struct nfnl_subsys_grammar sub_cttimeout = {
@@ -132,6 +137,4 @@ struct nfnl_subsys_grammar sub_cttimeout = {
 	.subsys_id = NFNL_SUBSYS_CTNETLINK_TIMEOUT,
 	.cmds = cttimeout_cmds,
 	.n_cmds = ARRAY_SIZE(cttimeout_cmds),
-	.attrs = cttimeout_attrs,
-	.n_attrs = ARRAY_SIZE(cttimeout_attrs),
 };
