@@ -39,6 +39,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 		return 2;
 	case NLA_KIND_BE32_MASK:
 	case NLA_KIND_BE32_MAX:
+	case NLA_KIND_BE32_ONEOF:
 		return 4;
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING:
@@ -84,6 +85,7 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 		break;
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
+	case NLA_KIND_BE32_ONEOF:
 		v = spec->oneof[rnd_modulo_u32(spec->n_oneof)];
 		break;
 	default:	/* the mask kinds */
@@ -134,6 +136,7 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	case NLA_KIND_BE32_MAX:
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
+	case NLA_KIND_BE32_ONEOF:
 		spec_fill_bounded(p, len, spec);
 		break;
 	default:

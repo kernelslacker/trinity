@@ -49,6 +49,7 @@ enum nla_kind {
 	 * the handler's reject arm still sees traffic. */
 	NLA_KIND_U8_ONEOF,
 	NLA_KIND_BE16_ONEOF,
+	NLA_KIND_BE32_ONEOF,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.

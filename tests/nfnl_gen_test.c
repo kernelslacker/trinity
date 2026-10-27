@@ -174,6 +174,13 @@ static const unsigned int l4protos[] = { 1, 6, 17, 47, 58, 132, 255 };
 static const unsigned int l3protos[] = { 2, 10 };
 
 /*
+ * nfnl_compat_get_rcu() reads NFTA_COMPAT_TYPE as target = (nla_get_be32() ==
+ * htonl(1)): 1 is a target and any other number a match, so 0 and 1 reach
+ * both arms.
+ */
+static const unsigned int compat_types[] = { 0, 1 };
+
+/*
  * The top-level attributes whose handlers accept a few values and no others,
  * read as a byte or in network byte order, with the values each accepts.
  * The ids are the attribute enums' positions.
@@ -185,6 +192,9 @@ static const struct bounded_slot oneof_slots[] = {
 	  NLA_KIND_BE16_ONEOF, 0, l3protos, ARRAY_SIZE(l3protos) },
 	{ "CTA_TIMEOUT_L4PROTO", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 3,
 	  NLA_KIND_U8_ONEOF, 0, l4protos, ARRAY_SIZE(l4protos) },
+	/* nfnl_compat_policy_get types TYPE NLA_U32 */
+	{ "NFTA_COMPAT_TYPE", NFNL_SUBSYS_NFT_COMPAT, 3,
+	  NLA_KIND_BE32_ONEOF, 0, compat_types, ARRAY_SIZE(compat_types) },
 };
 
 static bool has_value(const struct bounded_slot *slot, unsigned int v)
