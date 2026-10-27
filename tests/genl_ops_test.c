@@ -486,8 +486,8 @@ extern struct genl_family_grammar fam_nfsd;
 
 /* fs/nfsd/netlink.c: the nfsd_*_nl_policy tables */
 static struct slot nfsd_fslocation[] = {
-	S_STR(NFSD_A_FSLOCATION_HOST, 0),
-	S_STR(NFSD_A_FSLOCATION_PATH, 0),
+	S_STR(NFSD_A_FSLOCATION_HOST, 0, .required = true),
+	S_STR(NFSD_A_FSLOCATION_PATH, 0, .required = true),
 };
 static struct slot nfsd_fslocations[] = {
 	S_NEST(NFSD_A_FSLOCATIONS_LOCATION, nfsd_fslocation),
@@ -498,10 +498,10 @@ static struct slot nfsd_auth_flavor[] = {
 };
 static struct slot nfsd_svc_export[] = {
 	S_U64(NFSD_A_SVC_EXPORT_SEQNO),
-	S_STR(NFSD_A_SVC_EXPORT_CLIENT, 0),
-	S_STR(NFSD_A_SVC_EXPORT_PATH, 0),
+	S_STR(NFSD_A_SVC_EXPORT_CLIENT, 0, .required = true),
+	S_STR(NFSD_A_SVC_EXPORT_PATH, 0, .required = true),
 	S_FLAG(NFSD_A_SVC_EXPORT_NEGATIVE),
-	S_U64(NFSD_A_SVC_EXPORT_EXPIRY),
+	S_U64(NFSD_A_SVC_EXPORT_EXPIRY, .required = true),
 	S_U32(NFSD_A_SVC_EXPORT_ANON_UID),
 	S_U32(NFSD_A_SVC_EXPORT_ANON_GID),
 	S_NEST(NFSD_A_SVC_EXPORT_FSLOCATIONS, nfsd_fslocations),
@@ -513,24 +513,24 @@ static struct slot nfsd_svc_export[] = {
 };
 static struct slot nfsd_expkey[] = {
 	S_U64(NFSD_A_EXPKEY_SEQNO),
-	S_STR(NFSD_A_EXPKEY_CLIENT, 0),
-	S_U8(NFSD_A_EXPKEY_FSIDTYPE),
-	S_BLOB(NFSD_A_EXPKEY_FSID, 0, 0xffff),
+	S_STR(NFSD_A_EXPKEY_CLIENT, 0, .required = true),
+	S_U8(NFSD_A_EXPKEY_FSIDTYPE, .required = true),
+	S_BLOB(NFSD_A_EXPKEY_FSID, 0, 0xffff, .required = true),
 	S_FLAG(NFSD_A_EXPKEY_NEGATIVE),
-	S_U64(NFSD_A_EXPKEY_EXPIRY),
+	S_U64(NFSD_A_EXPKEY_EXPIRY, .required = true),
 	S_STR(NFSD_A_EXPKEY_PATH, 0),
 };
 static struct slot nfsd_version[] = {
-	S_U32(NFSD_A_VERSION_MAJOR),
+	S_U32(NFSD_A_VERSION_MAJOR, .required = true),
 	S_U32(NFSD_A_VERSION_MINOR),
 	S_FLAG(NFSD_A_VERSION_ENABLED),
 };
 static struct slot nfsd_sock[] = {
-	S_BLOB(NFSD_A_SOCK_ADDR, 0, 0xffff),
-	S_STR(NFSD_A_SOCK_TRANSPORT_NAME, 0),
+	S_BLOB(NFSD_A_SOCK_ADDR, 0, 0xffff, .required = true),
+	S_STR(NFSD_A_SOCK_TRANSPORT_NAME, 0, .required = true),
 };
 static struct slot nfsd_threads_set[] = {
-	S_U32(NFSD_A_SERVER_THREADS),
+	S_U32(NFSD_A_SERVER_THREADS, .required = true),
 	S_U32(NFSD_A_SERVER_GRACETIME),
 	S_U32(NFSD_A_SERVER_LEASETIME),
 	S_STR(NFSD_A_SERVER_SCOPE, 0),

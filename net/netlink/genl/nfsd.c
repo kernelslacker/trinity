@@ -20,10 +20,15 @@
  * svc_export and a blob in expkey.  The *_FLAGS and XPRTSEC words are
  * NLA_POLICY_MASK: 0x3ffff, one bit for each of the 18 export flags, on both
  * FLAGS words, and 0x7, the three xprtsec modes, on XPRTSEC.
+ *
+ * nfsd_nl_parse_one_export() answers an export with no CLIENT, PATH or EXPIRY
+ * -EINVAL, nfsd_nl_parse_one_expkey() a key with no CLIENT, FSIDTYPE, FSID or
+ * EXPIRY, and nfsd_nl_parse_fslocations() a location without both HOST and
+ * PATH, so those are marked required.
  */
 static const struct nla_attr_spec nfsd_fslocation_attrs[] = {
-	{ NFSD_A_FSLOCATION_HOST,	NLA_KIND_STRING, 32, 1 },
-	{ NFSD_A_FSLOCATION_PATH,	NLA_KIND_STRING, 64, 1 },
+	{ NFSD_A_FSLOCATION_HOST,	NLA_KIND_STRING, 32, 1, .required = true },
+	{ NFSD_A_FSLOCATION_PATH,	NLA_KIND_STRING, 64, 1, .required = true },
 };
 
 static const struct nla_attr_spec nfsd_fslocations_attrs[] = {
@@ -38,10 +43,10 @@ static const struct nla_attr_spec nfsd_auth_flavor_attrs[] = {
 
 static const struct nla_attr_spec nfsd_svc_export_attrs[] = {
 	{ NFSD_A_SVC_EXPORT_SEQNO,	NLA_KIND_U64,    8 },
-	{ NFSD_A_SVC_EXPORT_CLIENT,	NLA_KIND_STRING, 32, 1 },
-	{ NFSD_A_SVC_EXPORT_PATH,	NLA_KIND_STRING, 64, 1 },
+	{ NFSD_A_SVC_EXPORT_CLIENT,	NLA_KIND_STRING, 32, 1, .required = true },
+	{ NFSD_A_SVC_EXPORT_PATH,	NLA_KIND_STRING, 64, 1, .required = true },
 	{ NFSD_A_SVC_EXPORT_NEGATIVE,	NLA_KIND_FLAG,   0 },
-	{ NFSD_A_SVC_EXPORT_EXPIRY,	NLA_KIND_U64,    8 },
+	{ NFSD_A_SVC_EXPORT_EXPIRY,	NLA_KIND_U64,    8, .required = true },
 	{ NFSD_A_SVC_EXPORT_ANON_UID,	NLA_KIND_U32,    4 },
 	{ NFSD_A_SVC_EXPORT_ANON_GID,	NLA_KIND_U32,    4 },
 	{ NFSD_A_SVC_EXPORT_FSLOCATIONS, NLA_KIND_NESTED, 0, 0,
@@ -56,25 +61,29 @@ static const struct nla_attr_spec nfsd_svc_export_attrs[] = {
 
 static const struct nla_attr_spec nfsd_expkey_attrs[] = {
 	{ NFSD_A_EXPKEY_SEQNO,		NLA_KIND_U64,    8 },
-	{ NFSD_A_EXPKEY_CLIENT,		NLA_KIND_STRING, 32, 1 },
-	{ NFSD_A_EXPKEY_FSIDTYPE,	NLA_KIND_U8,     1 },
-	{ NFSD_A_EXPKEY_FSID,		NLA_KIND_BINARY, 32 },
+	{ NFSD_A_EXPKEY_CLIENT,		NLA_KIND_STRING, 32, 1, .required = true },
+	{ NFSD_A_EXPKEY_FSIDTYPE,	NLA_KIND_U8,     1, .required = true },
+	{ NFSD_A_EXPKEY_FSID,		NLA_KIND_BINARY, 32, .required = true },
 	{ NFSD_A_EXPKEY_NEGATIVE,	NLA_KIND_FLAG,   0 },
-	{ NFSD_A_EXPKEY_EXPIRY,		NLA_KIND_U64,    8 },
+	{ NFSD_A_EXPKEY_EXPIRY,		NLA_KIND_U64,    8, .required = true },
 	{ NFSD_A_EXPKEY_PATH,		NLA_KIND_STRING, 64, 1 },
 };
 
+/* nfsd_nl_version_set_doit() skips a version that has no MAJOR. */
 static const struct nla_attr_spec nfsd_version_attrs[] = {
-	{ NFSD_A_VERSION_MAJOR,		NLA_KIND_U32,    4 },
+	{ NFSD_A_VERSION_MAJOR,		NLA_KIND_U32,    4, .required = true },
 	{ NFSD_A_VERSION_MINOR,		NLA_KIND_U32,    4 },
 	{ NFSD_A_VERSION_ENABLED,	NLA_KIND_FLAG,   0 },
 };
 
 /* ADDR is a sockaddr_in or a sockaddr_in6, which nfsd_nl_listener_set_doit()
- * sizes by its family. */
+ * sizes by its family.  nfsd_nl_validate_listeners() answers a socket
+ * without both ADDR and TRANSPORT_NAME -EINVAL. */
 static const struct nla_attr_spec nfsd_sock_attrs[] = {
-	{ NFSD_A_SOCK_ADDR,		NLA_KIND_BINARY_FIXED2, 28, 16 },
-	{ NFSD_A_SOCK_TRANSPORT_NAME,	NLA_KIND_STRING, 16, 1 },
+	{ NFSD_A_SOCK_ADDR,		NLA_KIND_BINARY_FIXED2, 28, 16,
+	  .required = true },
+	{ NFSD_A_SOCK_TRANSPORT_NAME,	NLA_KIND_STRING, 16, 1,
+	  .required = true },
 };
 
 /*
@@ -82,10 +91,13 @@ static const struct nla_attr_spec nfsd_sock_attrs[] = {
  * has no slot for costs an -EINVAL, and every namespace starts at 1: a
  * cmd takes only the ids of its own.  The two the replies add, SOCK_RPCBIND
  * and POOL_MODE_NPOOLS, are not in a request policy.  FH_KEY is exactly
- * 16 bytes, the rest u32 or NLA_NUL_STRING.
+ * 16 bytes, the rest u32 or NLA_NUL_STRING.  THREADS_SET answers -EINVAL
+ * without THREADS.  The cmds that take one attribute, POOL_MODE_SET and the
+ * three UNLOCKs, want it, and a table of one is drawn from by every
+ * request that has an attribute, so they mark nothing.
  */
 static const struct nla_attr_spec nfsd_threads_set_attrs[] = {
-	{ NFSD_A_SERVER_THREADS,	NLA_KIND_U32,    4 },
+	{ NFSD_A_SERVER_THREADS,	NLA_KIND_U32,    4, .required = true },
 	{ NFSD_A_SERVER_GRACETIME,	NLA_KIND_U32,    4 },
 	{ NFSD_A_SERVER_LEASETIME,	NLA_KIND_U32,    4 },
 	{ NFSD_A_SERVER_SCOPE,		NLA_KIND_STRING, 16, 1 },
