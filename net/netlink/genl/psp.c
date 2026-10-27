@@ -15,8 +15,9 @@
  * bytes for the 128-bit versions and 32 for the 256-bit ones.
  */
 static const struct nla_attr_spec psp_keys_attrs[] = {
-	{ PSP_A_KEYS_KEY,		NLA_KIND_BINARY_FIXED2, 32, 16 },
-	{ PSP_A_KEYS_SPI,		NLA_KIND_U32,    4 },
+	{ PSP_A_KEYS_KEY,		NLA_KIND_BINARY_FIXED2, 32, 16,
+	  .required = true },
+	{ PSP_A_KEYS_SPI,		NLA_KIND_U32,    4, .required = true },
 };
 
 /*
@@ -25,29 +26,38 @@ static const struct nla_attr_spec psp_keys_attrs[] = {
  * only the ids of its own.  What the replies carry, the version
  * capabilities, the association list, RX_KEY and the counters, is not in a
  * request policy.  NSID is an s32, a device id is at least 1,
- * VERSIONS_ENA a mask of the four versions and VERSION at most 3.
+ * VERSIONS_ENA a mask of the four versions and VERSION at most 3.  The
+ * pre_doits answer -EINVAL without the DEV_ID or SOCK_FD they look up, and
+ * an assoc whose socket has no device yet without ASSOC_DEV_ID; the doits
+ * do without VERSION, TX_KEY and the KEY and SPI in it, or the DEV_IFINDEX
+ * a device is associated with, so those are marked required.
  */
 static const struct nla_attr_spec psp_dev_id_attrs[] = {
 	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec psp_dev_set_attrs[] = {
-	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
 	{ PSP_A_DEV_PSP_VERSIONS_ENA,	NLA_KIND_U32_MASK, 0xf },
 };
 
 static const struct nla_attr_spec psp_rx_assoc_attrs[] = {
-	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0 },
-	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
+	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0,
+	  .required = true },
+	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4, .required = true },
 };
 
 static const struct nla_attr_spec psp_tx_assoc_attrs[] = {
-	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0 },
+	{ PSP_A_ASSOC_DEV_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0,
+	  .required = true },
 	{ PSP_A_ASSOC_TX_KEY,		NLA_KIND_NESTED, 0, 0,
-	  psp_keys_attrs, ARRAY_SIZE(psp_keys_attrs) },
-	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4 },
+	  psp_keys_attrs, ARRAY_SIZE(psp_keys_attrs), .required = true },
+	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4, .required = true },
 };
 
 static const struct nla_attr_spec psp_get_stats_attrs[] = {
@@ -55,8 +65,9 @@ static const struct nla_attr_spec psp_get_stats_attrs[] = {
 };
 
 static const struct nla_attr_spec psp_dev_assoc_attrs[] = {
-	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ PSP_A_DEV_IFINDEX,		NLA_KIND_U32,    4 },
+	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+	{ PSP_A_DEV_IFINDEX,		NLA_KIND_U32,    4, .required = true },
 	{ PSP_A_DEV_NSID,		NLA_KIND_U32,    4 },
 };
 

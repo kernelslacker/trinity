@@ -828,43 +828,47 @@ static struct cmd_policy sunrpc_cmds[] = {
 extern struct genl_family_grammar fam_psp;
 
 /* net/psp/psp-nl-gen.c: the psp_*_nl_policy tables, whose device ids are
- * NLA_POLICY_MIN(NLA_U32, 1) */
+ * NLA_POLICY_MIN(NLA_U32, 1).  The pre_doits of net/psp/psp_nl.c answer
+ * -EINVAL without the DEV_ID or the SOCK_FD they look up, and an assoc
+ * whose socket has no device yet without ASSOC_DEV_ID; the doits do the
+ * same without ASSOC_VERSION, TX_KEY and the KEY and SPI in it, and the
+ * DEV_IFINDEX a device is (dis)associated with. */
 static struct slot psp_keys[] = {
-	S_BLOB(PSP_A_KEYS_KEY, 0, 0xffff),
-	S_U32(PSP_A_KEYS_SPI),
+	S_BLOB(PSP_A_KEYS_KEY, 0, 0xffff, .required = true),
+	S_U32(PSP_A_KEYS_SPI, .required = true),
 };
 static struct slot psp_dev_get[] = {
 	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX),
 };
 static struct slot psp_dev_set[] = {
-	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX),
+	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX, .required = true),
 	S_U32_MASK(PSP_A_DEV_PSP_VERSIONS_ENA, 0xf),
 };
 static struct slot psp_key_rotate[] = {
 	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX),
 };
 static struct slot psp_rx_assoc[] = {
-	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX),
-	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3),
-	S_U32(PSP_A_ASSOC_SOCK_FD),
+	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX, .required = true),
+	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3, .required = true),
+	S_U32(PSP_A_ASSOC_SOCK_FD, .required = true),
 };
 static struct slot psp_tx_assoc[] = {
-	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX),
-	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3),
-	S_NEST(PSP_A_ASSOC_TX_KEY, psp_keys),
-	S_U32(PSP_A_ASSOC_SOCK_FD),
+	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX, .required = true),
+	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3, .required = true),
+	S_NEST(PSP_A_ASSOC_TX_KEY, psp_keys, .required = true),
+	S_U32(PSP_A_ASSOC_SOCK_FD, .required = true),
 };
 static struct slot psp_get_stats[] = {
 	S_U32_RANGE(PSP_A_STATS_DEV_ID, 1, UINT32_MAX),
 };
 static struct slot psp_dev_assoc[] = {
-	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX),
-	S_U32(PSP_A_DEV_IFINDEX),
+	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX, .required = true),
+	S_U32(PSP_A_DEV_IFINDEX, .required = true),
 	S_U32(PSP_A_DEV_NSID),
 };
 static struct slot psp_dev_disassoc[] = {
-	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX),
-	S_U32(PSP_A_DEV_IFINDEX),
+	S_U32_RANGE(PSP_A_DEV_ID, 1, UINT32_MAX, .required = true),
+	S_U32(PSP_A_DEV_IFINDEX, .required = true),
 	S_U32(PSP_A_DEV_NSID),
 };
 /* The dumpits of DEV_GET and GET_STATS have no policy, so take nothing. */
