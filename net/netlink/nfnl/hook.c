@@ -5,6 +5,7 @@
  * for NFPROTO_NETDEV.
  */
 
+#include <linux/netfilter.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_hook.h>
 
@@ -17,14 +18,26 @@ static const struct nfnl_cmd_grammar hook_cmds[] = {
 };
 
 /*
+ * HOOKNUM is NLA_POLICY_MAX(NLA_BE32, 255) in the policy, but the hook arrays
+ * behind it are shorter, and nfnl_hook_entries_head() answers a number past
+ * one -EINVAL.  IPv4, IPv6 and bridge, the families the body generator names
+ * that it knows, hold NF_INET_NUMHOOKS entries; ARP and netdev hold fewer.
+ * So the grammar draws the inet hooks; the numbers from there up to 255,
+ * which only that refusal answers, go undrawn.
+ */
+static const unsigned int hook_hooknums[] = {
+	NF_INET_PRE_ROUTING, NF_INET_LOCAL_IN, NF_INET_FORWARD,
+	NF_INET_LOCAL_OUT, NF_INET_POST_ROUTING,
+};
+
+/*
  * The request path reads only HOOKNUM and DEV; PRIORITY, FUNCTION_NAME and
  * MODULE_NAME are reply-only (nfnl_hook_dump_one()) and never read by the
- * handler.  HOOKNUM is NLA_POLICY_MAX(NLA_BE32, 255) in the policy; the hook
- * arrays behind it hold NF_INET_NUMHOOKS entries or fewer, so most of that
- * range is refused one level down, in nfnl_hook_entries_head().
+ * handler.
  */
 static const struct nla_attr_spec hook_attrs[] = {
-	{ NFNLA_HOOK_HOOKNUM,		NLA_KIND_BE32_MAX, 255 },
+	{ NFNLA_HOOK_HOOKNUM,		NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = hook_hooknums, .n_oneof = ARRAY_SIZE(hook_hooknums) },
 	{ NFNLA_HOOK_PRIORITY,		NLA_KIND_U32,    4 },
 	{ NFNLA_HOOK_DEV,		NLA_KIND_STRING, 15 },
 	{ NFNLA_HOOK_FUNCTION_NAME,	NLA_KIND_STRING, 127 },

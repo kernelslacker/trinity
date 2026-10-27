@@ -140,8 +140,6 @@ struct bounded_slot {
 static const struct bounded_slot slots[] = {
 	/* nfnl_acct_policy, NFACCT_F_QUOTA: both quota bits */
 	{ "NFACCT_FLAGS", NFNL_SUBSYS_ACCT, 5, NLA_KIND_BE32_MASK, 0x3 },
-	/* nfnl_hook_nla_policy */
-	{ "NFNLA_HOOK_HOOKNUM", NFNL_SUBSYS_HOOK, 1, NLA_KIND_BE32_MAX, 255 },
 	/* nfnl_compat_policy_get */
 	{ "NFTA_COMPAT_REV", NFNL_SUBSYS_NFT_COMPAT, 2, NLA_KIND_BE32_MAX, 255 },
 	/* nfqa_cfg_policy, NFQA_CFG_F_MAX - 1 */
@@ -181,6 +179,14 @@ static const unsigned int l3protos[] = { 2, 10 };
 static const unsigned int compat_types[] = { 0, 1 };
 
 /*
+ * nfnl_hook_entries_head() answers a hook number past the family's array
+ * -EINVAL.  IPv4, IPv6 and bridge, the families gen_nfnl_body() names that it
+ * knows, have NF_INET_NUMHOOKS entries; nfnl_hook_nla_policy only caps the
+ * number at 255.
+ */
+static const unsigned int hooknums[] = { 0, 1, 2, 3, 4 };
+
+/*
  * The top-level attributes whose handlers accept a few values and no others,
  * read as a byte or in network byte order, with the values each accepts.
  * The ids are the attribute enums' positions.
@@ -192,6 +198,9 @@ static const struct bounded_slot oneof_slots[] = {
 	  NLA_KIND_BE16_ONEOF, 0, l3protos, ARRAY_SIZE(l3protos) },
 	{ "CTA_TIMEOUT_L4PROTO", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 3,
 	  NLA_KIND_U8_ONEOF, 0, l4protos, ARRAY_SIZE(l4protos) },
+	/* nfnl_hook_nla_policy: NLA_POLICY_MAX(NLA_BE32, 255) */
+	{ "NFNLA_HOOK_HOOKNUM", NFNL_SUBSYS_HOOK, 1,
+	  NLA_KIND_BE32_ONEOF, 0, hooknums, ARRAY_SIZE(hooknums) },
 	/* nfnl_compat_policy_get types TYPE NLA_U32 */
 	{ "NFTA_COMPAT_TYPE", NFNL_SUBSYS_NFT_COMPAT, 3,
 	  NLA_KIND_BE32_ONEOF, 0, compat_types, ARRAY_SIZE(compat_types) },
