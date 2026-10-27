@@ -124,6 +124,44 @@ struct compat_ipc_perm_old {
 	uint16_t uid, gid, cuid, cgid, mode, seq;
 };
 
+/*
+ * Give the object an IPC_SET's @buf names the caller's own uid and gid and
+ * a readable mode, as semctl(), msgctl() and shmctl() do theirs: a zeroed
+ * buffer hands the object to uid 0 with mode 0, which ipc_update_perm()
+ * takes from its owner and which locks it out of every later operation.
+ * The command in *@cmd picks the layout, through IPC_64 for a compat call
+ * (compat_ksys_old_semctl() and its msg and shm twins): with it,
+ * compat_ipc64_perm, whose uid, gid and mode lie where the native
+ * struct's do; without it, the old compat_ipc_perm, which packs them into
+ * 16 bits and can carry them only when they fit.
+ */
+static void ipc_set_perm(struct syscallrecord *rec, void *buf,
+			 unsigned long *cmd)
+{
+	static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
+	uid_t uid = getuid();
+	gid_t gid = getgid();
+	unsigned short mode =
+		mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
+
+	if (rec->do32bit && uid <= USHRT_MAX && gid <= USHRT_MAX &&
+	    RAND_BOOL()) {
+		struct compat_ipc_perm_old *perm = buf;
+
+		perm->uid = uid;
+		perm->gid = gid;
+		perm->mode = mode;
+	} else {
+		struct ipc_perm *perm = buf;
+
+		perm->uid = uid;
+		perm->gid = gid;
+		perm->mode = mode;
+		if (rec->do32bit)
+			*cmd |= IPC_64;
+	}
+}
+
 static void sanitise_ipc_semctl(struct syscallrecord *rec)
 {
 	/*
@@ -135,7 +173,6 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 	 * of the buffer a command takes, which the call has to reach too.
 	 * The other commands ignore what the slot holds.
 	 */
-	static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
 	unsigned long *slot, val = rnd_modulo_u32(SEMVMX + 1);
 	size_t len = 0;
 	int cmd;
@@ -178,37 +215,7 @@ static void sanitise_ipc_semctl(struct syscallrecord *rec)
 		for (i = 0; i < SEMCTL_ARRAY_SLOTS; i++)
 			arr[i] = rnd_modulo_u32(SEMVMX + 1);
 	} else if (cmd == IPC_SET) {
-		uid_t uid = getuid();
-		gid_t gid = getgid();
-		unsigned short mode =
-			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
-
-		/*
-		 * As semctl()'s IPC_SET: without these the call fires EPERM
-		 * or installs mode 0, which locks the set out of every later
-		 * operation.  compat_ksys_old_semctl() takes the layout from
-		 * IPC_64 in the command: with it, compat_ipc64_perm, whose
-		 * uid, gid and mode lie where the native struct's do; without
-		 * it, the old compat_ipc_perm, which packs them into 16 bits
-		 * and can carry them only when they fit.
-		 */
-		if (rec->do32bit && uid <= USHRT_MAX && gid <= USHRT_MAX &&
-		    RAND_BOOL()) {
-			struct compat_ipc_perm_old *perm =
-				(struct compat_ipc_perm_old *) val;
-
-			perm->uid = uid;
-			perm->gid = gid;
-			perm->mode = mode;
-		} else {
-			struct semid_ds *ds = (struct semid_ds *) val;
-
-			ds->sem_perm.uid = uid;
-			ds->sem_perm.gid = gid;
-			ds->sem_perm.mode = mode;
-			if (rec->do32bit)
-				rec->a4 |= IPC_64;
-		}
+		ipc_set_perm(rec, (void *) val, &rec->a4);
 	}
 
 	slot = (unsigned long *) get_writable_struct(sizeof(*slot));
@@ -324,6 +331,8 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
+		if (cmd == IPC_SET)
+			ipc_set_perm(rec, buf, &rec->a3);
 		rec->a5 = (unsigned long) buf;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 		break;
@@ -435,6 +444,8 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 		if (!buf)
 			break;
 		memset(buf, 0, sizeof(*buf));
+		if (cmd == IPC_SET)
+			ipc_set_perm(rec, buf, &rec->a3);
 		rec->a5 = (unsigned long) buf;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(*buf));
 		break;
