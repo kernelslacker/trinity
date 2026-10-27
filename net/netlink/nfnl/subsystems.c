@@ -110,6 +110,30 @@ const struct nfnl_subsys_grammar *nfnl_lookup_by_subsys(unsigned char subsys_id)
 	return NULL;
 }
 
+const struct nla_attr_spec *nfnl_cmd_attrs(const struct nfnl_subsys_grammar *sub,
+					   unsigned char cmd, size_t *nr_out)
+{
+	unsigned int i;
+
+	if (sub == NULL)
+		return NULL;
+
+	for (i = 0; i < sub->n_cmds; i++) {
+		if (sub->cmds[i].cmd != cmd)
+			continue;
+		if (sub->cmds[i].attrs != NULL) {
+			*nr_out = sub->cmds[i].n_attrs;
+			return sub->cmds[i].attrs;
+		}
+		break;
+	}
+
+	if (sub->n_attrs == 0)
+		return NULL;
+	*nr_out = sub->n_attrs;
+	return sub->attrs;
+}
+
 const struct nfnl_subsys_grammar *nfnl_pick_subsys(void)
 {
 	unsigned int real_count = 0;

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 
 #include "netlink-attrs.h"
 
@@ -37,6 +38,16 @@ struct nfnl_cmd_grammar {
 	 * inside a NFNL_MSG_BATCH_BEGIN ... NFNL_MSG_BATCH_END batch and
 	 * answers -EINVAL to it anywhere else. */
 	bool batch;
+
+	/* The attributes the cmd's own policy takes, when that is narrower
+	 * than the subsystem's table or types an id differently from it: a
+	 * request for the cmd draws only from these.  nfnetlink parses the
+	 * attributes leniently, so an id the policy has no slot for is
+	 * ignored rather than refused and the table decides what a request
+	 * carries, not what the kernel turns away.  NULL keeps the
+	 * subsystem's table. */
+	const struct nla_attr_spec *attrs;
+	unsigned int n_attrs;
 };
 
 struct nfnl_subsys_grammar {
@@ -69,6 +80,15 @@ struct nfnl_subsys_grammar {
  * legacy random-attr generator path.
  */
 const struct nfnl_subsys_grammar *nfnl_lookup_by_subsys(unsigned char subsys_id);
+
+/*
+ * The attribute table a request for cmd of sub draws from, with its length
+ * in *nr_out: the cmd's own table, else the subsystem's.  NULL when neither
+ * exists, or sub is NULL, which sends the caller to the legacy
+ * random-attribute path.
+ */
+const struct nla_attr_spec *nfnl_cmd_attrs(const struct nfnl_subsys_grammar *sub,
+					   unsigned char cmd, size_t *nr_out);
 
 /*
  * Pick a random subsystem from the registry.  Returns NULL only if the

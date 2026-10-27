@@ -25,6 +25,8 @@
 
 size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 			     const struct nla_attr_spec *table, size_t nr_specs);
+const struct nla_attr_spec *pick_spec_table(int protocol, const struct nlmsghdr *nlh,
+					    size_t *nr_out);
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
 #define ROUNDS		50000
@@ -117,6 +119,81 @@ static void check_cttimeout_commands(void)
 		fprintf(stderr, "cttimeout: cmd %u picked %u times in %u draws\n",
 			cmd, picked[cmd], ROUNDS);
 		BUG("nfnl grammar: cttimeout leaves out a command the kernel registers");
+	}
+}
+
+/*
+ * nfnl_cmd_attrs() gives a cmd the table its grammar names for it, and a cmd
+ * with none, or one the grammar does not list, the subsystem's.  A subsystem
+ * with neither, or none at all, has nothing for a request to draw from.
+ */
+static void check_cmd_attrs_lookup(void)
+{
+	static const struct nla_attr_spec flat[] = {
+		{ 1, NLA_KIND_U32, 4 },
+	};
+	static const struct nla_attr_spec own[] = {
+		{ 2, NLA_KIND_U32, 4 },
+		{ 3, NLA_KIND_U32, 4 },
+	};
+	static const struct nfnl_cmd_grammar cmds[] = {
+		{ 0, "OWN", false, own, ARRAY_SIZE(own) },
+		{ 1, "FLAT" },
+	};
+	const struct nfnl_subsys_grammar sub = {
+		.name = "lookup",
+		.cmds = cmds,
+		.n_cmds = ARRAY_SIZE(cmds),
+		.attrs = flat,
+		.n_attrs = ARRAY_SIZE(flat),
+	};
+	const struct nfnl_subsys_grammar bare = {
+		.name = "bare",
+		.cmds = cmds + 1,
+		.n_cmds = 1,
+	};
+	size_t n = 0;
+
+	if (nfnl_cmd_attrs(&sub, 0, &n) != own || n != ARRAY_SIZE(own))
+		BUG("nfnl grammar: a cmd with a table of its own does not draw from it");
+	if (nfnl_cmd_attrs(&sub, 1, &n) != flat || n != ARRAY_SIZE(flat))
+		BUG("nfnl grammar: a cmd with no table of its own does not draw from the subsystem's");
+	n = 0;
+	if (nfnl_cmd_attrs(&sub, 9, &n) != flat || n != ARRAY_SIZE(flat))
+		BUG("nfnl grammar: a cmd the grammar does not list does not draw from the subsystem's");
+	if (nfnl_cmd_attrs(&bare, 1, &n) != NULL)
+		BUG("nfnl grammar: a subsystem with no table has attributes to draw from");
+	if (nfnl_cmd_attrs(NULL, 0, &n) != NULL)
+		BUG("nfnl grammar: a missing subsystem has attributes to draw from");
+}
+
+/*
+ * The generator draws a message's attributes from the table its nlmsg_type
+ * names: for every cmd of every registered subsystem, and for one it does not
+ * list, pick_spec_table() must return what nfnl_cmd_attrs() does.
+ */
+static void check_spec_table_dispatch(void)
+{
+	unsigned int id, i;
+
+	for (id = 0; id < 256; id++) {
+		const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(id);
+
+		if (sub == NULL)
+			continue;
+		for (i = 0; i <= sub->n_cmds; i++) {
+			unsigned char cmd = i < sub->n_cmds ? sub->cmds[i].cmd : 255;
+			struct nlmsghdr nlh = { .nlmsg_type = (id << 8) | cmd };
+			size_t want = 0, got = 0;
+			const struct nla_attr_spec *table;
+
+			table = pick_spec_table(NETLINK_NETFILTER, &nlh, &got);
+			if (table != nfnl_cmd_attrs(sub, cmd, &want) || (table && got != want)) {
+				fprintf(stderr, "%s: cmd %u draws from another table than its grammar names\n",
+					sub->name, cmd);
+				BUG("nfnl grammar: the generator draws from the wrong table for a cmd");
+			}
+		}
 	}
 }
 
@@ -826,6 +903,8 @@ void nfnl_gen_self_check(void)
 	unsigned int i;
 
 	check_no_rejected_attr();
+	check_cmd_attrs_lookup();
+	check_spec_table_dispatch();
 	check_cttimeout_commands();
 	for (i = 0; i < ARRAY_SIZE(slots); i++)
 		check_bounded_slot(&slots[i]);

@@ -460,11 +460,11 @@ size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
  * Return the nla_attr_spec table for the message whose header is nlh and
  * whose body is already built, setting *nr_out to its element count.
  * NULL means the family is not spec-aware and the caller should fall back
- * to the legacy flat-attr generator.  Netfilter dispatches by NFNL_SUBSYS_x
- * nibble of nlmsg_type via the per-subsys grammar registry; generic netlink
- * dispatches by runtime-resolved family_id via the genl registry, and then
- * by the cmd and dump flag the message carries, since the policies are the
- * cmd's.
+ * to the legacy flat-attr generator.  Netfilter dispatches by the
+ * NFNL_SUBSYS_x byte of nlmsg_type via the per-subsys grammar registry, and
+ * then by the cmd byte; generic netlink dispatches by runtime-resolved
+ * family_id via the genl registry, and then by the cmd and dump flag the
+ * message carries.  Both do so because the policies are the cmd's.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,
@@ -492,16 +492,9 @@ const struct nla_attr_spec *pick_spec_table(int protocol,
 	case NETLINK_XFRM:
 		*nr_out = xfrma_specs_n;
 		return xfrma_specs;
-	case NETLINK_NETFILTER: {
-		const struct nfnl_subsys_grammar *sub;
-
-		sub = nfnl_lookup_by_subsys(nlmsg_type >> 8);
-		if (sub != NULL && sub->n_attrs > 0) {
-			*nr_out = sub->n_attrs;
-			return sub->attrs;
-		}
-		return NULL;
-	}
+	case NETLINK_NETFILTER:
+		return nfnl_cmd_attrs(nfnl_lookup_by_subsys(nlmsg_type >> 8),
+				      nlmsg_type & 0xff, nr_out);
 	case NETLINK_SOCK_DIAG:
 		*nr_out = inet_diag_specs_n;
 		return inet_diag_specs;
