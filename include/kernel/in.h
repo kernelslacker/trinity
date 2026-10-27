@@ -45,9 +45,3 @@
 #ifndef IPPROTO_ETHERNET
 #define IPPROTO_ETHERNET        143
 #endif
-#ifndef IPPROTO_AG
-#define IPPROTO_AG              3
-#endif
-#ifndef IPPROTO_NSH
-#define IPPROTO_NSH             140
-#endif
