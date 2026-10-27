@@ -2477,6 +2477,53 @@ static void call_writable_struct_reachable(void)
 		BUG("arg coupling: the low pool vended more than it holds");
 }
 
+/* A sanitiser builds each call in this_child()'s record, and a compat
+ * call's kernel reads each pointer slot as its low 32 bits, so every
+ * buffer drawn while that record is compat comes from the low pool, below
+ * 4 GiB, in 16-byte slots or a page-aligned one, the pool's own size at
+ * most; a native call's, and the parent's, come from the writable pool.
+ * A request for the whole pool leaves the next one to start over at its
+ * base. */
+static void call_buffers_follow_abi(void)
+{
+	unsigned long a, b;
+
+	fake_this_child = NULL;
+	a = (unsigned long) get_writable_struct(24);
+	if (!range_in_writable_pool(a, 24))
+		BUG("arg coupling: the parent's buffer is not in the writable pool");
+
+	memset(&mm_child.syscall, 0, sizeof(mm_child.syscall));
+	fake_this_child = &mm_child;
+	a = (unsigned long) get_writable_struct(24);
+	b = (unsigned long) get_writable_page_aligned(page_size);
+	if (!range_in_writable_pool(a, 24) ||
+	    !range_in_writable_pool(b, page_size) || (b & ~PAGE_MASK) != 0)
+		BUG("arg coupling: a native call's buffer is not in the writable pool");
+
+#ifdef ARCH_IS_BIARCH
+	{
+		unsigned long base;
+
+		mm_child.syscall.do32bit = true;
+		base = (unsigned long) get_writable_address(WRITABLE_POOL_BYTES);
+		a = (unsigned long) get_writable_struct(24);
+		b = (unsigned long) get_writable_struct(24);
+		if (base == 0 || base + WRITABLE_POOL_BYTES > (1UL << 32))
+			BUG("arg coupling: a compat call's buffer lies where its slots cannot reach");
+		if (a != base || b != base + 32)
+			BUG("arg coupling: the low pool does not vend in 16-byte slots from its base");
+		a = (unsigned long) get_writable_page_aligned(page_size);
+		if (a < base || a - base > WRITABLE_POOL_BYTES - page_size ||
+		    (a & ~PAGE_MASK) != 0)
+			BUG("arg coupling: a compat call's page-aligned buffer is not a low pool page");
+		if (get_writable_address(WRITABLE_POOL_BYTES + 1) != NULL)
+			BUG("arg coupling: the low pool vended more than it holds");
+	}
+#endif
+	fake_this_child = NULL;
+}
+
 static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
 				   unsigned long advice, bool compat)
 {
@@ -4855,6 +4902,7 @@ void arg_coupling_self_check(void)
 	process_madvise_guard_install_held();
 	pools_end_at_a_guard_page();
 	call_writable_struct_reachable();
+	call_buffers_follow_abi();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	vet_final_asked_first();

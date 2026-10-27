@@ -65,7 +65,7 @@ static unsigned char *writable_pool;
  * vetted.  low_pool_init() makes this one MAP_32BIT, in the first 2 GiB,
  * with the same size, guard page and tracking.  Its cursor lives in this
  * file's .data, which each child's first advance makes its own (COW).
- * NULL where it could not be made, and on an arch with no compat calls.
+ * NULL on an arch with no compat calls.
  */
 static unsigned char *low_pool;
 static unsigned long low_pool_cursor;
@@ -106,19 +106,40 @@ static void *pool_bump(unsigned char *pool, unsigned long *cursor_p,
 	return pool + cursor;
 }
 
-void * get_writable_address(unsigned long size)
+/*
+ * The pool a buffer for the current call comes from, and the cursor into
+ * it.  Sanitisers build each call in this_child()'s record, so while that
+ * record is compat every buffer they draw, in a struct, an iovec or a
+ * relocation, comes from the low pool, where the slots' low 32 bits reach
+ * it.  A native call's, and the parent's, come from the writable pool.
+ */
+static unsigned char *call_pool(unsigned long **cursor_p)
 {
 	struct childdata *child = this_child();
 	static unsigned long parent_cursor;
 
-	return pool_bump(writable_pool,
-			 child != NULL ? &child->writable_pool_cursor
-				       : &parent_cursor,
-			 size);
+	if (child == NULL) {
+		*cursor_p = &parent_cursor;
+		return writable_pool;
+	}
+	if (child->syscall.do32bit) {
+		*cursor_p = &low_pool_cursor;
+		return low_pool;
+	}
+	*cursor_p = &child->writable_pool_cursor;
+	return writable_pool;
+}
+
+void * get_writable_address(unsigned long size)
+{
+	unsigned long *cursor_p;
+	unsigned char *pool = call_pool(&cursor_p);
+
+	return pool_bump(pool, cursor_p, size);
 }
 
 /*
- * Page-aligned bump allocation from the writable pool.
+ * Page-aligned bump allocation from the call's pool (call_pool()).
  *
  * get_writable_address() returns 16-byte-aligned slots (max_align_t),
  * which is fine for arbitrary structs but wrong for buffers a kernel
@@ -142,13 +163,12 @@ void * get_writable_address(unsigned long size)
  */
 void * get_writable_page_aligned(unsigned long size)
 {
-	struct childdata *child = this_child();
 	unsigned long cursor, aligned_offset, next_cursor;
-	static unsigned long parent_cursor;
 	unsigned long *cursor_p;
+	unsigned char *pool = call_pool(&cursor_p);
 	unsigned long page_mask = (unsigned long)page_size - 1;
 
-	if (writable_pool == NULL)
+	if (pool == NULL)
 		return NULL;
 
 	if (size == 0)
@@ -157,8 +177,6 @@ void * get_writable_page_aligned(unsigned long size)
 	if (size > WRITABLE_POOL_BYTES)
 		return NULL;
 
-	cursor_p = (child != NULL) ? &child->writable_pool_cursor
-				   : &parent_cursor;
 	cursor = *cursor_p;
 
 	aligned_offset = (cursor + page_mask) & ~page_mask;
@@ -174,7 +192,7 @@ void * get_writable_page_aligned(unsigned long size)
 	next_cursor = (aligned_offset + size + (WRITABLE_POOL_ALIGN - 1))
 		      & ~(WRITABLE_POOL_ALIGN - 1);
 	*cursor_p = next_cursor;
-	return writable_pool + aligned_offset;
+	return pool + aligned_offset;
 }
 
 void * get_non_null_address(void)
@@ -812,6 +830,8 @@ void low_pool_init(void)
 {
 #if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
 	low_pool = map_guarded_pool(WRITABLE_POOL_BYTES, MAP_32BIT, __func__);
+	if (low_pool == NULL)
+		exit(EXIT_FAILURE);
 #endif
 }
 

@@ -24,6 +24,11 @@ void *get_address(void);
 void *get_non_null_address(void);
 /* Size of the pool get_writable_address() and its siblings vend from. */
 #define WRITABLE_POOL_BYTES   (1UL << 20)   /* 1 MiB */
+/*
+ * @size bytes of scratch from the pool the current call reaches: the low
+ * pool while this_child()'s record is compat, since its kernel reads each
+ * pointer slot as its low 32 bits, and the writable pool otherwise.
+ */
 void *get_writable_address(unsigned long size);
 /*
  * As get_writable_address(), but returns a page-aligned start with a
@@ -119,9 +124,8 @@ void writable_pool_init(void);
  * One-shot parent-side allocator for the low pool: the writable pool's
  * twin, with its size, guard page and tracking, but made MAP_32BIT, below
  * 2 GiB, on the one arch with compat calls.  Called from init_shm before
- * any child forks.  A failure leaves compat calls without the buffers it
- * would have given them, not trinity without a pool it cannot run
- * without, so it is not fatal.
+ * any child forks.  Exits on mmap failure, as writable_pool_init() does:
+ * every buffer a compat call is built with comes from it.
  */
 void low_pool_init(void);
 unsigned long get_len(void);
