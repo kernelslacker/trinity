@@ -211,6 +211,71 @@ static const struct nla_attr_spec nft_deltable_attrs[] = {
 };
 
 /*
+ * The chain commands.  NEWCHAIN reads the table and the chain's name of
+ * nft_chain_policy, and answers -EINVAL if either is missing (a handle or an
+ * id may stand in for the name, which the grammar leaves out); GETCHAIN,
+ * DELCHAIN and DESTROYCHAIN need both as well, and read nothing else a request
+ * can usefully carry: a delete's HOOK names the devices of a netdev chain, and
+ * DESTROYCHAIN answers it -EOPNOTSUPP.
+ *
+ * NEWCHAIN makes a base chain only if HOOK holds a hook number and a priority
+ * (nft_chain_parse_hook() answers -ENOENT unless it has both), and COUNTERS
+ * must hold both counters (nft_stats_alloc()), so both nests have tables of
+ * their own.  The number must be below NFT_MAX_HOOKS and in the chain type's
+ * hook_mask: the five inet hooks are the ones every IPv4, IPv6 and bridge
+ * filter chain has, ARP and netdev chains have fewer, and what they refuse
+ * keeps the reject arm in view.  The handlers read the number, the priority
+ * and POLICY in network byte order, and POLICY must be NF_DROP or NF_ACCEPT,
+ * anything else being -EINVAL.  A TYPE the kernel has no chain type of
+ * costs it a request_module() on each such name, so it is one of the three it
+ * has.
+ */
+static const unsigned int nft_hooknums[] = {
+	NF_INET_PRE_ROUTING, NF_INET_LOCAL_IN, NF_INET_FORWARD,
+	NF_INET_LOCAL_OUT, NF_INET_POST_ROUTING,
+};
+
+static const unsigned int nft_policies[] = { NF_DROP, NF_ACCEPT };
+
+static const char *const nft_chain_types[] = { "filter", "nat", "route" };
+
+static const struct nla_attr_spec nft_chain_hook_attrs[] = {
+	{ NFTA_HOOK_HOOKNUM,   NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = nft_hooknums, .n_oneof = ARRAY_SIZE(nft_hooknums),
+	  .required = true },
+	{ NFTA_HOOK_PRIORITY,  NLA_KIND_U32, 4, .required = true },
+};
+
+static const struct nla_attr_spec nft_chain_counters_attrs[] = {
+	{ NFTA_COUNTER_BYTES,   NLA_KIND_U64, 8, .required = true },
+	{ NFTA_COUNTER_PACKETS, NLA_KIND_U64, 8, .required = true },
+};
+
+static const struct nla_attr_spec nft_newchain_attrs[] = {
+	{ NFTA_CHAIN_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_CHAIN_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_CHAIN_HOOK,     NLA_KIND_NESTED, 0, 0,
+	  nft_chain_hook_attrs, ARRAY_SIZE(nft_chain_hook_attrs) },
+	{ NFTA_CHAIN_POLICY,   NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = nft_policies, .n_oneof = ARRAY_SIZE(nft_policies) },
+	{ NFTA_CHAIN_TYPE,     NLA_KIND_STRING_ONEOF, 0, 0,
+	  .words = nft_chain_types, .n_words = ARRAY_SIZE(nft_chain_types) },
+	{ NFTA_CHAIN_COUNTERS, NLA_KIND_NESTED, 0, 0,
+	  nft_chain_counters_attrs, ARRAY_SIZE(nft_chain_counters_attrs) },
+	{ NFTA_CHAIN_FLAGS,    NLA_KIND_BE32_MASK, NFT_CHAIN_FLAGS },
+	{ NFTA_CHAIN_USERDATA, NLA_KIND_BINARY, 64 },
+};
+
+static const struct nla_attr_spec nft_chain_name_attrs[] = {
+	{ NFTA_CHAIN_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_CHAIN_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -223,10 +288,14 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_deltable_attrs, ARRAY_SIZE(nft_deltable_attrs) },
 	{ NFT_MSG_DESTROYTABLE,      "NFT_MSG_DESTROYTABLE", true,
 	  nft_deltable_attrs, ARRAY_SIZE(nft_deltable_attrs) },
-	{ NFT_MSG_NEWCHAIN,          "NFT_MSG_NEWCHAIN", true },
-	{ NFT_MSG_GETCHAIN,          "NFT_MSG_GETCHAIN" },
-	{ NFT_MSG_DELCHAIN,          "NFT_MSG_DELCHAIN", true },
-	{ NFT_MSG_DESTROYCHAIN,      "NFT_MSG_DESTROYCHAIN", true },
+	{ NFT_MSG_NEWCHAIN,          "NFT_MSG_NEWCHAIN", true,
+	  nft_newchain_attrs, ARRAY_SIZE(nft_newchain_attrs) },
+	{ NFT_MSG_GETCHAIN,          "NFT_MSG_GETCHAIN", false,
+	  nft_chain_name_attrs, ARRAY_SIZE(nft_chain_name_attrs) },
+	{ NFT_MSG_DELCHAIN,          "NFT_MSG_DELCHAIN", true,
+	  nft_chain_name_attrs, ARRAY_SIZE(nft_chain_name_attrs) },
+	{ NFT_MSG_DESTROYCHAIN,      "NFT_MSG_DESTROYCHAIN", true,
+	  nft_chain_name_attrs, ARRAY_SIZE(nft_chain_name_attrs) },
 	{ NFT_MSG_NEWRULE,           "NFT_MSG_NEWRULE", true },
 	{ NFT_MSG_GETRULE,           "NFT_MSG_GETRULE" },
 	{ NFT_MSG_GETRULE_RESET,     "NFT_MSG_GETRULE_RESET" },
@@ -265,10 +334,10 @@ static const unsigned char nftables_families[] = {
 
 /*
  * NFTA_* attrs of the namespaces whose commands name no table of their own.
- * Their ids overlap (NFTA_CHAIN_TABLE and NFTA_RULE_TABLE are both 1), so an
+ * Their ids overlap (NFTA_RULE_TABLE and NFTA_SET_TABLE are both 1), so an
  * entry meets whatever slot the picked command's policy has at that id:
  * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
- * length-checks typed ones.  The chain, obj and flowtable nests are bare
+ * length-checks typed ones.  The obj and flowtable nests are bare
  * NLA_NESTED parsed by the handlers; NFTA_RULE_EXPRESSIONS is an
  * NLA_POLICY_NESTED_ARRAY, which nla_validate walks element by element.  The
  * FLAGS words are NLA_POLICY_MASK in their policies, each with the flag
@@ -277,15 +346,6 @@ static const unsigned char nftables_families[] = {
  * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*CHAIN */
-	{ NFTA_CHAIN_TABLE,          NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_CHAIN_HANDLE,         NLA_KIND_U64,    8 },
-	{ NFTA_CHAIN_NAME,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_CHAIN_HOOK,           NLA_KIND_NESTED, 0 },
-	{ NFTA_CHAIN_POLICY,         NLA_KIND_U32,    4 },
-	{ NFTA_CHAIN_TYPE,           NLA_KIND_STRING, 16 },
-	{ NFTA_CHAIN_FLAGS,          NLA_KIND_BE32_MASK, NFT_CHAIN_FLAGS },
-	{ NFTA_CHAIN_USERDATA,       NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*RULE */
 	{ NFTA_RULE_TABLE,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
 	{ NFTA_RULE_CHAIN,           NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },

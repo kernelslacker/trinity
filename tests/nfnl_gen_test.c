@@ -263,9 +263,15 @@ static const unsigned int compat_types[] = { 0, 1 };
  * nfnl_hook_entries_head() answers a hook number past the family's array
  * -EINVAL.  IPv4, IPv6 and bridge, the families gen_nfnl_body() names that it
  * knows, have NF_INET_NUMHOOKS entries; nfnl_hook_nla_policy only caps the
- * number at 255.
+ * number at 255.  nft_chain_parse_hook() takes the same five of an IPv4, IPv6
+ * or bridge filter chain, below NFT_MAX_HOOKS and in the chain type's
+ * hook_mask.
  */
 static const unsigned int hooknums[] = { 0, 1, 2, 3, 4 };
+
+/* nf_tables_newchain() takes NF_DROP and NF_ACCEPT as a base chain's policy
+ * and answers any other -EINVAL. */
+static const unsigned int policies[] = { 0, 1 };
 
 /*
  * The top-level attributes whose handlers accept a few values and no others,
@@ -285,6 +291,11 @@ static const struct bounded_slot oneof_slots[] = {
 	/* nfnl_compat_policy_get types TYPE NLA_U32 */
 	{ "NFTA_COMPAT_TYPE", NFNL_SUBSYS_NFT_COMPAT, 3,
 	  NLA_KIND_BE32_ONEOF, 0, compat_types, ARRAY_SIZE(compat_types) },
+	/* nft_hook_policy and nft_chain_policy type both NLA_U32 */
+	{ "NFTA_HOOK_HOOKNUM", NFNL_SUBSYS_NFTABLES, 1,
+	  NLA_KIND_BE32_ONEOF, 0, hooknums, ARRAY_SIZE(hooknums) },
+	{ "NFTA_CHAIN_POLICY", NFNL_SUBSYS_NFTABLES, 5,
+	  NLA_KIND_BE32_ONEOF, 0, policies, ARRAY_SIZE(policies) },
 };
 
 static bool has_value(const struct bounded_slot *slot, unsigned int v)
@@ -594,12 +605,65 @@ static void check_name_specs(const struct nla_attr_spec *table, size_t n_specs,
 }
 
 /*
- * A NLA_KIND_STRING_ONEOF attribute is one of the spec's words, NUL-terminated,
- * on seven draws in eight and random lowercase letters as long as a word on the
- * eighth.  Each word is about 4400 of the 20000 draws, the two of the same
- * length among them, and a tenth of the draws is a wide floor that a word
- * which only the random letters ever spell does not reach.
+ * A NLA_KIND_STRING_ONEOF spec draws one of its words, NUL-terminated, on
+ * seven draws in eight, and on the eighth random lowercase letters as long as
+ * some word.  Each word is 0.875 of the draws shared by the n words, and half
+ * of that is a floor that a word which only the random letters ever spell does
+ * not reach.
  */
+static void check_word_draws(const char *name, const struct nla_attr_spec *spec)
+{
+	unsigned int round, i, in_list = 0, seen[32] = { 0 };
+
+	if (spec->n_words == 0 || spec->n_words > ARRAY_SIZE(seen))
+		BUG("nfnl grammar: a word list is empty or too long to judge");
+
+	for (round = 0; round < SLOT_ROUNDS; round++) {
+		unsigned char buf[64];
+		struct nlattr nla;
+		size_t plen;
+		bool matched = false, sized = false;
+
+		memset(buf, 0, sizeof(buf));
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1) == 0)
+			BUG("nfnl grammar: a word list emitted nothing");
+		memcpy(&nla, buf, sizeof(nla));
+		plen = nla.nla_len - NLA_HDRLEN;
+		if (nla.nla_type != spec->type || plen == 0 ||
+		    buf[NLA_HDRLEN + plen - 1] != '\0')
+			BUG("nfnl grammar: a word from a list is not a NUL-terminated string");
+
+		for (i = 0; i < spec->n_words; i++) {
+			if (plen != strlen(spec->words[i]) + 1)
+				continue;
+			sized = true;
+			if (memcmp(buf + NLA_HDRLEN, spec->words[i], plen) == 0) {
+				matched = true;
+				seen[i]++;
+			}
+		}
+		if (matched) {
+			in_list++;
+			continue;
+		}
+		if (!sized)
+			BUG("nfnl grammar: a word from a list is as long as none of them");
+		for (i = 0; i + 1 < plen; i++) {
+			if (buf[NLA_HDRLEN + i] < 'a' || buf[NLA_HDRLEN + i] > 'z')
+				BUG("nfnl grammar: a word from a list draws something but lowercase letters");
+		}
+	}
+
+	check_slot_fraction(name, in_list);
+	for (i = 0; i < spec->n_words; i++) {
+		if (seen[i] >= SLOT_ROUNDS * 7 / 8 / spec->n_words / 2)
+			continue;
+		fprintf(stderr, "%s: \"%s\" drawn %u times in %u\n",
+			name, spec->words[i], seen[i], SLOT_ROUNDS);
+		BUG("nfnl grammar: a word of a list is hardly drawn");
+	}
+}
+
 static void check_string_oneof(void)
 {
 	static const char *const words[] = { "ab", "cde", "fghi", "jk" };
@@ -609,47 +673,8 @@ static void check_string_oneof(void)
 		.words = words,
 		.n_words = ARRAY_SIZE(words),
 	};
-	unsigned int round, i, in_list = 0, seen[ARRAY_SIZE(words)] = { 0 };
 
-	for (round = 0; round < SLOT_ROUNDS; round++) {
-		unsigned char buf[64];
-		struct nlattr nla;
-		size_t plen;
-		bool matched = false;
-
-		memset(buf, 0, sizeof(buf));
-		if (append_specced_nlattr(buf, 0, sizeof(buf), &spec, 1) == 0)
-			BUG("nfnl grammar: a word list emitted nothing");
-		memcpy(&nla, buf, sizeof(nla));
-		plen = nla.nla_len - NLA_HDRLEN;
-		if (nla.nla_type != 7 || buf[NLA_HDRLEN + plen - 1] != '\0')
-			BUG("nfnl grammar: a word from a list is not a NUL-terminated string");
-		for (i = 0; i + 1 < plen; i++) {
-			if (buf[NLA_HDRLEN + i] < 'a' || buf[NLA_HDRLEN + i] > 'z')
-				BUG("nfnl grammar: a word from a list draws something but lowercase letters");
-		}
-
-		for (i = 0; i < ARRAY_SIZE(words); i++) {
-			if (plen == strlen(words[i]) + 1 &&
-			    memcmp(buf + NLA_HDRLEN, words[i], plen) == 0) {
-				matched = true;
-				seen[i]++;
-			}
-		}
-		if (matched)
-			in_list++;
-		else if (plen != 3 && plen != 4 && plen != 5)
-			BUG("nfnl grammar: a word from a list is as long as none of them");
-	}
-
-	check_slot_fraction("the word list", in_list);
-	for (i = 0; i < ARRAY_SIZE(words); i++) {
-		if (seen[i] >= SLOT_ROUNDS / 10)
-			continue;
-		fprintf(stderr, "the word list: \"%s\" drawn %u times in %u\n",
-			words[i], seen[i], SLOT_ROUNDS);
-		BUG("nfnl grammar: a word of a list is hardly drawn");
-	}
+	check_word_draws("the word list", &spec);
 }
 
 /*
@@ -1036,6 +1061,39 @@ static struct pslot table_del[] = {
 	PS(1, false, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nft_chain_policy has the table (1), the handle (2), the name (3), HOOK (4),
+ * POLICY (5), TYPE (7), COUNTERS (8), the flags (10), the id (11) and the user
+ * data (12).  NEWCHAIN reads all but the handle and the id, which the grammar
+ * leaves out; the other three commands read the table and the name.  HOOK is
+ * nft_hook_policy's hook number (1) and priority (2), which a base chain
+ * needs both of, and COUNTERS nft_counter_policy's bytes (1) and packets (2),
+ * of which nft_stats_alloc() wants both; the hook's device (3 and 4) is only
+ * for a netdev chain, and a chain of another family answers one -EOPNOTSUPP.
+ */
+static struct pslot chain_hook[] = {
+	PS(1, true, NLA_KIND_BE32_ONEOF),
+	PS(2, true, 0),
+};
+static struct pslot chain_counters[] = {
+	PS(1, true, 0),
+	PS(2, true, 0),
+};
+static struct pslot chain_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(3, true, NLA_KIND_STRING_WORD),
+	PSN(4, false, chain_hook),
+	PS(5, false, NLA_KIND_BE32_ONEOF),
+	PS(7, false, NLA_KIND_STRING_ONEOF),
+	PSN(8, false, chain_counters),
+	PS(10, false, NLA_KIND_BE32_MASK),
+	PS(12, false, 0),
+};
+static struct pslot chain_name[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(3, true, NLA_KIND_STRING_WORD),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1043,7 +1101,64 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETTABLE", NFTABLES, 1, table_get, ARRAY_SIZE(table_get) },
 	{ "NFT_MSG_DELTABLE", NFTABLES, 2, table_del, ARRAY_SIZE(table_del) },
 	{ "NFT_MSG_DESTROYTABLE", NFTABLES, 26, table_del, ARRAY_SIZE(table_del) },
+	{ "NFT_MSG_NEWCHAIN", NFTABLES, 3, chain_new, ARRAY_SIZE(chain_new) },
+	{ "NFT_MSG_GETCHAIN", NFTABLES, 4, chain_name, ARRAY_SIZE(chain_name) },
+	{ "NFT_MSG_DELCHAIN", NFTABLES, 5, chain_name, ARRAY_SIZE(chain_name) },
+	{ "NFT_MSG_DESTROYCHAIN", NFTABLES, 27, chain_name, ARRAY_SIZE(chain_name) },
 };
+
+/*
+ * The names a handler looks up in a registry, which a word list must hold and
+ * no others: nft_chain_filter.c, nft_chain_nat.c and nft_chain_route.c
+ * register the chain types "filter", "nat" and "route", and any other name
+ * costs nf_tables_chain_type_lookup() a request_module().
+ */
+struct word_slot {
+	const char *name;
+	unsigned char subsys;
+	unsigned char cmd;	/* the cmd whose own table holds the spec */
+	unsigned short id;
+	const char *const *words;
+	unsigned int n_words;
+};
+
+static const char *const chain_types[] = { "filter", "nat", "route" };
+
+static const struct word_slot word_slots[] = {
+	{ "NFTA_CHAIN_TYPE", NFTABLES, 3, 7, chain_types, ARRAY_SIZE(chain_types) },
+};
+
+static void check_word_slot(const struct word_slot *slot)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(slot->subsys);
+	const struct nfnl_cmd_grammar *cmd = sub ? find_cmd(sub, slot->cmd) : NULL;
+	const struct nla_attr_spec *spec = NULL;
+	unsigned int i, j, matched = 0;
+
+	if (cmd == NULL || cmd->attrs == NULL)
+		BUG("nfnl grammar: a word list's command has no table of its own");
+	for (i = 0; i < cmd->n_attrs; i++) {
+		if (cmd->attrs[i].type == slot->id)
+			spec = &cmd->attrs[i];
+	}
+	if (spec == NULL || spec->kind != NLA_KIND_STRING_ONEOF ||
+	    spec->n_words != slot->n_words) {
+		fprintf(stderr, "%s: no word list of %u words at id %u\n",
+			slot->name, slot->n_words, slot->id);
+		BUG("nfnl grammar: a name is not drawn from the registry's words");
+	}
+	for (i = 0; i < spec->n_words; i++) {
+		for (j = 0; j < slot->n_words; j++) {
+			if (strcmp(spec->words[i], slot->words[j]) == 0)
+				matched |= 1U << j;
+		}
+	}
+	if (matched != (1U << slot->n_words) - 1) {
+		fprintf(stderr, "%s: the words are not the registry's\n", slot->name);
+		BUG("nfnl grammar: a name is not drawn from the registry's words");
+	}
+	check_word_draws(slot->name, spec);
+}
 
 #define BATCH_ROUNDS	60000
 
@@ -1354,4 +1469,6 @@ void nfnl_gen_self_check(void)
 	check_nftables_batches(word);
 	for (i = 0; i < ARRAY_SIZE(cmd_rows); i++)
 		check_cmd_row(&cmd_rows[i]);
+	for (i = 0; i < ARRAY_SIZE(word_slots); i++)
+		check_word_slot(&word_slots[i]);
 }
