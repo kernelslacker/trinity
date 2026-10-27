@@ -64,6 +64,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_DATAPATH	721
 #define ID_OVS_VPORT	722
 #define ID_OVS_METER	723
+#define ID_OVS_CT_LIMIT	724
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1157,6 +1158,22 @@ static struct cmd_policy ovs_meter_cmds[] = {
 	P_CMD(OVS_METER_CMD_DEL, ovs_meter),
 	P_CMD(OVS_METER_CMD_GET, ovs_meter),
 };
+
+extern struct genl_family_grammar fam_ovs_ct_limit;
+
+/*
+ * net/openvswitch/conntrack.c: ct_limit_policy.  ZONE_LIMIT is typed a nest
+ * but holds a packed array of struct ovs_zone_limit, not attributes, and a
+ * nest that is not empty takes four bytes at least.
+ */
+static struct slot ovs_ct_limit[] = {
+	S_BLOB(OVS_CT_LIMIT_ATTR_ZONE_LIMIT, NLA_HDRLEN, 0xffff),
+};
+static struct cmd_policy ovs_ct_limit_cmds[] = {
+	P_CMD(OVS_CT_LIMIT_CMD_SET, ovs_ct_limit),
+	P_CMD(OVS_CT_LIMIT_CMD_DEL, ovs_ct_limit),
+	P_CMD(OVS_CT_LIMIT_CMD_GET, ovs_ct_limit),
+};
 #endif
 
 static struct policy_family policy_families[] = {
@@ -1198,6 +1215,8 @@ static struct policy_family policy_families[] = {
 	  ARRAY_SIZE(ovs_vport_cmds) },
 	{ &fam_ovs_meter, ID_OVS_METER, ovs_meter_cmds,
 	  ARRAY_SIZE(ovs_meter_cmds) },
+	{ &fam_ovs_ct_limit, ID_OVS_CT_LIMIT, ovs_ct_limit_cmds,
+	  ARRAY_SIZE(ovs_ct_limit_cmds) },
 #endif
 };
 

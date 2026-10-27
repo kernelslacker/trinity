@@ -7,6 +7,7 @@
 
 #if __has_include(<linux/openvswitch.h>)
 
+#include <linux/netlink.h>
 #include <linux/openvswitch.h>
 
 #include "netlink-genl-families.h"
@@ -421,10 +422,12 @@ static const struct genl_cmd_grammar ovs_ct_limit_cmds[] = {
  * carries an array of struct ovs_zone_limit (12 bytes each: zone_id +
  * limit + count).  The kernel-side parser in net/openvswitch/conntrack.c
  * walks the payload as a packed array, so a binary payload sized to a
- * small multiple of the struct size is what we want to emit.
+ * small multiple of the struct size is what we want to emit.  The policy
+ * types ZONE_LIMIT a nest, which takes no bytes or NLA_HDRLEN at least,
+ * so a payload of one to three bytes is refused.
  */
 static const struct nla_attr_spec ovs_ct_limit_attrs[] = {
-	{ OVS_CT_LIMIT_ATTR_ZONE_LIMIT,	NLA_KIND_BINARY, sizeof(struct ovs_zone_limit) * 4 },
+	{ OVS_CT_LIMIT_ATTR_ZONE_LIMIT,	NLA_KIND_BINARY, sizeof(struct ovs_zone_limit) * 4, NLA_HDRLEN },
 };
 
 struct genl_family_grammar fam_ovs_ct_limit = {
