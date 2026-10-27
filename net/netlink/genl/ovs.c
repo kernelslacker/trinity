@@ -66,37 +66,51 @@ static const struct genl_cmd_grammar ovs_vport_cmds[] = {
 };
 
 /*
- * Vport policy lives in net/openvswitch/vport-netdev.c et al via
- * vport_policy[].  TYPE is u32 OVS_VPORT_TYPE_* (NETDEV / INTERNAL /
- * GRE / VXLAN / GENEVE).  OPTIONS is a NESTED carrying tunnel-type
- * specific attrs — for VXLAN that's OVS_TUNNEL_ATTR_DST_PORT plus
- * OVS_TUNNEL_ATTR_EXTENSION wrapping OVS_VXLAN_EXT_GBP.  UPCALL_PID is
- * an array of u32 PIDs, STATS is struct ovs_vport_stats, UPCALL_STATS
- * is a NESTED of OVS_VPORT_UPCALL_ATTR_* u64 counters.
+ * The legacy tunnel options OPTIONS holds, a destination port and an
+ * extension wrapping OVS_VXLAN_EXT_GBP, and the two u64 counters
+ * UPCALL_STATS nests.  The nests have no policy of their own.
+ */
+static const struct nla_attr_spec ovs_vport_vxlan_ext_attrs[] = {
+	{ OVS_VXLAN_EXT_GBP,		NLA_KIND_U32,    4 },
+};
+
+static const struct nla_attr_spec ovs_vport_tunnel_attrs[] = {
+	{ OVS_TUNNEL_ATTR_DST_PORT,	NLA_KIND_U16,    2 },
+	{ OVS_TUNNEL_ATTR_EXTENSION,	NLA_KIND_NESTED, 0, 0,
+	  ovs_vport_vxlan_ext_attrs, ARRAY_SIZE(ovs_vport_vxlan_ext_attrs) },
+};
+
+static const struct nla_attr_spec ovs_vport_upcall_attrs[] = {
+	{ OVS_VPORT_UPCALL_ATTR_SUCCESS, NLA_KIND_U64,   8 },
+	{ OVS_VPORT_UPCALL_ATTR_FAIL,	NLA_KIND_U64,    8 },
+};
+
+/*
+ * vport_policy in net/openvswitch/datapath.c, which the ops share and
+ * validate liberally.  TYPE is u32 OVS_VPORT_TYPE_* (NETDEV / INTERNAL /
+ * GRE / VXLAN / GENEVE).  NAME is an NLA_NUL_STRING (IFNAMSIZ - 1), so a
+ * byte at least, for the terminator.  STATS is a slot with a length, so
+ * exactly struct ovs_vport_stats: any shorter payload is refused.
+ * UPCALL_PID is an array of u32 PIDs, which the policy takes at any
+ * length.  OPTIONS is a NESTED carrying tunnel-type specific attrs, which
+ * ovs_vport_cmd_set() answers with -EOPNOTSUPP, as no vport type takes
+ * them now.  UPCALL_STATS is a reply's nest of counters.  The ids of the
+ * nests sit in tables of their own: at the top level they met PORT_NO,
+ * where a u16 DST_PORT is too short for an NLA_U32.
  */
 static const struct nla_attr_spec ovs_vport_attrs[] = {
 	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32,    4 },
 	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32,    4 },
-	{ OVS_VPORT_ATTR_NAME,			NLA_KIND_STRING, 15 },
-	{ OVS_VPORT_ATTR_OPTIONS,		NLA_KIND_NESTED, 0 },
+	{ OVS_VPORT_ATTR_NAME,			NLA_KIND_STRING, 15, 1 },
+	{ OVS_VPORT_ATTR_OPTIONS,		NLA_KIND_NESTED, 0, 0,
+	  ovs_vport_tunnel_attrs, ARRAY_SIZE(ovs_vport_tunnel_attrs) },
 	{ OVS_VPORT_ATTR_UPCALL_PID,		NLA_KIND_BINARY, 64 },
-	{ OVS_VPORT_ATTR_STATS,			NLA_KIND_BINARY, sizeof(struct ovs_vport_stats) },
+	{ OVS_VPORT_ATTR_STATS,			NLA_KIND_BINARY_FIXED2,
+	  sizeof(struct ovs_vport_stats), sizeof(struct ovs_vport_stats) },
 	{ OVS_VPORT_ATTR_IFINDEX,		NLA_KIND_U32,    4 },
 	{ OVS_VPORT_ATTR_NETNSID,		NLA_KIND_U32,    4 },
-	{ OVS_VPORT_ATTR_UPCALL_STATS,		NLA_KIND_NESTED, 0 },
-
-	/* OVS_TUNNEL_ATTR_* — nested under OVS_VPORT_ATTR_OPTIONS for
-	 * tunnel-typed vports (VXLAN / GENEVE / GRE). */
-	{ OVS_TUNNEL_ATTR_DST_PORT,		NLA_KIND_U16,    2 },
-	{ OVS_TUNNEL_ATTR_EXTENSION,		NLA_KIND_NESTED, 0 },
-
-	/* OVS_VXLAN_EXT_* — nested under OVS_TUNNEL_ATTR_EXTENSION for
-	 * VXLAN vports. */
-	{ OVS_VXLAN_EXT_GBP,			NLA_KIND_U32,    4 },
-
-	/* OVS_VPORT_UPCALL_ATTR_* — nested under OVS_VPORT_ATTR_UPCALL_STATS. */
-	{ OVS_VPORT_UPCALL_ATTR_SUCCESS,	NLA_KIND_U64,    8 },
-	{ OVS_VPORT_UPCALL_ATTR_FAIL,		NLA_KIND_U64,    8 },
+	{ OVS_VPORT_ATTR_UPCALL_STATS,		NLA_KIND_NESTED, 0, 0,
+	  ovs_vport_upcall_attrs, ARRAY_SIZE(ovs_vport_upcall_attrs) },
 };
 
 struct genl_family_grammar fam_ovs_vport = {

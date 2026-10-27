@@ -62,6 +62,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_NETDEV	719
 #define ID_ETHTOOL	720
 #define ID_OVS_DATAPATH	721
+#define ID_OVS_VPORT	722
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -1084,6 +1085,45 @@ static struct cmd_policy ovs_datapath_cmds[] = {
 	P_CMD(OVS_DP_CMD_GET, ovs_datapath),
 	P_CMD(OVS_DP_CMD_SET, ovs_datapath),
 };
+
+extern struct genl_family_grammar fam_ovs_vport;
+
+/*
+ * net/openvswitch/datapath.c: vport_policy, which the ops share.  UPCALL_PID
+ * has a slot but no type, so takes any length, and STATS one with a length,
+ * so exactly that of struct ovs_vport_stats.  OPTIONS and UPCALL_STATS are
+ * bare nests; their children are the legacy tunnel options and the two
+ * counters of a reply.
+ */
+static struct slot ovs_vport_vxlan_ext[] = {
+	S_U32(OVS_VXLAN_EXT_GBP),
+};
+static struct slot ovs_vport_tunnel[] = {
+	S_U16(OVS_TUNNEL_ATTR_DST_PORT),
+	S_NEST(OVS_TUNNEL_ATTR_EXTENSION, ovs_vport_vxlan_ext),
+};
+static struct slot ovs_vport_upcall[] = {
+	S_U64(OVS_VPORT_UPCALL_ATTR_SUCCESS),
+	S_U64(OVS_VPORT_UPCALL_ATTR_FAIL),
+};
+static struct slot ovs_vport[] = {
+	S_U32(OVS_VPORT_ATTR_PORT_NO),
+	S_U32(OVS_VPORT_ATTR_TYPE),
+	S_STR(OVS_VPORT_ATTR_NAME, 15),
+	S_NEST(OVS_VPORT_ATTR_OPTIONS, ovs_vport_tunnel),
+	S_BLOB(OVS_VPORT_ATTR_UPCALL_PID, 0, 0xffff),
+	S_BLOB(OVS_VPORT_ATTR_STATS, sizeof(struct ovs_vport_stats),
+	       sizeof(struct ovs_vport_stats)),
+	S_U32(OVS_VPORT_ATTR_IFINDEX),
+	S_U32(OVS_VPORT_ATTR_NETNSID),
+	S_NEST(OVS_VPORT_ATTR_UPCALL_STATS, ovs_vport_upcall),
+};
+static struct cmd_policy ovs_vport_cmds[] = {
+	P_CMD(OVS_VPORT_CMD_NEW, ovs_vport),
+	P_CMD(OVS_VPORT_CMD_DEL, ovs_vport),
+	P_CMD(OVS_VPORT_CMD_GET, ovs_vport),
+	P_CMD(OVS_VPORT_CMD_SET, ovs_vport),
+};
 #endif
 
 static struct policy_family policy_families[] = {
@@ -1121,6 +1161,8 @@ static struct policy_family policy_families[] = {
 #if __has_include(<linux/openvswitch.h>)
 	{ &fam_ovs_datapath, ID_OVS_DATAPATH, ovs_datapath_cmds,
 	  ARRAY_SIZE(ovs_datapath_cmds) },
+	{ &fam_ovs_vport, ID_OVS_VPORT, ovs_vport_cmds,
+	  ARRAY_SIZE(ovs_vport_cmds) },
 #endif
 };
 
