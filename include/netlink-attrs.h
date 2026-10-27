@@ -18,6 +18,9 @@ enum nla_kind {
 	NLA_KIND_U64,
 	NLA_KIND_BINARY,
 	NLA_KIND_STRING,
+	/* A nest whose parser takes a few children at most has that cap in
+	 * max_len, and one draw in eight goes one or two past it; a capped
+	 * nest's marked children are not put first. */
 	NLA_KIND_NESTED,
 	NLA_KIND_FLAG,
 	/* Binary blob whose length the kernel constrains to exactly one
@@ -88,7 +91,8 @@ struct nla_attr_spec {
 				 * the mask or maximum for the bounded
 				 * scalar kinds, which a mask or maximum may
 				 * fill all 32 bits of; the most elements of
-				 * an NLA_KIND_NESTED_ARRAY, 0 for 1-3 */
+				 * an NLA_KIND_NESTED_ARRAY or children of an
+				 * NLA_KIND_NESTED, 0 for 1-3 */
 	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
 				 * max_len}; for NLA_KIND_U32_RANGE and

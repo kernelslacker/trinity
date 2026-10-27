@@ -287,18 +287,33 @@ static size_t append_required_children(unsigned char *inner, size_t avail,
 	return off;
 }
 
+/*
+ * How many children or elements a nest gets: 1-3, or 1 to cap when its
+ * parser takes no more, but one time in eight one or two past it, for the
+ * parser's too-many arm.
+ */
+static unsigned int nest_count(unsigned int cap)
+{
+	if (cap == 0)
+		return RAND_RANGE(1, 3);
+	if (ONE_IN(8))
+		return cap + RAND_RANGE(1, 2);
+	return RAND_RANGE(1U, cap);
+}
+
 /* The children a nest's handler needs, if it has a table of its own, and
- * then 1-3 attributes drawn from table into the avail bytes at inner;
- * returns the bytes used.  A nest without a table is drawn from the outer
- * policy's, whose marks are not its own. */
+ * then nest_count(cap) attributes drawn from table into the avail bytes at
+ * inner; returns the bytes used.  A nest without a table is drawn from the
+ * outer policy's, whose marks are not its own, and a capped nest holds its
+ * count alone, which the marked children could crowd out. */
 static size_t append_nest_children(unsigned char *inner, size_t avail,
 				   const struct nla_attr_spec *table,
-				   size_t nr_specs, bool own)
+				   size_t nr_specs, bool own, unsigned int cap)
 {
 	size_t off = 0;
-	int child_count = RAND_RANGE(1, 3);
+	unsigned int child_count = nest_count(cap);
 
-	if (own)
+	if (own && cap == 0)
 		off = append_required_children(inner, avail, table, nr_specs);
 	while (child_count-- > 0) {
 		size_t new_off = append_specced_flat(inner, off, avail,
@@ -311,25 +326,17 @@ static size_t append_nest_children(unsigned char *inner, size_t avail,
 }
 
 /*
- * The elements of an NLA_POLICY_NESTED_ARRAY: each an NLA_F_NESTED
- * attribute, numbered from 0, that holds children drawn from table.  There
- * are 1-3 of them, or 1 to cap when the handler counts them against one,
- * but one time in eight one or two past it, for the handler's too-many arm.
+ * The nest_count(cap) elements of an NLA_POLICY_NESTED_ARRAY: each an
+ * NLA_F_NESTED attribute, numbered from 0, that holds children drawn from
+ * table.
  */
 static size_t append_nest_elements(unsigned char *inner, size_t avail,
 				   const struct nla_attr_spec *table,
 				   size_t nr_specs, bool own, unsigned int cap)
 {
 	size_t off = 0;
-	unsigned int elem_count;
+	unsigned int elem_count = nest_count(cap);
 	unsigned short elem_no = 0;
-
-	if (cap == 0)
-		elem_count = RAND_RANGE(1, 3);
-	else if (ONE_IN(8))
-		elem_count = cap + RAND_RANGE(1, 2);
-	else
-		elem_count = RAND_RANGE(1U, cap);
 
 	while (elem_count-- > 0) {
 		struct nlattr nla;
@@ -339,7 +346,7 @@ static size_t append_nest_elements(unsigned char *inner, size_t avail,
 			break;
 		stream = append_nest_children(inner + off + NLA_HDRLEN,
 					      avail - off - NLA_HDRLEN,
-					      table, nr_specs, own);
+					      table, nr_specs, own, 0);
 		if (stream == 0)
 			break;
 
@@ -352,9 +359,9 @@ static size_t append_nest_elements(unsigned char *inner, size_t avail,
 }
 
 /*
- * Emit a NLA_F_NESTED outer attr whose payload is 1-3 children drawn
- * from the spec's nest table, or from table, the one the spec is in, when it
- * names none; an array's payload is elements holding such children.
+ * Emit a NLA_F_NESTED outer attr whose payload is nest_count() children
+ * drawn from the spec's nest table, or from table, the one the spec is in,
+ * when it names none; an array's payload is elements holding such children.
  * Mirrors append_nested_attr_container() but walks a typed spec table for
  * kind/max_len information.  Increments the same nested counter so the dump
  * output stays consistent across spec-driven and pick_attr_hint-driven
@@ -391,7 +398,8 @@ static size_t append_specced_nested(unsigned char *buf, size_t offset,
 						 spec->max_len);
 	else
 		inner_off = append_nest_children(inner, inner_avail,
-						 table, nr_specs, own);
+						 table, nr_specs, own,
+						 spec->max_len);
 
 	if (inner_off == 0)
 		return offset;
