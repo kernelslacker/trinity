@@ -20,12 +20,30 @@
 static const unsigned int nft_compat_types[] = { 0, 1 };
 
 /*
+ * xt_find_revision() looks the name up among the matches, or for a TYPE of 1
+ * the targets, registered for the family, and try_then_request_module() runs
+ * modprobe for "ipt_<name>" and its kin when there is none, so a name drawn
+ * at random costs a module request on every call.  These are the matches
+ * that xt_tcpudp.c, xt_mark.c, xt_limit.c, xt_state.c, xt_conntrack.c,
+ * xt_comment.c and xt_pkttype.c register, and the targets that xt_mark.c,
+ * xt_NFQUEUE.c, xt_CT.c, xt_NFLOG.c, xt_TRACE.c and xt_CLASSIFY.c do, each
+ * for IPv4 and IPv6 or for every family, under module aliases that load them.
+ * TYPE is drawn without regard to the name, so about half the names meet the
+ * kind they are, and the rest cost one request.
+ */
+static const char *const nft_compat_names[] = {
+	"tcp", "udp", "mark", "limit", "state", "conntrack", "comment",
+	"pkttype", "MARK", "NFQUEUE", "CT", "NFLOG", "TRACE", "CLASSIFY",
+};
+
+/*
  * The one command's table.  nfnl_compat_get_rcu() answers -EINVAL unless the
  * name, REV and TYPE are all there, so all three are marked.  NFTA_COMPAT_REV
  * is NLA_POLICY_MAX(NLA_BE32, 255) in nfnl_compat_policy_get.
  */
 static const struct nla_attr_spec nft_compat_attrs[] = {
-	{ NFTA_COMPAT_NAME, NLA_KIND_STRING, NFT_COMPAT_NAME_MAX - 1, 0,
+	{ NFTA_COMPAT_NAME, NLA_KIND_STRING_ONEOF, 0, 0,
+	  .words = nft_compat_names, .n_words = ARRAY_SIZE(nft_compat_names),
 	  .required = true },
 	{ NFTA_COMPAT_REV,  NLA_KIND_BE32_MAX, 255, 0, .required = true },
 	{ NFTA_COMPAT_TYPE, NLA_KIND_BE32_ONEOF, 0, 0,

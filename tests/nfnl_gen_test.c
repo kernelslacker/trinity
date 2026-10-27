@@ -1428,7 +1428,7 @@ static struct pslot cttimeout_default_get[] = {
  * nfnl_compat_get_rcu() answers -EINVAL unless all three are there.
  */
 static struct pslot compat_get[] = {
-	PS(1, true, NLA_KIND_STRING),
+	PS(1, true, NLA_KIND_STRING_ONEOF),
 	PSB(2, true, NLA_KIND_BE32_MAX, 0, 255),
 	PS(3, true, NLA_KIND_BE32_ONEOF),
 };
@@ -1550,8 +1550,24 @@ struct word_slot {
 
 static const char *const chain_types[] = { "filter", "nat", "route" };
 
+/*
+ * nfnl_compat_get_rcu() hands the name to xt_find_revision(), which looks for
+ * a match or, for TYPE 1, a target of that name registered for the family,
+ * and has try_then_request_module() run modprobe for "ipt_<name>" and its
+ * kin when there is none.  These are the matches that xt_tcpudp.c, xt_mark.c,
+ * xt_limit.c, xt_state.c, xt_conntrack.c, xt_comment.c and xt_pkttype.c
+ * register, and the targets that xt_mark.c, xt_NFQUEUE.c, xt_CT.c, xt_NFLOG.c,
+ * xt_TRACE.c and xt_CLASSIFY.c do, each for IPv4 and IPv6 or for every
+ * family, under module aliases that load them.
+ */
+static const char *const xt_names[] = {
+	"tcp", "udp", "mark", "limit", "state", "conntrack", "comment", "pkttype",
+	"MARK", "NFQUEUE", "CT", "NFLOG", "TRACE", "CLASSIFY",
+};
+
 static const struct word_slot word_slots[] = {
 	{ "NFTA_CHAIN_TYPE", NFTABLES, 3, 7, chain_types, ARRAY_SIZE(chain_types) },
+	{ "NFTA_COMPAT_NAME", NFT_COMPAT, 0, 1, xt_names, ARRAY_SIZE(xt_names) },
 };
 
 static void check_word_slot(const struct word_slot *slot)
