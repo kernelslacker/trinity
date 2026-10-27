@@ -222,8 +222,8 @@ static unsigned short pick_nlmsg_type(int protocol)
  * ~1 in 4 messages are multi-message batches (2-4 nlmsghdr chained
  * together) to exercise the kernel's NLMSG_NEXT iteration path.  A
  * NETLINK_NETFILTER buffer that opens with an NFNL_CB_BATCH command is
- * also bracketed by NFNL_MSG_BATCH_BEGIN and NFNL_MSG_BATCH_END, which
- * build_nfnl_batch() explains.
+ * also put behind NFNL_MSG_BATCH_BEGIN and, most of the time, followed by
+ * NFNL_MSG_BATCH_END, which build_nfnl_batch() explains.
  */
 
 /*
@@ -449,7 +449,10 @@ static size_t put_nfnl_batch_marker(unsigned char *msg, size_t offset,
  * NFNL_MSG_BATCH_END and commits only if every command in it succeeded.
  * So this builds BEGIN, then num_msgs commands, the first of type
  * first_type and the rest picked from the same subsystem's batch
- * callbacks, then END, all in the buffer the caller sized.
+ * callbacks, then END, all in the buffer the caller sized.  One batch in
+ * eight leaves END off: the walk ends with the buffer, and when no command
+ * failed nfnetlink_rcv_batch() aborts with NFNL_ABORT_VALIDATE, which
+ * validates the transaction and then rolls it back.
  */
 static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
 			       struct socket_triplet *triplet,
@@ -469,6 +472,8 @@ static size_t build_nfnl_batch(unsigned char *msg, size_t buflen,
 		offset = build_one_nlmsg(msg, offset, cmds_end, triplet, type);
 		type = (first_type & 0xff00) | nfnl_pick_batch_cmd(sub);
 	}
+	if (ONE_IN(8))
+		return offset;
 	return put_nfnl_batch_marker(msg, offset, NFNL_MSG_BATCH_END, subsys);
 }
 

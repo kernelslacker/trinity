@@ -423,23 +423,25 @@ static bool is_marker(const unsigned char *buf, unsigned short type)
 }
 
 /*
- * Check what lies between BEGIN and END in a buffer that has both.  BEGIN
- * names nftables in res_id, and the commands are batch commands of that
- * subsystem: nfnetlink_rcv_batch() answers any other -EINVAL, and a batch
- * with an error in it cannot commit.  The first command's header sits right
- * after BEGIN, so its type is held to that outright.  A later header sits
- * where the lengths before it put it, which a length the generator
- * corrupted on purpose throws off into the bytes of another message, and
- * what is read there is noise.  So the later commands are judged only when
- * every length ran true and the chain ended exactly at END, and then only
- * reported: *cmds is their number and *stray whether one is no batch
- * command.  Returns the first command's type, or 0 when there is none.
+ * Check what lies after BEGIN in a buffer that opens with it, up to END, or to
+ * the end of the buffer when ended is false.  BEGIN names nftables in
+ * res_id, and the commands are batch commands of that subsystem:
+ * nfnetlink_rcv_batch() answers any other -EINVAL, and a batch with an error
+ * in it cannot commit.  The first command's header sits right after BEGIN, so
+ * its type is held to that outright.  A later header sits where the lengths
+ * before it put it, which a length the generator corrupted on purpose throws
+ * off into the bytes of another message, and what is read there is noise.  So
+ * the later commands are judged only when every length ran true and the chain
+ * ended exactly where the commands do, and then only reported: *cmds is their
+ * number and *stray whether one is no batch command.  Returns the first
+ * command's type, or 0 when there is none.
  */
 static unsigned short check_batch_buffer(const unsigned char *buf, size_t len,
-					 unsigned int *cmds, bool *stray)
+					 bool ended, unsigned int *cmds,
+					 bool *stray)
 {
 	const size_t marker = NLMSG_SPACE(sizeof(struct nfgenmsg));
-	const size_t end_off = len - marker;
+	const size_t end_off = ended ? len - marker : len;
 	unsigned short first = 0;
 	bool any_stray = false;
 	unsigned int n = 0;
@@ -488,10 +490,11 @@ static unsigned short check_batch_buffer(const unsigned char *buf, size_t len,
 
 struct batch_tally {
 	unsigned int wrapped;	/* opens with BEGIN and closes with END */
+	unsigned int unended;	/* opens with BEGIN and has no END */
 	unsigned int bare;	/* opens with a batch command, nothing around it */
-	unsigned int multi;	/* wrapped, two commands or more, every length true */
+	unsigned int multi;	/* opens with BEGIN, two commands or more, every length true */
 	unsigned int stray;	/* ... of which hold a message that is no batch command */
-	bool led[256];		/* batch commands that opened a wrapped buffer, by id */
+	bool led[256];		/* batch commands that opened a batch, by id */
 };
 
 static void tally_buffer(struct batch_tally *t, const unsigned char *buf,
@@ -504,14 +507,18 @@ static void tally_buffer(struct batch_tally *t, const unsigned char *buf,
 		return;
 	memcpy(&nlh, buf, sizeof(nlh));
 
-	if (len >= 2 * marker && is_marker(buf, NFNL_MSG_BATCH_BEGIN) &&
-	    is_marker(buf + len - marker, NFNL_MSG_BATCH_END)) {
+	if (len >= marker && is_marker(buf, NFNL_MSG_BATCH_BEGIN)) {
+		bool ended = len >= 2 * marker &&
+			     is_marker(buf + len - marker, NFNL_MSG_BATCH_END);
 		unsigned short first;
 		unsigned int cmds;
 		bool stray;
 
-		first = check_batch_buffer(buf, len, &cmds, &stray);
-		t->wrapped++;
+		first = check_batch_buffer(buf, len, ended, &cmds, &stray);
+		if (ended)
+			t->wrapped++;
+		else
+			t->unended++;
 		if (cmds >= 2) {
 			t->multi++;
 			if (stray)
@@ -525,16 +532,21 @@ static void tally_buffer(struct batch_tally *t, const unsigned char *buf,
 }
 
 /*
- * A buffer whose first message is a batch command goes out inside BEGIN and
- * END seven times in eight, and bare the eighth, so 0.875 of those buffers
- * open with BEGIN.  A run draws about 3000 of them, so the fraction has a
- * standard deviation of 0.006 and the limits 0.80 and 0.95 are 12 sigma off;
- * they turn away a generator that never wraps and one that always does.  A
- * quarter of the wrapped buffers hold two commands or more, about 500 with
- * every length true.  Their later commands are batch callbacks too; picked
- * as the first message of any buffer is, nearly every such batch would hold
- * some other message, where as built none does, so a tenth is a wide limit.
- * And each of the 21 batch commands must open some batch.
+ * A buffer whose first message is a batch command goes out behind BEGIN seven
+ * times in eight, and bare the eighth, so 0.875 of those buffers open with
+ * BEGIN.  A run draws about 3000 of them, so the fraction has a standard
+ * deviation of 0.006 and the limits 0.80 and 0.95 are 12 sigma off; they turn
+ * away a generator that never wraps and one that always does.  One batch in
+ * eight leaves END off, which nfnetlink_rcv_batch() ends with
+ * NFNL_ABORT_VALIDATE when no command failed, so 0.125 of the batches have no
+ * END; a run has about 2700 batches, so the fraction has a standard deviation
+ * of 0.006 and the limits 0.05 and 0.25 are 12 and 19 sigma off, and turn away
+ * a generator that always writes END and one that mostly leaves it off.  A
+ * quarter of the batches hold two commands or more, about 500 with every
+ * length true.  Their later commands are batch callbacks too; picked as the
+ * first message of any buffer is, nearly every such batch would hold some
+ * other message, where as built none does, so a tenth is a wide limit.  And
+ * each of the 21 batch commands must open some batch.
  */
 static void check_nftables_batches(void)
 {
@@ -545,7 +557,7 @@ static void check_nftables_batches(void)
 		.protocol = NETLINK_NETFILTER,
 	};
 	struct batch_tally t = { 0 };
-	unsigned int round, i, led = 0;
+	unsigned int round, i, opened, led = 0;
 	double frac;
 
 	if (sub == NULL)
@@ -560,20 +572,27 @@ static void check_nftables_batches(void)
 		free(buf);
 	}
 
-	if (t.wrapped + t.bare < 1000) {
-		fprintf(stderr, "nftables: %u wrapped and %u bare batch commands in %u buffers\n",
-			t.wrapped, t.bare, BATCH_ROUNDS);
+	opened = t.wrapped + t.unended;
+	if (opened + t.bare < 1000) {
+		fprintf(stderr, "nftables: %u batched and %u bare batch commands in %u buffers\n",
+			opened, t.bare, BATCH_ROUNDS);
 		BUG("nfnl batch: too few batch commands to judge the wrapping");
 	}
-	frac = (double) t.wrapped / (t.wrapped + t.bare);
+	frac = (double) opened / (opened + t.bare);
 	if (frac < 0.80 || frac > 0.95) {
 		fprintf(stderr, "nftables: %u of %u batch commands went out inside a batch, want a fraction in [0.80, 0.95]\n",
-			t.wrapped, t.wrapped + t.bare);
+			opened, opened + t.bare);
 		BUG("nfnl batch: batch commands are not wrapped most of the time");
+	}
+	frac = (double) t.unended / opened;
+	if (frac < 0.05 || frac > 0.25) {
+		fprintf(stderr, "nftables: %u of %u batches have no END, want a fraction in [0.05, 0.25]\n",
+			t.unended, opened);
+		BUG("nfnl batch: batches do not leave END off some of the time");
 	}
 	if (t.multi < 100) {
 		fprintf(stderr, "nftables: %u of %u batches hold two commands or more\n",
-			t.multi, t.wrapped);
+			t.multi, opened);
 		BUG("nfnl batch: batches never hold more than one command");
 	}
 	if (t.stray * 10 > t.multi) {
