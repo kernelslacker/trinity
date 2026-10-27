@@ -319,6 +319,54 @@ static const struct nla_attr_spec nft_delrule_attrs[] = {
 };
 
 /*
+ * The set commands.  NEWSET answers -EINVAL unless the request holds the
+ * table, the name, NFTA_SET_KEY_LEN and the set's id, so all four are marked,
+ * and reads the rest of what nft_set_policy lets a set be made from.  It
+ * reads the lengths and the policy with ntohl(): KEY_LEN and DATA_LEN must be
+ * from 1 to NFT_DATA_VALUE_MAXLEN, or the answer is -EINVAL, and POLICY
+ * NFT_SET_POL_PERFORMANCE or NFT_SET_POL_MEMORY, or -EOPNOTSUPP.  Several
+ * attributes need another: DATA_TYPE needs the NFT_SET_MAP flag and, unless
+ * it is a verdict, a DATA_LEN, TIMEOUT and GC_INTERVAL need NFT_SET_TIMEOUT,
+ * OBJ_TYPE NFT_SET_OBJECT, and the grammar does not tie them together.  DESC,
+ * EXPR and EXPRESSIONS are nests it cannot build yet, and the handle names a
+ * set by a number that a draw cannot know, so none of the four is in the
+ * table.  GETSET, DELSET and DESTROYSET need the table and the name.
+ */
+static const unsigned int nft_set_policies[] = {
+	NFT_SET_POL_PERFORMANCE, NFT_SET_POL_MEMORY,
+};
+
+static const struct nla_attr_spec nft_newset_attrs[] = {
+	{ NFTA_SET_TABLE,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_SET_NAME,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_SET_FLAGS,     NLA_KIND_BE32_MASK,
+		NFT_SET_ANONYMOUS | NFT_SET_CONSTANT | NFT_SET_INTERVAL |
+		NFT_SET_MAP | NFT_SET_TIMEOUT | NFT_SET_EVAL | NFT_SET_OBJECT |
+		NFT_SET_CONCAT | NFT_SET_EXPR },
+	{ NFTA_SET_KEY_TYPE,  NLA_KIND_U32, 4 },
+	{ NFTA_SET_KEY_LEN,   NLA_KIND_BE32_RANGE, NFT_DATA_VALUE_MAXLEN, 1,
+	  .required = true },
+	{ NFTA_SET_DATA_TYPE, NLA_KIND_U32, 4 },
+	{ NFTA_SET_DATA_LEN,  NLA_KIND_BE32_RANGE, NFT_DATA_VALUE_MAXLEN, 1 },
+	{ NFTA_SET_POLICY,    NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = nft_set_policies, .n_oneof = ARRAY_SIZE(nft_set_policies) },
+	{ NFTA_SET_ID,        NLA_KIND_U32, 4, .required = true },
+	{ NFTA_SET_TIMEOUT,   NLA_KIND_U64, 8 },
+	{ NFTA_SET_GC_INTERVAL, NLA_KIND_U32, 4 },
+	{ NFTA_SET_USERDATA,  NLA_KIND_BINARY, 64 },
+	{ NFTA_SET_OBJ_TYPE,  NLA_KIND_U32, 4 },
+};
+
+static const struct nla_attr_spec nft_set_name_attrs[] = {
+	{ NFTA_SET_TABLE,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+	{ NFTA_SET_NAME,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
+	  .required = true },
+};
+
+/*
  * The NEW, DEL and DESTROY commands, 21 of the 32, are NFNL_CB_BATCH in
  * nf_tables_cb[] and marked as such; the GETs are NFNL_CB_RCU.
  */
@@ -349,10 +397,14 @@ static const struct nfnl_cmd_grammar nftables_cmds[] = {
 	  nft_delrule_attrs, ARRAY_SIZE(nft_delrule_attrs) },
 	{ NFT_MSG_DESTROYRULE,       "NFT_MSG_DESTROYRULE", true,
 	  nft_delrule_attrs, ARRAY_SIZE(nft_delrule_attrs) },
-	{ NFT_MSG_NEWSET,            "NFT_MSG_NEWSET", true },
-	{ NFT_MSG_GETSET,            "NFT_MSG_GETSET" },
-	{ NFT_MSG_DELSET,            "NFT_MSG_DELSET", true },
-	{ NFT_MSG_DESTROYSET,        "NFT_MSG_DESTROYSET", true },
+	{ NFT_MSG_NEWSET,            "NFT_MSG_NEWSET", true,
+	  nft_newset_attrs, ARRAY_SIZE(nft_newset_attrs) },
+	{ NFT_MSG_GETSET,            "NFT_MSG_GETSET", false,
+	  nft_set_name_attrs, ARRAY_SIZE(nft_set_name_attrs) },
+	{ NFT_MSG_DELSET,            "NFT_MSG_DELSET", true,
+	  nft_set_name_attrs, ARRAY_SIZE(nft_set_name_attrs) },
+	{ NFT_MSG_DESTROYSET,        "NFT_MSG_DESTROYSET", true,
+	  nft_set_name_attrs, ARRAY_SIZE(nft_set_name_attrs) },
 	{ NFT_MSG_NEWSETELEM,        "NFT_MSG_NEWSETELEM", true },
 	{ NFT_MSG_GETSETELEM,        "NFT_MSG_GETSETELEM" },
 	{ NFT_MSG_GETSETELEM_RESET,  "NFT_MSG_GETSETELEM_RESET" },
@@ -382,31 +434,15 @@ static const unsigned char nftables_families[] = {
 
 /*
  * NFTA_* attrs of the namespaces whose commands name no table of their own.
- * Their ids overlap (NFTA_SET_TABLE and NFTA_OBJ_TABLE are both 1), so an
+ * Their ids overlap (NFTA_SET_ELEM_KEY and NFTA_OBJ_TABLE are both 1), so an
  * entry meets whatever slot the picked command's policy has at that id:
  * nfnetlink's liberal parse skips ids past attr_count and untyped slots, and
  * length-checks typed ones.  The obj and flowtable nests are bare NLA_NESTED
  * parsed by the handlers.  The FLAGS words are NLA_POLICY_MASK in their
  * policies, each with the flag bits the uapi header names for it.
- * NFTA_SET_FLAGS and NFTA_SET_ELEM_FLAGS share id 3, so which policy a draw
- * meets depends on the picked command.
  * The strings at ids 1, 2 and 3 are the names that nft_word stands for.
  */
 static const struct nla_attr_spec nftables_attrs[] = {
-	/* NFT_MSG_*SET */
-	{ NFTA_SET_TABLE,            NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_SET_NAME,             NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
-	{ NFTA_SET_FLAGS,            NLA_KIND_BE32_MASK,
-		NFT_SET_ANONYMOUS | NFT_SET_CONSTANT | NFT_SET_INTERVAL |
-		NFT_SET_MAP | NFT_SET_TIMEOUT | NFT_SET_EVAL | NFT_SET_OBJECT |
-		NFT_SET_CONCAT | NFT_SET_EXPR },
-	{ NFTA_SET_KEY_TYPE,         NLA_KIND_U32,    4 },
-	{ NFTA_SET_KEY_LEN,          NLA_KIND_U32,    4 },
-	{ NFTA_SET_DATA_TYPE,        NLA_KIND_U32,    4 },
-	{ NFTA_SET_DATA_LEN,         NLA_KIND_U32,    4 },
-	{ NFTA_SET_POLICY,           NLA_KIND_U32,    4 },
-	{ NFTA_SET_TIMEOUT,          NLA_KIND_U64,    8 },
-	{ NFTA_SET_USERDATA,         NLA_KIND_BINARY, 64 },
 	/* NFT_MSG_*SETELEM */
 	{ NFTA_SET_ELEM_KEY,         NLA_KIND_NESTED, 0 },
 	{ NFTA_SET_ELEM_DATA,        NLA_KIND_NESTED, 0 },

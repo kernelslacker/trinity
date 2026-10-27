@@ -216,8 +216,9 @@ struct bounded_slot {
 
 /*
  * The top-level attributes the netfilter policies bound with NLA_POLICY_MASK
- * or NLA_POLICY_MAX, all read in network byte order, with the bound each
- * policy gives.  The ids are the attribute enums' positions.
+ * or NLA_POLICY_MAX, and the words their handlers bound where the policy does
+ * not, all read in network byte order, with the bound each gives.  The ids
+ * are the attribute enums' positions.
  */
 static const struct bounded_slot slots[] = {
 	/* nfnl_acct_policy, NFACCT_F_QUOTA: both quota bits */
@@ -237,6 +238,13 @@ static const struct bounded_slot slots[] = {
 	{ "NFTA_SET_FLAGS", NFNL_SUBSYS_NFTABLES, 3, NLA_KIND_BE32_MASK, 0x1ff },
 	{ "NFTA_SET_ELEM_FLAGS", NFNL_SUBSYS_NFTABLES, 3, NLA_KIND_BE32_MASK, 0x3 },
 	{ "NFTA_FLOWTABLE_FLAGS", NFNL_SUBSYS_NFTABLES, 7, NLA_KIND_BE32_MASK, 0x3 },
+	/* nf_tables_newset() reads NFTA_SET_KEY_LEN and NFTA_SET_DATA_LEN, which
+	 * nft_set_policy types NLA_U32, with ntohl() and answers a 0 or one over
+	 * NFT_DATA_VALUE_MAXLEN -EINVAL */
+	{ .name = "NFTA_SET_KEY_LEN", .subsys = NFNL_SUBSYS_NFTABLES, .id = 5,
+	  .kind = NLA_KIND_BE32_RANGE, .limit = 64, .lo = 1 },
+	{ .name = "NFTA_SET_DATA_LEN", .subsys = NFNL_SUBSYS_NFTABLES, .id = 7,
+	  .kind = NLA_KIND_BE32_RANGE, .limit = 64, .lo = 1 },
 };
 
 /*
@@ -274,6 +282,10 @@ static const unsigned int hooknums[] = { 0, 1, 2, 3, 4 };
  * and answers any other -EINVAL. */
 static const unsigned int policies[] = { 0, 1 };
 
+/* nf_tables_newset() takes NFT_SET_POL_PERFORMANCE and NFT_SET_POL_MEMORY and
+ * answers any other policy -EOPNOTSUPP. */
+static const unsigned int set_policies[] = { 0, 1 };
+
 /*
  * The top-level attributes whose handlers accept a few values and no others,
  * read as a byte or in network byte order, with the values each accepts.
@@ -297,6 +309,9 @@ static const struct bounded_slot oneof_slots[] = {
 	  NLA_KIND_BE32_ONEOF, 0, hooknums, ARRAY_SIZE(hooknums) },
 	{ "NFTA_CHAIN_POLICY", NFNL_SUBSYS_NFTABLES, 5,
 	  NLA_KIND_BE32_ONEOF, 0, policies, ARRAY_SIZE(policies) },
+	/* nft_set_policy types POLICY NLA_U32 */
+	{ "NFTA_SET_POLICY", NFNL_SUBSYS_NFTABLES, 8,
+	  NLA_KIND_BE32_ONEOF, 0, set_policies, ARRAY_SIZE(set_policies) },
 };
 
 static bool has_value(const struct bounded_slot *slot, unsigned int v)
@@ -1165,6 +1180,37 @@ static struct pslot rule_del[] = {
 	PS(2, false, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nft_set_policy has the table (1), the name (2), the flags (3), KEY_TYPE (4),
+ * KEY_LEN (5), DATA_TYPE (6), DATA_LEN (7), POLICY (8), DESC (9), the id (10),
+ * TIMEOUT (11), GC_INTERVAL (12), the user data (13), OBJ_TYPE (15), the
+ * handle (16), EXPR (17), EXPRESSIONS (18) and two that it rejects, TYPE (19)
+ * and COUNT (20).  NEWSET answers -EINVAL unless the request holds the table,
+ * the name, KEY_LEN and the set's id, and reads the rest of what a set is made
+ * from; the grammar leaves out DESC, EXPR and EXPRESSIONS, nests it cannot
+ * build, and the handle, which a draw cannot know.  GETSET, DELSET and
+ * DESTROYSET need the table and the name.
+ */
+static struct pslot set_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+	PS(3, false, NLA_KIND_BE32_MASK),
+	PS(4, false, 0),
+	PS(5, true, NLA_KIND_BE32_RANGE),
+	PS(6, false, 0),
+	PS(7, false, NLA_KIND_BE32_RANGE),
+	PS(8, false, NLA_KIND_BE32_ONEOF),
+	PS(10, true, 0),
+	PS(11, false, 0),
+	PS(12, false, 0),
+	PS(13, false, 0),
+	PS(15, false, 0),
+};
+static struct pslot set_name[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PS(2, true, NLA_KIND_STRING_WORD),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 
 static struct cmd_row cmd_rows[] = {
@@ -1181,6 +1227,10 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_GETRULE_RESET", NFTABLES, 25, rule_get, ARRAY_SIZE(rule_get) },
 	{ "NFT_MSG_DELRULE", NFTABLES, 8, rule_del, ARRAY_SIZE(rule_del) },
 	{ "NFT_MSG_DESTROYRULE", NFTABLES, 28, rule_del, ARRAY_SIZE(rule_del) },
+	{ "NFT_MSG_NEWSET", NFTABLES, 9, set_new, ARRAY_SIZE(set_new) },
+	{ "NFT_MSG_GETSET", NFTABLES, 10, set_name, ARRAY_SIZE(set_name) },
+	{ "NFT_MSG_DELSET", NFTABLES, 11, set_name, ARRAY_SIZE(set_name) },
+	{ "NFT_MSG_DESTROYSET", NFTABLES, 29, set_name, ARRAY_SIZE(set_name) },
 };
 
 /*
