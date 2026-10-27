@@ -138,12 +138,14 @@ int fd_from_socketinfo(struct socketinfo *si)
 
 struct map *fake_map_drawn;
 
-struct map *get_map(void)
+struct map *__wrap_get_map(void);
+struct map *__wrap_get_map(void)
 {
 	return fake_map_drawn;
 }
 
-struct map *get_map_with_prot(int required_prot)
+struct map *__wrap_get_map_with_prot(int required_prot);
+struct map *__wrap_get_map_with_prot(int required_prot)
 {
 	(void) required_prot;
 	return NULL;

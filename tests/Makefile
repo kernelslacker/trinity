@@ -126,6 +126,12 @@ LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 # munmap() unless armed.
 LDFLAGS		+= -Wl,--wrap=munmap
 
+# get_map() and get_map_with_prot() stand-ins: mm/maps-pick.c is linked
+# for get_map_handle(), and its wrappers would draw from pools most tests
+# never build.  post_oracle_test.c wraps both: get_map() hands out the
+# mapping a test names in fake_map_drawn, get_map_with_prot() none.
+LDFLAGS		+= -Wl,--wrap=get_map -Wl,--wrap=get_map_with_prot
+
 # valresult_alloc() tracking: args/valresult.c is linked for recvfrom's
 # sanitiser, whose value-result buffers valresult_free() hands to deferred
 # free, and that takes only a chunk the alloc-track holds, which this binary's
@@ -594,6 +600,11 @@ FAKE_SRCS	+= objpool_reader_test.c
 # mm/maps-lifecycle.c linked above over fake pools, and the post handler
 # of the syscalls/mm/mmap.c linked above too.
 FAKE_SRCS	+= maps_name_test.c
+
+# maps_pick_test.c runs get_map_handle() over a pool it installs through
+# the get_objhead() stand-in.
+PARENT_SRCS	+= $(TOP)/mm/maps-pick.c
+FAKE_SRCS	+= maps_pick_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

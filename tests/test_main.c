@@ -23,6 +23,7 @@ void shared_str_heap_free_size_check(void);
 void dispatch_stage_order_self_check(void);
 void deferred_free_ownership_self_check(void);
 void maps_name_self_check(void);
+void maps_pick_self_check(void);
 void stats_opclock_lossless_self_check(void);
 void struct_field_bounds_self_check(void);
 void kmsg_trigger_self_check(void);
@@ -138,6 +139,11 @@ int main(int argc, char **argv)
 	printf("  maps_name_self_check ... ");
 	fflush(stdout);
 	maps_name_self_check();
+	printf("OK\n");
+
+	printf("  maps_pick_self_check ... ");
+	fflush(stdout);
+	maps_pick_self_check();
 	printf("OK\n");
 
 	printf("  stats_opclock_lossless_self_check ... ");

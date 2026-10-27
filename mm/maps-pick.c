@@ -369,16 +369,33 @@ static void maybe_refill_local_anon_pool(struct childdata *child,
 }
 
 /*
+ * Draws a compat call spends looking for a mapping below 4 GiB.  The
+ * MAP_32BIT twins setup_initial_mappings() makes are about one draw in
+ * twenty for a child whose three pools all hold entries, so 64 draws find
+ * one all but every time.
+ */
+#define COMPAT_MAP_DRAWS	64
+
+/*
  * Populate a handle for a randomly-picked entry in the
  * OBJ_MMAP_ANON / OBJ_MMAP_FILE / OBJ_MMAP_TESTFILE pools.  Same
  * pick-and-deref flow as get_map() (heap-range guard, size guard);
  * post-Stage-5 the pools live in private heap so there is no
  * concurrent destroyer racing the consumer's deref of map->ptr /
  * map->size / map->prot.
+ *
+ * A compat call's kernel reads an address slot as its low 32 bits, so
+ * this_child()'s record being compat, the call is handed a mapping that
+ * lies wholly below 4 GiB when one turns up within COMPAT_MAP_DRAWS draws
+ * that pass the checks, and the first of those draws when none does.
  */
 bool get_map_handle(struct map_handle *h)
 {
 	struct childdata *child = this_child();
+	bool compat = child != NULL && child->syscall.do32bit;
+	struct object *pick = NULL;
+	enum objecttype pick_type = 0;
+	unsigned int high_draws = 0;
 	enum obj_scope scope;
 	enum objecttype type = 0;
 	/*
@@ -439,20 +456,21 @@ bool get_map_handle(struct map_handle *h)
 		if (obj->map.holed)
 			continue;
 
-		h->map = &obj->map;
-		h->type = type;
-		h->scope = scope;
-
-		if (sampled) {
-			t1 = maps_pick_read_cycles();
-			__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_sum,
-					   t1 - t0, __ATOMIC_RELAXED);
-			__atomic_add_fetch(&shm->stats.maps.pick_cycles_sampled_count,
-					   1, __ATOMIC_RELAXED);
+		/* The size check above caps the sum well short of a wrap. */
+		if (compat && (unsigned long) obj->map.ptr + obj->map.size >
+			      (1UL << 32)) {
+			if (pick == NULL) {
+				pick = obj;
+				pick_type = type;
+			}
+			if (++high_draws < COMPAT_MAP_DRAWS)
+				continue;
+			break;
 		}
-		maps_pick_bump_scan_histogram((unsigned int)i);
-		account_pool_pick_success(type, i);
-		return true;
+
+		pick = obj;
+		pick_type = type;
+		break;
 	}
 
 	if (sampled) {
@@ -463,6 +481,14 @@ bool get_map_handle(struct map_handle *h)
 				   1, __ATOMIC_RELAXED);
 	}
 	maps_pick_bump_scan_histogram((unsigned int)i);
+
+	if (pick != NULL) {
+		h->map = &pick->map;
+		h->type = pick_type;
+		h->scope = scope;
+		account_pool_pick_success(pick_type, i);
+		return true;
+	}
 
 	maybe_refill_local_anon_pool(child, scope);
 

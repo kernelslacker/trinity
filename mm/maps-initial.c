@@ -76,7 +76,8 @@ static void alloc_zero_map(unsigned long size, int prot, int flags, const char *
 
 /*
  * Like alloc_zero_map, but returns false instead of exiting on mmap failure.
- * Used for MAP_HUGETLB mappings which may not be available.
+ * Used for MAP_HUGETLB mappings which may not be available, and for the
+ * MAP_32BIT twins, whose window can be short.
  */
 static bool try_alloc_zero_map(unsigned long size, int prot, int flags, const char *name)
 {
@@ -193,10 +194,29 @@ disable_1gb_mappings:
 	mapping_sizes[8] = page_size;
 }
 
+/* The protection and sharing of the initial anon mappings, one of each per size. */
+static const struct {
+	int prot;
+	int flags;
+	const char *name;
+} initial_anon_kinds[] = {
+	{ PROT_READ | PROT_WRITE, MAP_SHARED, "PROT_READ | PROT_WRITE" },
+	{ PROT_READ, MAP_SHARED, "PROT_READ" },
+	{ PROT_WRITE, MAP_SHARED, "PROT_WRITE" },
+	{ PROT_EXEC, MAP_SHARED, "PROT_EXEC" },
+	{ PROT_NONE, MAP_SHARED, "PROT_NONE" },
+	{ PROT_READ | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_EXEC" },
+	{ PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_WRITE | PROT_EXEC" },
+	{ PROT_READ | PROT_WRITE, MAP_PRIVATE, "PROT_READ | PROT_WRITE (private)" },
+	{ PROT_READ, MAP_PRIVATE, "PROT_READ (private)" },
+	{ PROT_WRITE, MAP_PRIVATE, "PROT_WRITE (private)" },
+	{ PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, "PROT_READ | PROT_WRITE | PROT_EXEC (private)" },
+};
+
 void setup_initial_mappings(void)
 {
 	struct objhead *head;
-	unsigned int i;
+	unsigned int i, k;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_MMAP_ANON);
 	head->destroy = &map_destructor_shared;
@@ -204,19 +224,31 @@ void setup_initial_mappings(void)
 
 	setup_mapping_sizes();
 
-	for (i = 0; i < ARRAY_SIZE(mapping_sizes); i++) {
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, MAP_SHARED, "PROT_READ | PROT_WRITE");
-		alloc_zero_map(mapping_sizes[i], PROT_READ, MAP_SHARED, "PROT_READ");
-		alloc_zero_map(mapping_sizes[i], PROT_WRITE, MAP_SHARED, "PROT_WRITE");
-		alloc_zero_map(mapping_sizes[i], PROT_EXEC, MAP_SHARED, "PROT_EXEC");
-		alloc_zero_map(mapping_sizes[i], PROT_NONE, MAP_SHARED, "PROT_NONE");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_EXEC");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, "PROT_READ | PROT_WRITE | PROT_EXEC");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE, MAP_PRIVATE, "PROT_READ | PROT_WRITE (private)");
-		alloc_zero_map(mapping_sizes[i], PROT_READ, MAP_PRIVATE, "PROT_READ (private)");
-		alloc_zero_map(mapping_sizes[i], PROT_WRITE, MAP_PRIVATE, "PROT_WRITE (private)");
-		alloc_zero_map(mapping_sizes[i], PROT_READ | PROT_WRITE | PROT_EXEC, MAP_PRIVATE, "PROT_READ | PROT_WRITE | PROT_EXEC (private)");
+	for (i = 0; i < ARRAY_SIZE(mapping_sizes); i++)
+		for (k = 0; k < ARRAY_SIZE(initial_anon_kinds); k++)
+			alloc_zero_map(mapping_sizes[i],
+				       initial_anon_kinds[k].prot,
+				       initial_anon_kinds[k].flags,
+				       initial_anon_kinds[k].name);
+
+#if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
+	/*
+	 * A compat call's kernel reads an address slot as its low 32 bits,
+	 * and the mappings above lie past 4 GiB, so each kind gets twins
+	 * below 2 GiB, 64 KiB and 2 MiB long, for get_map_handle() to hand a
+	 * compat call.  They take 22 MiB of the 1 GiB MAP_32BIT window the
+	 * low pool and compat mmaps share; one the window cannot hold is
+	 * left out.
+	 */
+	for (k = 0; k < ARRAY_SIZE(initial_anon_kinds); k++) {
+		try_alloc_zero_map(64UL * 1024, initial_anon_kinds[k].prot,
+				   initial_anon_kinds[k].flags | MAP_32BIT,
+				   initial_anon_kinds[k].name);
+		try_alloc_zero_map(MB(2), initial_anon_kinds[k].prot,
+				   initial_anon_kinds[k].flags | MAP_32BIT,
+				   initial_anon_kinds[k].name);
 	}
+#endif
 
 	/*
 	 * Try to create MAP_HUGETLB mappings.  These exercise the hugetlb
