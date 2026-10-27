@@ -253,7 +253,8 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
 /*
  * Build a single nlmsghdr of the caller's nlmsg_type at msg+offset.  Returns
  * new offset (NLMSG_ALIGN'd).  nfgen_family is the family a batch pins on the
- * nfgenmsg of a NETLINK_NETFILTER command, or -1 to draw one.
+ * nfgenmsg of a NETLINK_NETFILTER command, or -1 to draw one from the
+ * command's subsystem's families.
  */
 /*
  * Single iteration of build_one_nlmsg()'s inner attr-append loop.
@@ -349,6 +350,11 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		body_len = gen_genl_body(msg + offset, nlmsg_type,
 					 buflen - offset, chaos, &genl_caps);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
+		/* A lone message names one of its subsystem's families, as
+		 * the commands of a batch do. */
+		if (nfgen_family < 0)
+			nfgen_family = nfnl_pick_family(
+				nfnl_lookup_by_subsys(nlmsg_type >> 8));
 		body_len = gen_nfnl_body(msg + offset, nlmsg_type,
 					 buflen - offset, nfgen_family);
 	} else if (triplet->protocol == NETLINK_XFRM) {

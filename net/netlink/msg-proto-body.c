@@ -101,9 +101,9 @@ unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
 /*
  * Generate body for NETLINK_NETFILTER messages.
  * nfnetlink messages have a nfgenmsg (4 bytes) after nlmsghdr.
- * The nlmsg_type encodes subsystem << 8 | message.  A family of 0 or more
- * is the one a batch sends all its commands in, kept seven times in eight;
- * the rest draw their own.  After building the body, bump the per-subsys
+ * The nlmsg_type encodes subsystem << 8 | message.  A family of 0 or more,
+ * the one a batch sends all its commands in or one of a lone message's
+ * subsystem's, is kept seven times in eight; the rest draw their own.  After building the body, bump the per-subsys
  * dispatch counter so the live subsystem mix is visible in the periodic
  * stats dump and end-of-run summary; bump degrades to a no-op when
  * nlmsg_type's high byte doesn't match any registered subsys.

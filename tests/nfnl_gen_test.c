@@ -879,6 +879,59 @@ static void check_nftables_families(void)
 }
 
 /*
+ * A lone nftables message, one that opens no batch, names one of the
+ * families nftables supports seven times in eight, as a batch's commands
+ * do, so that a GETTABLE looks in a family a batch may have made its table
+ * in; each of the six turns up.  Before, the lone ones drew from a fixed
+ * four that leave INET, ARP and NETDEV out.
+ */
+#define LONE_ROUNDS	40000
+
+static void check_nftables_lone_families(void)
+{
+	struct socket_triplet triplet = {
+		.family = PF_NETLINK,
+		.type = SOCK_RAW,
+		.protocol = NETLINK_NETFILTER,
+	};
+	unsigned int family[256] = { 0 };
+	unsigned int round, lone = 0, listed = 0, i;
+
+	for (round = 0; round < LONE_ROUNDS; round++) {
+		struct nlmsghdr nlh;
+		struct nfgenmsg nfg;
+		void *buf;
+		size_t len;
+
+		netlink_gen_msg(&triplet, &buf, &len);
+		if (len >= NLMSG_HDRLEN + sizeof(nfg)) {
+			memcpy(&nlh, buf, sizeof(nlh));
+			memcpy(&nfg, (unsigned char *) buf + NLMSG_HDRLEN,
+			       sizeof(nfg));
+			if (nlh.nlmsg_type >> 8 == NFNL_SUBSYS_NFTABLES) {
+				lone++;
+				family[nfg.nfgen_family]++;
+			}
+		}
+		free(buf);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(nft_families); i++) {
+		listed += family[nft_families[i]];
+		if (family[nft_families[i]] * 20 < lone) {
+			fprintf(stderr, "nftables: %u of %u lone messages in family %u\n",
+				family[nft_families[i]], lone, nft_families[i]);
+			BUG("nfnl: a lone message seldom names a family nftables has");
+		}
+	}
+	if (lone < 500 || listed * 10 < lone * 9) {
+		fprintf(stderr, "nftables: %u of %u lone messages in a listed family\n",
+			listed, lone);
+		BUG("nfnl: lone messages do not draw nftables' families");
+	}
+}
+
+/*
  * What a cmd's own table must be, as the kernel's policy and the handler
  * have it: the attributes of the policy that the handler reads, which of
  * them it cannot do without, and for a nest the grammar types, the policy
@@ -1983,6 +2036,7 @@ void nfnl_gen_self_check(void)
 		check_oneof_slot(&oneof_slots[i]);
 	word = check_nftables_names();
 	check_nftables_families();
+	check_nftables_lone_families();
 	for (i = 0; i < ARRAY_SIZE(word_names); i++)
 		check_word_name(&word_names[i]);
 	check_nftables_batch_flags();
