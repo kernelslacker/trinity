@@ -276,11 +276,15 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 	if ((long)rec->retval < 0)
 		return;
 
-	/* The kernel takes flags as a __u32, and with any it returns the ABI
+	/*
+	 * The kernel takes flags as a __u32, and with any it returns the ABI
 	 * version or the errata: a number, not a ruleset, so there is nothing to
-	 * arm and no fd to close. */
+	 * arm, pool or close.  The number may still be one of the child's fds,
+	 * so the retval goes to -1UL, or register_returned_fd() would pool it
+	 * and account_fd_and_group() retire and reuse it as one.
+	 */
 	if ((uint32_t) get_arg_snapshot(rec, 3) != 0) {
-		publish_resource(OBJ_FD_LANDLOCK, fd, NULL);
+		rec->retval = -1UL;
 		return;
 	}
 

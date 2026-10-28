@@ -988,9 +988,6 @@ static const struct create_case create_cases[] = {
 	  .flags = LANDLOCK_CREATE_RULESET_VERSION, .rules = 0 },
 	{ .what = "the errata query", .abi = 12,
 	  .flags = LANDLOCK_CREATE_RULESET_ERRATA, .rules = 0 },
-	{ .what = "the pool turning away a version query", .abi = 12,
-	  .flags = LANDLOCK_CREATE_RULESET_VERSION, .pool_refuses = true,
-	  .rules = 0 },
 };
 
 /* A buffer a 32-bit task could name, since the kernel reads its pointers as
@@ -1020,8 +1017,26 @@ static void check_create_cases(void)
 		unsigned char attr[96] = { 0 };
 		unsigned char *buf = attr;
 		struct syscallrecord rec;
-		bool kept;
+		bool kept, planted = false;
+		int number = -1;
 		long fd;
+
+		/* A query's answer is a number, and may well be the number of an
+		 * fd the child holds: one is held there for the handler to leave
+		 * open. */
+		if ((uint32_t) cc->flags != 0) {
+			number = (uint32_t) cc->flags == LANDLOCK_CREATE_RULESET_VERSION ?
+				 cc->abi : FAKE_ERRATA;
+			if (fcntl(number, F_GETFD) == -1) {
+				int null = open("/dev/null", O_RDONLY);
+
+				if (null < 0 || dup2(null, number) != number)
+					BUG("landlock: cannot hold an fd at a query's answer");
+				if (null != number)
+					close(null);
+				planted = true;
+			}
+		}
 
 		memcpy(attr, &hdr, sizeof(hdr));
 		if (cc->compat) {
@@ -1049,10 +1064,15 @@ static void check_create_cases(void)
 			munmap(buf, 4096);
 
 		if ((uint32_t) cc->flags != 0) {
-			/* A number, not a ruleset: nothing to arm, nothing to close. */
-			expect(fd >= 0 && rec.retval == (unsigned long) fd &&
-			       nr_rule_calls == 0,
-			       cc->what, nr_rule_calls);
+			/* A number, not a ruleset: nothing to arm, publish or
+			 * close, and no fd left in the retval for the dispatcher
+			 * to pool. */
+			expect(fd == number && nr_rule_calls == 0 && publishes == 0 &&
+			       rec.retval == -1UL, cc->what, rec.retval);
+			expect(fcntl(number, F_GETFD) >= 0,
+			       "the fd a query's answer names was closed", number);
+			if (planted)
+				close(number);
 			continue;
 		}
 
