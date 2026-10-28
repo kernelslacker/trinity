@@ -22,7 +22,13 @@ static const unsigned int tcp_opts[] = {
 
 static const char *ulp_names[] = { "tls", "mptcp" };
 
-static const char *cc_algos[] = { "cubic", "reno", "bbr", "dctcp", "vegas", "westwood" };
+/* Every congestion control the kernel can register by name; one not
+ * loaded yet is request_module()d for a caller with CAP_NET_ADMIN. */
+static const char *cc_algos[] = {
+	"reno", "cubic", "bbr", "bic", "cdg", "dctcp", "highspeed", "htcp",
+	"hybla", "illinois", "lp", "nv", "roccet", "scalable", "vegas",
+	"veno", "westwood", "yeah",
+};
 
 static const char *ao_algos[] = { "hmac(sha1)", "cmac(aes)", "hmac(sha256)" };
 
