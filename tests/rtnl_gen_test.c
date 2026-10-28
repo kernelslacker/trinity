@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <netinet/in.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -23,6 +24,8 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
+size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
+			      unsigned short nla_type);
 
 #define ROUNDS		800000
 
@@ -326,6 +329,58 @@ static void expect_tunnel_attrs(const struct tunnel_attrs *t)
 			"rtnl: a tunnel request does not ask for every device half the time");
 	expect_fraction(t->entries, t->attrs, 0.80, 0.95, "RTM_*TUNNEL",
 			"rtnl: a tunnel request's attributes are not mostly VXLAN_VNIFILTER_ENTRY");
+}
+
+#define ENTRIES		40000
+
+/*
+ * Whether the VXLAN_VNIFILTER_ENTRY payload of len bytes at p holds a GROUP
+ * or GROUP6 of a length other than an address's, which the exact-length
+ * policy refuses.
+ */
+static bool short_group(const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((type == VXLAN_VNIFILTER_ENTRY_GROUP &&
+		     nla->nla_len != NLA_HDRLEN + sizeof(struct in_addr)) ||
+		    (type == VXLAN_VNIFILTER_ENTRY_GROUP6 &&
+		     nla->nla_len != NLA_HDRLEN + sizeof(struct in6_addr)))
+			return true;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return false;
+}
+
+/*
+ * vni_filter_policy validates every entry against vni_filter_entry_policy,
+ * whose GROUP and GROUP6 are NLA_POLICY_EXACT_LEN, so one short entry
+ * refuses the whole message.  An entry has up to three siblings after
+ * START, each a GROUP or GROUP6 two times in three and short one time in
+ * 32, so about 0.03 of the entries are short.
+ */
+static void builds_vni_entries_the_policy_takes(void)
+{
+	static unsigned char buf[256];
+	unsigned int i, bad = 0;
+
+	for (i = 0; i < ENTRIES; i++) {
+		size_t len = gen_rta_tunnel_payload(buf, sizeof(buf),
+						    VXLAN_VNIFILTER_ENTRY);
+
+		if (len == 0)
+			BUG("rtnl: no VXLAN_VNIFILTER_ENTRY payload fits 256 bytes");
+		bad += short_group(buf, len);
+	}
+	expect_fraction(bad, ENTRIES, 0.015, 0.05, "VXLAN_VNIFILTER_ENTRY",
+			"rtnl: a VNI filter entry is not short about one time in 32");
 }
 
 /* ---------- The link size limits and IFLA_PACING_OFFLOAD ----------------- */
@@ -707,6 +762,7 @@ void rtnl_gen_self_check(void)
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_tunnel_attrs(&t.tunnel);
+	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);

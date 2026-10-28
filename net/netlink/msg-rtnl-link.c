@@ -323,9 +323,9 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
  * whose START and END are both zero, so emit a non-zero VNI in
  * [1, 0xFFFFFF] -- VNIs are 24-bit) then 0-3 optional siblings drawn
  * from the inner VXLAN_VNIFILTER_ENTRY_* set sized to the widths the
- * kernel's vni_filter_entry_policy walker expects: NLA_U32 for END,
- * NLA_BINARY sizeof(struct in_addr) for GROUP, NLA_BINARY
- * sizeof(struct in6_addr) for GROUP6.  Returns the inner payload
+ * kernel's vni_filter_entry_policy takes: NLA_U32 for END, and exactly
+ * sizeof(struct in_addr) for GROUP and sizeof(struct in6_addr) for GROUP6
+ * (NLA_POLICY_EXACT_LEN).  Returns the inner payload
  * length (excluding the outer per-entry header, which the caller
  * writes); 0 on no-room.
  */
@@ -363,16 +363,16 @@ static size_t build_vxlan_vni_entry_nested(unsigned char *p, size_t avail)
 			break;
 		case 1:
 			atype = VXLAN_VNIFILTER_ENTRY_GROUP;
-			/* 1-in-8: short payload exercises the NLA_BINARY ceiling
-			 * validator (kernel bug 984f831dda31 accepted under-length
-			 * attrs but read at full width). */
-			plen = ONE_IN(8) ? RAND_RANGE((size_t)1, sizeof(struct in_addr) - 1)
-					 : sizeof(struct in_addr);
+			/* A short GROUP or GROUP6 keeps the exact-length check
+			 * busy, but the outer parse validates every entry, so
+			 * it refuses the whole message: one in 32. */
+			plen = ONE_IN(32) ? RAND_RANGE((size_t)1, sizeof(struct in_addr) - 1)
+					  : sizeof(struct in_addr);
 			break;
 		default:
 			atype = VXLAN_VNIFILTER_ENTRY_GROUP6;
-			plen = ONE_IN(8) ? RAND_RANGE((size_t)1, sizeof(struct in6_addr) - 1)
-					 : sizeof(struct in6_addr);
+			plen = ONE_IN(32) ? RAND_RANGE((size_t)1, sizeof(struct in6_addr) - 1)
+					  : sizeof(struct in6_addr);
 			break;
 		}
 
@@ -414,15 +414,13 @@ static size_t build_vxlan_vni_entry_nested(unsigned char *p, size_t avail)
  * attributes carried in the RTM_*TUNNEL message family (group 26 in
  * the gen_rta_payload switch).  The only kernel-side handler today is
  * drivers/net/vxlan/vxlan_vnifilter.c::vxlan_vnifilter_process,
- * registered for PF_BRIDGE; it walks the message via
- * nlmsg_parse(..., vni_filter_policy, ...) which only declares the
- * NLA_NESTED VXLAN_VNIFILTER_ENTRY top-level attr.  The kernel then
- * iterates nlmsg_for_each_attr_type(VXLAN_VNIFILTER_ENTRY) and for
- * each entry runs nla_parse_nested(..., vni_filter_entry_policy, ...)
+ * registered for PF_BRIDGE; its strict nlmsg_parse() against
+ * vni_filter_policy declares VXLAN_VNIFILTER_ENTRY alone, as
+ * NLA_POLICY_NESTED(vni_filter_entry_policy), so every entry is validated
  * over { START, END, GROUP, GROUP6 } -- the sub-attrs
- * build_vxlan_vni_entry_nested lays down.  Sizing this here means the
- * inner per-entry parser actually runs instead of bouncing at the
- * outer nlmsg_parse on a random-byte payload.
+ * build_vxlan_vni_entry_nested lays down -- and one bad entry refuses the
+ * whole message.  The handler then walks the entries and parses each
+ * again.
  *
  * VXLAN_VNIFILTER_ENTRY_STATS has no entry in vni_filter_entry_policy
  * (it is dump-only, written via nla_nest_start in the reply path), so
