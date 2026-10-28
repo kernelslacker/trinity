@@ -627,10 +627,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
 # syscalls/mm/remap_file_pages.c for remap_file_pages.
 # syscalls/mm/mseal.c brings mseal, whose sanitiser maps a real scratch
 # mapping in the test process and whose hook and cleanup the same test
-# runs.
+# runs.  syscalls/mm/numa/move_pages.c brings move_pages, whose sanitiser
+# and hook it runs too, the arrays on the heap with every map lookup empty.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c \
 		   $(TOP)/syscalls/mm/mseal.c \
-		   $(TOP)/syscalls/mm/remap_file_pages.c
+		   $(TOP)/syscalls/mm/remap_file_pages.c \
+		   $(TOP)/syscalls/mm/numa/move_pages.c
 
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and

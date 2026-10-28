@@ -8,8 +8,9 @@
  * mapping), a munmap, mprotect, pkey_mprotect, madvise,
  * set_mempolicy_home_node or remap_file_pages range inside the pool mapping
  * its sanitiser picked, madvise's (addr, len) off trinity's tracked regions
- * too, a madvise or process_madvise never installs guard pages, and an
- * mseal seals only a mapping its sanitiser made for it.
+ * too, a madvise or process_madvise never installs guard pages, an mseal
+ * seals only a mapping its sanitiser made for it, and a move_pages count
+ * stays inside the arrays its sanitiser built.
  */
 
 #include <errno.h>
@@ -3147,6 +3148,99 @@ static void mincore_held_to_vec(void)
 	fake_this_child = NULL;
 }
 
+/* End a call the way the dispatcher ends a failed one: the post handler,
+ * then the arrays the sanitiser left on the record.  The fake allocator
+ * tracks nothing, so rec_owned_drain() would leave them, and they are
+ * freed by hand. */
+static void end_move_pages(struct syscallentry *entry,
+			   struct syscallrecord *mrec)
+{
+	mrec->retval = (unsigned long) -1L;
+	entry->post(mrec);
+	while (mrec->owned_count > 0)
+		free(mrec->owned[--mrec->owned_count]);
+}
+
+/* The sanitiser sizes the pages, nodes and status arrays to the count it
+ * draws, and whatever it builds passes, a compat call included.  A count
+ * rewritten past the arrays is refused, whatever brought it: one page
+ * more, a pid, the largest count, a native count with an upper half.  One
+ * within them passes and becomes the count post_move_pages() holds the
+ * return to, so the count the sanitiser drew is refused after it.  A
+ * compat call's count is judged on the slot's low 32 bits. */
+static void move_pages_count_held_to_arrays(struct syscallentry *entry)
+{
+	const unsigned long grown_by[] = { 1, 4194304, ULONG_MAX / 2 };
+	struct syscallrecord *mrec;
+	unsigned long count;
+	unsigned int i;
+
+	for (i = 0; i < MM_DRAWS; i++) {
+		mrec = mm_call(entry);
+		mrec->do32bit = (i % 10) == 0;
+		entry->sanitise(mrec);
+		if (validate_arg_coupling(mrec, mrec->entry) != 0)
+			BUG("move_pages: a call the sanitiser built was refused");
+		end_move_pages(entry, mrec);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(grown_by); i++) {
+		mrec = mm_call(entry);
+		entry->sanitise(mrec);
+		mrec->a2 += grown_by[i];
+		if (validate_arg_coupling(mrec, mrec->entry) != -1)
+			BUG("move_pages: a count grown past the arrays was kept");
+		end_move_pages(entry, mrec);
+	}
+
+	mrec = mm_call(entry);
+	entry->sanitise(mrec);
+	count = mrec->a2;
+	mrec->a2 = count | (1UL << 32);
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("move_pages: a native count's upper half was dropped");
+	mrec->do32bit = true;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("move_pages: a compat call was judged on its count's upper half");
+	mrec->do32bit = false;
+	mrec->a2 = count - 1;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("move_pages: a count inside the arrays was refused");
+	mrec->a2 = count;
+	if (validate_arg_coupling(mrec, mrec->entry) != -1)
+		BUG("move_pages: a count was not held to the one the last pass handed the kernel");
+	end_move_pages(entry, mrec);
+}
+
+/* Without the call's own snapshot there is no count to hold it to: a pid
+ * where the pointer was, one the ownership table does not hold, or one
+ * with another magic.  Only a call that moves no pages goes through then. */
+static void move_pages_needs_its_snapshot(struct syscallentry *entry)
+{
+	struct syscallrecord *mrec = mm_call(entry);
+	unsigned long snap;
+
+	entry->sanitise(mrec);
+	snapshot_gate_held(mrec, "move_pages");
+	snap = mrec->post_state;
+	mrec->post_state = 12345;
+	mrec->a2 = 0;
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("move_pages: a call moving no pages was refused for its snapshot");
+	mrec->post_state = snap;
+	end_move_pages(entry, mrec);
+}
+
+/* move_pages's final count moves no more pages than its arrays hold. */
+static void move_pages_held_to_arrays(void)
+{
+	struct syscallentry move_pages_entry = syscall_move_pages;
+
+	move_pages_count_held_to_arrays(&move_pages_entry);
+	move_pages_needs_its_snapshot(&move_pages_entry);
+	fake_this_child = NULL;
+}
+
 /* The call recv's or recvfrom's sanitiser builds over the pool mapping from
  * the generator's @count, mapping in the buffer slot. */
 static struct syscallrecord *recv_call(struct syscallentry *entry,
@@ -5052,6 +5146,7 @@ void arg_coupling_self_check(void)
 	mremap_post_follows_mapping();
 	mremap_held_to_vetted_call();
 	mincore_held_to_vec();
+	move_pages_held_to_arrays();
 	recv_buffer_held_to_mapping();
 	getrandom_buffer_held_to_mapping();
 	syslog_buffer_held_to_mapping();

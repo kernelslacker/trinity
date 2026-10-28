@@ -111,6 +111,36 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 }
 
 /*
+ * post_move_pages() holds the return, the pages that could not be moved, to
+ * the count sanitise drew, and a rewrite of nr_pages afterwards (chain
+ * substitution, a RedQueen pin) can raise it past the arrays, after which a
+ * larger return is no anomaly.  So a count past the snapshot's is refused,
+ * and one inside it becomes the snapshot's, the count the kernel is handed.
+ * The kernel reads a compat call's count as its low 32 bits.  Without the
+ * call's own snapshot only a call that moves no pages goes through.
+ */
+static int vet_final_move_pages(struct syscallrecord *rec,
+				const struct syscallentry *entry)
+{
+	struct move_pages_post_state *snap =
+		(struct move_pages_post_state *) rec->post_state;
+	unsigned long count = rec->do32bit ? (unsigned int) rec->a2 : rec->a2;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != MOVE_PAGES_POST_STATE_MAGIC)
+		snap = NULL;
+
+	if (count != 0 && (snap == NULL || count > snap->count)) {
+		outputerr("arg-coupling: %s rejected: nr_pages runs past the arrays sanitise built\n",
+			  entry->name);
+		return -1;
+	}
+	if (snap != NULL)
+		snap->count = count;
+	return 0;
+}
+
+/*
  * Diagnostic helper for the rejection sample lines below.  Mirrors the
  * banding used by corrupt_ptr_label() in utils.c so the per-handler
  * sample lines and the global corrupt-ptr reject sample line speak the
@@ -193,7 +223,8 @@ static void post_move_pages(struct syscallrecord *rec)
 
 	/*
 	 * Kernel ABI: sys_move_pages returns the count of pages that
-	 * could not be moved, capped at the snapshotted nr_pages arg.
+	 * could not be moved, capped at the nr_pages it was handed, which
+	 * vet_final_move_pages() left in snap->count.
 	 * Failure returns -1UL.  Anything > snap->count on a non-(-1UL)
 	 * return is a structural ABI regression: a sign-extension tear
 	 * in the syscall return path, a kernel-side miscount of unmoved
@@ -224,6 +255,7 @@ struct syscallentry syscall_move_pages = {
 	.arg_params[5].list = ARGLIST(move_pages_flags),
 	.group = GROUP_VM,
 	.sanitise = sanitise_move_pages,
+	.vet_final = vet_final_move_pages,
 	.post = post_move_pages,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
