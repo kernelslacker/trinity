@@ -6,12 +6,14 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <time.h>
 #include "arch.h"
 #include "output-poison.h"
 #include "pathnames.h"
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stat-recall.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -40,13 +42,15 @@
  * post would forge a clean-looking divergence.  A poison_seed of 0
  * means the sanitise-time writability check refused to stamp poison
  * for this call and the post handler must no-op the untouched-buffer
- * check.
+ * check.  before is the coarse clock read ahead of the call, which
+ * stat_recall_diverged() judges the answer's ctime by.
  */
 #define NEWLSTAT_POST_STATE_MAGIC	0x4E4C5354UL	/* "NLST" */
 struct newlstat_post_state {
 	unsigned long magic;
 	unsigned long statbuf;
 	uint64_t poison_seed;
+	struct timespec before;
 	char filename[PATH_MAX];
 };
 
@@ -106,6 +110,7 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWLSTAT_POST_STATE_MAGIC;
 	snap->statbuf  = rec->a2;
+	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
 	if (!post_snapshot_str(snap->filename, sizeof(snap->filename),
 			       (const char *)(unsigned long) rec->a1))
 		snap->filename[0] = '\0';
@@ -139,23 +144,19 @@ static void sanitise_newlstat(struct syscallrecord *rec)
 
 /*
  * Oracle: newlstat(filename, statbuf) writes the inode metadata of the
- * symlink itself (lstat does not follow) into the user struct stat.
- * For a given symlink, every inode-attribute field is byte-stable across
- * the ~150ms window between the original syscall return and our post-hook
- * re-call: st_dev, st_ino, st_mode, st_nlink, st_uid, st_gid, st_rdev,
- * st_size, st_blksize, st_blocks all live on the inode and only change
- * via chmod / chown / link / truncate / unlink-and-replace on the path.
- * A sibling thread may legitimately touch the timestamps (atim/mtim/ctim
- * advance on access/modify/metadata-change), so those three are excluded
- * from the compare to keep false-positive rate near zero.  A divergence
- * in the remaining ten fields is not benign drift; it points at one of:
+ * symlink itself (lstat does not follow) into the user struct stat.  A
+ * re-call on the same path finds the same attributes unless something
+ * changed the inode in between, and siblings do: half these calls name a
+ * testfile, which they chmod, chown, link and truncate, and rename other
+ * files over.  So a moved attribute counts only as stat_recall_diverged()
+ * judges it, where nothing outside the kernel can have moved it, and then
+ * points at one of:
  *
  *   - copy_to_user mis-write that leaves a torn struct stat in user
  *     memory (partial write, wrong-offset fill, residual stack data).
- *   - 32-bit-on-64-bit compat sign-extension of st_size, st_dev, or
- *     st_rdev (e.g. a small positive size sign-extending to 0xFFFF...).
- *   - struct-layout mismatch shifting st_dev into the st_ino slot, or
- *     st_blocks into st_blksize, on a kernel/glibc skew.
+ *   - 32-bit-on-64-bit compat sign-extension of st_size or st_rdev
+ *     (e.g. a small positive size sign-extending to 0xFFFF...).
+ *   - struct-layout mismatch shifting fields on a kernel/glibc skew.
  *   - sibling-thread scribble of the user receive buffer between syscall
  *     return and our post-hook re-read.
  *
@@ -167,17 +168,15 @@ static void sanitise_newlstat(struct syscallrecord *rec)
  * by then we may resolve a different file, get different inode metadata,
  * and report a false divergence.  Snapshot BOTH the path (PATH_MAX
  * stack buffer) and the original stat result before the re-call.  If
- * the re-call fails, give up rather than report.  Compare each field
- * individually with no early-return so multi-field corruption surfaces
- * in a single sample, but bump the anomaly counter only once per sample.
- * Sample one in a hundred to stay in line with the rest of the oracle
- * family.
+ * the re-call fails, give up rather than report.  The anomaly line
+ * prints every field, so multi-field corruption surfaces in a single
+ * sample, and the counter is bumped once per sample.  Sample one in a
+ * hundred to stay in line with the rest of the oracle family.
  */
 static void post_newlstat(struct syscallrecord *rec)
 {
 	struct newlstat_post_state *snap;
 	struct stat first, recheck;
-	int diverged = 0;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -229,18 +228,10 @@ static void post_newlstat(struct syscallrecord *rec)
 		    AT_SYMLINK_NOFOLLOW) != 0)
 		goto out_release;
 
-	if (first.st_dev     != recheck.st_dev)     diverged = 1;
-	if (first.st_ino     != recheck.st_ino)     diverged = 1;
-	if (first.st_mode    != recheck.st_mode)    diverged = 1;
-	if (first.st_nlink   != recheck.st_nlink)   diverged = 1;
-	if (first.st_uid     != recheck.st_uid)     diverged = 1;
-	if (first.st_gid     != recheck.st_gid)     diverged = 1;
-	if (first.st_rdev    != recheck.st_rdev)    diverged = 1;
-	if (first.st_size    != recheck.st_size)    diverged = 1;
-	if (first.st_blksize != recheck.st_blksize) diverged = 1;
-	if (first.st_blocks  != recheck.st_blocks)  diverged = 1;
-
-	if (!diverged)
+	/* vfs_fstatat() adds AT_NO_AUTOMOUNT, so the mount lookup does too. */
+	if (!stat_recall_diverged(&first, &recheck, AT_FDCWD, snap->filename,
+				  AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+				  &snap->before))
 		goto out_release;
 
 	output(0,

@@ -19,7 +19,7 @@
 #include "debug.h"		/* BUG */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_newstat */
+#include "syscalls/syscalls.h"	/* syscall_newstat, syscall_newlstat */
 
 extern bool fake_snapshot_str_copies;		/* arg_coupling_test.c */
 
@@ -48,10 +48,14 @@ struct recall_oracle {
 	unsigned long (*anomalies)(const char *path, const struct stat *answer);
 };
 
-static unsigned long newstat_anomalies(const char *path,
-				       const struct stat *answer)
+/* @entry's calls on (@path, statbuf), the shape newstat and newlstat share,
+ * each of which answered @answer; *@counter counts their anomalies. */
+static unsigned long path_stat_anomalies(struct syscallentry *entry,
+					 const unsigned long *counter,
+					 const char *path,
+					 const struct stat *answer)
 {
-	unsigned long before = shm->stats.oracle.newstat_oracle_anomalies;
+	unsigned long before = *counter;
 	static struct syscallrecord rec;
 	static struct stat buf;
 	unsigned int i;
@@ -60,16 +64,36 @@ static unsigned long newstat_anomalies(const char *path,
 		memset(&rec, 0, sizeof(rec));
 		rec.a1 = (unsigned long) path;
 		rec.a2 = (unsigned long) &buf;
-		syscall_newstat.sanitise(&rec);
+		entry->sanitise(&rec);
 		memcpy((void *) rec.a2, answer, sizeof(*answer));
 		rec.retval = 0;
-		syscall_newstat.post(&rec);
+		entry->post(&rec);
 	}
-	return shm->stats.oracle.newstat_oracle_anomalies - before;
+	return *counter - before;
+}
+
+static unsigned long newstat_anomalies(const char *path,
+				       const struct stat *answer)
+{
+	return path_stat_anomalies(&syscall_newstat,
+				   &shm->stats.oracle.newstat_oracle_anomalies,
+				   path, answer);
+}
+
+static unsigned long newlstat_anomalies(const char *path,
+					const struct stat *answer)
+{
+	return path_stat_anomalies(&syscall_newlstat,
+				   &shm->stats.oracle.newlstat_oracle_anomalies,
+				   path, answer);
 }
 
 static const struct recall_oracle newstat_oracle = {
 	.name = "newstat", .anomalies = newstat_anomalies,
+};
+
+static const struct recall_oracle newlstat_oracle = {
+	.name = "newlstat", .anomalies = newlstat_anomalies,
 };
 
 static char scratch[] = "/tmp/trinity-stat-recall-test.XXXXXX";
@@ -148,6 +172,7 @@ void stat_recall_self_check(void)
 	fake_mnt_ids = true;
 
 	path_recall_cases(&newstat_oracle);
+	path_recall_cases(&newlstat_oracle);
 
 	fake_mnt_ids = false;
 	fake_snapshot_str_copies = false;
