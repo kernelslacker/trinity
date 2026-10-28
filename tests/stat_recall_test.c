@@ -19,7 +19,7 @@
 #include "debug.h"		/* BUG */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_newstat, syscall_newlstat */
+#include "syscalls/syscalls.h"	/* syscall_newstat, ... */
 
 extern bool fake_snapshot_str_copies;		/* arg_coupling_test.c */
 
@@ -88,12 +88,39 @@ static unsigned long newlstat_anomalies(const char *path,
 				   path, answer);
 }
 
+/* newfstatat(AT_FDCWD, @path, statbuf, AT_SYMLINK_NOFOLLOW) calls. */
+static unsigned long newfstatat_anomalies(const char *path,
+					  const struct stat *answer)
+{
+	unsigned long before = shm->stats.oracle.newfstatat_oracle_anomalies;
+	static struct syscallrecord rec;
+	static struct stat buf;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) AT_FDCWD;
+		rec.a2 = (unsigned long) path;
+		rec.a3 = (unsigned long) &buf;
+		rec.a4 = AT_SYMLINK_NOFOLLOW;
+		syscall_newfstatat.sanitise(&rec);
+		memcpy((void *) rec.a3, answer, sizeof(*answer));
+		rec.retval = 0;
+		syscall_newfstatat.post(&rec);
+	}
+	return shm->stats.oracle.newfstatat_oracle_anomalies - before;
+}
+
 static const struct recall_oracle newstat_oracle = {
 	.name = "newstat", .anomalies = newstat_anomalies,
 };
 
 static const struct recall_oracle newlstat_oracle = {
 	.name = "newlstat", .anomalies = newlstat_anomalies,
+};
+
+static const struct recall_oracle newfstatat_oracle = {
+	.name = "newfstatat", .anomalies = newfstatat_anomalies,
 };
 
 static char scratch[] = "/tmp/trinity-stat-recall-test.XXXXXX";
@@ -173,6 +200,7 @@ void stat_recall_self_check(void)
 
 	path_recall_cases(&newstat_oracle);
 	path_recall_cases(&newlstat_oracle);
+	path_recall_cases(&newfstatat_oracle);
 
 	fake_mnt_ids = false;
 	fake_snapshot_str_copies = false;

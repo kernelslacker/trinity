@@ -533,12 +533,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/fds/fds-pool.c \
 		   $(TOP)/dispatch/syscall-retfd.c
 
-# syscalls/fs/stat/newstat.c and newlstat.c bring syscall_newstat and
-# syscall_newlstat, whose sanitisers and post handlers stat_recall_test.c
-# runs on a file of its own, and stat-recall.c the verdict their re-call
-# oracles reach.
+# syscalls/fs/stat/newstat.c, newlstat.c and newfstat.c bring
+# syscall_newstat, syscall_newlstat and syscall_newfstatat, whose
+# sanitisers and post handlers stat_recall_test.c runs on a file of its
+# own, and stat-recall.c the verdict their re-call oracles reach.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/stat/newstat.c \
 		   $(TOP)/syscalls/fs/stat/newlstat.c \
+		   $(TOP)/syscalls/fs/stat/newfstat.c \
 		   $(TOP)/syscalls/fs/stat/stat-recall.c
 
 # syscalls/bpf.c and its sibling TUs bring syscall_bpf, whose sanitiser
