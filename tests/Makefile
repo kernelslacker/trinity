@@ -541,8 +541,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 # verdict their re-call oracles reach.  syscalls/fs/mount/statmount.c
 # brings syscall_statmount, whose sanitiser and post handler it runs on
 # the mount / lies on, and whose pool of mount ids mount_pool_test.c holds
-# to ids a real statmount() answers for.
+# to ids a real statmount() answers for.  syscalls/fs/mount/listmount.c
+# brings syscall_listmount, whose pool the same test holds to ids a real
+# listmount() lists under.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/mount/statmount.c \
+		   $(TOP)/syscalls/fs/mount/listmount.c \
 		   $(TOP)/syscalls/fs/stat/newstat.c \
 		   $(TOP)/syscalls/fs/stat/newlstat.c \
 		   $(TOP)/syscalls/fs/stat/newfstat.c \

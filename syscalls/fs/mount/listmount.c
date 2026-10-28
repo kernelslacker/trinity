@@ -9,7 +9,6 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
 #include "arch.h"
@@ -40,15 +39,17 @@
 #define LISTMOUNT_MNT_ID_POOL_SIZE	16
 
 /*
- * Per-process cache of real mount IDs read from /proc/self/mountinfo.
+ * Per-process cache of real mount IDs, from listmount() of LSMT_ROOT.
  * Random 64-bit mnt_id values almost never match a live parent and the
- * call EINVALs before the iterator runs.  Pulling real parent IDs from
- * mountinfo steers the bias into the iteration arm where the bulk of
- * the kernel-side work lives.  Per-process static is enough: trinity
- * forks per child and the cache is inherited through the fork.  No
- * fileops in the syscall path -- the cache is populated lazily on the
- * first call.  Duplicated rather than shared with statmount's cache
- * because two callers do not justify a cross-cutting header.
+ * call EINVALs before the iterator runs.  Pulling real parent IDs steers
+ * the bias into the iteration arm where the bulk of the kernel-side work
+ * lives.  They have to be unique ids: copy_mnt_id_req() refuses any at or
+ * below MNT_UNIQUE_ID_OFFSET with -EINVAL, and the reused ids
+ * /proc/self/mountinfo lists all are.  Per-process static is enough:
+ * trinity forks per child and the cache is inherited through the fork.
+ * One listmount() fills it lazily on the first call.  Duplicated rather
+ * than shared with statmount's cache because two callers do not justify a
+ * cross-cutting header.
  */
 static __u64 listmount_mnt_id_pool[LISTMOUNT_MNT_ID_POOL_SIZE];
 static unsigned int listmount_mnt_id_pool_n;
@@ -56,46 +57,25 @@ static bool listmount_mnt_id_pool_loaded;
 
 static void load_listmount_mnt_id_pool(void)
 {
-	static char buf[32768];
-	ssize_t n;
-	char *p, *end;
-	int fd;
+#ifdef HAVE_SYS_LISTMOUNT
+	struct mnt_id_req req = {
+		.size = MNT_ID_REQ_SIZE_VER0,
+		.mnt_id = LSMT_ROOT,
+	};
+	long n;
+#endif
 
 	if (listmount_mnt_id_pool_loaded)
 		return;
 	listmount_mnt_id_pool_loaded = true;
 
-	/* Raw open/read instead of fopen/fgets/fclose: avoid stdio's
-	 * per-call malloc of the FILE struct + IO buffer.  One bounded read
-	 * of /proc/self/mountinfo into a fixed buffer is enough to pull the
-	 * first POOL_SIZE mount IDs out -- if mountinfo overflows the
-	 * buffer we simply parse fewer lines, which only affects the
-	 * biasing distribution, not correctness. */
-	fd = open("/proc/self/mountinfo", O_RDONLY);
-	if (fd < 0)
-		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-
-	p = buf;
-	end = buf + n;
-	while (p < end &&
-	       listmount_mnt_id_pool_n < LISTMOUNT_MNT_ID_POOL_SIZE) {
-		unsigned long long id;
-		char *nl = memchr(p, '\n', end - p);
-
-		if (nl != NULL)
-			*nl = '\0';
-		if (sscanf(p, "%llu ", &id) == 1)
-			listmount_mnt_id_pool[listmount_mnt_id_pool_n++] =
-				(__u64) id;
-		if (nl == NULL)
-			break;
-		p = nl + 1;
-	}
+#ifdef HAVE_SYS_LISTMOUNT
+	n = syscall(SYS_listmount, &req, listmount_mnt_id_pool,
+		    LISTMOUNT_MNT_ID_POOL_SIZE, 0);
+	if (n > 0)
+		listmount_mnt_id_pool_n =
+			min(n, (long) LISTMOUNT_MNT_ID_POOL_SIZE);
+#endif
 }
 
 /*
