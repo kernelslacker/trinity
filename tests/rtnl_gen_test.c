@@ -266,18 +266,28 @@ static void expect_addr_header(const struct addr_header *get,
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
 
 struct tunnel_attrs {
+	unsigned int msgs;
+	unsigned int bridge;	/* tunnel_msg.family AF_BRIDGE */
+	unsigned int flags_ok;	/* no flag but TUNNEL_MSG_FLAG_STATS */
+	unsigned int index_all;	/* ifindex 0 */
 	unsigned int attrs;
 	unsigned int entries;	/* of type VXLAN_VNIFILTER_ENTRY */
 };
 
 static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nlh)
 {
+	const struct tunnel_msg *tm = NLMSG_DATA(nlh);
 	const unsigned char *p;
 	const struct nlattr *nla;
 	size_t len;
 
 	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct tunnel_msg)))
 		return;
+	t->msgs++;
+	t->bridge += tm->family == AF_BRIDGE;
+	t->flags_ok += !(tm->flags & ~TUNNEL_MSG_FLAG_STATS);
+	t->index_all += tm->ifindex == 0;
+
 	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct tunnel_msg));
 	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct tunnel_msg));
 	while ((nla = fit_attr(p, len)) != NULL) {
@@ -293,6 +303,12 @@ static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nl
 }
 
 /*
+ * vxlan_vnifilter.c registers the three types for PF_BRIDGE alone, and
+ * rtnetlink_rcv_msg() answers any other family -EOPNOTSUPP;
+ * vxlan_vnifilter_dump() refuses a flag but TUNNEL_MSG_FLAG_STATS and walks
+ * every device for ifindex 0.  The builder names AF_BRIDGE but one request
+ * in sixteen, which takes one of six families seven times in eight, holds
+ * valid flags seven times in eight and asks for every device half the time.
  * vxlan_vnifilter_process() parses RTM_NEWTUNNEL and RTM_DELTUNNEL strictly
  * against vni_filter_policy, whose one attribute is VXLAN_VNIFILTER_ENTRY,
  * so a request of any other type is refused whole, and the dump reads only
@@ -302,6 +318,12 @@ static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nl
  */
 static void expect_tunnel_attrs(const struct tunnel_attrs *t)
 {
+	expect_fraction(t->bridge, t->msgs, 0.91, 0.98, "RTM_*TUNNEL",
+			"rtnl: a tunnel request does not name AF_BRIDGE but one time in sixteen");
+	expect_fraction(t->flags_ok, t->msgs, 0.84, 0.91, "RTM_*TUNNEL",
+			"rtnl: a tunnel request's flags are not valid seven times in eight");
+	expect_fraction(t->index_all, t->msgs, 0.44, 0.57, "RTM_*TUNNEL",
+			"rtnl: a tunnel request does not ask for every device half the time");
 	expect_fraction(t->entries, t->attrs, 0.80, 0.95, "RTM_*TUNNEL",
 			"rtnl: a tunnel request's attributes are not mostly VXLAN_VNIFILTER_ENTRY");
 }

@@ -357,17 +357,25 @@ static size_t gen_rtnl_body_nexthop(unsigned char *body, size_t buflen, unsigned
 	return sizeof(nh);
 }
 
-/* RTM_*TUNNEL: struct tunnel_msg */
+/*
+ * RTM_*TUNNEL: struct tunnel_msg.  vxlan_vnifilter.c registers the three
+ * types for PF_BRIDGE alone, and rtnetlink_rcv_msg() answers any other
+ * family -EOPNOTSUPP; the dump refuses a flag but TUNNEL_MSG_FLAG_STATS and
+ * walks every device for ifindex 0.  So a request names AF_BRIDGE but one
+ * in sixteen, holds valid flags seven times in eight, and an index for
+ * every device, lo or a small one.
+ */
 static size_t gen_rtnl_body_tunnel(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
 	struct tunnel_msg tm;
 
 	if (sizeof(tm) > buflen)
 		return 0;
-	tm.family = rand_family();
-	tm.flags = rand32() & 0xff;
+	tm.family = ONE_IN(16) ? rand_family() : AF_BRIDGE;
+	tm.flags = ONE_IN(8) ? rand32() & 0xff :
+		   RAND_BOOL() ? TUNNEL_MSG_FLAG_STATS : 0;
 	tm.reserved2 = 0;
-	tm.ifindex = rnd_modulo_u32(64);
+	tm.ifindex = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
 	*out_family = tm.family;
 	memcpy(body, &tm, sizeof(tm));
 	return sizeof(tm);
