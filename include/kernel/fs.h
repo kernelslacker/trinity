@@ -60,3 +60,82 @@ struct file_attr {
 #ifndef FS_XFLAG_HASATTR
 #define FS_XFLAG_HASATTR	0x80000000
 #endif
+
+#ifndef PROCFS_IOCTL_MAGIC
+#define PROCFS_IOCTL_MAGIC	'f'
+#endif
+
+#ifndef PAGEMAP_SCAN
+#define PAGEMAP_SCAN	_IOWR(PROCFS_IOCTL_MAGIC, 16, struct pm_scan_arg)
+
+/* What a scan reports in struct page_region and takes in its masks. */
+#define PAGE_IS_WPALLOWED	(1 << 0)
+#define PAGE_IS_WRITTEN		(1 << 1)
+#define PAGE_IS_FILE		(1 << 2)
+#define PAGE_IS_PRESENT		(1 << 3)
+#define PAGE_IS_SWAPPED		(1 << 4)
+#define PAGE_IS_PFNZERO		(1 << 5)
+#define PAGE_IS_HUGE		(1 << 6)
+#define PAGE_IS_SOFT_DIRTY	(1 << 7)
+
+struct page_region {
+	__u64 start;
+	__u64 end;
+	__u64 categories;
+};
+
+#define PM_SCAN_WP_MATCHING	(1 << 0)
+#define PM_SCAN_CHECK_WPASYNC	(1 << 1)
+
+struct pm_scan_arg {
+	__u64 size;
+	__u64 flags;
+	__u64 start;
+	__u64 end;
+	__u64 walk_end;
+	__u64 vec;
+	__u64 vec_len;
+	__u64 max_pages;
+	__u64 category_inverted;
+	__u64 category_mask;
+	__u64 category_anyof_mask;
+	__u64 return_mask;
+};
+#endif
+#ifndef PAGE_IS_GUARD
+#define PAGE_IS_GUARD		(1 << 8)
+#endif
+#ifndef PAGE_IS_ACCESSED
+#define PAGE_IS_ACCESSED	(1 << 9)
+#endif
+
+#ifndef PROCMAP_QUERY
+#define PROCMAP_QUERY	_IOWR(PROCFS_IOCTL_MAGIC, 17, struct procmap_query)
+
+enum procmap_query_flags {
+	PROCMAP_QUERY_VMA_READABLE		= 0x01,
+	PROCMAP_QUERY_VMA_WRITABLE		= 0x02,
+	PROCMAP_QUERY_VMA_EXECUTABLE		= 0x04,
+	PROCMAP_QUERY_VMA_SHARED		= 0x08,
+	PROCMAP_QUERY_COVERING_OR_NEXT_VMA	= 0x10,
+	PROCMAP_QUERY_FILE_BACKED_VMA		= 0x20,
+};
+
+struct procmap_query {
+	__u64 size;
+	__u64 query_flags;		/* in */
+	__u64 query_addr;		/* in */
+	__u64 vma_start;		/* out */
+	__u64 vma_end;			/* out */
+	__u64 vma_flags;		/* out */
+	__u64 vma_page_size;		/* out */
+	__u64 vma_offset;		/* out */
+	__u64 inode;			/* out */
+	__u32 dev_major;		/* out */
+	__u32 dev_minor;		/* out */
+	__u32 vma_name_size;		/* in/out */
+	__u32 build_id_size;		/* in/out */
+	__u64 vma_name_addr;		/* in */
+	__u64 build_id_addr;		/* in */
+};
+#endif
