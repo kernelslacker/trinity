@@ -204,6 +204,7 @@ endif
 # silently pulled it in" surprise.
 REAL_SRCS	:= \
 	$(TOP)/args/struct_fill.c \
+	$(TOP)/args/struct_validate.c \
 	$(TOP)/args/struct_mutate.c \
 	$(TOP)/args/struct_mutate_selftest.c \
 	$(TOP)/struct_catalog/variant.c \
@@ -567,7 +568,9 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/mount/statmount.c \
 # generators the other arms reach are linked as they are, and
 # the struct_catalog/bpf*.c tables bring the map, program and attach type
 # lists the sanitisers draw from; the pickers the arms draw their fds from
-# are faked in fake_fds.c.
+# are faked in fake_fds.c.  The schema fill the link_create sanitiser takes
+# an attach type's tail from is args/struct_validate.c, in REAL_SRCS, run on
+# the bpf_attr row of the catalog fake_stubs.c holds.
 PARENT_SRCS	+= $(wildcard $(TOP)/syscalls/bpf*.c) \
 		   $(wildcard $(TOP)/net/bpf/*.c) \
 		   $(wildcard $(TOP)/struct_catalog/bpf*.c)

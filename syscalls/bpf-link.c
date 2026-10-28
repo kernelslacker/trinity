@@ -17,11 +17,39 @@
 
 void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 {
+	/*
+	 * The attach type, the tail of the link_create arm it names and the
+	 * size of the call are the catalog's.  The head fields the catalog
+	 * fills as well, with a generic fd and raw flags, are drawn again from
+	 * the bpf pools.
+	 */
+	sanitise_bpf_default(attr, rec);
 	attr->link_create.prog_fd = get_rand_bpf_prog_fd();
 	attr->link_create.target_fd = get_rand_bpf_fd();
-	attr->link_create.attach_type = bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
 	attr->link_create.flags = rnd_modulo_u32(16);
-	rec->a3 = sizeof(attr->link_create);
+
+	/*
+	 * link_create() hands the attr to the program's taker, which answers
+	 * -EINVAL to a head field it has no use for: bpf_iter_link_attach()
+	 * and bpf_tracing_multi_attach() to a target_fd or flags, and the
+	 * perf, kprobe_multi, uprobe_multi and netfilter takers to flags.
+	 */
+	switch (attr->link_create.attach_type) {
+	case BPF_TRACE_ITER:
+	case BPF_TRACE_FENTRY_MULTI:
+	case BPF_TRACE_FEXIT_MULTI:
+	case BPF_TRACE_FSESSION_MULTI:
+		attr->link_create.target_fd = 0;
+		/* fall through */
+	case BPF_PERF_EVENT:
+	case BPF_TRACE_KPROBE_MULTI:
+	case BPF_TRACE_KPROBE_SESSION:
+	case BPF_TRACE_UPROBE_MULTI:
+	case BPF_TRACE_UPROBE_SESSION:
+	case BPF_NETFILTER:
+		attr->link_create.flags = 0;
+		break;
+	}
 }
 
 void sanitise_bpf_link_update(union bpf_attr *attr, struct syscallrecord *rec)

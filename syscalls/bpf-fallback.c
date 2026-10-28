@@ -1,9 +1,10 @@
 /*
  * syscalls/bpf-fallback.c -- schema-aware bpf_attr floor for the cmd arms
  * without a hand-rolled sanitiser.  Fed by the default arm of sanitise_bpf()'s
- * switch in syscalls/bpf.c: consults struct_catalog's bpf_attr variant table
- * for the per-cmd effective_size and delegates the field fill to
- * struct_field_fill_schema_aware().
+ * switch in syscalls/bpf.c, and by sanitise_bpf_link_create(), which takes the
+ * attach type and the tail of its arm from it: consults struct_catalog's
+ * bpf_attr variant table for the per-cmd effective_size and delegates the
+ * field fill to struct_field_fill_schema_aware().
  */
 
 #ifdef USE_BPF

@@ -90,7 +90,10 @@ lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
 - `syscalls/bpf.c` — `struct_catalog_lookup("bpf_attr")` +
   `struct_desc_resolve_variant()` + `struct_field_fill_schema_aware()` in the
   default per-cmd arm, letting most bpf(2) cmds fall through to schema fill
-  rather than a hand-rolled generator.
+  rather than a hand-rolled generator.  `sanitise_bpf_link_create()` runs the
+  same fill for `BPF_LINK_CREATE`, which takes its attach type and the tail of
+  the nested arm that type names from it, and draws the head fields from the
+  bpf pools.
 - `syscalls/socket/setsockopt.c` — `struct_arg_lookup_two_key("setsockopt", 4, level,
   optname)` resolves the optval struct before the picked (level, optname)
   values are published to `rec`.

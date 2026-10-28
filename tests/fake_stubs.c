@@ -14,6 +14,9 @@
 #include <sys/mman.h>
 #include <sys/types.h>
 #include <unistd.h>
+#ifdef USE_BPF
+#include <linux/bpf.h>
+#endif
 
 #include "args-internal.h"
 #include "debug.h"
@@ -23,6 +26,8 @@
 #include "random.h"		/* rand32 */
 #include "rnd.h"
 #include "struct_catalog.h"
+#include "struct_catalog-internal.h"	/* bpf_attr_variants */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 /*
  * mainpid, outputerr, alloc_shared: minimum needed to link
@@ -78,14 +83,38 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 	abort();
 }
 
-/* Neutral stub: no test lands on a live catalog lookup (the depth-cap test
- * installs its own override, and the address-walk test uses hand-built
- * descs with no FT_PTR_STRUCT descent), so NULL satisfies the linker for
- * struct_catalog/{address,variant}.c and args/struct_fill.c without
- * importing the catalog build. */
+/*
+ * The catalog the schema fill reads: args/struct_validate.c walks every row of
+ * it on the first fill.  It is empty but for the bpf_attr row, which is the
+ * real one, so a sanitiser that fills a bpf attr through it runs on the
+ * catalog's own tables; the real struct_catalog/catalog.c would bring the
+ * tables of every family into the link.
+ */
+const struct struct_desc struct_catalog[SC_NR_ENTRIES] = {
+#include "struct_catalog/catalog-bpf.inc"
+};
+
+/*
+ * Set by a test that runs a sanitiser which looks a struct up by name; the
+ * lookup then finds the rows above.  Left clear, nothing is cataloged: no
+ * other test lands on a live catalog lookup (the depth-cap test installs its
+ * own override, and the address-walk test uses hand-built descs with no
+ * FT_PTR_STRUCT descent), and NULL satisfies the linker for
+ * struct_catalog/{address,variant}.c and args/struct_fill.c.
+ */
+bool fake_catalog_lookup;
+
 const struct struct_desc *struct_catalog_lookup(const char *name)
 {
-	(void) name;
+	unsigned int i;
+
+	if (!fake_catalog_lookup || name == NULL)
+		return NULL;
+	for (i = 0; i < SC_NR_ENTRIES; i++) {
+		if (struct_catalog[i].name != NULL &&
+		    strcmp(struct_catalog[i].name, name) == 0)
+			return &struct_catalog[i];
+	}
 	return NULL;
 }
 
@@ -123,7 +152,6 @@ unsigned int rand32(void)
  * get_random_fd:       only reachable via FT_FD, unless a test that runs a
  *                      sanitiser drawing from the fd pool sets
  *                      fake_random_fd_empty, when the pool hands out -1.
- * struct_field_fill_schema_aware: only reachable via FT_EMBEDDED_STRUCT.
  * __zmalloc_tracked:  only reachable via pointer-tag passes (Pass 2/3).
  */
 bool fake_random_fd_empty;
@@ -139,15 +167,6 @@ int get_random_fd(void)
 /* Owned by main/params/state.c.  No -x in a test run, so the gate
  * trinity_raw_syscall() consults before it issues a syscall stays open. */
 bool do_exclude_syscall;
-
-void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
-				    const struct struct_desc *desc,
-				    struct syscallrecord *rec)
-{
-	(void) buf; (void) size; (void) desc; (void) rec;
-	fprintf(stderr, "fake struct_field_fill_schema_aware called unexpectedly\n");
-	abort();
-}
 
 void * __zmalloc_tracked(size_t size, const char *func)
 {

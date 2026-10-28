@@ -32,6 +32,9 @@
 #include "syscalls/bpf-internal.h"
 
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
+extern bool fake_catalog_lookup;	/* fake_stubs.c */
+extern bool fake_random_fd_empty;	/* fake_stubs.c */
+extern int fake_bpf_prog_fd;		/* fake_fds.c */
 int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
@@ -1076,6 +1079,223 @@ static void map_elem_draws_reach_the_maps_code(void)
 	fake_get_rand_bpf_map = NULL;
 }
 
+/*
+ * link_create() (kernel/bpf/syscall.c) hands the attr to the taker for the
+ * attach type, which reads the arm of the union that type names, so the
+ * sanitiser takes the arm from the catalog and draws the head, which every
+ * attach type shares, from the pools.  A taker that has no use for a head
+ * field answers -EINVAL when it is set: bpf_iter_link_attach()
+ * (kernel/bpf/bpf_iter.c) and bpf_tracing_multi_attach()
+ * (kernel/trace/bpf_trace.c) to a target_fd or flags, and
+ * bpf_perf_link_attach() (kernel/bpf/syscall.c),
+ * bpf_kprobe_multi_link_attach() and bpf_uprobe_multi_link_attach()
+ * (kernel/trace/bpf_trace.c) and bpf_nf_link_attach()
+ * (net/netfilter/nf_bpf_link.c) to flags.
+ */
+static bool kernel_refuses_flags(unsigned long type)
+{
+	switch (type) {
+	case BPF_TRACE_ITER:
+	case BPF_PERF_EVENT:
+	case BPF_TRACE_KPROBE_MULTI:
+	case BPF_TRACE_KPROBE_SESSION:
+	case BPF_TRACE_UPROBE_MULTI:
+	case BPF_TRACE_UPROBE_SESSION:
+	case BPF_TRACE_FENTRY_MULTI:
+	case BPF_TRACE_FEXIT_MULTI:
+	case BPF_TRACE_FSESSION_MULTI:
+	case BPF_NETFILTER:
+		return true;
+	}
+	return false;
+}
+
+static bool kernel_refuses_target_fd(unsigned long type)
+{
+	switch (type) {
+	case BPF_TRACE_ITER:
+	case BPF_TRACE_FENTRY_MULTI:
+	case BPF_TRACE_FEXIT_MULTI:
+	case BPF_TRACE_FSESSION_MULTI:
+		return true;
+	}
+	return false;
+}
+
+/*
+ * The tail fields a multi attach cannot do without, whatever else its taker
+ * checks: bpf_kprobe_multi_link_attach() answers -EINVAL to a cnt of 0 and to
+ * a call that names neither syms nor addrs, bpf_uprobe_multi_link_attach() to
+ * a cnt of 0 and to no offsets, and bpf_tracing_multi_attach() to a cnt of 0
+ * and to no ids.
+ */
+static bool kernel_gets_its_tail(const union bpf_attr *attr)
+{
+	switch (attr->link_create.attach_type) {
+	case BPF_TRACE_KPROBE_MULTI:
+	case BPF_TRACE_KPROBE_SESSION:
+		return attr->link_create.kprobe_multi.cnt != 0 &&
+		       (attr->link_create.kprobe_multi.syms != 0 ||
+			attr->link_create.kprobe_multi.addrs != 0);
+	case BPF_TRACE_UPROBE_MULTI:
+	case BPF_TRACE_UPROBE_SESSION:
+		return attr->link_create.uprobe_multi.cnt != 0 &&
+		       attr->link_create.uprobe_multi.offsets != 0;
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+	case BPF_TRACE_FENTRY_MULTI:
+	case BPF_TRACE_FEXIT_MULTI:
+	case BPF_TRACE_FSESSION_MULTI:
+		return attr->link_create.tracing_multi.cnt != 0 &&
+		       attr->link_create.tracing_multi.ids != 0;
+#endif
+	}
+	return true;
+}
+
+/* The pools' fds, which nothing else a draw is given can be mistaken for: the
+ * catalog's own draw of a head field is an fd of the generic pool, here -1. */
+#define LINK_PROG_FD	88
+#define LINK_MAP_FD	100
+
+static bool pick_link_map(struct bpfobj *map)
+{
+	memset(map, 0, sizeof(*map));
+	map->map_fd = LINK_MAP_FD;
+	map->map_type = BPF_MAP_TYPE_HASH;
+	return true;
+}
+
+struct link_tally {
+	unsigned int draws, refused, flags_set, pool_target, generic_prog;
+	unsigned int tail_set, no_tail, tail_uncovered;
+};
+
+/* The sub-buffers the fill made for the pointer fields of the arm the attr's
+ * attach type names; deferred free refused them, as it did the attr itself. */
+static void free_arm_buffers(const union bpf_attr *attr)
+{
+	static struct syscallrecord probe;
+	const struct union_variant *outer, *arm;
+	unsigned int i;
+
+	memset(&probe, 0, sizeof(probe));
+	probe.a1 = BPF_LINK_CREATE;
+	outer = struct_desc_resolve_variant(struct_catalog_lookup("bpf_attr"),
+					    &probe, NULL);
+	arm = struct_desc_resolve_nested_variant(outer,
+						 (const unsigned char *) attr,
+						 sizeof(*attr));
+	if (arm == NULL)
+		return;
+
+	for (i = 0; i < arm->num_fields; i++) {
+		const struct struct_field *f = &arm->fields[i];
+		uint64_t ptr;
+
+		if (f->tag != FT_PTR_BYTES && f->tag != FT_PTR_ARRAY)
+			continue;
+		memcpy(&ptr, (const unsigned char *) attr + f->offset, sizeof(ptr));
+		free((void *)(uintptr_t) ptr);
+	}
+}
+
+static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
+{
+	enum { ROUNDS = 8000 };
+	static struct link_tally tally[BPF_ATTACH_TYPES_N];
+	static struct syscallrecord rec;
+	unsigned int round, i;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	fake_catalog_lookup = true;
+	fake_random_fd_empty = true;
+	fake_bpf_prog_fd = LINK_PROG_FD;
+	fake_get_rand_bpf_map = pick_link_map;
+
+	for (round = 0; round < ROUNDS; round++) {
+		const union bpf_attr *attr;
+		const unsigned char *raw;
+		struct link_tally *t = NULL;
+		size_t b, last = 0;
+		bool tail_set = false;
+		unsigned long type;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = BPF_LINK_CREATE;
+		syscall_bpf.sanitise(&rec);
+		attr = (const union bpf_attr *) rec.a2;
+		raw = (const unsigned char *) attr;
+		type = attr->link_create.attach_type;
+
+		for (i = 0; i < bpf_attach_types_count; i++) {
+			if (bpf_attach_types[i] == type)
+				t = &tally[i];
+		}
+		check("an attach type outside the vocabulary was drawn",
+		      "link create", t != NULL);
+
+		if (t != NULL) {
+			t->draws++;
+			if ((kernel_refuses_flags(type) && attr->link_create.flags != 0) ||
+			    (kernel_refuses_target_fd(type) &&
+			     attr->link_create.target_fd != 0))
+				t->refused++;
+			t->flags_set += attr->link_create.flags != 0;
+			t->pool_target += (int) attr->link_create.target_fd == LINK_MAP_FD;
+			t->generic_prog += (int) attr->link_create.prog_fd != LINK_PROG_FD;
+
+			/* Past the head are the arm's fields, and with them the
+			 * target_btf_id every attach type has in the catalog. */
+			for (b = 0; b < sizeof(attr->link_create); b++) {
+				if (raw[b] == 0)
+					continue;
+				last = b;
+				if (b >= offsetof(union bpf_attr, link_create.target_btf_id))
+					tail_set = true;
+			}
+			t->tail_set += tail_set;
+			t->no_tail += !kernel_gets_its_tail(attr);
+			t->tail_uncovered += rec.a3 <= last;
+		}
+
+		rec.retval = (unsigned long) -1L;
+		rec.errno_post = EBADF;
+		syscall_bpf.post(&rec);
+		free_arm_buffers(attr);
+		free((void *) attr);
+	}
+
+	fake_get_rand_bpf_map = NULL;
+	fake_bpf_prog_fd = -1;
+	fake_random_fd_empty = false;
+	fake_catalog_lookup = false;
+
+	for (i = 0; i < bpf_attach_types_count; i++) {
+		const struct link_tally *t = &tally[i];
+		unsigned long type = bpf_attach_types[i];
+		char name[40];
+
+		snprintf(name, sizeof(name), "link create, attach type %lu", type);
+		check("the attach type was never drawn", name, t->draws > 0);
+		check("a draw sets a head field its taker refuses", name,
+		      t->refused == 0);
+		check("a draw has no field past the head", name,
+		      t->tail_set * 2 >= t->draws);
+		check("a multi attach has no count, or no array under it", name,
+		      t->no_tail == 0);
+		check("the size stops short of what the draw filled", name,
+		      t->tail_uncovered == 0);
+		check("a program is not the pool's", name, t->generic_prog == 0);
+		if (!kernel_refuses_flags(type))
+			check("the flags of a taker that takes them are no longer drawn",
+			      name, t->flags_set * 100 >= t->draws * 80);
+		if (!kernel_refuses_target_fd(type))
+			check("a target_fd is not the pool's map", name,
+			      t->pool_target == t->draws);
+	}
+}
+
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 /*
  * bpf_tracing_multi_attach() reads link_create.tracing_multi.ids, .cookies
@@ -1155,6 +1375,7 @@ void bpf_gen_self_check(void)
 	prog_load_draws_flags_the_kernel_takes();
 	common_attr_follows_the_kernels_rules();
 	map_elem_draws_reach_the_maps_code();
+	link_create_takes_its_arm_and_the_head_its_taker_wants();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif
