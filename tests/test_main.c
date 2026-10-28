@@ -75,6 +75,7 @@ void sanitiser_owned_mask_pool_self_check(void);
 void canary_path_self_check(void);
 void perf_attr_self_check(void);
 void landlock_self_check(void);
+void numa_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -406,6 +407,11 @@ int main(int argc, char **argv)
 	printf("  landlock_self_check ... ");
 	fflush(stdout);
 	landlock_self_check();
+	printf("OK\n");
+
+	printf("  numa_self_check ... ");
+	fflush(stdout);
+	numa_self_check();
 	printf("OK\n");
 
 	return 0;

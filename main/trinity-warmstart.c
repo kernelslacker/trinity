@@ -52,6 +52,7 @@ char *progname = NULL;
 
 unsigned int page_size;
 unsigned int num_online_cpus;
+unsigned int num_possible_cpus;
 bool no_bind_to_cpu;
 unsigned int max_children;
 struct rlimit max_files_rlimit;
@@ -365,8 +366,8 @@ void publish_and_persist_seed(void)
 
 /*
  * Process bootstrap: stdio buffering, progname/mainpid capture,
- * RLIMIT_NOFILE probe with a 1024 fallback, NUMA enumeration, and
- * syscall table selection.  Runs as the very first work after entry,
+ * RLIMIT_NOFILE probe with a 1024 fallback, cpu counts, NUMA enumeration,
+ * and syscall table selection.  Runs as the very first work after entry,
  * before parse_args, because every later helper (parser included)
  * depends on at least one of these globals.  Sets the default
  * max_children = num_online_cpus * 4; parse_args may override it,
@@ -394,6 +395,7 @@ void init_main_process(char *argv[])
 	num_online_cpus = (ncpus > 0) ? (unsigned int)ncpus : 1;
 	max_children = num_online_cpus * 4;	/* possibly overridden in params. */
 
+	num_possible_cpus = possible_cpus();
 	init_numa_nodes();
 
 	select_syscall_tables();

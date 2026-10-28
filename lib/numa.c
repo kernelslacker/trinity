@@ -1,7 +1,10 @@
 #include <ctype.h>
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 
 #include "numa.h"
 #include "random.h"
@@ -85,6 +88,41 @@ void init_numa_nodes(void)
 fallback:
 	numa_node_pool[0] = 0;
 	nr_numa_nodes = 1;
+}
+
+unsigned int cpulist_weight(const char *list)
+{
+	unsigned long weight = 0;
+	long lo, hi;
+
+	while (next_list_range(&list, &lo, &hi)) {
+		weight += (unsigned long) (hi - lo) + 1;
+		if (weight > UINT_MAX)
+			return 0;
+	}
+	return *list == '\0' ? (unsigned int) weight : 0;
+}
+
+unsigned int possible_cpus(void)
+{
+	char buf[4096];
+	unsigned int n = 0;
+	long conf;
+	FILE *f;
+
+	f = fopen("/sys/devices/system/cpu/possible", "re");
+	if (f != NULL) {
+		/* A line cut short would count too few cpus. */
+		if (fgets(buf, sizeof(buf), f) != NULL &&
+		    strchr(buf, '\n') != NULL)
+			n = cpulist_weight(buf);
+		fclose(f);
+	}
+	if (n != 0)
+		return n;
+
+	conf = sysconf(_SC_NPROCESSORS_CONF);
+	return conf > 0 ? (unsigned int) conf : 1;
 }
 
 int random_numa_node(void)

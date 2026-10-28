@@ -9,7 +9,6 @@
 #include <linux/bpf.h>
 #include <stddef.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "arch.h"
 #include "bpf.h"
@@ -19,6 +18,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "trinity.h"		/* num_possible_cpus */
 #include "utils.h"
 
 /*
@@ -101,18 +101,6 @@ void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec)
 	}
 }
 
-static unsigned long map_cpus(void)
-{
-	static unsigned long cpus;
-	long n;
-
-	if (cpus == 0) {
-		n = sysconf(_SC_NPROCESSORS_CONF);
-		cpus = n > 0 ? n : 1;
-	}
-	return cpus;
-}
-
 /* The map types that keep one value for each possible cpu. */
 static bool map_is_percpu(unsigned int type)
 {
@@ -134,7 +122,7 @@ static unsigned long map_value_len(const struct bpfobj *map, u64 flags)
 	if ((flags & (BPF_F_CPU | BPF_F_ALL_CPUS)) ||
 	    !map_is_percpu(map->map_type))
 		return map->value_size;
-	return ((map->value_size + 7UL) & ~7UL) * map_cpus();
+	return ((map->value_size + 7UL) & ~7UL) * num_possible_cpus;
 }
 
 /*
@@ -233,10 +221,10 @@ static u64 draw_update_flags(const struct bpfobj *map, bool known)
 
 	if (flags & BPF_F_CPU)
 		flags |= (ONE_IN(32) ? 0x100000 + rnd_modulo_u32(0x1000) :
-			  rnd_modulo_u32(map_cpus())) * (1ULL << 32);
+			  rnd_modulo_u32(num_possible_cpus)) * (1ULL << 32);
 	else if (as_drawn && ONE_IN(4))
 		/* A cpu number with no BPF_F_CPU to say it is one. */
-		flags |= (u64) rnd_modulo_u32(map_cpus()) << 32;
+		flags |= (u64) rnd_modulo_u32(num_possible_cpus) << 32;
 
 	if (known && map_value_len(map, flags) > BPF_ELEM_BUF_MAX)
 		flags |= BPF_F_ALL_CPUS;
@@ -261,7 +249,7 @@ static u64 draw_lookup_flags(const struct bpfobj *map, bool known,
 	if (RAND_BOOL() || map_value_len(map, 0) > BPF_ELEM_BUF_MAX)
 		return BPF_F_CPU | (ONE_IN(32) ?
 				    0x100000 + rnd_modulo_u32(0x1000) :
-				    rnd_modulo_u32(map_cpus())) * (1ULL << 32);
+				    rnd_modulo_u32(num_possible_cpus)) * (1ULL << 32);
 	return 0;
 }
 

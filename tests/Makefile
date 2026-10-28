@@ -688,6 +688,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/landlock/landlock_add_rule.c \
 		   $(TOP)/args/csfu.c
 FAKE_SRCS	+= landlock_test.c
 
+# lib/numa.c brings cpulist_weight(), which numa_test.c holds to the cpu
+# lists the kernel prints and to lists it cannot count.
+PARENT_SRCS	+= $(TOP)/lib/numa.c
+FAKE_SRCS	+= numa_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

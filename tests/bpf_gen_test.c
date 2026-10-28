@@ -744,10 +744,13 @@ static bool pick_fake_map(struct bpfobj *map)
 
 extern bool (*fake_get_rand_bpf_map)(struct bpfobj *map);	/* fake_fds.c */
 
-static unsigned long kernel_cpus(void)
-{
-	return sysconf(_SC_NPROCESSORS_CONF);
-}
+/*
+ * Owned by main/trinity-warmstart.c, which the test binary does not link.
+ * num_possible_cpus() is what the kernel sizes a per-cpu row by, and a host
+ * with hotplug slots has cpus possible that sysconf() does not count as
+ * configured: the element draws below are made on such a host.
+ */
+unsigned int num_possible_cpus;
 
 static bool kernel_percpu_map(unsigned int type)
 {
@@ -772,7 +775,7 @@ static unsigned long kernel_value_size(const struct fake_map *m, uint64_t flags)
 	if (flags & (BPF_F_CPU | BPF_F_ALL_CPUS))
 		return m->value_size;
 	if (kernel_percpu_map(m->type))
-		return ((m->value_size + 7UL) & ~7UL) * kernel_cpus();
+		return ((m->value_size + 7UL) & ~7UL) * num_possible_cpus;
 	if (kernel_fd_map(m->type))
 		return sizeof(__u32);
 	return m->value_size;
@@ -793,7 +796,7 @@ static int kernel_map_check_op_flags(const struct fake_map *m, uint64_t flags,
 			return -EINVAL;
 		if ((flags & BPF_F_CPU) && (flags & BPF_F_ALL_CPUS))
 			return -EINVAL;
-		if ((flags & BPF_F_CPU) && (flags >> 32) >= kernel_cpus())
+		if ((flags & BPF_F_CPU) && (flags >> 32) >= num_possible_cpus)
 			return -ERANGE;
 	}
 	return 0;
@@ -949,7 +952,7 @@ static void tally_elem(struct elem_tally *t, unsigned int cmd,
 
 	if (flags & BPF_F_CPU) {
 		t->cpu++;
-		if ((flags >> 32) < kernel_cpus())
+		if ((flags >> 32) < num_possible_cpus)
 			t->cpu_valid++;
 		if ((flags >> 32) < 64)
 			t->cpus_seen |= 1ULL << (flags >> 32);
@@ -1008,8 +1011,10 @@ static void map_elem_draws_reach_the_maps_code(void)
 		BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
 		BPF_MAP_GET_NEXT_KEY, BPF_MAP_LOOKUP_AND_DELETE_ELEM,
 	};
+	long conf = sysconf(_SC_NPROCESSORS_CONF);
 	unsigned int c;
 
+	num_possible_cpus = (conf > 0 ? conf : 1) + 64;
 	if (get_writable_address(sizeof(unsigned long)) == NULL)
 		writable_pool_init();
 	fake_get_rand_bpf_map = pick_fake_map;
@@ -1048,7 +1053,7 @@ static void map_elem_draws_reach_the_maps_code(void)
 			      "map elem", t.erange > 0);
 			check("BPF_F_CPU names too few of the cpus", "map elem",
 			      __builtin_popcountll(t.cpus_seen) >=
-			      (kernel_cpus() < 8 ? kernel_cpus() : 8));
+			      (num_possible_cpus < 8 ? num_possible_cpus : 8));
 			check("over 10% of the draws put a cpu flag on a map that "
 			      "is not per-cpu", "map elem",
 			      t.cpu_off_percpu * 100 <= t.rounds * 10);

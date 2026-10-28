@@ -4,6 +4,7 @@
 #include "types.h"
 
 extern unsigned int num_online_cpus;
+extern unsigned int num_possible_cpus;
 extern struct rlimit max_files_rlimit;
 extern bool no_bind_to_cpu;
 
