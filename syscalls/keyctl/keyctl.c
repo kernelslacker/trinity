@@ -608,10 +608,15 @@ static void sanitise_keyctl(struct syscallrecord *rec)
  * already-allocated key, they don't mint a new serial.  Pool teardown
  * is handled by the existing OBJ_KEY_SERIAL destructor (KEYCTL_INVALIDATE).
  *
- * KEY_SPEC_BPF_KEYRING names the kernel's own .bpf keyring, which every
- * process shares and nothing re-creates, so what GET_KEYRING_ID and
- * SEARCH return under it, that keyring or a key in it, is never pooled:
- * the destructor would invalidate it for good.
+ * The destructor invalidates every serial in the pool, so a keyring the
+ * child does not own stays out of it.  GET_KEYRING_ID pools only the
+ * thread and process keyrings, which die with the child anyway: the
+ * session keyring a child inherits is the parent's and every sibling's,
+ * and the login's that started the run, and the user, user-session and
+ * requestor keyrings are shared as well, all of them reachable again
+ * through their KEY_SPEC_* ids.  KEY_SPEC_BPF_KEYRING names the kernel's
+ * own .bpf keyring, which nothing re-creates, so a key SEARCH finds in it
+ * is not pooled either.
  */
 static void post_keyctl(struct syscallrecord *rec)
 {
@@ -620,10 +625,19 @@ static void post_keyctl(struct syscallrecord *rec)
 	if (ret <= 0 || ret > INT32_MAX)
 		return;
 
+	/* The kernel reads the id in a2 as a key_serial_t. */
 	switch (get_arg_snapshot(rec, 1)) {
 	case KEYCTL_GET_KEYRING_ID:
+		switch ((int32_t) get_arg_snapshot(rec, 2)) {
+		case KEY_SPEC_THREAD_KEYRING:
+		case KEY_SPEC_PROCESS_KEYRING:
+			register_key_serial((int32_t) ret);
+			break;
+		default:
+			break;
+		}
+		break;
 	case KEYCTL_SEARCH:
-		/* The kernel reads the id as a key_serial_t. */
 		if ((int32_t) get_arg_snapshot(rec, 2) != KEY_SPEC_BPF_KEYRING)
 			register_key_serial((int32_t) ret);
 		break;
@@ -654,8 +668,9 @@ struct syscallentry syscall_keyctl = {
 	 * mismatch bumps arg_shadow_stomp from inside get_arg_snapshot()
 	 * and the handler still dispatches against the cmd the kernel
 	 * actually executed.  a2 is shadowed for the same reason: it says
-	 * whether GET_KEYRING_ID or SEARCH ran under KEY_SPEC_BPF_KEYRING,
-	 * whose result must never be pooled. */
+	 * which keyring GET_KEYRING_ID resolved and whether SEARCH ran under
+	 * KEY_SPEC_BPF_KEYRING, which decide whether the result may be
+	 * pooled. */
 	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	/* sanitise_keyctl() draws the cmd itself and never reads a1, so the
 	 * ARG_OP draw, and any CMP hint pulled into it, is always thrown

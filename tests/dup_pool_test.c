@@ -3256,12 +3256,13 @@ static void epoll_create_pools_an_epoll_object(void)
 	syscall_epoll_create1.is_epoll_create1 = false;
 }
 
-/* keyctl pools the keyring GET_KEYRING_ID resolves and the key SEARCH
- * finds, but never under KEY_SPEC_BPF_KEYRING, the kernel's own .bpf
- * keyring, which the pool's destructor would invalidate.  The kernel
- * reads the id as a key_serial_t, so bits above the low 32 do not hide
- * it. */
-static void keyctl_never_pools_the_bpf_keyring(void)
+/* The pool's destructor invalidates what it holds, so keyctl pools only
+ * the keyrings a child owns: GET_KEYRING_ID's thread and process
+ * keyrings, never the session, user or requestor keyrings it shares,
+ * nor the kernel's own .bpf keyring.  SEARCH pools the key it finds
+ * unless it searched .bpf.  The kernel reads the id as a key_serial_t,
+ * so bits above the low 32 do not hide it. */
+static void keyctl_pools_only_owned_keyrings(void)
 {
 	static const struct {
 		const char *name;
@@ -3269,15 +3270,27 @@ static void keyctl_never_pools_the_bpf_keyring(void)
 		unsigned long id;
 		bool pooled;
 	} cases[] = {
+		{ "GET_KEYRING_ID(thread)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_THREAD_KEYRING, true },
+		{ "GET_KEYRING_ID(process)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_PROCESS_KEYRING, true },
 		{ "GET_KEYRING_ID(session)", KEYCTL_GET_KEYRING_ID,
-		  (unsigned long) KEY_SPEC_SESSION_KEYRING, true },
-		{ "SEARCH(session)", KEYCTL_SEARCH,
-		  (unsigned long) KEY_SPEC_SESSION_KEYRING, true },
+		  (unsigned long) KEY_SPEC_SESSION_KEYRING, false },
+		{ "GET_KEYRING_ID(user)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_USER_KEYRING, false },
+		{ "GET_KEYRING_ID(user session)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_USER_SESSION_KEYRING, false },
+		{ "GET_KEYRING_ID(requestor)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_REQUESTOR_KEYRING, false },
 		{ "GET_KEYRING_ID(bpf)", KEYCTL_GET_KEYRING_ID,
 		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
+		{ "GET_KEYRING_ID(process), high bits", KEYCTL_GET_KEYRING_ID,
+		  0x1fffffffeUL, true },
+		{ "SEARCH(session)", KEYCTL_SEARCH,
+		  (unsigned long) KEY_SPEC_SESSION_KEYRING, true },
 		{ "SEARCH(bpf)", KEYCTL_SEARCH,
 		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
-		{ "GET_KEYRING_ID(bpf), high bits", KEYCTL_GET_KEYRING_ID,
+		{ "SEARCH(bpf), high bits", KEYCTL_SEARCH,
 		  0x1fffffff7UL, false },
 	};
 	const int serial = 4242;
@@ -3296,7 +3309,7 @@ static void keyctl_never_pools_the_bpf_keyring(void)
 		rec.retval = (unsigned long) serial;
 		syscall_keyctl.post(&rec);
 		check(cases[i].pooled ? "the serial was not pooled" :
-					"the .bpf keyring's result was pooled",
+					"a keyring the child does not own was pooled",
 		      cases[i].name,
 		      (pool_find(serial, OBJ_KEY_SERIAL) != NULL) == cases[i].pooled);
 	}
@@ -3749,7 +3762,7 @@ void dup_pool_self_check(void)
 	typed_fd_pool_is_capped_per_type();
 	typed_fd_the_pool_cannot_own_is_closed();
 	epoll_create_pools_an_epoll_object();
-	keyctl_never_pools_the_bpf_keyring();
+	keyctl_pools_only_owned_keyrings();
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];
 		ioctl_pools_the_ns_fd_a_getter_returned();
