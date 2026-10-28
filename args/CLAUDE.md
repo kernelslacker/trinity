@@ -31,7 +31,7 @@ Decides what value goes in each of a syscall's up to 6 argument slots, given the
 
 ## Integration points
 
-- `dispatch/syscall-exec.c` — `__do_syscall()` runs a second `blanket_address_scrub()` pass after the per-syscall sanitise callback has run, then `validate_arg_coupling()`, before entering the kernel.
+- `dispatch/syscall-exec.c` — `__do_syscall()` runs a second `blanket_address_scrub()` pass after the per-syscall sanitise callback has run, then `validate_arg_coupling()` on a private copy of the record's head, whose vetted slots it hands the kernel and writes back to the record.
 - `random_syscall/dispatch-wrappers.c`, `random_syscall/dispatch-step.c` — the callers of `generate_syscall_args()` (3 call sites: `random_syscall_step()`, `random_syscall_step_biased()` and the re-exec regeneration in dispatch-step.c); dispatch-step.c also calls `output_syscall_prefix()`/`output_syscall_postfix()` from arg-decoder.c.
 - `tables/table-copy.c` — `copy_syscall_table()` calls the `compute_*_mask()` / `populate_arglist_all_bits()` helpers from argtype_table.c once per syscallentry at table-init time to cache the scrub/cleanup/fd/len bitmaps consumed every dispatch.
 - `struct_catalog/` — the schema source of truth: `struct_desc`, `struct_field`, `field_tag`, `union_variant` types and `struct_catalog_lookup()`/`struct_arg_lookup()` are defined there and consumed throughout struct_fill.c, struct_mutate.c, struct_validate.c, scrub.c, gen_arg_struct_ptr.c, argtype_table.c. `struct_catalog/sockaddr-sockopt.c` and `syscalls/socket/setsockopt.c`, `syscalls/bpf.c` call back into `struct_field_fill_schema_aware()`.

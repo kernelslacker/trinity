@@ -553,9 +553,12 @@ struct syscallentry {
 	 * run, so what the sanitiser vetted has to be held again on the
 	 * final slots.  validate_arg_coupling() calls this once per dispatch,
 	 * after the second blanket_address_scrub() and ahead of its generic
-	 * rules, which then judge any slot it repaired.  It may repair a slot
-	 * in place and refresh the call's own post_state snapshot to the
-	 * final slots.  Returns 0 to dispatch; non-zero refuses the call,
+	 * rules, which then judge any slot it repaired.  @rec is the
+	 * dispatcher's private copy of the record's head, whose slots are
+	 * the ones the kernel gets: the hook reads no field past the head.
+	 * It may repair a slot in place and refresh the call's own
+	 * post_state snapshot to the final slots.  Returns 0 to dispatch;
+	 * non-zero refuses the call,
 	 * which then fails with EINVAL without entering the kernel, and the
 	 * hook says why with outputerr().  @entry is the one the dispatcher
 	 * passed, the hook's own or a sibling's sharing it: a hook names the

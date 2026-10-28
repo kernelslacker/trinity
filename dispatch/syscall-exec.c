@@ -8,9 +8,11 @@
 
 #include <errno.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -350,10 +352,23 @@ static void watchdog_evict_fd_args(struct syscallentry *entry,
 	sigalrm_pending = 0;
 }
 
+/*
+ * The head of a record, the fields before prebuffer, which __do_syscall()
+ * vets a private copy of: every field a .vet_final hook or a coupling rule
+ * reads has to lie in it.
+ */
+#define VETTED_HEAD	offsetof(struct syscallrecord, prebuffer)
+_Static_assert(offsetof(struct syscallrecord, entry) < VETTED_HEAD &&
+	       offsetof(struct syscallrecord, a6) < VETTED_HEAD &&
+	       offsetof(struct syscallrecord, post_state) < VETTED_HEAD &&
+	       offsetof(struct syscallrecord, do32bit) < VETTED_HEAD,
+	       "a field the vetting reads lies past the copied head");
+
 void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		  enum syscallstate state,
 		  struct kcov_child *kc, struct childdata *child)
 {
+	struct syscallrecord vetted;
 	unsigned long ret = 0;
 	unsigned long a1, a2, a3, a4, a5, a6;
 	bool fault_armed = false;
@@ -384,20 +399,29 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 	 * pass — only the timing moves. */
 	blanket_address_scrub(entry, rec);
 
+	/* Vet a private copy of the call, and dispatch that.  rec lives in
+	 * shared memory and a sibling child can stomp rec->aN mid-flight
+	 * (the per-arg snapshot pattern in .post handlers exists for
+	 * exactly this reason): slots read back from rec after the rules
+	 * below judged them would reach the kernel unvetted, past a
+	 * .vet_final refusal that may guard a permanent effect (mseal()).
+	 * The rules read only the record's head. */
+	memcpy(&vetted, rec, VETTED_HEAD);
+
 	/* Cross-arg consistency check + coupled-pair repair: catch
 	 * (buf_ptr, count) pairs the kernel would reject at its earliest
 	 * validation step, and clamp over-extent lengths in place so the
 	 * syscall walks real kernel code instead of copy-faulting at
-	 * import.  Runs BEFORE the local snapshot so any repair mutation
-	 * to rec->aN flows through to the values the kernel actually sees
-	 * (and to dispatch_args / arg_shadow below).  On reject synthesize
-	 * a -1/EINVAL AFTER state so handle_syscall_ret() accounts the
-	 * rejection identically to a real early-EINVAL failure.  Zero the
+	 * import.  A repair lands in the copy, so it flows through to the
+	 * values the kernel actually sees (and to dispatch_args /
+	 * arg_shadow below).  On reject synthesize a -1/EINVAL AFTER
+	 * state so handle_syscall_ret() accounts the rejection
+	 * identically to a real early-EINVAL failure.  Zero the
 	 * kcov trace count header manually because kcov_enable_trace
 	 * (which usually owns that zeroing) never runs on the skip path
 	 * and the caller's kcov_collect() would otherwise re-process the
 	 * previous syscall's PCs against this slot. */
-	if (validate_arg_coupling(rec, entry) != 0) {
+	if (validate_arg_coupling(&vetted, entry) != 0) {
 		validator_rejected_bump();
 		clear_stale_kcov_state(kc, rec);  /* header zero + dispatch_args_valid clear */
 		srec_publish_begin(rec);
@@ -409,19 +433,25 @@ void __do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		return;
 	}
 
-	/* Snapshot the argument slots before dispatch.  rec lives in
-	 * shared memory and a sibling child can stomp rec->aN mid-flight
-	 * (the per-arg snapshot pattern in .post handlers exists for
-	 * exactly this reason).  We send the snapshots to the kernel
-	 * and re-read them from the locals in the watchdog eviction
-	 * block below so a sibling stomp between syscall return and the
-	 * eviction read cannot redirect us to a fabricated fd value. */
-	a1 = rec->a1;
-	a2 = rec->a2;
-	a3 = rec->a3;
-	a4 = rec->a4;
-	a5 = rec->a5;
-	a6 = rec->a6;
+	/* We send the vetted slots to the kernel and re-read them from
+	 * the locals in the watchdog eviction block below so a sibling
+	 * stomp between syscall return and the eviction read cannot
+	 * redirect us to a fabricated fd value.  rec gets them back for
+	 * the post handlers and the logs. */
+	a1 = vetted.a1;
+	a2 = vetted.a2;
+	a3 = vetted.a3;
+	a4 = vetted.a4;
+	a5 = vetted.a5;
+	a6 = vetted.a6;
+	srec_publish_begin(rec);
+	rec->a1 = a1;
+	rec->a2 = a2;
+	rec->a3 = a3;
+	rec->a4 = a4;
+	rec->a5 = a5;
+	rec->a6 = a6;
+	srec_publish_end(rec);
 
 	/* Non-tripwire dispatch-arg snapshot, shared with
 	 * cmp_hints_collect()'s RedQueen attribution scan.  Captured here

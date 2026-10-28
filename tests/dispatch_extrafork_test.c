@@ -3,7 +3,8 @@
  * reports back through the shared record and a --dry-run call records in
  * the caller's own.  The fchdir, fchroot and setns sanitisers close only the
  * fd they opened, the coupling validator keeps F_SETSIG to signals the parent
- * ignores, and a fork failing in a dead pid namespace recycles the child.
+ * ignores, the kernel is handed the slots the validator vetted, and a fork
+ * failing in a dead pid namespace recycles the child.
  */
 
 #include <errno.h>
@@ -391,6 +392,52 @@ static void selftest_fcntl_setsig(void)
 		BUG("dispatch_extrafork: a syscall other than fcntl had its arg rewritten");
 }
 
+/*
+ * A sibling's stray write can land on the shared record at any moment, and
+ * one that lands after the .vet_final hook has judged the slots must not
+ * reach the kernel: the dispatcher hands the kernel the slots it vetted and
+ * puts them back in the record.  The hook stands in for the sibling, writing
+ * to the record once it has passed the call.
+ */
+#define VETTED_ARG	0x1000UL
+#define STRAY_ARG	0xdead0000UL
+
+static struct syscallrecord *stray_rec;
+
+static int vet_then_stray(struct syscallrecord *rec,
+			  const struct syscallentry *entry)
+{
+	(void) entry;
+	if (rec->a1 != VETTED_ARG)
+		return -1;
+	stray_rec->a1 = STRAY_ARG;
+	return 0;
+}
+
+static void selftest_vetted_slots_dispatched(void)
+{
+	struct syscallentry entry = { .name = "probe", .num_args = 1,
+				      .vet_final = vet_then_stray };
+	struct childdata *child = map_child();
+	struct syscallrecord *rec = &child->syscall;
+
+	rec->entry = &entry;
+	rec->a1 = VETTED_ARG;
+	stray_rec = rec;
+
+	dry_run = true;
+	do_syscall(rec, &entry, &child->kcov, child);
+	dry_run = false;
+
+	if (rec->validator_rejected)
+		BUG("dispatch_extrafork: a call its hook passed was rejected");
+	if (rec->dispatch_args[0] != VETTED_ARG)
+		BUG("dispatch_extrafork: a write after the vetting reached the kernel");
+	if (rec->a1 != VETTED_ARG)
+		BUG("dispatch_extrafork: the record does not hold the slots the kernel was handed");
+	munmap(child, sizeof(*child));
+}
+
 void dispatch_extrafork_self_check(void);
 void dispatch_extrafork_self_check(void)
 {
@@ -399,4 +446,5 @@ void dispatch_extrafork_self_check(void)
 	selftest_dead_pidns();
 	selftest_owned_fds();
 	selftest_fcntl_setsig();
+	selftest_vetted_slots_dispatched();
 }

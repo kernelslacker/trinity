@@ -19,6 +19,12 @@ struct syscallrecord;
  * (chain substitution, a RedQueen pin) can undo the vetting: the final
  * slots are the ones the kernel reads.
  *
+ * __do_syscall() passes a private copy of the record's head, the fields
+ * before prebuffer, and hands the kernel the slots the rules leave in it,
+ * so that a stray write to the shared record after they judged it cannot
+ * reach the kernel: the rules read no field past the head, and repair the
+ * copy.
+ *
  * @entry is the descriptor the caller is dispatching.  The rules read
  * it, and call its hook, in place of rec->entry: the record sits in
  * shared memory, where a sibling's stray write could point that
