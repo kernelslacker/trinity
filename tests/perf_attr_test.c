@@ -261,11 +261,82 @@ static void check_catalog(void)
 	       "the catalog rows reach the end of the struct", end);
 }
 
+static const struct struct_field *catalog_row(const char *name)
+{
+	unsigned int i;
+
+	for (i = 0; i < PERF_EVENT_ATTR_FIELDS_N; i++) {
+		if (strcmp(perf_event_attr_fields[i].name, name) == 0)
+			return &perf_event_attr_fields[i];
+	}
+	return NULL;
+}
+
+/*
+ * A bit-field has no offset, so the flag bits the header gained after VER9
+ * are held by what they do to the word they live in: the kernel reads
+ * defer_callchain and defer_output as bits 38 and 39 of the flag word at
+ * offset 40 and the aux_* bits as the low three of aux_action, and a bit that
+ * moved would be sent as another flag.  The FT_FLAGS masks of the catalog
+ * have to name exactly the bits the header defines, which is every bit of
+ * the flag word but precise_ip's and __reserved_1's and every bit of
+ * aux_action but __reserved_3's; they are worked out from the header here,
+ * so a flag the header gains and the table misses shows up.
+ */
+static void check_flag_bits(void)
+{
+	const struct struct_field *row;
+	struct perf_event_attr attr;
+	unsigned long long reserved, precise;
+	unsigned int all = ~0U;
+
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+	memset(&attr, 0, sizeof(attr));
+	attr.defer_callchain = 1;
+	expect(perf_flags(&attr) == 1ULL << 38, "defer_callchain is bit 38",
+	       perf_flags(&attr));
+	memset(&attr, 0, sizeof(attr));
+	attr.defer_output = 1;
+	expect(perf_flags(&attr) == 1ULL << 39, "defer_output is bit 39",
+	       perf_flags(&attr));
+	memset(&attr, 0, sizeof(attr));
+	attr.aux_start_paused = 1;
+	expect(attr.aux_action == 1, "aux_start_paused is bit 0", attr.aux_action);
+	memset(&attr, 0, sizeof(attr));
+	attr.aux_pause = 1;
+	expect(attr.aux_action == 2, "aux_pause is bit 1", attr.aux_action);
+	memset(&attr, 0, sizeof(attr));
+	attr.aux_resume = 1;
+	expect(attr.aux_action == 4, "aux_resume is bit 2", attr.aux_action);
+#endif
+
+	memset(&attr, 0, sizeof(attr));
+	attr.__reserved_1 = all;
+	reserved = perf_flags(&attr);
+	memset(&attr, 0, sizeof(attr));
+	attr.precise_ip = 3;
+	precise = perf_flags(&attr);
+	row = catalog_row("flags_bitfield");
+	expect(row != NULL && row->u.flags.mask ==
+	       (unsigned long) ~(reserved | precise),
+	       "the flag word mask names the flags the header defines",
+	       row != NULL ? row->u.flags.mask : 0);
+
+	memset(&attr, 0, sizeof(attr));
+	attr.__reserved_3 = all;
+	row = catalog_row("aux_action");
+	expect(row != NULL && row->u.flags.mask ==
+	       (unsigned long) (unsigned int) ~attr.aux_action,
+	       "the aux_action mask names the bits the header defines",
+	       row != NULL ? row->u.flags.mask : 0);
+}
+
 void perf_attr_self_check(void)
 {
 	check_regs_intr();
 	check_declared_size();
 	check_simd_regs();
+	check_flag_bits();
 	check_catalog();
 
 	if (failed != 0)

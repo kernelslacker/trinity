@@ -37,8 +37,8 @@
  * discriminator is wired and `type` (offset 0) becomes the
  * desc-level discriminator.
  *
- * Bit-field flag group at offset 40 (disabled..sigtrap, ~36 single-
- * bit flags + precise_ip:2 + __reserved_1:26) is annotated below via
+ * Bit-field flag group at offset 40 (disabled..defer_output, ~38 single-
+ * bit flags + precise_ip:2 + __reserved_1:24) is annotated below via
  * PERF_ATTR_FLAG_MASK; the explicit hand-built mask doesn't compose
  * with offsetof so the field uses an explicit { .offset = 40 }.
  */
@@ -144,8 +144,8 @@ static const unsigned long clockid_values[] = {
 };
 
 /*
- * Off-40 bit-field flag mask.  perf_event_attr packs 36 single-bit
- * flags plus precise_ip:2 plus __reserved_1:26 into a u64 starting at
+ * Off-40 bit-field flag mask.  perf_event_attr packs 38 single-bit
+ * flags plus precise_ip:2 plus __reserved_1:24 into a u64 starting at
  * offset 40, the packed perf flag word.  Trinity cannot use
  * offsetof on a bit-field member, so the catalog entry uses an
  * explicit { .offset = 40, .size = 8 } and this mask is hand-built
@@ -159,26 +159,28 @@ static const unsigned long clockid_values[] = {
  *                  so FT_FLAGS leaves it 0 (broadest "arbitrary skid"
  *                  path).  An ε-random splat across the 4 legal values
  *                  is intentionally deferred.
- *   - bits 17..37  single-bit flags: mmap_data, sample_id_all,
+ *   - bits 17..39  single-bit flags: mmap_data, sample_id_all,
  *                  exclude_host, exclude_guest,
  *                  exclude_callchain_kernel, exclude_callchain_user,
  *                  mmap2, comm_exec, use_clockid, context_switch,
  *                  write_backward, namespaces, ksymbol, bpf_event,
  *                  aux_output, cgroup, text_poke, build_id,
- *                  inherit_thread, remove_on_exec, sigtrap
- *   - bits 38..63  __reserved_1 (26 bits) -- excluded so FT_FLAGS
+ *                  inherit_thread, remove_on_exec, sigtrap,
+ *                  defer_callchain, defer_output
+ *   - bits 40..63  __reserved_1 (24 bits) -- excluded so FT_FLAGS
  *                  never trips the kernel's reserved-nonzero
  *                  -EINVAL gate.
  *
- * Sums to 36 bits set.  This is the only hand-built-from-bitfield
+ * Sums to 38 bits set.  This is the only hand-built-from-bitfield
  * mask in the catalog; a generic FT_BITFIELD_RUN sidecar would be
  * cleaner but isn't worth the infra for one struct the schema never
  * fills on the live path anyway.
  *
  * Constants use 1ULL so the OR-chain evaluates as u64; the implicit
  * narrowing to .u.flags.mask's unsigned long type silently drops
- * bits 32..37 (cgroup, text_poke, build_id, inherit_thread,
- * remove_on_exec, sigtrap) on 32-bit builds.  Acceptable: trinity's
+ * bits 32..39 (cgroup, text_poke, build_id, inherit_thread,
+ * remove_on_exec, sigtrap, defer_callchain, defer_output) on 32-bit
+ * builds.  Acceptable: trinity's
  * primary target is 64-bit, the schema never fills the live buffer
  * regardless, and the truncation only narrows the flag vocabulary on
  * 32-bit -- never produces an invalid value.
@@ -194,16 +196,14 @@ static const unsigned long clockid_values[] = {
 	(1ULL << 25) | (1ULL << 26) | (1ULL << 27) | (1ULL << 28) | \
 	(1ULL << 29) | (1ULL << 30) | (1ULL << 31) | (1ULL << 32) | \
 	(1ULL << 33) | (1ULL << 34) | (1ULL << 35) | (1ULL << 36) | \
-	(1ULL << 37) \
-	/* bits 38..63: __reserved_1, skipped */ \
+	(1ULL << 37) | (1ULL << 38) | (1ULL << 39) \
+	/* bits 40..63: __reserved_1, skipped */ \
 )
 
 /*
  * aux_action (offset 116): u32 with 3 valid bits packed at the low
- * end (aux_start_paused, aux_pause, aux_resume in upstream uapi;
- * trinity's perf_event.h vintage exposes the slot as a plain u32 so
- * the bit names aren't visible here).  The remaining 29 bits are
- * reserved and rejected nonzero by the kernel.
+ * end (aux_start_paused, aux_pause, aux_resume).  The remaining 29
+ * bits are reserved and rejected nonzero by the kernel.
  */
 #define PERF_AUX_ACTION_MASK ((1UL << 0) | (1UL << 1) | (1UL << 2))
 

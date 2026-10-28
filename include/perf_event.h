@@ -448,7 +448,9 @@ struct perf_event_attr {
 				inherit_thread :  1, /* children only inherit if cloned with CLONE_THREAD */
 				remove_on_exec :  1, /* event is removed from task on exec */
 				sigtrap        :  1, /* send synchronous SIGTRAP on event */
-				__reserved_1   : 26;
+				defer_callchain:  1, /* request PERF_RECORD_CALLCHAIN_DEFERRED records */
+				defer_output   :  1, /* output PERF_RECORD_CALLCHAIN_DEFERRED records */
+				__reserved_1   : 24;
 
 	union {
 		__u32		wakeup_events;	  /* wakeup every n events */
@@ -495,7 +497,15 @@ struct perf_event_attr {
 	__u16	sample_max_stack;
 	__u16	__reserved_2;	/* align to __u64 */
 	__u32	aux_sample_size;
-	__u32	aux_action;
+	union {
+		__u32	aux_action;
+		struct {
+			__u32	aux_start_paused :  1, /* start AUX area tracing paused */
+				aux_pause        :  1, /* on overflow, pause AUX area tracing */
+				aux_resume       :  1, /* on overflow, resume AUX area tracing */
+				__reserved_3     : 29;
+		};
+	};
 	__u64	sig_data;
 	__u64	config3;	/* extension of config2 */
 	__u64	config4;	/* extension of config3 */
@@ -531,6 +541,8 @@ struct perf_event_attr {
  */
 _Static_assert(sizeof(struct perf_event_attr) == PERF_ATTR_SIZE_VER10,
 	       "struct perf_event_attr is not the VER10 size");
+_Static_assert(offsetof(struct perf_event_attr, aux_action) == 116,
+	       "aux_action moved");
 _Static_assert(offsetof(struct perf_event_attr, sample_simd_regs_enabled) ==
 	       PERF_ATTR_SIZE_VER9, "sample_simd_regs_enabled moved");
 _Static_assert(offsetof(struct perf_event_attr, sample_simd_pred_reg_qwords) ==
