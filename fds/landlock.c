@@ -142,7 +142,8 @@ static void arm_landlock(int ruleset_fd)
 /* Bytes of struct landlock_ruleset_attr valid for each ABI version.
  * ABI v1–v3 only have handled_access_fs (8 bytes).
  * ABI v4+ adds handled_access_net (16 bytes).
- * ABI v5+ adds scoped (24 bytes).
+ * ABI v6+ adds scoped (24 bytes); an ABI 4 or 5 kernel takes the 24 with
+ * scoped zero, since it refuses only a tail that is not.
  * ABI v10+ adds the quiet masks (48 bytes), v12+ handled_permissions (56). */
 #define LANDLOCK_ATTR_SIZE_V1  (sizeof(__u64))
 #define LANDLOCK_ATTR_SIZE_V4  (sizeof(__u64) * 2)
