@@ -263,6 +263,49 @@ static void expect_addr_header(const struct addr_header *get,
 			"rtnl: RTM_NEWADDR and RTM_DELADDR lose their random prefixlen, flags and scope");
 }
 
+/* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
+
+struct tunnel_attrs {
+	unsigned int attrs;
+	unsigned int entries;	/* of type VXLAN_VNIFILTER_ENTRY */
+};
+
+static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nlh)
+{
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct tunnel_msg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct tunnel_msg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct tunnel_msg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		t->attrs++;
+		t->entries += (nla->nla_type & NLA_TYPE_MASK) == VXLAN_VNIFILTER_ENTRY;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * vxlan_vnifilter_process() parses RTM_NEWTUNNEL and RTM_DELTUNNEL strictly
+ * against vni_filter_policy, whose one attribute is VXLAN_VNIFILTER_ENTRY,
+ * so a request of any other type is refused whole, and the dump reads only
+ * that type.  An attribute takes its group's type seven times in eight,
+ * whether it is a nest of the builder's or built by the type's own payload
+ * generator, so about seven in eight of them are entries.
+ */
+static void expect_tunnel_attrs(const struct tunnel_attrs *t)
+{
+	expect_fraction(t->entries, t->attrs, 0.80, 0.95, "RTM_*TUNNEL",
+			"rtnl: a tunnel request's attributes are not mostly VXLAN_VNIFILTER_ENTRY");
+}
+
 /* ---------- The link size limits and IFLA_PACING_OFFLOAD ----------------- */
 
 /*
@@ -566,6 +609,7 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 struct tallies {
 	struct dump_bits dumps, dcb;
 	struct addr_header getaddr, newdeladdr;
+	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
@@ -604,6 +648,11 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELADDR:
 			tally_addr_header(&t->newdeladdr, nlh);
 			break;
+		case RTM_NEWTUNNEL:
+		case RTM_DELTUNNEL:
+		case RTM_GETTUNNEL:
+			tally_tunnel_attrs(&t->tunnel, nlh);
+			break;
 		case RTM_GETMULTICAST:
 			tally_addr_dump(&t->multicast, nlh);
 			break;
@@ -635,6 +684,7 @@ void rtnl_gen_self_check(void)
 	run_rounds(&t);
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
+	expect_tunnel_attrs(&t.tunnel);
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);

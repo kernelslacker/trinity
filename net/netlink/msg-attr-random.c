@@ -368,6 +368,7 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
 	case 25: return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
+	case 26: return VXLAN_VNIFILTER_ENTRY;
 	default: return 0;
 	}
 }
