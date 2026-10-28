@@ -703,8 +703,8 @@ static void common_attr_follows_the_kernels_rules(void)
  * ahead of that code: CHECK_ATTR(), the flag rules of
  * bpf_map_check_op_flags(), the key copy of __bpf_copy_key() and the value
  * size of bpf_map_value_size().  A draw is judged by how far it gets.  The
- * maps are the pool's: some it records the type and sizes of, some it met
- * only by id and knows nothing of.
+ * maps are the pool's: some it records the type and sizes of, some it knows
+ * nothing of, as of a map met by id that the kernel would not describe.
  */
 #define FAKE_MAP_FD	100
 

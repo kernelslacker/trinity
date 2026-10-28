@@ -376,6 +376,13 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 	return ret;
 }
 
+/*
+ * A call another suite models: it sets this while it runs the code that makes
+ * the call, and the hook answers true, with the result or -errno in *ret, for
+ * a call it took.  One it does not take goes on to the real syscall().
+ */
+bool (*fake_syscall)(long number, const unsigned long a[6], long *ret);
+
 long __real_syscall(long number, ...);
 long __wrap_syscall(long number, ...);
 
@@ -398,7 +405,7 @@ long __wrap_syscall(long number, ...)
 	else if (fake_abi != 0 && number == __NR_landlock_add_rule)
 		ret = fake_add_rule((int) a[0], (unsigned int) a[1],
 				    (const void *) a[2], (unsigned int) a[3]);
-	else
+	else if (fake_syscall == NULL || !fake_syscall(number, a, &ret))
 		return __real_syscall(number, a[0], a[1], a[2], a[3], a[4], a[5]);
 
 	if (ret < 0) {

@@ -146,9 +146,10 @@ LDFLAGS		+= -Wl,--wrap=valresult_alloc
 
 # syscall() stand-in: landlock_test.c wraps it so that, while it has a model
 # kernel armed, the Landlock calls trinity_raw_syscall() makes in the fd
-# provider and the post handler land in that model.  The wrapper forwards
-# every other call, and the Landlock ones when nothing is armed, to the real
-# syscall().
+# provider and the post handler land in that model.  A suite that models a
+# call of its own, as dup_pool_test.c does bpf()'s info query, hooks it
+# through fake_syscall.  The wrapper forwards every other call, and the
+# Landlock ones when nothing is armed, to the real syscall().
 LDFLAGS		+= -Wl,--wrap=syscall
 
 # ioctl() stand-in: procfs_self_test.c wraps it so that the PAGEMAP_SCAN the

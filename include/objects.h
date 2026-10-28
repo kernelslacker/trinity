@@ -101,8 +101,9 @@ struct fanotifyobj {
 
 /*
  * A map's key and value sizes are what the element commands size their
- * buffers by.  A map the pool met only by id (BPF_MAP_GET_FD_BY_ID) has no
- * type, BPF_MAP_TYPE_UNSPEC, and neither size is known.
+ * buffers by.  A map met by id (BPF_MAP_GET_FD_BY_ID) has them from
+ * BPF_OBJ_GET_INFO_BY_FD; one the kernel would not describe has no type,
+ * BPF_MAP_TYPE_UNSPEC, and neither size is known.
  */
 struct bpfobj {
 	u32 map_type;

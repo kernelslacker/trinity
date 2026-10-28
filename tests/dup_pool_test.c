@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@
 #include <sys/mount.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -68,6 +70,8 @@ extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
+extern bool (*fake_syscall)(long number, const unsigned long a[6],
+			    long *ret);	/* landlock_test.c */
 
 /* Numbers no fd table in the test holds, so the post handlers' fstat()
  * oracle finds nothing to compare. */
@@ -207,7 +211,6 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 {
 	unsigned int i;
 
-	(void) meta;
 	if (type == unrouted)
 		return NULL;
 
@@ -223,6 +226,10 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 		e->obj.obj_type = type;
 		if (type == OBJ_FD_TESTFILE)
 			e->obj.testfileobj.fd = (int) id;
+		/* The one piece of the metadata the real one stamps that a case
+		 * reads back: the type of a map. */
+		if (type == OBJ_FD_BPF_MAP && meta != NULL)
+			e->obj.bpfobj.map_type = meta->subtype;
 		e->obj.slot_version = ++fake_versions;
 		published++;
 		return &e->obj;
@@ -3915,6 +3922,240 @@ static void bpf_map_create_records_the_map_sizes(void)
 	}
 }
 
+/*
+ * The map the model kernel holds, behind the fd a case made for it.  The kernel
+ * answers a BPF_OBJ_GET_INFO_BY_FD on a map fd in bpf_map_get_info_by_fd()
+ * (kernel/bpf/syscall.c), which fills struct bpf_map_info from the map: its
+ * type, id, and the sizes of its key and value come first.
+ */
+static struct {
+	int fd;
+	unsigned int type, key_size, value_size;
+} kernel_map = { .fd = -1 };
+
+static int info_errno;		/* the errno every info query is answered with */
+
+/* What the post handler asked of the model. */
+static struct {
+	unsigned int calls, cmd, size, info_len;
+	int fd;
+} info_seen;
+
+/* struct bpf_map_info is 104 bytes in include/uapi/linux/bpf.h, and
+ * bpf_map_get_info_by_fd() takes its last field, hash_size, to end at 100. */
+#define KERNEL_MAP_INFO_SIZE		104
+#define KERNEL_MAP_INFO_FIELDS_END	100
+
+#define ATTR_INFO_END	(offsetof(union bpf_attr, info) + sizeof(((union bpf_attr *) NULL)->info))
+#define ATTR_INFO_LEN	offsetof(union bpf_attr, info.info_len)
+
+/*
+ * __sys_bpf() and bpf_obj_get_info_by_fd() for the one command the post
+ * handler may issue.  The attr is copied in for its size and zero-extended,
+ * and nothing may be set past info.info (CHECK_ATTR()).  A fd that is no map
+ * is -EINVAL.  The info buffer must be a pointer, and past what the kernel
+ * knows of the struct it must be zero (bpf_check_uarg_tail_zero(), a page at
+ * most); the map's fields come back in its first info_len bytes, and
+ * info_len itself is stored back into the attr.  Every refusal but -EFAULT
+ * comes before the info is written; -EFAULT is the one a copy_to_user() that
+ * landed can be followed by, when the store of info_len faults, so the info is
+ * written and the call fails.
+ */
+static bool fake_bpf_info(long number, const unsigned long a[6], long *ret)
+{
+	unsigned char kinfo[KERNEL_MAP_INFO_SIZE] = { 0 };
+	unsigned char *uinfo;
+	unsigned int size, info_len, i;
+	uint32_t fields[4];
+	union bpf_attr attr;
+
+	if (number != __NR_bpf)
+		return false;
+	info_seen.calls++;
+	info_seen.cmd = a[0];
+	if (a[0] != BPF_OBJ_GET_INFO_BY_FD)
+		BUG("fd pool: bpf() was called with a command the model has no answer to");
+
+	size = a[2];
+	info_seen.size = size;
+	memset(&attr, 0, sizeof(attr));
+	memcpy(&attr, (const void *) a[1], size < sizeof(attr) ? size : sizeof(attr));
+	for (i = ATTR_INFO_END; i < sizeof(attr); i++) {
+		if (((const unsigned char *) &attr)[i] != 0) {
+			*ret = -EINVAL;
+			return true;
+		}
+	}
+
+	info_seen.fd = attr.info.bpf_fd;
+	info_seen.info_len = attr.info.info_len;
+	if (info_errno != 0 && info_errno != EFAULT) {
+		*ret = -info_errno;
+		return true;
+	}
+	if (kernel_map.fd != (int) attr.info.bpf_fd) {
+		*ret = -EINVAL;
+		return true;
+	}
+
+	uinfo = (unsigned char *)(uintptr_t) attr.info.info;
+	info_len = attr.info.info_len;
+	if (info_len > 4096) {
+		*ret = -E2BIG;
+		return true;
+	}
+	if (info_len > 0 && uinfo == NULL) {
+		*ret = -EFAULT;
+		return true;
+	}
+	for (i = KERNEL_MAP_INFO_FIELDS_END; i < info_len; i++) {
+		if (uinfo[i] != 0) {
+			*ret = -E2BIG;
+			return true;
+		}
+	}
+	if (info_len > KERNEL_MAP_INFO_SIZE)
+		info_len = KERNEL_MAP_INFO_SIZE;
+
+	fields[0] = kernel_map.type;
+	fields[1] = 1;			/* the id */
+	fields[2] = kernel_map.key_size;
+	fields[3] = kernel_map.value_size;
+	memcpy(kinfo, fields, sizeof(fields));
+	if (info_len > 0)
+		memcpy(uinfo, kinfo, info_len);
+	if (info_errno == EFAULT) {
+		*ret = -EFAULT;
+		return true;
+	}
+	memcpy((unsigned char *) a[1] + ATTR_INFO_LEN, &info_len, sizeof(info_len));
+	*ret = 0;
+	return true;
+}
+
+/* The post handler of a BPF_MAP_GET_FD_BY_ID that returned @retval, with the
+ * model standing in for the kernel's answer to what it asks of the fd. */
+static void run_bpf_map_get_fd_by_id(unsigned long retval)
+{
+	static struct syscallrecord rec;
+	void *attr;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = BPF_MAP_GET_FD_BY_ID;
+	syscall_bpf.sanitise(&rec);
+	attr = (void *) rec.a2;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? ENOENT : 0;
+
+	forget_calls();
+	memset(&info_seen, 0, sizeof(info_seen));
+	fake_syscall = fake_bpf_info;
+	syscall_bpf.post(&rec);
+	fake_syscall = NULL;
+	free(attr);
+}
+
+/*
+ * A map the child met only by id would be drawn by the element commands as one
+ * the pool knows nothing of, with buffers made for any map.  The kernel
+ * reports its type and sizes for the fd the call returned, and the post
+ * handler asks, so the object it pools carries them.
+ */
+static void bpf_map_get_fd_by_id_records_what_the_kernel_reports(void)
+{
+	static const struct {
+		unsigned int type, key_size, value_size;
+	} maps[] = {
+		{ BPF_MAP_TYPE_HASH, 8, 8 },
+		{ BPF_MAP_TYPE_PERCPU_ARRAY, 4, 1016 },
+		{ BPF_MAP_TYPE_RINGBUF, 0, 0 },
+		{ BPF_MAP_TYPE_LPM_TRIE, 12, 4 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(maps); i++) {
+		struct pool_entry *e;
+		int peer, fd;
+
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		kernel_map.fd = fd;
+		kernel_map.type = maps[i].type;
+		kernel_map.key_size = maps[i].key_size;
+		kernel_map.value_size = maps[i].value_size;
+		info_errno = 0;
+
+		run_bpf_map_get_fd_by_id((unsigned long) fd);
+		e = pool_find(fd, OBJ_FD_BPF_MAP);
+		check("the map was not pooled", "bpf",
+		      e != NULL && e->local && published == 1);
+		check("the pooled map lost the type the kernel reported", "bpf",
+		      e != NULL && e->obj.bpfobj.map_type == maps[i].type);
+		check("the pooled map lost the key size the kernel reported",
+		      "bpf", e != NULL &&
+		      e->obj.bpfobj.key_size == maps[i].key_size);
+		check("the pooled map lost the value size the kernel reported",
+		      "bpf", e != NULL &&
+		      e->obj.bpfobj.value_size == maps[i].value_size);
+		check("the map's fd was not asked about, once", "bpf",
+		      info_seen.calls == 1 && info_seen.fd == fd &&
+		      info_seen.cmd == BPF_OBJ_GET_INFO_BY_FD);
+		check("the info buffer stops short of the value size", "bpf",
+		      info_seen.info_len >=
+		      offsetof(struct bpf_map_info, value_size) + sizeof(__u32));
+		check("the attr does not reach the info pointer", "bpf",
+		      info_seen.size >= ATTR_INFO_END);
+		close(fd);
+	}
+	kernel_map.fd = -1;
+}
+
+/* A map the kernel will not describe, or an fd that is no map, is pooled all
+ * the same, as one of unknown type, which the element commands give buffers
+ * made for any map. */
+static void bpf_map_get_fd_by_id_pools_a_map_the_kernel_will_not_describe(void)
+{
+	/* The last case has the model refuse nothing: it holds no map behind
+	 * the fd, which the kernel answers -EINVAL. */
+	static const int errnos[] = { EPERM, EINVAL, E2BIG, EFAULT, 0 };
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(errnos); i++) {
+		struct pool_entry *e;
+		int peer, fd;
+
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		kernel_map.fd = errnos[i] != 0 ? fd : -1;
+		kernel_map.type = BPF_MAP_TYPE_HASH;
+		kernel_map.key_size = 8;
+		kernel_map.value_size = 8;
+		info_errno = errnos[i];
+
+		run_bpf_map_get_fd_by_id((unsigned long) fd);
+		e = pool_find(fd, OBJ_FD_BPF_MAP);
+		check("a map the kernel would not describe was not pooled", "bpf",
+		      e != NULL && e->local && published == 1);
+		check("a map the kernel would not describe has a type or sizes",
+		      "bpf", e != NULL &&
+		      e->obj.bpfobj.map_type == BPF_MAP_TYPE_UNSPEC &&
+		      e->obj.bpfobj.key_size == 0 && e->obj.bpfobj.value_size == 0);
+		close(fd);
+	}
+	kernel_map.fd = -1;
+	info_errno = 0;
+}
+
+/* A lookup by id that failed returned -1, which names no map: nothing is
+ * asked of it and nothing pooled. */
+static void bpf_map_get_fd_by_id_that_failed_asks_nothing(void)
+{
+	reset();
+	run_bpf_map_get_fd_by_id((unsigned long) -1L);
+	check("a failed lookup was asked about", "bpf", info_seen.calls == 0);
+	check("a failed lookup pooled a map", "bpf", published == 0);
+}
+
 /* A stream fd the pool cannot take, its head having no destructor to close
  * it through, is nobody's: closed rather than leaked. */
 static void bpf_stream_open_closes_an_fd_the_pool_cannot_take(void)
@@ -4027,6 +4268,9 @@ void dup_pool_self_check(void)
 	bpf_stream_open_leaves_a_number_that_is_not_free_alone();
 	bpf_stream_open_closes_an_fd_the_pool_cannot_take();
 	bpf_map_create_records_the_map_sizes();
+	bpf_map_get_fd_by_id_records_what_the_kernel_reports();
+	bpf_map_get_fd_by_id_pools_a_map_the_kernel_will_not_describe();
+	bpf_map_get_fd_by_id_that_failed_asks_nothing();
 #endif
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];

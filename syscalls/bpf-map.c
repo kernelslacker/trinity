@@ -8,6 +8,7 @@
 
 #include <linux/bpf.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "arch.h"
@@ -18,6 +19,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "syscall-gate.h"
 #include "trinity.h"		/* num_possible_cpus */
 #include "utils.h"
 
@@ -127,8 +129,9 @@ static unsigned long map_value_len(const struct bpfobj *map, u64 flags)
 
 /*
  * Draw a map from the pool, naming it in attr->map_fd.  Of a map the pool
- * met only by id the pool knows no type, and so no size: its buffers are
- * made generously.  Returns whether the map is a known one.
+ * has no type for, one the kernel would not describe when it was met by id,
+ * the pool knows no size either: its buffers are made generously.  Returns
+ * whether the map is a known one.
  */
 static bool pick_map(union bpf_attr *attr, struct bpfobj *map)
 {
@@ -328,18 +331,45 @@ void post_bpf_map_create(int fd, bool attr_readable, union bpf_attr *attr)
 
 void post_bpf_map_get_fd_by_id(int fd)
 {
+	struct bpf_map_info info;
+	union bpf_attr attr;
+	struct object *obj;
+
+	if (fd < 0)
+		return;
+
 	/*
 	 * Looked-up map fd is the same kind of object as one fresh
 	 * from BPF_MAP_CREATE — just sourced via id-lookup against
 	 * the kernel's id table.  Publish into the per-child pool so
 	 * subsequent map-fd consumers (LOOKUP_ELEM, UPDATE_ELEM,
-	 * FREEZE, etc.) can pick it up.  Map type is unknown at this
-	 * point; leaving it as BPF_MAP_TYPE_UNSPEC just makes the
-	 * dump output read "unknown" — no behavioural impact since
-	 * map_type is metadata only.
+	 * FREEZE, etc.) can pick it up.
+	 *
+	 * The call returned the fd and nothing of the map, whose type and
+	 * sizes the element commands size their buffers by, so the kernel
+	 * is asked (bpf_map_get_info_by_fd() in kernel/bpf/syscall.c).  The
+	 * front of struct bpf_map_info, up to value_size, is all that is
+	 * wanted: the kernel copies out as many bytes as info_len says.  A
+	 * map it will not describe is pooled as one of unknown type,
+	 * BPF_MAP_TYPE_UNSPEC, and gets the buffers made for any map.
 	 */
-	if (fd >= 0)
-		publish_resource(OBJ_FD_BPF_MAP, fd, NULL);
+	memset(&info, 0, sizeof(info));
+	memset(&attr, 0, sizeof(attr));
+	attr.info.bpf_fd = fd;
+	attr.info.info_len = offsetof(struct bpf_map_info, value_size) +
+			     sizeof(info.value_size);
+	attr.info.info = (uintptr_t) &info;
+	if (trinity_raw_syscall(__NR_bpf, BPF_OBJ_GET_INFO_BY_FD, &attr,
+				offsetof(union bpf_attr, info) +
+				sizeof(attr.info)) != 0)
+		memset(&info, 0, sizeof(info));
+
+	obj = publish_resource(OBJ_FD_BPF_MAP, fd,
+			       &(struct resource_meta){.subtype = info.type});
+	if (obj != NULL) {
+		obj->bpfobj.key_size = info.key_size;
+		obj->bpfobj.value_size = info.value_size;
+	}
 }
 
 #endif	/* USE_BPF */
