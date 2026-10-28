@@ -23,6 +23,8 @@
 #define TAINT_AUX                       16
 #define TAINT_RANDSTRUCT                17
 #define TAINT_TEST                      18
+#define TAINT_FWCTL                     19
+#define TAINT_FORCED_BIND               20
 
 /* command line args. */
 void parse_args(int argc, char *argv[]);

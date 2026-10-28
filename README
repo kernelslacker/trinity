@@ -107,8 +107,9 @@ garbage named files; just rm -rf tmp afterwards)
  --kernel_taint/-T: controls which kernel taint flags should be considered.
 	The following flag names are supported: PROPRIETARY_MODULE, FORCED_MODULE, UNSAFE_SMP,
 	FORCED_RMMOD, MACHINE_CHECK, BAD_PAGE, USER, DIE, OVERRIDDEN_ACPI_TABLE, WARN, CRAP,
-	FIRMWARE_WORKAROUND, and OOT_MODULE. For instance, to set trinity to monitor only BAD,
-	WARN and MACHINE_CHECK flags one should specify "-T BAD,WARN,MACHINE_CHECK" parameter.
+	FIRMWARE_WORKAROUND, OOT_MODULE, UNSIGNED_MODULE, SOFTLOCKUP, LIVEPATCH, AUX,
+	RANDSTRUCT, TEST, FWCTL and FORCED_BIND. For instance, to set trinity to monitor only
+	BAD_PAGE, WARN and MACHINE_CHECK flags one should specify "-T BAD_PAGE,WARN,MACHINE_CHECK".
 
  --list/-L: list known syscalls and their offsets
 

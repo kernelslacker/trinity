@@ -222,6 +222,10 @@ static void toggle_taint_flag_by_name(char *beg, char *end)
 		toggle_taint_flag(TAINT_RANDSTRUCT);
 	else if (strcmp(name,"TEST") == 0)
 		toggle_taint_flag(TAINT_TEST);
+	else if (strcmp(name,"FWCTL") == 0)
+		toggle_taint_flag(TAINT_FWCTL);
+	else if (strcmp(name,"FORCED_BIND") == 0)
+		toggle_taint_flag(TAINT_FORCED_BIND);
 	else {
 		outputerr("Unrecognizable kernel taint flag \"%s\".\n", name);
 		exit(EXIT_FAILURE);
