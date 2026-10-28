@@ -238,14 +238,13 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
 	switch (protocol) {
 	case NETLINK_ROUTE:
 		return pick_rtnl_attr_type(nlmsg_type);
-	case NETLINK_GENERIC:
-		return pick_genl_attr_type(nlmsg_type);
 	default:
-		/* XFRM, SOCK_DIAG, ctnetlink, nftables, genl-ctrl now have
-		 * dedicated nla_attr_spec tables consulted directly by
-		 * build_one_nlmsg, so they no longer need a raw type pick
-		 * here.  Anything that lands in this default returns 0 and
-		 * the caller falls back to a random type. */
+		/* XFRM, SOCK_DIAG, ctnetlink, nftables and the genl families
+		 * the registry knows, with the controller, have dedicated
+		 * nla_attr_spec tables consulted directly by build_one_nlmsg,
+		 * so they no longer need a raw type pick here.  Anything that
+		 * lands in this default returns 0 and the caller falls back
+		 * to a random type. */
 		return 0;
 	}
 }

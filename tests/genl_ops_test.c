@@ -2583,6 +2583,120 @@ next:
 	}
 }
 
+/* ---------- Checking the controller's requests --------------------------- */
+
+/*
+ * net/netlink/genetlink.c: ctrl_policy_family, which GETFAMILY takes, and
+ * ctrl_policy_policy, GETPOLICY's, which adds OP.  GETPOLICY and the dump
+ * of GETFAMILY parse strictly, so an id that is not here, or one of another
+ * length, refuses the request.
+ */
+static struct slot ctrl_family[] = {
+	S_U16(CTRL_ATTR_FAMILY_ID),
+	S_STR(CTRL_ATTR_FAMILY_NAME, GENL_NAMSIZ - 1),
+};
+static struct slot ctrl_policy[] = {
+	S_U16(CTRL_ATTR_FAMILY_ID),
+	S_STR(CTRL_ATTR_FAMILY_NAME, GENL_NAMSIZ - 1),
+	S_U32(CTRL_ATTR_OP),
+};
+
+#define CTRL_ROUNDS	40000
+
+/*
+ * What a request to the controller carries.  Only GETFAMILY and GETPOLICY
+ * have handlers; genl_family_rcv_msg() answers any other cmd before it
+ * reads an attribute.  The generator sends one of the two seven times in
+ * eight, so each is 0.449 of the requests and the cmds with no handler
+ * 0.10, which a cmd drawn from all eleven would make 0.82.  A cmd with no
+ * handler carries no attribute and the others only those their policy takes.
+ * GETPOLICY has a dumpit alone and carries both dump bits as a dumpit-only
+ * family's cmd does, 0.925 of the time (the message in ten with random
+ * flags aside); GETFAMILY has both handlers and carries them 0.49 of the
+ * time, as a cmd of either does.  Over the 2000 requests or so of each the
+ * fractions have standard deviations under 0.012, and the bounds are six of
+ * them out or more.
+ */
+static void check_ctrl_requests(void)
+{
+	struct socket_triplet triplet = {
+		.family = PF_NETLINK,
+		.type = SOCK_RAW,
+		.protocol = NETLINK_GENERIC,
+	};
+	unsigned int msgs = 0, unserved = 0;
+	unsigned int family_msgs = 0, family_dump = 0;
+	unsigned int policy_msgs = 0, policy_dump = 0;
+	unsigned int round;
+
+	for (round = 0; round < CTRL_ROUNDS; round++) {
+		const unsigned char *attrs;
+		const struct genlmsghdr *genl;
+		const struct nlmsghdr *nlh;
+		struct slot *slots = NULL;
+		unsigned int n_slots = 0;
+		size_t hdrs = NLMSG_HDRLEN + GENL_HDRLEN;
+		bool dump;
+		void *buf;
+		size_t len;
+
+		netlink_gen_msg(&triplet, &buf, &len);
+		nlh = buf;
+		if (len < hdrs || nlh->nlmsg_type != GENL_ID_CTRL)
+			goto next;
+		genl = NLMSG_DATA(nlh);
+		dump = (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP;
+
+		msgs++;
+		if (genl->cmd == CTRL_CMD_GETFAMILY) {
+			family_msgs++;
+			family_dump += dump;
+			slots = ctrl_family;
+			n_slots = ARRAY_SIZE(ctrl_family);
+		} else if (genl->cmd == CTRL_CMD_GETPOLICY) {
+			policy_msgs++;
+			policy_dump += dump;
+			slots = ctrl_policy;
+			n_slots = ARRAY_SIZE(ctrl_policy);
+		} else {
+			unserved++;
+		}
+
+		if (len >= SMALLEST_BUFFER || NLMSG_ALIGN(nlh->nlmsg_len) != len ||
+		    doubled_batch(buf, len, hdrs, slots, n_slots))
+			goto next;
+		attrs = (const unsigned char *) nlh + hdrs;
+		if (slots == NULL ? nlh->nlmsg_len != hdrs :
+		    !stream_conforms(attrs, nlh->nlmsg_len - hdrs, slots, n_slots)) {
+			fprintf(stderr, "controller cmd %u: attributes its policy does not take:\n",
+				genl->cmd);
+			hexdump(attrs, nlh->nlmsg_len - hdrs);
+			BUG("genl ops: a request to the controller carries what its policy refuses");
+		}
+next:
+		free(buf);
+	}
+
+	if (msgs < 2000 || family_msgs < msgs * 0.40 || policy_msgs < msgs * 0.40 ||
+	    unserved < msgs * 0.05 || unserved > msgs * 0.16) {
+		fprintf(stderr, "controller: %u requests, %u GETFAMILY, %u GETPOLICY, %u of other cmds\n",
+			msgs, family_msgs, policy_msgs, unserved);
+		BUG("genl ops: the controller is not sent mostly the cmds it has handlers for");
+	}
+	if (policy_dump < policy_msgs * 0.88 || policy_dump > policy_msgs * 0.98) {
+		fprintf(stderr, "controller: %u of %u GETPOLICY requests carry NLM_F_DUMP, want a fraction in [0.88, 0.98]\n",
+			policy_dump, policy_msgs);
+		BUG("genl ops: GETPOLICY is not sent as a dump");
+	}
+	if (family_dump < family_msgs * 0.42 || family_dump > family_msgs * 0.58) {
+		fprintf(stderr, "controller: %u of %u GETFAMILY requests carry NLM_F_DUMP, want a fraction in [0.42, 0.58]\n",
+			family_dump, family_msgs);
+		BUG("genl ops: GETFAMILY is pinned to one of its handlers");
+	}
+	expect_slots_seen(ctrl_family, ARRAY_SIZE(ctrl_family), "controller GETFAMILY");
+	expect_slots_seen(ctrl_policy, ARRAY_SIZE(ctrl_policy), "controller GETPOLICY");
+}
+
 /* ---------- Checking how a nest is filled -------------------------------- */
 
 size_t append_specced_nlattr(unsigned char *buf, size_t offset, size_t buflen,
@@ -3285,6 +3399,7 @@ void genl_ops_self_check(void)
 	check_required_not_inherited();
 	check_once_tables();
 	check_attrs_in_policy();
+	check_ctrl_requests();
 	check_policy_specs();
 	check_policy_required();
 	check_policy_values();

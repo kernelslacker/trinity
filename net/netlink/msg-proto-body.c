@@ -28,7 +28,11 @@
  * family->hdrsize that the kernel skips past before walking attributes —
  * for those we append fam->hdrsize random bytes after the genlmsghdr so
  * the per-cmd attribute parser sees TLVs at the offset it expects.
- * For the controller (GENL_ID_CTRL), we pick from CTRL_CMD_* commands.
+ * The controller (GENL_ID_CTRL) has handlers for CTRL_CMD_GETFAMILY and
+ * CTRL_CMD_GETPOLICY alone, so one cmd in eight is any CTRL_CMD_* and the
+ * rest are one of those two.  Its ops are fixed (genl_ctrl_ops[] in
+ * net/netlink/genetlink.c), so GETPOLICY, which has a dumpit only, is
+ * given its caps here; GETFAMILY has both handlers.
  * For other families, we use random cmd values since we don't know
  * which families are loaded at runtime.
  * *cmd_caps gets the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits the
@@ -48,8 +52,12 @@ size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
 		return 0;
 
 	if (nlmsg_type == GENL_ID_CTRL) {
-		/* Controller commands: GETFAMILY is the most useful */
-		genl.cmd = RAND_RANGE(CTRL_CMD_UNSPEC, CTRL_CMD_MAX);
+		if (ONE_IN(8))
+			genl.cmd = RAND_RANGE(CTRL_CMD_UNSPEC, CTRL_CMD_MAX);
+		else
+			genl.cmd = RAND_BOOL() ? CTRL_CMD_GETFAMILY : CTRL_CMD_GETPOLICY;
+		if (genl.cmd == CTRL_CMD_GETPOLICY)
+			*cmd_caps = GENL_CMD_CAP_DUMP;
 		genl.version = RAND_BOOL() ? 1 : rnd_modulo_u32(4);
 	} else if ((fam = genl_lookup_by_id(nlmsg_type)) != NULL) {
 		/* Resolved family: pick a known cmd from its grammar so the
@@ -85,17 +93,6 @@ size_t gen_genl_body(unsigned char *body, unsigned short nlmsg_type,
 		return len + fam->hdrsize;
 	}
 	return len;
-}
-
-/* Pick an nlattr type for genl controller messages.  Reads through the
- * ctrl_specs spec table; the legacy flat-attr code path still needs a
- * raw nla_type when nesting a NETLINK_GENERIC controller attr via
- * append_nested_attr_container().  The spec-driven path bypasses this. */
-unsigned short pick_genl_attr_type(unsigned short nlmsg_type)
-{
-	if (nlmsg_type == GENL_ID_CTRL)
-		return ctrl_specs[rnd_modulo_u32(ctrl_specs_n)].type;
-	return 0; /* unknown family: fall back to random */
 }
 
 /*

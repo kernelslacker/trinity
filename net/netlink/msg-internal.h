@@ -124,9 +124,6 @@ extern const size_t mdba_attrs_n;
 extern const unsigned short bridge_vlandb_attrs[];
 extern const size_t bridge_vlandb_attrs_n;
 
-extern const struct nla_attr_spec ctrl_specs[];
-extern const size_t ctrl_specs_n;
-
 extern const struct nla_attr_spec xfrma_specs[];
 extern const size_t xfrma_specs_n;
 
@@ -208,16 +205,6 @@ size_t gen_audit_body(unsigned char *body, unsigned short nlmsg_type,
 		      size_t buflen);
 size_t gen_sockdiag_body(unsigned char *body, unsigned short nlmsg_type,
 			 size_t buflen);
-
-/*
- * Attribute-type picker for NETLINK_GENERIC.  Defined in
- * msg-proto-body.c, called from pick_attr_hint in msg-core.c.  Reads the
- * ctrl_specs table for GENL_ID_CTRL messages so the legacy flat-attr
- * path can nest a controller attr through
- * append_nested_attr_container(); returns 0 for other families so the
- * caller falls back to a random attr type.
- */
-unsigned short pick_genl_attr_type(unsigned short nlmsg_type);
 
 /*
  * Legacy random-payload attribute path.  Defined in msg-attr-random.c

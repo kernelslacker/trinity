@@ -403,20 +403,6 @@ const size_t bridge_vlandb_attrs_n = ARRAY_SIZE(bridge_vlandb_attrs);
  * generated attrs are length-rejected with -EINVAL before any code
  * the family cares about gets to run.
  */
-/* genl controller (GENL_ID_CTRL) attributes */
-const struct nla_attr_spec ctrl_specs[] = {
-	{ CTRL_ATTR_FAMILY_ID,    NLA_KIND_U16,    2 },
-	{ CTRL_ATTR_FAMILY_NAME,  NLA_KIND_STRING, GENL_NAMSIZ },
-	{ CTRL_ATTR_VERSION,      NLA_KIND_U32,    4 },
-	{ CTRL_ATTR_HDRSIZE,      NLA_KIND_U32,    4 },
-	{ CTRL_ATTR_MAXATTR,      NLA_KIND_U32,    4 },
-	{ CTRL_ATTR_OPS,          NLA_KIND_NESTED, 0 },
-	{ CTRL_ATTR_MCAST_GROUPS, NLA_KIND_NESTED, 0 },
-	{ CTRL_ATTR_POLICY,       NLA_KIND_NESTED, 0 },
-	{ CTRL_ATTR_OP,           NLA_KIND_U32,    4 },
-};
-const size_t ctrl_specs_n = ARRAY_SIZE(ctrl_specs);
-
 /* Newer XFRMA_* attrs may be missing from older system headers. */
 #ifndef XFRMA_NAT_KEEPALIVE_INTERVAL
 #define XFRMA_NAT_KEEPALIVE_INTERVAL	34

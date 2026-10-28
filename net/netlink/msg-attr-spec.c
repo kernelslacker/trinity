@@ -607,7 +607,8 @@ size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
  * NFNL_SUBSYS_x byte of nlmsg_type via the per-subsys grammar registry, and
  * then by the cmd byte; generic netlink dispatches by runtime-resolved
  * family_id via the genl registry, and then by the cmd and dump flag the
- * message carries.  Both do so because the policies are the cmd's.
+ * message carries; the controller, which the registry lacks, by its cmd.
+ * All do so because the policies are the cmd's.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,
@@ -618,16 +619,13 @@ const struct nla_attr_spec *pick_spec_table(int protocol,
 	switch (protocol) {
 	case NETLINK_GENERIC: {
 		const struct genl_family_grammar *fam;
-		const struct genlmsghdr *genl;
+		const struct genlmsghdr *genl = NLMSG_DATA(nlh);
 
-		if (nlmsg_type == GENL_ID_CTRL) {
-			*nr_out = ctrl_specs_n;
-			return ctrl_specs;
-		}
+		if (nlmsg_type == GENL_ID_CTRL)
+			return genl_ctrl_attrs(genl->cmd, nr_out);
 		fam = genl_lookup_by_id(nlmsg_type);
 		if (fam == NULL)
 			return NULL;
-		genl = NLMSG_DATA(nlh);
 		return genl_cmd_attrs(fam, genl->cmd,
 				      (nlh->nlmsg_flags & NLM_F_DUMP) == NLM_F_DUMP,
 				      nr_out);

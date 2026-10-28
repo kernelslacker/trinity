@@ -133,6 +133,14 @@ const struct nla_attr_spec *genl_cmd_attrs(const struct genl_family_grammar *fam
 					   size_t *nr_out);
 
 /*
+ * The attribute table a request to the controller (GENL_ID_CTRL) draws from
+ * for cmd, with its length in *nr_out.  The controller is not in the
+ * registry, so genl_cmd_attrs() cannot serve it.  A cmd with no handler
+ * takes none, which is genl_no_attrs.
+ */
+const struct nla_attr_spec *genl_ctrl_attrs(unsigned char cmd, size_t *nr_out);
+
+/*
  * Bump the per-family dispatch counter for fam.  Called from
  * gen_genl_body() once per built genl message after the family has
  * been resolved.  No-op when fam is NULL or its call_counter pointer
