@@ -58,11 +58,21 @@ struct object *find_object_by_fd(int fd)
 /*
  * The pickers of fds/bpf.c, whose pools no test provides: the sanitisers of
  * syscalls/bpf*.c and the perf ioctl group take -1 from each, as they do
- * from an empty pool.
+ * from an empty pool, but for the map picker, which answers with the map a
+ * test installs a hook to name.
  */
+bool (*fake_get_rand_bpf_map)(struct bpfobj *map);
+
+bool get_rand_bpf_map(struct bpfobj *map)
+{
+	return fake_get_rand_bpf_map != NULL && fake_get_rand_bpf_map(map);
+}
+
 int get_rand_bpf_fd(void)
 {
-	return -1;
+	struct bpfobj map;
+
+	return get_rand_bpf_map(&map) ? map.map_fd : -1;
 }
 
 int get_rand_bpf_prog_fd(void)

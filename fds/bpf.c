@@ -119,6 +119,8 @@ static int open_bpf_fd(void)
 	}
 	obj->bpfobj.map_fd = fd;
 	obj->bpfobj.map_type = bpf_fds[idx].map_type;
+	obj->bpfobj.key_size = bpf_fds[idx].key_size;
+	obj->bpfobj.value_size = bpf_fds[idx].value_size;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_MAP);
 	__atomic_add_fetch(&shm->stats.ebpf_gen.maps_provided, 1, __ATOMIC_RELAXED);
 	return true;
@@ -133,8 +135,8 @@ static int init_bpf_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_map_dump;
 	/*
-	 * bpfobj is {u32 map_type; int map_fd;} with no pointer members,
-	 * so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
+	 * bpfobj is four u32-sized scalars with no pointer members, so the
+	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
 	 * cross-process reads (dump, lockless slot pick) are safe.
 	 */
 
@@ -144,7 +146,7 @@ static int init_bpf_fds(void)
 	return true;
 }
 
-int get_rand_bpf_fd(void)
+bool get_rand_bpf_map(struct bpfobj *map)
 {
 	struct objhead *local;
 
@@ -172,16 +174,18 @@ int get_rand_bpf_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_MAP,
 						       OBJ_LOCAL);
-		if (objpool_check(obj, OBJ_FD_BPF_MAP))
-			return obj->bpfobj.map_fd;
+		if (objpool_check(obj, OBJ_FD_BPF_MAP)) {
+			*map = obj->bpfobj;
+			return true;
+		}
 	}
 
 	if (objects_empty(OBJ_FD_BPF_MAP) == true)
-		return -1;
+		return false;
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfobj.map_fd deref.  A version-validated object-slot read
+	 * obj->bpfobj deref.  A version-validated object-slot read
 	 * guards the lockless reader against a recycled object
 	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
 	 * lockless-reader UAF window: between the lockless slot pick and the
@@ -192,20 +196,26 @@ int get_rand_bpf_fd(void)
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
-		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
 		if (!objpool_check(obj, OBJ_FD_BPF_MAP))
 			continue;
 
-		fd = obj->bpfobj.map_fd;
-		if (fd < 0)
+		*map = obj->bpfobj;
+		if (map->map_fd < 0)
 			continue;
 
-		return fd;
+		return true;
 	}
 
-	return -1;
+	return false;
+}
+
+int get_rand_bpf_fd(void)
+{
+	struct bpfobj map;
+
+	return get_rand_bpf_map(&map) ? map.map_fd : -1;
 }
 
 static const struct fd_provider bpf_map_fd_provider = {
@@ -359,7 +369,7 @@ int get_rand_bpf_prog_fd(void)
 {
 	struct objhead *local;
 
-	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	/* See get_rand_bpf_map() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
 	 * UAF window that the version-validated object-slot read guards
 	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
@@ -466,7 +476,7 @@ int get_rand_bpf_link_fd(void)
 {
 	struct objhead *local;
 
-	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	/* See get_rand_bpf_map() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
 	 * UAF window that the version-validated object-slot read guards
 	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
@@ -574,7 +584,7 @@ int get_rand_bpf_btf_fd(void)
 {
 	struct objhead *local;
 
-	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	/* See get_rand_bpf_map() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
 	 * UAF window that the version-validated object-slot read guards
 	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
@@ -683,7 +693,7 @@ int get_rand_bpf_token_fd(void)
 {
 	struct objhead *local;
 
-	/* See get_rand_bpf_fd() for why we coin-flip OBJ_LOCAL first.
+	/* See get_rand_bpf_map() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
 	 * UAF window that the version-validated object-slot read guards
 	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the

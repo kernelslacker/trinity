@@ -306,3 +306,9 @@ struct bpf_common_attr {
 #ifndef HAVE_BPF_F_LOCK
 #define BPF_F_LOCK			4
 #endif
+#ifndef HAVE_BPF_F_CPU
+#define BPF_F_CPU			8
+#endif
+#ifndef HAVE_BPF_F_ALL_CPUS
+#define BPF_F_ALL_CPUS			16
+#endif

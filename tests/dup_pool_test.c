@@ -3802,6 +3802,42 @@ static void bpf_stream_open_leaves_a_number_that_is_not_free_alone(void)
 	close(fd);
 }
 
+/* The element commands size their buffers by the key and value size of the
+ * map they draw, so a map the sanitiser created reaches the pool with both
+ * in the object the post handler publishes. */
+static void bpf_map_create_records_the_map_sizes(void)
+{
+	enum { ROUNDS = 16 };
+	static struct syscallrecord rec;
+	unsigned int round;
+
+	for (round = 0; round < ROUNDS; round++) {
+		struct pool_entry *e;
+		union bpf_attr attr;
+		void *made;
+		int peer, fd;
+
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = BPF_MAP_CREATE;
+		syscall_bpf.sanitise(&rec);
+		made = (void *) rec.a2;
+		memcpy(&attr, made, sizeof(attr));
+		rec.retval = (unsigned long) fd;
+
+		forget_calls();
+		syscall_bpf.post(&rec);
+		e = pool_find(fd, OBJ_FD_BPF_MAP);
+		check("the created map was not pooled", "bpf", e != NULL);
+		check("the pooled map lost its key or value size", "bpf",
+		      e != NULL && e->obj.bpfobj.key_size == attr.key_size &&
+		      e->obj.bpfobj.value_size == attr.value_size);
+		free(made);
+		close(fd);
+	}
+}
+
 /* A stream fd the pool cannot take, its head having no destructor to close
  * it through, is nobody's: closed rather than leaked. */
 static void bpf_stream_open_closes_an_fd_the_pool_cannot_take(void)
@@ -3904,6 +3940,7 @@ void dup_pool_self_check(void)
 	bpf_stream_open_that_failed_owns_nothing();
 	bpf_stream_open_leaves_a_number_that_is_not_free_alone();
 	bpf_stream_open_closes_an_fd_the_pool_cannot_take();
+	bpf_map_create_records_the_map_sizes();
 #endif
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];

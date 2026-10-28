@@ -1,7 +1,17 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "kernel/bpf.h"
 
+struct bpfobj;
+
+/*
+ * Draw a map from the pool.  get_rand_bpf_map() hands back what the pool
+ * recorded of it, for a caller that sizes buffers by the map's type and key
+ * and value size; get_rand_bpf_fd() is its fd, or -1 from an empty pool.
+ */
+bool get_rand_bpf_map(struct bpfobj *map);
 int get_rand_bpf_fd(void);
 int get_rand_bpf_prog_fd(void);
 int get_rand_bpf_link_fd(void);

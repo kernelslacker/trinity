@@ -186,8 +186,10 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		rec->rettype = RET_FD;
 		break;
 	case BPF_MAP_LOOKUP_ELEM:
+		sanitise_bpf_map_lookup(attr, rec, false);
+		break;
 	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
-		sanitise_bpf_map_lookup(attr, rec);
+		sanitise_bpf_map_lookup(attr, rec, true);
 		break;
 	case BPF_MAP_UPDATE_ELEM:
 		sanitise_bpf_map_update(attr, rec);

@@ -99,9 +99,16 @@ struct fanotifyobj {
 	int eventflags;
 };
 
+/*
+ * A map's key and value sizes are what the element commands size their
+ * buffers by.  A map the pool met only by id (BPF_MAP_GET_FD_BY_ID) has no
+ * type, BPF_MAP_TYPE_UNSPEC, and neither size is known.
+ */
 struct bpfobj {
 	u32 map_type;
 	int map_fd;
+	u32 key_size;
+	u32 value_size;
 };
 
 struct bpfprogobj {

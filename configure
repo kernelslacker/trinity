@@ -644,9 +644,9 @@ check_enum_member linux/bpf.h BPF_TRACE_KPROBE_SESSION \
 	BPF_TRACE_UPROBE_SESSION BPF_TRACE_FSESSION BPF_TRACE_FENTRY_MULTI \
 	BPF_TRACE_FEXIT_MULTI BPF_TRACE_FSESSION_MULTI
 
-# BPF_F_LOCK is a member of the anonymous map-update flags enum, unlike the
-# other BPF_F_* flags, which are macros.
-check_enum_member linux/bpf.h BPF_F_LOCK
+# BPF_F_LOCK, BPF_F_CPU and BPF_F_ALL_CPUS are members of the anonymous
+# map-update flags enum, unlike the other BPF_F_* flags, which are macros.
+check_enum_member linux/bpf.h BPF_F_LOCK BPF_F_CPU BPF_F_ALL_CPUS
 
 # drm-ras's error-threshold commands and attribute.
 check_enum_member drm/drm_ras.h DRM_RAS_CMD_GET_ERROR_THRESHOLD \

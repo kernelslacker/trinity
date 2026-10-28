@@ -24,15 +24,20 @@
 #include <stdbool.h>
 #include <linux/bpf.h>
 
+#include "sanitise.h"		/* WRITABLE_POOL_BYTES */
 #include "syscall.h"
 
 /* Shared helpers (defined in syscalls/bpf.c). */
 void bpf_fill_obj_name(char *name);
 int bpf_random_token_fd(void);
 
+/* The most the element commands make a value buffer, from a pool of 1 MiB. */
+#define BPF_ELEM_BUF_MAX	(WRITABLE_POOL_BYTES / 2)
+
 /* Map family (defined in syscalls/bpf-map.c). */
 void sanitise_bpf_map_create(union bpf_attr *attr, struct syscallrecord *rec);
-void sanitise_bpf_map_lookup(union bpf_attr *attr, struct syscallrecord *rec);
+void sanitise_bpf_map_lookup(union bpf_attr *attr, struct syscallrecord *rec,
+			     bool and_delete);
 void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_map_delete(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_map_get_next_key(union bpf_attr *attr, struct syscallrecord *rec);

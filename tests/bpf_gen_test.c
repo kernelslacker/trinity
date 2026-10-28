@@ -10,13 +10,16 @@
 #include <linux/filter.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "arch.h"		/* page_size */
 #include "bpf.h"
 #include "debug.h"		/* BUG */
+#include "objects.h"		/* struct bpfobj */
 #include "rnd.h"
 #include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
 #include "syscall.h"		/* struct syscallrecord */
@@ -687,6 +690,385 @@ static void common_attr_follows_the_kernels_rules(void)
 	memset(get_writable_address(WRITABLE_POOL_BYTES), 0, WRITABLE_POOL_BYTES);
 }
 
+/*
+ * The element commands copy the key and the value in or out through
+ * pointers of the attr, and a pointer that does not take the copy ends the
+ * call in -EFAULT (-EINVAL for a key a map with no key is given) before the
+ * map's own code runs.  kernel_map_elem() is what kernel/bpf/syscall.c does
+ * ahead of that code: CHECK_ATTR(), the flag rules of
+ * bpf_map_check_op_flags(), the key copy of __bpf_copy_key() and the value
+ * size of bpf_map_value_size().  A draw is judged by how far it gets.  The
+ * maps are the pool's: some it records the type and sizes of, some it met
+ * only by id and knows nothing of.
+ */
+#define FAKE_MAP_FD	100
+
+struct fake_map {
+	unsigned int type, key_size, value_size;
+	bool pooled;		/* whether the pool recorded the three */
+};
+
+static const struct fake_map fake_maps[] = {
+	{ BPF_MAP_TYPE_HASH, 8, 8, true },
+	{ BPF_MAP_TYPE_ARRAY, 4, 8, true },
+	{ BPF_MAP_TYPE_PERCPU_HASH, 4, 1016, true },
+	{ BPF_MAP_TYPE_PERCPU_ARRAY, 4, 8, true },
+	{ BPF_MAP_TYPE_LRU_PERCPU_HASH, 4, 8, true },
+	{ BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE, 8, 8, true },
+	/* A row of every cpu's value is too big for the pool. */
+	{ BPF_MAP_TYPE_PERCPU_ARRAY, 4, 65535, true },
+	{ BPF_MAP_TYPE_LPM_TRIE, 8, 8, true },
+	{ BPF_MAP_TYPE_PROG_ARRAY, 4, 4, true },
+	{ BPF_MAP_TYPE_QUEUE, 0, 8, true },
+	{ BPF_MAP_TYPE_BLOOM_FILTER, 0, 4, true },
+	{ BPF_MAP_TYPE_RINGBUF, 0, 0, true },
+	{ BPF_MAP_TYPE_HASH, 512, 30000, false },
+	{ BPF_MAP_TYPE_PERCPU_HASH, 16, 8, false },
+};
+
+static const struct fake_map *picked_map;
+
+static bool pick_fake_map(struct bpfobj *map)
+{
+	memset(map, 0, sizeof(*map));
+	map->map_fd = FAKE_MAP_FD + (picked_map - fake_maps);
+	if (picked_map->pooled) {
+		map->map_type = picked_map->type;
+		map->key_size = picked_map->key_size;
+		map->value_size = picked_map->value_size;
+	}
+	return true;
+}
+
+extern bool (*fake_get_rand_bpf_map)(struct bpfobj *map);	/* fake_fds.c */
+
+static unsigned long kernel_cpus(void)
+{
+	return sysconf(_SC_NPROCESSORS_CONF);
+}
+
+static bool kernel_percpu_map(unsigned int type)
+{
+	return type == BPF_MAP_TYPE_PERCPU_ARRAY ||
+	       type == BPF_MAP_TYPE_PERCPU_HASH ||
+	       type == BPF_MAP_TYPE_LRU_PERCPU_HASH ||
+	       type == BPF_MAP_TYPE_PERCPU_CGROUP_STORAGE;
+}
+
+/* IS_FD_MAP(), whose elements read back as a 4-byte id. */
+static bool kernel_fd_map(unsigned int type)
+{
+	return type == BPF_MAP_TYPE_PERF_EVENT_ARRAY ||
+	       type == BPF_MAP_TYPE_CGROUP_ARRAY ||
+	       type == BPF_MAP_TYPE_ARRAY_OF_MAPS ||
+	       type == BPF_MAP_TYPE_PROG_ARRAY ||
+	       type == BPF_MAP_TYPE_HASH_OF_MAPS;
+}
+
+static unsigned long kernel_value_size(const struct fake_map *m, uint64_t flags)
+{
+	if (flags & (BPF_F_CPU | BPF_F_ALL_CPUS))
+		return m->value_size;
+	if (kernel_percpu_map(m->type))
+		return ((m->value_size + 7UL) & ~7UL) * kernel_cpus();
+	if (kernel_fd_map(m->type))
+		return sizeof(__u32);
+	return m->value_size;
+}
+
+/* bpf_map_check_op_flags(), for a map no BTF record gives a spin lock. */
+static int kernel_map_check_op_flags(const struct fake_map *m, uint64_t flags,
+				     uint64_t allowed)
+{
+	if ((__u32) flags & ~allowed)
+		return -EINVAL;
+	if (flags & BPF_F_LOCK)
+		return -EINVAL;
+	if (!(flags & BPF_F_CPU) && flags >> 32)
+		return -EINVAL;
+	if (flags & (BPF_F_CPU | BPF_F_ALL_CPUS)) {
+		if (!kernel_percpu_map(m->type))
+			return -EINVAL;
+		if ((flags & BPF_F_CPU) && (flags & BPF_F_ALL_CPUS))
+			return -EINVAL;
+		if ((flags & BPF_F_CPU) && (flags >> 32) >= kernel_cpus())
+			return -ERANGE;
+	}
+	return 0;
+}
+
+static bool user_memory(unsigned long ptr, unsigned long len)
+{
+	return len == 0 || range_in_writable_pool(ptr, len);
+}
+
+struct elem_verdict {
+	int err;		/* what ends the call ahead of the map's code */
+	unsigned long value_len; /* the bytes it moves through the value pointer */
+	bool value_faults;	/* the copy that follows the map's code does */
+	bool exist_conflict;	/* the map's own -EINVAL for both existence flags */
+};
+
+static struct elem_verdict kernel_map_elem(unsigned int cmd,
+					   const union bpf_attr *attr,
+					   unsigned long size,
+					   const struct fake_map *m)
+{
+	const unsigned char *raw = (const unsigned char *) attr;
+	unsigned long key = attr->key, value = attr->value;
+	uint64_t flags = attr->flags;
+	struct elem_verdict v = { 0 };
+	size_t last_end, i;
+
+	switch (cmd) {
+	case BPF_MAP_DELETE_ELEM:
+		last_end = offsetof(union bpf_attr, key) + sizeof(attr->key);
+		break;
+	case BPF_MAP_GET_NEXT_KEY:
+		last_end = offsetof(union bpf_attr, next_key) +
+			   sizeof(attr->next_key);
+		break;
+	default:
+		last_end = offsetof(union bpf_attr, flags) + sizeof(attr->flags);
+		break;
+	}
+	/* CHECK_ATTR(): nothing set past the command's last field. */
+	for (i = last_end; i < size && i < sizeof(*attr); i++) {
+		if (raw[i] != 0) {
+			v.err = -EINVAL;
+			return v;
+		}
+	}
+
+	if (cmd == BPF_MAP_LOOKUP_AND_DELETE_ELEM && (flags & ~BPF_F_LOCK)) {
+		v.err = -EINVAL;
+		return v;
+	}
+	if (attr->map_fd != FAKE_MAP_FD + (m - fake_maps)) {
+		v.err = -EBADF;
+		return v;
+	}
+
+	if (cmd == BPF_MAP_LOOKUP_ELEM)
+		v.err = kernel_map_check_op_flags(m, flags, BPF_F_LOCK | BPF_F_CPU);
+	else if (cmd == BPF_MAP_UPDATE_ELEM)
+		v.err = kernel_map_check_op_flags(m, flags, ~0ULL);
+	else if (cmd == BPF_MAP_LOOKUP_AND_DELETE_ELEM && flags != 0 &&
+		 (m->type == BPF_MAP_TYPE_QUEUE || m->type == BPF_MAP_TYPE_STACK))
+		v.err = -EINVAL;
+	if (v.err)
+		return v;
+
+	if (m->key_size == 0 && key != 0) {
+		v.err = -EINVAL;
+		return v;
+	}
+	if (m->key_size != 0 && (cmd != BPF_MAP_GET_NEXT_KEY || key != 0) &&
+	    !user_memory(key, m->key_size)) {
+		v.err = -EFAULT;
+		return v;
+	}
+
+	switch (cmd) {
+	case BPF_MAP_UPDATE_ELEM:
+		/* kvmemdup_bpfptr() reads the value before the map's code. */
+		v.value_len = kernel_value_size(m, flags);
+		if (!user_memory(value, v.value_len)) {
+			v.err = -EFAULT;
+			return v;
+		}
+		v.exist_conflict = (flags & BPF_NOEXIST) && (flags & BPF_EXIST);
+		break;
+	case BPF_MAP_LOOKUP_ELEM:
+		v.value_len = kernel_value_size(m, flags);
+		if (m->type == BPF_MAP_TYPE_BLOOM_FILTER) {
+			if (!user_memory(value, v.value_len)) {
+				v.err = -EFAULT;
+				return v;
+			}
+		} else {
+			v.value_faults = !user_memory(value, v.value_len);
+		}
+		break;
+	case BPF_MAP_LOOKUP_AND_DELETE_ELEM:
+		v.value_len = kernel_value_size(m, 0);
+		v.value_faults = !user_memory(value, v.value_len);
+		break;
+	case BPF_MAP_GET_NEXT_KEY:
+		/* The next key is copied out after the map's code. */
+		v.value_len = m->key_size;
+		v.value_faults = !user_memory(value, v.value_len);
+		break;
+	}
+	return v;
+}
+
+struct elem_tally {
+	unsigned int rounds, reached, efault, einval, erange, value_faults;
+	unsigned int exist_conflicts, cpu, cpu_valid, all_cpus, cpu_off_percpu;
+	unsigned int undersized, big_rows;
+	uint64_t cpus_seen;	/* bit n: BPF_F_CPU named cpu n, for n below 64 */
+};
+
+static void tally_elem(struct elem_tally *t, unsigned int cmd,
+		       const union bpf_attr *attr, unsigned long size,
+		       unsigned long span)
+{
+	const struct fake_map *m = picked_map;
+	struct elem_verdict v = kernel_map_elem(cmd, attr, size, m);
+	uint64_t flags = attr->flags;
+
+	t->rounds++;
+	if (v.err == 0)
+		t->reached++;
+	else if (v.err == -EFAULT)
+		t->efault++;
+	else if (v.err == -ERANGE)
+		t->erange++;
+	else if (v.err == -EINVAL)
+		t->einval++;
+	else
+		check("a call fails where the kernel's checks do not",
+		      "map elem", false);
+	if (v.exist_conflict)
+		t->exist_conflicts++;
+
+	/* A row of every cpu's value that no buffer the arms make holds is
+	 * sent only by the call that cannot name one value instead: it is not
+	 * the draw's to get right, but any other call's is to name one. */
+	if (v.value_len > BPF_ELEM_BUF_MAX) {
+		if (cmd != BPF_MAP_LOOKUP_AND_DELETE_ELEM &&
+		    (v.err == 0 || v.err == -EFAULT))
+			t->big_rows++;
+		v.value_faults = false;
+	}
+	if (v.value_faults)
+		t->value_faults++;
+
+	if (flags & BPF_F_CPU) {
+		t->cpu++;
+		if ((flags >> 32) < kernel_cpus())
+			t->cpu_valid++;
+		if ((flags >> 32) < 64)
+			t->cpus_seen |= 1ULL << (flags >> 32);
+	}
+	if (flags & BPF_F_ALL_CPUS)
+		t->all_cpus++;
+	if ((flags & (BPF_F_CPU | BPF_F_ALL_CPUS)) &&
+	    !kernel_percpu_map(m->type))
+		t->cpu_off_percpu++;
+
+	/* The pool the draw took holds at least the value the call moves, in
+	 * a buffer that is one: what a buffer smaller than that would run
+	 * into.  A pointer outside the pool is no buffer. */
+	if (v.err == 0 && v.value_len <= BPF_ELEM_BUF_MAX &&
+	    range_in_writable_pool(attr->value, 1) && span < v.value_len)
+		t->undersized++;
+}
+
+/* Draws of one command against every fake map.  The pool is parked at its
+ * end first, so the draw starts at its base and what it took is the
+ * distance to the next allocation. */
+static void draw_map_elem(struct elem_tally *t, unsigned int cmd,
+			  unsigned int rounds)
+{
+	static struct syscallrecord rec;
+	unsigned int round;
+	size_t i;
+
+	for (i = 0; i < ARRAY_SIZE(fake_maps); i++) {
+		picked_map = &fake_maps[i];
+		for (round = 0; round < rounds; round++) {
+			const union bpf_attr *attr;
+			unsigned char *before, *after;
+
+			(void) get_writable_address(WRITABLE_POOL_BYTES);
+			before = get_writable_address(16);
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = cmd;
+			syscall_bpf.sanitise(&rec);
+			after = get_writable_address(16);
+			attr = (const union bpf_attr *) rec.a2;
+
+			tally_elem(t, cmd, attr, rec.a3, after - before);
+
+			rec.retval = (unsigned long) -1L;
+			rec.errno_post = EBADF;
+			syscall_bpf.post(&rec);
+			free((void *) attr);
+		}
+	}
+}
+
+static void map_elem_draws_reach_the_maps_code(void)
+{
+	static const unsigned int cmds[] = {
+		BPF_MAP_LOOKUP_ELEM, BPF_MAP_UPDATE_ELEM, BPF_MAP_DELETE_ELEM,
+		BPF_MAP_GET_NEXT_KEY, BPF_MAP_LOOKUP_AND_DELETE_ELEM,
+	};
+	unsigned int c;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	fake_get_rand_bpf_map = pick_fake_map;
+	fake_rand_bitmask_draws = true;
+
+	for (c = 0; c < ARRAY_SIZE(cmds); c++) {
+		struct elem_tally t = { 0 };
+
+		draw_map_elem(&t, cmds[c], 400);
+
+		check("under 80% of the draws get past the key and flag checks",
+		      "map elem", t.reached * 100 >= t.rounds * 80);
+		check("no draw is refused for a pointer", "map elem", t.efault > 0);
+		check("over 12% of the draws are refused for a pointer",
+		      "map elem", t.efault * 100 <= t.rounds * 12);
+		check("over 12% of the draws fault in the copy after the map's code",
+		      "map elem", t.value_faults * 100 <= t.rounds * 12);
+		check("a value buffer is smaller than the value the call moves",
+		      "map elem", t.undersized == 0);
+		check("a row of every cpu's value, too big for the pool, is sent "
+		      "where one value could be", "map elem", t.big_rows == 0);
+
+		if (cmds[c] == BPF_MAP_LOOKUP_ELEM ||
+		    cmds[c] == BPF_MAP_UPDATE_ELEM ||
+		    cmds[c] == BPF_MAP_LOOKUP_AND_DELETE_ELEM)
+			check("no draw is refused for its flags", "map elem",
+			      t.einval > 0);
+
+		if (cmds[c] == BPF_MAP_LOOKUP_ELEM ||
+		    cmds[c] == BPF_MAP_UPDATE_ELEM) {
+			check("no draw puts a cpu in BPF_F_CPU", "map elem",
+			      t.cpu > 0);
+			check("under 90% of the cpus of BPF_F_CPU are possible ones",
+			      "map elem", t.cpu_valid * 100 >= t.cpu * 90);
+			check("no cpu of BPF_F_CPU is refused as out of range",
+			      "map elem", t.erange > 0);
+			check("BPF_F_CPU names too few of the cpus", "map elem",
+			      __builtin_popcountll(t.cpus_seen) >=
+			      (kernel_cpus() < 8 ? kernel_cpus() : 8));
+			check("over 10% of the draws put a cpu flag on a map that "
+			      "is not per-cpu", "map elem",
+			      t.cpu_off_percpu * 100 <= t.rounds * 10);
+		}
+		if (cmds[c] == BPF_MAP_UPDATE_ELEM) {
+			check("no draw sets BPF_F_ALL_CPUS", "map elem",
+			      t.all_cpus > 0);
+			check("over 10% of the updates set both existence flags",
+			      "map elem", t.exist_conflicts * 100 <= t.rounds * 10);
+		}
+		/* Takes no flag but BPF_F_LOCK, which a map with no BTF spin
+		 * lock refuses too: the odd draw of the update flags is all
+		 * that may carry one. */
+		if (cmds[c] == BPF_MAP_LOOKUP_AND_DELETE_ELEM)
+			check("over 5% of the lookup-and-deletes send BPF_F_CPU",
+			      "map elem", t.cpu * 100 <= t.rounds * 5);
+	}
+
+	fake_rand_bitmask_draws = false;
+	fake_get_rand_bpf_map = NULL;
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -700,6 +1082,7 @@ void bpf_gen_self_check(void)
 	valid_programs_draw_both_frames();
 	prog_load_draws_flags_the_kernel_takes();
 	common_attr_follows_the_kernels_rules();
+	map_elem_draws_reach_the_maps_code();
 
 	if (failed != 0)
 		BUG("a bpf sanitiser or generator drew what the kernel does not take");
