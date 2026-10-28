@@ -3,9 +3,14 @@
  *                const struct landlock_ruleset_attr __user *const, attr,
  *                const size_t, size, const __u32, flags)
  */
+#include <stdint.h>
+#include <string.h>
+#include <unistd.h>
 #include <linux/landlock.h>
 #include "csfu.h"
 #include "deferred-free.h"
+#include "fd.h"
+#include "landlock.h"
 #include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
@@ -110,12 +115,10 @@ static __u64 random_mask(const __u64 *bits, unsigned int n)
  *   8  -- ABI v1, handled_access_fs only
  *   16 -- ABI v4, + handled_access_net
  *   24 -- ABI v6, + scoped
- *   48 -- ABI v10 (v7.2), + quiet_*
+ *   48 -- ABI v10, + quiet_*
  * build_csfu_struct() draws uniformly from this pool for UNDERSIZE;
- * the EXACT bucket already covers sizeof(struct landlock_ruleset_attr),
- * so the current ksize is not repeated here.  The 48-byte entry now
- * exceeds the build-time ksize (headers still declare the 24-byte
- * layout); csfu clamps to buflen (ksize + CSFU_TAIL_SLACK = 56).
+ * the EXACT bucket already covers the 56 bytes of ABI v12 (+
+ * handled_permissions), which are ksize, so they are not repeated here.
  */
 static const size_t landlock_known_sizes[] = {
 	8,
@@ -126,15 +129,50 @@ static const size_t landlock_known_sizes[] = {
 
 static const struct csfu_desc desc_landlock_create_ruleset = {
 	.name = "landlock_ruleset_attr",
-	.ksize = sizeof(struct landlock_ruleset_attr),
+	.ksize = sizeof(struct landlock_ruleset_attr_abi12),
 	.known_sizes = landlock_known_sizes,
 	.n_known_sizes = ARRAY_SIZE(landlock_known_sizes),
 };
 
+/*
+ * handled_permissions: a mask of the two permissions, -EINVAL for any other
+ * bit, alone or with the rest, and -ENOMSG when nothing at all is handled.
+ * post_landlock_create_ruleset() arms whatever a ruleset handles, so these
+ * are drawn freely: with the rest, as the only thing handled, with a bit that
+ * is not defined, and with nothing handled whatever.
+ */
+static void draw_handled_permissions(struct landlock_ruleset_attr_abi12 *attr)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+	case 1:
+		attr->handled_permissions = 1 + rnd_modulo_u32(3);
+		break;
+	case 2:
+		attr->handled_permissions = 1 + rnd_modulo_u32(3);
+		attr->handled_access_fs = 0;
+		attr->handled_access_net = 0;
+		attr->scoped = 0;
+		attr->quiet_access_fs = 0;
+		attr->quiet_access_net = 0;
+		attr->quiet_scoped = 0;
+		break;
+	case 3:
+		attr->handled_permissions = rand64() |
+			(LANDLOCK_PERMISSION_CAPABILITY_USE << 1);
+		break;
+	case 4:
+		memset(attr, 0, sizeof(*attr));
+		break;
+	default:
+		break;
+	}
+}
+
 static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_landlock_create_ruleset);
-	struct landlock_ruleset_attr *attr = buf.ptr;
+	struct landlock_ruleset_attr_abi12 *attr = buf.ptr;
 	unsigned int flagpick;
 
 	attr->handled_access_fs = random_mask(landlock_access_fs_bits,
@@ -147,27 +185,27 @@ static void sanitise_landlock_create_ruleset(struct syscallrecord *rec)
 					   ARRAY_SIZE(landlock_scope_bits));
 
 	/*
-	 * ABI v10 quiet_* fields live at byte offsets 24/32/40 of the
-	 * userspace struct; the local uapi header predates them, so write
-	 * raw __u64s via buf.ptr.  The kernel EINVALs unless each quiet_*
-	 * is a subset of the corresponding handled_* mask, so AND against
-	 * the values just picked above.
+	 * The kernel EINVALs unless each quiet_* is a subset of the
+	 * corresponding handled_* mask, so AND against the values just
+	 * picked above.  The EXACT size is the 56 bytes of ABI 12, and a
+	 * kernel that predates a field answers -E2BIG to a size that reaches
+	 * past what it knows unless the extra bytes are zero, so the newer
+	 * fields are a minority draw.
 	 */
-	if (buf.usize >= 48) {
-		__u64 quiet_fs = random_mask(landlock_access_fs_bits,
-					     ARRAY_SIZE(landlock_access_fs_bits))
-				 & attr->handled_access_fs;
-		__u64 quiet_net = random_mask(landlock_access_net_bits,
-					      ARRAY_SIZE(landlock_access_net_bits))
-				  & attr->handled_access_net;
-		__u64 quiet_scoped = random_mask(landlock_scope_bits,
+	if (buf.usize >= 48 && ONE_IN(4)) {
+		attr->quiet_access_fs = random_mask(landlock_access_fs_bits,
+						    ARRAY_SIZE(landlock_access_fs_bits))
+					& attr->handled_access_fs;
+		attr->quiet_access_net = random_mask(landlock_access_net_bits,
+						     ARRAY_SIZE(landlock_access_net_bits))
+					 & attr->handled_access_net;
+		attr->quiet_scoped = random_mask(landlock_scope_bits,
 						 ARRAY_SIZE(landlock_scope_bits))
 				     & attr->scoped;
-
-		memcpy((char *) attr + 24, &quiet_fs, sizeof(quiet_fs));
-		memcpy((char *) attr + 32, &quiet_net, sizeof(quiet_net));
-		memcpy((char *) attr + 40, &quiet_scoped, sizeof(quiet_scoped));
 	}
+
+	if (buf.usize >= 56 && ONE_IN(4))
+		draw_handled_permissions(attr);
 
 	rec->a1 = (unsigned long) attr;
 	avoid_shared_buffer_inout(&rec->a1, buf.usize);
@@ -203,14 +241,66 @@ static void cleanup_landlock_create_ruleset(struct syscallrecord *rec)
 	cleanup_release_post_state(rec);
 }
 
+/*
+ * What sys_landlock_create_ruleset() took as handled_permissions.  The kernel
+ * copies min(56, size) bytes of the attr and zero-fills the rest, so a size
+ * inside the field exposes only its low bytes, and a compat call hands it the
+ * low 32 bits of the pointer and the size.  Copying the same bytes into a
+ * zeroed struct reads the field as the kernel did, whatever the byte order.
+ * The shadows hold what __do_syscall() passed the kernel.  False when the attr
+ * cannot be read back.
+ */
+static bool kernel_handled_permissions(struct syscallrecord *rec, __u64 *handled)
+{
+	struct landlock_ruleset_attr_abi12 seen = { 0 };
+	unsigned long attr = get_arg_snapshot(rec, 1);
+	unsigned long size = get_arg_snapshot(rec, 2);
+
+	if (rec->do32bit) {
+		attr = (uint32_t) attr;
+		size = (uint32_t) size;
+	}
+	if (!post_snapshot_or_skip(&seen, (const void *) attr,
+				   min(size, sizeof(seen))))
+		return false;
+
+	*handled = seen.handled_permissions;
+	return true;
+}
+
 static void post_landlock_create_ruleset(struct syscallrecord *rec)
 {
+	__u64 handled;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
 		return;
 
-	publish_resource(OBJ_FD_LANDLOCK, fd, NULL);
+	/* The kernel takes flags as a __u32, and with any it returns the ABI
+	 * version or the errata: a number, not a ruleset, so there is nothing to
+	 * arm and no fd to close. */
+	if ((uint32_t) get_arg_snapshot(rec, 3) != 0) {
+		publish_resource(OBJ_FD_LANDLOCK, fd, NULL);
+		return;
+	}
+
+	/*
+	 * landlock_allow_permissions() says why a ruleset is armed before it is
+	 * published.  One that cannot be armed is closed: left open and out of
+	 * the pool, a guessed number could still restrict the child with it.
+	 * So is one whose attr cannot be read back to say what it handles, and
+	 * one the pool turns away, so whatever stays open is armed.  A stdio or
+	 * protected number is never closed here: it is the child's own plumbing
+	 * unless the child closed it, and a stomped retval must not close it.
+	 */
+	if (kernel_handled_permissions(rec, &handled) &&
+	    landlock_allow_permissions(fd, handled) &&
+	    publish_resource(OBJ_FD_LANDLOCK, fd, NULL) != NULL)
+		return;
+
+	if (fd > 2 && !fd_is_protected(fd))
+		close(fd);
+	rec->retval = -1UL;
 }
 
 struct syscallentry syscall_landlock_create_ruleset = {
@@ -226,4 +316,10 @@ struct syscallentry syscall_landlock_create_ruleset = {
 	.cleanup = cleanup_landlock_create_ruleset,
 	.group = GROUP_PROCESS,
 	.flags = REEXEC_SANITISE_OK,
+	/* What the post handler arms the ruleset from: the flags say whether
+	 * the return is a ruleset fd or a number, and the attr and its size say
+	 * which permissions the ruleset handles.  Shadowed so a sibling stomp
+	 * cannot turn a version query into a ruleset, or one that handles a
+	 * permission into one that handles none. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
 };

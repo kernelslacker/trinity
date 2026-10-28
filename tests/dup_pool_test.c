@@ -29,7 +29,6 @@
 #include "arg_coupling.h"	/* validate_arg_coupling */
 #include "bpf.h"		/* BPF_PROG_STREAM_OPEN */
 #include "child.h"
-#include "csfu.h"		/* build_csfu_struct */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"	/* fake_ioctl_group */
 #include "fd.h"			/* lowest_protected_fd_in_range */
@@ -329,15 +328,6 @@ struct socketinfo *get_rand_socketinfo(void)
 {
 	BUG("fd pool: a handler asked for a random socket");
 	return NULL;
-}
-
-/* The open sanitisers reach this and get_testfile_path(), whose stand-in
- * is in arg_coupling_test.c; the cases run the post handlers. */
-struct csfu_buf build_csfu_struct(const struct csfu_desc *desc)
-{
-	(void) desc;
-	BUG("fd pool: a handler built an open_how");
-	return (struct csfu_buf) { 0 };
 }
 
 static void fake_destructor(struct object *obj)

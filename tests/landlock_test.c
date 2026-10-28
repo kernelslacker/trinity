@@ -10,8 +10,11 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <sys/mman.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -24,6 +27,7 @@
 #include "landlock.h"
 #include "list.h"
 #include "objects.h"
+#include "publish_resource.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_landlock_add_rule */
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -47,6 +51,14 @@ extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 
 #define BOTH_PERMISSIONS (LANDLOCK_PERMISSION_NAMESPACE_USE | \
 			  LANDLOCK_PERMISSION_CAPABILITY_USE)
+
+/* A kernel that has gone on to add a third permission, bit 2, would take it in
+ * a ruleset: the model's ABI 13 does, and nothing here has a rule for it. */
+#define THIRD_PERMISSION	(1ULL << 2)
+#define EXTRA_PERMISSIONS	(BOTH_PERMISSIONS | THIRD_PERMISSION)
+
+/* What the errata query answers: the kernel returns a mask of fixes. */
+#define FAKE_ERRATA	3
 
 static unsigned int failed;
 
@@ -201,10 +213,15 @@ static int last_create_fd = -1;
 static unsigned int fake_refuse_type;
 static int fake_refuse_errno;
 
+/* The create call comes from a 32-bit task: the kernel sees the low 32 bits of
+ * the size, as it does of every compat argument. */
+static bool fake_compat;
+
 struct fake_ruleset {
 	bool used;
 	int fd;
 	unsigned long long handled_permissions;
+	unsigned long long handled_access;	/* filesystem, network and scope */
 	unsigned long long allowed_ns, allowed_caps;
 };
 static struct fake_ruleset rulesets[16];
@@ -256,7 +273,9 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	if (flags) {
 		if (attr || size)
 			return -EINVAL;
-		return flags == LANDLOCK_CREATE_RULESET_VERSION ? fake_abi : -EINVAL;
+		if (flags == LANDLOCK_CREATE_RULESET_VERSION)
+			return fake_abi;
+		return flags == LANDLOCK_CREATE_RULESET_ERRATA ? FAKE_ERRATA : -EINVAL;
 	}
 
 	if (!attr)
@@ -281,7 +300,7 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	if ((f[3] | f[0]) != f[0] || (f[4] | f[1]) != f[1] ||
 	    (f[5] | f[2]) != f[2])
 		return -EINVAL;
-	if (f[6] & ~BOTH_PERMISSIONS)
+	if (f[6] & ~(fake_abi >= 13 ? EXTRA_PERMISSIONS : BOTH_PERMISSIONS))
 		return -EINVAL;
 	if (!f[0] && !f[1] && !f[2] && !f[6])
 		return -ENOMSG;
@@ -301,6 +320,7 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	rs->used = true;
 	rs->fd = fd;
 	rs->handled_permissions = f[6];
+	rs->handled_access = f[0] | f[1] | f[2];
 	last_create_fd = fd;
 	return fd;
 }
@@ -372,7 +392,8 @@ long __wrap_syscall(long number, ...)
 	va_end(ap);
 
 	if (fake_abi != 0 && number == __NR_landlock_create_ruleset)
-		ret = fake_create_ruleset((const unsigned char *) a[0], a[1],
+		ret = fake_create_ruleset((const unsigned char *) a[0],
+					  fake_compat ? (uint32_t) a[1] : a[1],
 					  (unsigned int) a[2]);
 	else if (fake_abi != 0 && number == __NR_landlock_add_rule)
 		ret = fake_add_rule((int) a[0], (unsigned int) a[1],
@@ -480,6 +501,7 @@ static void reset_kernel(void)
 	last_create_fd = -1;
 	fake_refuse_type = 0;
 	fake_refuse_errno = 0;
+	fake_compat = false;
 }
 
 /* The rule calls that were for @type, and how many of them the kernel took. */
@@ -727,6 +749,521 @@ static void check_allow_refused(void)
 	reset_kernel();
 }
 
+/*
+ * publish_resource() stand-in: the post handler publishes its fd through it,
+ * and what the ruleset held at that moment is what a restrict_self() could
+ * see.  Unhooked, the call goes on to the pool fake of dup_pool_test.c.
+ */
+struct object *(*fake_publish_resource)(enum objecttype type, unsigned long id,
+					const struct resource_meta *meta);
+struct object *__real_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta);
+struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta);
+
+struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta)
+{
+	if (fake_publish_resource != NULL)
+		return fake_publish_resource(type, id, meta);
+	return __real_publish_resource(type, id, meta);
+}
+
+static unsigned long publishes;
+static struct fake_ruleset published_rs;
+static struct object published_obj;
+static bool pool_refuses;	/* the pool turns every fd away */
+
+static struct object *publish_hook(enum objecttype type, unsigned long id,
+				   const struct resource_meta *meta)
+{
+	struct fake_ruleset *rs = find_ruleset((int) id);
+
+	(void) meta;
+	expect(type == OBJ_FD_LANDLOCK, "a ruleset is published as a landlock fd",
+	       type);
+	publishes++;
+	if (rs != NULL)
+		published_rs = *rs;
+	return pool_refuses ? NULL : &published_obj;
+}
+
+static void drop_ruleset(int fd)
+{
+	struct fake_ruleset *rs = find_ruleset(fd);
+
+	if (rs != NULL)
+		rs->used = false;
+	close(fd);
+}
+
+/*
+ * The create call's post handler as the dispatcher runs it: the shadows
+ * __do_syscall() takes of the slots the entry names, then post, which runs on
+ * a failure too.  What the ruleset held when it was published is kept.
+ */
+static void post_create(struct syscallrecord *rec)
+{
+	const struct syscallentry *entry = &syscall_landlock_create_ruleset;
+
+	publishes = 0;
+	memset(&published_rs, 0, sizeof(published_rs));
+	fake_publish_resource = publish_hook;
+
+	rec->arg_snapshot_mask = entry->arg_snapshot_mask;
+	rec->arg_shadow[0] = rec->a1;
+	rec->arg_shadow[1] = rec->a2;
+	rec->arg_shadow[2] = rec->a3;
+	entry->post(rec);
+
+	fake_publish_resource = NULL;
+}
+
+/* The syscall with the args in @rec against the model kernel, its answer as
+ * the retval, then post.  Returns what the syscall answered. */
+static int create_errno;
+
+static long run_create(struct syscallrecord *rec)
+{
+	long ret;
+
+	ret = syscall(__NR_landlock_create_ruleset, rec->a1, rec->a2, rec->a3);
+	create_errno = errno;
+	rec->retval = (unsigned long) ret;
+	post_create(rec);
+	return ret;
+}
+
+/*
+ * What the post handler owes the ruleset @fd that the model made.  One that
+ * handles a permission is armed with a rule for each, whole, before it is
+ * published, or it is closed, out of the pool and gone from the retval: an fd
+ * left open and unpooled can still be named by a guessed number, and
+ * restrict_self() with a ruleset that allows none of what it handles takes
+ * that from the child for good.  The same goes for a ruleset the pool turns
+ * away, so what is left open is armed and pooled.  Returns whether it was kept.
+ */
+static bool check_fate(const struct syscallrecord *rec, long fd)
+{
+	struct fake_ruleset *rs = find_ruleset(fd);
+	unsigned long long handled;
+	bool unarmed, kept;
+
+	expect(rs != NULL, "the model holds the ruleset the call made", fd);
+	if (rs == NULL)
+		return false;
+	handled = rs->handled_permissions;
+
+	/* A rule the kernel turns away for a permission the ruleset handles, or a
+	 * permission the kernel has and this has no rule for, cannot arm it. */
+	unarmed = (fake_refuse_type == LANDLOCK_RULE_NAMESPACE_COMPAT &&
+		   (handled & LANDLOCK_PERMISSION_NAMESPACE_USE)) ||
+		  (fake_refuse_type == LANDLOCK_RULE_CAPABILITY_COMPAT &&
+		   (handled & LANDLOCK_PERMISSION_CAPABILITY_USE)) ||
+		  (handled & ~BOTH_PERMISSIONS);
+	kept = !unarmed && !pool_refuses;
+
+	if (kept) {
+		expect(rec->retval == (unsigned long) fd,
+		       "an armed and pooled ruleset is returned", rec->retval);
+		expect(fcntl(fd, F_GETFD) >= 0, "an armed and pooled ruleset is open",
+		       fd);
+		expect(publishes == 1, "an armed ruleset is published once", publishes);
+		expect(nr_rule_calls == (unsigned int) __builtin_popcountll(handled),
+		       "one rule for each permission the ruleset handles and no other",
+		       nr_rule_calls);
+		expect(published_rs.allowed_ns ==
+		       ((handled & LANDLOCK_PERMISSION_NAMESPACE_USE) ? NS_ALL : 0),
+		       "a handled namespace permission allows every type when the "
+		       "ruleset is published", published_rs.allowed_ns);
+		expect(published_rs.allowed_caps ==
+		       ((handled & LANDLOCK_PERMISSION_CAPABILITY_USE) ? CAPS_ALL : 0),
+		       "a handled capability permission allows every capability when "
+		       "the ruleset is published", published_rs.allowed_caps);
+		drop_ruleset(fd);
+		return true;
+	}
+
+	expect(rec->retval == -1UL, "a ruleset that was not kept is not returned",
+	       rec->retval);
+	expect(fcntl(fd, F_GETFD) == -1 && errno == EBADF,
+	       "a ruleset that was not kept is closed", fd);
+	expect(publishes == (unarmed ? 0 : 1),
+	       "only a ruleset that was armed is offered to the pool", publishes);
+	/* Closed already, so the model must not close it again. */
+	rs->used = false;
+	return false;
+}
+
+/* Rules to ask for that no case holds a count of. */
+#define ANY_RULES	(~0U)
+
+struct create_case {
+	const char *what;
+	int abi;			/* the model kernel */
+	bool compat;			/* a 32-bit task makes the call */
+	unsigned long long perms;	/* handled_permissions in the attr */
+	unsigned long size;		/* the size passed with it, 0 for a query */
+	unsigned long flags;
+	unsigned int refuse_type;	/* a rule type the kernel turns away ... */
+	int refuse_errno;		/* ... with this errno */
+	bool pool_refuses;
+	unsigned int rules;		/* the rules the handler asks for */
+	bool kept;
+};
+
+/*
+ * Create calls the sanitiser may or may not build, run through the post
+ * handler and judged by the model.  The kernel copies min(56, size) bytes of
+ * the attr and zero-fills the rest, so a size inside handled_permissions
+ * (bytes 48 to 55) exposes its low bytes, and the permission bits are in byte
+ * 48; it takes flags as a __u32, and from a 32-bit task the low 32 bits of the
+ * size.  The handler asks for what the model recorded, not what the attr says.
+ */
+static const struct create_case create_cases[] = {
+	{ .what = "a ruleset that handles no permission",
+	  .abi = 12, .size = 56, .rules = 0, .kept = true },
+	{ .what = "namespace use", .abi = 12, .size = 56,
+	  .perms = LANDLOCK_PERMISSION_NAMESPACE_USE, .rules = 1, .kept = true },
+	{ .what = "capability use", .abi = 12, .size = 56,
+	  .perms = LANDLOCK_PERMISSION_CAPABILITY_USE, .rules = 1, .kept = true },
+	{ .what = "both permissions", .abi = 12, .size = 56,
+	  .perms = BOTH_PERMISSIONS, .rules = 2, .kept = true },
+	{ .what = "an attr longer than the kernel's, with a zero tail",
+	  .abi = 12, .size = 60, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .kept = true },
+	{ .what = "a size that ends one byte into handled_permissions",
+	  .abi = 12, .size = 49, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .kept = true },
+	{ .what = "a size that ends in the middle of handled_permissions",
+	  .abi = 12, .size = 52, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .kept = true },
+	{ .what = "a size that ends one byte short of the whole attr",
+	  .abi = 12, .size = 55, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .kept = true },
+	{ .what = "a size that stops short of handled_permissions",
+	  .abi = 12, .size = 48, .perms = BOTH_PERMISSIONS, .rules = 0,
+	  .kept = true },
+	{ .what = "a bit past the size that was copied",
+	  .abi = 12, .size = 49, .perms = BOTH_PERMISSIONS | (1ULL << 8),
+	  .rules = 2, .kept = true },
+	{ .what = "the same bit in a size that copies it, which is refused",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS | (1ULL << 8),
+	  .rules = 0, .kept = false },
+	{ .what = "a refused namespace rule, -EINVAL",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
+	  .refuse_type = LANDLOCK_RULE_NAMESPACE_COMPAT, .refuse_errno = EINVAL,
+	  .rules = ANY_RULES, .kept = false },
+	{ .what = "a refused capability rule, -EPERM",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
+	  .refuse_type = LANDLOCK_RULE_CAPABILITY_COMPAT, .refuse_errno = EPERM,
+	  .rules = ANY_RULES, .kept = false },
+	{ .what = "the only rule refused, -ENOMEM",
+	  .abi = 12, .size = 56, .perms = LANDLOCK_PERMISSION_NAMESPACE_USE,
+	  .refuse_type = LANDLOCK_RULE_NAMESPACE_COMPAT, .refuse_errno = ENOMEM,
+	  .rules = ANY_RULES, .kept = false },
+	{ .what = "a refused rule the ruleset does not need",
+	  .abi = 12, .size = 56, .perms = LANDLOCK_PERMISSION_CAPABILITY_USE,
+	  .refuse_type = LANDLOCK_RULE_NAMESPACE_COMPAT, .refuse_errno = ENOMEM,
+	  .rules = 1, .kept = true },
+	{ .what = "the pool turning an armed ruleset away",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS, .pool_refuses = true,
+	  .rules = 2, .kept = false },
+	{ .what = "a permission the kernel has since added",
+	  .abi = 13, .size = 56, .perms = THIRD_PERMISSION, .rules = ANY_RULES,
+	  .kept = false },
+	{ .what = "a new permission among the old",
+	  .abi = 13, .size = 56, .perms = EXTRA_PERMISSIONS, .rules = ANY_RULES,
+	  .kept = false },
+	{ .what = "a permission the kernel does not have",
+	  .abi = 12, .size = 56, .perms = THIRD_PERMISSION, .rules = 0,
+	  .kept = false },
+	{ .what = "flags the kernel truncates to none",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
+	  .flags = 1ULL << 32, .rules = 2, .kept = true },
+	{ .what = "a size a 32-bit task has truncated below the field",
+	  .abi = 12, .compat = true, .size = (1ULL << 32) | 8,
+	  .perms = BOTH_PERMISSIONS, .rules = 0, .kept = true },
+	{ .what = "the version query", .abi = 12,
+	  .flags = LANDLOCK_CREATE_RULESET_VERSION, .rules = 0 },
+	{ .what = "the errata query", .abi = 12,
+	  .flags = LANDLOCK_CREATE_RULESET_ERRATA, .rules = 0 },
+	{ .what = "the pool turning away a version query", .abi = 12,
+	  .flags = LANDLOCK_CREATE_RULESET_VERSION, .pool_refuses = true,
+	  .rules = 0 },
+};
+
+/* A buffer a 32-bit task could name, since the kernel reads its pointers as
+ * their low 32 bits; NULL where there is no such memory. */
+static unsigned char *map_low_buffer(void)
+{
+#ifdef MAP_32BIT
+	void *p = mmap(NULL, 4096, PROT_READ | PROT_WRITE,
+		       MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+
+	return p == MAP_FAILED ? NULL : p;
+#else
+	return NULL;
+#endif
+}
+
+static void check_create_cases(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(create_cases); i++) {
+		const struct create_case *cc = &create_cases[i];
+		struct landlock_ruleset_attr_abi12 hdr = {
+			.handled_access_fs = 1,
+			.handled_permissions = cc->perms,
+		};
+		unsigned char attr[96] = { 0 };
+		unsigned char *buf = attr;
+		struct syscallrecord rec;
+		bool kept;
+		long fd;
+
+		memcpy(attr, &hdr, sizeof(hdr));
+		if (cc->compat) {
+			buf = map_low_buffer();
+			if (buf == NULL)
+				continue;
+			memcpy(buf, attr, sizeof(attr));
+		}
+		fake_abi = cc->abi;
+		reset_kernel();
+		fake_refuse_type = cc->refuse_type;
+		fake_refuse_errno = cc->refuse_errno;
+		fake_compat = cc->compat;
+		pool_refuses = cc->pool_refuses;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.do32bit = cc->compat;
+		if (cc->size != 0) {
+			rec.a1 = (unsigned long) buf;
+			rec.a2 = cc->size;
+		}
+		rec.a3 = cc->flags;
+		fd = run_create(&rec);
+		if (cc->compat)
+			munmap(buf, 4096);
+
+		if ((uint32_t) cc->flags != 0) {
+			/* A number, not a ruleset: nothing to arm, nothing to close. */
+			expect(fd >= 0 && rec.retval == (unsigned long) fd &&
+			       nr_rule_calls == 0,
+			       cc->what, nr_rule_calls);
+			continue;
+		}
+
+		if (fd < 0) {
+			/* The kernel took no ruleset: there is nothing to arm. */
+			expect(!cc->kept && nr_rule_calls == 0 && publishes == 0 &&
+			       rec.retval == -1UL, cc->what, nr_rule_calls);
+			continue;
+		}
+
+		kept = check_fate(&rec, fd);
+		expect(kept == cc->kept, cc->what, kept);
+		expect(cc->rules == ANY_RULES || nr_rule_calls == cc->rules,
+		       cc->what, nr_rule_calls);
+	}
+
+	pool_refuses = false;
+	fake_abi = 0;
+	reset_kernel();
+}
+
+/*
+ * Records that no create call produces but the dispatcher could hand the post
+ * handler.  A ruleset whose attr cannot be read back to say what it handles
+ * cannot be armed, so it is closed; and a retval that names a stdio fd is not
+ * a ruleset this call made, so what cannot be armed is refused without being
+ * closed, since closing it would take the child's own plumbing down.
+ */
+static void check_create_odd_records(void)
+{
+	struct landlock_ruleset_attr_abi12 attr = {
+		.handled_access_fs = 1,
+		.handled_permissions = BOTH_PERMISSIONS,
+	};
+	struct fake_ruleset *rs;
+	struct syscallrecord rec;
+	long fd;
+
+	fake_abi = 12;
+
+	reset_kernel();
+	fd = make_ruleset(BOTH_PERMISSIONS);
+	expect(fd >= 0, "the model makes a ruleset whose attr is then lost", fd);
+	if (fd >= 0) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a2 = sizeof(attr);
+		rec.retval = (unsigned long) fd;
+		post_create(&rec);
+		expect(rec.retval == -1UL && publishes == 0 && nr_rule_calls == 0,
+		       "a ruleset whose attr cannot be read back is not kept",
+		       nr_rule_calls);
+		expect(fcntl(fd, F_GETFD) == -1 && errno == EBADF,
+		       "a ruleset whose attr cannot be read back is closed", fd);
+		rs = find_ruleset(fd);
+		if (rs != NULL)
+			rs->used = false;
+	}
+
+	reset_kernel();
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = (unsigned long) &attr;
+	rec.a2 = sizeof(attr);
+	rec.retval = STDOUT_FILENO;
+	post_create(&rec);
+	expect(rec.retval == -1UL && publishes == 0,
+	       "a retval naming stdout is not a ruleset that was armed", publishes);
+	expect(fcntl(STDOUT_FILENO, F_GETFD) >= 0,
+	       "a retval naming stdout does not close stdout", 0);
+
+	fake_abi = 0;
+	reset_kernel();
+}
+
+struct create_stats {
+	unsigned long attrs;	/* calls that passed an attr */
+	unsigned long newer;	/* of them, with a non-zero byte past 24 */
+	unsigned long versions;	/* version queries */
+	unsigned long created;
+	unsigned long kept;
+	unsigned long perms;	/* rulesets that handle a permission */
+	unsigned long perm_only;/* and handle nothing else */
+	unsigned long einval, enomsg, e2big;
+};
+
+/*
+ * The sanitiser's calls run through the model and the post handler, each
+ * judged on its own by check_fate(): whatever the sanitiser draws, a ruleset
+ * is armed and pooled or closed.  @refuse_type is turned away with
+ * @refuse_errno, and @refuse_pool has the pool turn every fd away.
+ */
+static void run_creates(int abi, unsigned int refuse_type, int refuse_errno,
+			bool refuse_pool, struct create_stats *st)
+{
+	unsigned long i;
+	unsigned int b;
+
+	fake_abi = abi;
+	memset(st, 0, sizeof(*st));
+
+	for (i = 0; i < NR_CALLS; i++) {
+		const struct landlock_ruleset_attr_abi12 *attr;
+		struct syscallrecord rec;
+		unsigned long long handled, other;
+		struct fake_ruleset *rs;
+		long fd;
+
+		memset(&rec, 0, sizeof(rec));
+		reset_kernel();
+		fake_refuse_type = refuse_type;
+		fake_refuse_errno = refuse_errno;
+		pool_refuses = refuse_pool;
+		syscall_landlock_create_ruleset.sanitise(&rec);
+		attr = (const struct landlock_ruleset_attr_abi12 *) rec.a1;
+
+		/* What the kernel reads of the attr: past byte 24 it is the
+		 * fields a kernel that predates them takes only as zero. */
+		if (attr != NULL && rec.a3 == 0) {
+			bool newer = false;
+
+			st->attrs++;
+			for (b = 24; b < rec.a2 && b < sizeof(*attr); b++)
+				newer |= ((const unsigned char *) attr)[b] != 0;
+			st->newer += newer;
+		}
+
+		fd = run_create(&rec);
+		free((void *) rec.post_state);
+
+		if (rec.a3 != 0) {
+			expect(nr_rule_calls == 0,
+			       "a call with flags arms nothing, its answer is no ruleset",
+			       nr_rule_calls);
+			if (rec.a3 == LANDLOCK_CREATE_RULESET_VERSION) {
+				expect(fd == abi, "the version query answers the ABI", fd);
+				st->versions++;
+			}
+			continue;
+		}
+
+		if (fd < 0) {
+			expect(publishes == 0 && nr_rule_calls == 0,
+			       "a refused call arms and publishes nothing", publishes);
+			st->einval += create_errno == EINVAL;
+			st->enomsg += create_errno == ENOMSG;
+			st->e2big += create_errno == E2BIG;
+			continue;
+		}
+
+		rs = find_ruleset(fd);
+		handled = rs != NULL ? rs->handled_permissions : 0;
+		other = rs != NULL ? rs->handled_access : 0;
+		st->created++;
+		st->perms += handled != 0;
+		st->perm_only += handled != 0 && other == 0;
+		st->kept += check_fate(&rec, fd);
+	}
+
+	pool_refuses = false;
+	fake_abi = 0;
+	reset_kernel();
+}
+
+static void check_create(void)
+{
+	struct create_stats st;
+
+	check_create_cases();
+	check_create_odd_records();
+
+	run_creates(12, 0, 0, false, &st);
+	expect(st.created * 4 > NR_CALLS, "an ABI 12 kernel takes most creates",
+	       st.created);
+	expect(st.kept == st.created,
+	       "no ruleset is thrown away when no rule is refused", st.kept);
+	expect(st.perms > NR_CALLS / 50,
+	       "rulesets that handle permissions are made", st.perms);
+	expect(st.perm_only > NR_CALLS / 200,
+	       "some of them handle nothing else", st.perm_only);
+	expect(st.versions > 0, "the version query is drawn", st.versions);
+	expect(st.einval > 0, "-EINVAL is drawn", st.einval);
+	expect(st.enomsg > 0, "-ENOMSG is drawn", st.enomsg);
+	expect(st.e2big > 0, "-E2BIG is drawn", st.e2big);
+	/* The attrs that are right are most of them: a quiet mask outside the
+	 * handled one, or any other refusal drawn by mistake, shows here. */
+	expect(st.einval * 10 < st.attrs, "-EINVAL is a small share of the draws",
+	       st.einval);
+	/* A kernel that predates quiet_* and handled_permissions takes a size
+	 * past byte 24 only with the rest zero, so most calls keep them so. */
+	expect(st.newer * 10 < st.attrs * 4,
+	       "the fields past byte 24 are a minority of the draws", st.newer);
+	expect(st.newer > st.attrs / 50,
+	       "the fields past byte 24 are drawn at all", st.newer);
+
+	/* A refused rule costs the rulesets that handle its permission, and only
+	 * those; the pool turning every fd away costs them all. */
+	run_creates(12, LANDLOCK_RULE_NAMESPACE_COMPAT, ENOMEM, false, &st);
+	expect(st.kept < st.created && st.kept > st.created / 2,
+	       "a refused namespace rule closes the rulesets that need it", st.kept);
+	run_creates(12, LANDLOCK_RULE_CAPABILITY_COMPAT, EINVAL, false, &st);
+	expect(st.kept < st.created && st.kept > st.created / 2,
+	       "a refused capability rule closes the rulesets that need it", st.kept);
+	run_creates(12, 0, 0, true, &st);
+	expect(st.created > 0 && st.kept == 0,
+	       "a pool that refuses every fd keeps no ruleset open", st.kept);
+
+	run_creates(6, 0, 0, false, &st);
+	expect(st.created > 0, "an ABI 6 kernel takes creates", st.created);
+	expect(st.perms == 0, "an ABI 6 kernel makes no ruleset with permissions",
+	       st.perms);
+}
+
 #endif /* __NR_landlock_create_ruleset */
 
 void landlock_self_check(void)
@@ -739,6 +1276,7 @@ void landlock_self_check(void)
 	check_provider_refused();
 	check_allow_permissions();
 	check_allow_refused();
+	check_create();
 #endif
 
 	if (failed != 0)

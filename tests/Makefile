@@ -146,10 +146,17 @@ LDFLAGS		+= -Wl,--wrap=valresult_alloc
 
 # syscall() stand-in: landlock_test.c wraps it so that, while it has a model
 # kernel armed, the Landlock calls trinity_raw_syscall() makes in the fd
-# provider land in that model.  The wrapper forwards every other call, and the
-# Landlock ones when nothing is armed, to the real
+# provider and the post handler land in that model.  The wrapper forwards
+# every other call, and the Landlock ones when nothing is armed, to the real
 # syscall().
 LDFLAGS		+= -Wl,--wrap=syscall
+
+# publish_resource() hook: syscalls/landlock/landlock_create_ruleset.c is
+# linked for its post handler, which publishes the new ruleset's fd, and
+# dup_pool_test.c defines a stand-in that fills a pool of its own.
+# landlock_test.c wraps the call so it can see what the ruleset holds at the
+# moment it is published; unhooked, the call goes on to the stand-in.
+LDFLAGS		+= -Wl,--wrap=publish_resource
 
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
@@ -650,11 +657,16 @@ FAKE_SRCS	+= perf_attr_test.c
 
 # syscalls/landlock/landlock_add_rule.c brings syscall_landlock_add_rule,
 # whose sanitiser landlock_test.c runs and holds to what the kernel answers a
-# rule with, and fds/landlock.c the provider, whose init hook it runs against
-# the fake object-pool hooks and a model of the two Landlock syscalls.
+# rule with, fds/landlock.c the provider, whose init hook it runs against
+# the fake object-pool hooks and a model of the Landlock syscalls, and
+# landlock_create_ruleset.c syscall_landlock_create_ruleset, whose sanitiser
+# and post handler it runs against the same model, with args/csfu.c the
+# size-bucket builder the sanitiser draws its attr from.
 PARENT_SRCS	+= $(TOP)/syscalls/landlock/landlock_add_rule.c \
+		   $(TOP)/syscalls/landlock/landlock_create_ruleset.c \
 		   $(TOP)/fds/landlock.c \
-		   $(TOP)/fds/fds-diag.c
+		   $(TOP)/fds/fds-diag.c \
+		   $(TOP)/args/csfu.c
 FAKE_SRCS	+= landlock_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
