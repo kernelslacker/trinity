@@ -72,9 +72,6 @@ static const struct ioctl loop_dev_ioctls[] = {
 #ifdef LOOP_GET_STATUS64
 	IOCTL(LOOP_GET_STATUS64),
 #endif
-#ifdef LOOP_CHANGE_FD
-	IOCTL(LOOP_CHANGE_FD),
-#endif
 #ifdef LOOP_SET_CAPACITY
 	IOCTL(LOOP_SET_CAPACITY),
 #endif
