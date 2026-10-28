@@ -538,7 +538,8 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 # syscall_newstat, syscall_newlstat, syscall_newfstatat, syscall_newfstat
 # and syscall_statx, whose sanitisers and post handlers
 # stat_recall_test.c runs on a file of its own, and stat-recall.c the
-# verdict their re-call oracles reach.  syscalls/fs/mount/statmount.c
+# verdict their re-call oracles reach; statfs.c and fstatfs.c bring
+# syscall_statfs and syscall_fstatfs, which it runs the same way.  syscalls/fs/mount/statmount.c
 # brings syscall_statmount, whose sanitiser and post handler it runs on
 # the mount / lies on, and whose pool of mount ids mount_pool_test.c holds
 # to ids a real statmount() answers for.  syscalls/fs/mount/listmount.c
@@ -546,6 +547,8 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 # listmount() lists under.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/mount/statmount.c \
 		   $(TOP)/syscalls/fs/mount/listmount.c \
+		   $(TOP)/syscalls/fs/stat/statfs.c \
+		   $(TOP)/syscalls/fs/stat/fstatfs.c \
 		   $(TOP)/syscalls/fs/stat/newstat.c \
 		   $(TOP)/syscalls/fs/stat/newlstat.c \
 		   $(TOP)/syscalls/fs/stat/newfstat.c \

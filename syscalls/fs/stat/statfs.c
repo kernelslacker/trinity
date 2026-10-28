@@ -138,12 +138,10 @@ static void sanitise_statfs(struct syscallrecord *rec)
 /*
  * Oracle: statfs(pathname, buf) is the path-based sibling of fstatfs.
  * The kernel resolves pathname to a dentry, walks to its mount, and
- * fills struct statfs with the same eight stable fields plus the three
- * legitimately-drifting free-space counters.  The same divergence
- * sources apply (copy_to_user mis-write, struct-layout shift, compat
- * truncation, sibling scribble of the user buffer, genuine remount or
- * online-resize), so the oracle compares the same eight fields and
- * excludes f_bfree, f_bavail, f_ffree, plus the reserved f_spare[].
+ * fills struct statfs.  The same divergence sources apply
+ * (copy_to_user mis-write, struct-layout shift, sibling scribble of the
+ * user buffer), and the same fields move without one, so the oracle
+ * compares what fstatfs compares and excludes what it excludes.
  *
  * Two differences from the fd-based variant change the shape of the
  * recheck:
@@ -159,20 +157,22 @@ static void sanitise_statfs(struct syscallrecord *rec)
  *
  *   - Mount drift.  Even with a stable path string a sibling can
  *     unmount and remount a different filesystem at the same mount
- *     point between the two calls; the recheck then describes a
- *     completely different mount and every stable field will look
- *     "wrong".  f_fsid is the kernel's per-mount identifier — if
- *     snapshot.f_fsid != recheck.f_fsid we know we are looking at a
- *     different mount and benign-skip the sample without bumping the
- *     anomaly counter.  Both halves of f_fsid must match.
+ *     point between the two calls, or put an entry on another
+ *     filesystem at the path; the recheck then describes a completely
+ *     different filesystem and every field will look "wrong".  f_fsid
+ *     identifies the filesystem, but every one without an id of its
+ *     own (procfs and sysfs, through simple_statfs()) reports 0, so
+ *     both halves of f_fsid and f_type have to match before any field
+ *     is compared, and a mismatch benign-skips the sample without
+ *     bumping the anomaly counter.
  *
  * The benign-skip paths are: rc != 0 from the recheck (path no longer
- * resolvable: sibling unlink/rename/unmount made it disappear) and
- * f_fsid mismatch (mount drift).  Sample one in a hundred to stay in
- * line with the rest of the oracle family.  Compare each field
- * individually with no early-return so multi-field corruption surfaces
- * in a single sample, but bump the anomaly counter only once per
- * anomalous sample.
+ * resolvable: sibling unlink/rename/unmount made it disappear) and an
+ * answer from another filesystem (mount drift).  Sample one in a
+ * hundred to stay in line with the rest of the oracle family.  Compare
+ * each field individually with no early-return so multi-field
+ * corruption surfaces in a single sample, but bump the anomaly counter
+ * only once per anomalous sample.
  *
  * Some 32-bit-only architectures fold statfs into statfs64 and do not
  * define SYS_statfs.  Guard the .post handler and wire-up so the file
@@ -235,16 +235,13 @@ static void post_statfs(struct syscallrecord *rec)
 		goto out_release;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
-	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1])
+	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1] ||
+	    first.f_type != recheck.f_type)
 		goto out_release;
 
-	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
-	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
-	if (first.f_files   != recheck.f_files)   diverged = 1;
 	if (first.f_namelen != recheck.f_namelen) diverged = 1;
 	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
-	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 
 	if (!diverged)
 		goto out_release;
@@ -405,16 +402,16 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 /*
  * Oracle: statfs64(pathname, sz, buf) is the 3-arg explicit-size variant
  * of statfs.  The kernel resolves pathname to a dentry, walks to its
- * mount, and fills struct statfs64 with the same eight stable fields
- * plus the three legitimately-drifting free-space counters.  The post
- * handler mirrors post_statfs exactly: TOCTOU pathname snapshot into a
- * PATH_MAX stack buffer before the recheck, f_fsid mount-drift gate
- * (both halves must match), and field-by-field comparison of the eight
- * stable fields with no early return so multi-field corruption surfaces
- * in a single sample.  The only shape delta from post_statfs is the sz
- * argument: snapshot rec->a2 and pass that exact value back into the
- * recheck issue rather than synthesizing one, so the recheck sees the
- * same buffer-size semantics the kernel saw the first time.
+ * mount, and fills struct statfs64.  The post handler mirrors
+ * post_statfs exactly: TOCTOU pathname snapshot into a PATH_MAX stack
+ * buffer before the recheck, the mount-drift gate (both halves of
+ * f_fsid and f_type must match), and field-by-field comparison of
+ * f_bsize, f_namelen and f_frsize with no early return so multi-field
+ * corruption surfaces in a single sample.  The only shape delta from
+ * post_statfs is the sz argument: snapshot rec->a2 and pass that exact
+ * value back into the recheck issue rather than synthesizing one, so
+ * the recheck sees the same buffer-size semantics the kernel saw the
+ * first time.
  *
  * Some 64-bit architectures fold statfs64 into statfs and do not define
  * SYS_statfs64.  Guard the .post handler and wire-up so the file still
@@ -482,16 +479,13 @@ static void post_statfs64(struct syscallrecord *rec)
 		goto out_release;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
-	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1])
+	    first.f_fsid.__val[1] != recheck.f_fsid.__val[1] ||
+	    first.f_type != recheck.f_type)
 		goto out_release;
 
-	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
-	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
-	if (first.f_files   != recheck.f_files)   diverged = 1;
 	if (first.f_namelen != recheck.f_namelen) diverged = 1;
 	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
-	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 
 	if (!diverged)
 		goto out_release;

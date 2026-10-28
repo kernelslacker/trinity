@@ -85,38 +85,34 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
  * name-resolution TOCTOU window for a sibling to widen by scribbling
  * user memory between original return and re-call.
  *
- * Most struct statfs fields describe properties that are intrinsic to
- * the mount and do not drift on benign sibling activity:
+ * The fields compared are the ones nothing outside the kernel moves
+ * on the filesystem the fd pins:
  *
  *   - f_type    filesystem magic; pinned for an open inode's mount
  *   - f_bsize   preferred block size; stable for the mount lifetime
- *   - f_blocks  total data blocks; resizing a live FS is rare enough
- *                 that a divergence is worth surfacing
- *   - f_files   total inode slots; same rationale as f_blocks
  *   - f_namelen max filename length; stable per FS type
  *   - f_frsize  fragment size; stable per FS type
- *   - f_flags   mount flags; remount can move them but the event is
- *                 rare enough that we want to know it happened
  *   - f_fsid    filesystem identifier (two ints); pinned per mount
  *
  * The free-space counters (f_bfree, f_bavail, f_ffree) are excluded
  * — every concurrent write, allocate, or unlink legitimately moves
  * them and including them would dwarf any real signal in benign
- * drift.  f_spare[] is also excluded; the kernel zeroes it but the
- * field is reserved padding with no defined stable contract.  A
- * divergence in the remaining eight fields points at one of:
+ * drift.  So are f_blocks, f_files and f_flags, which siblings move
+ * as well: xfs derives f_files from the free blocks
+ * (xfs_statfs_inodes()), f_flags is the mount's and the superblock's
+ * flags (calculate_f_flags()), which a remount or mount_setattr()
+ * moves, and a tmpfs remount with size= or nr_inodes= moves f_blocks
+ * and f_files.  f_spare[] is also excluded; the kernel zeroes it but
+ * the field is reserved padding with no defined stable contract.  A
+ * divergence in the remaining five fields points at one of:
  *
  *   - copy_to_user mis-write that leaves a torn struct statfs in
  *     user memory (partial write, wrong-offset fill, residual stack
  *     data).
  *   - struct-layout shift on a kernel/glibc skew that lands f_type in
- *     the f_bsize slot, or f_blocks in f_files.
- *   - 32-bit-on-64-bit compat sign-extension or truncation of the
- *     wide block / inode counters.
+ *     the f_bsize slot.
  *   - sibling-thread scribble of the user receive buffer between the
  *     original syscall return and our post-hook re-read.
- *   - genuine remount / online-resize racing the fuzz run, in which
- *     case the divergence is real and worth a log line.
  *
  * The only benign-divergence path is a sibling closing the fd between
  * the original syscall and the recheck — that just makes the recheck
@@ -177,11 +173,8 @@ static void post_fstatfs(struct syscallrecord *rec)
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
-	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
-	if (first.f_files   != recheck.f_files)   diverged = 1;
 	if (first.f_namelen != recheck.f_namelen) diverged = 1;
 	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
-	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0]) diverged = 1;
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 
@@ -318,11 +311,12 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
  * caller-supplied sz matches the kernel's expected size and the full
  * struct was filled.
  *
- * The same eight stable fields apply for the same reasons as fstatfs:
- * f_type, f_bsize, f_blocks, f_files, f_namelen, f_frsize, f_flags,
- * and the two halves of f_fsid.  f_bfree, f_bavail, f_ffree drift
- * legitimately under sibling allocator activity and stay excluded;
- * f_spare[] is reserved padding with no contract.
+ * The same five fields apply for the same reasons as fstatfs:
+ * f_type, f_bsize, f_namelen, f_frsize and the two halves of f_fsid.
+ * f_bfree, f_bavail and f_ffree drift legitimately under sibling
+ * allocator activity, and f_blocks, f_files and f_flags under writes,
+ * remounts and mount_setattr(), so they stay excluded; f_spare[] is
+ * reserved padding with no contract.
  *
  * Re-issue the syscall with the original sz so the recheck mirrors
  * the original call exactly — if a sibling closes the fd between the
@@ -391,11 +385,8 @@ static void post_fstatfs64(struct syscallrecord *rec)
 
 	if (first.f_type    != recheck.f_type)    diverged = 1;
 	if (first.f_bsize   != recheck.f_bsize)   diverged = 1;
-	if (first.f_blocks  != recheck.f_blocks)  diverged = 1;
-	if (first.f_files   != recheck.f_files)   diverged = 1;
 	if (first.f_namelen != recheck.f_namelen) diverged = 1;
 	if (first.f_frsize  != recheck.f_frsize)  diverged = 1;
-	if (first.f_flags   != recheck.f_flags)   diverged = 1;
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0]) diverged = 1;
 	if (first.f_fsid.__val[1] != recheck.f_fsid.__val[1]) diverged = 1;
 

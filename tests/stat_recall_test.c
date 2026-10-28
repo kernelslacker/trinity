@@ -4,7 +4,9 @@
  * the fuzzed call wrote, and counts the anomalies its sampled re-call
  * reports.  A moved attribute counts only while dev, ino and ctime held and
  * the ctime rule holds (stat_recall_diverged()), and never for st_blocks or
- * st_blksize; statmount's only for the fields no mount operation moves.
+ * st_blksize; statmount's only for the fields no mount operation moves, and
+ * the statfs family's only for the fields of a filesystem nothing outside
+ * the kernel moves.
  */
 
 #include <fcntl.h>
@@ -13,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
 #include <sys/syscall.h>
 #include <sys/wait.h>
 #include <time.h>
@@ -362,6 +365,98 @@ static void statx_recall_cases(void)
 	unlink(scratch);
 }
 
+#if defined(SYS_statfs) || defined(__NR_statfs)
+/* statfs(@path, buf) calls, each of which answered @answer. */
+static unsigned long statfs_anomalies(const char *path,
+				      const struct statfs *answer)
+{
+	unsigned long before = shm->stats.oracle.statfs_oracle_anomalies;
+	static struct syscallrecord rec;
+	static struct statfs buf;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) path;
+		rec.a2 = (unsigned long) &buf;
+		syscall_statfs.sanitise(&rec);
+		memcpy((void *) rec.a2, answer, sizeof(*answer));
+		rec.retval = 0;
+		syscall_statfs.post(&rec);
+	}
+	return shm->stats.oracle.statfs_oracle_anomalies - before;
+}
+
+/* fstatfs() calls on an fd it opens on @path. */
+static unsigned long fstatfs_anomalies(const char *path,
+				       const struct statfs *answer)
+{
+	unsigned long before = shm->stats.oracle.fstatfs_oracle_anomalies;
+	static struct syscallrecord rec;
+	static struct statfs buf;
+	unsigned int i;
+	int fd = open(path, O_RDONLY);
+
+	if (fd < 0)
+		BUG("stat recall: cannot open the scratch file");
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) fd;
+		rec.a2 = (unsigned long) &buf;
+		syscall_fstatfs.sanitise(&rec);
+		memcpy((void *) rec.a2, answer, sizeof(*answer));
+		rec.retval = 0;
+		syscall_fstatfs.post(&rec);
+	}
+	close(fd);
+	return shm->stats.oracle.fstatfs_oracle_anomalies - before;
+}
+
+/*
+ * The statfs family compares the fields of a filesystem that nothing
+ * outside the kernel moves: a block size that moved is reported, while
+ * f_blocks, f_files and f_flags, which a write, a remount or
+ * mount_setattr() moves, are not.  statfs looks its path up again, so it
+ * judges only an answer from the filesystem the re-call reached, and one
+ * with another f_type is not reported; fstatfs's fd pins the filesystem,
+ * so there a moved f_type is.
+ */
+static void statfs_recall_cases(void)
+{
+	struct statfs sfs, moved;
+	struct stat st;
+
+	scratch_file(&st);
+	if (statfs(scratch, &sfs) != 0)
+		BUG("stat recall: cannot statfs the scratch file");
+
+	moved = sfs;
+	moved.f_bsize *= 2;
+	check("a block size that moved was not reported", "statfs",
+	      statfs_anomalies(scratch, &moved) > 0);
+	check("a block size that moved was not reported", "fstatfs",
+	      fstatfs_anomalies(scratch, &moved) > 0);
+
+	moved = sfs;
+	moved.f_blocks += 8;
+	moved.f_files += 8;
+	moved.f_flags ^= 1;
+	check("f_blocks, f_files or f_flags was judged", "statfs",
+	      statfs_anomalies(scratch, &moved) == 0);
+	check("f_blocks, f_files or f_flags was judged", "fstatfs",
+	      fstatfs_anomalies(scratch, &moved) == 0);
+
+	moved = sfs;
+	moved.f_type ^= 1;
+	check("an answer from another filesystem was reported", "statfs",
+	      statfs_anomalies(scratch, &moved) == 0);
+	check("a filesystem type that moved under the fd was not reported",
+	      "fstatfs", fstatfs_anomalies(scratch, &moved) > 0);
+
+	unlink(scratch);
+}
+#endif
+
 #ifdef SYS_statmount
 /*
  * Have the next ONE_IN(100) the post handler draws come up: the stream is a
@@ -499,6 +594,9 @@ void stat_recall_self_check(void)
 	recall_cases(&newfstatat_oracle);
 	recall_cases(&newfstat_oracle);
 	statx_recall_cases();
+#if defined(SYS_statfs) || defined(__NR_statfs)
+	statfs_recall_cases();
+#endif
 #ifdef SYS_statmount
 	statmount_recall_cases();
 #endif
