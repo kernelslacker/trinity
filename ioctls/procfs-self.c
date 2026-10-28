@@ -1,7 +1,8 @@
 /*
- * PROCMAP_QUERY (do_procmap_query() in fs/proc/task_mmu.c), aimed at the
- * calling child's own /proc/self/maps and never at another process's: any
- * regular procfs file draws the group, and the call goes to a file it opens.
+ * PROCMAP_QUERY and PAGEMAP_SCAN (do_procmap_query() and do_pagemap_scan()
+ * in fs/proc/task_mmu.c), aimed at the calling child's own /proc/self/maps
+ * and pagemap and never at another process's: any regular procfs file draws
+ * the group, and the call goes to a file it opens.
  */
 
 #include <fcntl.h>
@@ -9,6 +10,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -24,13 +26,14 @@
 #include "utils.h"
 
 IOCTL_SIZE_ASSERT(PROCMAP_QUERY, struct procmap_query);
+IOCTL_SIZE_ASSERT(PAGEMAP_SCAN, struct pm_scan_arg);
 
 /*
- * The walk of /proc stops at /proc/<pid>, so the pool has no maps file, and
- * any regular file on procfs draws the group instead.  The fd is never what
- * the call goes to (see open_own()).  procfs's device number is read off this
- * process's own maps file the first time, which leaves the claim itself no
- * syscall.
+ * The walk of /proc stops at /proc/<pid>, so the pool has no maps or pagemap
+ * file, and any regular file on procfs draws the group instead.  The fd is
+ * never what the call goes to (see open_own()).  procfs's device number is
+ * read off this process's own maps file the first time, which leaves the
+ * claim itself no syscall.
  */
 static int procfs_self_fd_test(int fd __attribute__((unused)),
 			       const struct stat *st)
@@ -60,9 +63,23 @@ static int procfs_self_fd_test(int fd __attribute__((unused)),
  */
 static struct owned_fd_ring own_fds;
 
-static int open_own(const char *path)
+/*
+ * pagemap is S_IRUSR, and a task that is not dumpable owns its /proc files as
+ * root (task_dump_owner()), so a child that cleared the flag, as
+ * disable_coredumps() does, cannot open its own: @owner_only sets the flag for
+ * the open and puts it back, as 0 if it was 2, which prctl() cannot set.
+ * maps is S_IRUGO and needs none of this.
+ */
+static int open_own(const char *path, bool owner_only)
 {
-	int fd = open(path, O_RDONLY | O_CLOEXEC);
+	bool toggled = owner_only && prctl(PR_GET_DUMPABLE) != 1;
+	int fd;
+
+	if (toggled)
+		prctl(PR_SET_DUMPABLE, 1);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (toggled)
+		prctl(PR_SET_DUMPABLE, 0);
 
 	if (fd < 0)
 		return -1;
@@ -77,9 +94,9 @@ static int open_own(const char *path)
 /*
  * A run of whole pages from a pool mapping, starting at one of its pages and
  * ending at its end, or the page of a stack variable when the pool has
- * none.
+ * none.  Returns whether the pages are a pool mapping's.
  */
-static void pick_span(unsigned long *start, unsigned long *pages)
+static bool pick_span(unsigned long *start, unsigned long *pages)
 {
 	struct map *map = get_map();
 	unsigned long first;
@@ -87,12 +104,13 @@ static void pick_span(unsigned long *start, unsigned long *pages)
 	if (map == NULL || map->ptr == NULL || map->size < page_size) {
 		*start = (unsigned long) &first & PAGE_MASK;
 		*pages = 1;
-		return;
+		return false;
 	}
 
 	first = rnd_modulo_u64(map->size / page_size);
 	*start = (unsigned long) map->ptr + first * page_size;
 	*pages = map->size / page_size - first;
+	return true;
 }
 
 /*
@@ -241,12 +259,173 @@ static void sanitise_procmap_query(struct syscallrecord *rec)
 		out_buffer(&q->build_id_size, &q->build_id_addr,
 			   RAND_ARRAY(id_sizes));
 
-	fd = open_own("/proc/self/maps");
+	fd = open_own("/proc/self/maps", false);
 	if (fd < 0)
 		return;
 
 	rec->a1 = (unsigned long) fd;
 	rec->a3 = (unsigned long) q;
+}
+
+/* The ten categories of the kernel's PM_SCAN_CATEGORIES. */
+#define SCAN_CATEGORIES		(PAGE_IS_WPALLOWED | PAGE_IS_WRITTEN | \
+				 PAGE_IS_FILE | PAGE_IS_PRESENT | \
+				 PAGE_IS_SWAPPED | PAGE_IS_PFNZERO | \
+				 PAGE_IS_HUGE | PAGE_IS_SOFT_DIRTY | \
+				 PAGE_IS_GUARD | PAGE_IS_ACCESSED)
+
+/* The most pages a run covers, and the most regions a call has room for. */
+#define SCAN_RUN_MAX		64
+#define SCAN_REGIONS_MAX	64
+
+/*
+ * pagemap_scan_get_args() answers -EINVAL for a size other than the
+ * kernel's, a flag or a category it does not know, a start that is not page
+ * aligned, and a length with no buffer.  An end below the start makes the
+ * length wrap, which is -EFAULT.
+ *
+ * pagemap_scan_test_walk() skips a VMA that is not registered for userfaultfd
+ * write protection in async mode when the flags ask for WP_MATCHING, and
+ * fails the walk with -EPERM when they ask for CHECK_WPASYNC, so the pages of
+ * an ordinary VMA are only reached with neither.  A VMA is skipped as well
+ * when WPALLOWED is in category_mask and not inverted, which that kind of
+ * VMA alone has, so the bit is left out of the mask most of the time.
+ *
+ * WP_MATCHING write-protects the pages of the VMAs that pass, which only a
+ * child that registered one itself has, and a write fault in async mode
+ * clears the protection without a signal or a wait.  It is drawn only for a
+ * range inside a pool mapping, the memory a fuzzed call already acts on,
+ * and never for one that runs past it or for the stack page a child with no
+ * pool falls back to.  Regions are written up to vec_len, so the buffer holds
+ * as many.
+ */
+static void sanitise_pagemap_scan(struct syscallrecord *rec)
+{
+	struct pm_scan_arg *a;
+	unsigned long start, pages, run;
+	bool in_pool;
+	int fd;
+
+	a = get_writable_struct(sizeof(*a));
+	if (!a)
+		return;
+	memset(a, 0, sizeof(*a));
+
+	a->size = sizeof(*a);
+	if (ONE_IN(32))
+		a->size = RAND_BOOL() ? rnd_u64() :
+			  RAND_BOOL() ? sizeof(*a) - 8 : sizeof(*a) + 8;
+
+	in_pool = pick_span(&start, &pages);
+	run = 1 + rnd_modulo_u64(pages < SCAN_RUN_MAX ? pages : SCAN_RUN_MAX);
+	a->start = start;
+	a->end = start + run * page_size;
+
+	switch (rnd_modulo_u32(32)) {
+	case 0:
+		a->start += 1 + rnd_modulo_u32(page_size - 1);
+		break;
+	case 1:
+		a->end = start - page_size;
+		break;
+	case 2:
+	case 3:
+		a->end = start + (1UL << 30);
+		break;
+	case 4:
+		a->end = start + pages * page_size;
+		break;
+	default:
+		break;
+	}
+
+	switch (rnd_modulo_u32(32)) {
+	case 24:
+	case 25:
+	case 26:
+	case 27:
+		a->flags = PM_SCAN_WP_MATCHING;
+		break;
+	case 28:
+		a->flags = PM_SCAN_CHECK_WPASYNC;
+		break;
+	case 29:
+		a->flags = PM_SCAN_WP_MATCHING | PM_SCAN_CHECK_WPASYNC;
+		break;
+	case 30:
+	case 31:
+		a->flags = rnd_u64() | (1UL << 2);
+		break;
+	default:
+		break;
+	}
+	if (!in_pool || a->start < start || a->end <= a->start ||
+	    a->end > start + pages * page_size)
+		a->flags &= ~(unsigned long) PM_SCAN_WP_MATCHING;
+
+	if (!ONE_IN(4))
+		a->return_mask = rnd_u32() & SCAN_CATEGORIES;
+
+	switch (rnd_modulo_u32(8)) {
+	case 4:
+	case 5:
+		a->category_mask = 1UL << (1 + rnd_modulo_u32(9));
+		break;
+	case 6:
+		a->category_mask = (1UL << (1 + rnd_modulo_u32(9))) |
+				   (1UL << (1 + rnd_modulo_u32(9)));
+		break;
+	case 7:
+		a->category_mask = rnd_u32() & SCAN_CATEGORIES;
+		break;
+	default:
+		break;
+	}
+	if (RAND_BOOL())
+		a->category_anyof_mask = rnd_u32() & SCAN_CATEGORIES;
+	if (ONE_IN(4))
+		a->category_inverted = rnd_u32() & SCAN_CATEGORIES;
+
+	if (ONE_IN(32)) {
+		__u64 *masks[] = {
+			&a->return_mask, &a->category_mask,
+			&a->category_anyof_mask, &a->category_inverted,
+		};
+
+		*masks[rnd_modulo_u32(ARRAY_SIZE(masks))] |=
+			(rnd_u64() & ~(__u64) SCAN_CATEGORIES) | (1ULL << 63);
+	}
+
+	switch (rnd_modulo_u32(64)) {
+	case 0:
+		a->vec_len = 1 + rnd_modulo_u32(SCAN_REGIONS_MAX);
+		break;
+	case 1:
+	case 2:
+	case 3:
+	case 4:
+	case 5:
+	case 6:
+		break;
+	default: {
+		unsigned int n = 1 + rnd_modulo_u32(SCAN_REGIONS_MAX);
+		void *vec = get_writable_address(n * sizeof(struct page_region));
+
+		if (vec != NULL) {
+			a->vec = (unsigned long) vec;
+			a->vec_len = n;
+		}
+		break;
+	}
+	}
+	a->max_pages = RAND_BOOL() ? 0 : 1 + rnd_modulo_u32(256);
+
+	fd = open_own("/proc/self/pagemap", true);
+	if (fd < 0)
+		return;
+
+	rec->a1 = (unsigned long) fd;
+	rec->a3 = (unsigned long) a;
 }
 
 static void procfs_self_sanitise(const struct ioctl_group *grp,
@@ -261,12 +440,19 @@ static void procfs_self_sanitise(const struct ioctl_group *grp,
 	 */
 	rec->a1 = (unsigned long) -1;
 
-	if (rec->a2 == PROCMAP_QUERY)
+	switch (rec->a2) {
+	case PROCMAP_QUERY:
 		sanitise_procmap_query(rec);
+		break;
+	case PAGEMAP_SCAN:
+		sanitise_pagemap_scan(rec);
+		break;
+	}
 }
 
 static const struct ioctl procfs_self_ioctls[] = {
 	IOCTL(PROCMAP_QUERY),
+	IOCTL(PAGEMAP_SCAN),
 };
 
 static const struct ioctl_group procfs_self_grp = {
