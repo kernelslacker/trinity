@@ -117,25 +117,31 @@ static void build_mount_attr(struct mount_attr *ma)
 static unsigned long pick_open_tree_attr_flags(void)
 {
 	unsigned int bucket = rnd_modulo_u32(12);
+	unsigned long flags;
 
 	/*
 	 * OPEN_TREE_CLONE (1) and OPEN_TREE_NAMESPACE (2) are mutually-
-	 * exclusive mode bits introduced in v6.15: CLONE detaches a copy of
-	 * the mount tree; NAMESPACE opens an existing namespace fd.  ORing
-	 * both is rejected by the kernel, so each gets its own bucket.
-	 * OPEN_TREE_CLOEXEC is orthogonal and may combine with either.
+	 * exclusive mode bits: CLONE detaches a copy of the mount tree;
+	 * NAMESPACE clones it into a new mount namespace and returns that
+	 * namespace's fd.  ORing both is rejected by the kernel, so each
+	 * gets its own bucket.  OPEN_TREE_CLOEXEC is orthogonal and may
+	 * combine with either.
 	 */
 	switch (bucket) {
 	case 0: case 1: case 2:
-		return OPEN_TREE_CLONE;			/* 25% */
+		flags = OPEN_TREE_CLONE;		/* 25% */
+		break;
 	case 3: case 4:
-		return OPEN_TREE_NAMESPACE;		/* 17% */
+		flags = OPEN_TREE_NAMESPACE;		/* 17% */
+		break;
 	case 5: case 6:
 		return OPEN_TREE_CLOEXEC;		/* 17% */
 	case 7: case 8:
-		return OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC;	/* 17% */
+		flags = OPEN_TREE_CLONE | OPEN_TREE_CLOEXEC;	/* 17% */
+		break;
 	case 9:
-		return OPEN_TREE_NAMESPACE | OPEN_TREE_CLOEXEC;	/*  8% */
+		flags = OPEN_TREE_NAMESPACE | OPEN_TREE_CLOEXEC;	/*  8% */
+		break;
 	case 10:
 		return 0;				/*  8% attach-in-place */
 	default:
@@ -143,6 +149,19 @@ static unsigned long pick_open_tree_attr_flags(void)
 		return OPEN_TREE_CLONE |
 			(1UL << (16 + rnd_modulo_u32(16)));
 	}
+
+	/*
+	 * Either mode copies the submounts, and recursive attributes apply,
+	 * only with AT_RECURSIVE, which vfs_open_tree() refuses without a
+	 * mode.  OPEN_TREE_DROP_MNTNS_MOUNTS leaves the nsfs mounts of pinned
+	 * mount namespaces out of a recursive copy and needs both.
+	 */
+	if (RAND_BOOL()) {
+		flags |= AT_RECURSIVE;
+		if (ONE_IN(3))
+			flags |= OPEN_TREE_DROP_MNTNS_MOUNTS;
+	}
+	return flags;
 }
 
 /*
