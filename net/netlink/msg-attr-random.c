@@ -248,17 +248,19 @@ size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	nla.nla_type = nla_type;
 
 	/*
-	 * Set NLA_F_NESTED only when the payload actually is a nested
-	 * attribute chain.  A strict parse rejects the flag on a
-	 * structured-but-flat attribute (RTA_DST, RTA_OIF, IFLA_MTU, …)
-	 * before the family's real handler runs.  Random-byte payloads
-	 * (structured_len == 0) keep the unconditional 1-in-4 OR —
-	 * bad-attr is intentional novelty on that path.
+	 * NLA_F_NESTED goes on a payload that is a nested attribute chain
+	 * but one time in eight, since a strict parse (NL_VALIDATE_NESTED)
+	 * refuses an NLA_NESTED attribute without it, and never on a
+	 * structured-but-flat one (RTA_DST, RTA_OIF, IFLA_MTU, …), which a
+	 * strict parse refuses with it.  Random-byte payloads
+	 * (structured_len == 0) keep the 1-in-4 OR: bad-attr is
+	 * intentional novelty on that path.
 	 */
-	if (ONE_IN(4)) {
-		if (structured_len == 0 ||
-		    rta_payload_is_nested(rtnl_group, nla_type))
+	if (structured_len == 0) {
+		if (ONE_IN(4))
 			nla.nla_type |= NLA_F_NESTED;
+	} else if (rta_payload_is_nested(rtnl_group, nla_type) && !ONE_IN(8)) {
+		nla.nla_type |= NLA_F_NESTED;
 	}
 	if (ONE_IN(8))
 		nla.nla_type |= NLA_F_NET_BYTEORDER;

@@ -275,6 +275,7 @@ struct tunnel_attrs {
 	unsigned int index_all;	/* ifindex 0 */
 	unsigned int attrs;
 	unsigned int entries;	/* of type VXLAN_VNIFILTER_ENTRY */
+	unsigned int flagged;	/* ... flagged NLA_F_NESTED */
 };
 
 static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nlh)
@@ -297,7 +298,10 @@ static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nl
 		size_t total = NLA_ALIGN(nla->nla_len);
 
 		t->attrs++;
-		t->entries += (nla->nla_type & NLA_TYPE_MASK) == VXLAN_VNIFILTER_ENTRY;
+		if ((nla->nla_type & NLA_TYPE_MASK) == VXLAN_VNIFILTER_ENTRY) {
+			t->entries++;
+			t->flagged += !!(nla->nla_type & NLA_F_NESTED);
+		}
 		if (total >= len)
 			break;
 		p += total;
@@ -317,7 +321,10 @@ static void tally_tunnel_attrs(struct tunnel_attrs *t, const struct nlmsghdr *nl
  * so a request of any other type is refused whole, and the dump reads only
  * that type.  An attribute takes its group's type seven times in eight,
  * whether it is a nest of the builder's or built by the type's own payload
- * generator, so about seven in eight of them are entries.
+ * generator, so about seven in eight of them are entries.  The strict parse
+ * refuses an entry without NLA_F_NESTED, which the builder's nests always
+ * carry and the payload generator's seven times in eight: about 0.89 of the
+ * entries.
  */
 static void expect_tunnel_attrs(const struct tunnel_attrs *t)
 {
@@ -329,6 +336,8 @@ static void expect_tunnel_attrs(const struct tunnel_attrs *t)
 			"rtnl: a tunnel request does not ask for every device half the time");
 	expect_fraction(t->entries, t->attrs, 0.80, 0.95, "RTM_*TUNNEL",
 			"rtnl: a tunnel request's attributes are not mostly VXLAN_VNIFILTER_ENTRY");
+	expect_fraction(t->flagged, t->entries, 0.82, 0.95, "RTM_*TUNNEL",
+			"rtnl: a VNI filter entry mostly lacks NLA_F_NESTED, which the strict parse wants");
 }
 
 #define ENTRIES		40000
