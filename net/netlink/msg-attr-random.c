@@ -17,6 +17,8 @@
 #include "shm.h"
 #include "utils.h"
 
+#include "kernel/if_addr.h"
+
 /* Forward declaration — defined in net/netlink/msg-rtnl-neigh.c.
  * Other gen_rta_* sibling declarations live in msg-internal.h;
  * this one is inline here to keep the rtnl_neightbl wire-up confined
@@ -111,20 +113,24 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 26: return gen_rta_tunnel_payload(p, avail, nla_type);
 
 	/*
-	 * Groups 10, 11 and 13 have no user-settable attribute surface:
-	 *
 	 * Group 10: RTM_GETMULTICAST (RTM_NEWMULTICAST=56).  Registered
-	 * with only a .dumpit handler in both IPv4 (net/ipv4/devinet.c,
-	 * inet_dump_ifmcaddr) and IPv6 (net/ipv6/addrconf.c,
-	 * inet6_dump_ifmcaddr).  The kernel enumerates multicast group
-	 * memberships; the user supplies only a netlink dump request with
-	 * no RTAs.
+	 * with only a .dumpit handler in IPv4 (net/ipv4/devinet.c,
+	 * inet_dump_ifmcaddr), IPv6 (net/ipv6/addrconf.c,
+	 * inet6_dump_ifmcaddr) and PF_PACKET (net/core/dev_addr_lists.c,
+	 * dev_mc_dump()).  The kernel enumerates multicast group
+	 * memberships; the request is an ifaddrmsg with one attribute,
+	 * IFA_TARGET_NETNSID, which dev_mc_dump() parses strictly and the
+	 * IPv4 and IPv6 dumps do on a socket that asks for strict checking.
 	 *
 	 * Group 11: RTM_GETANYCAST (RTM_NEWANYCAST=60).  IPv6-only,
 	 * registered with only .dumpit (net/ipv6/addrconf.c,
-	 * inet6_dump_ifacaddr).  Same pattern as GETMULTICAST: dump-only,
-	 * no user-writable RTA payload.
-	 *
+	 * inet6_dump_ifacaddr).  The same request, and the same attribute.
+	 */
+	case 10: /* RTM_GETMULTICAST */
+	case 11: /* RTM_GETANYCAST */
+		return gen_rta_addr_payload(p, avail, nla_type, family);
+
+	/*
 	 * Group 13: RTM_NEWNDUSEROPT (=68).  Purely a kernel-to-user
 	 * notification; the kernel sends it when Neighbor Discovery
 	 * processes Router Advertisement user options
@@ -132,8 +138,6 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	 * or .dumpit handler is registered; a sendmsg from userspace
 	 * would be rejected by rtnetlink before any RTA is parsed.
 	 */
-	case 10: /* RTM_GETMULTICAST - dump-only, no user-settable RTAs */
-	case 11: /* RTM_GETANYCAST  - dump-only, no user-settable RTAs */
 	case 13: /* RTM_NEWNDUSEROPT - kernel-to-user notify only */
 		/* fall through */
 	default: return 0;
@@ -350,6 +354,8 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 5:
 	case 6:
 	case 7: return tca_attrs[rnd_modulo_u32(tca_attrs_n)].type;
+	case 10:
+	case 11: return IFA_TARGET_NETNSID;
 	case 12: return RAND_ARRAY(ndtbl_attrs);
 	case 14: return ifal_attrs[rnd_modulo_u32(ifal_attrs_n)];
 	case 15: return dcb_attrs[rnd_modulo_u32(dcb_attrs_n)];

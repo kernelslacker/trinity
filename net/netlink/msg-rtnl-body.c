@@ -71,6 +71,44 @@ static size_t gen_rtnl_body_addr(unsigned char *body, size_t buflen, unsigned ch
 	return sizeof(ifa);
 }
 
+/*
+ * RTM_*MULTICAST and RTM_*ANYCAST: the struct ifaddrmsg of an address dump.
+ * Both are dumps with no doit.  RTM_GETMULTICAST has a dumpit for PF_INET,
+ * PF_INET6 and PF_PACKET, whose dev_mc_dump() in net/core/dev_addr_lists.c
+ * answers a header with a nonzero prefixlen, flags or scope -EINVAL and
+ * dumps the one device ifa_index names, or all of them for 0, and
+ * RTM_GETANYCAST one for PF_INET6 alone.  So a request names AF_PACKET
+ * three times in four for the first, the other two a quarter between them,
+ * and AF_INET6 for the second, but one in sixteen takes any family.  The
+ * prefixlen, flags and scope are 0 seven times in eight.
+ */
+static size_t gen_rtnl_body_addr_dump(unsigned char *body, size_t buflen, bool anycast,
+				      unsigned char *out_family)
+{
+	struct ifaddrmsg ifa = { 0 };
+
+	if (sizeof(ifa) > buflen)
+		return 0;
+	if (ONE_IN(16))
+		ifa.ifa_family = rand_family();
+	else if (anycast)
+		ifa.ifa_family = AF_INET6;
+	else if (ONE_IN(4))
+		ifa.ifa_family = RAND_BOOL() ? AF_INET : AF_INET6;
+	else
+		ifa.ifa_family = AF_PACKET;
+	if (ONE_IN(8)) {
+		ifa.ifa_prefixlen = rnd_modulo_u32(129);
+		ifa.ifa_flags = rnd_modulo_u32(256);
+		ifa.ifa_scope = rnd_modulo_u32(256);
+	}
+	/* Every device, or lo, which every netns has, or a small index. */
+	ifa.ifa_index = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	*out_family = ifa.ifa_family;
+	memcpy(body, &ifa, sizeof(ifa));
+	return sizeof(ifa);
+}
+
 /* RTM_*ROUTE: struct rtmsg */
 static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
@@ -380,6 +418,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 4:  return gen_rtnl_body_rule(body, buflen, out_family);
 	case 8:  return gen_rtnl_body_action(body, buflen, out_family);
 	case 9:  return gen_rtnl_body_prefix(body, buflen, out_family);
+	case 10: /* RTM_*MULTICAST */
+	case 11: /* RTM_*ANYCAST */
+		return gen_rtnl_body_addr_dump(body, buflen, group == 11, out_family);
 	case 12: return gen_rtnl_body_neightbl(body, buflen, out_family);
 	case 13: return gen_rtnl_body_nduseropt(body, buflen, out_family);
 	case 14: return gen_rtnl_body_addrlabel(body, buflen, out_family);

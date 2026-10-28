@@ -564,6 +564,10 @@ fi
 check_enum_member linux/rtnetlink.h RTA_DEL_REASON
 check_enum_member linux/nexthop.h NHA_DST_PORT
 
+# The address attribute that names a dump's target netns, which the address,
+# multicast and anycast dumps take.
+check_enum_member linux/if_addr.h IFA_TARGET_NETNSID
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

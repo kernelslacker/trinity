@@ -371,8 +371,9 @@ KCOV_PERSIST_SRCS := \
 # The registries in genl/families.c and nfnl/subsystems.c name every
 # grammar in their directories, so each directory is linked whole.  Same
 # section-per-function treatment; genl_ops_test.c fakes the RNG helpers
-# these reach and feeds the resolver a canned controller reply, and
-# nfnl_gen_test.c runs the nfnl grammars through the generator.
+# these reach and feeds the resolver a canned controller reply,
+# nfnl_gen_test.c runs the nfnl grammars through the generator and
+# rtnl_gen_test.c the rtnetlink message builders.
 NETLINK_SRCS	:= $(wildcard $(TOP)/net/netlink/*.c \
 			      $(TOP)/net/netlink/genl/*.c \
 			      $(TOP)/net/netlink/nfnl/*.c)
@@ -425,6 +426,7 @@ FAKE_SRCS	:= \
 	ioctl_sanitise_test.c \
 	genl_ops_test.c \
 	nfnl_gen_test.c \
+	rtnl_gen_test.c \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \
 	reap_fault_beacon_test.c \

@@ -24,6 +24,7 @@
 #include "msg-rtnl-common.h"
 #include "utils.h"
 
+#include "kernel/if_addr.h"
 #include "kernel/netlink.h"
 #include "kernel/nexthop.h"
 #include "kernel/rtnetlink.h"
@@ -217,9 +218,6 @@ const size_t ifla_attrs_n = ARRAY_SIZE(ifla_attrs);
 /* Newer IFA_* attrs may be missing from older system headers. */
 #ifndef IFA_MULTICAST
 #define IFA_MULTICAST			7
-#endif
-#ifndef IFA_TARGET_NETNSID
-#define IFA_TARGET_NETNSID		10
 #endif
 
 const unsigned short ifa_attrs[] = {

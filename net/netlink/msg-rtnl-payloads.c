@@ -28,6 +28,8 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
+#include "kernel/if_addr.h"
+
 /* Prototype mirrored from the forward declaration in msg-attr-random.c;
  * kept here (rather than in msg-internal.h next to its
  * gen_rta_* siblings) to keep the rtnl_addrlabel wire-up confined to
@@ -98,6 +100,18 @@ size_t gen_rta_addr_payload(unsigned char *p, size_t avail,
 		if (avail >= 1) {
 			*p = rnd_modulo_u32(256);
 			return 1;
+		}
+		return 0;
+
+	case IFA_TARGET_NETNSID:
+		/* An s32 nsid that rtnl_get_net_ns_capable() finds a netns by:
+		 * -1 is never assigned, and a netns holds the ids it has been
+		 * given from 0 up, so most are small. */
+		if (avail >= 4) {
+			__s32 id = ONE_IN(8) ? -1 : (__s32) rnd_modulo_u32(4);
+
+			memcpy(p, &id, 4);
+			return 4;
 		}
 		return 0;
 

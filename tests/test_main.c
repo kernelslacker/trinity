@@ -57,6 +57,7 @@ void loop_status_self_check(void);
 void ioctl_sanitise_self_check(void);
 void genl_ops_self_check(void);
 void nfnl_gen_self_check(void);
+void rtnl_gen_self_check(void);
 void kcov_persist_self_check(void);
 void stats_render_self_check(void);
 void shutdown_wait_self_check(void);
@@ -309,6 +310,11 @@ int main(int argc, char **argv)
 	printf("  nfnl_gen_self_check ... ");
 	fflush(stdout);
 	nfnl_gen_self_check();
+	printf("OK\n");
+
+	printf("  rtnl_gen_self_check ... ");
+	fflush(stdout);
+	rtnl_gen_self_check();
 	printf("OK\n");
 
 	printf("  kcov_persist_self_check ... ");
