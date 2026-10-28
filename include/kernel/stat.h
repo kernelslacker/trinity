@@ -22,12 +22,16 @@
 #endif
 
 /*
- * Per-bit guards: STATX_WRITE_ATOMIC landed in 6.11 and STATX_DIO_READ_ALIGN
- * in 6.13, after the umbrella STATX_TYPE block above was last refreshed.  A
- * uapi snapshot from 6.10..6.12 defines STATX_TYPE (skipping the block above)
- * but is missing one or both of these.  Guarding individually fills the gap
- * without redefining bits the host header already provides.
+ * Per-bit guards: STATX_MNT_ID_UNIQUE landed in 6.8, STATX_WRITE_ATOMIC in
+ * 6.11 and STATX_DIO_READ_ALIGN in 6.13, after the umbrella STATX_TYPE block
+ * above was last refreshed.  A uapi snapshot from before them defines
+ * STATX_TYPE (skipping the block above) but is missing some of these.
+ * Guarding individually fills the gap without redefining bits the host
+ * header already provides.
  */
+#ifndef STATX_MNT_ID_UNIQUE
+#define STATX_MNT_ID_UNIQUE	0x00004000
+#endif
 #ifndef STATX_WRITE_ATOMIC
 #define STATX_WRITE_ATOMIC	0x00010000
 #endif

@@ -13,3 +13,6 @@
 #if !defined(SYS_uname) && defined(__NR_uname)
 #define SYS_uname	__NR_uname
 #endif
+#if !defined(SYS_statmount) && defined(__NR_statmount)
+#define SYS_statmount	__NR_statmount
+#endif

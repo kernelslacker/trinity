@@ -7,8 +7,10 @@
 #include <sys/stat.h>
 #include <sys/syscall.h>
 #include <sys/vfs.h>
+#include <time.h>
 #include <unistd.h>
 #include "csfu.h"
+#include "ctime-rule.h"
 #include "fd.h"
 #include "files.h"
 #include "pathnames.h"
@@ -21,7 +23,6 @@
 #include "utils.h"
 
 #include "kernel/fcntl.h"
-#include "kernel/stat.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so the pin lands
  * inside the same trinity-testfile<N> inodes the rest of the path-pinned
@@ -97,9 +98,11 @@ struct openat_dir_seen {
 
 /*
  * What sanitise_openat() saw for the oracle in post_openat(): the inode the
- * path named before the call and its ctime, the mount it lay on (0 when
- * statx() could not say), the directories it walked through, and the
- * (dfd, path, flags) of that call.
+ * path named before the call and its ctime, the unique id of the mount it
+ * lay on (0 when statx() could not give one), the directories it walked
+ * through, whether every ctime recorded marks a change after it
+ * (ctime_marks_change(), going by the coarse clock read before the lookups),
+ * and the (dfd, path, flags) of that call.
  */
 #define OPENAT_POST_STATE_MAGIC	0x4F504154UL	/* "OPAT" */
 struct openat_post_state {
@@ -111,6 +114,8 @@ struct openat_post_state {
 	ino_t ino;
 	struct timespec ctime;
 	unsigned long long mnt_id;
+	struct timespec before;
+	bool ctimes_mark_change;
 	unsigned int ndirs;
 	struct openat_dir_seen dirs[OPENAT_ORACLE_DIRS];
 };
@@ -120,11 +125,13 @@ struct openat_post_state {
  * directory @path walks through before its last component: / or the
  * working directory it starts in, then the prefix up to each '/'.  A
  * directory that moves away and comes back changes the ctime of the one it
- * moved through, which the lookups of the whole path never look at.  Every
- * prefix has to be a directory: a symlink there, a procfs magic link
- * among them, can be repointed and restored past what any lookup sees.
- * False when the path cannot be judged, and when checking, when a
- * directory differs from what was recorded.
+ * moved through, which the lookups of the whole path never look at, so
+ * recording also clears snap->ctimes_mark_change for a directory whose
+ * ctime would not show the move.  Every prefix has to be a directory: a
+ * symlink there, a procfs magic link among them, can be repointed and
+ * restored past what any lookup sees.  False when the path cannot be
+ * judged, and when checking, when a directory differs from what was
+ * recorded.
  */
 static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 			     bool check)
@@ -142,6 +149,8 @@ static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 
 	for (i = 0; i <= end; i++) {
 		struct openat_dir_seen *seen;
+		unsigned long long mnt_id = 0;
+		const char *dir = prefix;
 		struct stat st;
 		int ret;
 
@@ -150,13 +159,17 @@ static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 		if (n == OPENAT_ORACLE_DIRS || (check && n == snap->ndirs))
 			return false;
 
-		if (i == 0) {
-			ret = lstat(prefix[0] == '/' ? "/" : ".", &st);
-		} else {
+		if (i == 0)
+			dir = prefix[0] == '/' ? "/" : ".";
+		else
 			prefix[i] = '\0';
-			ret = lstat(prefix, &st);
+		ret = lstat(dir, &st);
+		if (ret == 0 && !check)
+			mnt_id = stat_mnt_id(AT_FDCWD, dir,
+					     AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+					     st.st_dev, st.st_ino);
+		if (i != 0)
 			prefix[i] = '/';
-		}
 		if (ret != 0 || !S_ISDIR(st.st_mode))
 			return false;
 
@@ -165,6 +178,8 @@ static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 			seen->dev = st.st_dev;
 			seen->ino = st.st_ino;
 			seen->ctime = st.st_ctim;
+			if (!ctime_marks_change(mnt_id, &st.st_ctim, &snap->before))
+				snap->ctimes_mark_change = false;
 		} else if (seen->dev != st.st_dev || seen->ino != st.st_ino ||
 			   seen->ctime.tv_sec != st.st_ctim.tv_sec ||
 			   seen->ctime.tv_nsec != st.st_ctim.tv_nsec) {
@@ -176,20 +191,6 @@ static bool openat_dirs_seen(const char *path, struct openat_post_state *snap,
 		return n == snap->ndirs;
 	snap->ndirs = n;
 	return true;
-}
-
-/*
- * The mount the lookup of @path from @dfd ends on, @flags as statx() takes
- * them, or 0 where statx() cannot say.
- */
-static unsigned long long openat_mnt_id(int dfd, const char *path, int flags)
-{
-	struct statx stx;
-
-	if (syscall(SYS_statx, dfd, path, flags, STATX_MNT_ID, &stx) != 0 ||
-	    !(stx.stx_mask & STATX_MNT_ID))
-		return 0;
-	return stx.stx_mnt_id;
 }
 
 /*
@@ -267,18 +268,26 @@ static void sanitise_openat(struct syscallrecord *rec)
 	 * does, past what S_ISLNK() can see.  The name is read only once
 	 * lstat() has, so the kernel has seen a string there.  O_NOFOLLOW
 	 * changes only what a trailing symlink opens, so any other path is
-	 * judged with it or without.
+	 * judged with it or without.  The coarse clock is read before the
+	 * lookups, for ctime_marks_change().
 	 */
 	if ((rec->a3 & O_PATH) &&
-	    (int) rec->a1 == AT_FDCWD && rec->a2 != 0 &&
-	    lstat((const char *) rec->a2, &st) == 0 && !S_ISLNK(st.st_mode) &&
-	    path_ends_in_a_name((const char *) rec->a2)) {
+	    (int) rec->a1 == AT_FDCWD && rec->a2 != 0) {
+		const char *path = (const char *) rec->a2;
 		struct openat_post_state seen = { 0 }, *snap;
 
-		if (!openat_dirs_seen((const char *) rec->a2, &seen, false))
+		clock_gettime(CLOCK_REALTIME_COARSE, &seen.before);
+		if (lstat(path, &st) != 0 || S_ISLNK(st.st_mode) ||
+		    !path_ends_in_a_name(path))
 			return;
-		seen.mnt_id = openat_mnt_id(AT_FDCWD, (const char *) rec->a2,
-					    AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT);
+		seen.ctimes_mark_change = true;
+		if (!openat_dirs_seen(path, &seen, false))
+			return;
+		seen.mnt_id = stat_mnt_id(AT_FDCWD, path,
+					  AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT,
+					  st.st_dev, st.st_ino);
+		if (!ctime_marks_change(seen.mnt_id, &st.st_ctim, &seen.before))
+			seen.ctimes_mark_change = false;
 
 		snap = zmalloc_tracked(sizeof(*snap));
 		*snap = seen;
@@ -353,9 +362,14 @@ struct syscallentry syscall_open = {
  * the open and the first one again by the later lookup only if that one, or
  * a directory on the way, was renamed away and back or linked there again,
  * and either sets a ctime the lookups compare (a write in the window does
- * too, and leaves the call unjudged).  A mount over the path for the open
- * alone changes no lookup, so the fd has to lie on the path's mount as
- * well.  Symlinks, paths through them and procfs fds are skipped.
+ * too, and leaves the call unjudged).  A set ctime shows only where it is
+ * sure to differ from the one recorded: on a multigrain filesystem, or for
+ * a ctime older than any grain the coarse clock stamps in
+ * (ctime_marks_change()).  Anywhere else a rename away and back inside one
+ * tick leaves every ctime as it was, and a call that rests on such a ctime
+ * is inconclusive.  A mount over the path for the open alone changes no
+ * lookup, so the fd has to lie on the path's mount as well.  Symlinks,
+ * paths through them and procfs fds are skipped.
  */
 static void openat_path_oracle(const struct syscallrecord *rec,
 			       struct openat_post_state *snap,
@@ -379,29 +393,26 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 	    st_path.st_dev != snap->dev || st_path.st_ino != snap->ino ||
 	    st_path.st_ctim.tv_sec != snap->ctime.tv_sec ||
 	    st_path.st_ctim.tv_nsec != snap->ctime.tv_nsec ||
-	    !openat_dirs_seen((const char *) snap->path, snap, true)) {
-		__atomic_add_fetch(
-			&shm->stats.oracle.openat_oracle_inconclusive,
-			1, __ATOMIC_RELAXED);
-		return;
-	}
+	    !openat_dirs_seen((const char *) snap->path, snap, true))
+		goto inconclusive;
 
 	if (st_fd->st_dev == snap->dev && st_fd->st_ino == snap->ino)
 		return;
+
+	if (!snap->ctimes_mark_change)
+		goto inconclusive;
 
 	/*
 	 * A mount that covers the path, or a directory on it, for the open
 	 * alone puts the fd on another mount than the lookup before the call
 	 * ended on, and changes neither lookup: an fd on another mount than
-	 * the path's is no evidence either way.
+	 * the path's is no evidence either way, nor is one when the path's
+	 * mount is not known.
 	 */
-	if (snap->mnt_id != 0 &&
-	    openat_mnt_id(fd, "", AT_EMPTY_PATH) != snap->mnt_id) {
-		__atomic_add_fetch(
-			&shm->stats.oracle.openat_oracle_inconclusive,
-			1, __ATOMIC_RELAXED);
-		return;
-	}
+	if (snap->mnt_id == 0 ||
+	    stat_mnt_id(fd, "", AT_EMPTY_PATH, st_fd->st_dev,
+			st_fd->st_ino) != snap->mnt_id)
+		goto inconclusive;
 
 	/*
 	 * An automount trigger opened with O_DIRECTORY puts the fd on the root
@@ -409,12 +420,8 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 	 * on it (follow_automount()): a directory fd on another filesystem
 	 * than the path's is no evidence either way.
 	 */
-	if (S_ISDIR(st_fd->st_mode) && st_fd->st_dev != snap->dev) {
-		__atomic_add_fetch(
-			&shm->stats.oracle.openat_oracle_inconclusive,
-			1, __ATOMIC_RELAXED);
-		return;
-	}
+	if (S_ISDIR(st_fd->st_mode) && st_fd->st_dev != snap->dev)
+		goto inconclusive;
 
 	output(0, "fd oracle: openat(%s, O_PATH) inode mismatch "
 	       "fd=(%lu:%lu) path=(%lu:%lu)\n",
@@ -424,6 +431,11 @@ static void openat_path_oracle(const struct syscallrecord *rec,
 	       (unsigned long) st_path.st_dev,
 	       (unsigned long) st_path.st_ino);
 	__atomic_add_fetch(&shm->stats.oracle.fd_oracle_anomalies, 1,
+			   __ATOMIC_RELAXED);
+	return;
+
+inconclusive:
+	__atomic_add_fetch(&shm->stats.oracle.openat_oracle_inconclusive, 1,
 			   __ATOMIC_RELAXED);
 }
 

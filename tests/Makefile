@@ -151,6 +151,12 @@ LDFLAGS		+= -Wl,--wrap=valresult_alloc
 # syscall().
 LDFLAGS		+= -Wl,--wrap=syscall
 
+# ctime-rule seams: ctime_rule_test.c wraps ctime_marks_change() and
+# stat_mnt_id() so that the oracles' tests can have the rule hold or fail,
+# and a kernel without unique mount ids answer as one with them, on any
+# host.  Both wrappers forward to the real functions unless armed.
+LDFLAGS		+= -Wl,--wrap=ctime_marks_change -Wl,--wrap=stat_mnt_id
+
 # publish_resource() hook: syscalls/landlock/landlock_create_ruleset.c is
 # linked for its post handler, which publishes the new ruleset's fd, and
 # dup_pool_test.c defines a stand-in that fills a pool of its own.
@@ -467,6 +473,7 @@ FAKE_SRCS	:= \
 	spawn_test.c \
 	post_oracle_test.c \
 	dup_pool_test.c \
+	ctime_rule_test.c \
 	bpf_gen_test.c \
 	test_main.c
 
@@ -516,8 +523,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/accept.c \
 # dup_pool_test.c drives against the same pool, and fds/fds-pool.c the
 # capped pool they put a file or directory in; it drives the post handlers
 # of syscalls/ioctl.c, linked above, and syscalls/poll/epoll_create.c the
-# same way.
+# same way.  syscalls/fs/ctime-rule.c brings the rule openat's O_PATH oracle
+# judges a held ctime by, which ctime_rule_test.c checks.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
+		   $(TOP)/syscalls/fs/ctime-rule.c \
 		   $(TOP)/syscalls/fs/creat.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
 		   $(TOP)/fds/fds-pool.c \

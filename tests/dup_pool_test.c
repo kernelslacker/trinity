@@ -55,6 +55,13 @@
 #include "kernel/socket.h"	/* SOCK_NONBLOCK */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
+
+/* The ctime-rule seams of ctime_rule_test.c. */
+enum fake_ctime_rule { FAKE_CTIME_REAL, FAKE_CTIME_HOLDS, FAKE_CTIME_FAILS };
+extern enum fake_ctime_rule fake_ctime_rule;
+extern struct timespec fake_ctime_refuse_upto;
+extern bool fake_mnt_ids;
+extern bool fake_no_mnt_id;
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
@@ -3006,6 +3013,67 @@ static void openat_oracle_needs_the_lookup_of_its_call(void)
 	oracle_files_remove();
 }
 
+/*
+ * openat (AT_FDCWD, @path, O_PATH) through the sanitiser and the post
+ * handler as a call that returned an fd on @fd_path, HELD_TRIES times, each
+ * of which has to be counted inconclusive.  Returns the anomalies counted:
+ * a case that leaves the call unjudged when its lookups agree has to keep
+ * them at 0, which calls whose binding held, as most do, would not.
+ */
+static unsigned long unjudged_openat_path(const char *path,
+					  const char *fd_path)
+{
+	unsigned long anomalies = 0;
+	unsigned int tries;
+
+	for (tries = 0; tries < HELD_TRIES; tries++) {
+		unsigned long inconclusive = OPENAT_INCONCLUSIVE;
+		int fd;
+
+		sanitise_openat_path(path);
+		fd = open_o_path(fd_path);
+		anomalies += post_openat_path(fd);
+		check("an unjudged call was not counted as inconclusive once",
+		      "openat", OPENAT_INCONCLUSIVE == inconclusive + 1);
+		close(fd);
+	}
+	return anomalies;
+}
+
+/*
+ * Lookups that agree say the binding held only as far as the ctimes they
+ * compare would show a change: a mismatch is not judged when the rule fails
+ * for the file's ctime, nor when it fails only for a directory the path
+ * walks through, nor on a path whose mount is not known, which the fd's
+ * mount cannot then be held to.
+ */
+static void openat_oracle_needs_ctimes_that_mark_change(void)
+{
+	struct stat st;
+
+	oracle_files();
+	fake_ctime_rule = FAKE_CTIME_FAILS;
+	check("a mismatch the ctimes could not vouch for was reported",
+	      "openat", unjudged_openat_path(oracle_a, oracle_b) == 0);
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+
+	/* The file changes a tick after its directory last did, so only the
+	 * directories' ctimes are refused. */
+	nanosleep(&(const struct timespec) { 0, 20 * 1000 * 1000 }, NULL);
+	if (chmod(oracle_a, 0640) != 0 || lstat(oracle_dir, &st) != 0)
+		BUG("fd pool: cannot age the O_PATH oracle's directory");
+	fake_ctime_refuse_upto = st.st_ctim;
+	check("a mismatch a directory's ctime could not vouch for was reported",
+	      "openat", unjudged_openat_path(oracle_a, oracle_b) == 0);
+	fake_ctime_refuse_upto = (struct timespec) { 0, 0 };
+
+	fake_no_mnt_id = true;
+	check("a mismatch on a path with no mount id was reported", "openat",
+	      unjudged_openat_path(oracle_a, oracle_b) == 0);
+	fake_no_mnt_id = false;
+	oracle_files_remove();
+}
+
 /* The lookup the sanitiser keeps is released by the post handler on every
  * path through it, and by .cleanup when .post never ran, and a call that
  * failed the fstat oracle is still counted by it. */
@@ -3927,12 +3995,21 @@ void dup_pool_self_check(void)
 	open_closing_a_device_does_not_evict();
 	open_without_a_destructor_closes();
 	open_oracle_reports_a_dead_fd();
+
+	/* The O_PATH oracle's cases run alike on any host: the ctime rule
+	 * holds unless a case says otherwise, and a kernel without unique
+	 * mount ids answers as one with them. */
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+	fake_mnt_ids = true;
 	openat_oracle_compares_the_inode();
 	openat_oracle_ignores_a_path_that_moved();
 	openat_oracle_holds_the_directories();
 	openat_oracle_ignores_a_mount_for_the_open();
 	openat_oracle_needs_the_lookup_of_its_call();
+	openat_oracle_needs_ctimes_that_mark_change();
 	openat_releases_the_lookup_it_took();
+	fake_ctime_rule = FAKE_CTIME_REAL;
+	fake_mnt_ids = false;
 	open_result_is_pooled_by_kind();
 	pool_leaves_stdio_and_protected_numbers_alone();
 	retfd_registration_skips_protected_numbers();

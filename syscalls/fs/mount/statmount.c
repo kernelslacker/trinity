@@ -21,12 +21,10 @@
 #include "shm.h"
 #include "trinity.h"
 #include "kernel/mount.h"
+#include "kernel/unistd.h"
 #include "utils.h"
 
-#if defined(SYS_statmount) || defined(__NR_statmount)
-#ifndef SYS_statmount
-#define SYS_statmount __NR_statmount
-#endif
+#ifdef SYS_statmount
 #define HAVE_SYS_STATMOUNT 1
 #endif
 
