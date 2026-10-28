@@ -206,7 +206,7 @@ static void sanitise_getrandom(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = GETRANDOM_POST_STATE_MAGIC;
 	snap->addr        = rec->a1;
-	snap->extent      = rec->a1 == (unsigned long) map->ptr ? map->size : rec->a2;
+	snap->extent      = (rec->a1 == (unsigned long) map->ptr) ? map->size : rec->a2;
 	snap->poison_seed = 0;
 
 	if (rec->a1 != 0 && rec->a2 != 0) {

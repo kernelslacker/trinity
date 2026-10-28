@@ -125,7 +125,7 @@ static void attach_buffer(struct syscallrecord *rec, struct map *map,
 
 	snap->magic = SYSLOG_POST_STATE_MAGIC;
 	snap->buf = rec->a2;
-	snap->extent = rec->a2 == (unsigned long) map->ptr ? map->size : rec->a3;
+	snap->extent = (rec->a2 == (unsigned long) map->ptr) ? map->size : rec->a3;
 	post_state_install(rec, snap);
 }
 
