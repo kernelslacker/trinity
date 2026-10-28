@@ -9,6 +9,7 @@
 
 #ifdef USE_DRM
 #include <drm/drm.h>
+#include <drm/drm_mode.h>
 #endif
 
 #include "debug.h"		/* BUG */
@@ -16,6 +17,7 @@
 #include "ioctls.h"		/* struct ioctl_group */
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 #define ROUNDS		4000
 
@@ -66,6 +68,76 @@ static void drm_draws_every_client_cap(void)
 		}
 	}
 }
+/*
+ * drm_mode_object_find() matches an object by id and, unless the type is
+ * DRM_MODE_OBJECT_ANY, by type, so a type no object carries is answered
+ * -ENOENT before anything else is looked at.  The ioctls that name an
+ * object take a type from the kernel's own list, never a random word.
+ */
+static const __u32 drm_object_types[] = {
+	DRM_MODE_OBJECT_CRTC,
+	DRM_MODE_OBJECT_CONNECTOR,
+	DRM_MODE_OBJECT_ENCODER,
+	DRM_MODE_OBJECT_MODE,
+	DRM_MODE_OBJECT_PROPERTY,
+	DRM_MODE_OBJECT_FB,
+	DRM_MODE_OBJECT_BLOB,
+	DRM_MODE_OBJECT_PLANE,
+};
+
+static unsigned int object_type_index(__u32 type)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(drm_object_types); i++)
+		if (drm_object_types[i] == type)
+			return i;
+	return ARRAY_SIZE(drm_object_types);
+}
+
+static void drm_object_ioctls_name_a_known_object_type(void)
+{
+	static struct syscallrecord rec;
+	const struct ioctl_group *grp = fake_ioctl_group("drm");
+	unsigned int seen_get[ARRAY_SIZE(drm_object_types)] = { 0 };
+	unsigned int seen_set[ARRAY_SIZE(drm_object_types)] = { 0 };
+	unsigned int i;
+
+	if (grp == NULL)
+		BUG("ioctl args: the drm group is not linked");
+
+	for (i = 0; i < ROUNDS; i++) {
+		struct drm_mode_obj_get_properties *get;
+		struct drm_mode_obj_set_property *set;
+
+		memset(&rec, 0, sizeof(rec));
+		fake_ioctl_request = DRM_IOCTL_MODE_OBJ_GETPROPERTIES;
+		grp->sanitise(grp, &rec);
+		if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+			BUG("ioctl args: MODE_OBJ_GETPROPERTIES got no struct");
+		get = (struct drm_mode_obj_get_properties *) rec.a3;
+		if (object_type_index(get->obj_type) == ARRAY_SIZE(drm_object_types))
+			BUG("ioctl args: MODE_OBJ_GETPROPERTIES names a type no object has");
+		seen_get[object_type_index(get->obj_type)]++;
+
+		memset(&rec, 0, sizeof(rec));
+		fake_ioctl_request = DRM_IOCTL_MODE_OBJ_SETPROPERTY;
+		grp->sanitise(grp, &rec);
+		if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+			BUG("ioctl args: MODE_OBJ_SETPROPERTY got no struct");
+		set = (struct drm_mode_obj_set_property *) rec.a3;
+		if (object_type_index(set->obj_type) == ARRAY_SIZE(drm_object_types))
+			BUG("ioctl args: MODE_OBJ_SETPROPERTY names a type no object has");
+		seen_set[object_type_index(set->obj_type)]++;
+	}
+
+	for (i = 0; i < ARRAY_SIZE(drm_object_types); i++) {
+		if (seen_get[i] == 0 || seen_set[i] == 0) {
+			fprintf(stderr, "object type %#x\n", drm_object_types[i]);
+			BUG("ioctl args: a drm object type is never drawn");
+		}
+	}
+}
 #endif /* USE_DRM */
 
 void ioctl_args_self_check(void);
@@ -76,5 +148,6 @@ void ioctl_args_self_check(void)
 
 #ifdef USE_DRM
 	drm_draws_every_client_cap();
+	drm_object_ioctls_name_a_known_object_type();
 #endif
 }

@@ -74,6 +74,9 @@ IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_GETPROPBLOB, struct drm_mode_get_blob);
 #ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
 IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_OBJ_GETPROPERTIES, struct drm_mode_obj_get_properties);
 #endif
+#ifdef DRM_IOCTL_MODE_OBJ_SETPROPERTY
+IOCTL_SIZE_ASSERT(DRM_IOCTL_MODE_OBJ_SETPROPERTY, struct drm_mode_obj_set_property);
+#endif
 
 #ifndef DRM_IOCTL_NOUVEAU_GETPARAM
 struct drm_nouveau_getparam {
@@ -689,28 +692,69 @@ static void drm_sanitise_mode_getpropblob(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) p;
 }
 
+#if defined(DRM_IOCTL_MODE_OBJ_GETPROPERTIES) || defined(DRM_IOCTL_MODE_OBJ_SETPROPERTY)
+/* What drm_mode_object_find() matches an object's own type against. */
+static const __u32 drm_obj_types[] = {
+	DRM_MODE_OBJECT_CRTC,
+	DRM_MODE_OBJECT_CONNECTOR,
+	DRM_MODE_OBJECT_ENCODER,
+	DRM_MODE_OBJECT_MODE,
+	DRM_MODE_OBJECT_PROPERTY,
+	DRM_MODE_OBJECT_FB,
+	DRM_MODE_OBJECT_BLOB,
+	DRM_MODE_OBJECT_PLANE,
+};
+#endif
+
 #ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
 static void drm_sanitise_mode_obj_getproperties(struct syscallrecord *rec)
 {
-	static const __u32 obj_types[] = {
-		DRM_MODE_OBJECT_CRTC,
-		DRM_MODE_OBJECT_CONNECTOR,
-		DRM_MODE_OBJECT_ENCODER,
-		DRM_MODE_OBJECT_MODE,
-		DRM_MODE_OBJECT_PROPERTY,
-		DRM_MODE_OBJECT_FB,
-		DRM_MODE_OBJECT_BLOB,
-		DRM_MODE_OBJECT_PLANE,
-	};
 	struct drm_mode_obj_get_properties *p = get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
 	memset(p, 0, sizeof(*p));
 	p->obj_id = rnd_modulo_u32(64);
-	p->obj_type = RAND_ARRAY(obj_types);
+	p->obj_type = RAND_ARRAY(drm_obj_types);
 	p->count_props = 0;
 	p->props_ptr = 0;
 	p->prop_values_ptr = 0;
+	rec->a3 = (unsigned long) p;
+}
+#endif
+
+#ifdef DRM_IOCTL_MODE_OBJ_SETPROPERTY
+/*
+ * drm_mode_obj_set_property_ioctl() answers -ENOENT for an id and type no
+ * object has, -EINVAL for an object with no properties and for a property id
+ * the object lacks, and only then judges the value.  The ioctl is DRM_MASTER,
+ * which drm_master_open() gives the first opener of a primary node while the
+ * device has none.
+ */
+static void drm_sanitise_mode_obj_setproperty(struct syscallrecord *rec)
+{
+	struct drm_mode_obj_set_property *p = get_writable_struct(sizeof(*p));
+	if (!p)
+		return;
+	memset(p, 0, sizeof(*p));
+	p->obj_id = rnd_modulo_u32(64);
+	p->obj_type = RAND_ARRAY(drm_obj_types);
+	p->prop_id = rnd_modulo_u32(128);
+
+	/*
+	 * A bool, an enum and most ranges take a small value and an object or
+	 * blob property takes an id; a wide one only meets the range checks.
+	 */
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		p->value = rnd_u64();
+		break;
+	case 1:
+		p->value = rnd_modulo_u32(128);
+		break;
+	default:
+		p->value = rnd_modulo_u32(4);
+		break;
+	}
 	rec->a3 = (unsigned long) p;
 }
 #endif
@@ -791,6 +835,12 @@ static void drm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 #ifdef DRM_IOCTL_MODE_OBJ_GETPROPERTIES
 	case DRM_IOCTL_MODE_OBJ_GETPROPERTIES:
 		drm_sanitise_mode_obj_getproperties(rec);
+		break;
+#endif
+
+#ifdef DRM_IOCTL_MODE_OBJ_SETPROPERTY
+	case DRM_IOCTL_MODE_OBJ_SETPROPERTY:
+		drm_sanitise_mode_obj_setproperty(rec);
 		break;
 #endif
 
