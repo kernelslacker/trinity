@@ -186,7 +186,10 @@ literals `tables/` copies into shared memory.
    `struct bpf_common_attr` and its size, which the kernel reads only when
    the command carries `BPF_COMMON_ATTRS`; the two slots are the sanitiser's
    (`.sanitiser_owned_mask`) and most calls leave them 0.
-   `sanitise_bpf_link_create()` in `bpf-link.c` takes the attach type and the
-   tail of its `link_create` arm from `struct_catalog` (through
-   `sanitise_bpf_default()` in `bpf-fallback.c`), draws the head fields from
-   the bpf pools, and zeroes the ones the attach type's taker refuses.
+   `sanitise_bpf_link_create()` in `bpf-link.c` draws a program from the pool
+   (`get_rand_bpf_prog()`) and, seven times in eight, an attach type that
+   program pairs with in `bpf_prog_attach_check_attach_type()`, which turns
+   any other away before a taker runs; it takes the tail of the
+   `link_create` arm that attach type names from `struct_catalog` (through
+   `sanitise_bpf_nested()` in `bpf-fallback.c`), draws the other head fields
+   from the bpf pools, and zeroes the ones the attach type's taker refuses.

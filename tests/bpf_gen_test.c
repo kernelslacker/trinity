@@ -35,6 +35,7 @@ extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 extern bool fake_catalog_lookup;	/* fake_stubs.c */
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 extern int fake_bpf_prog_fd;		/* fake_fds.c */
+extern bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);	/* fake_fds.c */
 int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
@@ -1335,6 +1336,156 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 	}
 }
 
+/*
+ * bpf_prog_attach_check_attach_type() and link_create() (kernel/bpf/syscall.c):
+ * whether a program of @prog_type loaded for @expected gets past the check on
+ * @type and to a taker.  The check lets a plain kprobe through on the multi
+ * attach types too, but their takers want a program loaded for them.
+ */
+static bool kernel_takes_attach_type(unsigned int prog_type,
+				     unsigned int expected, unsigned int type)
+{
+	switch (prog_type) {
+	case BPF_PROG_TYPE_CGROUP_SOCK:
+	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+	case BPF_PROG_TYPE_SK_LOOKUP:
+	case BPF_PROG_TYPE_TRACING:
+	case BPF_PROG_TYPE_LSM:
+		return type == expected;
+	case BPF_PROG_TYPE_CGROUP_SKB:
+		return type == BPF_CGROUP_INET_INGRESS ||
+		       type == BPF_CGROUP_INET_EGRESS;
+	case BPF_PROG_TYPE_KPROBE:
+		if (expected == BPF_TRACE_KPROBE_MULTI ||
+		    expected == BPF_TRACE_KPROBE_SESSION ||
+		    expected == BPF_TRACE_UPROBE_MULTI ||
+		    expected == BPF_TRACE_UPROBE_SESSION)
+			return type == expected;
+		return type == BPF_PERF_EVENT;
+	case BPF_PROG_TYPE_PERF_EVENT:
+	case BPF_PROG_TYPE_TRACEPOINT:
+		return type == BPF_PERF_EVENT;
+	case BPF_PROG_TYPE_SCHED_CLS:
+		return type == BPF_TCX_INGRESS || type == BPF_TCX_EGRESS ||
+		       type == BPF_NETKIT_PRIMARY || type == BPF_NETKIT_PEER;
+	case BPF_PROG_TYPE_SK_SKB:
+		return type == BPF_SK_SKB_STREAM_PARSER ||
+		       type == BPF_SK_SKB_STREAM_VERDICT ||
+		       type == BPF_SK_SKB_VERDICT;
+	case BPF_PROG_TYPE_XDP:
+		return type == BPF_XDP;
+	case BPF_PROG_TYPE_NETFILTER:
+		return type == BPF_NETFILTER;
+	default:
+		return false;
+	}
+}
+
+static struct bpfprogobj link_prog;
+
+static bool pick_link_prog(struct bpfprogobj *prog)
+{
+	*prog = link_prog;
+	return true;
+}
+
+/*
+ * A link is drawn for the program it carries: an attach type the program
+ * takes seven times in eight and any the eighth, each of the program's
+ * attach types in turn when it takes more than one.  A program no link takes
+ * gets any attach type.
+ */
+static void link_create_draws_an_attach_type_its_program_takes(void)
+{
+	enum { ROUNDS = 800, MAX_SEEN = 8 };
+	/* kinds: how many attach types the program takes. */
+	static const struct {
+		unsigned int prog_type, expected, kinds;
+	} progs[] = {
+		{ BPF_PROG_TYPE_KPROBE, 0, 1 },
+		{ BPF_PROG_TYPE_KPROBE, BPF_TRACE_KPROBE_MULTI, 1 },
+		{ BPF_PROG_TYPE_TRACEPOINT, 0, 1 },
+		{ BPF_PROG_TYPE_CGROUP_SKB, BPF_CGROUP_INET_INGRESS, 2 },
+		{ BPF_PROG_TYPE_CGROUP_SOCK, BPF_CGROUP_INET_SOCK_CREATE, 1 },
+		{ BPF_PROG_TYPE_CGROUP_SOCK_ADDR, BPF_CGROUP_INET4_CONNECT, 1 },
+		{ BPF_PROG_TYPE_XDP, 0, 1 },
+		{ BPF_PROG_TYPE_SCHED_CLS, 0, 4 },
+		{ BPF_PROG_TYPE_SK_SKB, 0, 3 },
+		{ BPF_PROG_TYPE_TRACING, BPF_TRACE_FENTRY, 1 },
+		{ BPF_PROG_TYPE_LSM, BPF_LSM_MAC, 1 },
+		{ BPF_PROG_TYPE_SOCKET_FILTER, 0, 0 },
+	};
+	static struct syscallrecord rec;
+	unsigned int p, round, i;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	fake_catalog_lookup = true;
+	fake_random_fd_empty = true;
+	fake_get_rand_bpf_map = pick_link_map;
+	fake_get_rand_bpf_prog = pick_link_prog;
+
+	for (p = 0; p < ARRAY_SIZE(progs); p++) {
+		unsigned int seen_type[MAX_SEEN], seen_count[MAX_SEEN];
+		unsigned int n_seen = 0, taken = 0;
+		char name[64];
+
+		memset(&link_prog, 0, sizeof(link_prog));
+		link_prog.fd = LINK_PROG_FD;
+		link_prog.prog_type = progs[p].prog_type;
+		link_prog.expected_attach_type = progs[p].expected;
+
+		for (round = 0; round < ROUNDS; round++) {
+			const union bpf_attr *attr;
+			unsigned int type;
+
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = BPF_LINK_CREATE;
+			syscall_bpf.sanitise(&rec);
+			attr = (const union bpf_attr *) rec.a2;
+			type = attr->link_create.attach_type;
+			if (kernel_takes_attach_type(progs[p].prog_type,
+						     progs[p].expected, type)) {
+				taken++;
+				for (i = 0; i < n_seen && seen_type[i] != type; i++)
+					;
+				if (i == n_seen && n_seen < MAX_SEEN) {
+					seen_type[n_seen] = type;
+					seen_count[n_seen++] = 0;
+				}
+				if (i < n_seen)
+					seen_count[i]++;
+			}
+			rec.retval = (unsigned long) -1L;
+			rec.errno_post = EBADF;
+			syscall_bpf.post(&rec);
+			free_arm_buffers(attr);
+			free((void *) attr);
+		}
+
+		snprintf(name, sizeof(name), "link create, prog type %u loaded for %u",
+			 progs[p].prog_type, progs[p].expected);
+		if (progs[p].prog_type == BPF_PROG_TYPE_SOCKET_FILTER) {
+			check("a program no link takes was paired with an attach type",
+			      name, taken == 0);
+			continue;
+		}
+		check("the attach type is not one the program takes seven times in eight",
+		      name, taken * 100 >= ROUNDS * 82 && taken * 100 <= ROUNDS * 95);
+		check("an attach type the program takes is never drawn", name,
+		      n_seen == progs[p].kinds);
+		for (i = 0; i < n_seen; i++)
+			check("an attach type the program takes is seldom drawn", name,
+			      seen_count[i] * 10 >= taken / n_seen);
+	}
+
+	fake_get_rand_bpf_prog = NULL;
+	fake_get_rand_bpf_map = NULL;
+	fake_random_fd_empty = false;
+	fake_catalog_lookup = false;
+}
+
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 /*
  * bpf_tracing_multi_attach() reads link_create.tracing_multi.ids, .cookies
@@ -1415,6 +1566,7 @@ void bpf_gen_self_check(void)
 	common_attr_follows_the_kernels_rules();
 	map_elem_draws_reach_the_maps_code();
 	link_create_takes_its_arm_and_the_head_its_taker_wants();
+	link_create_draws_an_attach_type_its_program_takes();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif

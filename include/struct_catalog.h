@@ -492,6 +492,17 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 				    struct syscallrecord *rec);
 
 /*
+ * The depth-1 nested overlay of the fill above: the base pass, then the
+ * nested_variant the sub-discriminator already in @buf names.  Public for a
+ * sanitiser that sets the sub-discriminator itself (link_create's
+ * attach_type) and wants the catalog's arm for it.  Defined in
+ * args/struct_fill.c.
+ */
+void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
+				   const struct union_variant *variant,
+				   struct syscallrecord *rec);
+
+/*
  * Post-fill structure-aware mutator.  Runs immediately after
  * struct_field_fill_schema_aware() at the top-level ARG_STRUCT_PTR_IN /
  * ARG_STRUCT_PTR_INOUT call sites; with bounded probability picks one

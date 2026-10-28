@@ -230,17 +230,11 @@ int find_field_index_in(const struct struct_field *fields,
 			unsigned int num_fields, const char *name);
 
 /*
- * Schema-aware struct fill helpers.  struct_fill_passes runs the
- * three-pass scalar / pointer / length fill over a fields[] array;
- * struct_variant_overlay_nested handles the depth-1 nested overlay
- * (base -> matched nested_variant) after the outer variant fill
- * lands.  Definitions live in args/struct_fill.c; consumed by
- * struct_field_fill_schema_aware in generate-args.c.
+ * Schema-aware struct fill helper: the three-pass scalar / pointer /
+ * length fill over a fields[] array.  Defined in args/struct_fill.c;
+ * consumed by struct_field_fill_schema_aware in generate-args.c.
  */
 void struct_fill_passes(unsigned char *buf, unsigned int size,
 			const struct struct_field *fields,
 			unsigned int n,
 			struct syscallrecord *rec);
-void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
-				   const struct union_variant *variant,
-				   struct syscallrecord *rec);

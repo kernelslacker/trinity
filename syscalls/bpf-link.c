@@ -16,16 +16,109 @@
 #include "rnd.h"
 #include "sanitise.h"
 
+/*
+ * An attach type link_create() (kernel/bpf/syscall.c) pairs with @prog: its
+ * bpf_prog_attach_check_attach_type() holds a cgroup sock, sock addr,
+ * sockopt or sk_lookup program, and the tracing and LSM takers a tracing or
+ * LSM one, to the attach type it was loaded for, and lets each other type
+ * that has a taker through on one to four attach types of its own.  False
+ * for a program no link takes.
+ */
+static bool pick_link_attach_type(const struct bpfprogobj *prog,
+				  unsigned int *type)
+{
+	static const unsigned int sk_skb[] = {
+		BPF_SK_SKB_STREAM_PARSER, BPF_SK_SKB_STREAM_VERDICT,
+		BPF_SK_SKB_VERDICT,
+	};
+	static const unsigned int sched_cls[] = {
+		BPF_TCX_INGRESS, BPF_TCX_EGRESS,
+		BPF_NETKIT_PRIMARY, BPF_NETKIT_PEER,
+	};
+
+	switch (prog->prog_type) {
+	case BPF_PROG_TYPE_CGROUP_SOCK:
+	case BPF_PROG_TYPE_CGROUP_SOCK_ADDR:
+	case BPF_PROG_TYPE_CGROUP_SOCKOPT:
+	case BPF_PROG_TYPE_SK_LOOKUP:
+	case BPF_PROG_TYPE_TRACING:
+	case BPF_PROG_TYPE_LSM:
+		*type = prog->expected_attach_type;
+		return true;
+	case BPF_PROG_TYPE_KPROBE:
+		switch (prog->expected_attach_type) {
+		case BPF_TRACE_KPROBE_MULTI:
+		case BPF_TRACE_KPROBE_SESSION:
+		case BPF_TRACE_UPROBE_MULTI:
+		case BPF_TRACE_UPROBE_SESSION:
+			*type = prog->expected_attach_type;
+			return true;
+		}
+		*type = BPF_PERF_EVENT;
+		return true;
+	case BPF_PROG_TYPE_PERF_EVENT:
+	case BPF_PROG_TYPE_TRACEPOINT:
+		*type = BPF_PERF_EVENT;
+		return true;
+	case BPF_PROG_TYPE_CGROUP_SKB:
+		/* Held to the attach type it was loaded for only when the
+		 * verifier saw it return what one of the two alone takes. */
+		*type = RAND_BOOL() ? BPF_CGROUP_INET_INGRESS :
+				      BPF_CGROUP_INET_EGRESS;
+		return true;
+	case BPF_PROG_TYPE_SOCK_OPS:
+		*type = BPF_CGROUP_SOCK_OPS;
+		return true;
+	case BPF_PROG_TYPE_CGROUP_DEVICE:
+		*type = BPF_CGROUP_DEVICE;
+		return true;
+	case BPF_PROG_TYPE_CGROUP_SYSCTL:
+		*type = BPF_CGROUP_SYSCTL;
+		return true;
+	case BPF_PROG_TYPE_SK_MSG:
+		*type = BPF_SK_MSG_VERDICT;
+		return true;
+	case BPF_PROG_TYPE_SK_SKB:
+		*type = RAND_ARRAY(sk_skb);
+		return true;
+	case BPF_PROG_TYPE_FLOW_DISSECTOR:
+		*type = BPF_FLOW_DISSECTOR;
+		return true;
+	case BPF_PROG_TYPE_XDP:
+		*type = BPF_XDP;
+		return true;
+	case BPF_PROG_TYPE_SCHED_CLS:
+		*type = RAND_ARRAY(sched_cls);
+		return true;
+	case BPF_PROG_TYPE_NETFILTER:
+		*type = BPF_NETFILTER;
+		return true;
+	default:
+		return false;
+	}
+}
+
 void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 {
+	struct bpfprogobj prog;
+	unsigned int type;
+	bool have_prog;
+
 	/*
-	 * The attach type, the tail of the link_create arm it names and the
-	 * size of the call are the catalog's.  The head fields the catalog
-	 * fills as well, with a generic fd and raw flags, are drawn again from
-	 * the bpf pools.
+	 * bpf_prog_attach_check_attach_type() turns away an attach type the
+	 * program does not pair with before any taker runs, so the attach
+	 * type is one the program pairs with but one draw in eight, which
+	 * takes any.  The catalog fills the tail of the arm it names and
+	 * sizes the call; the other head fields come from the bpf pools.
 	 */
-	sanitise_bpf_default(attr, rec);
-	attr->link_create.prog_fd = get_rand_bpf_prog_fd();
+	have_prog = get_rand_bpf_prog(&prog);
+	attr->link_create.prog_fd = have_prog ? prog.fd : -1;
+	if (have_prog && !ONE_IN(8) && pick_link_attach_type(&prog, &type))
+		attr->link_create.attach_type = type;
+	else
+		attr->link_create.attach_type =
+			bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
+	sanitise_bpf_nested(attr, rec);
 	attr->link_create.target_fd = get_rand_bpf_fd();
 	attr->link_create.flags = rnd_modulo_u32(16);
 
