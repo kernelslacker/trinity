@@ -152,8 +152,9 @@ bool chain_is_replay_safe(const struct chain_step *steps,
  * it, instead of the saving run's freed or recycled address.
  *
  * Each step is judged by the table of its own ABI: on biarch one nr is
- * unrelated syscalls under the two.  @steps must have passed
- * chain_is_replay_safe(), so every table entry resolves.
+ * unrelated syscalls under the two.  A step with no table entry is left
+ * as it is: chain_is_replay_safe(), which every caller runs first,
+ * refuses its chain.
  */
 void chain_zero_stale_args(struct chain_step *steps, unsigned int len)
 {
@@ -162,6 +163,9 @@ void chain_zero_stale_args(struct chain_step *steps, unsigned int len)
 	for (i = 0; i < len; i++) {
 		const struct syscallentry *entry = get_syscall_entry(steps[i].nr,
 								     steps[i].do32bit);
+
+		if (entry == NULL)
+			continue;
 
 		for (j = 0; j < entry->num_args && j < 6; j++) {
 			if (corpus_argtype_stale_on_replay(entry->argtype[j]))
