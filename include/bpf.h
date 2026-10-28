@@ -5,6 +5,7 @@
 #include "kernel/bpf.h"
 
 struct bpfobj;
+struct bpfprogobj;
 
 /*
  * Draw a map from the pool.  get_rand_bpf_map() hands back what the pool
@@ -13,7 +14,20 @@ struct bpfobj;
  */
 bool get_rand_bpf_map(struct bpfobj *map);
 int get_rand_bpf_fd(void);
+
+/*
+ * Draw a program from the pool: get_rand_bpf_prog() hands back its type and
+ * the attach type it was loaded for, get_rand_bpf_prog_fd() its fd, or -1
+ * from an empty pool.
+ */
+bool get_rand_bpf_prog(struct bpfprogobj *prog);
 int get_rand_bpf_prog_fd(void);
+
+/* The expected attach type the kernel holds a program of @prog_type loaded
+ * with @requested to. */
+unsigned int bpf_prog_loaded_attach_type(unsigned int prog_type,
+					 unsigned int requested);
+
 int get_rand_bpf_link_fd(void);
 int get_rand_bpf_btf_fd(void);
 int get_rand_bpf_token_fd(void);

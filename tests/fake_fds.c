@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "bpf.h"
 #include "list.h"
@@ -60,9 +61,11 @@ struct object *find_object_by_fd(int fd)
  * syscalls/bpf*.c and the perf ioctl group take -1 from each, as they do
  * from an empty pool, but for the map picker, which answers with the map a
  * test installs a hook to name, and the program picker, which answers with
- * the fd a test sets.
+ * the program a test's hook names or, unhooked, a program of no particular
+ * type at the fd a test sets.
  */
 bool (*fake_get_rand_bpf_map)(struct bpfobj *map);
+bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);
 int fake_bpf_prog_fd = -1;
 
 bool get_rand_bpf_map(struct bpfobj *map)
@@ -77,9 +80,20 @@ int get_rand_bpf_fd(void)
 	return get_rand_bpf_map(&map) ? map.map_fd : -1;
 }
 
+bool get_rand_bpf_prog(struct bpfprogobj *prog)
+{
+	if (fake_get_rand_bpf_prog != NULL)
+		return fake_get_rand_bpf_prog(prog);
+	memset(prog, 0, sizeof(*prog));
+	prog->fd = fake_bpf_prog_fd;
+	return fake_bpf_prog_fd >= 0;
+}
+
 int get_rand_bpf_prog_fd(void)
 {
-	return fake_bpf_prog_fd;
+	struct bpfprogobj prog;
+
+	return get_rand_bpf_prog(&prog) ? prog.fd : -1;
 }
 
 int get_rand_bpf_link_fd(void)

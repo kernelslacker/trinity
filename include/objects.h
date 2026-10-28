@@ -112,9 +112,15 @@ struct bpfobj {
 	u32 value_size;
 };
 
+/*
+ * A program's type and the attach type it was loaded for, as the kernel
+ * holds it after bpf_prog_load_fixup_attach_type(): link_create() takes an
+ * attach type only if it pairs with the two.
+ */
 struct bpfprogobj {
 	int fd;
 	u32 prog_type;
+	u32 expected_attach_type;
 };
 
 struct bpflinkobj {

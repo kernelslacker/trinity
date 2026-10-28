@@ -30,6 +30,7 @@
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
 #include "bpf.h"		/* BPF_PROG_STREAM_OPEN */
+#include "syscalls/bpf-internal.h"	/* post_bpf_prog_load */
 #include "child.h"
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"	/* fake_ioctl_group */
@@ -227,9 +228,11 @@ struct object *publish_resource(enum objecttype type, unsigned long id,
 		if (type == OBJ_FD_TESTFILE)
 			e->obj.testfileobj.fd = (int) id;
 		/* The one piece of the metadata the real one stamps that a case
-		 * reads back: the type of a map. */
+		 * reads back: the type of a map or a program. */
 		if (type == OBJ_FD_BPF_MAP && meta != NULL)
 			e->obj.bpfobj.map_type = meta->subtype;
+		if (type == OBJ_FD_BPF_PROG && meta != NULL)
+			e->obj.bpfprogobj.prog_type = meta->subtype;
 		e->obj.slot_version = ++fake_versions;
 		published++;
 		return &e->obj;
@@ -4156,6 +4159,50 @@ static void bpf_map_get_fd_by_id_that_failed_asks_nothing(void)
 	check("a failed lookup pooled a map", "bpf", published == 0);
 }
 
+/*
+ * A loaded program is pooled with its type and the attach type the kernel
+ * holds it to, which link_create() pairs an attach type with: the one the
+ * load named, or for a cgroup sock or reuseport program that named none, the
+ * one bpf_prog_load_fixup_attach_type() stands in.
+ */
+static void bpf_prog_load_records_the_attach_type_it_was_loaded_for(void)
+{
+	static const struct {
+		unsigned int prog_type, requested, held;
+	} loads[] = {
+		{ BPF_PROG_TYPE_CGROUP_SOCK, 0, BPF_CGROUP_INET_SOCK_CREATE },
+		{ BPF_PROG_TYPE_CGROUP_SOCK, BPF_CGROUP_INET4_POST_BIND,
+		  BPF_CGROUP_INET4_POST_BIND },
+		{ BPF_PROG_TYPE_SK_REUSEPORT, 0, BPF_SK_REUSEPORT_SELECT },
+		{ BPF_PROG_TYPE_KPROBE, BPF_TRACE_KPROBE_MULTI,
+		  BPF_TRACE_KPROBE_MULTI },
+		{ BPF_PROG_TYPE_KPROBE, 0, 0 },
+		{ BPF_PROG_TYPE_TRACING, BPF_TRACE_FENTRY, BPF_TRACE_FENTRY },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(loads); i++) {
+		union bpf_attr attr;
+		struct pool_entry *e;
+		int peer, fd;
+
+		reset();
+		fd = open_kind(FILE_REG, &peer);
+		memset(&attr, 0, sizeof(attr));
+		attr.prog_type = loads[i].prog_type;
+		attr.expected_attach_type = loads[i].requested;
+		post_bpf_prog_load(fd, true, &attr, false, 0);
+		e = pool_find(fd, OBJ_FD_BPF_PROG);
+		check("the loaded program was not pooled", "bpf", e != NULL);
+		check("the pooled program lost its type", "bpf", e != NULL &&
+		      e->obj.bpfprogobj.prog_type == loads[i].prog_type);
+		check("the pooled program does not hold the attach type the kernel does",
+		      "bpf", e != NULL &&
+		      e->obj.bpfprogobj.expected_attach_type == loads[i].held);
+		close(fd);
+	}
+}
+
 /* A stream fd the pool cannot take, its head having no destructor to close
  * it through, is nobody's: closed rather than leaked. */
 static void bpf_stream_open_closes_an_fd_the_pool_cannot_take(void)
@@ -4268,6 +4315,7 @@ void dup_pool_self_check(void)
 	bpf_stream_open_leaves_a_number_that_is_not_free_alone();
 	bpf_stream_open_closes_an_fd_the_pool_cannot_take();
 	bpf_map_create_records_the_map_sizes();
+	bpf_prog_load_records_the_attach_type_it_was_loaded_for();
 	bpf_map_get_fd_by_id_records_what_the_kernel_reports();
 	bpf_map_get_fd_by_id_pools_a_map_the_kernel_will_not_describe();
 	bpf_map_get_fd_by_id_that_failed_asks_nothing();

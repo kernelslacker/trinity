@@ -288,6 +288,26 @@ static void bpf_attach_sk_lookup(int prog_fd)
 				 &(struct resource_meta){.subtype = BPF_SK_LOOKUP});
 }
 
+/*
+ * bpf_prog_load_fixup_attach_type() (kernel/bpf/syscall.c) stands in the
+ * attach type a cgroup sock or reuseport program means by 0, which is what
+ * link_create() then holds an attach type to.
+ */
+unsigned int bpf_prog_loaded_attach_type(unsigned int prog_type,
+					 unsigned int requested)
+{
+	if (requested != 0)
+		return requested;
+	switch (prog_type) {
+	case BPF_PROG_TYPE_CGROUP_SOCK:
+		return BPF_CGROUP_INET_SOCK_CREATE;
+	case BPF_PROG_TYPE_SK_REUSEPORT:
+		return BPF_SK_REUSEPORT_SELECT;
+	default:
+		return 0;
+	}
+}
+
 void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 			bool classic_bpf_insns, int errnum)
 {
@@ -298,9 +318,16 @@ void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 			__atomic_add_fetch(&shm->stats.ebpf_gen.bpf_prog_load_rejected, 1, __ATOMIC_RELAXED);
 	}
 
-	if (fd >= 0 && attr_readable)
-		publish_resource(OBJ_FD_BPF_PROG, fd,
-				 &(struct resource_meta){.subtype = attr->prog_type});
+	if (fd >= 0 && attr_readable) {
+		struct object *obj;
+
+		obj = publish_resource(OBJ_FD_BPF_PROG, fd,
+				       &(struct resource_meta){.subtype = attr->prog_type});
+		if (obj != NULL)
+			obj->bpfprogobj.expected_attach_type =
+				bpf_prog_loaded_attach_type(attr->prog_type,
+							    attr->expected_attach_type);
+	}
 
 	/*
 	 * sk_lookup is one of the few prog types whose runtime path is

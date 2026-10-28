@@ -324,9 +324,9 @@ static int init_bpf_prog_fds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &bpf_prog_dump;
 	/*
-	 * bpfprogobj is {int fd; u32 prog_type;} with no pointer members,
-	 * so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
-	 * cross-process reads are safe.
+	 * bpfprogobj is {int fd; u32 prog_type; u32 expected_attach_type;}
+	 * with no pointer members, so the OBJ_GLOBAL pool's scalars stay
+	 * valid across fork/COW and cross-process reads are safe.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++) {
@@ -353,6 +353,8 @@ static int init_bpf_prog_fds(void)
 		}
 		obj->bpfprogobj.fd = fd;
 		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
+		obj->bpfprogobj.expected_attach_type =
+			bpf_prog_loaded_attach_type(bpf_prog_templates[i].prog_type, 0);
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 		__atomic_add_fetch(&shm->stats.ebpf_gen.progs_provided, 1,
 				   __ATOMIC_RELAXED);
@@ -365,7 +367,7 @@ static int init_bpf_prog_fds(void)
 	return true;
 }
 
-int get_rand_bpf_prog_fd(void)
+bool get_rand_bpf_prog(struct bpfprogobj *prog)
 {
 	struct objhead *local;
 
@@ -379,16 +381,18 @@ int get_rand_bpf_prog_fd(void)
 	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
 		struct object *obj = get_random_object(OBJ_FD_BPF_PROG,
 						       OBJ_LOCAL);
-		if (objpool_check(obj, OBJ_FD_BPF_PROG))
-			return obj->bpfprogobj.fd;
+		if (objpool_check(obj, OBJ_FD_BPF_PROG)) {
+			*prog = obj->bpfprogobj;
+			return true;
+		}
 	}
 
 	if (objects_empty(OBJ_FD_BPF_PROG) == true)
-		return -1;
+		return false;
 
 	/*
 	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfprogobj.fd deref.  A version-validated object-slot read
+	 * obj->bpfprogobj deref.  A version-validated object-slot read
 	 * guards the lockless reader against a recycled object
 	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
 	 * lockless-reader UAF window: between the lockless slot pick and the
@@ -400,20 +404,26 @@ int get_rand_bpf_prog_fd(void)
 	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
-		int fd;
 
 		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
 		if (!objpool_check(obj, OBJ_FD_BPF_PROG))
 			continue;
 
-		fd = obj->bpfprogobj.fd;
-		if (fd < 0)
+		*prog = obj->bpfprogobj;
+		if (prog->fd < 0)
 			continue;
 
-		return fd;
+		return true;
 	}
 
-	return -1;
+	return false;
+}
+
+int get_rand_bpf_prog_fd(void)
+{
+	struct bpfprogobj prog;
+
+	return get_rand_bpf_prog(&prog) ? prog.fd : -1;
 }
 
 static const struct fd_provider bpf_prog_fd_provider = {
