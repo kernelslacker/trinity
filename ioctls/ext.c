@@ -3,29 +3,15 @@
 
 #include <asm/ioctl.h>
 #include "ioctls.h"
+#include "kernel/ext4.h"
 #include "objects.h"
 #include "shm.h"
 #include "utils.h"
 
-struct ext4_new_group_input {
-	__u32 group;		/* Group number for this data */
-	__u64 block_bitmap;	/* Absolute block number of block bitmap */
-	__u64 inode_bitmap;	/* Absolute block number of inode bitmap */
-	__u64 inode_table;	/* Absolute block number of inode table start */
-	__u32 blocks_count;	/* Total number of blocks in this group */
-	__u16 reserved_blocks;	/* Number of reserved blocks in this group */
-	__u16 unused;
-};
-
-struct move_extent {
-	__u32 reserved;		/* should be zero */
-	__u32 donor_fd;		/* donor file descriptor */
-	__u64 orig_start;	/* logical start offset in block for orig */
-	__u64 donor_start;	/* logical start offset in block for donor */
-	__u64 len;		/* block length to be moved */
-	__u64 moved_len;	/* moved block length */
-};
-
+/*
+ * <linux/ext4.h> leaves codes 19 to 39 to fscrypt, so it has none of these:
+ * the FS_IOC_*ENCRYPTION requests under the ext4 names they once had.
+ */
 #define EXT4_KEY_DESCRIPTOR_SIZE 8
 struct ext4_encryption_policy {
 	char version;
@@ -35,18 +21,6 @@ struct ext4_encryption_policy {
 	char master_key_descriptor[EXT4_KEY_DESCRIPTOR_SIZE];
 };
 
-#define EXT4_IOC_GETVERSION             _IOR('f', 3, long)
-#define EXT4_IOC_SETVERSION             _IOW('f', 4, long)
-#define EXT4_IOC_GETRSVSZ               _IOR('f', 5, long)
-#define EXT4_IOC_SETRSVSZ               _IOW('f', 6, long)
-#define EXT4_IOC_GROUP_EXTEND           _IOW('f', 7, unsigned long)
-#define EXT4_IOC_GROUP_ADD              _IOW('f', 8, struct ext4_new_group_input)
-#define EXT4_IOC_MIGRATE                _IO('f', 9)
-#define EXT4_IOC_ALLOC_DA_BLKS          _IO('f', 12)
-#define EXT4_IOC_MOVE_EXT               _IOWR('f', 15, struct move_extent)
-#define EXT4_IOC_RESIZE_FS              _IOW('f', 16, __u64)
-#define EXT4_IOC_SWAP_BOOT              _IO('f', 17)
-#define EXT4_IOC_PRECACHE_EXTENTS       _IO('f', 18)
 #define EXT4_IOC_SET_ENCRYPTION_POLICY  _IOR('f', 19, struct ext4_encryption_policy)
 #define EXT4_IOC_GET_ENCRYPTION_PWSALT  _IOW('f', 20, __u8[16])
 #define EXT4_IOC_GET_ENCRYPTION_POLICY  _IOW('f', 21, struct ext4_encryption_policy)
