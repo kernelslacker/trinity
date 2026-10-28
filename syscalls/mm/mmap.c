@@ -232,7 +232,7 @@ static unsigned long mmap_fixed_extent(unsigned long len, unsigned long flags,
 		return len;
 	if (len > ULONG_MAX - (huge - 1))
 		return ULONG_MAX;
-	return (len + huge - 1) & ~(huge - 1);
+	return (len + (huge - 1)) & ~(huge - 1);
 }
 
 static void sanitise_mmap(struct syscallrecord *rec)
