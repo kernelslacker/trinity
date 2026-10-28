@@ -89,7 +89,6 @@ static void ipv6_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct 
 }
 
 static const struct sock_option inet6_opts[] = {
-	{ .name = IPV6_ADDRFORM, },
 	{ .name = IPV6_2292PKTINFO, .len = sizeof(struct in6_pktinfo) },
 	{ .name = IPV6_2292HOPOPTS, },
 	{ .name = IPV6_2292DSTOPTS, },
