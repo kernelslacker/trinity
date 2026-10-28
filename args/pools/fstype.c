@@ -42,8 +42,8 @@ static const char *fstype_builtin_pool[] = {
  */
 static const char *fstype_unloaded_pool[] = {
 	"9p", "ceph", "ocfs2", "gfs2", "reiserfs", "jfs", "ubifs",
-	"ntfs3", "f2fs", "erofs", "squashfs", "exfat", "afs", "udf",
-	"isofs", "ext2", "minix", "hfs", "hfsplus", "cifs", "smb3",
+	"ntfs", "ntfs3", "f2fs", "erofs", "squashfs", "exfat", "afs", "udf",
+	"iso9660", "ext2", "minix", "hfs", "hfsplus", "cifs", "smb3",
 };
 
 void gen_fstype_name_pooled(char *buf, size_t len)
