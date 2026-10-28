@@ -997,7 +997,7 @@ static struct cmd_policy netdev_cmds[] = {
 #endif
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
-#include <linux/ethtool.h>		/* ETHTOOL_MAC_STATS_SRC_PMAC */
+#include "kernel/ethtool.h"		/* ETHTOOL_MAC_STATS_SRC_PMAC, ETH_SS_PHY_INTERFACES */
 #include "kernel/ethtool_netlink_generated.h"
 
 extern struct genl_family_grammar fam_ethtool;
@@ -1028,8 +1028,11 @@ static struct slot ethtool_header_phy[] = {
 	S_U32_MASK(ETHTOOL_A_HEADER_FLAGS, 0x3),
 	S_U32_RANGE(ETHTOOL_A_HEADER_PHY_INDEX, 1, UINT32_MAX),
 };
+/* get_stringset_policy takes any NLA_U32, and strset_parse_request() answers
+ * an id from ETH_SS_COUNT up -EOPNOTSUPP.  There are 24 string sets, 0 to
+ * ETH_SS_PHY_INTERFACES, in the kernel this was written from. */
 static struct slot ethtool_stringset[] = {
-	S_U32(ETHTOOL_A_STRINGSET_ID),
+	S_U32_RANGE(ETHTOOL_A_STRINGSET_ID, 0, ETH_SS_PHY_INTERFACES),
 };
 static struct slot ethtool_stringsets[] = {
 	S_NEST(ETHTOOL_A_STRINGSETS_STRINGSET, ethtool_stringset),

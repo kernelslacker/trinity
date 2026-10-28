@@ -643,6 +643,9 @@ check_enum_member linux/ethtool_netlink_generated.h \
 check_enum_member linux/ethtool_netlink_generated.h \
 	ETHTOOL_MSG_PORT_GET ETHTOOL_A_PORT_HEADER ETHTOOL_A_PORT_ID
 
+# ethtool's newest string set, which ends the ids STRSET_GET takes.
+check_enum_member linux/ethtool.h ETH_SS_PHY_INTERFACES
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

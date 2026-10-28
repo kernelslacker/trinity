@@ -9,7 +9,7 @@
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 
 #include <limits.h>
-#include <linux/ethtool.h>
+#include "kernel/ethtool.h"
 #include "kernel/ethtool_netlink_generated.h"
 
 #include "netlink-genl-families.h"
@@ -49,12 +49,21 @@ static const struct nla_attr_spec ethtool_header_phy_attrs[] = {
 };
 
 /*
+ * The highest string set id: strset_parse_request() answers one from
+ * ETH_SS_COUNT up -EOPNOTSUPP.  A header without ETH_SS_PHY_INTERFACES, the
+ * newest set, counts ETH_SS_COUNT one short of it.
+ */
+#define ETHTOOL_SS_LAST	(ETH_SS_COUNT > ETH_SS_PHY_INTERFACES ? \
+			 ETH_SS_COUNT - 1 : ETH_SS_PHY_INTERFACES)
+
+/*
  * The nests of STRSET_GET's STRINGSETS, which strset_parse_request() walks
  * as a nest of STRINGSET nests holding an ID each, and of TSINFO_GET's
- * HWTSTAMP_PROVIDER, from ethnl_ts_hwtst_prov_policy.
+ * HWTSTAMP_PROVIDER, from ethnl_ts_hwtst_prov_policy.  The ID is a plain
+ * NLA_U32 that the handler bounds, so it is a range to the last string set.
  */
 static const struct nla_attr_spec ethtool_stringset_attrs[] = {
-	{ ETHTOOL_A_STRINGSET_ID,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_STRINGSET_ID,	NLA_KIND_U32_RANGE, ETHTOOL_SS_LAST, 0 },
 };
 
 static const struct nla_attr_spec ethtool_stringsets_attrs[] = {
