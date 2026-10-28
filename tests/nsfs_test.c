@@ -1,8 +1,9 @@
 /*
- * Self-check for the nsfs ioctl group: the files it claims, and that the args
- * it builds are held to a model of ns_ioctl() (fs/nsfs.c), written from the
- * kernel.  No ioctl is issued, so what the kernel under the test would answer
- * does not matter.
+ * Self-check for the nsfs ioctl group: the files it claims, that the args it
+ * builds are held to a model of ns_ioctl() (fs/nsfs.c), written from the
+ * kernel, that the cmds that return an fd say so, and that the group is kept
+ * out of the EFAULT probe.  No ioctl is issued against a namespace file, so
+ * what the kernel under the test would answer does not matter.
  */
 
 #include <fcntl.h>
@@ -14,6 +15,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "efault_cache.h"	/* ioctl_efault_classify */
 #include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
 #include "kernel/nsfs.h"
@@ -163,6 +165,20 @@ static bool nsfs_ioctl_valid(unsigned int cmd)
 	return false;
 }
 
+/*
+ * What ns_ioctl() returns an fd for: open_related_ns() for NS_GET_USERNS and
+ * NS_GET_PARENT, and the fd FD_PREPARE() makes for the next and the previous
+ * mount namespace.  The rest return a type, a pid, a uid's 0 or 0.
+ */
+static bool model_returns_fd(unsigned int cmd)
+{
+	if (!nsfs_ioctl_valid(cmd))
+		return false;
+	return cmd == NS_GET_USERNS || cmd == NS_GET_PARENT ||
+	       _IOC_NR(cmd) == _IOC_NR(NS_MNT_GET_NEXT) ||
+	       _IOC_NR(cmd) == _IOC_NR(NS_MNT_GET_PREV);
+}
+
 struct tally {
 	unsigned int calls;
 	unsigned int valid;		/* the kernel knows the cmd as drawn */
@@ -181,8 +197,12 @@ static size_t arg_len(unsigned int cmd)
 	case NS_GET_MNTNS_ID:
 	case NS_GET_ID:		return sizeof(unsigned long long);
 	}
-	if (_IOC_NR(cmd) == _IOC_NR(NS_MNT_GET_INFO))
+	switch (_IOC_NR(cmd)) {
+	case _IOC_NR(NS_MNT_GET_INFO):
+	case _IOC_NR(NS_MNT_GET_NEXT):
+	case _IOC_NR(NS_MNT_GET_PREV):
 		return MNT_NS_INFO_SIZE_VER0;
+	}
 	return 0;
 }
 
@@ -194,6 +214,21 @@ static void tally_call(struct tally *t, unsigned long request,
 
 	t->calls++;
 	t->valid += nsfs_ioctl_valid(cmd);
+
+	/*
+	 * The cmd the picker drew says what the call returns, whatever struct
+	 * size is drawn for it afterwards; and the predicate the post handler
+	 * asks of the cmd as the kernel reads it is the kernel's.
+	 */
+	if ((rec->rettype == RET_FD) != model_returns_fd((unsigned int) request)) {
+		fprintf(stderr, "request %#lx, rettype %d\n", request,
+			rec->rettype);
+		BUG("nsfs: the type a cmd publishes is not whether it returns an fd");
+	}
+	if (nsfs_getter(rec->a2) != model_returns_fd(cmd)) {
+		fprintf(stderr, "cmd %#x\n", cmd);
+		BUG("nsfs: nsfs_getter() and the kernel disagree about a cmd");
+	}
 
 	if (len != 0) {
 		if (rec->a3 == FAKE_IOCTL_JUNK_ARG)
@@ -215,6 +250,8 @@ static void tally_call(struct tally *t, unsigned long request,
 		t->own_pid += (int) rec->a3 == getpid();
 		break;
 	case NS_MNT_GET_INFO:
+	case NS_MNT_GET_NEXT:
+	case NS_MNT_GET_PREV:
 		if (_IOC_SIZE(cmd) == MNT_NS_INFO_SIZE_VER0)
 			t->exact++;
 		else if (_IOC_SIZE(cmd) < MNT_NS_INFO_SIZE_VER0)
@@ -229,10 +266,10 @@ static void tally_call(struct tally *t, unsigned long request,
  * A request that takes a pointer is handed one, in the writable pool, and
  * NULL one call in 32.  A pid translation is handed a pid number, never a
  * pointer: this process's four times in eight, 1 once, the rest a number the
- * model has no task for.  NS_MNT_GET_INFO carries the kernel's 16 byte
- * struct 28 times in 32, a larger one three and a smaller one, which the
- * kernel does not know, one.  Over 4000 calls the fractions have deviations
- * under 0.008 and the bounds are many of them out.
+ * model has no task for.  The mount namespace requests carry the kernel's
+ * 16 byte struct 28 times in 32, a larger one three and a smaller one, which
+ * the kernel does not know, one.  Over 4000 calls the fractions have
+ * deviations under 0.008 and the bounds are many of them out.
  */
 static void expect_request(const char *name, unsigned long request,
 			   const struct tally *t)
@@ -252,14 +289,16 @@ static void expect_request(const char *name, unsigned long request,
 				"nsfs: a pid translation is not asked for a pid the namespace has five times in eight");
 		break;
 	case NS_MNT_GET_INFO:
+	case NS_MNT_GET_NEXT:
+	case NS_MNT_GET_PREV:
 		expect_fraction(t->exact, t->calls, 0.82, 0.92, name,
-				"nsfs: NS_MNT_GET_INFO does not carry the kernel's struct size 28 times in 32");
+				"nsfs: a mount namespace request does not carry the kernel's struct size 28 times in 32");
 		expect_fraction(t->large, t->calls, 0.04, 0.15, name,
-				"nsfs: NS_MNT_GET_INFO does not carry a larger struct three times in 32");
+				"nsfs: a mount namespace request does not carry a larger struct three times in 32");
 		expect_fraction(t->small, t->calls, 0.012, 0.06, name,
-				"nsfs: NS_MNT_GET_INFO does not carry a smaller struct than the kernel knows once in 32");
+				"nsfs: a mount namespace request does not carry a smaller struct than the kernel knows once in 32");
 		expect_fraction(t->valid, t->calls, 0.94, 0.99, name,
-				"nsfs: the kernel does not know NS_MNT_GET_INFO as drawn 31 times in 32");
+				"nsfs: the kernel does not know a mount namespace request as drawn 31 times in 32");
 		return;
 	}
 
@@ -292,6 +331,40 @@ static void builds_args_the_kernel_takes(void)
 	}
 }
 
+/*
+ * NS_GET_USERNS and NS_GET_PARENT are _IO() requests that ignore their arg, so
+ * the bogus one the EFAULT probe sends (ioctls/efault_cache.c) does not stop
+ * them: on a namespace file they succeed, and the nsfd they return to the
+ * probe is one nothing closes.  The group is opted out, and the probe is
+ * not run for it; one that is not opted out is probed, which the control
+ * shows.  A pipe stands in for the fd, so that nothing is made: it answers
+ * every nsfs request -ENOTTY, which the probe takes for a scalar arg.
+ */
+static void is_kept_out_of_the_efault_probe(void)
+{
+	static const unsigned long getters[] = { NS_GET_USERNS, NS_GET_PARENT };
+	const struct ioctl_group *grp = group();
+	const struct ioctl_group *control = fake_ioctl_group("pidfd");
+	unsigned int i;
+	int pipefd[2];
+
+	if (control == NULL || control->no_efault_probe)
+		BUG("nsfs: no group to show the probe runs");
+	if (pipe(pipefd) != 0)
+		BUG("nsfs: no pipe");
+
+	for (i = 0; i < ARRAY_SIZE(getters); i++) {
+		if (ioctl_efault_classify(control, pipefd[0], getters[i]) !=
+		    IOCTL_ARG_SCALAR)
+			BUG("nsfs: the control group is not probed");
+		if (ioctl_efault_classify(grp, pipefd[0], getters[i]) !=
+		    IOCTL_ARG_UNKNOWN)
+			BUG("nsfs: a cmd that returns an fd is probed with a bogus arg");
+	}
+	close(pipefd[0]);
+	close(pipefd[1]);
+}
+
 void nsfs_self_check(void);
 void nsfs_self_check(void)
 {
@@ -300,4 +373,5 @@ void nsfs_self_check(void)
 
 	claims_only_namespace_files();
 	builds_args_the_kernel_takes();
+	is_kept_out_of_the_efault_probe();
 }

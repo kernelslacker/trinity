@@ -55,6 +55,14 @@ struct ioctl_group {
 	 * (vet_final_ioctl() in syscalls/ioctl.c), since a cmd pinned or
 	 * substituted after it would take args built for another. */
 	bool cmd_held;
+
+	/* The group's cmds act on a request before they look at its arg, so
+	 * the bogus one the EFAULT probe sends (ioctls/efault_cache.c) does
+	 * not stop them, and what they make, a new fd, is one nothing closes.
+	 * A group matched by devname is opted out through efault_optout_devs[]
+	 * there; one matched by fd_test alone has no devname to list, and sets
+	 * this. */
+	bool no_efault_probe;
 };
 
 void register_ioctl_group(const struct ioctl_group *);
@@ -72,6 +80,10 @@ void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 /* Whether @cmd, as the kernel reads it, is one of the pidfs namespace
  * getters: the cmds whose return value is the nsfd they made. */
 bool pidfd_ns_getter(unsigned long cmd);
+
+/* Whether @cmd, as the kernel reads it, is one of the nsfs requests whose
+ * return value is the nsfd they made. */
+bool nsfs_getter(unsigned long cmd);
 
 /* Whether @fd is a file on nsfs, which is what a namespace getter makes.
  * statfs()'s answer: a namespace file is a regular file with no size, like

@@ -51,6 +51,7 @@
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
 #include "kernel/keyctl.h"	/* KEY_SPEC_BPF_KEYRING */
+#include "kernel/nsfs.h"	/* NS_GET_NSTYPE */
 #include "kernel/socket.h"	/* SOCK_NONBLOCK */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
@@ -3309,28 +3310,45 @@ static void keyctl_pools_only_owned_keyrings(void)
 
 #define NS_GETTERS_MAX	16
 
-/* The requests of the pidfs namespace getters, from the pidfd group's
- * table: every PIDFD_GET_ cmd but the info one.  Returns how many. */
+/* The requests of the namespace getters: the pidfd group's, every PIDFD_GET_
+ * cmd of its table but the info one, and the four of the nsfs group's that
+ * return an fd.  Returns how many. */
 static unsigned int ns_getters(unsigned long cmds[NS_GETTERS_MAX])
 {
-	const struct ioctl_group *grp = fake_ioctl_group("pidfd");
-	unsigned int n = 0;
+	static const char *const nsfs_getters[] = {
+		"NS_GET_USERNS", "NS_GET_PARENT",
+		"NS_MNT_GET_NEXT", "NS_MNT_GET_PREV",
+	};
+	const struct ioctl_group *pidfd = fake_ioctl_group("pidfd");
+	const struct ioctl_group *nsfs = fake_ioctl_group("nsfs");
+	unsigned int n = 0, k;
 	size_t i;
 
-	if (grp == NULL)
+	if (pidfd == NULL)
 		BUG("fd pool: the pidfd ioctl group is not linked");
-	for (i = 0; i < grp->ioctls_cnt; i++) {
-		const char *name = grp->ioctls[i].name;
+	if (nsfs == NULL)
+		BUG("fd pool: the nsfs ioctl group is not linked");
+	for (i = 0; i < pidfd->ioctls_cnt; i++) {
+		const char *name = pidfd->ioctls[i].name;
 
 		if (strncmp(name, "PIDFD_GET_", 10) != 0 ||
 		    strcmp(name, "PIDFD_GET_INFO") == 0)
 			continue;
 		if (n == NS_GETTERS_MAX)
 			BUG("fd pool: more namespace getters than the cases expect");
-		cmds[n++] = grp->ioctls[i].request;
+		cmds[n++] = pidfd->ioctls[i].request;
 	}
-	if (n != 10)
-		BUG("fd pool: the pidfd group does not have ten namespace getters");
+	for (i = 0; i < nsfs->ioctls_cnt; i++) {
+		for (k = 0; k < ARRAY_SIZE(nsfs_getters); k++) {
+			if (strcmp(nsfs->ioctls[i].name, nsfs_getters[k]) != 0)
+				continue;
+			if (n == NS_GETTERS_MAX)
+				BUG("fd pool: more namespace getters than the cases expect");
+			cmds[n++] = nsfs->ioctls[i].request;
+		}
+	}
+	if (n != 14)
+		BUG("fd pool: the pidfd and nsfs groups do not have fourteen namespace getters");
 	return n;
 }
 
@@ -3483,7 +3501,7 @@ static void ioctl_that_returned_no_fd_owns_nothing(void)
 static void ioctl_leaves_a_desynced_return_alone(void)
 {
 	unsigned long cmds[NS_GETTERS_MAX];
-	unsigned long other[2];
+	unsigned long other[3];
 	unsigned int c, n, k;
 	int peer, fd;
 
@@ -3496,6 +3514,7 @@ static void ioctl_leaves_a_desynced_return_alone(void)
 		   fake_ioctl_group("pidfd")->ioctls[
 			   fake_ioctl_group("pidfd")->ioctls_cnt - 1].request :
 		   OTHER_CMD;
+	other[2] = NS_GET_NSTYPE;	/* returns a CLONE_NEW* value */
 
 	/* A cmd that is no getter, returned under a number that really is
 	 * a namespace file, a plain file, a directory, a device. */

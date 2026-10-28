@@ -249,7 +249,9 @@ REAL_SRCS	:= \
 # it reaches are the real ones.
 # ioctls/nsfs.c brings the nsfs group, whose fd_test and sanitiser nsfs_test.c
 # runs over the test process's own namespace files, and fd_is_nsfs(), which
-# the ioctl post handler asks.
+# the ioctl post handler asks.  ioctls/efault_cache.c brings the probe
+# nsfs_test.c checks the group is kept out of; fake_ioctls.c registers the
+# groups with it.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c and
 # syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler
 # and the recv family, whose post handlers post_oracle_test.c drives
@@ -327,6 +329,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/ext.c \
 	$(TOP)/ioctls/procfs-self.c \
 	$(TOP)/ioctls/nsfs.c \
+	$(TOP)/ioctls/efault_cache.c \
 	$(TOP)/syscalls/ioctl.c \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \

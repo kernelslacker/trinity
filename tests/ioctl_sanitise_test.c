@@ -18,6 +18,7 @@
 #include "fake_ioctls.h"
 #include "fd.h"			/* get_typed_fd */
 #include "ioctls.h"		/* struct ioctl_group */
+#include "kernel/nsfs.h"
 #include "objects.h"		/* get_objhead */
 #include "random.h"		/* rand64 */
 #include "rnd.h"
@@ -39,8 +40,10 @@ extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 /*
  * The cmds whose return value is the new fd, by table name.  Each was
  * read in the kernel: open_namespace() for the pidfs getters,
- * vfio_group_ioctl_get_device_fd(), receive_fd() for the vduse iotlb
- * cmds and i915_perf_open_ioctl().  The cmds that hand the fd back
+ * open_related_ns() for the nsfs ones that open a related namespace,
+ * FD_PREPARE() and fd_publish() for the two that step to the next and the
+ * previous mount namespace, vfio_group_ioctl_get_device_fd(), receive_fd()
+ * for the vduse iotlb cmds and i915_perf_open_ioctl().  The cmds that hand the fd back
  * through their arg and return 0 stay out: DRM prime and syncobj
  * handle-to-fd, the DRM lease, the gpio line requests, the iommufd queue
  * allocs and VIDIOC_EXPBUF.  So does VFIO_DEVICE_GET_GFX_DMABUF, whose
@@ -57,6 +60,10 @@ static const char *const returns_fd[] = {
 	"PIDFD_GET_TIME_FOR_CHILDREN_NAMESPACE",
 	"PIDFD_GET_USER_NAMESPACE",
 	"PIDFD_GET_UTS_NAMESPACE",
+	"NS_GET_USERNS",
+	"NS_GET_PARENT",
+	"NS_MNT_GET_NEXT",
+	"NS_MNT_GET_PREV",
 	"VFIO_GROUP_GET_DEVICE_FD",
 	"VDUSE_IOTLB_GET_FD",
 	"VDUSE_IOTLB_GET_FD2",
@@ -528,6 +535,65 @@ static void only_the_ns_getters_are_getters(void)
 }
 
 /*
+ * What post_ioctl() asks of the nsfs cmds, as of the pidfs ones: the four that
+ * return a namespace file are the getters, whatever struct size the two mount
+ * namespace ones carry from 16 bytes up, which the kernel takes
+ * (nsfs_ioctl_valid()) and the bits above the cmd it does not read, and no
+ * other cmd of any linked group is.  A smaller size, another direction or
+ * another type is not the kernel's request.
+ */
+static void only_the_nsfs_cmds_that_return_an_fd_are_getters(void)
+{
+	const struct ioctl_group *const *groups;
+	unsigned int ngroups, g, getters = 0;
+	size_t i;
+
+	groups = fake_ioctl_groups(&ngroups);
+	for (g = 0; g < ngroups; g++) {
+		const struct ioctl_group *grp = groups[g];
+
+		for (i = 0; i < grp->ioctls_cnt; i++) {
+			const char *name = grp->ioctls[i].name;
+			unsigned long req = grp->ioctls[i].request;
+			bool want = grp->name != NULL &&
+				    strcmp(grp->name, "nsfs") == 0 &&
+				    (strcmp(name, "NS_GET_USERNS") == 0 ||
+				     strcmp(name, "NS_GET_PARENT") == 0 ||
+				     strcmp(name, "NS_MNT_GET_NEXT") == 0 ||
+				     strcmp(name, "NS_MNT_GET_PREV") == 0);
+
+			if (nsfs_getter(req) != want) {
+				fprintf(stderr, "%s: nsfs_getter() says %d\n",
+					name, !want);
+				BUG("nsfs getter: the predicate and the nsfs group disagree");
+			}
+			if (want) {
+				getters++;
+				if (!nsfs_getter(req | (1UL << 40)))
+					BUG("nsfs getter: the predicate reads bits the kernel drops");
+			}
+		}
+	}
+	if (getters != 4)
+		BUG("nsfs getter: the nsfs group does not have four getters");
+
+	if (nsfs_getter(0))
+		BUG("nsfs getter: cmd 0 is a getter");
+	if (!nsfs_getter(_IOC(_IOC_READ, NSIO, _IOC_NR(NS_MNT_GET_NEXT), 4096)) ||
+	    !nsfs_getter(_IOC(_IOC_READ, NSIO, _IOC_NR(NS_MNT_GET_PREV), 16)))
+		BUG("nsfs getter: a mount namespace step with a larger struct is not a getter");
+	if (nsfs_getter(_IOC(_IOC_READ, NSIO, _IOC_NR(NS_MNT_GET_NEXT), 15)) ||
+	    nsfs_getter(_IOC(_IOC_WRITE, NSIO, _IOC_NR(NS_MNT_GET_NEXT), 16)) ||
+	    nsfs_getter(_IOC(_IOC_READ, NSIO + 1, _IOC_NR(NS_MNT_GET_NEXT), 16)))
+		BUG("nsfs getter: a cmd the kernel does not know is a getter");
+	if (nsfs_getter(NS_MNT_GET_INFO) || nsfs_getter(NS_GET_NSTYPE))
+		BUG("nsfs getter: a cmd that returns no fd is a getter");
+	if (pidfd_ns_getter(NS_GET_USERNS) ||
+	    nsfs_getter(fake_ioctl_group("pidfd")->ioctls[0].request))
+		BUG("nsfs getter: the two predicates overlap");
+}
+
+/*
  * A group that names a typed-fd class claims the fds of it the child made
  * itself, which sit in its own pool and which get_typed_fd() never reads,
  * as well as the ones the parent opened.  The pidfd group needs them: the
@@ -645,6 +711,7 @@ void ioctl_sanitise_self_check(void)
 	group_first_pick();
 	ns_getters_get_a_zero_arg();
 	only_the_ns_getters_are_getters();
+	only_the_nsfs_cmds_that_return_an_fd_are_getters();
 	fd_class_groups_claim_the_childs_own_fds();
 	cmd_held_to_the_one_drawn();
 }

@@ -172,10 +172,10 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 }
 
 /*
- * A pidfs namespace getter returns the nsfd it made, and nothing else owns
- * it: pool it, so the pool's cap closes it in time.  Left alone, every
- * getter that succeeds would leak one in the child.  The vfio, vduse and
- * i915 cmds that publish RET_FD cannot succeed as generated, and stay
+ * A pidfs or nsfs namespace getter returns the nsfd it made, and nothing
+ * else owns it: pool it, so the pool's cap closes it in time.  Left alone,
+ * every getter that succeeds would leak one in the child.  The vfio, vduse
+ * and i915 cmds that publish RET_FD cannot succeed as generated, and stay
  * unowned.
  *
  * rec->rettype is not consulted.  A rewrite of any slot after the sanitiser
@@ -184,17 +184,18 @@ static void sanitise_ioctl(struct syscallrecord *rec)
  * fresh pidfd into a1 for one, still returns an nsfd nothing else owns.
  * What keeps a plain integer return, 0 for most ioctls, from being taken for
  * that fd is the check on the number: nothing is pooled or closed unless it
- * is verified as the fd a getter made, the cmd being a getter and the number
- * a file on nsfs.  A stdio or protected number is no new fd either, since
- * the kernel only hands out a free one.  What pool_returned_fd() refuses
- * after that is the getter's and has no owner: it is closed.
+ * is verified as the fd a getter made, the cmd being a getter of either
+ * group and the number a file on nsfs.  A stdio or protected number is no
+ * new fd either, since the kernel only hands out a free one.  What
+ * pool_returned_fd() refuses after that is the getter's and has no owner: it
+ * is closed.
  */
 static void post_ioctl(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (!pidfd_ns_getter(rec->a2) || (long) rec->retval < 0 ||
-	    (long) rec->retval >= (1 << 20))
+	if ((!pidfd_ns_getter(rec->a2) && !nsfs_getter(rec->a2)) ||
+	    (long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
 		return;
 
 	if (fd <= 2 || fd_is_protected(fd) || !fd_is_nsfs(fd))

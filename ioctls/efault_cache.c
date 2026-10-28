@@ -126,7 +126,8 @@ static void cache_store(unsigned int group_idx, unsigned int request,
  * allocates kernel state on the dispatch path before any arg validation
  * happens, so the "kernel rejects ~0UL at access_ok()" trick still
  * leaves residue.  Identified by the /dev names trinity matches against
- * in find_ioctl_group().
+ * in find_ioctl_group(); a group that fd_test alone claims has none, and
+ * sets no_efault_probe.
  */
 static const char * const efault_optout_devs[] = {
 	"vhost-net",		/* vhost ring/queue setup before validation */
@@ -154,7 +155,7 @@ static bool compute_efault_probe_allowed(const struct ioctl_group *grp)
 {
 	size_t i, j;
 
-	if (grp == NULL)
+	if (grp == NULL || grp->no_efault_probe)
 		return false;
 
 	for (i = 0; i < grp->devs_cnt; ++i) {

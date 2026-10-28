@@ -35,12 +35,41 @@
 IOCTL_SIZE_ASSERT(NS_GET_MNTNS_ID, __u64);
 IOCTL_SIZE_ASSERT(NS_GET_ID, __u64);
 IOCTL_SIZE_ASSERT(NS_MNT_GET_INFO, struct mnt_ns_info);
+IOCTL_SIZE_ASSERT(NS_MNT_GET_NEXT, struct mnt_ns_info);
+IOCTL_SIZE_ASSERT(NS_MNT_GET_PREV, struct mnt_ns_info);
 
 bool fd_is_nsfs(int fd)
 {
 	struct statfs sfs;
 
 	return fstatfs(fd, &sfs) == 0 && sfs.f_type == NSFS_MAGIC;
+}
+
+/*
+ * The requests whose return value is the namespace fd they made:
+ * NS_GET_USERNS, NS_GET_PARENT and the two mount namespace requests that step
+ * to the next and the previous namespace.  Those are extensible, and
+ * nsfs_ioctl_valid() takes them with any struct size from 16 bytes up; a
+ * smaller one is -ENOTTY, which makes no fd.
+ */
+bool nsfs_getter(unsigned long cmd)
+{
+	unsigned int c = (unsigned int) cmd;
+
+	switch (c) {
+	case NS_GET_USERNS:
+	case NS_GET_PARENT:
+		return true;
+	}
+
+	switch (_IOC_NR(c)) {
+	case _IOC_NR(NS_MNT_GET_NEXT):
+	case _IOC_NR(NS_MNT_GET_PREV):
+		return _IOC_DIR(c) == _IOC_DIR(NS_MNT_GET_NEXT) &&
+		       _IOC_TYPE(c) == _IOC_TYPE(NS_MNT_GET_NEXT) &&
+		       _IOC_SIZE(c) >= MNT_NS_INFO_SIZE_VER0;
+	}
+	return false;
 }
 
 /*
@@ -71,7 +100,15 @@ static int nsfs_fd_test(int fd, const struct stat *st)
  * writes through, built here for all four, since the picker has none for an
  * _IO() request and the encoding of the others says only how long it is,
  * and NULL one call in 32, for the -EINVAL and the -EFAULT the kernel has
- * for it.  NS_GET_NSTYPE takes no arg.
+ * for it.  NS_GET_NSTYPE, NS_GET_USERNS and NS_GET_PARENT take no arg, and
+ * NS_MNT_GET_NEXT and NS_MNT_GET_PREV the same struct as NS_MNT_GET_INFO,
+ * which they copy out before they publish the fd, so a NULL one is -EFAULT
+ * and leaves none.
+ *
+ * A getter publishes RET_FD for the cmd the picker drew, which is all that
+ * is known of what the call returns: the struct size that is drawn for it
+ * below can make the kernel refuse it, and a refusal returns no fd.  The
+ * fd it returns is owned by post_ioctl().
  */
 static void nsfs_sanitise(const struct ioctl_group *grp,
 			  struct syscallrecord *rec)
@@ -79,6 +116,9 @@ static void nsfs_sanitise(const struct ioctl_group *grp,
 	size_t len = 0;
 
 	pick_random_ioctl(grp, rec);
+
+	if (nsfs_getter(rec->a2))
+		rec->rettype = RET_FD;
 
 	switch (rec->a2) {
 	case NS_GET_OWNER_UID:
@@ -89,16 +129,18 @@ static void nsfs_sanitise(const struct ioctl_group *grp,
 		len = sizeof(__u64);
 		break;
 	case NS_MNT_GET_INFO:
+	case NS_MNT_GET_NEXT:
+	case NS_MNT_GET_PREV:
 		len = sizeof(struct mnt_ns_info);
 		switch (rnd_modulo_u32(32)) {
 		case 0:
-			rec->a2 = _IOC(_IOC_READ, NSIO, _IOC_NR(NS_MNT_GET_INFO),
+			rec->a2 = _IOC(_IOC_READ, NSIO, _IOC_NR(rec->a2),
 				       rnd_modulo_u32(MNT_NS_INFO_SIZE_VER0));
 			break;
 		case 1:
 		case 2:
 		case 3:
-			rec->a2 = _IOC(_IOC_READ, NSIO, _IOC_NR(NS_MNT_GET_INFO),
+			rec->a2 = _IOC(_IOC_READ, NSIO, _IOC_NR(rec->a2),
 				       MNT_NS_INFO_SIZE_VER0 +
 				       rnd_modulo_u32(_IOC_SIZEMASK + 1 -
 						      MNT_NS_INFO_SIZE_VER0));
@@ -137,6 +179,8 @@ static void nsfs_sanitise(const struct ioctl_group *grp,
 }
 
 static const struct ioctl nsfs_ioctls[] = {
+	IOCTL(NS_GET_USERNS),
+	IOCTL(NS_GET_PARENT),
 	IOCTL(NS_GET_NSTYPE),
 	IOCTL(NS_GET_OWNER_UID),
 	IOCTL(NS_GET_MNTNS_ID),
@@ -145,13 +189,21 @@ static const struct ioctl nsfs_ioctls[] = {
 	IOCTL(NS_GET_PID_IN_PIDNS),
 	IOCTL(NS_GET_TGID_IN_PIDNS),
 	IOCTL(NS_MNT_GET_INFO),
+	IOCTL(NS_MNT_GET_NEXT),
+	IOCTL(NS_MNT_GET_PREV),
 	IOCTL(NS_GET_ID),
 };
 
+/*
+ * No EFAULT probe.  NS_GET_USERNS and NS_GET_PARENT are _IO() requests that
+ * ignore their arg, so the probe's bogus one (efault_cache.c) does not stop
+ * them, and the nsfd they return to it is one nothing closes.
+ */
 static const struct ioctl_group nsfs_grp = {
 	.name = "nsfs",
 	.fd_test = nsfs_fd_test,
 	.sanitise = nsfs_sanitise,
+	.no_efault_probe = true,
 	.ioctls = nsfs_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(nsfs_ioctls),
 };
