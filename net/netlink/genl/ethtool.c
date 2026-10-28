@@ -152,6 +152,21 @@ static const struct nla_attr_spec ethtool_rss_get_attrs[] = {
 	{ ETHTOOL_A_RSS_START_CONTEXT,	NLA_KIND_U32,    4 },
 };
 
+/*
+ * PORT_GET, from ethnl_port_get_policy: the header and a PORT_ID of at
+ * least 1.  The doit answers -EINVAL without either, the header in
+ * ethnl_parse_header_dev_get() and the id in port_parse_request(), but
+ * ethnl_port_dump_start() answers a dump that carries a PORT_ID -EINVAL, so
+ * the dump takes the header alone, which ethtool_get_attrs is.
+ */
+static const struct nla_attr_spec ethtool_port_get_attrs[] = {
+	{ ETHTOOL_A_PORT_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_PORT_ID,		NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -210,6 +225,9 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_MSE_GET,           "ETHTOOL_MSG_MSE_GET",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_PORT_GET,          "ETHTOOL_MSG_PORT_GET",
+	  ethtool_port_get_attrs, ARRAY_SIZE(ethtool_port_get_attrs),
+	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 };
 
 struct genl_family_grammar fam_ethtool = {

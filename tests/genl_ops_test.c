@@ -1081,6 +1081,15 @@ static struct slot ethtool_rss_get[] = {
 	S_U32(ETHTOOL_A_RSS_CONTEXT),
 	S_U32(ETHTOOL_A_RSS_START_CONTEXT),
 };
+/* net/ethtool/port.c: ethnl_port_get_policy, whose PORT_ID is
+ * NLA_POLICY_MIN(NLA_U32, 1).  The doit needs both attributes, the header
+ * for ethnl_parse_header_dev_get() and the id for port_parse_request(); the
+ * dump, whose ethnl_port_dump_start() answers -EINVAL to a PORT_ID, takes
+ * the header alone, which ethtool_get is. */
+static struct slot ethtool_port_get[] = {
+	S_NEST(ETHTOOL_A_PORT_HEADER, ethtool_header, .required = true),
+	S_U32_RANGE(ETHTOOL_A_PORT_ID, 1, UINT32_MAX, .required = true),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1110,6 +1119,8 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_PHY_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSCONFIG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MSE_GET, ethtool_get_phy),
+	P_CMD(ETHTOOL_MSG_PORT_GET, ethtool_port_get),
+	P_DUMP(ETHTOOL_MSG_PORT_GET, ethtool_get),
 };
 #endif
 
@@ -2458,7 +2469,7 @@ static unsigned int min_policy_streams(void)
 /* Every family in the reply takes a share of the rounds, so the streams of a
  * nest deep in one family's cmd thin out as families are added: the rounds
  * go on, to this many, until each required slot has its REQUIRED_STREAMS. */
-#define ATTR_ROUNDS_MAX	1500000
+#define ATTR_ROUNDS_MAX	3000000
 
 /*
  * Whether the len bytes at msg are a batch whose first message claims

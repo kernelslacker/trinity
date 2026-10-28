@@ -21,3 +21,15 @@
 #ifndef HAVE_ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER
 #define ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER 2
 #endif
+
+/* PORT_GET, which lists the PHY ports of a netdev, and the attributes of its
+ * request, added in 7.4.  Probed by configure like the ones above. */
+#ifndef HAVE_ETHTOOL_MSG_PORT_GET
+#define ETHTOOL_MSG_PORT_GET 52
+#endif
+#ifndef HAVE_ETHTOOL_A_PORT_HEADER
+#define ETHTOOL_A_PORT_HEADER 1
+#endif
+#ifndef HAVE_ETHTOOL_A_PORT_ID
+#define ETHTOOL_A_PORT_ID 2
+#endif

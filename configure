@@ -639,6 +639,10 @@ check_enum_member linux/ethtool_netlink_generated.h \
 	ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX \
 	ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER
 
+# ethtool's PORT_GET, which lists a netdev's PHY ports, and its attributes.
+check_enum_member linux/ethtool_netlink_generated.h \
+	ETHTOOL_MSG_PORT_GET ETHTOOL_A_PORT_HEADER ETHTOOL_A_PORT_ID
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
