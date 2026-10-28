@@ -573,6 +573,9 @@ check_enum_member linux/if_addr.h IFA_TARGET_NETNSID
 check_enum_member linux/if_link.h IFLA_GRO_MAX_SIZE IFLA_GSO_IPV4_MAX_SIZE \
 	IFLA_GRO_IPV4_MAX_SIZE IFLA_PACING_OFFLOAD
 
+# The ctnetlink filter attribute that says CTA_ZONE is filtered on.
+check_enum_member linux/netfilter/nfnetlink_conntrack.h CTA_FILTER_ZONE
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

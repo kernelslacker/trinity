@@ -13,6 +13,8 @@
 #include "netlink-nfnl-subsystems.h"
 #include "utils.h"
 
+#include "kernel/nfnetlink_conntrack.h"
+
 /*
  * Fresh-uapi shims for CTA_* ids that build hosts with a stale
  * <linux/netfilter/nfnetlink_conntrack.h> may not yet know.  Values
@@ -46,11 +48,28 @@ static const struct nfnl_cmd_grammar ctnetlink_exp_cmds[] = {
 };
 
 /*
+ * The children of CTA_FILTER, from cta_filter_nla_policy, which
+ * ctnetlink_parse_filter() applies with the strict nla_parse_nested(): an id
+ * past CTA_FILTER_MAX, or a nest flag on a child, answers the request -EINVAL.
+ * The two flags words are NLA_POLICY_MASK(NLA_U32, CTA_FILTER_F_ALL), in host
+ * order, and CTA_FILTER_F_ALL (net/netfilter/nf_internals.h) is the twelve
+ * bits that CTA_FILTER_F_CTA_IP_SRC to CTA_FILTER_F_CTA_PROTO_ICMPV6_ID
+ * name.  CTA_FILTER_ZONE, added by 46da6029bf46, is a flag that
+ * ctnetlink_alloc_filter() answers -EINVAL unless CTA_ZONE is there too.
+ */
+static const struct nla_attr_spec ctnetlink_filter_attrs[] = {
+	{ CTA_FILTER_ORIG_FLAGS,  NLA_KIND_U32_MASK, 0xfff },
+	{ CTA_FILTER_REPLY_FLAGS, NLA_KIND_U32_MASK, 0xfff },
+	{ CTA_FILTER_ZONE,        NLA_KIND_FLAG,     0 },
+};
+
+/*
  * CTA_* attr spec table for NFNL_SUBSYS_CTNETLINK (conntrack entries).
  * Mirrors the kernel's ct_nla_policy entries the entry dispatchers gate
  * on.  Lengths follow the kernel's nla_policy maximums.  The nests are bare
  * NLA_NESTED there (max_len 0 here); the handlers parse them against
- * tuple_nla_policy, help_nla_policy, protoinfo_policy and the like.
+ * tuple_nla_policy, help_nla_policy, protoinfo_policy and the like, except
+ * CTA_FILTER, whose children have the table above.
  * CTA_TIMESTAMP_EVENT is left out: ct_nla_policy marks it NLA_REJECT, so the
  * four commands that carry that policy answer a message with it -EINVAL
  * before the handler runs.
@@ -78,7 +97,8 @@ static const struct nla_attr_spec ctnetlink_attrs[] = {
 	{ CTA_LABELS,         NLA_KIND_BINARY, 16 },
 	{ CTA_LABELS_MASK,    NLA_KIND_BINARY, 16 },
 	{ CTA_SYNPROXY,       NLA_KIND_NESTED, 0 },
-	{ CTA_FILTER,         NLA_KIND_NESTED, 0 },
+	{ CTA_FILTER,         NLA_KIND_NESTED, 0, 0,
+	  ctnetlink_filter_attrs, ARRAY_SIZE(ctnetlink_filter_attrs) },
 	{ CTA_STATUS_MASK,    NLA_KIND_U32,    4 },
 	{ CTA_SECMARK,        NLA_KIND_U32,    4 },
 	{ CTA_SECCTX,         NLA_KIND_NESTED, 0 },

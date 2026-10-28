@@ -1727,6 +1727,152 @@ static void check_rows_cover_tables(void)
 }
 
 /*
+ * ctnetlink_parse_filter() in nf_conntrack_netlink.c reads CTA_FILTER with
+ * the strict nla_parse_nested() against cta_filter_nla_policy, so a child
+ * with an id past CTA_FILTER_MAX, a nest flag or the wrong length gets the
+ * whole request -EINVAL.  The two flags words are NLA_POLICY_MASK(NLA_U32,
+ * CTA_FILTER_F_ALL), read in host order, with the twelve bits that
+ * nf_internals.h numbers from CTA_FILTER_F_CTA_IP_SRC to
+ * CTA_FILTER_F_CTA_PROTO_ICMPV6_ID; CTA_FILTER_ZONE, which 46da6029bf46
+ * added, is an NLA_FLAG.
+ */
+#define KERNEL_CTA_FILTER		25
+#define KERNEL_CTA_FILTER_MAX		3
+#define KERNEL_CTA_FILTER_ZONE		3
+#define KERNEL_CTA_FILTER_F_ALL		0xfffu
+
+static struct pslot cta_filter_pol[] = {
+	/* CTA_FILTER_ORIG_FLAGS and CTA_FILTER_REPLY_FLAGS */
+	PSB(1, false, NLA_KIND_U32_MASK, 0, KERNEL_CTA_FILTER_F_ALL),
+	PSB(2, false, NLA_KIND_U32_MASK, 0, KERNEL_CTA_FILTER_F_ALL),
+	PS(KERNEL_CTA_FILTER_ZONE, false, NLA_KIND_FLAG),
+};
+
+/*
+ * What the strict parse takes of the attribute at buf, from
+ * __nla_validate_parse() and validate_nla() in lib/nlattr.c: the container
+ * flagged NLA_F_NESTED, every child an id from 1 to CTA_FILTER_MAX without
+ * that flag, a flags word four bytes exactly and inside the mask, a zone flag
+ * with no payload, and nothing after the last child.  with[] counts the
+ * nests that hold each id, and bits_or and bits_and the bits that the flags
+ * words set and keep.
+ */
+struct filter_tally {
+	unsigned int nests, parsed;
+	unsigned int with[KERNEL_CTA_FILTER_MAX + 1];
+	uint32_t bits_or, bits_and;
+};
+
+static void tally_filter(struct filter_tally *t, const unsigned char *buf)
+{
+	struct nlattr nla;
+	bool seen[KERNEL_CTA_FILTER_MAX + 1] = { false };
+	unsigned int id;
+	size_t off;
+	bool ok = true;
+
+	memcpy(&nla, buf, sizeof(nla));
+	t->nests++;
+	if ((nla.nla_type & NLA_TYPE_MASK) != KERNEL_CTA_FILTER ||
+	    !(nla.nla_type & NLA_F_NESTED))
+		return;
+
+	for (off = NLA_HDRLEN; off + NLA_HDRLEN <= nla.nla_len; ) {
+		struct nlattr child;
+		uint32_t v;
+
+		memcpy(&child, buf + off, sizeof(child));
+		if (child.nla_len < NLA_HDRLEN || off + child.nla_len > nla.nla_len)
+			break;
+		id = child.nla_type & NLA_TYPE_MASK;
+		if (id == 0 || id > KERNEL_CTA_FILTER_MAX ||
+		    (child.nla_type & NLA_F_NESTED)) {
+			ok = false;
+		} else if (id == KERNEL_CTA_FILTER_ZONE) {
+			ok = ok && child.nla_len == NLA_HDRLEN;
+			seen[id] = true;
+		} else if (child.nla_len != NLA_HDRLEN + sizeof(v)) {
+			ok = false;
+		} else {
+			memcpy(&v, buf + off + NLA_HDRLEN, sizeof(v));
+			if (v & ~KERNEL_CTA_FILTER_F_ALL) {
+				ok = false;
+			} else {
+				t->bits_or |= v;
+				t->bits_and &= v;
+			}
+			seen[id] = true;
+		}
+		off += NLA_ALIGN(child.nla_len);
+	}
+
+	if (!ok || off < nla.nla_len)
+		return;
+	t->parsed++;
+	for (id = 1; id <= KERNEL_CTA_FILTER_MAX; id++)
+		t->with[id] += seen[id];
+}
+
+/*
+ * CTA_FILTER is a bare nest in ct_nla_policy, so the strict parse is the
+ * handler's own, and a nest drawn from the table it is in, whose ids are
+ * ct_nla_policy's, gets almost every request refused.  Its table is the
+ * policy above, and a draw is a nest the parse takes unless a flags word is
+ * the one draw in eight of random bytes, which the mask refuses.  With one
+ * to three children, two in three of them flags words, about 0.84 of the
+ * nests are taken.  Each id is in half of those or so, and every bit of the
+ * mask is set in some flags word and clear in another.
+ */
+static void check_ctnetlink_filter(void)
+{
+	const struct nfnl_subsys_grammar *sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK);
+	const struct nla_attr_spec *spec = NULL;
+	struct filter_tally t = { .bits_and = KERNEL_CTA_FILTER_F_ALL };
+	unsigned int round, id;
+	size_t i;
+
+	if (sub == NULL)
+		BUG("nfnl grammar: ctnetlink is not registered");
+	for (i = 0; i < sub->n_attrs; i++) {
+		if (sub->attrs[i].type == KERNEL_CTA_FILTER)
+			spec = &sub->attrs[i];
+	}
+	if (spec == NULL || spec->kind != NLA_KIND_NESTED)
+		BUG("nfnl grammar: ctnetlink does not nest CTA_FILTER");
+	if (spec->nest == NULL)
+		BUG("nfnl grammar: CTA_FILTER has no table of its own");
+	expect_declared(spec->nest, spec->n_nest, cta_filter_pol,
+			ARRAY_SIZE(cta_filter_pol), "CTA_FILTER");
+
+	for (round = 0; round < ROUNDS; round++) {
+		unsigned char buf[1024];
+
+		memset(buf, 0, sizeof(buf));
+		if (append_specced_nlattr(buf, 0, sizeof(buf), spec, 1, NULL) == 0)
+			BUG("nfnl grammar: the CTA_FILTER spec emitted nothing");
+		tally_filter(&t, buf);
+	}
+
+	if (t.parsed < t.nests * 0.70 || t.parsed > t.nests * 0.95) {
+		fprintf(stderr, "CTA_FILTER: %u of %u nests pass the strict parse, want a fraction in [0.70, 0.95]\n",
+			t.parsed, t.nests);
+		BUG("nfnl grammar: CTA_FILTER is not drawn as its policy takes it");
+	}
+	for (id = 1; id <= KERNEL_CTA_FILTER_MAX; id++) {
+		if (t.with[id] >= t.parsed * 0.35)
+			continue;
+		fprintf(stderr, "CTA_FILTER: id %u is in %u of %u accepted nests\n",
+			id, t.with[id], t.parsed);
+		BUG("nfnl grammar: CTA_FILTER never draws one of its children");
+	}
+	if (t.bits_or != KERNEL_CTA_FILTER_F_ALL || t.bits_and != 0) {
+		fprintf(stderr, "CTA_FILTER: flags words set %#x and keep %#x of the mask %#x\n",
+			t.bits_or, t.bits_and, KERNEL_CTA_FILTER_F_ALL);
+		BUG("nfnl grammar: CTA_FILTER's flags words do not span their mask");
+	}
+}
+
+/*
  * nf_tables_cb[] gives every nftables command but NFT_MSG_GETGEN a policy,
  * and the grammar a table for each; GETGEN takes no attribute at all, so it
  * has none and the subsystem has no union to fall back on.
@@ -2139,6 +2285,7 @@ void nfnl_gen_self_check(void)
 	check_rows_cover_tables();
 	for (i = 0; i < ARRAY_SIZE(cmd_rows); i++)
 		check_cmd_row(&cmd_rows[i]);
+	check_ctnetlink_filter();
 	for (i = 0; i < ARRAY_SIZE(word_slots); i++)
 		check_word_slot(&word_slots[i]);
 }
