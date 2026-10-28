@@ -464,9 +464,64 @@ static void expect_probe_interval(const struct probe_interval *t)
 			"rtnl: the probe interval is not often a short one");
 }
 
+/* ---------- The dump bits of a GET with one kind of handler ------------- */
+
+/*
+ * rtnetlink_rcv_msg() routes a GET to its dumpit on either dump bit and
+ * answers -EOPNOTSUPP to one routed to a handler the type does not have,
+ * under the request's family or PF_UNSPEC.  These GETs have only a dumpit
+ * under every family; RTM_GETDCB has only a doit.
+ */
+static bool dumpit_only(unsigned short type)
+{
+	switch (type) {
+	case RTM_GETNEIGHTBL:
+	case RTM_GETRULE:
+	case RTM_GETMULTICAST:
+	case RTM_GETANYCAST:
+	case RTM_GETVLAN:
+	case RTM_GETTUNNEL:
+		return true;
+	default:
+		return false;
+	}
+}
+
+struct dump_bits {
+	unsigned int msgs;
+	unsigned int misrouted;	/* routed to the handler the type lacks */
+};
+
+static void tally_dump_bits(struct dump_bits *t, const struct nlmsghdr *nlh,
+			    bool dumpit)
+{
+	bool dump = nlh->nlmsg_flags & NLM_F_DUMP;
+
+	t->msgs++;
+	t->misrouted += dump != dumpit;
+}
+
+/*
+ * Only the chaos message in ten keeps a random flags word, which holds
+ * neither dump bit a quarter of the time and one or both the rest, so
+ * 0.025 of the dumpit-only GETs' requests and 0.075 of RTM_GETDCB's are
+ * routed to the handler the type lacks.  Over thousands of requests the
+ * bounds are many standard deviations out.
+ */
+static void expect_dump_bits(const struct dump_bits *dumps,
+			     const struct dump_bits *dcb)
+{
+	expect_fraction(dumps->misrouted, dumps->msgs, 0.0, 0.04,
+			"the dumpit-only GETs",
+			"rtnl: a GET with only a dumpit is sent without NLM_F_DUMP");
+	expect_fraction(dcb->misrouted, dcb->msgs, 0.0, 0.12, "RTM_GETDCB",
+			"rtnl: RTM_GETDCB, which has only a doit, is sent a dump bit");
+}
+
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
+	struct dump_bits dumps, dcb;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
@@ -491,6 +546,11 @@ static void run_rounds(struct tallies *t)
 		if (len < NLMSG_HDRLEN || len >= SMALLEST_BUFFER ||
 		    NLMSG_ALIGN(nlh->nlmsg_len) != len)
 			goto next;
+
+		if (dumpit_only(nlh->nlmsg_type))
+			tally_dump_bits(&t->dumps, nlh, true);
+		else if (nlh->nlmsg_type == RTM_GETDCB)
+			tally_dump_bits(&t->dcb, nlh, false);
 
 		switch (nlh->nlmsg_type) {
 		case RTM_GETMULTICAST:
@@ -522,6 +582,7 @@ void rtnl_gen_self_check(void)
 	static struct tallies t;
 
 	run_rounds(&t);
+	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);

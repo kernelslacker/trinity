@@ -91,16 +91,17 @@ static unsigned short gen_nlmsg_modifiers(void)
  * which skip it, and the handlers that read the modifiers (gtp tests EXCL
  * and REPLACE) still get them.
  *
- * genl_caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the genl
- * command the message carries, 0 when unknown or not genl.  The genl core
- * routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and turns away a request
- * whose routed handler is missing, so a cmd with only a dumpit gets both
- * dump bits and one with only a doit gets neither.  The NEW and DELETE
- * modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so the pin
- * comes after them.
+ * caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the handlers
+ * the message's genl cmd or rtnl GET type has, 0 when unknown or both.  The
+ * genl core routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and
+ * rtnetlink_rcv_msg() routes a GET on either dump bit, and both turn away a
+ * request whose routed handler is missing, so a cmd or type with only a
+ * dumpit gets both dump bits and one with only a doit gets neither.  The NEW
+ * and DELETE modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so
+ * the pin comes after them.
  */
 static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
-				      unsigned char genl_caps)
+				      unsigned char caps)
 {
 	unsigned short flags = NLM_F_REQUEST; /* almost always set */
 
@@ -120,12 +121,34 @@ static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
 	if (protocol != NETLINK_GENERIC || ONE_IN(8))
 		flags |= gen_nlmsg_modifiers();
 
-	if (genl_caps == GENL_CMD_CAP_DUMP)
+	if (caps == GENL_CMD_CAP_DUMP)
 		flags |= NLM_F_DUMP;
-	else if (genl_caps == GENL_CMD_CAP_DO)
+	else if (caps == GENL_CMD_CAP_DO)
 		flags &= ~NLM_F_DUMP;
 
 	return flags;
+}
+
+/*
+ * The rtnl GETs with only a dumpit under every family, and RTM_GETDCB, with
+ * only a doit.  A GET whose doit depends on the family (RTM_GETADDR,
+ * RTM_GETROUTE, RTM_GETNETCONF) is left to the draw.
+ */
+static unsigned char rtnl_get_caps(unsigned short nlmsg_type)
+{
+	switch (nlmsg_type) {
+	case RTM_GETNEIGHTBL:
+	case RTM_GETRULE:
+	case RTM_GETMULTICAST:
+	case RTM_GETANYCAST:
+	case RTM_GETVLAN:
+	case RTM_GETTUNNEL:
+		return GENL_CMD_CAP_DUMP;
+	case RTM_GETDCB:
+		return GENL_CMD_CAP_DO;
+	default:
+		return 0;
+	}
 }
 
 /* Pick an nlmsg_type appropriate for the netlink protocol */
@@ -315,7 +338,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	size_t body_len;
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
-	unsigned char genl_caps = 0;
+	unsigned char caps = 0;
 	bool chaos;
 	int rtnl_group = -1;
 	int num_attrs;
@@ -345,9 +368,10 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		body_len = gen_rtnl_body(msg + offset, nlmsg_type,
 					 buflen - offset, &body_family);
 		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
+		caps = rtnl_get_caps(nlmsg_type);
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type,
-					 buflen - offset, chaos, &genl_caps);
+					 buflen - offset, chaos, &caps);
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		/* A lone message names one of its subsystem's families, as
 		 * the commands of a batch do. */
@@ -373,8 +397,9 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	}
 	offset += body_len;
 
-	/* After the body: a genl cmd's handlers decide the dump bits. */
-	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, triplet->protocol, genl_caps);
+	/* After the body: the handlers of a genl cmd or an rtnl GET decide
+	 * the dump bits. */
+	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, triplet->protocol, caps);
 
 	/* Append nlattr TLVs with protocol-appropriate types.  A genl
 	 * cmd's table depends on its cmd and dump flag, both set above.
