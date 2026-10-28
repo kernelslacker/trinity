@@ -354,6 +354,16 @@ static void sanitise_close_range(struct syscallrecord *rec)
 	/* else: leave the ARG_FD-derived range and the ARG_LIST flags
 	 * untouched -- the original behaviour. */
 
+	/*
+	 * CLOEXEC marks the range close-on-exec and CLOEXEC_ONLY closes what
+	 * is marked; the kernel refuses the pair with EINVAL, so keep that
+	 * to one draw in eight.
+	 */
+	if ((rec->a3 & CLOSE_RANGE_CLOEXEC) &&
+	    (rec->a3 & CLOSE_RANGE_CLOEXEC_ONLY) && !ONE_IN(8))
+		rec->a3 &= ~(unsigned long) (RAND_BOOL() ? CLOSE_RANGE_CLOEXEC :
+							   CLOSE_RANGE_CLOEXEC_ONLY);
+
 	/* Visible counter so the operator can SEE the guard firing -- a
 	 * denominator for the first_ebadf=...: closer=nr<close_range>[/prot]
 	 * diag readings.  Zero means the picker never landed on a range that
