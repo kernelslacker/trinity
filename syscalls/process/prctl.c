@@ -339,8 +339,9 @@ static void sanitise_sched_core(struct syscallrecord *rec)
 	rec->a2 = rnd_modulo_u32(PR_SCHED_CORE_MAX); /* cmd: 0..3 */
 	rec->a3 = 0;                                  /* pid: self */
 	rec->a4 = rnd_modulo_u32(PR_SCHED_CORE_SCOPE_PROCESS_GROUP + 1); /* type: 0..2 */
+	/* GET writes the cookie id as a u64, to an 8-byte-aligned address. */
 	rec->a5 = (rec->a2 == PR_SCHED_CORE_GET)
-		? (unsigned long)get_writable_address(sizeof(unsigned long))
+		? (unsigned long)get_writable_address(sizeof(__u64))
 		: 0;
 }
 
