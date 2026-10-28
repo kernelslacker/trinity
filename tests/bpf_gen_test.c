@@ -1089,8 +1089,10 @@ static void map_elem_draws_reach_the_maps_code(void)
  * (kernel/trace/bpf_trace.c) to a target_fd or flags, and
  * bpf_perf_link_attach() (kernel/bpf/syscall.c),
  * bpf_kprobe_multi_link_attach() and bpf_uprobe_multi_link_attach()
- * (kernel/trace/bpf_trace.c) and bpf_nf_link_attach()
- * (net/netfilter/nf_bpf_link.c) to flags.
+ * (kernel/trace/bpf_trace.c), bpf_nf_link_attach()
+ * (net/netfilter/nf_bpf_link.c), netns_bpf_link_create()
+ * (kernel/bpf/net_namespace.c) and sock_map_link_create()
+ * (net/core/sock_map.c) to flags.
  */
 static bool kernel_refuses_flags(unsigned long type)
 {
@@ -1105,6 +1107,31 @@ static bool kernel_refuses_flags(unsigned long type)
 	case BPF_TRACE_FEXIT_MULTI:
 	case BPF_TRACE_FSESSION_MULTI:
 	case BPF_NETFILTER:
+	case BPF_FLOW_DISSECTOR:
+	case BPF_SK_LOOKUP:
+	case BPF_SK_SKB_STREAM_PARSER:
+	case BPF_SK_SKB_STREAM_VERDICT:
+	case BPF_SK_SKB_VERDICT:
+	case BPF_SK_MSG_VERDICT:
+		return true;
+	}
+	return false;
+}
+
+/*
+ * bpf_tracing_prog_attach() (kernel/bpf/syscall.c), the taker of these, answers
+ * -EINVAL to a target_fd without a target_btf_id and to a btf id without an fd:
+ * the pair names a program and a function in it, and neither names the target
+ * the program was loaded with.
+ */
+static bool kernel_pairs_target(unsigned long type)
+{
+	switch (type) {
+	case BPF_TRACE_FENTRY:
+	case BPF_TRACE_FEXIT:
+	case BPF_MODIFY_RETURN:
+	case BPF_LSM_MAC:
+	case BPF_TRACE_FSESSION:
 		return true;
 	}
 	return false;
@@ -1166,7 +1193,8 @@ static bool pick_link_map(struct bpfobj *map)
 }
 
 struct link_tally {
-	unsigned int draws, refused, flags_set, pool_target, generic_prog;
+	unsigned int draws, refused, flags_set, pool_target, prog_target;
+	unsigned int generic_prog;
 	unsigned int tail_set, no_tail, tail_uncovered;
 };
 
@@ -1239,10 +1267,14 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			t->draws++;
 			if ((kernel_refuses_flags(type) && attr->link_create.flags != 0) ||
 			    (kernel_refuses_target_fd(type) &&
-			     attr->link_create.target_fd != 0))
+			     attr->link_create.target_fd != 0) ||
+			    (kernel_pairs_target(type) &&
+			     !attr->link_create.target_fd !=
+			     !attr->link_create.target_btf_id))
 				t->refused++;
 			t->flags_set += attr->link_create.flags != 0;
 			t->pool_target += (int) attr->link_create.target_fd == LINK_MAP_FD;
+			t->prog_target += (int) attr->link_create.target_fd == LINK_PROG_FD;
 			t->generic_prog += (int) attr->link_create.prog_fd != LINK_PROG_FD;
 
 			/* Past the head are the arm's fields, and with them the
@@ -1290,9 +1322,16 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 		if (!kernel_refuses_flags(type))
 			check("the flags of a taker that takes them are no longer drawn",
 			      name, t->flags_set * 100 >= t->draws * 80);
-		if (!kernel_refuses_target_fd(type))
+		if (kernel_pairs_target(type)) {
+			check("a tracing attach is handed the map pool's fd", name,
+			      t->pool_target == 0);
+			check("a tracing attach never names a program to attach in",
+			      name, t->prog_target > 0 &&
+			      t->prog_target * 2 < t->draws);
+		} else if (!kernel_refuses_target_fd(type)) {
 			check("a target_fd is not the pool's map", name,
 			      t->pool_target == t->draws);
+		}
 	}
 }
 

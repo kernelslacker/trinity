@@ -12,6 +12,7 @@
 #include "bpf-internal.h"
 #include "objects.h"
 #include "publish_resource.h"
+#include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 
@@ -32,7 +33,12 @@ void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 	 * link_create() hands the attr to the program's taker, which answers
 	 * -EINVAL to a head field it has no use for: bpf_iter_link_attach()
 	 * and bpf_tracing_multi_attach() to a target_fd or flags, and the
-	 * perf, kprobe_multi, uprobe_multi and netfilter takers to flags.
+	 * perf, kprobe_multi, uprobe_multi, netfilter, netns and sockmap
+	 * takers to flags.  bpf_tracing_prog_attach() takes target_fd and
+	 * target_btf_id together, a program and a btf id in it, or neither
+	 * for the target the program was loaded with, which most calls name;
+	 * its cookie, which helpers read back uninterpreted and the catalog
+	 * leaves at zero as it does every wide raw field, is drawn too.
 	 */
 	switch (attr->link_create.attach_type) {
 	case BPF_TRACE_ITER:
@@ -47,7 +53,28 @@ void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 	case BPF_TRACE_UPROBE_MULTI:
 	case BPF_TRACE_UPROBE_SESSION:
 	case BPF_NETFILTER:
+	case BPF_FLOW_DISSECTOR:
+	case BPF_SK_LOOKUP:
+	case BPF_SK_SKB_STREAM_PARSER:
+	case BPF_SK_SKB_STREAM_VERDICT:
+	case BPF_SK_SKB_VERDICT:
+	case BPF_SK_MSG_VERDICT:
 		attr->link_create.flags = 0;
+		break;
+	case BPF_TRACE_FENTRY:
+	case BPF_TRACE_FEXIT:
+	case BPF_MODIFY_RETURN:
+	case BPF_LSM_MAC:
+	case BPF_TRACE_FSESSION:
+		if (ONE_IN(8)) {
+			attr->link_create.target_fd = get_rand_bpf_prog_fd();
+			if (attr->link_create.target_btf_id == 0)
+				attr->link_create.target_btf_id = 1;
+		} else {
+			attr->link_create.target_fd = 0;
+			attr->link_create.target_btf_id = 0;
+		}
+		attr->link_create.tracing.cookie = rnd_u64();
 		break;
 	}
 }
