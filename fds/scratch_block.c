@@ -470,9 +470,8 @@ static int init_scratch_block(void)
 	/* Box-safety gate: without the parent's private mount namespace,
 	 * any mount() we issue lands in the host mount tree and any
 	 * loop binding pollutes a host-visible device node.  Degrade
-	 * silently -- childops that depended on the pool consult
-	 * scratch_block_ready themselves and fall back to today's
-	 * per-child tmpfs/ramfs path. */
+	 * silently -- the btrfs ioctl group consults scratch_block_ready
+	 * itself and falls back to the testfile pool. */
 	if (!__atomic_load_n(&shm->isolation.mnt_ready, __ATOMIC_RELAXED)) {
 		fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
 				      "mnt_ready=0");
@@ -589,36 +588,12 @@ static const struct fd_provider scratch_block_provider = {
 
 REG_FD_PROV(scratch_block_provider);
 
-int scratch_block_random_loop_num(void)
-{
-	unsigned int count;
-	unsigned int start;
-	unsigned int i;
-
-	if (!__atomic_load_n(&shm->isolation.scratch_block_ready,
-			     __ATOMIC_RELAXED))
-		return -1;
-	count = load_scratch_block_count();
-	if (count == 0)
-		return -1;
-
-	start = rnd_modulo_u32(count);
-	for (i = 0; i < count; i++) {
-		struct scratch_block_entry *e =
-			&shm->isolation.scratch_block[(start + i) % count];
-
-		if (e->loop_num >= 0)
-			return e->loop_num;
-	}
-	return -1;
-}
-
 #else  /* !__has_include(<linux/loop.h>) */
 
 /*
  * No <linux/loop.h> in the build environment: register a stub
  * provider so the dispatcher's "registered but not enabled" logging
- * names the missing dependency, and return -1 from the helper.
+ * names the missing dependency.
  */
 static int init_scratch_block(void)
 {
@@ -641,10 +616,5 @@ static const struct fd_provider scratch_block_provider = {
 };
 
 REG_FD_PROV(scratch_block_provider);
-
-int scratch_block_random_loop_num(void)
-{
-	return -1;
-}
 
 #endif /* __has_include(<linux/loop.h>) */

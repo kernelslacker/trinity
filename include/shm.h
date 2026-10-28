@@ -307,17 +307,13 @@ struct shm_s {
 		 * came from the kernel's own LOOP_CTL_GET_FREE allocation
 		 * and the parent retains the loop fd for the run's lifetime
 		 * (children inherit it via fork; a child close drops only
-		 * that child's ref).  Childops needing /dev/loopN draw
-		 * their loop number from this pool rather than reaching
-		 * for arbitrary host block devices, so the node is always
-		 * a fuzz-safe parent-owned entry, never a host disk node.
+		 * that child's ref).
 		 *
-		 * Children consult scratch_block_ready before reading any
-		 * other field; when false (non-root, mnt_ready degraded, or
-		 * provider init failed), childops fall back to today's
-		 * per-child tmpfs/ramfs path.  loop_fd / loop_num are -1
-		 * for the tmpfs slot, so an entry with loop_num >= 0 is the
-		 * only kind a block-fd consumer should pick.
+		 * scratch_block_ready is false when the pool never stood
+		 * up (non-root, mnt_ready degraded, or provider init
+		 * failed).  loop_fd / loop_num are -1 for the tmpfs slot,
+		 * so an entry with loop_num >= 0 is the only kind a
+		 * block-fd consumer should pick.
 		 *
 		 * Parent teardown via atexit (mirror self_cgroup_cleanup):
 		 * unmount + LOOP_CLR_FD on every published entry, close the

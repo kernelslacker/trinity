@@ -13,12 +13,8 @@
  * fork(); the parent's fd outlives any child close so the loop binding
  * stays alive for the run.
  *
- * The pool is the only block-fd source childops are allowed to draw.
- * Helpers below let migrated childops pull a vetted loop number or fd
- * without re-reading the shm layout; both return -1 when the pool is
- * empty (mnt_ready false, /dev/loop-control unavailable, or every
- * loop allocation failed), and consumers must treat that as "no
- * scratch loop -- fall back to today's per-child tmpfs/ramfs path".
+ * The provider hands out the loop fds, and the btrfs and loop ioctl
+ * groups match the fd they were handed against the published entries.
  */
 
 /*
@@ -57,13 +53,6 @@ struct scratch_block_entry {
 	/* "ext4", "tmpfs", or "none" (loop without a filesystem). */
 	char fs_type[8];
 };
-
-/*
- * Return the loop_num field of a random pool entry whose loop_num is
- * >= 0 (i.e. ignore tmpfs-only slots), or -1 if no such entry exists.
- * Safe to call from any process; reads shm->isolation atomically.
- */
-int scratch_block_random_loop_num(void);
 
 /*
  * Load shm->isolation.scratch_block_count clamped to SCRATCH_BLOCK_MAX.
