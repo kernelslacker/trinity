@@ -55,9 +55,6 @@
 #ifdef USE_PHONET
 #include <linux/phonet.h>
 #endif
-#ifdef USE_ATALK
-#include <linux/atalk.h>
-#endif
 #ifdef USE_ATM
 #include <linux/atm.h>
 #endif
