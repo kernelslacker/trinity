@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
-#include "bpf.h"		/* get_rand_bpf_prog_fd */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
 #include "fd.h"			/* get_typed_fd */
@@ -71,13 +70,8 @@ static const char *const returns_fd[] = {
  * find_local_object_by_fd() hooked in fake_objects.c; their for_each_obj
  * walks run through objects/registry.c.  The pidfd group's info sanitiser
  * asks for set_rand_bitmask(), which genl_ops_test.c fakes, and the perf
- * group's for a bpf prog fd.
+ * group's for a bpf prog fd, which fake_fds.c fakes.
  */
-int get_rand_bpf_prog_fd(void)
-{
-	return -1;
-}
-
 u64 rand64(void)
 {
 	return rnd_u64();

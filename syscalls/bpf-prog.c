@@ -1,9 +1,11 @@
 /*
  * syscalls/bpf-prog.c -- BPF_PROG_* command family sanitisers and post
  * handlers: PROG_LOAD (the classic-vs-eBPF insn buffer split and the sk_lookup
- * post-attach lifecycle), PROG_ATTACH / PROG_DETACH, PROG_TEST_RUN and
- * RAW_TRACEPOINT_OPEN.  The raw tracepoint arm rides here because it consumes
- * a prog_fd and the fixed name pool has no object type of its own.
+ * post-attach lifecycle), PROG_ATTACH / PROG_DETACH, PROG_TEST_RUN,
+ * RAW_TRACEPOINT_OPEN and PROG_STREAM_OPEN.  The raw tracepoint and stream
+ * arms ride here because they consume a prog_fd, and neither has an object
+ * pool of its own: the tracepoint arm draws a name from a fixed list, and
+ * the stream fd it opens is pooled as a plain file.
  */
 
 #ifdef USE_BPF
@@ -21,6 +23,7 @@
 #include "bpf.h"
 #include "bpf-internal.h"
 #include "deferred-free.h"
+#include "fd.h"
 #include "net.h"
 #include "objects.h"
 #include "publish_resource.h"
@@ -155,6 +158,32 @@ void sanitise_bpf_raw_tracepoint(union bpf_attr *attr, struct syscallrecord *rec
 	rec->a3 = sizeof(attr->raw_tracepoint);
 }
 
+#ifdef USE_BPF_PROG_STREAM_OPEN
+/*
+ * bpf_prog_stream_new_fd() serves only the stdout and stderr ids and
+ * prog_stream_open() refuses any flag but BPF_F_STREAM_NONBLOCK, so most
+ * draws are valid and a stray id or flag (-ENOENT, -EINVAL) is the rare one.
+ * A blocking stream fd sleeps in wait_event_interruptible() on an empty
+ * stream until the call's alarm ends it, so only a quarter of the opens
+ * leave NONBLOCK clear.
+ */
+void sanitise_bpf_prog_stream_open(union bpf_attr *attr, struct syscallrecord *rec)
+{
+	attr->prog_stream_open.prog_fd = get_rand_bpf_prog_fd();
+	if (ONE_IN(16))
+		attr->prog_stream_open.stream_id = rnd_u32();
+	else
+		attr->prog_stream_open.stream_id = RAND_BOOL() ?
+			BPF_STREAM_STDOUT : BPF_STREAM_STDERR;
+	if (ONE_IN(16))
+		attr->prog_stream_open.flags = rnd_u32();
+	else
+		attr->prog_stream_open.flags = ONE_IN(4) ?
+			0 : BPF_F_STREAM_NONBLOCK;
+	rec->a3 = sizeof(attr->prog_stream_open);
+}
+#endif
+
 /*
  * Drive the sk_lookup attach lifecycle on a freshly loaded
  * BPF_PROG_TYPE_SK_LOOKUP program.  sk_lookup attaches via
@@ -258,6 +287,23 @@ void post_bpf_prog_get_fd_by_id(int fd)
 	/* Same logic as BPF_MAP_GET_FD_BY_ID for prog fds. */
 	if (fd >= 0)
 		publish_resource(OBJ_FD_BPF_PROG, fd, NULL);
+}
+
+/*
+ * The bpf-stream fd BPF_PROG_STREAM_OPEN returned belongs to no provider:
+ * pool it, so read() and poll() reach bpf_stream_fops and the pool's cap
+ * closes it in time.  Left alone, every open that succeeds leaks one.  A
+ * stdio or protected number is no fd this call made (the kernel hands out
+ * only free ones), so it is neither pooled nor closed; what the pool
+ * refuses past that is the stream's alone, and is closed.
+ */
+void post_bpf_prog_stream_open(int fd)
+{
+	if (fd <= 2 || fd_is_protected(fd))
+		return;
+
+	if (!pool_returned_fd(fd))
+		close(fd);
 }
 
 void post_bpf_prog_attach(unsigned long ret, bool attr_readable,

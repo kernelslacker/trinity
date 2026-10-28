@@ -2,9 +2,10 @@
  * Self-check for how the post handlers pool and retire the descriptors a
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
- * pidfs namespace getters, the typed producers and epoll_create, close and
- * close_range, and the key serials keyctl pools.  Whatever object a number
- * held is retired, copy pooled or not, and a retire never closes the number.
+ * pidfs namespace getters, bpf's BPF_PROG_STREAM_OPEN, the typed producers
+ * and epoll_create, close and close_range, and the key serials keyctl
+ * pools.  Whatever object a number held is retired, copy pooled or not,
+ * and a retire never closes the number.
  */
 
 #include <errno.h>
@@ -26,6 +27,7 @@
 #include <unistd.h>
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
+#include "bpf.h"		/* BPF_PROG_STREAM_OPEN */
 #include "child.h"
 #include "csfu.h"		/* build_csfu_struct */
 #include "debug.h"		/* BUG */
@@ -3684,6 +3686,116 @@ static void ioctl_fds_are_all_pooled_or_closed(void)
 	}
 }
 
+#ifdef USE_BPF
+/* Run bpf's sanitiser, which makes the post handler's snapshot, and its
+ * post handler on a BPF_PROG_STREAM_OPEN that returned @retval.  The
+ * handler hands the attr to deferred free, which refuses what the fake
+ * allocator never tracked, so the attr is the case's to free. */
+static void run_bpf_stream_open(unsigned long retval)
+{
+	static struct syscallrecord rec;
+	void *attr;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = BPF_PROG_STREAM_OPEN;
+	syscall_bpf.sanitise(&rec);
+	attr = (void *) rec.a2;
+	rec.retval = retval;
+	rec.errno_post = (retval == (unsigned long) -1L) ? EBADF : 0;
+
+	forget_calls();
+	syscall_bpf.post(&rec);
+	free(attr);
+}
+
+/* The call returns the stream fd it made: no provider owns it, so it is
+ * pooled like an open result, and stays open. */
+static void bpf_stream_open_pools_the_fd_it_returned(void)
+{
+	struct pool_entry *e;
+	int peer, fd;
+
+	reset();
+	fd = open_kind(FILE_REG, &peer);
+	run_bpf_stream_open((unsigned long) fd);
+	e = pool_find(fd, OBJ_FD_TESTFILE);
+	check("the stream fd was not pooled", "bpf",
+	      e != NULL && e->local && published == 1 && pool_count(fd) == 1);
+	check("a pooled stream fd was closed", "bpf",
+	      fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
+/* A call that failed owns nothing: -1 is an errno, not a number to
+ * close, and no object under it is retired. */
+static void bpf_stream_open_that_failed_owns_nothing(void)
+{
+	int peer, fd;
+
+	reset();
+	fd = open_kind(FILE_REG, &peer);
+	pool_add(true, fd, OBJ_FD_PIPE);
+	run_bpf_stream_open((unsigned long) -1L);
+	check("a failed stream open changed the pool", "bpf",
+	      published == 0 && retires == 0 && destroys == 0 &&
+	      pool_count(fd) == 1 && pool_find(fd, OBJ_FD_PIPE) != NULL);
+	check("a failed stream open closed an fd", "bpf",
+	      fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
+/* The kernel only hands out a free number, so one that names stdio or a
+ * protected fd is somebody's descriptor and not the stream the call made
+ * (the record's cmd can be stale when a slot was rewritten after the
+ * sanitiser drew it): it is left alone, open and unpooled. */
+static void bpf_stream_open_leaves_a_number_that_is_not_free_alone(void)
+{
+	unsigned int k;
+	int peer, fd;
+
+	for (k = 0; k < 3; k++) {
+		bool open_after;
+
+		reset();
+		save_stdio(k);
+		run_bpf_stream_open(k);
+		open_after = fcntl((int) k, F_GETFD) != -1;
+		restore_stdio(k);
+		check("a stream open that returned a stdio number pooled it",
+		      "bpf", published == 0 && retires == 0);
+		check("a stream open that returned a stdio number closed it",
+		      "bpf", open_after);
+	}
+
+	reset();
+	fd = open_kind(FILE_REG, &peer);
+	fake_child.fail_nth_fd = fd;
+	run_bpf_stream_open((unsigned long) fd);
+	fake_child.fail_nth_fd = -1;
+	check("a stream open that returned a protected number pooled it",
+	      "bpf", published == 0 && retires == 0);
+	check("a stream open that returned a protected number closed it",
+	      "bpf", fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
+/* A stream fd the pool cannot take, its head having no destructor to close
+ * it through, is nobody's: closed rather than leaked. */
+static void bpf_stream_open_closes_an_fd_the_pool_cannot_take(void)
+{
+	int peer, fd;
+
+	reset();
+	no_destructor = true;
+	fd = open_kind(FILE_REG, &peer);
+	run_bpf_stream_open((unsigned long) fd);
+	check("a stream fd was pooled where nothing can close it", "bpf",
+	      published == 0 && pool_count(fd) == 0);
+	check("a stream fd nothing owns was left open", "bpf",
+	      fcntl(fd, F_GETFD) == -1);
+}
+#endif /* USE_BPF */
+
 void dup_pool_self_check(void);
 void dup_pool_self_check(void)
 {
@@ -3763,6 +3875,12 @@ void dup_pool_self_check(void)
 	typed_fd_the_pool_cannot_own_is_closed();
 	epoll_create_pools_an_epoll_object();
 	keyctl_pools_only_owned_keyrings();
+#ifdef USE_BPF
+	bpf_stream_open_pools_the_fd_it_returned();
+	bpf_stream_open_that_failed_owns_nothing();
+	bpf_stream_open_leaves_a_number_that_is_not_free_alone();
+	bpf_stream_open_closes_an_fd_the_pool_cannot_take();
+#endif
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];
 		ioctl_pools_the_ns_fd_a_getter_returned();

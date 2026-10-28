@@ -3,12 +3,14 @@
  * binary: the allocator and list validator the registry needs, and a stub
  * for the object-pool lookup the fd-to-provider walk reaches.  The stub
  * aborts unless a test has installed a pool, so a test that wanders into
- * that walk fails loudly instead of quietly seeing an untracked fd.
+ * that walk fails loudly instead of quietly seeing an untracked fd.  Also
+ * the pickers of fds/bpf.c, which the bpf sanitisers draw from.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "bpf.h"
 #include "list.h"
 #include "objects.h"
 #include "utils.h"
@@ -51,4 +53,34 @@ struct object *find_object_by_fd(int fd)
 		abort();
 	}
 	return fake_find_object_by_fd(fd);
+}
+
+/*
+ * The pickers of fds/bpf.c, whose pools no test provides: the sanitisers of
+ * syscalls/bpf*.c and the perf ioctl group take -1 from each, as they do
+ * from an empty pool.
+ */
+int get_rand_bpf_fd(void)
+{
+	return -1;
+}
+
+int get_rand_bpf_prog_fd(void)
+{
+	return -1;
+}
+
+int get_rand_bpf_link_fd(void)
+{
+	return -1;
+}
+
+int get_rand_bpf_btf_fd(void)
+{
+	return -1;
+}
+
+int get_rand_bpf_token_fd(void)
+{
+	return -1;
 }

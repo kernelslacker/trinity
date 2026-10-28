@@ -123,7 +123,6 @@ unsigned int rand32(void)
  * get_random_fd:       only reachable via FT_FD, unless a test that runs a
  *                      sanitiser drawing from the fd pool sets
  *                      fake_random_fd_empty, when the pool hands out -1.
- * ebpf_gen_program_into: only reachable via FT_BPF_PROGRAM (USE_BPF).
  * struct_field_fill_schema_aware: only reachable via FT_EMBEDDED_STRUCT.
  * __zmalloc_tracked:  only reachable via pointer-tag passes (Pass 2/3).
  */
@@ -134,18 +133,6 @@ int get_random_fd(void)
 	if (fake_random_fd_empty)
 		return -1;
 	fprintf(stderr, "fake get_random_fd called unexpectedly\n");
-	abort();
-}
-
-/* ebpf_gen_program_into signature uses struct bpf_insn * but we avoid
- * pulling in bpf.h here; void * is ABI-equivalent on all supported arches. */
-void ebpf_gen_program_into(void *insns, int max_insns,
-			   int *insn_count, unsigned int prog_type);
-void ebpf_gen_program_into(void *insns, int max_insns,
-			   int *insn_count, unsigned int prog_type)
-{
-	(void) insns; (void) max_insns; (void) insn_count; (void) prog_type;
-	fprintf(stderr, "fake ebpf_gen_program_into called unexpectedly\n");
 	abort();
 }
 

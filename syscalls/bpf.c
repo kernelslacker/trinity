@@ -264,6 +264,12 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		sanitise_bpf_default(attr, rec);
 		rec->rettype = RET_FD;
 		break;
+#ifdef USE_BPF_PROG_STREAM_OPEN
+	case BPF_PROG_STREAM_OPEN:
+		sanitise_bpf_prog_stream_open(attr, rec);
+		rec->rettype = RET_FD;
+		break;
+#endif
 	default:
 		sanitise_bpf_default(attr, rec);
 		break;
@@ -448,6 +454,7 @@ static void post_bpf_close_orphan_fd(int fd, unsigned int cmd)
 	case BPF_BTF_LOAD:
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_TOKEN_CREATE:
+	case BPF_PROG_STREAM_OPEN:
 		/* Already tracked above. */
 		break;
 	case BPF_OBJ_GET:
@@ -558,6 +565,9 @@ static void post_bpf(struct syscallrecord *rec)
 	case BPF_TOKEN_CREATE:
 		post_bpf_token_create(fd);
 		break;
+	case BPF_PROG_STREAM_OPEN:
+		post_bpf_prog_stream_open(fd);
+		break;
 	case BPF_PROG_ATTACH:
 		post_bpf_prog_attach(ret, attr_readable, attr);
 		break;
@@ -592,6 +602,7 @@ static unsigned long bpf_cmds[] = {
 	BPF_LINK_DETACH, BPF_PROG_BIND_MAP,
 	BPF_TOKEN_CREATE,
 	BPF_PROG_STREAM_READ_BY_FD, BPF_PROG_ASSOC_STRUCT_OPS,
+	BPF_PROG_STREAM_OPEN,
 };
 
 struct syscallentry syscall_bpf = {

@@ -434,6 +434,7 @@ FAKE_SRCS	:= \
 	spawn_test.c \
 	post_oracle_test.c \
 	dup_pool_test.c \
+	bpf_gen_test.c \
 	test_main.c
 
 # The periodic KCOV CMP dump and the core --stats-json emitters, linked for
@@ -488,6 +489,17 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
 		   $(TOP)/fds/fds-pool.c \
 		   $(TOP)/dispatch/syscall-retfd.c
+
+# syscalls/bpf.c and its sibling TUs bring syscall_bpf, whose sanitiser
+# bpf_gen_test.c runs, and whose BPF_PROG_STREAM_OPEN post handler
+# dup_pool_test.c drives against its fake object pool.  The program
+# generators the other arms reach are linked as they are, and
+# the struct_catalog/bpf*.c tables bring the map, program and attach type
+# lists the sanitisers draw from; the pickers the arms draw their fds from
+# are faked in fake_fds.c.
+PARENT_SRCS	+= $(wildcard $(TOP)/syscalls/bpf*.c) \
+		   $(wildcard $(TOP)/net/bpf/*.c) \
+		   $(wildcard $(TOP)/struct_catalog/bpf*.c)
 
 # syscalls/fs/read.c, syscalls/mq/mq_timedreceive.c, the getters and
 # listers under syscalls/xattr/ and the value-buffer pickers they share

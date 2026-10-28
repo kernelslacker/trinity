@@ -451,6 +451,32 @@ else
 fi
 
 #############################################################################################
+# Does linux/bpf.h give union bpf_attr the prog_stream_open member
+# (BPF_PROG_STREAM_OPEN, added in 7.4)
+#
+echo -n "[*] Checking if bpf_attr has prog_stream_open.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .prog_stream_open.stream_id = 0 };
+	return a.prog_stream_open.stream_id;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_PROG_STREAM_OPEN 1" >> $CONFIGH
+fi
+
+#############################################################################################
 # Does linux/bpf.h give union bpf_attr the link_create.cgroup member
 # (added in 6.13)
 #
@@ -587,7 +613,12 @@ check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_MAP_UPDATE_BATCH BPF_MAP_DELETE_BATCH BPF_LINK_CREATE \
 	BPF_LINK_UPDATE BPF_LINK_GET_FD_BY_ID BPF_LINK_GET_NEXT_ID \
 	BPF_ENABLE_STATS BPF_ITER_CREATE BPF_LINK_DETACH BPF_PROG_BIND_MAP \
-	BPF_TOKEN_CREATE BPF_PROG_STREAM_READ_BY_FD BPF_PROG_ASSOC_STRUCT_OPS
+	BPF_TOKEN_CREATE BPF_PROG_STREAM_READ_BY_FD BPF_PROG_ASSOC_STRUCT_OPS \
+	BPF_PROG_STREAM_OPEN
+
+# BPF_PROG_STREAM_OPEN's stream ids and flag, members of anonymous enums.
+check_enum_member linux/bpf.h BPF_STREAM_STDOUT BPF_STREAM_STDERR \
+	BPF_F_STREAM_NONBLOCK
 
 # enum bpf_map_type, from BPF_MAP_TYPE_LRU_HASH to the newest.
 check_enum_member linux/bpf.h BPF_MAP_TYPE_LRU_HASH \

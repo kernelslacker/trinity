@@ -113,6 +113,23 @@
 #ifndef HAVE_BPF_PROG_ASSOC_STRUCT_OPS
 #define BPF_PROG_ASSOC_STRUCT_OPS	38
 #endif
+#ifndef HAVE_BPF_PROG_STREAM_OPEN
+#define BPF_PROG_STREAM_OPEN		39
+#endif
+
+/*
+ * BPF_PROG_STREAM_OPEN's stream ids and its one flag.  Each is a member of
+ * an anonymous enum, so each is probed like the commands above.
+ */
+#ifndef HAVE_BPF_STREAM_STDOUT
+#define BPF_STREAM_STDOUT		1
+#endif
+#ifndef HAVE_BPF_STREAM_STDERR
+#define BPF_STREAM_STDERR		2
+#endif
+#ifndef HAVE_BPF_F_STREAM_NONBLOCK
+#define BPF_F_STREAM_NONBLOCK		(1U << 0)
+#endif
 
 /*
  * Attach-type fallbacks for older /usr/include/linux/bpf.h.  Consumed
