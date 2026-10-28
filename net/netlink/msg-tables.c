@@ -25,6 +25,7 @@
 #include "utils.h"
 
 #include "kernel/if_addr.h"
+#include "kernel/if_link.h"
 #include "kernel/netlink.h"
 #include "kernel/nexthop.h"
 #include "kernel/rtnetlink.h"
@@ -156,9 +157,6 @@ const size_t link_kinds_n = ARRAY_SIZE(link_kinds);
 #ifndef IFLA_PARENT_DEV_BUS_NAME
 #define IFLA_PARENT_DEV_BUS_NAME	57
 #endif
-#ifndef IFLA_GRO_MAX_SIZE
-#define IFLA_GRO_MAX_SIZE		58
-#endif
 #ifndef IFLA_TSO_MAX_SIZE
 #define IFLA_TSO_MAX_SIZE		59
 #endif
@@ -170,12 +168,6 @@ const size_t link_kinds_n = ARRAY_SIZE(link_kinds);
 #endif
 #ifndef IFLA_DEVLINK_PORT
 #define IFLA_DEVLINK_PORT		62
-#endif
-#ifndef IFLA_GSO_IPV4_MAX_SIZE
-#define IFLA_GSO_IPV4_MAX_SIZE		63
-#endif
-#ifndef IFLA_GRO_IPV4_MAX_SIZE
-#define IFLA_GRO_IPV4_MAX_SIZE		64
 #endif
 #ifndef IFLA_DPLL_PIN
 #define IFLA_DPLL_PIN			65
@@ -211,7 +203,7 @@ const unsigned short ifla_attrs[] = {
 	IFLA_DEVLINK_PORT, IFLA_GSO_IPV4_MAX_SIZE,
 	IFLA_GRO_IPV4_MAX_SIZE, IFLA_DPLL_PIN,
 	IFLA_MAX_PACING_OFFLOAD_HORIZON, IFLA_NETNS_IMMUTABLE,
-	IFLA_HEADROOM, IFLA_TAILROOM,
+	IFLA_HEADROOM, IFLA_TAILROOM, IFLA_PACING_OFFLOAD,
 };
 const size_t ifla_attrs_n = ARRAY_SIZE(ifla_attrs);
 

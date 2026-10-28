@@ -18,6 +18,8 @@
 #include "rnd.h"
 #include "utils-macros.h"		/* ARRAY_SIZE, RAND_ARRAY */
 
+#include "kernel/if_link.h"
+
 /* Prototypes for external-linkage generators defined below.  Their
  * sibling declarations for the dispatcher live in net/netlink/msg-core.c;
  * these self-declarations satisfy -Wmissing-prototypes without
@@ -158,6 +160,34 @@ static size_t gen_link_af_spec(unsigned char *p, size_t avail)
 }
 
 /*
+ * The size limits of a link.  ifla_policy takes IFLA_GSO_MAX_SIZE and its
+ * IPv4 twin from MAX_TCP_HEADER + 1, which is 513 at most (176 bytes of
+ * header room, and a 256 byte cache line on s390), and validate_linkmsg()
+ * only up to the device's tso_max_size.  That is 65536, TSO_LEGACY_MAX_SIZE,
+ * until a driver raises it, as lo and veth do to GSO_MAX_SIZE; the GRO limits
+ * go up to GRO_MAX_SIZE.  Both of those are 8 * 65535, the BIG TCP maximum.
+ * A limit bites when it is under what the flow sends, and since 32bfd220cd6f
+ * a device re-segments an oversized skb instead of dropping its GSO features,
+ * so a draw starts clear of the floor, a quarter are within a few segments
+ * and one in eight is a BIG TCP size, which only a raised device takes.
+ */
+#define LEGACY_MAX_SIZE		65536u
+#define BIG_TCP_MAX_SIZE	(8 * 65535u)
+
+static __u32 gen_link_gso_limit(void)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		return RAND_RANGE(LEGACY_MAX_SIZE + 1, BIG_TCP_MAX_SIZE);
+	case 1:
+	case 2:
+		return RAND_RANGE(1024u, 4096u);
+	default:
+		return RAND_RANGE(1024u, LEGACY_MAX_SIZE);
+	}
+}
+
+/*
  * Generate a structured payload for link attributes (IFLA_*).
  */
 size_t gen_rta_link_payload(unsigned char *p, size_t avail,
@@ -196,7 +226,6 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 	case IFLA_NUM_RX_QUEUES:
 	case IFLA_NUM_VF:
 	case IFLA_GSO_MAX_SEGS:
-	case IFLA_GSO_MAX_SIZE:
 	case IFLA_NEW_IFINDEX:
 	case IFLA_LINK:
 	case IFLA_MASTER:
@@ -205,6 +234,39 @@ size_t gen_rta_link_payload(unsigned char *p, size_t avail,
 	case IFLA_NET_NS_FD:
 		if (avail >= 4) {
 			__u32 val = rnd_modulo_u32(64);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_GSO_MAX_SIZE:
+	case IFLA_GSO_IPV4_MAX_SIZE:
+		if (avail >= 4) {
+			__u32 val = gen_link_gso_limit();
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	case IFLA_GRO_MAX_SIZE:
+	case IFLA_GRO_IPV4_MAX_SIZE:
+		if (avail >= 4) {
+			__u32 val;
+
+			if (RAND_BOOL())
+				val = RAND_RANGE(0u, LEGACY_MAX_SIZE);
+			else
+				val = RAND_RANGE(LEGACY_MAX_SIZE + 1, BIG_TCP_MAX_SIZE);
+			memcpy(p, &val, 4);
+			return 4;
+		}
+		return 0;
+
+	/* NLA_POLICY_MAX(NLA_U32, 1); only a device that advertises a pacing
+	 * horizon takes a 1, which none of the virtual ones does. */
+	case IFLA_PACING_OFFLOAD:
+		if (avail >= 4) {
+			__u32 val = RAND_BOOL();
 			memcpy(p, &val, 4);
 			return 4;
 		}

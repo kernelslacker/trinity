@@ -568,6 +568,11 @@ check_enum_member linux/nexthop.h NHA_DST_PORT
 # multicast and anycast dumps take.
 check_enum_member linux/if_addr.h IFA_TARGET_NETNSID
 
+# The link attributes that set the BIG TCP size limits and the pacing offload
+# switch.
+check_enum_member linux/if_link.h IFLA_GRO_MAX_SIZE IFLA_GSO_IPV4_MAX_SIZE \
+	IFLA_GRO_IPV4_MAX_SIZE IFLA_PACING_OFFLOAD
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

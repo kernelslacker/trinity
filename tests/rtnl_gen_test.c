@@ -17,11 +17,13 @@
 
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
+#include "kernel/if_link.h"	/* the IFLA_* limits and IFLA_PACING_OFFLOAD */
 #include "socketinfo.h"		/* struct socket_triplet */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
-#define ROUNDS		200000
+#define ROUNDS		400000
 
 /*
  * Only a lone message whose nlmsg_len is intact says where its attributes
@@ -165,8 +167,8 @@ static void tally_addr_dump(struct addr_dump *t, const struct nlmsghdr *nlh)
  * of four bytes seven times in eight, but one draw in seven is a nest of
  * them, so about 0.48 of the requests are clear of anything the strict
  * parse refuses and 0.35 of them hold one; the ids are -1 one time in eight
- * and 0 to 3 the rest.  Over the 1900 requests or so each type has the
- * fractions have standard deviations under 0.012, and the bounds are five of
+ * and 0 to 3 the rest.  Over the 3900 requests or so each type has the
+ * fractions have standard deviations under 0.009, and the bounds are five of
  * them out or more.
  */
 static void expect_addr_dump(const struct addr_dump *t, bool multicast,
@@ -207,10 +209,161 @@ static void expect_addr_dump(const struct addr_dump *t, bool multicast,
 			"rtnl: an IFA_TARGET_NETNSID is not a small id");
 }
 
+/* ---------- The link size limits and IFLA_PACING_OFFLOAD ----------------- */
+
+/*
+ * What the kernel takes of them, from ifla_policy and validate_linkmsg() in
+ * net/core/rtnetlink.c.  IFLA_GSO_MAX_SIZE and IFLA_GSO_IPV4_MAX_SIZE are
+ * NLA_POLICY_MIN(NLA_U32, MAX_TCP_HEADER + 1), and MAX_TCP_HEADER is
+ * L1_CACHE_ALIGN(128 + MAX_HEADER): 512 at most, with the 176 bytes of header
+ * room that tunnels and wireless give it and a 256 byte cache line, so 513
+ * clears the floor on any config.  validate_linkmsg() then refuses either
+ * above the device's tso_max_size, which is TSO_LEGACY_MAX_SIZE until a
+ * driver raises it, as lo and veth do to GSO_MAX_SIZE, and refuses
+ * IFLA_GRO_MAX_SIZE and IFLA_GRO_IPV4_MAX_SIZE above GRO_MAX_SIZE.
+ * IFLA_PACING_OFFLOAD is NLA_POLICY_MAX(NLA_U32, 1), and ifla_policy parses
+ * the types from IFLA_DPLL_PIN up strictly, so it takes four bytes exactly.
+ */
+#define FLOOR_CLEARED		513u
+#define TSO_LEGACY_MAX_SIZE	65536u
+#define GSO_MAX_SIZE		(8 * 65535u)
+#define GRO_MAX_SIZE		(8 * 65535u)
+
+/* A few segments of a 1500 byte MTU: what a limit has to be under to bite. */
+#define FEW_SEGMENTS		4096u
+
+enum limit_kind { GSO_LIMIT, GRO_LIMIT, PACING };
+
+static const struct {
+	unsigned short type;
+	enum limit_kind kind;
+	const char *name;
+} limit_types[] = {
+	{ IFLA_GSO_MAX_SIZE,      GSO_LIMIT, "IFLA_GSO_MAX_SIZE" },
+	{ IFLA_GSO_IPV4_MAX_SIZE, GSO_LIMIT, "IFLA_GSO_IPV4_MAX_SIZE" },
+	{ IFLA_GRO_MAX_SIZE,      GRO_LIMIT, "IFLA_GRO_MAX_SIZE" },
+	{ IFLA_GRO_IPV4_MAX_SIZE, GRO_LIMIT, "IFLA_GRO_IPV4_MAX_SIZE" },
+	{ IFLA_PACING_OFFLOAD,    PACING,    "IFLA_PACING_OFFLOAD" },
+};
+
+struct limit {
+	unsigned int seen;
+	unsigned int exact;		/* four bytes, without the nest flag */
+	unsigned int below;		/* under FLOOR_CLEARED */
+	unsigned int few;		/* up to FEW_SEGMENTS */
+	unsigned int legacy;		/* up to TSO_LEGACY_MAX_SIZE */
+	unsigned int big;		/* up to GSO_MAX_SIZE, as a raised limit takes */
+	unsigned int over;		/* past it, which no device takes */
+	unsigned int zero, one;
+};
+
+/*
+ * The limit attributes among the top-level ones of an RTM_*LINK request, by
+ * the size of the number each carries.
+ */
+static void tally_link_limits(struct limit *t, const struct nlmsghdr *nlh)
+{
+	const unsigned char *p = (const unsigned char *) nlh +
+				 NLMSG_SPACE(sizeof(struct ifinfomsg));
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct ifinfomsg)))
+		return;
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct ifinfomsg));
+
+	while (len >= NLA_HDRLEN) {
+		const struct nlattr *nla = (const struct nlattr *) p;
+		size_t total = NLA_ALIGN(nla->nla_len);
+		unsigned int i;
+
+		if (nla->nla_len < NLA_HDRLEN || nla->nla_len > len)
+			break;
+		for (i = 0; i < ARRAY_SIZE(limit_types); i++) {
+			struct limit *l = &t[i];
+			uint32_t v;
+
+			if ((nla->nla_type & NLA_TYPE_MASK) != limit_types[i].type)
+				continue;
+			l->seen++;
+			if ((nla->nla_type & NLA_F_NESTED) ||
+			    nla->nla_len != NLA_HDRLEN + sizeof(v))
+				break;
+			l->exact++;
+			memcpy(&v, p + NLA_HDRLEN, sizeof(v));
+			l->below += v < FLOOR_CLEARED;
+			l->few += v <= FEW_SEGMENTS;
+			l->legacy += v <= TSO_LEGACY_MAX_SIZE;
+			l->big += v > TSO_LEGACY_MAX_SIZE && v <= GSO_MAX_SIZE;
+			l->over += v > GSO_MAX_SIZE;
+			l->zero += v == 0;
+			l->one += v == 1;
+			break;
+		}
+		if (total > len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * A draw has to clear the policy and validate_linkmsg() of a device that has
+ * the legacy limit to reach do_setlink() on every device, and a limit bites
+ * only when it is under what the flow sends, which since 32bfd220cd6f is when
+ * a device re-segments an oversized skb instead of dropping its GSO features.
+ * So the GSO limits are mostly between the floor and TSO_LEGACY_MAX_SIZE, a
+ * quarter of them within a few segments, and some take the BIG TCP sizes that
+ * lo and veth do, where the legacy limit refuses them.  The GRO limits are as
+ * often above 64 KiB as under it, and the pacing switch is 0 or 1.  One draw
+ * in seven of the shared attribute loop is a nest of the type instead of a
+ * number, so about six in seven of each are the four bytes.
+ */
+static void expect_link_limits(const struct limit *t)
+{
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(limit_types); i++) {
+		const struct limit *l = &t[i];
+		const char *name = limit_types[i].name;
+
+		expect_fraction(l->exact, l->seen, 0.75, 0.95, name,
+				"rtnl: a link limit is not mostly a four byte number");
+		switch (limit_types[i].kind) {
+		case GSO_LIMIT:
+			expect_fraction(l->legacy - l->below, l->exact, 0.75, 1.0, name,
+					"rtnl: a gso limit is not mostly in the policy's range");
+			expect_fraction(l->below, l->exact, 0.0, 0.05, name,
+					"rtnl: a gso limit is under the policy's floor");
+			expect_fraction(l->few - l->below, l->exact, 0.15, 0.45, name,
+					"rtnl: a gso limit is not often within a few segments");
+			expect_fraction(l->big, l->exact, 0.03, 0.25, name,
+					"rtnl: a gso limit is never a BIG TCP size");
+			expect_fraction(l->over, l->exact, 0.0, 0.01, name,
+					"rtnl: a gso limit is past what any device takes");
+			break;
+		case GRO_LIMIT:
+			expect_fraction(l->over, l->exact, 0.0, 0.01, name,
+					"rtnl: a gro limit is past GRO_MAX_SIZE");
+			expect_fraction(l->big, l->exact, 0.35, 0.65, name,
+					"rtnl: a gro limit is not often a BIG TCP size");
+			expect_fraction(l->legacy, l->exact, 0.35, 0.65, name,
+					"rtnl: a gro limit is not often a legacy size");
+			break;
+		case PACING:
+			expect_fraction(l->zero, l->exact, 0.35, 0.65, name,
+					"rtnl: pacing offload is not often 0");
+			expect_fraction(l->one, l->exact, 0.35, 0.65, name,
+					"rtnl: pacing offload is not often 1");
+			break;
+		}
+	}
+}
+
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
 	struct addr_dump multicast, anycast;
+	struct limit limits[ARRAY_SIZE(limit_types)];
 };
 
 static void run_rounds(struct tallies *t)
@@ -240,6 +393,12 @@ static void run_rounds(struct tallies *t)
 		case RTM_GETANYCAST:
 			tally_addr_dump(&t->anycast, nlh);
 			break;
+		case RTM_NEWLINK:
+		case RTM_DELLINK:
+		case RTM_GETLINK:
+		case RTM_SETLINK:
+			tally_link_limits(t->limits, nlh);
+			break;
 		}
 next:
 		free(buf);
@@ -254,4 +413,5 @@ void rtnl_gen_self_check(void)
 	run_rounds(&t);
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
+	expect_link_limits(t.limits);
 }
