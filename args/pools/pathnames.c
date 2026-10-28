@@ -100,6 +100,7 @@ static const char * const interesting_paths[] = {
 	"/dev/null", "/dev/zero", "/dev/urandom", "/dev/full",
 	"/dev/stdin", "/dev/stdout",
 	"/proc/self/status", "/proc/self/maps", "/proc/self/cmdline",
+	"/proc/self/smaps", "/proc/self/smaps_rollup",
 	"/proc/version", "/proc/meminfo", "/proc/cpuinfo",
 	"/sys/kernel/vmcoreinfo",
 };
