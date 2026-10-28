@@ -45,6 +45,10 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
  */
 #define KERNEL_CTA_TIMESTAMP_EVENT	27
 
+/* NF_CT_HELPER_NAME_LEN, which include/net/netfilter/nf_conntrack_helper.h
+ * keeps from uapi: the room nfnl_cthelper_policy's name has with its NUL. */
+#define KERNEL_NF_CT_HELPER_NAME_LEN	16
+
 /* Whether the attribute at buf, or a child of it when it is a nest, has
  * type id. */
 static bool carries_type(const unsigned char *buf, unsigned short id)
@@ -219,8 +223,8 @@ struct bounded_slot {
 };
 
 /*
- * The top-level attributes the netfilter policies bound with NLA_POLICY_MASK
- * or NLA_POLICY_MAX, and the words their handlers bound where the policy does
+ * The attributes the netfilter policies bound with NLA_POLICY_MASK or
+ * NLA_POLICY_MAX, and the words their handlers bound where the policy does
  * not, all read in network byte order, with the bound each gives.  The ids
  * are the attribute enums' positions.
  */
@@ -253,6 +257,19 @@ static const struct bounded_slot slots[] = {
 	 * to NFT_OBJECT_MAX, 10 */
 	{ .name = "NFTA_OBJ_TYPE", .subsys = NFNL_SUBSYS_NFTABLES, .id = 3,
 	  .kind = NLA_KIND_BE32_RANGE, .limit = 10, .lo = 1 },
+	/* nfnl_cthelper_create() reads NFCTH_PRIV_DATA_LEN, which
+	 * nfnl_cthelper_policy types NLA_U32, with ntohl() and answers more
+	 * than the 32 bytes of nf_conn_help's data -ENOMEM.  An expectation
+	 * policy's SET_NUM is NLA_POLICY_MAX(NLA_BE32, 4), the kernel's
+	 * NF_CT_MAX_EXPECT_CLASSES, and nfnl_cthelper_parse_expect_policy()
+	 * answers 0 -EINVAL; nfnl_cthelper_expect_policy() answers an
+	 * EXPECT_MAX over NF_CT_EXPECT_MAX_CNT, 255, -EINVAL */
+	{ .name = "NFCTH_PRIV_DATA_LEN", .subsys = NFNL_SUBSYS_CTHELPER, .id = 5,
+	  .kind = NLA_KIND_BE32_RANGE, .limit = 32 },
+	{ .name = "NFCTH_POLICY_SET_NUM", .subsys = NFNL_SUBSYS_CTHELPER, .id = 1,
+	  .kind = NLA_KIND_BE32_RANGE, .limit = 4, .lo = 1 },
+	{ .name = "NFCTH_POLICY_EXPECT_MAX", .subsys = NFNL_SUBSYS_CTHELPER,
+	  .id = 2, .kind = NLA_KIND_BE32_RANGE, .limit = 255 },
 };
 
 /*
@@ -306,6 +323,16 @@ static const unsigned int set_policies[] = { 0, 1 };
  * for a new flowtable, and answers -EOPNOTSUPP to the rest. */
 static const unsigned int flowtable_hooknums[] = { 0 };
 
+/* nfnl_cthelper_create() and nfnl_cthelper_update() act on
+ * NFCT_HELPER_STATUS_DISABLED and ENABLED and pass over any other status. */
+static const unsigned int helper_statuses[] = { 0, 1 };
+
+/* A helper's tuple takes any L4 number, but the cthelper commands find a
+ * helper by its name and tuple together, so the tuple keeps to the ones a
+ * userspace helper serves, TCP and UDP, as its L3 number does to IPv4 and
+ * IPv6, which NLA_POLICY_MAX(NLA_BE16, NFPROTO_IPV6) also takes. */
+static const unsigned int helper_l4protos[] = { 6, 17 };
+
 /*
  * The top-level attributes whose handlers accept a few values and no others,
  * read as a byte or in network byte order, with the values each accepts.
@@ -337,6 +364,13 @@ static const struct bounded_slot oneof_slots[] = {
 	/* nft_flowtable_hook_policy types NUM NLA_U32 */
 	{ "NFTA_FLOWTABLE_HOOK_NUM", NFNL_SUBSYS_NFTABLES, 1,
 	  NLA_KIND_BE32_ONEOF, 0, flowtable_hooknums, ARRAY_SIZE(flowtable_hooknums) },
+	/* nfnl_cthelper_policy types STATUS NLA_U32 */
+	{ "NFCTH_STATUS", NFNL_SUBSYS_CTHELPER, 6,
+	  NLA_KIND_BE32_ONEOF, 0, helper_statuses, ARRAY_SIZE(helper_statuses) },
+	{ "NFCTH_TUPLE_L3PROTONUM", NFNL_SUBSYS_CTHELPER, 1,
+	  NLA_KIND_BE16_ONEOF, 0, l3protos, ARRAY_SIZE(l3protos) },
+	{ "NFCTH_TUPLE_L4PROTONUM", NFNL_SUBSYS_CTHELPER, 2,
+	  NLA_KIND_U8_ONEOF, 0, helper_l4protos, ARRAY_SIZE(helper_l4protos) },
 };
 
 static bool has_value(const struct bounded_slot *slot, unsigned int v)
@@ -788,8 +822,9 @@ static const char *check_nftables_names(void)
  * The names that a command finds an object by, which each must be one word
  * for a later command to find what an earlier one made: cttimeout_get_timeout(),
  * cttimeout_del_timeout() and the NLM_F_REPLACE arm of cttimeout_new_timeout()
- * find a timeout with strncmp() on its name, and nfnl_acct_new(), _get() and
- * _del() find an object the same way.  A name drawn at random would make
+ * find a timeout with strncmp() on its name, nfnl_acct_new(), _get() and
+ * _del() find an object the same way, and nfnl_cthelper_new(), _get() and
+ * _del() a helper, by its tuple as well.  A name drawn at random would make
  * another object on each NEW and let nothing else find them.  name_max is
  * the room the policy's NLA_NUL_STRING has for the name and its NUL.
  */
@@ -803,6 +838,7 @@ struct word_name {
 static const struct word_name word_names[] = {
 	{ "cttimeout", NFNL_SUBSYS_CTNETLINK_TIMEOUT, 1, CTNL_TIMEOUT_NAME_MAX },
 	{ "acct", NFNL_SUBSYS_ACCT, 1, NFACCT_NAME_MAX },
+	{ "cthelper", NFNL_SUBSYS_CTHELPER, 1, KERNEL_NF_CT_HELPER_NAME_LEN },
 };
 
 static void check_name_id_specs(const struct word_name *name,
@@ -1564,11 +1600,54 @@ static struct pslot hook_get[] = {
 	PS(3, false, NLA_KIND_STRING_WORD),
 };
 
+/*
+ * nfnl_cthelper_policy types the name (1), QUEUE_NUM (3), PRIV_DATA_LEN (5)
+ * and STATUS (6), and leaves TUPLE (2) and POLICY (4) to the handlers' own
+ * parse.  NEW answers -EINVAL without the name or the tuple, and so does
+ * nfnl_cthelper_create() without the policy or PRIV_DATA_LEN.  Wherever the
+ * tuple is parsed it needs its L3PROTONUM (1) and L4PROTONUM (2).  The
+ * policy needs its SET_NUM (1) and as many SETs (2 to 5) as that counts,
+ * which a mark cannot tie to the count, so all four are marked: a SET past
+ * the count is passed over.  Each SET needs its name (1), EXPECT_MAX (2) and
+ * EXPECT_TIMEOUT (3).  GET and DEL read the name and the tuple and need
+ * neither: without them GET answers the first helper and DEL deletes them
+ * all.
+ */
+static struct pslot cthelper_tuple[] = {
+	PS(1, true, NLA_KIND_BE16_ONEOF),
+	PS(2, true, NLA_KIND_U8_ONEOF),
+};
+static struct pslot cthelper_expect[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PSB(2, true, NLA_KIND_BE32_RANGE, 0, 255),
+	PS(3, true, 0),
+};
+static struct pslot cthelper_policy[] = {
+	PSB(1, true, NLA_KIND_BE32_RANGE, 1, 4),
+	PSN(2, true, cthelper_expect),
+	PSN(3, true, cthelper_expect),
+	PSN(4, true, cthelper_expect),
+	PSN(5, true, cthelper_expect),
+};
+static struct pslot cthelper_new[] = {
+	PS(1, true, NLA_KIND_STRING_WORD),
+	PSN(2, true, cthelper_tuple),
+	PS(3, false, 0),
+	PSN(4, true, cthelper_policy),
+	PSB(5, true, NLA_KIND_BE32_RANGE, 0, 32),
+	PS(6, false, NLA_KIND_BE32_ONEOF),
+};
+static struct pslot cthelper_find[] = {
+	PS(1, false, NLA_KIND_STRING_WORD),
+	PSN(2, false, cthelper_tuple),
+};
+
 #define NFTABLES	NFNL_SUBSYS_NFTABLES
 #define CTTIMEOUT	NFNL_SUBSYS_CTNETLINK_TIMEOUT
 #define NFT_COMPAT	NFNL_SUBSYS_NFT_COMPAT
 #define ACCT		NFNL_SUBSYS_ACCT
 #define HOOK		NFNL_SUBSYS_HOOK
+#define CTHELPER	NFNL_SUBSYS_CTHELPER
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1614,6 +1693,9 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFNL_MSG_ACCT_GET", ACCT, 1, acct_get, ARRAY_SIZE(acct_get) },
 	{ "NFNL_MSG_ACCT_DEL", ACCT, 3, acct_del, ARRAY_SIZE(acct_del) },
 	{ "NFNL_MSG_HOOK_GET", HOOK, 0, hook_get, ARRAY_SIZE(hook_get) },
+	{ "NFNL_MSG_CTHELPER_NEW", CTHELPER, 0, cthelper_new, ARRAY_SIZE(cthelper_new) },
+	{ "NFNL_MSG_CTHELPER_GET", CTHELPER, 1, cthelper_find, ARRAY_SIZE(cthelper_find) },
+	{ "NFNL_MSG_CTHELPER_DEL", CTHELPER, 2, cthelper_find, ARRAY_SIZE(cthelper_find) },
 };
 
 /*
