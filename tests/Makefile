@@ -641,6 +641,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/perf/perf_event_open-attr-build.c \
 		   $(TOP)/struct_catalog/perf.c
 FAKE_SRCS	+= perf_attr_test.c
 
+# syscalls/landlock/landlock_add_rule.c brings syscall_landlock_add_rule,
+# whose sanitiser landlock_test.c runs and holds to what the kernel answers a
+# rule with.
+PARENT_SRCS	+= $(TOP)/syscalls/landlock/landlock_add_rule.c
+FAKE_SRCS	+= landlock_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

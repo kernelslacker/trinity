@@ -6,25 +6,93 @@
 #include <string.h>
 #include "fd.h"
 #include "kernel/landlock.h"
+#include "kernel/sched.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 
-enum landlock_rule_type_compat {
-	LANDLOCK_RULE_PATH_BENEATH_COMPAT = 1,
-	LANDLOCK_RULE_NET_PORT_COMPAT,
-};
-
 static unsigned long landlock_ruletypes[] = {
 	LANDLOCK_RULE_PATH_BENEATH_COMPAT,
 	LANDLOCK_RULE_NET_PORT_COMPAT,
+	LANDLOCK_RULE_NAMESPACE_COMPAT,
+	LANDLOCK_RULE_CAPABILITY_COMPAT,
 };
+
+/* The members a permission rule names: the namespace types (CLONE_NS_ALL in
+ * the kernel) and the capabilities CAP_CHOWN..CAP_CHECKPOINT_RESTORE. */
+#define LANDLOCK_NS_TYPES	(CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | \
+				 CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | \
+				 CLONE_NEWNET | CLONE_NEWTIME)
+#define LANDLOCK_CAPS		((1ULL << 41) - 1)
+
+/*
+ * A namespace or capability rule.  The kernel answers -ENOMSG to a rule
+ * with no permission or that neither allows nor quiets anything, and -EINVAL
+ * to a selector other than the one its type is for or that the ruleset does
+ * not handle.  Rules only ever add to the members a layer allows, and the
+ * rulesets in the pool allow every member of what they handle (fds/landlock.c),
+ * so the allowed mask is drawn as every member most of the time and the
+ * odd draw cannot take one away.
+ */
+static void fill_permission_rule(struct landlock_permission_attr *pa, bool caps)
+{
+	__u64 members = caps ? LANDLOCK_CAPS : LANDLOCK_NS_TYPES;
+
+	pa->permissions = caps ? LANDLOCK_PERMISSION_CAPABILITY_USE :
+				 LANDLOCK_PERMISSION_NAMESPACE_USE;
+	if (ONE_IN(16)) {
+		switch (rnd_modulo_u32(4)) {
+		case 0:
+			pa->permissions = 0;
+			break;
+		case 1:
+			pa->permissions ^= LANDLOCK_PERMISSION_NAMESPACE_USE |
+					   LANDLOCK_PERMISSION_CAPABILITY_USE;
+			break;
+		case 2:
+			pa->permissions = LANDLOCK_PERMISSION_NAMESPACE_USE |
+					  LANDLOCK_PERMISSION_CAPABILITY_USE;
+			break;
+		default:
+			pa->permissions = rand64();
+			break;
+		}
+	}
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		pa->allowed = 0;
+		break;
+	case 1:
+		pa->allowed = rand64() & members;
+		break;
+	case 2:
+		pa->allowed = rand64();
+		break;
+	default:
+		pa->allowed = ~0ULL;
+		break;
+	}
+
+	switch (rnd_modulo_u32(4)) {
+	case 1:
+		pa->quiet = rand64() & members;
+		break;
+	case 2:
+		pa->quiet = rand64();
+		break;
+	default:
+		break;
+	}
+}
 
 static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 {
 	unsigned long rule_type;
+	unsigned long flags;
 
 	rule_type = rec->a2;
+	flags = rnd_modulo_u32(2) ? LANDLOCK_ADD_RULE_QUIET : 0;
 
 	switch (rule_type) {
 	case LANDLOCK_RULE_PATH_BENEATH_COMPAT: {
@@ -59,9 +127,29 @@ static void sanitise_landlock_add_rule(struct syscallrecord *rec)
 		avoid_shared_buffer_inout(&rec->a3, sizeof(*np));
 		break;
 	}
+	case LANDLOCK_RULE_NAMESPACE_COMPAT:
+	case LANDLOCK_RULE_CAPABILITY_COMPAT: {
+		struct landlock_permission_attr *pa;
+
+		/*
+		 * add_rule_namespace() and add_rule_capability() answer -EINVAL
+		 * to any flag, LANDLOCK_ADD_RULE_QUIET included: the rule's own
+		 * quiet mask is how they are told to stay out of the audit log.
+		 */
+		flags = 0;
+
+		pa = (struct landlock_permission_attr *) get_writable_address(sizeof(*pa));
+		if (pa == NULL)
+			break;
+		memset(pa, 0, sizeof(*pa));
+		fill_permission_rule(pa, rule_type == LANDLOCK_RULE_CAPABILITY_COMPAT);
+		rec->a3 = (unsigned long) pa;
+		avoid_shared_buffer_inout(&rec->a3, sizeof(*pa));
+		break;
+	}
 	}
 
-	rec->a4 = rnd_modulo_u32(2) ? LANDLOCK_ADD_RULE_QUIET : 0;
+	rec->a4 = flags;
 }
 
 struct syscallentry syscall_landlock_add_rule = {
