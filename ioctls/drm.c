@@ -121,6 +121,10 @@ struct drm_nouveau_channel_free {
 #define DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE	7
 #endif
 
+#ifndef DRM_MODE_OBJECT_COLOROP
+#define DRM_MODE_OBJECT_COLOROP			0xfafafafa
+#endif
+
 static const struct ioctl drm_ioctls[] = {
 	/* drm/drm.h */
 	IOCTL(DRM_IOCTL_VERSION),
@@ -693,7 +697,11 @@ static void drm_sanitise_mode_getpropblob(struct syscallrecord *rec)
 }
 
 #if defined(DRM_IOCTL_MODE_OBJ_GETPROPERTIES) || defined(DRM_IOCTL_MODE_OBJ_SETPROPERTY)
-/* What drm_mode_object_find() matches an object's own type against. */
+/*
+ * What drm_mode_object_find() matches an object's own type against.  The
+ * color operations of a plane's color pipeline (vkms, i915 and amdgpu make
+ * them) are objects with properties of their own.
+ */
 static const __u32 drm_obj_types[] = {
 	DRM_MODE_OBJECT_CRTC,
 	DRM_MODE_OBJECT_CONNECTOR,
@@ -703,6 +711,7 @@ static const __u32 drm_obj_types[] = {
 	DRM_MODE_OBJECT_FB,
 	DRM_MODE_OBJECT_BLOB,
 	DRM_MODE_OBJECT_PLANE,
+	DRM_MODE_OBJECT_COLOROP,
 };
 #endif
 

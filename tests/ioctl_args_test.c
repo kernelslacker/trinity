@@ -72,7 +72,8 @@ static void drm_draws_every_client_cap(void)
  * drm_mode_object_find() matches an object by id and, unless the type is
  * DRM_MODE_OBJECT_ANY, by type, so a type no object carries is answered
  * -ENOENT before anything else is looked at.  The ioctls that name an
- * object take a type from the kernel's own list, never a random word.
+ * object take a type from the kernel's own list, never a random word.  The
+ * last is DRM_MODE_OBJECT_COLOROP, which an installed drm_mode.h may lack.
  */
 static const __u32 drm_object_types[] = {
 	DRM_MODE_OBJECT_CRTC,
@@ -83,6 +84,7 @@ static const __u32 drm_object_types[] = {
 	DRM_MODE_OBJECT_FB,
 	DRM_MODE_OBJECT_BLOB,
 	DRM_MODE_OBJECT_PLANE,
+	0xfafafafa,
 };
 
 static unsigned int object_type_index(__u32 type)
