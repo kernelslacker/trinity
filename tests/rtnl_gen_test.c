@@ -220,6 +220,49 @@ static void expect_addr_dump(const struct addr_dump *t, bool multicast,
 			"rtnl: an IFA_TARGET_NETNSID is not a small id");
 }
 
+/* ---------- The ifaddrmsg of RTM_NEWADDR, RTM_DELADDR and RTM_GETADDR ---- */
+
+struct addr_header {
+	unsigned int msgs;
+	unsigned int zero;	/* prefixlen, flags and scope all 0 */
+	unsigned int index_all, index_lo;
+};
+
+static void tally_addr_header(struct addr_header *t, const struct nlmsghdr *nlh)
+{
+	const struct ifaddrmsg *ifm = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ifm)))
+		return;
+	t->msgs++;
+	t->zero += !ifm->ifa_prefixlen && !ifm->ifa_flags && !ifm->ifa_scope;
+	t->index_all += ifm->ifa_index == 0;
+	t->index_lo += ifm->ifa_index == LOOPBACK_IFINDEX;
+}
+
+/*
+ * inet_valid_dump_ifaddr_req() and inet6_valid_dump_ifaddr_req(), the IPv4
+ * and IPv6 address dumps, and inet6_rtm_valid_getaddr_req(), the IPv6 doit,
+ * refuse a GET with a nonzero prefixlen, flags or scope on a socket that
+ * asks for strict checking, and the dumps an index that names no device.
+ * The builder leaves the three 0 seven times in eight for a GET, and its
+ * index is 0 half the time and lo's a quarter; NEW and DEL draw all three
+ * at random, which leaves them all 0 about once in eight million.
+ */
+static void expect_addr_header(const struct addr_header *get,
+			       const struct addr_header *newdel)
+{
+	expect_fraction(get->zero, get->msgs, 0.84, 0.91, "RTM_GETADDR",
+			"rtnl: RTM_GETADDR's prefixlen, flags and scope are not 0 seven times in eight");
+	expect_fraction(get->index_all, get->msgs, 0.44, 0.57, "RTM_GETADDR",
+			"rtnl: RTM_GETADDR does not ask for every device half the time");
+	expect_fraction(get->index_lo, get->msgs, 0.20, 0.31, "RTM_GETADDR",
+			"rtnl: RTM_GETADDR does not ask for lo a quarter of the time");
+	expect_fraction(newdel->zero, newdel->msgs, 0.0, 0.001,
+			"RTM_NEWADDR and RTM_DELADDR",
+			"rtnl: RTM_NEWADDR and RTM_DELADDR lose their random prefixlen, flags and scope");
+}
+
 /* ---------- The link size limits and IFLA_PACING_OFFLOAD ----------------- */
 
 /*
@@ -522,6 +565,7 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 
 struct tallies {
 	struct dump_bits dumps, dcb;
+	struct addr_header getaddr, newdeladdr;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
@@ -553,6 +597,13 @@ static void run_rounds(struct tallies *t)
 			tally_dump_bits(&t->dcb, nlh, false);
 
 		switch (nlh->nlmsg_type) {
+		case RTM_GETADDR:
+			tally_addr_header(&t->getaddr, nlh);
+			break;
+		case RTM_NEWADDR:
+		case RTM_DELADDR:
+			tally_addr_header(&t->newdeladdr, nlh);
+			break;
 		case RTM_GETMULTICAST:
 			tally_addr_dump(&t->multicast, nlh);
 			break;
@@ -583,6 +634,7 @@ void rtnl_gen_self_check(void)
 
 	run_rounds(&t);
 	expect_dump_bits(&t.dumps, &t.dcb);
+	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);

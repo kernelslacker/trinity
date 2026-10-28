@@ -54,18 +54,31 @@ static size_t gen_rtnl_body_link(unsigned char *body, size_t buflen, unsigned ch
 	return sizeof(ifi);
 }
 
-/* RTM_*ADDR: struct ifaddrmsg */
-static size_t gen_rtnl_body_addr(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*ADDR: struct ifaddrmsg.  On a socket that asks for strict checking,
+ * the IPv4 and IPv6 address dumps and the IPv6 doit refuse a GET with a
+ * nonzero prefixlen, flags or scope, and the dumps one whose index names no
+ * device; without strict checking a GET reads none of the three.  So a GET
+ * has them 0 seven times in eight, and an index for every device, lo or a
+ * small one, as the multicast dump does.
+ */
+static size_t gen_rtnl_body_addr(unsigned char *body, size_t buflen, bool get,
+				 unsigned char *out_family)
 {
-	struct ifaddrmsg ifa;
+	struct ifaddrmsg ifa = { 0 };
 
 	if (sizeof(ifa) > buflen)
 		return 0;
 	ifa.ifa_family = rand_family();
-	ifa.ifa_prefixlen = rnd_modulo_u32(129);
-	ifa.ifa_flags = rnd_modulo_u32(256);
-	ifa.ifa_scope = rnd_modulo_u32(256);
-	ifa.ifa_index = rnd_modulo_u32(64);
+	if (!get || ONE_IN(8)) {
+		ifa.ifa_prefixlen = rnd_modulo_u32(129);
+		ifa.ifa_flags = rnd_modulo_u32(256);
+		ifa.ifa_scope = rnd_modulo_u32(256);
+	}
+	if (get)
+		ifa.ifa_index = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	else
+		ifa.ifa_index = rnd_modulo_u32(64);
 	*out_family = ifa.ifa_family;
 	memcpy(body, &ifa, sizeof(ifa));
 	return sizeof(ifa);
@@ -412,7 +425,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 0:  /* RTM_*LINK */
 	case 23: /* RTM_*LINKPROP -- rtnl_linkprop shares struct ifinfomsg */
 		return gen_rtnl_body_link(body, buflen, out_family);
-	case 1:  return gen_rtnl_body_addr(body, buflen, out_family);
+	case 1:
+		return gen_rtnl_body_addr(body, buflen, nlmsg_type == RTM_GETADDR,
+					  out_family);
 	case 2:  return gen_rtnl_body_route(body, buflen, out_family);
 	case 3:  return gen_rtnl_body_neigh(body, buflen, out_family);
 	case 4:  return gen_rtnl_body_rule(body, buflen, out_family);
