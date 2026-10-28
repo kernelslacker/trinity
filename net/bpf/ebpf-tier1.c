@@ -90,7 +90,7 @@ static int emit_tier1_stack_roundtrip(struct bpf_insn *insns, int pos,
 				       int body_len, struct reg_state *rs)
 {
 	int reg = reg_pick_live(rs);
-	int off = rand_stack_offset();
+	int off = rand_stack_offset(rs);
 
 	insns[pos++] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, reg, off);
 	if (pos >= body_len)
@@ -106,9 +106,10 @@ static int emit_tier1_stack_roundtrip(struct bpf_insn *insns, int pos,
 }
 
 /* Emit one ST_MEM of a small immediate into a random stack slot. */
-static int emit_tier1_st_imm(struct bpf_insn *insns, int pos)
+static int emit_tier1_st_imm(struct bpf_insn *insns, int pos,
+			     const struct reg_state *rs)
 {
-	int off = rand_stack_offset();
+	int off = rand_stack_offset(rs);
 	int sz = RAND_ARRAY(mem_sizes);
 	int val = rnd_modulo_u32(256);
 
@@ -371,7 +372,7 @@ int gen_tier1(struct bpf_insn *insns, int max_insns,
 			pos = emit_tier1_jmp_fwd(insns, pos, body_len, &rs);
 
 		} else if (choice < 87) {
-			pos = emit_tier1_st_imm(insns, pos);
+			pos = emit_tier1_st_imm(insns, pos, &rs);
 
 		} else if (choice < 90) {
 			pos = emit_tier1_mov64_reg(insns, pos, &rs);

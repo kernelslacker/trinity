@@ -3,7 +3,7 @@
  *
  * Shared declarations for the net/bpf/ebpf*.c translation units of the
  * eBPF program generator.  Private to that fileset — do not include
- * from anywhere else.
+ * from anywhere else but tests/bpf_gen_test.c.
  */
 
 #ifndef NET_BPF_EBPF_INTERNAL_H
@@ -14,9 +14,23 @@
 
 #ifdef USE_BPF
 
-/* Stack frame: 512 bytes max, 8-byte aligned slots */
+/*
+ * Stack frame, in 8-byte aligned slots: MAX_BPF_STACK, 512 bytes, which is
+ * all the interpreter and a JIT without large-stack support accept, or
+ * MAX_BPF_STACK_JIT, 2 KiB, which bpf_prog_stack_limit() grants only when
+ * the program is JITed (net.core.bpf_jit_enable, or
+ * CONFIG_BPF_JIT_ALWAYS_ON), not offloaded, never calls
+ * bpf_clone_redirect(), and the JIT reports both
+ * bpf_jit_supports_large_stack() and bpf_jit_supports_subprog_tailcalls():
+ * x86-64 and arm64 only.  A program with no subprograms or tail calls, as
+ * a generated one is, has the whole budget for its one frame.  Writes are
+ * bounded by the budget, reads by what the program wrote.
+ */
 #define EBPF_STACK_SIZE		512
-#define EBPF_STACK_SLOTS	(EBPF_STACK_SIZE / 8)
+#define EBPF_STACK_SIZE_JIT	2048
+
+/* One program in this many draws its offsets from EBPF_STACK_SIZE_JIT. */
+#define EBPF_STACK_JIT_ONE_IN	4
 
 /*
  * Register liveness bitmap. Tracks which registers hold known-valid values
@@ -35,6 +49,7 @@ struct reg_state {
 	int8_t map_reg;		/* register holding PTR_TO_MAP, or -1 */
 	bool r0_or_null;	/* R0 holds a PTR_OR_NULL return value */
 	bool r0_writable;	/* deref of R0 may use STXW as well as LDXW */
+	int stack_size;		/* frame the program draws its stack offsets from */
 };
 
 void reg_init(struct reg_state *rs, int prepend_map_reg);
@@ -42,7 +57,7 @@ void reg_set(struct reg_state *rs, int reg);
 void reg_clear_caller_saved(struct reg_state *rs);
 int reg_pick_live(struct reg_state *rs);
 int reg_pick_dst(void);
-int rand_stack_offset(void);
+int rand_stack_offset(const struct reg_state *rs);
 
 /*
  * Per-arg type tag in the helper descriptor table.  The generator emits

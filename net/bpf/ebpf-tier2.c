@@ -36,7 +36,7 @@ static int gen_tier2_spill_fill(struct bpf_insn *insns, int pos, int body_len,
 	}
 	while (pos < body_len - 1) {
 		int reg = 2 + (rnd_modulo_u32(8));
-		int off = rand_stack_offset();
+		int off = rand_stack_offset(rs);
 		if (!(rs->live & (1 << reg))) {
 			insns[pos++] = EBPF_MOV64_IMM(reg, 0);
 			reg_set(rs, reg);

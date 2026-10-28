@@ -87,7 +87,10 @@ int gen_tier3(struct bpf_insn *insns, int max_insns)
 			insns[i] = EBPF_CALL(EBPF_MAX_HELPER_ID + 1 + (rnd_modulo_u32(1000)));
 
 		} else if (choice < 80) {
-			/* OOB stack access */
+			/* Stack access past the 512-byte frame: a draw short
+			 * of EBPF_STACK_SIZE_JIT is a valid store where the
+			 * JIT grants that budget, the rest are out of
+			 * bounds on every kernel. */
 			int off = -(EBPF_STACK_SIZE + 8 + (rnd_modulo_u32(4096)));
 			insns[i] = EBPF_STX_MEM(BPF_DW, BPF_REG_10, BPF_REG_0, off);
 

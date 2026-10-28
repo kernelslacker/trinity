@@ -24,6 +24,18 @@ void reg_init(struct reg_state *rs, int prepend_map_reg)
 		rs->live |= (1 << prepend_map_reg);
 		rs->map_reg = prepend_map_reg;
 	}
+
+	/*
+	 * The one bound every stack access of this program draws from, so
+	 * they all agree.  An architecture whose JIT never grants the 2 KiB
+	 * budget refuses each program that reaches past 512 bytes, so it
+	 * keeps the interpreter's frame.
+	 */
+	rs->stack_size = EBPF_STACK_SIZE;
+#if defined(__x86_64__) || defined(__aarch64__)
+	if (ONE_IN(EBPF_STACK_JIT_ONE_IN))
+		rs->stack_size = EBPF_STACK_SIZE_JIT;
+#endif
 }
 
 void reg_set(struct reg_state *rs, int reg)
@@ -73,10 +85,11 @@ int reg_pick_dst(void)
 	return rnd_modulo_u32(BPF_REG_10);
 }
 
-/* Random stack offset, 8-byte aligned, negative from r10 */
-int rand_stack_offset(void)
+/* Random stack offset, 8-byte aligned, negative from r10, within the
+ * program's frame */
+int rand_stack_offset(const struct reg_state *rs)
 {
-	int slot = (rnd_modulo_u32(EBPF_STACK_SLOTS)) + 1;
+	int slot = (rnd_modulo_u32(rs->stack_size / 8)) + 1;
 	return -(slot * 8);
 }
 
