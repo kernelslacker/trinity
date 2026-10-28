@@ -212,46 +212,51 @@ static const struct nla_attr_spec ovs_nsh_key_attrs[] = {
 	{ OVS_NSH_KEY_ATTR_MD2,			NLA_KIND_BINARY, 244, 1 },
 };
 
-#define OVS_FIXED(type, s) \
-	{ type, NLA_KIND_BINARY_FIXED2, sizeof(struct s), sizeof(struct s) }
+#define OVS_FIXED(type, s, ...) \
+	{ type, NLA_KIND_BINARY_FIXED2, sizeof(struct s), sizeof(struct s), \
+	  ##__VA_ARGS__ }
 
 /*
  * ovs_key_lens, less PACKET_TYPE, ND_EXTENSIONS and TUNNEL_INFO, which
  * __parse_flow_nlattrs() refuses, and ENCAP, the key of a VLAN's payload in
- * the same namespace.  MPLS is one label or two of the three it holds.
+ * the same namespace.  MPLS is one label or two of the three it holds.  The
+ * parser refuses a key given twice.
  */
 static const struct nla_attr_spec ovs_key_attrs[] = {
-	{ OVS_KEY_ATTR_PRIORITY,		NLA_KIND_U32,    4 },
-	{ OVS_KEY_ATTR_IN_PORT,			NLA_KIND_U32,    4 },
-	OVS_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet),
-	{ OVS_KEY_ATTR_VLAN,			NLA_KIND_U16,    2 },
-	{ OVS_KEY_ATTR_ETHERTYPE,		NLA_KIND_U16,    2 },
-	OVS_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4),
-	OVS_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6),
-	OVS_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp),
-	OVS_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp),
-	OVS_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp),
-	OVS_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6),
-	OVS_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp),
-	OVS_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd),
-	{ OVS_KEY_ATTR_SKB_MARK,		NLA_KIND_U32,    4 },
+	{ OVS_KEY_ATTR_PRIORITY,		NLA_KIND_U32,    4, .once = true },
+	{ OVS_KEY_ATTR_IN_PORT,			NLA_KIND_U32,    4, .once = true },
+	OVS_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true),
+	{ OVS_KEY_ATTR_VLAN,			NLA_KIND_U16,    2, .once = true },
+	{ OVS_KEY_ATTR_ETHERTYPE,		NLA_KIND_U16,    2, .once = true },
+	OVS_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd, .once = true),
+	{ OVS_KEY_ATTR_SKB_MARK,		NLA_KIND_U32,    4, .once = true },
 	{ OVS_KEY_ATTR_TUNNEL,			NLA_KIND_NESTED, 0, 0,
-	  ovs_tunnel_key_attrs, ARRAY_SIZE(ovs_tunnel_key_attrs) },
-	OVS_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp),
-	{ OVS_KEY_ATTR_TCP_FLAGS,		NLA_KIND_U16,    2 },
-	{ OVS_KEY_ATTR_DP_HASH,			NLA_KIND_U32,    4 },
-	{ OVS_KEY_ATTR_RECIRC_ID,		NLA_KIND_U32,    4 },
+	  ovs_tunnel_key_attrs, ARRAY_SIZE(ovs_tunnel_key_attrs), .once = true },
+	OVS_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp, .once = true),
+	{ OVS_KEY_ATTR_TCP_FLAGS,		NLA_KIND_U16,    2, .once = true },
+	{ OVS_KEY_ATTR_DP_HASH,			NLA_KIND_U32,    4, .once = true },
+	{ OVS_KEY_ATTR_RECIRC_ID,		NLA_KIND_U32,    4, .once = true },
 	{ OVS_KEY_ATTR_MPLS,			NLA_KIND_BINARY_FIXED2,
-	  2 * sizeof(struct ovs_key_mpls), sizeof(struct ovs_key_mpls) },
-	{ OVS_KEY_ATTR_CT_STATE,		NLA_KIND_U32,    4 },
-	{ OVS_KEY_ATTR_CT_ZONE,			NLA_KIND_U16,    2 },
-	{ OVS_KEY_ATTR_CT_MARK,			NLA_KIND_U32,    4 },
-	OVS_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels),
-	OVS_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4),
-	OVS_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6),
+	  2 * sizeof(struct ovs_key_mpls), sizeof(struct ovs_key_mpls),
+	  .once = true },
+	{ OVS_KEY_ATTR_CT_STATE,		NLA_KIND_U32,    4, .once = true },
+	{ OVS_KEY_ATTR_CT_ZONE,			NLA_KIND_U16,    2, .once = true },
+	{ OVS_KEY_ATTR_CT_MARK,			NLA_KIND_U32,    4, .once = true },
+	OVS_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4,
+		  .once = true),
+	OVS_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6,
+		  .once = true),
 	{ OVS_KEY_ATTR_NSH,			NLA_KIND_NESTED, 0, 0,
-	  ovs_nsh_key_attrs, ARRAY_SIZE(ovs_nsh_key_attrs) },
-	OVS_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs),
+	  ovs_nsh_key_attrs, ARRAY_SIZE(ovs_nsh_key_attrs), .once = true },
+	OVS_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs, .once = true),
 };
 
 /*
@@ -297,7 +302,8 @@ static const struct nla_attr_spec ovs_set_masked_key_attrs[] = {
  * The nests the actions open.  validate_userspace() parses USERSPACE
  * strictly and wants a PID that is not 0.  A SAMPLE wants a PROBABILITY
  * and its ACTIONS, a CHECK_PKT_LEN a PKT_LEN that is not 0 and both
- * branches, a DEC_TTL its ACTION and a PSAMPLE its GROUP.  The CT nest
+ * branches, a DEC_TTL its ACTION and a PSAMPLE its GROUP; a SAMPLE and a
+ * DEC_TTL refuse an attribute given twice.  The CT nest
  * (ovs_ct_attr_lens in conntrack.c) takes the name of a conntrack helper,
  * a module request away when it is not loaded, and of a timeout policy,
  * which the cttimeout grammar names "trinity"; its NAT nest a range of
@@ -393,10 +399,10 @@ static const struct nla_attr_spec ovs_leaf_action_attrs[] = {
 
 static const struct nla_attr_spec ovs_sample_attrs[] = {
 	{ OVS_SAMPLE_ATTR_PROBABILITY,		NLA_KIND_U32,    4,
-	  .required = true },
+	  .required = true, .once = true },
 	{ OVS_SAMPLE_ATTR_ACTIONS,		NLA_KIND_NESTED, 0, 0,
 	  ovs_leaf_action_attrs, ARRAY_SIZE(ovs_leaf_action_attrs),
-	  .required = true },
+	  .required = true, .once = true },
 };
 
 static const struct nla_attr_spec ovs_check_pkt_len_attrs[] = {
@@ -412,7 +418,8 @@ static const struct nla_attr_spec ovs_check_pkt_len_attrs[] = {
 
 static const struct nla_attr_spec ovs_dec_ttl_attrs[] = {
 	{ OVS_DEC_TTL_ATTR_ACTION,		NLA_KIND_NESTED, 0, 0,
-	  ovs_leaf_action_attrs, ARRAY_SIZE(ovs_leaf_action_attrs) },
+	  ovs_leaf_action_attrs, ARRAY_SIZE(ovs_leaf_action_attrs),
+	  .once = true },
 };
 
 static const struct nla_attr_spec ovs_action_attrs[] = {

@@ -137,8 +137,10 @@ struct nla_attr_spec {
 	bool required;
 
 	/* Set when the handler refuses the attribute given twice, as dpll's
-	 * id lookups do: the emitter puts it in a request once at most.  It
-	 * is read at the top level of a request whose table holds 64
-	 * attributes at most. */
+	 * id lookups and openvswitch's flow key parser do: the emitter puts
+	 * it in a request, or in a nest with a table of its own, once at
+	 * most.  One marked required as well is left out one time in eight,
+	 * since the random draws do not bring it back.  It is read in a
+	 * table of 64 attributes at most. */
 	bool once;
 };

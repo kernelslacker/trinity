@@ -1273,7 +1273,9 @@ extern struct genl_family_grammar fam_ovs_flow;
  * OUTPUT is below DP_MAX_PORTS, TRUNC at least ETH_HLEN and a userspace
  * PID not 0.  The handlers need a tunnel key's TTL, a userspace action's
  * PID, a sample's PROBABILITY and ACTIONS, a CHECK_PKT_LEN's PKT_LEN and
- * both branches, a PSAMPLE's GROUP and a NEW flow's KEY and ACTIONS.
+ * both branches, a PSAMPLE's GROUP and a NEW flow's KEY and ACTIONS.  The
+ * key parser refuses a key given twice, and a SAMPLE's and a DEC_TTL's
+ * parsers an attribute.
  */
 #define S_FIXED(id, s, ...) \
 	S_BLOB(id, sizeof(struct s), sizeof(struct s), ##__VA_ARGS__)
@@ -1306,34 +1308,36 @@ static struct slot ovs_nsh_key[] = {
 	S_BLOB(OVS_NSH_KEY_ATTR_MD2, 1, 244),
 };
 static struct slot ovs_key[] = {
-	S_U32(OVS_KEY_ATTR_PRIORITY),
-	S_U32(OVS_KEY_ATTR_IN_PORT),
-	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet),
-	S_U16(OVS_KEY_ATTR_VLAN),
-	S_U16(OVS_KEY_ATTR_ETHERTYPE),
-	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4),
-	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6),
-	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp),
-	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp),
-	S_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp),
-	S_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6),
-	S_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp),
-	S_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd),
-	S_U32(OVS_KEY_ATTR_SKB_MARK),
-	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key),
-	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp),
-	S_U16(OVS_KEY_ATTR_TCP_FLAGS),
-	S_U32(OVS_KEY_ATTR_DP_HASH),
-	S_U32(OVS_KEY_ATTR_RECIRC_ID),
-	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12),
-	S_U32(OVS_KEY_ATTR_CT_STATE),
-	S_U16(OVS_KEY_ATTR_CT_ZONE),
-	S_U32(OVS_KEY_ATTR_CT_MARK),
-	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels),
-	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4),
-	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6),
-	S_NEST(OVS_KEY_ATTR_NSH, ovs_nsh_key),
-	S_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs),
+	S_U32(OVS_KEY_ATTR_PRIORITY, .once = true),
+	S_U32(OVS_KEY_ATTR_IN_PORT, .once = true),
+	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true),
+	S_U16(OVS_KEY_ATTR_VLAN, .once = true),
+	S_U16(OVS_KEY_ATTR_ETHERTYPE, .once = true),
+	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4, .once = true),
+	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6, .once = true),
+	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp, .once = true),
+	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp, .once = true),
+	S_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp, .once = true),
+	S_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6, .once = true),
+	S_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp, .once = true),
+	S_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd, .once = true),
+	S_U32(OVS_KEY_ATTR_SKB_MARK, .once = true),
+	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key, .once = true),
+	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp, .once = true),
+	S_U16(OVS_KEY_ATTR_TCP_FLAGS, .once = true),
+	S_U32(OVS_KEY_ATTR_DP_HASH, .once = true),
+	S_U32(OVS_KEY_ATTR_RECIRC_ID, .once = true),
+	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12, .once = true),
+	S_U32(OVS_KEY_ATTR_CT_STATE, .once = true),
+	S_U16(OVS_KEY_ATTR_CT_ZONE, .once = true),
+	S_U32(OVS_KEY_ATTR_CT_MARK, .once = true),
+	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true),
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4,
+		.once = true),
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6,
+		.once = true),
+	S_NEST(OVS_KEY_ATTR_NSH, ovs_nsh_key, .once = true),
+	S_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs, .once = true),
 };
 static struct slot ovs_set_key[] = {
 	S_U32(OVS_KEY_ATTR_PRIORITY),
@@ -1420,8 +1424,9 @@ static struct slot ovs_leaf_action[] = {
 	OVS_LEAF_ACTION_SLOTS,
 };
 static struct slot ovs_sample[] = {
-	S_U32(OVS_SAMPLE_ATTR_PROBABILITY, .required = true),
-	S_NEST(OVS_SAMPLE_ATTR_ACTIONS, ovs_leaf_action, .required = true),
+	S_U32(OVS_SAMPLE_ATTR_PROBABILITY, .required = true, .once = true),
+	S_NEST(OVS_SAMPLE_ATTR_ACTIONS, ovs_leaf_action, .required = true,
+	       .once = true),
 };
 static struct slot ovs_check_pkt_len[] = {
 	S_U16(OVS_CHECK_PKT_LEN_ATTR_PKT_LEN, .required = true),
@@ -1431,7 +1436,7 @@ static struct slot ovs_check_pkt_len[] = {
 	       .required = true),
 };
 static struct slot ovs_dec_ttl[] = {
-	S_NEST(OVS_DEC_TTL_ATTR_ACTION, ovs_leaf_action),
+	S_NEST(OVS_DEC_TTL_ATTR_ACTION, ovs_leaf_action, .once = true),
 };
 static struct slot ovs_action[] = {
 	OVS_LEAF_ACTION_SLOTS,
@@ -3081,6 +3086,81 @@ static void check_required_not_inherited(void)
 	}
 }
 
+/* Each required slot of a mirror, nests included, in seven of its streams
+ * in eight: a fraction in [0.84, 0.91], as check_required_tables() wants. */
+static void expect_seven_in_eight(const struct slot *slots,
+				  unsigned int n_slots, const char *what)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_slots; i++) {
+		const struct slot *slot = &slots[i];
+
+		expect_seven_in_eight(slot->nest, slot->n_nest, what);
+		if (!slot->required)
+			continue;
+		if (slot->streams == 0 ||
+		    slot->present < slot->streams * 0.84 ||
+		    slot->present > slot->streams * 0.91) {
+			fprintf(stderr, "%s: attribute %u in %u of %u streams, want a fraction in [0.84, 0.91]\n",
+				what, slot->id, slot->present, slot->streams);
+			BUG("genl ops: a marked attribute is not left out one time in eight");
+		}
+	}
+}
+
+/*
+ * Specs marked once, drawn as build_one_nlmsg() draws them: the required
+ * pass and then the random draws, which share a used mask, at the top level
+ * and in a nest with a table of its own.  None goes in twice, and one marked
+ * required as well is in seven streams in eight, since the draws cannot
+ * bring it back after the required pass left it out; they would put it in
+ * 0.997 of them.  The draws in the nest find its third child alone.
+ */
+static void check_once_tables(void)
+{
+	static const struct nla_attr_spec pair[] = {
+		{ 1, NLA_KIND_U32, 4, .required = true, .once = true },
+		{ 2, NLA_KIND_U16, 2, .required = true, .once = true },
+		{ 3, NLA_KIND_U8, 1, .once = true },
+	};
+	static const struct nla_attr_spec top[] = {
+		{ 1, NLA_KIND_U32, 4, .required = true, .once = true },
+		{ 2, NLA_KIND_NESTED, 0, 0, pair, ARRAY_SIZE(pair),
+		  .required = true, .once = true },
+	};
+	static struct slot pair_mirror[] = {
+		S_U32(1, .required = true, .once = true),
+		S_U16(2, .required = true, .once = true),
+		S_U8(3, .once = true),
+	};
+	static struct slot top_mirror[] = {
+		S_U32(1, .required = true, .once = true),
+		S_NEST(2, pair_mirror, .required = true, .once = true),
+	};
+	unsigned char buf[2048];
+	unsigned int round, draw;
+
+	for (round = 0; round < REQUIRED_ROUNDS; round++) {
+		uint64_t used = 0;
+		size_t end;
+
+		memset(buf, 0, sizeof(buf));
+		end = append_required_attrs(buf, 0, sizeof(buf), top,
+					    ARRAY_SIZE(top), &used);
+		for (draw = 0; draw < 3; draw++)
+			end = append_specced_nlattr(buf, end, sizeof(buf), top,
+						    ARRAY_SIZE(top), &used);
+		if (!stream_conforms(buf, end, top_mirror, ARRAY_SIZE(top_mirror))) {
+			fprintf(stderr, "once tables:\n");
+			hexdump(buf, end);
+			BUG("genl ops: an attribute marked once went in twice");
+		}
+		tally_required(buf, end, top_mirror, ARRAY_SIZE(top_mirror));
+	}
+	expect_seven_in_eight(top_mirror, ARRAY_SIZE(top_mirror), "once tables");
+}
+
 /* ---------- Checking which attribute table a cmd draws from ------------ */
 
 struct table_case {
@@ -3187,6 +3267,7 @@ void genl_ops_self_check(void)
 	check_sockaddr_kind();
 	check_required_tables();
 	check_required_not_inherited();
+	check_once_tables();
 	check_attrs_in_policy();
 	check_policy_specs();
 	check_policy_required();

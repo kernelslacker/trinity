@@ -271,8 +271,10 @@ unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
  * its children from that, one without keeps them one level deep.
  * append_required_attrs() emits the entries of the table that are marked
  * required, most of the time, ahead of the random ones.  Both record in
- * *used the entries marked once that they emitted, which the random draws
- * then leave alone; a NULL used keeps no record.
+ * *used the entries marked once that they emitted, append_required_attrs()
+ * also the ones it left out, and the random draws then leave those alone;
+ * a NULL used keeps no record.  A nest with a table of its own keeps one
+ * for its children.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,

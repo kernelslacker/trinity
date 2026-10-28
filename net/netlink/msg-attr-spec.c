@@ -293,19 +293,52 @@ static size_t append_spec_flat(unsigned char *buf, size_t offset, size_t buflen,
 	return offset + total;
 }
 
-/* Emit a child of a nest drawn from table at random. */
+/*
+ * The index of a spec drawn from table, passing over one marked once that
+ * *used records and recording the one it takes, or nr_specs when it passes
+ * over all of them.  A table without such a spec draws as it would without
+ * used, from the same random number.
+ */
+static size_t pick_spec(const struct nla_attr_spec *table, size_t nr_specs,
+			uint64_t *used)
+{
+	uint64_t skip = 0;
+	size_t i, eligible, pick;
+
+	for (i = 0; used != NULL && i < nr_specs && i < 64; i++) {
+		if (table[i].once && (*used >> i & 1))
+			skip |= 1ULL << i;
+	}
+	eligible = nr_specs - __builtin_popcountll(skip);
+	if (eligible == 0)
+		return nr_specs;
+
+	pick = rnd_modulo_u32(eligible);
+	for (i = 0; (i < 64 && (skip >> i & 1)) || pick-- != 0; i++)
+		;
+	if (used != NULL && table[i].once && i < 64)
+		*used |= 1ULL << i;
+	return i;
+}
+
+/* Emit a child of a nest drawn from table at random, as pick_spec() draws
+ * it. */
 static size_t append_specced_flat(unsigned char *buf, size_t offset,
 				  size_t buflen,
 				  const struct nla_attr_spec *table,
-				  size_t nr_specs, bool own)
+				  size_t nr_specs, bool own, uint64_t *used)
 {
+	size_t i;
+
 	if (!table || nr_specs == 0)
 		return offset;
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
 
-	return append_spec_flat(buf, offset, buflen,
-				&table[rnd_modulo_u32(nr_specs)], table,
+	i = pick_spec(table, nr_specs, used);
+	if (i == nr_specs)
+		return offset;
+	return append_spec_flat(buf, offset, buflen, &table[i], table,
 				nr_specs, own);
 }
 
@@ -313,17 +346,23 @@ static size_t append_specced_flat(unsigned char *buf, size_t offset,
  * The children of a nest that its handler needs: each spec of the nest's own
  * table marked required, left out one time in eight so the handler's
  * missing-attribute arm keeps seeing traffic.  An unmarked spec draws nothing
- * from the RNG, so a table with no marks is emitted as it was.
+ * from the RNG, so a table with no marks is emitted as it was.  One marked
+ * once as well goes into *used whether it is left out or not, so the draws
+ * that follow cannot bring it back.
  */
 static size_t append_required_children(unsigned char *inner, size_t avail,
 				       const struct nla_attr_spec *table,
-				       size_t nr_specs)
+				       size_t nr_specs, uint64_t *used)
 {
 	size_t off = 0;
 	size_t i;
 
 	for (i = 0; i < nr_specs; i++) {
-		if (!table[i].required || ONE_IN(8))
+		if (!table[i].required)
+			continue;
+		if (table[i].once && i < 64)
+			*used |= 1ULL << i;
+		if (ONE_IN(8))
 			continue;
 		off = append_spec_flat(inner, off, avail, &table[i], table,
 				       nr_specs, true);
@@ -347,21 +386,25 @@ static unsigned int nest_count(unsigned int cap)
 
 /* The children a nest's handler needs, if it has a table of its own, and
  * then nest_count(cap) attributes drawn from table into the avail bytes at
- * inner; returns the bytes used.  A nest without a table is drawn from the
- * outer policy's, whose marks are not its own, and a capped nest holds its
- * count alone, which the marked children could crowd out. */
+ * inner; returns the bytes used.  A child its own table marks once goes in
+ * once at most.  A nest without a table is drawn from the outer policy's,
+ * whose marks are not its own, and a capped nest holds its count alone,
+ * which the required children could crowd out. */
 static size_t append_nest_children(unsigned char *inner, size_t avail,
 				   const struct nla_attr_spec *table,
 				   size_t nr_specs, bool own, unsigned int cap)
 {
+	uint64_t used = 0;
 	size_t off = 0;
 	unsigned int child_count = nest_count(cap);
 
 	if (own && cap == 0)
-		off = append_required_children(inner, avail, table, nr_specs);
+		off = append_required_children(inner, avail, table, nr_specs,
+					       &used);
 	while (child_count-- > 0) {
 		size_t new_off = append_specced_flat(inner, off, avail,
-						     table, nr_specs, own);
+						     table, nr_specs, own,
+						     own ? &used : NULL);
 		if (new_off == off)
 			break;
 		off = new_off;
@@ -496,40 +539,26 @@ static size_t append_spec_top(unsigned char *buf, size_t offset, size_t buflen,
 
 /*
  * Top-level entry for spec-driven attribute emission.  Picks a random
- * spec and delegates to the nested or flat path as appropriate.  Used
- * exclusively by build_one_nlmsg for families with a curated
- * nla_attr_spec table; the legacy random-payload append_nlattr() path
- * still serves families without specs.  The pick passes over a spec
- * marked once that *used records, and records the one it takes; a table
- * without such a spec draws as it would without used.
+ * spec, as pick_spec() does with *used, and delegates to the nested or flat
+ * path as appropriate.  Used exclusively by build_one_nlmsg for families
+ * with a curated nla_attr_spec table; the legacy random-payload
+ * append_nlattr() path still serves families without specs.
  */
 size_t append_specced_nlattr(unsigned char *buf, size_t offset,
 			     size_t buflen,
 			     const struct nla_attr_spec *table,
 			     size_t nr_specs, uint64_t *used)
 {
-	uint64_t skip = 0;
-	size_t i, eligible, pick;
+	size_t i;
 
 	if (!table || nr_specs == 0)
 		return offset;
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
 
-	for (i = 0; used != NULL && i < nr_specs && i < 64; i++) {
-		if (table[i].once && (*used >> i & 1))
-			skip |= 1ULL << i;
-	}
-	eligible = nr_specs - __builtin_popcountll(skip);
-	if (eligible == 0)
+	i = pick_spec(table, nr_specs, used);
+	if (i == nr_specs)
 		return offset;
-
-	pick = rnd_modulo_u32(eligible);
-	for (i = 0; (i < 64 && (skip >> i & 1)) || pick-- != 0; i++)
-		;
-	if (used != NULL && table[i].once && i < 64)
-		*used |= 1ULL << i;
-
 	return append_spec_top(buf, offset, buflen, &table[i], table,
 			       nr_specs);
 }
@@ -539,8 +568,9 @@ size_t append_specced_nlattr(unsigned char *buf, size_t offset,
  * required, left out one time in eight so the handler's missing-attribute
  * arm keeps seeing traffic.  build_one_nlmsg emits them ahead of the random
  * draws, which can bring a left-out one back, so a request lacks one a
- * little less often than that.  An unmarked spec draws nothing from the RNG,
- * so a table with no marks is emitted as it was.
+ * little less often than that; one marked once as well goes into *used
+ * whether it is left out or not, so the draws cannot.  An unmarked spec
+ * draws nothing from the RNG, so a table with no marks is emitted as it was.
  */
 size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 			     const struct nla_attr_spec *table,
@@ -549,12 +579,14 @@ size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
 	size_t i;
 
 	for (i = 0; i < nr_specs; i++) {
-		if (!table[i].required || ONE_IN(8))
+		if (!table[i].required)
+			continue;
+		if (used != NULL && table[i].once && i < 64)
+			*used |= 1ULL << i;
+		if (ONE_IN(8))
 			continue;
 		offset = append_spec_top(buf, offset, buflen, &table[i], table,
 					 nr_specs);
-		if (used != NULL && table[i].once && i < 64)
-			*used |= 1ULL << i;
 	}
 	return offset;
 }
