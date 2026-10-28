@@ -854,3 +854,24 @@ out:
 	*config1=rnd_modulo_u32(64);
 	return rnd_modulo_u32(64);
 }
+
+/*
+ * Whether @type names a PMU whose events the kernel lets start paused
+ * (PERF_PMU_CAP_AUX_PAUSE): intel_pt on x86 and cs_etm on arm, as the two
+ * perf_pmu_register() calls in arch/x86/events/intel/pt.c and
+ * drivers/hwtracing/coresight/coresight-etm-perf.c name them.  The type is a
+ * number the kernel hands out when the PMU registers, so only the table
+ * init_pmus() built can say.
+ */
+bool perf_pmu_aux_pausable(__u32 type)
+{
+	int i;
+
+	for (i = 0; i < num_pmus; i++) {
+		if (pmus[i].type != (int) type || pmus[i].name == NULL)
+			continue;
+		return !strcmp(pmus[i].name, "intel_pt") ||
+		       !strcmp(pmus[i].name, "cs_etm");
+	}
+	return false;
+}

@@ -83,6 +83,8 @@ long long random_read_format(void);
 long long random_branch_sample_type(void);
 long long random_sample_regs(void);
 void random_simd_regs(struct perf_event_attr *attr);
+void random_defer_aux_flags(struct perf_event_attr *attr, int group_leader);
+bool perf_pmu_aux_pausable(__u32 type);
 
 bool pick_perf_tuple(struct perf_event_attr *attr);
 

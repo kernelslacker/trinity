@@ -12,6 +12,7 @@
 #include "csfu.h"
 #include "debug.h"		/* BUG */
 #include "perf_event.h"
+#include "random.h"		/* RAND_BOOL */
 #include "struct_catalog-internal.h"	/* perf_event_attr_fields */
 #include "utils-macros.h"		/* ARRAY_SIZE */
 #include "syscalls/perf/perf_event_open-internal.h"
@@ -331,6 +332,93 @@ static void check_flag_bits(void)
 	       row != NULL ? row->u.flags.mask : 0);
 }
 
+/* The PMUs perf_pmu_aux_pausable() reads; intel_pt and cs_etm can pause. */
+static struct pmu_type fake_pmus[] = {
+	{ .name = "cpu", .type = 4 },
+	{ .name = "intel_pt", .type = 77 },
+	{ .name = "cs_etm", .type = 78 },
+};
+
+/*
+ * Rules the kernel applies to the bits that came with deferred unwinding and
+ * AUX tracing control, found in perf_event_alloc() and perf_get_aux_event()
+ * (kernel/events/core.c): pause and resume are alternatives, and are refused
+ * next to aux_output and without a group to be a member of; start-paused is
+ * refused on a PMU that cannot pause.  defer_callchain acts only on an event
+ * that takes a user callchain.  Presets stand for what a builder has drawn.
+ */
+static void check_defer_aux(void)
+{
+	static const __u32 types[] = {
+		PERF_TYPE_HARDWARE, PERF_TYPE_SOFTWARE, 4, 77, 78, 99,
+	};
+	unsigned long members = 0, paused = 0, aux_pmu = 0, started = 0;
+	unsigned long eligible = 0, deferred = 0, outputs = 0, i;
+	struct perf_event_attr attr;
+
+	pmus = fake_pmus;
+	num_pmus = ARRAY_SIZE(fake_pmus);
+
+	for (i = 0; i < NR_ATTRS; i++) {
+		__u32 type = types[i % ARRAY_SIZE(types)];
+		int leader = RAND_BOOL();
+		bool callchain;
+
+		memset(&attr, 0, sizeof(attr));
+		attr.type = type;
+		attr.sample_type = RAND_BOOL() ? PERF_SAMPLE_CALLCHAIN : 0;
+		attr.exclude_callchain_user = RAND_BOOL();
+		attr.aux_output = RAND_BOOL();
+		random_defer_aux_flags(&attr, leader);
+
+		expect(!(attr.aux_pause && attr.aux_resume),
+		       "pause and resume are alternatives", i);
+		expect(!leader || !(attr.aux_pause || attr.aux_resume),
+		       "pause and resume need a group to join", i);
+		expect(!((attr.aux_pause || attr.aux_resume) && attr.aux_output),
+		       "pause and resume do not sit next to aux_output", i);
+		expect(!attr.aux_start_paused || type == 77 || type == 78,
+		       "start-paused goes on a PMU that can pause", type);
+		callchain = (attr.sample_type & PERF_SAMPLE_CALLCHAIN) &&
+			    !attr.exclude_callchain_user;
+		expect(!attr.defer_callchain || callchain,
+		       "defer_callchain goes on an event with a user callchain", i);
+		expect(attr.__reserved_1 == 0 && attr.__reserved_3 == 0,
+		       "the reserved bits stay zero", i);
+
+		if (!leader) {
+			members++;
+			paused += attr.aux_pause || attr.aux_resume;
+		}
+		if (type == 77 || type == 78) {
+			aux_pmu++;
+			started += attr.aux_start_paused;
+		}
+		if (callchain) {
+			eligible++;
+			deferred += attr.defer_callchain;
+		}
+		outputs += attr.defer_output;
+	}
+
+	expect(paused > members / 16, "pause and resume are drawn", paused);
+	expect(started > aux_pmu / 4, "start-paused is drawn", started);
+	expect(deferred > eligible / 4, "defer_callchain is drawn", deferred);
+	expect(outputs > NR_ATTRS / 16, "defer_output is drawn", outputs);
+
+	/* And the builders call it, whichever of them runs. */
+	outputs = 0;
+	for (i = 0; i < NR_ATTRS; i++) {
+		memset(&attr, 0, sizeof(attr));
+		maybe_fill_perf_attr_body(&attr, CSFU_BUCKET_EXACT, i & 1);
+		outputs += attr.defer_output || attr.aux_pause || attr.aux_resume;
+	}
+	expect(outputs > NR_ATTRS / 32, "the builders draw the flags", outputs);
+
+	pmus = NULL;
+	num_pmus = 0;
+}
+
 void perf_attr_self_check(void)
 {
 	check_regs_intr();
@@ -338,6 +426,7 @@ void perf_attr_self_check(void)
 	check_simd_regs();
 	check_flag_bits();
 	check_catalog();
+	check_defer_aux();
 
 	if (failed != 0)
 		BUG("perf attr: a check failed");

@@ -1,6 +1,6 @@
 /*
  * perf_event_open: sample_type / read_format / branch_sample_type bit pickers,
- * and the sample_regs_* mask picker.
+ * and the pickers of the register-sampling and the defer and AUX fields.
  *
  * The wide RAND_BOOL chains that OR up attr->sample_type, attr->read_format
  * and attr->branch_sample_type from the PERF_SAMPLE_* / PERF_FORMAT_* /
@@ -235,4 +235,44 @@ void random_simd_regs(struct perf_event_attr *attr)
 	}
 
 	attr->size = PERF_ATTR_SIZE_VER10;
+}
+
+/*
+ * defer_callchain, defer_output and the aux_action bits, which perf_copy_attr()
+ * checks for nothing but the reserved bits around them, drawn the way the rest
+ * of the kernel takes them:
+ *
+ *  - defer_callchain is read only by perf_callchain(), for an event that takes
+ *    a user callchain, so it goes on one that does.  defer_output makes an
+ *    event a sink for the side-band PERF_RECORD_CALLCHAIN_DEFERRED records,
+ *    which any event may be.
+ *  - aux_pause and aux_resume are alternatives (perf_event_alloc() answers
+ *    -EINVAL to both and -EOPNOTSUPP next to aux_output), and
+ *    perf_get_aux_event() refuses either unless the event joins a group
+ *    whose leader sits on a PMU that can pause, so they go on a group member
+ *    and clear aux_output.
+ *  - aux_start_paused is perf_event_alloc()'s -EOPNOTSUPP on a PMU that
+ *    cannot pause, so it goes on an event of one that can.
+ *
+ * A kernel that predates the bits answers -EINVAL to each through its
+ * reserved ones, so the unconditional ones are a minority draw.
+ */
+void random_defer_aux_flags(struct perf_event_attr *attr, int group_leader)
+{
+	if ((attr->sample_type & PERF_SAMPLE_CALLCHAIN) &&
+	    !attr->exclude_callchain_user)
+		attr->defer_callchain = RAND_BOOL();
+
+	attr->defer_output = ONE_IN(8);
+
+	if (!group_leader && ONE_IN(8)) {
+		attr->aux_output = 0;
+		if (RAND_BOOL())
+			attr->aux_pause = 1;
+		else
+			attr->aux_resume = 1;
+	}
+
+	if (perf_pmu_aux_pausable(attr->type) && RAND_BOOL())
+		attr->aux_start_paused = 1;
 }

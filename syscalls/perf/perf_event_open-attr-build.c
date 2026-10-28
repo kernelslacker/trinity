@@ -370,4 +370,6 @@ void maybe_fill_perf_attr_body(struct perf_event_attr *attr,
 	default:
 		break;
 	}
+
+	random_defer_aux_flags(attr, group_leader);
 }
