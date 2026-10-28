@@ -6,6 +6,7 @@
  */
 
 #include <errno.h>
+#include <limits.h>
 #include <linux/filter.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -13,9 +14,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "arch.h"		/* page_size */
 #include "bpf.h"
 #include "debug.h"		/* BUG */
 #include "rnd.h"
+#include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_bpf */
 #include "utils.h"		/* ARRAY_SIZE */
@@ -24,6 +27,7 @@
 #include "syscalls/bpf-internal.h"
 
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
+int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
 static unsigned int failed;
@@ -350,6 +354,339 @@ static void prog_load_draws_flags_the_kernel_takes(void)
 	      (seen & takes) == takes);
 }
 
+/*
+ * struct bpf_common_attr rides in the fourth and fifth arguments of bpf().
+ * __sys_bpf() reads it only when cmd carries BPF_COMMON_ATTRS, and of the
+ * commands only BPF_MAP_CREATE, BPF_PROG_LOAD and BPF_BTF_LOAD do anything
+ * with it: they take their verifier log from it (bpf_log_attr_create_vlog()
+ * and bpf_log_attr_init() in kernel/bpf/log.c).  kernel_common_attr() is
+ * those checks as the kernel writes them, and a draw is judged by the
+ * verdict it gives.  A pointer is memory the kernel can read and write where
+ * the writable pool is, and nowhere else.
+ */
+#define COMMON_POISON		0x5a5a5a5aUL
+
+/* Where __sys_bpf()'s tail check on the struct starts. */
+#define COMMON_ATTR_END		(offsetof(struct bpf_common_attr, log_true_size) + sizeof(__u32))
+
+/* BPF_LOG_MASK and the size cap of bpf_verifier_log_attr_valid(). */
+#define KERNEL_LOG_MASK		15U
+#define KERNEL_LOG_SIZE_MAX	(UINT_MAX >> 2)
+
+struct common_verdict {
+	int err;		/* 0, -E2BIG, -EFAULT or -EINVAL */
+	bool mismatch;		/* the -EINVAL is two logs that differ */
+	bool log_from_common;	/* the verifier log is the struct's */
+	bool log_unwritable;	/* and a write it makes to the call's memory faults */
+};
+
+static bool kernel_log_attr_valid(unsigned int level, unsigned long buf,
+				  unsigned int size)
+{
+	if (!!buf != !!size)
+		return false;
+	if (buf && level == 0)
+		return false;
+	if (level & ~KERNEL_LOG_MASK)
+		return false;
+	return size <= KERNEL_LOG_SIZE_MAX;
+}
+
+/* A field of the attr the call hands over, zero where the size it passes
+ * stops short of it, as the kernel's zeroed copy leaves it. */
+#define ATTR_FIELD(attr, size, member) \
+	((size) >= offsetof(union bpf_attr, member) + sizeof((attr)->member) ? \
+	 (unsigned long) (attr)->member : 0UL)
+
+static struct common_verdict kernel_common_attr(unsigned long cmd_arg,
+						const union bpf_attr *attr,
+						unsigned long size,
+						unsigned long uattr_common,
+						unsigned long size_common_arg)
+{
+	const unsigned char *user = (const unsigned char *) uattr_common;
+	unsigned int cmd = cmd_arg, size_common = size_common_arg;
+	unsigned long own_buf = 0, own_size = 0, own_level = 0;
+	struct common_verdict v = { 0 };
+	struct bpf_common_attr common;
+	bool loads, creates;
+	unsigned int i;
+
+	if (!(cmd & BPF_COMMON_ATTRS))
+		return v;
+
+	/* bpf_check_uarg_tail_zero(): too long, or bytes set past the end of
+	 * log_true_size, in memory the kernel can read. */
+	if (size_common > page_size) {
+		v.err = -E2BIG;
+		return v;
+	}
+	if (size_common > COMMON_ATTR_END) {
+		if (!range_in_writable_pool(uattr_common + COMMON_ATTR_END,
+					    size_common - COMMON_ATTR_END)) {
+			v.err = -EFAULT;
+			return v;
+		}
+		for (i = COMMON_ATTR_END; i < size_common; i++) {
+			if (user[i] != 0) {
+				v.err = -E2BIG;
+				return v;
+			}
+		}
+	}
+
+	/* The copy: size_common bytes, to the struct's size, into zeroes. */
+	memset(&common, 0, sizeof(common));
+	if (size_common > sizeof(common))
+		size_common = sizeof(common);
+	if (size_common != 0) {
+		if (!range_in_writable_pool(uattr_common, size_common)) {
+			v.err = -EFAULT;
+			return v;
+		}
+		memcpy(&common, user, size_common);
+	}
+
+	cmd &= ~BPF_COMMON_ATTRS;
+	creates = cmd == BPF_MAP_CREATE;
+	loads = cmd == BPF_PROG_LOAD || cmd == BPF_BTF_LOAD;
+	if (!creates && !loads)
+		return v;
+
+	if (creates) {
+		/* bpf_log_attr_create_vlog(): no log without a struct. */
+		if (size_common == 0)
+			return v;
+		if (!kernel_log_attr_valid(common.log_level, common.log_buf,
+					   common.log_size)) {
+			v.err = -EINVAL;
+			return v;
+		}
+		v.log_from_common = common.log_level != 0;
+	} else {
+		if (cmd == BPF_PROG_LOAD) {
+			own_buf = ATTR_FIELD(attr, size, log_buf);
+			own_size = ATTR_FIELD(attr, size, log_size);
+			own_level = ATTR_FIELD(attr, size, log_level);
+		} else {
+			own_buf = ATTR_FIELD(attr, size, btf_log_buf);
+			own_size = ATTR_FIELD(attr, size, btf_log_size);
+			own_level = ATTR_FIELD(attr, size, btf_log_level);
+		}
+
+		/* bpf_log_attr_init(): both logs well formed, and one buffer
+		 * named twice is named alike. */
+		if (!kernel_log_attr_valid(common.log_level, common.log_buf,
+					   common.log_size) ||
+		    !kernel_log_attr_valid(own_level, own_buf, own_size)) {
+			v.err = -EINVAL;
+			return v;
+		}
+		if (own_buf != 0 && common.log_buf != 0 &&
+		    (own_buf != common.log_buf || own_size != common.log_size ||
+		     own_level != common.log_level)) {
+			v.err = -EINVAL;
+			v.mismatch = true;
+			return v;
+		}
+		v.log_from_common = own_buf == 0 && common.log_buf != 0;
+	}
+
+	if (v.log_from_common) {
+		if (common.log_buf != 0 &&
+		    !range_in_writable_pool(common.log_buf, common.log_size))
+			v.log_unwritable = true;
+		/* The log's true size goes back into the struct, past the
+		 * fields the log is made of. */
+		if (size_common >= COMMON_ATTR_END &&
+		    !range_in_writable_pool(uattr_common +
+					    offsetof(struct bpf_common_attr,
+						     log_true_size),
+					    sizeof(common.log_true_size)))
+			v.log_unwritable = true;
+	} else if (own_buf != 0 && !range_in_writable_pool(own_buf, own_size)) {
+		v.log_unwritable = true;
+	}
+	return v;
+}
+
+struct common_tally {
+	unsigned int rounds, carried, accepted;
+	unsigned int e2big, efault, einval, mismatch;
+	unsigned int from_common, unwritable;
+};
+
+static void tally_common(struct common_tally *t, const struct syscallrecord *rec,
+			 unsigned long cmd, const union bpf_attr *attr)
+{
+	struct common_verdict v;
+
+	t->rounds++;
+	check("the draw changed more of the command than its flag",
+	      "common attr", (rec->a1 & ~(unsigned long) BPF_COMMON_ATTRS) == cmd);
+	check("the draw left a slot of the common attrs unwritten",
+	      "common attr", rec->a4 != COMMON_POISON && rec->a5 != COMMON_POISON);
+
+	if (!(rec->a1 & BPF_COMMON_ATTRS)) {
+		check("a call without the flag carries a struct", "common attr",
+		      rec->a4 == 0 && rec->a5 == 0);
+		return;
+	}
+
+	t->carried++;
+	v = kernel_common_attr(rec->a1, attr, rec->a3, rec->a4, rec->a5);
+	switch (v.err) {
+	case 0:
+		t->accepted++;
+		break;
+	case -E2BIG:
+		t->e2big++;
+		break;
+	case -EFAULT:
+		t->efault++;
+		break;
+	case -EINVAL:
+		t->einval++;
+		if (v.mismatch)
+			t->mismatch++;
+		break;
+	}
+	if (v.log_from_common)
+		t->from_common++;
+	if (v.log_unwritable)
+		t->unwritable++;
+}
+
+/* The kernel reads the struct's tail wherever the pool has put it, and a
+ * pool a run has used holds what earlier calls left.  Fill it, so the slots
+ * the next draws take come back as junk and the tail is zero only if the
+ * sanitiser zeroed it: an allocation of the pool's whole size starts at its
+ * base and parks the cursor at its end, which the next one wraps. */
+static void dirty_writable_pool(void)
+{
+	memset(get_writable_address(WRITABLE_POOL_BYTES), 0xa5, WRITABLE_POOL_BYTES);
+}
+
+/* The sanitiser and the post handler, as the dispatcher runs them.  The
+ * post handler hands the attr to deferred free, which refuses what the fake
+ * allocator never tracked, so the attr is the case's to free. */
+static void draw_common_attr(struct common_tally *t, unsigned long cmd,
+			     unsigned int rounds)
+{
+	static struct syscallrecord rec;
+	unsigned int round;
+
+	for (round = 0; round < rounds; round++) {
+		const union bpf_attr *attr;
+
+		if (round % 32 == 0)
+			dirty_writable_pool();
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = cmd;
+		rec.a4 = COMMON_POISON;
+		rec.a5 = COMMON_POISON;
+		syscall_bpf.sanitise(&rec);
+		attr = (const union bpf_attr *) rec.a2;
+		tally_common(t, &rec, cmd, attr);
+
+		rec.retval = (unsigned long) -1L;
+		rec.errno_post = EINVAL;
+		syscall_bpf.post(&rec);
+		free((void *) attr);
+	}
+}
+
+/* PROG_LOAD's program is the case's to free, so it is drawn without the
+ * post handler: the attr is the one the sanitiser builds, then the step
+ * under test. */
+static void draw_common_attr_for_prog_load(struct common_tally *t,
+					   unsigned int rounds)
+{
+	static struct syscallrecord rec;
+	static union bpf_attr attr;
+	unsigned int round;
+
+	for (round = 0; round < rounds; round++) {
+		bool classic;
+
+		if (round % 32 == 0)
+			dirty_writable_pool();
+		memset(&attr, 0, sizeof(attr));
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = BPF_PROG_LOAD;
+		classic = sanitise_bpf_prog_load(&attr, &rec);
+		rec.a4 = COMMON_POISON;
+		rec.a5 = COMMON_POISON;
+		sanitise_bpf_common_attr(&attr, &rec);
+		tally_common(t, &rec, BPF_PROG_LOAD, &attr);
+		free_program(&attr, classic);
+	}
+}
+
+/*
+ * Most calls leave both slots 0 and the flag clear, as before.  The ones
+ * that carry the struct are mostly ones the kernel takes, and a few break
+ * one rule each so every rejection stays reachable: too long, tail bytes
+ * set, an unreadable pointer, a log that is no log, and for a load a second
+ * log that differs from the struct's.  The commands that read the struct
+ * carry it oftener than the rest, which only run the checks around it.
+ */
+static void common_attr_follows_the_kernels_rules(void)
+{
+	enum { ROUNDS = 4000, OTHER_ROUNDS = 400 };
+	const unsigned long *cmds = syscall_bpf.arg_params[0].list.values;
+	struct common_tally map = { 0 }, prog = { 0 }, btf = { 0 }, other = { 0 };
+	struct common_tally *const readers[] = { &map, &prog, &btf };
+	unsigned int i;
+
+	check("sanity_check_tables refuses the bpf entry", "common attr",
+	      entry_check_status(&syscall_bpf) == 0);
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+
+	draw_common_attr(&map, BPF_MAP_CREATE, ROUNDS);
+	draw_common_attr_for_prog_load(&prog, ROUNDS);
+	draw_common_attr(&btf, BPF_BTF_LOAD, ROUNDS);
+	for (i = 0; i < syscall_bpf.arg_params[0].list.num; i++) {
+		if (cmds[i] == BPF_MAP_CREATE || cmds[i] == BPF_PROG_LOAD ||
+		    cmds[i] == BPF_BTF_LOAD)
+			continue;
+		draw_common_attr(&other, cmds[i], OTHER_ROUNDS);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(readers); i++) {
+		const struct common_tally *t = readers[i];
+
+		check("under 15% of the calls carry the struct", "common attr",
+		      t->carried * 100 >= t->rounds * 15);
+		check("over 35% of the calls carry the struct", "common attr",
+		      t->carried * 100 <= t->rounds * 35);
+		check("under 75% of the structs are ones the kernel takes",
+		      "common attr", t->accepted * 100 >= t->carried * 75);
+		check("under 15% of the structs the kernel takes give it a log",
+		      "common attr", t->from_common * 100 >= t->accepted * 15);
+		check("a log the kernel writes is memory it cannot write",
+		      "common attr", t->unwritable == 0);
+		check("no struct is too long", "common attr", t->e2big > 0);
+		check("no struct is unreadable", "common attr", t->efault > 0);
+		check("no struct holds a log that is no log", "common attr",
+		      t->einval > 0);
+	}
+	check("no load names a second log that differs", "common attr",
+	      prog.mismatch > 0);
+
+	check("no call of another command carries the struct", "common attr",
+	      other.carried > 0);
+	check("over 8% of the calls of another command carry the struct",
+	      "common attr", other.carried * 100 <= other.rounds * 8);
+	check("a log the kernel writes is memory it cannot write",
+	      "common attr", other.unwritable == 0);
+
+	/* Leave the pool clean for the suites that follow. */
+	memset(get_writable_address(WRITABLE_POOL_BYTES), 0, WRITABLE_POOL_BYTES);
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -362,6 +699,7 @@ void bpf_gen_self_check(void)
 	a_program_keeps_to_its_frame();
 	valid_programs_draw_both_frames();
 	prog_load_draws_flags_the_kernel_takes();
+	common_attr_follows_the_kernels_rules();
 
 	if (failed != 0)
 		BUG("a bpf sanitiser or generator drew what the kernel does not take");

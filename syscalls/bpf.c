@@ -1,5 +1,6 @@
 /*
- * SYSCALL_DEFINE3(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size)
+ * SYSCALL_DEFINE5(bpf, int, cmd, union bpf_attr __user *, uattr, unsigned int, size,
+ *		   struct bpf_common_attr __user *, uattr_common, unsigned int, size_common)
  */
 #ifdef USE_BPF
 #include <linux/bpf.h>
@@ -166,7 +167,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap;
 	union bpf_attr *attr;
-	unsigned int cmd = rec->a1;
+	unsigned int cmd = rec->a1 & ~BPF_COMMON_ATTRS;
 	bool classic_bpf_insns = false;
 
 	rec->post_state = 0;
@@ -274,6 +275,8 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		sanitise_bpf_default(attr, rec);
 		break;
 	}
+
+	sanitise_bpf_common_attr(attr, rec);
 
 	avoid_shared_buffer_inout(&rec->a2, rec->a3);
 
@@ -608,13 +611,16 @@ static unsigned long bpf_cmds[] = {
 struct syscallentry syscall_bpf = {
 	.name = "bpf",
 	.group = GROUP_BPF,
-	.num_args = 3,
+	.num_args = 5,
 
-	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_STRUCT_SIZE },
-	.argname = { [0] = "cmd", [1] = "uattr", [2] = "size" },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS, [2] = ARG_STRUCT_SIZE,
+		     [3] = ARG_ADDRESS, [4] = ARG_STRUCT_SIZE },
+	.argname = { [0] = "cmd", [1] = "uattr", [2] = "size",
+		     [3] = "uattr_common", [4] = "size_common" },
 	.arg_params[0].list = ARGLIST(bpf_cmds),
 	.flags = KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_bpf,
+	.sanitiser_owned_mask = (1u << 3) | (1u << 4),
 	.post = post_bpf,
 };
 #endif

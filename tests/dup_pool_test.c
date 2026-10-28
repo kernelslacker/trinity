@@ -3687,6 +3687,9 @@ static void ioctl_fds_are_all_pooled_or_closed(void)
 }
 
 #ifdef USE_BPF
+/* Bits ORed into the command run_bpf_stream_open() hands the sanitiser. */
+static unsigned long bpf_cmd_flags;
+
 /* Run bpf's sanitiser, which makes the post handler's snapshot, and its
  * post handler on a BPF_PROG_STREAM_OPEN that returned @retval.  The
  * handler hands the attr to deferred free, which refuses what the fake
@@ -3697,7 +3700,7 @@ static void run_bpf_stream_open(unsigned long retval)
 	void *attr;
 
 	memset(&rec, 0, sizeof(rec));
-	rec.a1 = BPF_PROG_STREAM_OPEN;
+	rec.a1 = BPF_PROG_STREAM_OPEN | bpf_cmd_flags;
 	syscall_bpf.sanitise(&rec);
 	attr = (void *) rec.a2;
 	rec.retval = retval;
@@ -3723,6 +3726,26 @@ static void bpf_stream_open_pools_the_fd_it_returned(void)
 	      e != NULL && e->local && published == 1 && pool_count(fd) == 1);
 	check("a pooled stream fd was closed", "bpf",
 	      fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
+/* The kernel strips BPF_COMMON_ATTRS before it looks at the command, so the
+ * sanitiser builds, and the post handler finishes, the command the flag came
+ * on: a stream open that carries it still has its fd pooled. */
+static void bpf_stream_open_with_the_common_attrs_flag_is_still_pooled(void)
+{
+	struct pool_entry *e;
+	int peer, fd;
+
+	reset();
+	fd = open_kind(FILE_REG, &peer);
+	bpf_cmd_flags = BPF_COMMON_ATTRS;
+	run_bpf_stream_open((unsigned long) fd);
+	bpf_cmd_flags = 0;
+	e = pool_find(fd, OBJ_FD_TESTFILE);
+	check("the stream fd of a call that carried the flag was not pooled",
+	      "bpf", e != NULL && e->local && published == 1 &&
+	      pool_count(fd) == 1);
 	close(fd);
 }
 
@@ -3877,6 +3900,7 @@ void dup_pool_self_check(void)
 	keyctl_pools_only_owned_keyrings();
 #ifdef USE_BPF
 	bpf_stream_open_pools_the_fd_it_returned();
+	bpf_stream_open_with_the_common_attrs_flag_is_still_pooled();
 	bpf_stream_open_that_failed_owns_nothing();
 	bpf_stream_open_leaves_a_number_that_is_not_free_alone();
 	bpf_stream_open_closes_an_fd_the_pool_cannot_take();

@@ -132,6 +132,23 @@
 #endif
 
 /*
+ * BPF_COMMON_ATTRS, a bit of cmd, says the fourth and fifth arguments of
+ * bpf(2) carry a struct bpf_common_attr.  The struct is not a macro, so
+ * #ifndef cannot tell whether <linux/bpf.h> has it; it arrived with the
+ * flag, so the flag's probe stands for both.
+ */
+#ifndef HAVE_BPF_COMMON_ATTRS
+#define BPF_COMMON_ATTRS		(1 << 16)
+
+struct bpf_common_attr {
+	__aligned_u64 log_buf;
+	__u32 log_size;
+	__u32 log_level;
+	__u32 log_true_size;
+};
+#endif
+
+/*
  * Attach-type fallbacks for older /usr/include/linux/bpf.h.  Consumed
  * by bpf_attach_types[] in struct_catalog/bpf.c and by the tracing /
  * kprobe / uprobe attach-type pools in struct_catalog/bpf-link.c;

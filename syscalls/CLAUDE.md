@@ -179,6 +179,10 @@ literals `tables/` copies into shared memory.
    since most files in this directory are stateless per-call generators.
 4. **Four internal-header clusters (`bpf`, `io_uring_register`,
    `perf_event_open`, `setsockopt`) intentionally break the "one syscall,
-   one file" convention** — `perf_event_open` is spread over six `.c` files, and so is `bpf` (the `bpf.c` aggregator plus `bpf-{prog,map,btf,link,fallback}.c`).
+   one file" convention** — `perf_event_open` is spread over six `.c` files, and `bpf` over seven (the `bpf.c` aggregator plus `bpf-{prog,map,btf,link,common,fallback}.c`).
    A reader expecting the whole descriptor in one file needs to know to also
    check the paired `-payloads.c`/`-pmu-discovery.c`/`-internal.h` files.
+   `bpf-common.c` draws the fourth and fifth arguments of `bpf()`, a
+   `struct bpf_common_attr` and its size, which the kernel reads only when
+   the command carries `BPF_COMMON_ATTRS`; the two slots are the sanitiser's
+   (`.sanitiser_owned_mask`) and most calls leave them 0.

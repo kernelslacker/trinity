@@ -620,6 +620,11 @@ check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 check_enum_member linux/bpf.h BPF_STREAM_STDOUT BPF_STREAM_STDERR \
 	BPF_F_STREAM_NONBLOCK
 
+# BPF_COMMON_ATTRS, the bit of cmd that says bpf(2)'s fourth and fifth
+# arguments carry a struct bpf_common_attr.  The struct arrived with it, so
+# this one probe decides the fallback for both.
+check_enum_member linux/bpf.h BPF_COMMON_ATTRS
+
 # enum bpf_map_type, from BPF_MAP_TYPE_LRU_HASH to the newest.
 check_enum_member linux/bpf.h BPF_MAP_TYPE_LRU_HASH \
 	BPF_MAP_TYPE_LRU_PERCPU_HASH BPF_MAP_TYPE_LPM_TRIE \
