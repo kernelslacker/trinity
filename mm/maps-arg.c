@@ -174,7 +174,8 @@ unsigned long hugetlb_flag_size(unsigned long flags)
 		if (f != NULL) {
 			while (fgets(line, sizeof(line), f) != NULL) {
 				if (sscanf(line, "Hugepagesize: %lu kB", &kib) == 1) {
-					default_size = kib * 1024;
+					if (kib <= ULONG_MAX / 1024)
+						default_size = kib * 1024;
 					break;
 				}
 			}
