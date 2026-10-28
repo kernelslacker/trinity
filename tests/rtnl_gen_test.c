@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
@@ -23,7 +24,7 @@
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 
-#define ROUNDS		400000
+#define ROUNDS		800000
 
 /*
  * Only a lone message whose nlmsg_len is intact says where its attributes
@@ -46,6 +47,16 @@ static void expect_fraction(unsigned int part, unsigned int whole, double lo,
 			what, part, whole, lo, hi);
 		BUG(bug);
 	}
+}
+
+/* The attribute at p of the len bytes left, or NULL when it does not fit. */
+static const struct nlattr *fit_attr(const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla = (const struct nlattr *) p;
+
+	if (len < NLA_HDRLEN || nla->nla_len < NLA_HDRLEN || nla->nla_len > len)
+		return NULL;
+	return nla;
 }
 
 /* ---------- RTM_GETMULTICAST and RTM_GETANYCAST -------------------------- */
@@ -167,8 +178,8 @@ static void tally_addr_dump(struct addr_dump *t, const struct nlmsghdr *nlh)
  * of four bytes seven times in eight, but one draw in seven is a nest of
  * them, so about 0.48 of the requests are clear of anything the strict
  * parse refuses and 0.35 of them hold one; the ids are -1 one time in eight
- * and 0 to 3 the rest.  Over the 3900 requests or so each type has the
- * fractions have standard deviations under 0.009, and the bounds are five of
+ * and 0 to 3 the rest.  Over the 7800 requests or so each type has the
+ * fractions have standard deviations under 0.006, and the bounds are five of
  * them out or more.
  */
 static void expect_addr_dump(const struct addr_dump *t, bool multicast,
@@ -265,19 +276,17 @@ static void tally_link_limits(struct limit *t, const struct nlmsghdr *nlh)
 {
 	const unsigned char *p = (const unsigned char *) nlh +
 				 NLMSG_SPACE(sizeof(struct ifinfomsg));
+	const struct nlattr *nla;
 	size_t len;
 
 	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct ifinfomsg)))
 		return;
 	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct ifinfomsg));
 
-	while (len >= NLA_HDRLEN) {
-		const struct nlattr *nla = (const struct nlattr *) p;
+	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		unsigned int i;
 
-		if (nla->nla_len < NLA_HDRLEN || nla->nla_len > len)
-			break;
 		for (i = 0; i < ARRAY_SIZE(limit_types); i++) {
 			struct limit *l = &t[i];
 			uint32_t v;
@@ -359,11 +368,108 @@ static void expect_link_limits(const struct limit *t)
 	}
 }
 
+/* ---------- NDTPA_INTERVAL_PROBE_TIME_MS --------------------------------- */
+
+/*
+ * neightbl_set() in net/core/neighbour.c parses the NDTPA_* attributes of
+ * NDTA_PARMS against nl_ntbl_parm_policy, which holds
+ * NDTPA_INTERVAL_PROBE_TIME_MS, an NLA_U64, to nl_ntbl_parm_ms_range: 1000
+ * through 86400000 since 7a71343ba1a6, and answers any other value -ERANGE.
+ */
+#define NTBL_PARM_MS_MIN	1000u
+#define NTBL_PARM_MS_MAX	86400000u
+
+/* The interval at which neigh_managed_work() runs often. */
+#define SHORT_INTERVAL_MS	10000u
+
+struct probe_interval {
+	unsigned int seen;		/* the attribute, inside an NDTA_PARMS */
+	unsigned int exact;		/* of eight bytes */
+	unsigned int below, above;	/* under nl_ntbl_parm_ms_range, and over it */
+	unsigned int short_ms;		/* in it, and up to SHORT_INTERVAL_MS */
+};
+
+/* The children of one NDTA_PARMS, the policy's NDTPA_* attributes. */
+static void tally_parms(struct probe_interval *t, const unsigned char *p,
+			size_t len)
+{
+	const struct nlattr *nla;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		uint64_t v;
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == NDTPA_INTERVAL_PROBE_TIME_MS) {
+			t->seen++;
+			if (!(nla->nla_type & NLA_F_NESTED) &&
+			    nla->nla_len == NLA_HDRLEN + sizeof(v)) {
+				memcpy(&v, p + NLA_HDRLEN, sizeof(v));
+				t->exact++;
+				t->below += v < NTBL_PARM_MS_MIN;
+				t->above += v > NTBL_PARM_MS_MAX;
+				t->short_ms += v >= NTBL_PARM_MS_MIN &&
+					       v <= SHORT_INTERVAL_MS;
+			}
+		}
+		if (total > len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/* The probe interval among the NDTPA_* attributes of an RTM_*NEIGHTBL request. */
+static void tally_probe_interval(struct probe_interval *t,
+				 const struct nlmsghdr *nlh)
+{
+	const unsigned char *p = (const unsigned char *) nlh +
+				 NLMSG_SPACE(sizeof(struct ndtmsg));
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct ndtmsg)))
+		return;
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct ndtmsg));
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == NDTA_PARMS)
+			tally_parms(t, p + NLA_HDRLEN, nla->nla_len - NLA_HDRLEN);
+		if (total > len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * The builder draws the interval from nl_ntbl_parm_ms_range seven times in
+ * eight, and random bytes the eighth, which land in it about once in 2^38 and
+ * over it the rest of the time.  Half of the draws in range are up to ten
+ * seconds, where neigh_managed_work() reruns often.  None is under the floor,
+ * which a draw from the range the policy had before 7a71343ba1a6 would be.
+ */
+static void expect_probe_interval(const struct probe_interval *t)
+{
+	const char *name = "NDTPA_INTERVAL_PROBE_TIME_MS";
+
+	expect_fraction(t->exact, t->seen, 0.99, 1.0, name,
+			"rtnl: the probe interval is not eight bytes");
+	expect_fraction(t->exact - t->below - t->above, t->exact, 0.75, 0.95, name,
+			"rtnl: the probe interval is not mostly in the policy's range");
+	expect_fraction(t->below, t->exact, 0.0, 0.001, name,
+			"rtnl: the probe interval is under the policy's floor");
+	expect_fraction(t->short_ms, t->exact, 0.30, 0.55, name,
+			"rtnl: the probe interval is not often a short one");
+}
+
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
+	struct probe_interval probe_interval;
 };
 
 static void run_rounds(struct tallies *t)
@@ -399,6 +505,11 @@ static void run_rounds(struct tallies *t)
 		case RTM_SETLINK:
 			tally_link_limits(t->limits, nlh);
 			break;
+		case RTM_NEWNEIGHTBL:
+		case RTM_GETNEIGHTBL:
+		case RTM_SETNEIGHTBL:
+			tally_probe_interval(&t->probe_interval, nlh);
+			break;
 		}
 next:
 		free(buf);
@@ -414,4 +525,5 @@ void rtnl_gen_self_check(void)
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);
+	expect_probe_interval(&t.probe_interval);
 }

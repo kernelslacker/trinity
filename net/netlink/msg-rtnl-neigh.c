@@ -740,10 +740,8 @@ static const unsigned short ndtpa_u32_attrs[] = {
  * RETRANS_TIME / ANYCAST_DELAY / PROXY_DELAY / LOCKTIME /
  * INTERVAL_PROBE_TIME_MS).  Random-byte payloads at the wrong width
  * length-reject at nla_validate; emit them at 8 bytes so the inner
- * NEIGH_VAR_SET arm runs.  INTERVAL_PROBE_TIME_MS additionally has a
- * .min = 1 policy gate; the random u64 payload trips that exactly 1
- * in 2^64 of the time, which is fine — the other timers don't have
- * that gate and exercise the writer regardless.
+ * NEIGH_VAR_SET arm runs.  The other timers take any u64, so random bytes
+ * reach the writer; INTERVAL_PROBE_TIME_MS is range-checked, see below.
  */
 static const unsigned short ndtpa_u64_attrs[] = {
 	NDTPA_BASE_REACHABLE_TIME, NDTPA_GC_STALETIME,
@@ -751,6 +749,17 @@ static const unsigned short ndtpa_u64_attrs[] = {
 	NDTPA_ANYCAST_DELAY, NDTPA_PROXY_DELAY, NDTPA_LOCKTIME,
 	NDTPA_INTERVAL_PROBE_TIME_MS,
 };
+
+/*
+ * nl_ntbl_parm_ms_range in net/core/neighbour.c holds
+ * NDTPA_INTERVAL_PROBE_TIME_MS to 1000 (the floor since 7a71343ba1a6) through
+ * 86400000, a day, and a random u64 is inside it about once in 2^38.
+ * neigh_managed_work() rearms itself at this interval, so half the draws are
+ * within ten seconds of the floor, where it runs often; one draw in eight
+ * stays random bytes so the range check still sees traffic.
+ */
+#define NTBL_PARM_MS_MIN	1000u
+#define NTBL_PARM_MS_MAX	86400000u
 
 /*
  * Build the NDTA_PARMS nested payload: a leading NDTPA_IFINDEX u32
@@ -799,7 +808,17 @@ static size_t build_ndta_parms_nested(unsigned char *p, size_t avail)
 			break;
 		if (!start_nlattr(p, off, cap, atype, plen))
 			break;
-		generate_rand_bytes(p + off + NLA_HDRLEN, plen);
+		if (atype == NDTPA_INTERVAL_PROBE_TIME_MS && !ONE_IN(8)) {
+			__u64 ms;
+
+			if (RAND_BOOL())
+				ms = RAND_RANGE(NTBL_PARM_MS_MIN, 10000u);
+			else
+				ms = RAND_RANGE(NTBL_PARM_MS_MIN, NTBL_PARM_MS_MAX);
+			memcpy(p + off + NLA_HDRLEN, &ms, sizeof(ms));
+		} else {
+			generate_rand_bytes(p + off + NLA_HDRLEN, plen);
+		}
 		off += total;
 	}
 	return off;
