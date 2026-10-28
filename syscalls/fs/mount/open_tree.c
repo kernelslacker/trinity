@@ -10,6 +10,7 @@
 static unsigned long open_tree_flags[] = {
 	AT_EMPTY_PATH, AT_NO_AUTOMOUNT, AT_RECURSIVE, AT_SYMLINK_NOFOLLOW,
 	OPEN_TREE_CLONE, OPEN_TREE_CLOEXEC, OPEN_TREE_NAMESPACE,
+	OPEN_TREE_DROP_MNTNS_MOUNTS,
 };
 
 struct syscallentry syscall_open_tree = {
