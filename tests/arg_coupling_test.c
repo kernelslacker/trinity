@@ -90,12 +90,17 @@ int get_rand_testfile_fd(void)
 	return -1;
 }
 
+/* Copies only for a case that sets fake_snapshot_str_copies, such as the
+ * stat-family re-calls of stat_recall_test.c, which need the path. */
+bool fake_snapshot_str_copies;
+
 bool post_snapshot_str(char *dst, size_t dstsz, const char *src)
 {
-	(void) dst;
-	(void) dstsz;
-	(void) src;
-	return false;
+	if (!fake_snapshot_str_copies || src == NULL || dstsz == 0 ||
+	    strnlen(src, dstsz) == dstsz)
+		return false;
+	strcpy(dst, src);
+	return true;
 }
 
 /* The OBJ_PKEY pool, the heap-slip log, the /proc/self/maps oracle and

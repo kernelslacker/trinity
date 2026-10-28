@@ -474,6 +474,7 @@ FAKE_SRCS	:= \
 	post_oracle_test.c \
 	dup_pool_test.c \
 	ctime_rule_test.c \
+	stat_recall_test.c \
 	bpf_gen_test.c \
 	test_main.c
 
@@ -531,6 +532,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
 		   $(TOP)/fds/fds-pool.c \
 		   $(TOP)/dispatch/syscall-retfd.c
+
+# syscalls/fs/stat/newstat.c brings syscall_newstat, whose sanitiser and
+# post handler stat_recall_test.c runs on a file of its own, and
+# stat-recall.c the verdict its re-call oracle reaches.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/stat/newstat.c \
+		   $(TOP)/syscalls/fs/stat/stat-recall.c
 
 # syscalls/bpf.c and its sibling TUs bring syscall_bpf, whose sanitiser
 # bpf_gen_test.c runs, and whose BPF_PROG_STREAM_OPEN post handler
