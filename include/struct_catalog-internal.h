@@ -313,9 +313,6 @@ enum {
 #ifdef USE_ATM
 		+ 1 /* AF_ATMPVC */
 #endif
-#ifdef USE_LLC
-		+ 1
-#endif
 #ifdef USE_MCTP
 		+ 1
 #endif
@@ -358,9 +355,6 @@ extern const struct struct_field sockaddr_pn_variant_fields[];
 #endif
 #ifdef USE_ATM
 extern const struct struct_field sockaddr_atmpvc_variant_fields[];
-#endif
-#ifdef USE_LLC
-extern const struct struct_field sockaddr_llc_variant_fields[];
 #endif
 #ifdef USE_MCTP
 extern const struct struct_field sockaddr_mctp_variant_fields[];

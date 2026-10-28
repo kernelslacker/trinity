@@ -659,7 +659,6 @@ check_header linux/vm_sockets.h USE_VSOCK
 check_header linux/if_pppox.h USE_PPPOX
 check_header linux/can.h USE_CAN
 check_header linux/rxrpc.h USE_RXRPC
-check_header linux/llc.h USE_LLC
 check_header linux/if_xdp.h USE_XDP
 check_header linux/mctp.h USE_MCTP
 check_header linux/sctp.h USE_SCTP

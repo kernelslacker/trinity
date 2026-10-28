@@ -82,7 +82,6 @@ extern const struct netproto proto_alg;
 extern const struct netproto proto_nfc;
 extern const struct netproto proto_atmpvc;
 extern const struct netproto proto_x25;
-extern const struct netproto proto_llc;
 extern const struct netproto proto_netlink;
 extern const struct netproto proto_packet;
 extern const struct netproto proto_can;

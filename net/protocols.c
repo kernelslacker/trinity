@@ -14,7 +14,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_RDS] = { .proto = &proto_rds },
 #endif
 	[PF_KEY] = { .proto = &proto_key },
-	[PF_LLC] = { .proto = &proto_llc },
 	[PF_CAN] = { .proto = &proto_can },
 	[PF_TIPC] = { .proto = &proto_tipc },
 

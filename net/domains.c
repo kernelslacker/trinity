@@ -33,7 +33,6 @@ static const struct domain domains[] = {
 	{ "SNA",	PF_SNA },
 	{ "PPPOX",	PF_PPPOX },
 	{ "WANPIPE",	PF_WANPIPE },
-	{ "LLC",	PF_LLC },
 	{ "IB",		PF_IB  },
 	{ "MPLS",	PF_MPLS },
 	{ "CAN",	PF_CAN },

@@ -56,9 +56,6 @@
 #ifdef USE_ATM
 #include <linux/atm.h>
 #endif
-#ifdef USE_LLC
-#include <linux/llc.h>
-#endif
 #ifdef USE_MCTP
 #include <linux/mctp.h>
 #endif
@@ -130,9 +127,6 @@ const unsigned long sockaddr_storage_af_vocab[] = {
 #endif
 #ifdef USE_ATM
 	AF_ATMPVC,
-#endif
-#ifdef USE_LLC
-	AF_LLC,
 #endif
 #ifdef USE_MCTP
 	AF_MCTP,
@@ -359,29 +353,6 @@ const struct struct_field sockaddr_atmpvc_variant_fields[] = {
 	FIELD(struct sockaddr_atmpvc, sap_addr.itf),
 	FIELD(struct sockaddr_atmpvc, sap_addr.vpi),
 	FIELD(struct sockaddr_atmpvc, sap_addr.vci),
-};
-#endif
-
-#ifdef USE_LLC
-/*
- * AF_LLC (sockaddr_llc) -- IEEE 802.2 LLC endpoint.  The 16-byte
- * address is a flat (family, arphrd, test, xid, ua, sap, mac) tuple;
- * no inner tagged union, so this variant stays single-arm.  sllc_arphrd
- * is canonically ARPHRD_ETHER but the kernel does not reject other
- * values at bind, so it stays FT_RAW.  sllc_sap is the LSAP byte the
- * kernel matches in llc_ui_bind() via llc_sap_find(); leaving it
- * FT_RAW keeps the full 0x00-0xFF dispatch surface exposed.  sllc_mac
- * is a 6-byte hardware address the kernel walks via dev_get_by_index
- * / __dev_get_by_index against the bound interface; FT_RAW covers the
- * generic case without a /sys/class/net walk at init.
- */
-const struct struct_field sockaddr_llc_variant_fields[] = {
-	FIELD(struct sockaddr_llc, sllc_arphrd),
-	FIELD(struct sockaddr_llc, sllc_test),
-	FIELD(struct sockaddr_llc, sllc_xid),
-	FIELD(struct sockaddr_llc, sllc_ua),
-	FIELD(struct sockaddr_llc, sllc_sap),
-	FIELD(struct sockaddr_llc, sllc_mac),
 };
 #endif
 
@@ -706,15 +677,6 @@ const struct union_variant sockaddr_storage_variants[] = {
 		.fields		 = sockaddr_atmpvc_variant_fields,
 		.num_fields	 = ARRAY_SIZE(sockaddr_atmpvc_variant_fields),
 		.effective_size	 = sizeof(struct sockaddr_atmpvc),
-	},
-#endif
-#ifdef USE_LLC
-	{
-		.discrim_value	 = AF_LLC,
-		.name		 = "AF_LLC",
-		.fields		 = sockaddr_llc_variant_fields,
-		.num_fields	 = ARRAY_SIZE(sockaddr_llc_variant_fields),
-		.effective_size	 = sizeof(struct sockaddr_llc),
 	},
 #endif
 #ifdef USE_MCTP

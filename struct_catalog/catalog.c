@@ -61,9 +61,6 @@
 #ifdef USE_ATM
 #include <linux/atm.h>
 #endif
-#ifdef USE_LLC
-#include <linux/llc.h>
-#endif
 #ifdef USE_MCTP
 #include <linux/mctp.h>
 #endif

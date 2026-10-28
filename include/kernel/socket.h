@@ -20,13 +20,6 @@
 #define AF_RDS		PF_RDS
 #endif
 
-#ifndef PF_LLC
-#define PF_LLC		26
-#endif
-#ifndef AF_LLC
-#define AF_LLC		PF_LLC
-#endif
-
 #ifndef AF_IB
 #define AF_IB		27
 #endif

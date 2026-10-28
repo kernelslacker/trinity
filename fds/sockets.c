@@ -198,8 +198,6 @@ static unsigned int valid_proto(unsigned int family)
 			return false;
 		if (family == PF_PACKET)
 			return false;
-		if (family == PF_LLC)
-			return false;
 	}
 
 	return true;
