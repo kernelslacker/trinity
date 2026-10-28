@@ -256,6 +256,23 @@ static int ignore_files(const char *path)
 		NULL
 	};
 
+	/*
+	 * Whole-path patterns matched with fnmatch(), whose '*' crosses '/'.
+	 *
+	 * A driver's bind and unbind files attach or detach the device a
+	 * write names, and taint the kernel TAINT_FORCED_BIND before the
+	 * driver's callback runs: upstream sets aside whatever breaks after
+	 * as userspace forcing it, and a detached NIC or disk outlives the
+	 * run.  The default walk reaches them under /sys/bus; a -V walk
+	 * follows symlinks, so also through a module's drivers/ links and a
+	 * device's driver link.
+	 */
+	const char *ignored_path_patterns[] = {
+		"*/drivers/*/bind", "*/drivers/*/unbind",
+		"*/driver/bind", "*/driver/unbind",
+		NULL
+	};
+
 	/* Basename patterns matched with fnmatch(). */
 	const char *ignored_patterns[] = {
 		/* dangerous/noisy/annoying per-process stuff. */
@@ -298,6 +315,13 @@ static int ignore_files(const char *path)
 		if (strncmp(path, ignored_prefixes[i], plen) == 0 &&
 		    (path[plen] == '\0' || path[plen] == '/')) {
 			debugf("Skipping prefix %s\n", path);
+			return 1;
+		}
+	}
+
+	for (i = 0; ignored_path_patterns[i]; i++) {
+		if (fnmatch(ignored_path_patterns[i], path, 0) == 0) {
+			debugf("Skipping driver binding %s\n", path);
 			return 1;
 		}
 	}
