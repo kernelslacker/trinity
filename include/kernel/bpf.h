@@ -243,6 +243,20 @@
 #define BPF_F_NO_COMMON_LRU     (1U << 1)
 #endif
 
+/*
+ * BPF_PROG_LOAD prog_flags newer than the oldest header trinity builds
+ * against, macros upstream.
+ */
+#ifndef BPF_F_XDP_DEV_BOUND_ONLY
+# define BPF_F_XDP_DEV_BOUND_ONLY	(1U << 6)
+#endif
+#ifndef BPF_F_TEST_REG_INVARIANTS
+# define BPF_F_TEST_REG_INVARIANTS	(1U << 7)
+#endif
+#ifndef BPF_F_ARENA_SCALAR
+# define BPF_F_ARENA_SCALAR		(1U << 8)
+#endif
+
 /* Flags referenced from the MAP_CREATE schema annotation. */
 #ifndef BPF_F_MMAPABLE
 # define BPF_F_MMAPABLE			(1U << 10)

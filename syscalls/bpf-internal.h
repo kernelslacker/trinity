@@ -8,7 +8,7 @@
  * sanitise_bpf_default, and the syscall_bpf registration.
  *
  * This header is private to the syscalls/bpf*.c TUs -- do not include
- * it from anywhere else.
+ * it from anywhere else but tests/bpf_gen_test.c.
  *
  * The two file-static helpers bpf_fill_obj_name and bpf_random_token_fd
  * were deliberately widened from static to external linkage so the

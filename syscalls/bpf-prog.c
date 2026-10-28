@@ -59,11 +59,80 @@ static const char *const bpf_raw_tp_names[] = {
 
 static const char license[] = "GPLv2";
 
+/*
+ * The prog_flags bpf_prog_load() takes, from the mask it checks them
+ * against, less BPF_F_TOKEN_FD, which has an arm of its own.  The verifier
+ * takes these on a program of any type: how strict its alignment checks
+ * are, the test modes, and BPF_F_ARENA_SCALAR, which matters only to a
+ * program with an arena but is refused with -EOPNOTSUPP wherever the JIT
+ * lacks bpf_jit_supports_arena_scalar(): x86-64 and arm64.
+ */
+static const unsigned long bpf_prog_load_flags[] = {
+	BPF_F_STRICT_ALIGNMENT,
+	BPF_F_ANY_ALIGNMENT,
+	BPF_F_TEST_RND_HI32,
+	BPF_F_TEST_STATE_FREQ,
+	BPF_F_TEST_REG_INVARIANTS,
+#if defined(__x86_64__) || defined(__aarch64__)
+	BPF_F_ARENA_SCALAR,
+#endif
+};
+
+/*
+ * Three loads in four set no flags, so the common path keeps loading.  The
+ * rest take a subset of the list above, and the flags the kernel takes only
+ * of some programs go to those:
+ *
+ * BPF_F_SLEEPABLE passes can_be_sleepable() only for a type that needs no
+ * attach target: kprobe, which then attaches only to a uprobe event,
+ * tracepoint and raw tracepoint.  Any other type is refused with -EINVAL.
+ *
+ * BPF_F_XDP_HAS_FRAGS is XDP's: the attach path in net/core/dev.c reads it.
+ *
+ * BPF_F_XDP_DEV_BOUND_ONLY reaches bpf_prog_dev_bound_init() only with a
+ * prog_ifindex, and that takes no flag but this one and
+ * BPF_F_XDP_HAS_FRAGS, the latter only beside it, so the draw replaces the
+ * subset.  It names a small ifindex: the netdev has to exist and have
+ * ndo_bpf for the load to get further.
+ */
+static void bpf_prog_load_set_flags(union bpf_attr *attr)
+{
+	if (!ONE_IN(4))
+		return;
+
+	if (attr->prog_type == BPF_PROG_TYPE_XDP && ONE_IN(4)) {
+		attr->prog_flags = BPF_F_XDP_DEV_BOUND_ONLY;
+		if (RAND_BOOL())
+			attr->prog_flags |= BPF_F_XDP_HAS_FRAGS;
+		attr->prog_ifindex = 1 + rnd_modulo_u32(8);
+		return;
+	}
+
+	attr->prog_flags = set_rand_bitmask(ARRAY_SIZE(bpf_prog_load_flags),
+					    bpf_prog_load_flags);
+
+	switch (attr->prog_type) {
+	case BPF_PROG_TYPE_KPROBE:
+	case BPF_PROG_TYPE_TRACEPOINT:
+	case BPF_PROG_TYPE_RAW_TRACEPOINT:
+		if (ONE_IN(4))
+			attr->prog_flags |= BPF_F_SLEEPABLE;
+		break;
+	case BPF_PROG_TYPE_XDP:
+		if (RAND_BOOL())
+			attr->prog_flags |= BPF_F_XDP_HAS_FRAGS;
+		break;
+	default:
+		break;
+	}
+}
+
 static bool bpf_prog_load(union bpf_attr *attr)
 {
 	bool classic_filter = false;
 
 	attr->prog_type = bpf_prog_types[rnd_modulo_u32(bpf_prog_types_count)];
+	bpf_prog_load_set_flags(attr);
 
 	if (attr->prog_type == BPF_PROG_TYPE_SOCKET_FILTER && ONE_IN(2)) {
 		/* Classic BPF via sock_fprog for socket filters */
@@ -111,10 +180,10 @@ bool sanitise_bpf_prog_load(union bpf_attr *attr, struct syscallrecord *rec)
 	bool classic_bpf_insns = bpf_prog_load(attr);
 
 	/* Cover prog_name so bpf_fill_obj_name's bytes reach the kernel
-	 * verifier's bpf_obj_name_cpy(); without the bump rec->a3 = 48
-	 * stops one byte short of the name field. */
-	rec->a3 = offsetof(union bpf_attr, prog_name) +
-		  sizeof(attr->prog_name);
+	 * verifier's bpf_obj_name_cpy(), and prog_ifindex, which follows it
+	 * and which BPF_F_XDP_DEV_BOUND_ONLY needs the kernel to read. */
+	rec->a3 = offsetof(union bpf_attr, prog_ifindex) +
+		  sizeof(attr->prog_ifindex);
 	if (ONE_IN(8)) {
 		/* See the BPF_MAP_CREATE arm for why both the flag
 		 * bit and the fd matter, and why rec->a3 must grow

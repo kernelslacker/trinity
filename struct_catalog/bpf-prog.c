@@ -17,31 +17,15 @@
 #include "bpf.h"
 
 /*
- * PROG_LOAD flag mask.  The trailing #ifdef arms cover names that
- * older /usr/include/linux/bpf.h vintages may not declare; missing
- * names contribute zero to the mask and the kernel still rejects
- * bits outside its own contemporary mask before any field-level
- * validation runs.
+ * PROG_LOAD flag mask: every flag the mask at the top of the kernel's
+ * bpf_prog_load() lists.  Newer names than the oldest header trinity
+ * builds against come from the include/kernel/bpf.h shim.
  */
 #define PROG_LOAD_FLAGS_MASK ( \
 	BPF_F_STRICT_ALIGNMENT | BPF_F_ANY_ALIGNMENT | \
 	BPF_F_TEST_RND_HI32 | BPF_F_TEST_STATE_FREQ | BPF_F_SLEEPABLE | \
-	BPF_F_XDP_HAS_FRAGS)
-
-#ifdef BPF_F_XDP_DEV_BOUND_ONLY
-# define PROG_LOAD_FLAGS_XDP_DEV	BPF_F_XDP_DEV_BOUND_ONLY
-#else
-# define PROG_LOAD_FLAGS_XDP_DEV	0UL
-#endif
-#ifdef BPF_F_TEST_REG_INVARIANTS
-# define PROG_LOAD_FLAGS_TEST_REG	BPF_F_TEST_REG_INVARIANTS
-#else
-# define PROG_LOAD_FLAGS_TEST_REG	0UL
-#endif
-
-#define PROG_LOAD_FLAGS_FULL_MASK ( \
-	PROG_LOAD_FLAGS_MASK | PROG_LOAD_FLAGS_XDP_DEV | \
-	PROG_LOAD_FLAGS_TEST_REG | BPF_F_TOKEN_FD)
+	BPF_F_XDP_HAS_FRAGS | BPF_F_XDP_DEV_BOUND_ONLY | \
+	BPF_F_TEST_REG_INVARIANTS | BPF_F_ARENA_SCALAR | BPF_F_TOKEN_FD)
 
 /*
  * PROG_LOAD variant.  Two pointer/length pairs land here:
@@ -89,7 +73,7 @@ const struct struct_field bpf_attr_PROG_LOAD_fields[BPF_ATTR_PROG_LOAD_FIELDS_N]
 				.max_bytes = 4096 }),
 	FIELD(union bpf_attr, kern_version),
 	FIELDX(union bpf_attr, prog_flags, FT_FLAGS,
-	       .u.flags.mask = PROG_LOAD_FLAGS_FULL_MASK),
+	       .u.flags.mask = PROG_LOAD_FLAGS_MASK),
 	FIELD(union bpf_attr, prog_name),
 	FIELD(union bpf_attr, prog_ifindex),
 	FIELDX(union bpf_attr, expected_attach_type, FT_ENUM,

@@ -6,7 +6,9 @@
  */
 
 #include <errno.h>
+#include <linux/filter.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,6 +21,9 @@
 #include "utils.h"		/* ARRAY_SIZE */
 
 #include "net/bpf/ebpf-internal.h"
+#include "syscalls/bpf-internal.h"
+
+extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 
 #ifdef USE_BPF
 static unsigned int failed;
@@ -246,6 +251,105 @@ static void valid_programs_draw_both_frames(void)
 	}
 }
 
+/*
+ * The prog_flags bpf_prog_load() checks against, less BPF_F_TOKEN_FD, which
+ * the arm of its own sets.  Any other bit is -EINVAL.  BPF_F_ARENA_SCALAR is
+ * -EOPNOTSUPP without bpf_jit_supports_arena_scalar(), which only the x86-64
+ * and arm64 JITs have.
+ */
+#define KERNEL_PROG_FLAGS_MASK ( \
+	BPF_F_STRICT_ALIGNMENT | BPF_F_ANY_ALIGNMENT | BPF_F_TEST_RND_HI32 | \
+	BPF_F_TEST_STATE_FREQ | BPF_F_SLEEPABLE | BPF_F_XDP_HAS_FRAGS | \
+	BPF_F_XDP_DEV_BOUND_ONLY | BPF_F_TEST_REG_INVARIANTS)
+#define ARENA_SCALAR_FLAG	(LARGE_FRAMES ? BPF_F_ARENA_SCALAR : 0UL)
+
+/* The program types can_be_sleepable() takes without an attach target. */
+static bool can_be_sleepable(unsigned int type)
+{
+	return type == BPF_PROG_TYPE_KPROBE ||
+	       type == BPF_PROG_TYPE_TRACEPOINT ||
+	       type == BPF_PROG_TYPE_RAW_TRACEPOINT;
+}
+
+/* The generated program is the case's to free: deferred free refuses what
+ * the fake allocator never tracked. */
+static void free_program(const union bpf_attr *attr, bool classic)
+{
+	if (classic) {
+		struct sock_fprog *prog =
+			(struct sock_fprog *)(unsigned long) attr->insns;
+
+		free(prog->filter);
+		free(prog);
+	} else {
+		free((void *)(unsigned long) attr->insns);
+	}
+}
+
+/*
+ * Most loads set no prog_flags, so the common path keeps loading, and what
+ * is set is something the kernel takes together: only flags of its mask;
+ * BPF_F_SLEEPABLE only on a type that can be sleepable; and a prog_ifindex,
+ * which the kernel reads only for the dev-bound path, only on an XDP
+ * program with BPF_F_XDP_DEV_BOUND_ONLY and no flag but BPF_F_XDP_HAS_FRAGS.
+ */
+static void prog_load_draws_flags_the_kernel_takes(void)
+{
+	enum { ROUNDS = 20000 };
+	const unsigned long takes = KERNEL_PROG_FLAGS_MASK | ARENA_SCALAR_FLAG;
+	static struct syscallrecord rec;
+	static union bpf_attr attr;
+	unsigned long seen = 0;
+	unsigned int none = 0, round;
+
+	fake_rand_bitmask_draws = true;
+	for (round = 0; round < ROUNDS; round++) {
+		unsigned long flags;
+		bool classic;
+
+		memset(&attr, 0, sizeof(attr));
+		memset(&rec, 0, sizeof(rec));
+		classic = sanitise_bpf_prog_load(&attr, &rec);
+		flags = attr.prog_flags & ~BPF_F_TOKEN_FD;
+
+		check("a flag the kernel does not take was drawn", "prog flags",
+		      (flags & ~takes) == 0);
+		check("the size does not reach prog_ifindex", "prog flags",
+		      rec.a3 >= offsetof(union bpf_attr, prog_ifindex) +
+				sizeof(attr.prog_ifindex));
+		if (flags == 0)
+			none++;
+		seen |= flags;
+
+		if (flags & BPF_F_SLEEPABLE)
+			check("BPF_F_SLEEPABLE was drawn for a type that "
+			      "cannot be sleepable", "prog flags",
+			      can_be_sleepable(attr.prog_type));
+		if (flags & BPF_F_XDP_DEV_BOUND_ONLY)
+			check("BPF_F_XDP_DEV_BOUND_ONLY was drawn without a "
+			      "prog_ifindex, or off XDP", "prog flags",
+			      attr.prog_ifindex != 0 &&
+			      attr.prog_type == BPF_PROG_TYPE_XDP);
+		if (attr.prog_ifindex != 0)
+			check("a prog_ifindex came with what the dev-bound "
+			      "check refuses", "prog flags",
+			      attr.prog_type == BPF_PROG_TYPE_XDP &&
+			      (flags & BPF_F_XDP_DEV_BOUND_ONLY) &&
+			      (flags & ~(BPF_F_XDP_DEV_BOUND_ONLY |
+					 BPF_F_XDP_HAS_FRAGS)) == 0);
+
+		free_program(&attr, classic);
+	}
+	fake_rand_bitmask_draws = false;
+
+	check("under 65% of the loads set no flags", "prog flags",
+	      none * 100 >= ROUNDS * 65);
+	check("over 85% of the loads set no flags", "prog flags",
+	      none * 100 <= ROUNDS * 85);
+	check("a flag the kernel takes was never drawn", "prog flags",
+	      (seen & takes) == takes);
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -257,6 +361,7 @@ void bpf_gen_self_check(void)
 #endif
 	a_program_keeps_to_its_frame();
 	valid_programs_draw_both_frames();
+	prog_load_draws_flags_the_kernel_takes();
 
 	if (failed != 0)
 		BUG("a bpf sanitiser or generator drew what the kernel does not take");
