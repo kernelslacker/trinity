@@ -57,6 +57,7 @@ void loop_status_self_check(void);
 void ioctl_sanitise_self_check(void);
 void ioctl_args_self_check(void);
 void procfs_self_self_check(void);
+void nsfs_self_check(void);
 void genl_ops_self_check(void);
 void nfnl_gen_self_check(void);
 void rtnl_gen_self_check(void);
@@ -315,6 +316,11 @@ int main(int argc, char **argv)
 	printf("  procfs_self_self_check ... ");
 	fflush(stdout);
 	procfs_self_self_check();
+	printf("OK\n");
+
+	printf("  nsfs_self_check ... ");
+	fflush(stdout);
+	nsfs_self_check();
 	printf("OK\n");
 
 	printf("  genl_ops_self_check ... ");

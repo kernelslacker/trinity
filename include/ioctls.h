@@ -73,6 +73,11 @@ void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
  * getters: the cmds whose return value is the nsfd they made. */
 bool pidfd_ns_getter(unsigned long cmd);
 
+/* Whether @fd is a file on nsfs, which is what a namespace getter makes.
+ * statfs()'s answer: a namespace file is a regular file with no size, like
+ * many others, and nothing else tells them apart. */
+bool fd_is_nsfs(int fd);
+
 void dump_ioctls(void);
 
 #define IOCTL(_request) \

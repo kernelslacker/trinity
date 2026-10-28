@@ -2,10 +2,8 @@
  * SYSCALL_DEFINE3(ioctl, unsigned int, fd, unsigned int, cmd, unsigned long, arg)
  */
 #include <linux/ioctl.h>
-#include <linux/magic.h>
 #include <linux/major.h>
 #include <sys/stat.h>
-#include <sys/vfs.h>
 #include <unistd.h>
 #include "arch.h"
 #include "fd.h"
@@ -173,10 +171,6 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 	}
 }
 
-#ifndef NSFS_MAGIC
-#define NSFS_MAGIC	0x6e736673
-#endif
-
 /*
  * A pidfs namespace getter returns the nsfd it made, and nothing else owns
  * it: pool it, so the pool's cap closes it in time.  Left alone, every
@@ -197,15 +191,13 @@ static void sanitise_ioctl(struct syscallrecord *rec)
  */
 static void post_ioctl(struct syscallrecord *rec)
 {
-	struct statfs sfs;
 	int fd = rec->retval;
 
 	if (!pidfd_ns_getter(rec->a2) || (long) rec->retval < 0 ||
 	    (long) rec->retval >= (1 << 20))
 		return;
 
-	if (fd <= 2 || fd_is_protected(fd) ||
-	    fstatfs(fd, &sfs) != 0 || sfs.f_type != NSFS_MAGIC)
+	if (fd <= 2 || fd_is_protected(fd) || !fd_is_nsfs(fd))
 		return;
 
 	if (!pool_returned_fd(fd))

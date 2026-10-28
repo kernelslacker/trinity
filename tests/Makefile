@@ -247,6 +247,9 @@ REAL_SRCS	:= \
 # the test process, and get_map() hands out the mapping the test names, as
 # post_oracle_test.c has it.  The owned-fd ring and the protected-fd registry
 # it reaches are the real ones.
+# ioctls/nsfs.c brings the nsfs group, whose fd_test and sanitiser nsfs_test.c
+# runs over the test process's own namespace files, and fd_is_nsfs(), which
+# the ioctl post handler asks.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c and
 # syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler
 # and the recv family, whose post handlers post_oracle_test.c drives
@@ -323,6 +326,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/perf_event.c \
 	$(TOP)/ioctls/ext.c \
 	$(TOP)/ioctls/procfs-self.c \
+	$(TOP)/ioctls/nsfs.c \
 	$(TOP)/syscalls/ioctl.c \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
@@ -449,6 +453,7 @@ FAKE_SRCS	:= \
 	ioctl_sanitise_test.c \
 	ioctl_args_test.c \
 	procfs_self_test.c \
+	nsfs_test.c \
 	genl_ops_test.c \
 	nfnl_gen_test.c \
 	rtnl_gen_test.c \
