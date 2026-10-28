@@ -115,7 +115,6 @@ static void sanitise_listxattrat_plant_pathname(struct syscallrecord *rec)
 	}
 }
 
-#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 /*
  * Buffer-size phase for rec->a4 (list) / rec->a5 (size).
  *
@@ -169,35 +168,24 @@ static size_t sanitise_listxattrat_size_buffer(struct syscallrecord *rec)
 
 	return buf_alloc_size;
 }
-#endif
 
+/*
+ * Only the post oracle's re-call needs the libc syscall number: the call
+ * itself goes out by trinity's own table, so it is shaped the same way
+ * whichever uapi the build saw.
+ */
 static void sanitise_listxattrat(struct syscallrecord *rec)
 {
+	size_t buf_alloc_size;
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	struct listxattrat_post_state *snap;
-	size_t buf_alloc_size;
 
 	rec->post_state = 0;
 #endif
 
 	sanitise_listxattrat_plant_pathname(rec);
-
-#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	buf_alloc_size = sanitise_listxattrat_size_buffer(rec);
-#else
-	/*
-	 * Buffer-size legality buckets: substitute (buf, size) with a
-	 * curated boundary pair on ~half of all draws.  See xattr.c for
-	 * the bucket list.  Called before avoid_shared_buffer_out so the
-	 * existing pre/post comparison correctly classifies a substituted
-	 * buffer.
-	 */
-	xattr_pick_listbuf_bucket(&rec->a4, &rec->a5);
 
-	avoid_shared_buffer_out(&rec->a4, rec->a5);
-#endif
-
-#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	/*
 	 * at_flags (a3): handle_arg_list's 1/8 shift_flag_bit and 1/16
 	 * cmp-hint paths regularly OR in bits outside the kernel-accepted
@@ -223,6 +211,7 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	if (ONE_IN(3))
 		rec->a1 = (unsigned long)(long) AT_FDCWD;
 
+#if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	/*
 	 * Snapshot all four input args for the post oracle.  Without this
 	 * the post handler reads rec->aN at post-time, when a sibling
@@ -243,6 +232,8 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 	snap->size     = rec->a5;
 	snap->buf_alloc_size = buf_alloc_size;
 	post_state_install(rec, snap);
+#else
+	(void) buf_alloc_size;
 #endif
 }
 
