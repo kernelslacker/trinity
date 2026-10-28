@@ -51,6 +51,12 @@ struct bpf_fd_types {
 	char name[32];
 };
 
+/*
+ * Each row has to pass its map type's allocation check, or the create
+ * fails with -EINVAL and nothing is pooled: an arena takes no key or value,
+ * a page count in max_entries and BPF_F_MMAPABLE (arena_map_alloc()), and
+ * an LPM trie BPF_F_NO_PREALLOC (trie_alloc()).
+ */
 static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0, "hash" },
 	{ BPF_MAP_TYPE_ARRAY, sizeof(int), sizeof(long long), 256, 0, "array" },
@@ -63,11 +69,11 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_LRU_HASH, sizeof(u32), sizeof(long), 10000, 0, "LRU hash" },
 	{ BPF_MAP_TYPE_LRU_HASH, sizeof(u32), sizeof(long), 10000, BPF_F_NO_COMMON_LRU, "LRU hash (no common LRU)" },
 	{ BPF_MAP_TYPE_LRU_PERCPU_HASH, sizeof(u32), sizeof(long), 1000, 0, "LRU percpu hash" },
-	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, 0, "LPM TRIE" },
+	{ BPF_MAP_TYPE_LPM_TRIE, 8, sizeof(long), 10000, BPF_F_NO_PREALLOC, "LPM TRIE" },
 	{ BPF_MAP_TYPE_RINGBUF, 0, 0, 4096, 0, "ringbuf" },
 	{ BPF_MAP_TYPE_BLOOM_FILTER, 0, sizeof(u32), 100, 0, "bloom filter" },
 	{ BPF_MAP_TYPE_USER_RINGBUF, 0, 0, 4096, 0, "user ringbuf" },
-	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, 0, "arena" },
+	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, BPF_F_MMAPABLE, "arena" },
 };
 
 /*
