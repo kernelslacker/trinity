@@ -55,6 +55,7 @@ void arg_coupling_self_check(void);
 void asb_relocate_self_check(void);
 void loop_status_self_check(void);
 void ioctl_sanitise_self_check(void);
+void ioctl_args_self_check(void);
 void genl_ops_self_check(void);
 void nfnl_gen_self_check(void);
 void rtnl_gen_self_check(void);
@@ -303,6 +304,11 @@ int main(int argc, char **argv)
 	printf("  ioctl_sanitise_self_check ... ");
 	fflush(stdout);
 	ioctl_sanitise_self_check();
+	printf("OK\n");
+
+	printf("  ioctl_args_self_check ... ");
+	fflush(stdout);
+	ioctl_args_self_check();
 	printf("OK\n");
 
 	printf("  genl_ops_self_check ... ");

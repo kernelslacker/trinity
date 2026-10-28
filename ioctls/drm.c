@@ -111,6 +111,13 @@ struct drm_nouveau_channel_free {
 #define DRM_IOCTL_NOUVEAU_CHANNEL_FREE       DRM_IOW (DRM_COMMAND_BASE + DRM_NOUVEAU_CHANNEL_FREE, struct drm_nouveau_channel_free)
 #endif
 
+#ifndef DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT
+#define DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT	6
+#endif
+#ifndef DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE
+#define DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE	7
+#endif
+
 static const struct ioctl drm_ioctls[] = {
 	/* drm/drm.h */
 	IOCTL(DRM_IOCTL_VERSION),
@@ -542,13 +549,20 @@ static void drm_sanitise_set_client_cap(struct syscallrecord *rec)
 		DRM_CLIENT_CAP_ATOMIC,
 		DRM_CLIENT_CAP_ASPECT_RATIO,
 		DRM_CLIENT_CAP_WRITEBACK_CONNECTORS,
+		DRM_CLIENT_CAP_CURSOR_PLANE_HOTSPOT,
+		DRM_CLIENT_CAP_PLANE_COLOR_PIPELINE,
 	};
 	struct drm_set_client_cap *p = get_writable_struct(sizeof(*p));
 	if (!p)
 		return;
 	memset(p, 0, sizeof(*p));
 	p->capability = RAND_ARRAY(client_caps);
-	p->value = RAND_BOOL();
+	/*
+	 * WRITEBACK_CONNECTORS, CURSOR_PLANE_HOTSPOT and PLANE_COLOR_PIPELINE
+	 * are refused while the file has ATOMIC off, and a 0 turns it off
+	 * again, so keep to 1 three calls in four (drm_setclientcap()).
+	 */
+	p->value = !ONE_IN(4);
 	rec->a3 = (unsigned long) p;
 }
 #endif
@@ -796,6 +810,7 @@ static void drm_sanitise(const struct ioctl_group *grp, struct syscallrecord *re
 }
 
 static const struct ioctl_group drm_grp = {
+	.name = "drm",
 	.devtype = DEV_CHAR,
 	.devs = drm_devs,
 	.devs_cnt = ARRAY_SIZE(drm_devs),

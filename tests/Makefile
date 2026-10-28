@@ -438,6 +438,7 @@ FAKE_SRCS	:= \
 	fake_ioctls.c \
 	loop_status_test.c \
 	ioctl_sanitise_test.c \
+	ioctl_args_test.c \
 	genl_ops_test.c \
 	nfnl_gen_test.c \
 	rtnl_gen_test.c \
