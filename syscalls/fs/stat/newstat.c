@@ -123,13 +123,9 @@ static void sanitise_newstat(struct syscallrecord *rec)
 	 * paths so the call lands on a real trinity-owned inode and
 	 * penetrates the VFS path; the other half preserves the slot
 	 * exactly as the generic draw left it so the ENOENT reject arm
-	 * stays exercised.  generate_pathname() zmallocs MAX_PATH_LEN
-	 * (4096) bytes for the ARG_PATHNAME buffer, so the snprintf cap
-	 * below cannot overflow.  Pin runs after post_state_install so
-	 * the snapshot the oracle re-issues against is the pre-pin
-	 * filename; on pinned draws the re-call ENOENTs on the random
-	 * snapshot, or finds another inode there, and the oracle safely
-	 * bails -- the oracle/post path is left additive and untouched.
+	 * stays exercised.  The snapshot takes the pinned path too, so the
+	 * oracle re-calls the file the kernel was handed rather than the
+	 * random path the pin replaced.
 	 */
 	if (rnd_modulo_u32(2) != 0)
 		return;
@@ -139,6 +135,7 @@ static void sanitise_newstat(struct syscallrecord *rec)
 		return;
 
 	rec->a1 = (unsigned long) path;
+	snprintf(snap->filename, sizeof(snap->filename), "%s", path);
 }
 
 /*

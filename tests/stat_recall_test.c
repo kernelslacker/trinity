@@ -29,6 +29,7 @@
 #include "utils.h"		/* waitpid_eintr */
 
 extern bool fake_snapshot_str_copies;		/* arg_coupling_test.c */
+extern const char *fake_testfile_path;		/* arg_coupling_test.c */
 
 /* The ctime-rule seams of ctime_rule_test.c. */
 enum fake_ctime_rule { FAKE_CTIME_REAL, FAKE_CTIME_HOLDS, FAKE_CTIME_FAILS };
@@ -226,6 +227,47 @@ static void recall_cases(const struct recall_oracle *o)
 	      o->name, o->anomalies(scratch, &st) == 0);
 
 	fake_ctime_rule = FAKE_CTIME_REAL;
+	unlink(scratch);
+}
+
+/*
+ * newstat pins half its calls to a testfile, and the re-call has to go to
+ * the path the kernel was handed, not the one the pin replaced: a pinned
+ * call is judged on the testfile.  The calls' own path names nothing, so
+ * only the pinned half can report.
+ */
+static void newstat_judges_pinned_calls(void)
+{
+	unsigned long before = shm->stats.oracle.newstat_oracle_anomalies;
+	char missing[sizeof(scratch) + 2];
+	static struct syscallrecord rec;
+	static struct stat buf;
+	struct stat st, moved;
+	unsigned int i;
+
+	scratch_file(&st);
+	snprintf(missing, sizeof(missing), "%s.m", scratch);
+	fake_testfile_path = scratch;
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+	moved = st;
+	moved.st_mode ^= S_IXUSR;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) missing;
+		rec.a2 = (unsigned long) &buf;
+		syscall_newstat.sanitise(&rec);
+		memcpy((void *) rec.a2, &moved, sizeof(moved));
+		rec.retval = 0;
+		syscall_newstat.post(&rec);
+		if (rec.a1 != (unsigned long) missing)
+			free((void *) rec.a1);
+	}
+	check("a pinned call was not judged on the testfile it was pinned to",
+	      "newstat", shm->stats.oracle.newstat_oracle_anomalies != before);
+
+	fake_ctime_rule = FAKE_CTIME_REAL;
+	fake_testfile_path = NULL;
 	unlink(scratch);
 }
 
@@ -452,6 +494,7 @@ void stat_recall_self_check(void)
 	fake_mnt_ids = true;
 
 	recall_cases(&newstat_oracle);
+	newstat_judges_pinned_calls();
 	recall_cases(&newlstat_oracle);
 	recall_cases(&newfstatat_oracle);
 	recall_cases(&newfstat_oracle);

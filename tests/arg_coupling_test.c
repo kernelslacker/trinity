@@ -79,10 +79,14 @@ int get_rand_pagecache_fd(void)
 
 /* The xattr getters plant a value in a testfile when there is one, and
  * snapshot their path for the post handler; with no testfiles and no
- * snapshot source they do neither. */
+ * snapshot source they do neither.  A case that wants a sanitiser's
+ * testfile pin names the file in fake_testfile_path and frees the copy
+ * each pin hands out. */
+const char *fake_testfile_path;
+
 char *get_testfile_path(void)
 {
-	return NULL;
+	return fake_testfile_path != NULL ? strdup(fake_testfile_path) : NULL;
 }
 
 int get_rand_testfile_fd(void)
