@@ -48,8 +48,12 @@ static void unix_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct 
 	*addr = (struct sockaddr *) unixsock;
 }
 
+/* getsockopt() draws its option from this list too, which is what
+ * SO_PEERPIDFD_THREAD is here for: only AF_UNIX records the peer's
+ * connecting thread. */
 static const unsigned int unix_opts[] = {
 	SO_PASSCRED, SO_PEEK_OFF, SO_PASSPIDFD, SO_PASSSEC,
+	SO_PASSPIDFD_THREAD, SO_PEERPIDFD_THREAD,
 };
 
 static void unix_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -62,6 +66,7 @@ static void unix_setsockopt(struct sockopt *so, __unused__ struct socket_triplet
 	switch (so->optname) {
 	case SO_PASSCRED:
 	case SO_PASSPIDFD:
+	case SO_PASSPIDFD_THREAD:
 	case SO_PASSSEC:
 		optval32 = (int *) so->optval;
 		*optval32 = RAND_BOOL();
