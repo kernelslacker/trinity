@@ -4,7 +4,7 @@
  * the fuzzed call wrote, and counts the anomalies its sampled re-call
  * reports.  A moved attribute counts only while dev, ino and ctime held and
  * the ctime rule holds (stat_recall_diverged()), and never for st_blocks or
- * st_blksize.
+ * st_blksize; statmount's only for the fields no mount operation moves.
  */
 
 #include <fcntl.h>
@@ -14,14 +14,19 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/mount.h"	/* struct statmount, STATMOUNT_* */
 #include "kernel/stat.h"	/* struct statx, STATX_* */
+#include "kernel/unistd.h"	/* SYS_statmount */
+#include "rnd.h"		/* rnd_state, rnd_modulo_u32 */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_newstat, ... */
+#include "utils.h"		/* waitpid_eintr */
 
 extern bool fake_snapshot_str_copies;		/* arg_coupling_test.c */
 
@@ -29,6 +34,8 @@ extern bool fake_snapshot_str_copies;		/* arg_coupling_test.c */
 enum fake_ctime_rule { FAKE_CTIME_REAL, FAKE_CTIME_HOLDS, FAKE_CTIME_FAILS };
 extern enum fake_ctime_rule fake_ctime_rule;
 extern bool fake_mnt_ids;
+
+extern bool fake_random_fd_empty;		/* fake_stubs.c */
 
 static unsigned int failed;
 
@@ -313,6 +320,129 @@ static void statx_recall_cases(void)
 	unlink(scratch);
 }
 
+#ifdef SYS_statmount
+/*
+ * Have the next ONE_IN(100) the post handler draws come up: the stream is a
+ * pure function of rnd_state, so find a state it fires from.
+ */
+static void arm_sample(void)
+{
+	uint64_t s;
+
+	for (s = 0;; s++) {
+		rnd_state = s;
+		if (rnd_modulo_u32(100) == 0)
+			break;
+	}
+	rnd_state = s;
+}
+
+/*
+ * One statmount() call on the mount whose unique id is @mnt_id, through
+ * the sanitiser and the post handler, its re-call sampled, as a call that
+ * answered @answer.  The sanitiser draws the flags and the buffer size,
+ * so it runs until it draws a call by id with room for the struct, and
+ * the request is then rewritten to name the mount.  Returns the anomalies
+ * the call counted.
+ */
+static unsigned long statmount_anomalies(unsigned long long mnt_id,
+					 const struct statmount *answer)
+{
+	unsigned long before = shm->stats.oracle.statmount_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int tries;
+
+	for (tries = 0; tries < 1000; tries++) {
+		struct mnt_id_req *req;
+
+		memset(&rec, 0, sizeof(rec));
+		syscall_statmount.sanitise(&rec);
+		if (rec.a4 != 0 || rec.a3 < sizeof(struct statmount)) {
+			rec.retval = (unsigned long) -1L;
+			syscall_statmount.post(&rec);
+			continue;
+		}
+		req = (struct mnt_id_req *) rec.a1;
+		memset(req, 0, sizeof(*req));
+		req->size = MNT_ID_REQ_SIZE_VER0;
+		req->mnt_id = mnt_id;
+		req->param = STATMOUNT_SB_BASIC | STATMOUNT_MNT_BASIC;
+		memcpy((void *) rec.a2, answer, sizeof(*answer));
+		rec.retval = 0;
+		arm_sample();
+		syscall_statmount.post(&rec);
+		return shm->stats.oracle.statmount_oracle_anomalies - before;
+	}
+	BUG("stat recall: statmount's sanitiser never drew a call by id");
+	return 0;
+}
+
+/*
+ * Of the fixed struct statmount, a re-call is held only to the fields no
+ * mount operation moves: a mount id that moved is reported, while the
+ * superblock flags, the mount attributes, the propagation fields and the
+ * parent ids, which a remount, mount_setattr(), a propagation change or
+ * move_mount() moves, are not.  It runs in a child of its own, which
+ * reports through its exit status: each sanitised call leaves its 64 KiB
+ * buffer with deferred free, which this binary's allocator never tracked,
+ * so the child takes them with it, and a kernel without statmount() or
+ * unique mount ids skips the case (77).  The sanitiser draws a by-fd call
+ * one time in four, whose fd comes from an empty pool here, since whether
+ * the draws before a call by id hold one depends on every RNG draw earlier
+ * in the binary.
+ */
+static void statmount_recall_cases(void)
+{
+	uint64_t saved = rnd_state;
+	int status;
+	pid_t pid;
+
+	pid = fork();
+	if (pid == 0) {
+		struct mnt_id_req req = {
+			.size = MNT_ID_REQ_SIZE_VER0,
+			.param = STATMOUNT_SB_BASIC | STATMOUNT_MNT_BASIC,
+		};
+		struct statmount real, moved;
+		struct statx stx;
+
+		fake_random_fd_empty = true;
+		if (syscall(SYS_statx, AT_FDCWD, "/", 0, STATX_MNT_ID_UNIQUE,
+			    &stx) != 0 || !(stx.stx_mask & STATX_MNT_ID_UNIQUE))
+			_exit(77);
+		req.mnt_id = stx.stx_mnt_id;
+		if (syscall(SYS_statmount, &req, &real, sizeof(real), 0) != 0)
+			_exit(77);
+
+		moved = real;
+		moved.mnt_id_old ^= 1;
+		if (statmount_anomalies(req.mnt_id, &moved) != 1)
+			_exit(1);
+
+		moved = real;
+		moved.sb_flags ^= 1;
+		moved.mnt_attr ^= 1;
+		moved.mnt_propagation ^= 1;
+		moved.mnt_peer_group += 1;
+		moved.mnt_master += 1;
+		moved.propagate_from += 1;
+		moved.mnt_parent_id += 1;
+		moved.mnt_parent_id_old += 1;
+		_exit(statmount_anomalies(req.mnt_id, &moved) == 0 ? 0 : 2);
+	}
+	if (pid < 0 || waitpid_eintr(pid, &status, 0) != pid ||
+	    !WIFEXITED(status))
+		BUG("stat recall: the statmount case did not run");
+	if (WEXITSTATUS(status) == 77)
+		fprintf(stderr, "stat recall: statmount: no statmount() here, the case was skipped\n");
+	check("a mount id that moved was not reported", "statmount",
+	      WEXITSTATUS(status) != 1);
+	check("a field a mount operation moves was reported", "statmount",
+	      WEXITSTATUS(status) != 2);
+	rnd_state = saved;
+}
+#endif
+
 void stat_recall_self_check(void);
 void stat_recall_self_check(void)
 {
@@ -326,6 +456,9 @@ void stat_recall_self_check(void)
 	recall_cases(&newfstatat_oracle);
 	recall_cases(&newfstat_oracle);
 	statx_recall_cases();
+#ifdef SYS_statmount
+	statmount_recall_cases();
+#endif
 
 	fake_mnt_ids = false;
 	fake_snapshot_str_copies = false;

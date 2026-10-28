@@ -348,12 +348,20 @@ static void sanitise_statmount(struct syscallrecord *rec)
 /*
  * Oracle: statmount(req, buf, bufsize, flags) writes a struct statmount
  * fixed-prefix into the user buffer and returns 0 on success, with the
- * per-mount data anchored at req->mnt_id.  For a stable mount the kernel
- * fields the same struct on a back-to-back re-call, so a byte-identical
- * compare of the fixed-prefix region across two snapshots is the cheapest
- * possible cross-check.  Mount/umount flux or transient -EBUSY/-EINVAL on
- * the re-call is detected via rc < 0 and we silently skip -- only true
- * divergence with a successful re-call is reported.
+ * per-mount data anchored at req->mnt_id.  A re-call reports the same
+ * mount, but most of what it reports moves under siblings' mount calls,
+ * and there is no ctime to say whether one ran: a remount moves sb_flags,
+ * for every mount of the superblock in every namespace, mount_setattr()
+ * moves mnt_attr, a propagation change the peer, master and
+ * propagate_from fields, move_mount() the parent ids, and new options
+ * the size, the counts and the string offsets (statmount_sb_basic(),
+ * statmount_mnt_basic() and statmount_string() in fs/namespace.c).  So
+ * only the fields no mount operation moves are compared: the
+ * superblock's device and magic and the mount's two ids, all in the
+ * struct since statmount() first shipped.  Mount/umount flux or
+ * transient -EBUSY/-EINVAL on the re-call is detected via rc < 0 and we
+ * silently skip -- only true divergence with a successful re-call is
+ * reported.
  *
  * Divergence shapes the oracle catches:
  *   - copy_to_user mis-write: the kernel produced the right answer but a
@@ -379,12 +387,12 @@ static void sanitise_statmount(struct syscallrecord *rec)
  * against fd recycling between the original call and the re-issue.
  *
  * Per-audit note: only the FIXED prefix (sizeof(struct statmount)) is
- * compared.  The variable-length string area beyond the fixed struct is
- * also stable but harder to bound -- skip it for this first pass.
+ * read.  The variable-length string area beyond the fixed struct moves
+ * with options too, and is harder to bound.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
- * family.  No early return on first divergence -- multi-field corruption
- * surfaces in a single sample.
+ * family.  The anomaly line dumps the start of both prefixes, so
+ * multi-field corruption surfaces in a single sample.
  */
 static void post_statmount(struct syscallrecord *rec)
 {
@@ -474,7 +482,11 @@ static void post_statmount(struct syscallrecord *rec)
 	if (rc < 0)
 		goto out_release;
 
-	if (memcmp(&first_buf, &recheck_buf, sizeof(struct statmount)) != 0) {
+	if (first_buf.sb_dev_major != recheck_buf.sb_dev_major ||
+	    first_buf.sb_dev_minor != recheck_buf.sb_dev_minor ||
+	    first_buf.sb_magic != recheck_buf.sb_magic ||
+	    first_buf.mnt_id != recheck_buf.mnt_id ||
+	    first_buf.mnt_id_old != recheck_buf.mnt_id_old) {
 		const u64 *first_words = (const u64 *) &first_buf;
 		const u64 *recheck_words = (const u64 *) &recheck_buf;
 		char first_hex[8 * 17 + 1];
