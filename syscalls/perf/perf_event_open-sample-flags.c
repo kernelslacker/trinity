@@ -1,5 +1,6 @@
 /*
- * perf_event_open: sample_type / read_format / branch_sample_type bit pickers.
+ * perf_event_open: sample_type / read_format / branch_sample_type bit pickers,
+ * and the sample_regs_* mask picker.
  *
  * The wide RAND_BOOL chains that OR up attr->sample_type, attr->read_format
  * and attr->branch_sample_type from the PERF_SAMPLE_* / PERF_FORMAT_* /
@@ -155,4 +156,29 @@ long long random_branch_sample_type(void)
 
 
 	return branch_sample;
+}
+
+/* Bits 0..11 name a register on every architecture trinity builds for:
+ * AX..SS on x86, X0..X11 on arm64, r0..r11 on arm. */
+#define PERF_REGS_PORTABLE	0xfff
+
+/*
+ * A sample_regs_user / sample_regs_intr mask.  perf_reg_validate() refuses an
+ * empty one, and one that names a register the arch lacks, with -EINVAL:
+ * x86-64 turns away DS..GS (bits 12..15), i386 R8..R15 (16..23), and arm64
+ * and the 32-bit arches anything past their last register.  A mask drawn
+ * from the portable low bits is accepted on all of them.  One draw in eight
+ * probes the validator instead, with the empty mask, which is all an unset
+ * field ever gave it, and with a 64-bit splat.
+ */
+long long random_sample_regs(void)
+{
+	switch (rnd_modulo_u32(16)) {
+	case 0:
+		return 0;
+	case 1:
+		return rand64();
+	default:
+		return 1 + rnd_modulo_u32(PERF_REGS_PORTABLE);
+	}
 }

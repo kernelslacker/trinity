@@ -627,6 +627,18 @@ FAKE_SRCS	+= maps_name_test.c
 PARENT_SRCS	+= $(TOP)/mm/maps-pick.c
 FAKE_SRCS	+= maps_pick_test.c
 
+# syscalls/perf/ brings the perf_event_attr body builders, linked for
+# maybe_fill_perf_attr_body() with the sample, tuple and config pickers it
+# draws from and the PMU table those read, which stays empty here.
+# perf_attr_test.c fills attrs through that entry point and holds them to the
+# rules perf_copy_attr() applies.
+PARENT_SRCS	+= $(TOP)/syscalls/perf/perf_event_open-attr-build.c \
+		   $(TOP)/syscalls/perf/perf_event_open-config-picker.c \
+		   $(TOP)/syscalls/perf/perf_event_open-pmu-discovery.c \
+		   $(TOP)/syscalls/perf/perf_event_open-sample-flags.c \
+		   $(TOP)/syscalls/perf/perf_event_open-tuples.c
+FAKE_SRCS	+= perf_attr_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

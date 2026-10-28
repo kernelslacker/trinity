@@ -81,6 +81,7 @@ void setup_breakpoints(struct perf_event_attr *attr);
 long long random_sample_type(void);
 long long random_read_format(void);
 long long random_branch_sample_type(void);
+long long random_sample_regs(void);
 
 bool pick_perf_tuple(struct perf_event_attr *attr);
 

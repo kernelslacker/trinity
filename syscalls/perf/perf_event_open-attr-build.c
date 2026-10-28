@@ -183,6 +183,10 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 				break;
 	}
 
+	/* Read, and refused when empty, only with PERF_SAMPLE_REGS_INTR. */
+	if (attr->sample_type & PERF_SAMPLE_REGS_INTR)
+		attr->sample_regs_intr = random_sample_regs();
+
 	/* sample_stack_user is the size of user stack backtrace we want  */
 	/* if we pick too large of a value the kernel in theory truncates */
 	attr->sample_stack_user = rand32();
@@ -306,6 +310,8 @@ static void create_random_event(struct perf_event_attr *attr)
 
 	attr->branch_sample_type = rand64();
 	attr->sample_regs_user = rand64();
+	if (attr->sample_type & PERF_SAMPLE_REGS_INTR)
+		attr->sample_regs_intr = random_sample_regs();
 	attr->sample_stack_user = rand32();
 
 }
