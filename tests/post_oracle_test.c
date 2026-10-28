@@ -33,10 +33,11 @@ static unsigned int bumps;
 static unsigned int failed;
 
 /* A case that overwrites a live arg slot after dispatch sets
- * stomps_expected and counts the tripwire hits; any other hit means the
- * oracle read a slot whose shadow disagrees with it. */
-static unsigned int stomps;
-static bool stomps_expected;
+ * stomps_expected and counts the tripwire hits, here and in
+ * landlock_test.c; any other hit means the oracle read a slot whose shadow
+ * disagrees with it. */
+unsigned int stomps;
+bool stomps_expected;
 
 void post_handler_corrupt_ptr_bump_site(struct syscallrecord *rec,
 					void *caller_pc, const char *site)

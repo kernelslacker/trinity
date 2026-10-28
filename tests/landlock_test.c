@@ -35,6 +35,8 @@
 void landlock_self_check(void);
 
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
+extern bool stomps_expected;		/* post_oracle_test.c */
+extern unsigned int stomps;		/* post_oracle_test.c */
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 
@@ -888,9 +890,16 @@ static void drop_ruleset(int fd)
  * __do_syscall() takes of the slots the entry names, then post, which runs on
  * a failure too.  What the ruleset held when it was published is kept.
  */
+/* The arg slot (1 to 3) post_create() overwrites once the shadows hold what
+ * the kernel saw, as a sibling's stomp would, and what it writes; 0 for
+ * none. */
+static unsigned int stomp_slot;
+static unsigned long stomp_value;
+
 static void post_create(struct syscallrecord *rec)
 {
 	const struct syscallentry *entry = &syscall_landlock_create_ruleset;
+	unsigned long *live[] = { &rec->a1, &rec->a2, &rec->a3 };
 
 	publishes = 0;
 	memset(&published_rs, 0, sizeof(published_rs));
@@ -900,7 +909,13 @@ static void post_create(struct syscallrecord *rec)
 	rec->arg_shadow[0] = rec->a1;
 	rec->arg_shadow[1] = rec->a2;
 	rec->arg_shadow[2] = rec->a3;
+	if (stomp_slot != 0) {
+		*live[stomp_slot - 1] = stomp_value;
+		stomps = 0;
+		stomps_expected = true;
+	}
 	entry->post(rec);
+	stomps_expected = false;
 
 	fake_publish_resource = NULL;
 }
@@ -1321,6 +1336,74 @@ static void run_creates(int abi, unsigned int refuse_type, int refuse_errno,
 	reset_kernel();
 }
 
+/*
+ * The handler goes by the attr, its size and the flags the kernel saw, which
+ * the arg shadows hold, so a stomp of a live slot between the call and the
+ * handler can neither turn a version query into a ruleset nor one that
+ * handles a permission into one that handles none: the query's answer, an fd
+ * number the child holds, stays open and unpooled, and the ruleset is armed
+ * for both permissions before it is kept.  The tripwire counts each stomp
+ * once.
+ */
+static void check_create_stomped_args(void)
+{
+	struct landlock_ruleset_attr_abi12 attr = {
+		.handled_access_fs = 1,
+		.handled_permissions = BOTH_PERMISSIONS,
+	};
+	struct landlock_ruleset_attr_abi12 none = { .handled_access_fs = 1 };
+	struct syscallrecord rec;
+	bool planted = false;
+	long fd;
+
+	fake_abi = 12;
+	if (fcntl(fake_abi, F_GETFD) == -1) {
+		int null = open("/dev/null", O_RDONLY);
+
+		if (null < 0 || dup2(null, fake_abi) != fake_abi)
+			BUG("landlock: cannot hold an fd at a query's answer");
+		if (null != fake_abi)
+			close(null);
+		planted = true;
+	}
+	reset_kernel();
+	memset(&rec, 0, sizeof(rec));
+	rec.a3 = LANDLOCK_CREATE_RULESET_VERSION;
+	stomp_slot = 3;
+	stomp_value = 0;
+	fd = run_create(&rec);
+	expect(fd == fake_abi && rec.retval == -1UL && publishes == 0,
+	       "a version query whose flags were stomped is still a number",
+	       rec.retval);
+	expect(fcntl(fake_abi, F_GETFD) >= 0,
+	       "the fd at a stomped query's answer stays open", fake_abi);
+	expect(stomps == 1, "the stomped flags trip the shadow once", stomps);
+	if (planted)
+		close(fake_abi);
+
+	for (stomp_slot = 1; stomp_slot <= 2; stomp_slot++) {
+		reset_kernel();
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) &attr;
+		rec.a2 = sizeof(attr);
+		stomp_value = stomp_slot == 1 ? (unsigned long) &none :
+			      sizeof(attr.handled_access_fs);
+		fd = run_create(&rec);
+		expect(fd >= 0, "the model makes a ruleset whose args are stomped",
+		       fd);
+		if (fd >= 0)
+			expect(check_fate(&rec, fd),
+			       "a ruleset whose attr or size was stomped is armed and kept",
+			       stomp_slot);
+		expect(stomps == 1, "the stomped attr or size trips the shadow once",
+		       stomps);
+	}
+	stomp_slot = 0;
+
+	fake_abi = 0;
+	reset_kernel();
+}
+
 static void check_create(void)
 {
 	struct create_stats st;
@@ -1427,6 +1510,7 @@ void landlock_self_check(void)
 	check_allow_permissions();
 	check_allow_refused();
 	check_create();
+	check_create_stomped_args();
 #endif
 
 	if (failed != 0)
