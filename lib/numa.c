@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -16,11 +17,49 @@
 static int numa_node_pool[MAX_NUMA_NODES];
 static unsigned int nr_numa_nodes;
 
+/*
+ * The next range of a cpulist ("0", "0-3", "0,2,4", "0-1,3,5-7") at *@p, in
+ * [*@lo, *@hi], with *@p moved past it.  False at the end of the list, with
+ * *@p left at the NUL, and at a malformed range, with *@p left at it.
+ */
+static bool next_list_range(const char **p, long *lo, long *hi)
+{
+	const char *s = *p;
+	char *endp;
+
+	while (*s && (isspace((unsigned char)*s) || *s == ','))
+		s++;
+	*p = s;
+	if (!*s)
+		return false;
+
+	*lo = strtol(s, &endp, 10);
+	if (endp == s)
+		return false;
+	s = endp;
+
+	if (*s == '-') {
+		s++;
+		*hi = strtol(s, &endp, 10);
+		if (endp == s)
+			return false;
+		s = endp;
+	} else {
+		*hi = *lo;
+	}
+
+	if (*lo < 0 || *hi < *lo)
+		return false;
+	*p = s;
+	return true;
+}
+
 void init_numa_nodes(void)
 {
 	FILE *f;
 	char buf[4096];
-	char *p;
+	const char *p;
+	long lo, hi, n;
 
 	f = fopen("/sys/devices/system/node/online", "re");
 	if (f == NULL)
@@ -32,36 +71,8 @@ void init_numa_nodes(void)
 	}
 	fclose(f);
 
-	/* Parse cpulist syntax: "0", "0-3", "0,2,4", "0-1,3,5-7". */
 	p = buf;
-	while (*p && nr_numa_nodes < MAX_NUMA_NODES) {
-		char *endp;
-		long lo, hi;
-		long n;
-
-		while (*p && (isspace((unsigned char)*p) || *p == ','))
-			p++;
-		if (!*p)
-			break;
-
-		lo = strtol(p, &endp, 10);
-		if (endp == p)
-			break;
-		p = endp;
-
-		if (*p == '-') {
-			p++;
-			hi = strtol(p, &endp, 10);
-			if (endp == p)
-				break;
-			p = endp;
-		} else {
-			hi = lo;
-		}
-
-		if (lo < 0 || hi < lo)
-			break;
-
+	while (nr_numa_nodes < MAX_NUMA_NODES && next_list_range(&p, &lo, &hi)) {
 		for (n = lo; n <= hi && nr_numa_nodes < MAX_NUMA_NODES; n++)
 			numa_node_pool[nr_numa_nodes++] = (int) n;
 	}
