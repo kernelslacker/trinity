@@ -3,13 +3,16 @@
  * calls go to the process's own files and no other, and that the
  * PROCMAP_QUERY and PAGEMAP_SCAN args it builds are held to models of
  * do_procmap_query() and pagemap_scan_get_args() (fs/proc/task_mmu.c),
- * written from the kernel.  No ioctl is issued, so what the kernel under the
- * test would answer does not matter.
+ * written from the kernel.  The one ioctl the group sends, the PAGEMAP_SCAN
+ * that asks which categories the kernel has, is answered by the model too
+ * (__wrap_ioctl()), so what the kernel under the test would answer does not
+ * matter.
  */
 
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -29,6 +32,7 @@
 #include "objects.h"		/* struct object */
 #include "owned-fd-ring.h"	/* MAX_OWNED_FDS */
 #include "sanitise.h"		/* writable pool */
+#include "shm.h"		/* the learned categories */
 #include "syscall.h"		/* struct syscallrecord */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
@@ -557,10 +561,31 @@ static void builds_procmap_query_args_the_kernel_takes(void)
 
 /* ---------- PAGEMAP_SCAN ------------------------------------------------ */
 
-/* The ten categories of the kernel's PM_SCAN_CATEGORIES. */
+/* The ten categories of the current kernel's PM_SCAN_CATEGORIES. */
 #define CATEGORIES	((1UL << 10) - 1)
 
 #define NCATEGORIES	10
+
+/*
+ * The categories of the kernel the model answers for: the ten of the current
+ * one, or the set of an older release (kernels[] below).
+ */
+static unsigned long model_categories = CATEGORIES;
+
+/*
+ * A kernel that answers -EINVAL to every PAGEMAP_SCAN, whatever it holds,
+ * so that its answer to a probe says nothing of any category.
+ */
+static bool model_refuses_all;
+
+/* The PAGEMAP_SCANs the model has answered, which are the sanitiser's probes. */
+static struct {
+	unsigned int calls;
+	unsigned long asked;	/* the categories they held, one bit each */
+} probes;
+
+/* What the failure messages of the PAGEMAP_SCAN checks call the kernel. */
+static char scan_what[64] = "PAGEMAP_SCAN";
 
 /*
  * The end of the address space as access_ok() reads it: the pool mapping is
@@ -575,9 +600,9 @@ enum scan_answer { SCAN_EINVAL, SCAN_EFAULT, SCAN_WALKS };
  * built: a size other than the kernel's, a flag or a category it does not
  * know, a start that is not page aligned and a length with no buffer are
  * -EINVAL, and a range whose length is more than the address space holds,
- * which an end below the start makes, is -EFAULT.  The categories are the
- * ten of the kernel under test, PAGE_IS_GUARD and PAGE_IS_ACCESSED among
- * them; one that predates either answers a mask with it -EINVAL.
+ * which an end below the start makes, is -EFAULT.  The categories are
+ * model_categories: a kernel that predates PAGE_IS_GUARD or PAGE_IS_ACCESSED
+ * answers a mask with either -EINVAL.
  */
 static enum scan_answer pagemap_scan_answer(const struct pm_scan_arg *a)
 {
@@ -588,7 +613,7 @@ static enum scan_answer pagemap_scan_answer(const struct pm_scan_arg *a)
 	if (a->flags & ~(unsigned long) (PM_SCAN_WP_MATCHING | PM_SCAN_CHECK_WPASYNC))
 		return SCAN_EINVAL;
 	if ((a->category_inverted | a->category_mask |
-	     a->category_anyof_mask | a->return_mask) & ~CATEGORIES)
+	     a->category_anyof_mask | a->return_mask) & ~model_categories)
 		return SCAN_EINVAL;
 	if (a->start & (page_size - 1))
 		return SCAN_EINVAL;
@@ -597,6 +622,52 @@ static enum scan_answer pagemap_scan_answer(const struct pm_scan_arg *a)
 	if (!a->vec && a->vec_len)
 		return SCAN_EINVAL;
 	return SCAN_WALKS;
+}
+
+int __real_ioctl(int fd, unsigned long request, ...);
+int __wrap_ioctl(int fd, unsigned long request, ...);
+
+/*
+ * A PAGEMAP_SCAN is answered by the model and never reaches the kernel.  The
+ * only one the group sends is the probe for the categories the kernel has,
+ * and a probe is one category in a call that is valid in every other way,
+ * over an empty range: it walks no page, write-protects none and writes
+ * nothing back but walk_end, and it goes to this process's own pagemap.
+ * Anything else is a defect in the probe, not an answer.
+ */
+int __wrap_ioctl(int fd, unsigned long request, ...)
+{
+	const struct pm_scan_arg *a;
+	enum scan_answer answer;
+	unsigned long bits;
+	va_list ap;
+	void *arg;
+
+	va_start(ap, request);
+	arg = va_arg(ap, void *);
+	va_end(ap);
+
+	if (request != PAGEMAP_SCAN)
+		return __real_ioctl(fd, request, arg);
+
+	a = arg;
+	bits = a->category_inverted | a->category_mask |
+	       a->category_anyof_mask | a->return_mask;
+	if (!names(fd, "/proc/self/pagemap"))
+		BUG("procfs-self: a category probe did not go to the process's own pagemap");
+	if (a->size != sizeof(*a) || a->flags != 0 || a->start != a->end ||
+	    a->vec != 0 || a->vec_len != 0 || bits == 0 || (bits & (bits - 1)) != 0)
+		BUG("procfs-self: a category probe is not one category over an empty range");
+	if (probes.asked & bits)
+		BUG("procfs-self: a category was probed twice");
+	probes.calls++;
+	probes.asked |= bits;
+
+	answer = model_refuses_all ? SCAN_EINVAL : pagemap_scan_answer(a);
+	if (answer == SCAN_WALKS)
+		return 0;
+	errno = answer == SCAN_EINVAL ? EINVAL : EFAULT;
+	return -1;
 }
 
 /*
@@ -660,7 +731,8 @@ static void tally_pagemap_scan(struct scan_tally *t,
 	t->bad_size += a->size != sizeof(*a);
 	t->bad_flags += (a->flags & ~3UL) != 0;
 	t->bad_mask += ((a->category_inverted | a->category_mask |
-			 a->category_anyof_mask | a->return_mask) & ~CATEGORIES) != 0;
+			 a->category_anyof_mask | a->return_mask) &
+			~model_categories) != 0;
 	t->misaligned += (a->start & (page_size - 1)) != 0;
 	t->wrapped += a->end < a->start;
 	t->reaches += answer == SCAN_WALKS && walks_ordinary_vma(a);
@@ -704,12 +776,12 @@ static void tally_pagemap_scan(struct scan_tally *t,
  * two it knows 30 times in 32 (none 24 times, WP_MATCHING 4, CHECK_WPASYNC
  * and both one each) and a word with a flag it does not know twice, a
  * start that is page aligned and an end above it 30 times in 32, and the
- * masks within the ten categories 31 times in 32.  The run is inside the
- * pool mapping except when it is drawn to run past it, twice in 32, or to
- * end below its start, once, and a buffer comes with its length 57 times
- * in 64, the length alone once, and neither six times.  return_mask is
- * zero a quarter of the time and otherwise holds each of the ten
- * categories half the time; category_mask holds WPALLOWED one time in 16.
+ * masks within the categories the kernel has 31 times in 32.  The run is
+ * inside the pool mapping except when it is drawn to run past it, twice in
+ * 32, or to end below its start, once, and a buffer comes with its length
+ * 57 times in 64, the length alone once, and neither six times.  return_mask
+ * is zero a quarter of the time and otherwise holds each category the
+ * kernel has half the time; category_mask holds WPALLOWED one time in 16.
  * Over 20000 calls the fractions have deviations under 0.004 and the
  * bounds are many of them out.
  */
@@ -717,34 +789,43 @@ static void expect_pagemap_scan(const struct scan_tally *t, bool pool)
 {
 	unsigned int i;
 
-	expect_fraction(t->bad_size, t->calls, 0.015, 0.05, "PAGEMAP_SCAN",
+	expect_fraction(t->bad_size, t->calls, 0.015, 0.05, scan_what,
 			"procfs-self: a struct size other than the kernel's is not drawn one time in 32");
-	expect_fraction(t->bad_flags, t->calls, 0.04, 0.09, "PAGEMAP_SCAN",
+	expect_fraction(t->bad_flags, t->calls, 0.04, 0.09, scan_what,
 			"procfs-self: a flag the kernel does not know is not drawn");
-	expect_fraction(t->bad_mask, t->calls, 0.015, 0.05, "PAGEMAP_SCAN",
+	expect_fraction(t->bad_mask, t->calls, 0.015, 0.05, scan_what,
 			"procfs-self: a category the kernel does not know is not drawn one time in 32");
-	expect_fraction(t->misaligned, t->calls, 0.015, 0.05, "PAGEMAP_SCAN",
+	expect_fraction(t->misaligned, t->calls, 0.015, 0.05, scan_what,
 			"procfs-self: a start that is not page aligned is not drawn one time in 32");
-	expect_fraction(t->wrapped, t->calls, 0.015, 0.05, "PAGEMAP_SCAN",
+	expect_fraction(t->wrapped, t->calls, 0.015, 0.05, scan_what,
 			"procfs-self: an end below the start is not drawn one time in 32");
-	expect_fraction(t->len_only, t->calls, 0.005, 0.03, "PAGEMAP_SCAN",
+	expect_fraction(t->len_only, t->calls, 0.005, 0.03, scan_what,
 			"procfs-self: a length with no buffer is not drawn one time in 64");
-	expect_fraction(t->vec_none, t->calls, 0.07, 0.12, "PAGEMAP_SCAN",
+	expect_fraction(t->vec_none, t->calls, 0.07, 0.12, scan_what,
 			"procfs-self: a call with no buffer is not drawn one time in 11");
-	expect_fraction(t->vec, t->calls, 0.85, 0.92, "PAGEMAP_SCAN",
+	expect_fraction(t->vec, t->calls, 0.85, 0.92, scan_what,
 			"procfs-self: most calls do not have a buffer");
-	expect_fraction(t->wpallowed, t->calls, 0.02, 0.10, "PAGEMAP_SCAN",
+	expect_fraction(t->wpallowed, t->calls, 0.02, 0.10, scan_what,
 			"procfs-self: WPALLOWED is not in category_mask one time in 16");
 
-	/* Every category is asked for, the two newest among them. */
-	for (i = 0; i < NCATEGORIES; i++)
-		expect_fraction(t->category[i], t->calls, 0.30, 0.45, "PAGEMAP_SCAN",
-				"procfs-self: a category is not in return_mask about 0.375 of the time");
+	/*
+	 * Every category the kernel has is asked for, the newest among them.
+	 * One it lacks is only in the call meant to be turned away, which is
+	 * one in 32, and in a quarter of those.
+	 */
+	for (i = 0; i < NCATEGORIES; i++) {
+		if (model_categories >> i & 1)
+			expect_fraction(t->category[i], t->calls, 0.30, 0.45, scan_what,
+					"procfs-self: a category the kernel has is not in return_mask about 0.375 of the time");
+		else
+			expect_fraction(t->category[i], t->calls, 0, 0.02, scan_what,
+					"procfs-self: a category the kernel lacks is asked for in a call not meant to be turned away");
+	}
 
 	/* About four calls in five pass the checks ahead of the walk. */
-	expect_fraction(t->walks, t->calls, 0.72, 0.88, "PAGEMAP_SCAN",
+	expect_fraction(t->walks, t->calls, 0.72, 0.88, scan_what,
 			"procfs-self: the calls the kernel takes are not four in five");
-	expect_fraction(t->einval + t->efault, t->calls, 0.12, 0.28, "PAGEMAP_SCAN",
+	expect_fraction(t->einval + t->efault, t->calls, 0.12, 0.28, scan_what,
 			"procfs-self: the calls the kernel refuses are not a fifth of them");
 	/*
 	 * Most calls reach the pages of an ordinary VMA: those with neither
@@ -752,7 +833,7 @@ static void expect_pagemap_scan(const struct scan_tally *t, bool pool)
 	 * a call with no pool mapping does, four more.
 	 */
 	expect_fraction(t->reaches, t->calls, pool ? 0.52 : 0.62, pool ? 0.70 : 0.80,
-			"PAGEMAP_SCAN",
+			scan_what,
 			"procfs-self: the walk does not reach an ordinary VMA's pages most of the time");
 
 	if (!pool) {
@@ -761,11 +842,11 @@ static void expect_pagemap_scan(const struct scan_tally *t, bool pool)
 		return;
 	}
 
-	expect_fraction(t->in_map, t->calls, 0.85, 0.95, "PAGEMAP_SCAN",
+	expect_fraction(t->in_map, t->calls, 0.85, 0.95, scan_what,
 			"procfs-self: the range is not inside the pool mapping most of the time");
-	expect_fraction(t->beyond, t->calls, 0.03, 0.10, "PAGEMAP_SCAN",
+	expect_fraction(t->beyond, t->calls, 0.03, 0.10, scan_what,
 			"procfs-self: a range that runs past the mapping is not drawn two times in 32");
-	expect_fraction(t->wp, t->calls, 0.06, 0.20, "PAGEMAP_SCAN",
+	expect_fraction(t->wp, t->calls, 0.06, 0.20, scan_what,
 			"procfs-self: write-protecting calls that reach the walk are not about one in eight");
 }
 
@@ -784,6 +865,61 @@ static void builds_pagemap_scan_args_the_kernel_takes(const struct map *pool)
 		tally_pagemap_scan(&t, &rec, pool);
 	}
 	expect_pagemap_scan(&t, pool != NULL);
+}
+
+/*
+ * PM_SCAN_CATEGORIES at each release that changed it: SOFT_DIRTY came in
+ * v6.8, GUARD in v6.16 and ACCESSED in v7.3, and a kernel turns away a call
+ * whose masks hold a category it lacks.  The last is a kernel whose answer to
+ * a probe says nothing about its categories, because it refuses everything
+ * it is sent.
+ */
+static const struct {
+	const char *kernel;
+	unsigned long categories;
+	bool refuses_all;
+} kernels[] = {
+	{ "v6.7", (1UL << 7) - 1, false },
+	{ "v6.8", (1UL << 8) - 1, false },
+	{ "v6.16", (1UL << 9) - 1, false },
+	{ "v7.3", CATEGORIES, false },
+	{ "a kernel that refuses every probe", CATEGORIES, true },
+};
+
+/*
+ * The sanitiser asks the kernel which categories it has when it builds its
+ * first scan, and keeps the answer in shm, so each kernel starts with
+ * nothing learned.  Whichever kernel it is, the masks then hold what it has,
+ * apart from the call in 32 that is meant to be turned away, and about four
+ * calls in five pass the checks ahead of the walk, as they do on a kernel
+ * with all ten.  The question is sent once for each category, no more.
+ */
+static void draws_the_categories_each_kernel_has(const struct map *pool)
+{
+	unsigned int k;
+
+	for (k = 0; k < ARRAY_SIZE(kernels); k++) {
+		model_categories = kernels[k].categories;
+		model_refuses_all = kernels[k].refuses_all;
+		snprintf(scan_what, sizeof(scan_what), "PAGEMAP_SCAN on %s",
+			 kernels[k].kernel);
+		shm->pagemap_scan_categories = 0;
+		memset(&probes, 0, sizeof(probes));
+
+		builds_pagemap_scan_args_the_kernel_takes(pool);
+
+		if (probes.calls != NCATEGORIES || probes.asked != CATEGORIES) {
+			fprintf(stderr, "%s: %u probes, categories %#lx\n",
+				scan_what, probes.calls, probes.asked);
+			BUG("procfs-self: the categories were not each probed once");
+		}
+	}
+
+	model_categories = CATEGORIES;
+	model_refuses_all = false;
+	snprintf(scan_what, sizeof(scan_what), "PAGEMAP_SCAN");
+	shm->pagemap_scan_categories = 0;
+	memset(&probes, 0, sizeof(probes));
 }
 
 void procfs_self_self_check(void);
@@ -814,5 +950,6 @@ void procfs_self_self_check(void)
 	fake_map_drawn = &map_obj.map;
 	builds_procmap_query_args_the_kernel_takes();
 	builds_pagemap_scan_args_the_kernel_takes(&map_obj.map);
+	draws_the_categories_each_kernel_has(&map_obj.map);
 	fake_map_drawn = NULL;
 }

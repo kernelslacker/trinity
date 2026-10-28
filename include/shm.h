@@ -645,6 +645,12 @@ struct shm_s {
 	 * ioctls/efault_cache.c for the slot encoding and probing
 	 * protocol. */
 	uint64_t ioctl_efault_cache[IOCTL_EFAULT_CACHE_SIZE];
+
+	/* The categories a PAGEMAP_SCAN mask may hold on the running kernel,
+	 * as the first child to build one learned them (ioctls/procfs-self.c);
+	 * 0 until then.  The set is the kernel's, the same for every process,
+	 * and a learner stores it whole, so relaxed accesses serve. */
+	uint64_t pagemap_scan_categories;
 };
 extern struct shm_s *shm;
 extern unsigned int shm_size;

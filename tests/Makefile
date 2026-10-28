@@ -151,6 +151,12 @@ LDFLAGS		+= -Wl,--wrap=valresult_alloc
 # syscall().
 LDFLAGS		+= -Wl,--wrap=syscall
 
+# ioctl() stand-in: procfs_self_test.c wraps it so that the PAGEMAP_SCAN the
+# procfs-self sanitiser sends to learn which categories the kernel has lands
+# in a model of pagemap_scan_get_args(), whatever kernel the test runs on.
+# The wrapper forwards every other request to the real ioctl().
+LDFLAGS		+= -Wl,--wrap=ioctl
+
 # ctime-rule seams: ctime_rule_test.c wraps ctime_marks_change() and
 # stat_mnt_id() so that the oracles' tests can have the rule hold or fail,
 # and a kernel without unique mount ids answer as one with them, on any

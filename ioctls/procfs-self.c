@@ -5,6 +5,7 @@
  * the group, and the call goes to a file it opens.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <stdbool.h>
@@ -23,6 +24,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "shm.h"
 #include "utils.h"
 
 IOCTL_SIZE_ASSERT(PROCMAP_QUERY, struct procmap_query);
@@ -267,12 +269,58 @@ static void sanitise_procmap_query(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) q;
 }
 
-/* The ten categories of the kernel's PM_SCAN_CATEGORIES. */
+/* The ten categories of the current kernel's PM_SCAN_CATEGORIES. */
 #define SCAN_CATEGORIES		(PAGE_IS_WPALLOWED | PAGE_IS_WRITTEN | \
 				 PAGE_IS_FILE | PAGE_IS_PRESENT | \
 				 PAGE_IS_SWAPPED | PAGE_IS_PFNZERO | \
 				 PAGE_IS_HUGE | PAGE_IS_SOFT_DIRTY | \
 				 PAGE_IS_GUARD | PAGE_IS_ACCESSED)
+
+/*
+ * pagemap_scan_get_args() answers -EINVAL to a mask holding a category the
+ * kernel lacks, and an older kernel lacks up to three of the ten, so a call
+ * drawn from all ten is mostly turned away there.  One category in a call
+ * that is valid in every other way, over an empty range, walks nothing and
+ * is -EINVAL only if the kernel lacks it; any other answer keeps it, -ENOTTY
+ * from a kernel with no PAGEMAP_SCAN among them.  The set is the kernel's,
+ * so the first scan of a run asks and keeps it in shm for every child.  The
+ * draws take a category past WPALLOWED, so a set with none is read as a
+ * probe refused for another reason, and the ten stand.
+ */
+static unsigned long known_categories(int fd)
+{
+	unsigned long known = __atomic_load_n(&shm->pagemap_scan_categories,
+					      __ATOMIC_RELAXED) & SCAN_CATEGORIES;
+	struct pm_scan_arg probe;
+	unsigned long bit;
+
+	if (known & ~(unsigned long) PAGE_IS_WPALLOWED)
+		return known;
+
+	known = 0;
+	for (bit = 1; bit & SCAN_CATEGORIES; bit <<= 1) {
+		memset(&probe, 0, sizeof(probe));
+		probe.size = sizeof(probe);
+		probe.return_mask = bit;
+		if (ioctl(fd, PAGEMAP_SCAN, &probe) >= 0 || errno != EINVAL)
+			known |= bit;
+	}
+	if ((known & ~(unsigned long) PAGE_IS_WPALLOWED) == 0)
+		known = SCAN_CATEGORIES;
+
+	__atomic_store_n(&shm->pagemap_scan_categories, known, __ATOMIC_RELAXED);
+	return known;
+}
+
+/* One category of @cats, chosen at random.  @cats is not empty. */
+static unsigned long pick_category(unsigned long cats)
+{
+	unsigned int skip = rnd_modulo_u32(__builtin_popcountl(cats));
+
+	while (skip--)
+		cats &= cats - 1;
+	return cats & -cats;
+}
 
 /* The most pages a run covers, and the most regions a call has room for. */
 #define SCAN_RUN_MAX		64
@@ -291,6 +339,10 @@ static void sanitise_procmap_query(struct syscallrecord *rec)
  * when WPALLOWED is in category_mask and not inverted, which that kind of
  * VMA alone has, so the bit is left out of the mask most of the time.
  *
+ * The masks hold the categories the running kernel has (known_categories()),
+ * and one call in 32 holds a category it lacks, so that -EINVAL stays
+ * exercised on a kernel that has all ten too.
+ *
  * WP_MATCHING write-protects the pages of the VMAs that pass, which only a
  * child that registered one itself has, and a write fault in async mode
  * clears the protection without a signal or a wait.  It is drawn only for a
@@ -302,7 +354,7 @@ static void sanitise_procmap_query(struct syscallrecord *rec)
 static void sanitise_pagemap_scan(struct syscallrecord *rec)
 {
 	struct pm_scan_arg *a;
-	unsigned long start, pages, run;
+	unsigned long start, pages, run, known, singles;
 	bool in_pool;
 	int fd;
 
@@ -310,6 +362,12 @@ static void sanitise_pagemap_scan(struct syscallrecord *rec)
 	if (!a)
 		return;
 	memset(a, 0, sizeof(*a));
+
+	fd = open_own("/proc/self/pagemap", true);
+	if (fd < 0)
+		return;
+	known = known_categories(fd);
+	singles = known & ~(unsigned long) PAGE_IS_WPALLOWED;
 
 	a->size = sizeof(*a);
 	if (ONE_IN(32))
@@ -364,27 +422,26 @@ static void sanitise_pagemap_scan(struct syscallrecord *rec)
 		a->flags &= ~(unsigned long) PM_SCAN_WP_MATCHING;
 
 	if (!ONE_IN(4))
-		a->return_mask = rnd_u32() & SCAN_CATEGORIES;
+		a->return_mask = rnd_u32() & known;
 
 	switch (rnd_modulo_u32(8)) {
 	case 4:
 	case 5:
-		a->category_mask = 1UL << (1 + rnd_modulo_u32(9));
+		a->category_mask = pick_category(singles);
 		break;
 	case 6:
-		a->category_mask = (1UL << (1 + rnd_modulo_u32(9))) |
-				   (1UL << (1 + rnd_modulo_u32(9)));
+		a->category_mask = pick_category(singles) | pick_category(singles);
 		break;
 	case 7:
-		a->category_mask = rnd_u32() & SCAN_CATEGORIES;
+		a->category_mask = rnd_u32() & known;
 		break;
 	default:
 		break;
 	}
 	if (RAND_BOOL())
-		a->category_anyof_mask = rnd_u32() & SCAN_CATEGORIES;
+		a->category_anyof_mask = rnd_u32() & known;
 	if (ONE_IN(4))
-		a->category_inverted = rnd_u32() & SCAN_CATEGORIES;
+		a->category_inverted = rnd_u32() & known;
 
 	if (ONE_IN(32)) {
 		__u64 *masks[] = {
@@ -393,7 +450,7 @@ static void sanitise_pagemap_scan(struct syscallrecord *rec)
 		};
 
 		*masks[rnd_modulo_u32(ARRAY_SIZE(masks))] |=
-			(rnd_u64() & ~(__u64) SCAN_CATEGORIES) | (1ULL << 63);
+			(rnd_u64() & ~(__u64) known) | (1ULL << 63);
 	}
 
 	switch (rnd_modulo_u32(64)) {
@@ -419,10 +476,6 @@ static void sanitise_pagemap_scan(struct syscallrecord *rec)
 	}
 	}
 	a->max_pages = RAND_BOOL() ? 0 : 1 + rnd_modulo_u32(256);
-
-	fd = open_own("/proc/self/pagemap", true);
-	if (fd < 0)
-		return;
 
 	rec->a1 = (unsigned long) fd;
 	rec->a3 = (unsigned long) a;
