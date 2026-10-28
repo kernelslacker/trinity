@@ -8,6 +8,7 @@
 #include <sys/syscall.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <time.h>
 #include "arch.h"
 #include "kernel/stat.h"
 #include "output-poison.h"
@@ -16,6 +17,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "stat-recall.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -351,7 +353,9 @@ static unsigned int generate_statx_flags(void)
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect us at a foreign pathname or statxbuf,
  * cannot flip the dfd, and cannot smear the lookup flags or the field-
- * select mask used to seed the re-issue.
+ * select mask used to seed the re-issue.  before is the coarse clock read
+ * ahead of the call, which statx_recall_diverged() judges the answer's
+ * ctime by.
  */
 #define STATX_POST_STATE_MAGIC	0x53545458UL	/* "STTX" */
 struct statx_post_state {
@@ -361,6 +365,7 @@ struct statx_post_state {
 	unsigned long flags;
 	unsigned long mask;
 	unsigned long statxbuf;
+	struct timespec before;
 	/*
 	 * Seed for the poison pattern stamped into statxbuf at sanitise
 	 * time.  Returned by poison_output_struct() and fed back into
@@ -442,6 +447,7 @@ static void sanitise_statx(struct syscallrecord *rec)
 	snap->mask     = rec->a4;
 	snap->statxbuf = rec->a5;
 	snap->poison_seed = 0;
+	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
 
 	/*
 	 * Stamp a per-call poison pattern into the user buffer the kernel
@@ -492,16 +498,23 @@ static void sanitise_statx(struct syscallrecord *rec)
  *   STATX_NLINK              stx_nlink
  *   STATX_UID                stx_uid
  *   STATX_GID                stx_gid
- *   STATX_INO                stx_ino
  *   STATX_SIZE               stx_size
- *   STATX_BLOCKS             stx_blocks
  *
  * Always-on fields (kernel fills unconditionally per the UAPI):
- *   stx_blksize, stx_dev_major+stx_dev_minor, stx_rdev_major+stx_rdev_minor
+ *   stx_rdev_major+stx_rdev_minor
+ *
+ * Siblings change those between the calls, and put other inodes at the
+ * path: half these calls name a testfile, which they chmod, chown, link
+ * and truncate, and rename other files over.  So a moved field counts
+ * only as statx_recall_diverged() judges it, while stx_dev, stx_ino and
+ * stx_ctime held and where a held ctime means nothing changed, which
+ * needs STATX_INO and STATX_CTIME in both masks.
  *
  * Excluded (would drift legitimately or carry no inode-stable signal):
- *   stx_atime / stx_mtime / stx_ctime / stx_btime — sibling read / write /
- *     chmod legitimately advances these.
+ *   stx_atime / stx_mtime / stx_btime — sibling read / write legitimately
+ *     advances these.
+ *   stx_blocks and stx_blksize, which move with no ctime stamped (see
+ *     stat_recall_diverged()).
  *   stx_attributes / stx_attributes_mask — file-attribute flags can
  *     legitimately flip (chattr +i, FS_DAX_FL toggle, FS_VERITY_FL set).
  *   stx_mnt_id — bind-mount churn / mount propagation across a private
@@ -515,13 +528,9 @@ static void sanitise_statx(struct syscallrecord *rec)
  *
  *   - copy_to_user mis-write that leaves a torn struct statx in user
  *     memory (partial write, wrong-offset fill, residual stack data).
- *   - struct-layout shift on a kernel/glibc skew that lands stx_ino in
- *     the stx_size slot, or stx_blocks in stx_blksize.
+ *   - struct-layout shift on a kernel/glibc skew.
  *   - sibling-thread scribble of the user receive buffer between the
  *     original syscall return and our post-hook re-read.
- *   - sibling-thread rename / replace of the path component between the
- *     original lookup and the recheck (caught only because we resolved
- *     the snapshotted path and got a different inode).
  *
  * TOCTOU defeat (five buffers worth of it): pathname, flags, mask, and
  * statxbuf are all reachable from sibling-scribbleable user memory or
@@ -547,9 +556,9 @@ static void sanitise_statx(struct syscallrecord *rec)
  * all benign.  Treat any non-zero return from syscall(SYS_statx) as
  * "give up, sample skipped" so we never report on a torn-down path or
  * descriptor.  Sample one in a hundred to stay in line with the rest of
- * the oracle family; compare each field individually with no early-return
- * so multi-field corruption surfaces in a single sample, but bump the
- * anomaly counter only once per sample.
+ * the oracle family.  The anomaly line prints every field, so multi-field
+ * corruption surfaces in a single sample, and the counter is bumped once
+ * per sample.
  */
 static void post_statx(struct syscallrecord *rec)
 {
@@ -559,7 +568,6 @@ static void post_statx(struct syscallrecord *rec)
 	unsigned int flags, mask, valid_mask;
 	unsigned long retval;
 	int dfd;
-	int diverged = 0;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -669,31 +677,11 @@ static void post_statx(struct syscallrecord *rec)
 	if (syscall(SYS_statx, dfd, local_path, flags, mask, &recheck) != 0)
 		goto out_release;
 
-	valid_mask = first.stx_mask & recheck.stx_mask;
-
-	if (valid_mask & (STATX_TYPE | STATX_MODE))
-		if (first.stx_mode != recheck.stx_mode) diverged = 1;
-	if (valid_mask & STATX_NLINK)
-		if (first.stx_nlink != recheck.stx_nlink) diverged = 1;
-	if (valid_mask & STATX_UID)
-		if (first.stx_uid != recheck.stx_uid) diverged = 1;
-	if (valid_mask & STATX_GID)
-		if (first.stx_gid != recheck.stx_gid) diverged = 1;
-	if (valid_mask & STATX_INO)
-		if (first.stx_ino != recheck.stx_ino) diverged = 1;
-	if (valid_mask & STATX_SIZE)
-		if (first.stx_size != recheck.stx_size) diverged = 1;
-	if (valid_mask & STATX_BLOCKS)
-		if (first.stx_blocks != recheck.stx_blocks) diverged = 1;
-
-	if (first.stx_blksize    != recheck.stx_blksize)    diverged = 1;
-	if (first.stx_dev_major  != recheck.stx_dev_major)  diverged = 1;
-	if (first.stx_dev_minor  != recheck.stx_dev_minor)  diverged = 1;
-	if (first.stx_rdev_major != recheck.stx_rdev_major) diverged = 1;
-	if (first.stx_rdev_minor != recheck.stx_rdev_minor) diverged = 1;
-
-	if (!diverged)
+	if (!statx_recall_diverged(&first, &recheck, dfd, local_path, flags,
+				   &snap->before))
 		goto out_release;
+
+	valid_mask = first.stx_mask & recheck.stx_mask;
 
 	output(0,
 	       "statx oracle anomaly: dfd=%d path=%s flags=%x mask=%x valid_mask=%x "

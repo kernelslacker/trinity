@@ -13,10 +13,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/stat.h"	/* struct statx, STATX_* */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_newstat, ... */
@@ -220,6 +222,97 @@ static void recall_cases(const struct recall_oracle *o)
 	unlink(scratch);
 }
 
+/* Calls per statx case: its sanitiser draws the mask, and only a mask
+ * that fills stx_ctime can judge a sample. */
+#define STATX_RECALL_CALLS	4000
+
+/* statx(AT_FDCWD, @path, ...) calls, each of which answered @answer. */
+static unsigned long statx_anomalies(const char *path,
+				     const struct statx *answer)
+{
+	unsigned long before = shm->stats.oracle.statx_oracle_anomalies;
+	static struct syscallrecord rec;
+	static struct statx buf;
+	unsigned int i;
+
+	for (i = 0; i < STATX_RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) AT_FDCWD;
+		rec.a2 = (unsigned long) path;
+		rec.a5 = (unsigned long) &buf;
+		syscall_statx.sanitise(&rec);
+		memcpy((void *) rec.a5, answer, sizeof(*answer));
+		rec.retval = 0;
+		syscall_statx.post(&rec);
+	}
+	return shm->stats.oracle.statx_oracle_anomalies - before;
+}
+
+static void scratch_statx(struct statx *stx)
+{
+	if (syscall(SYS_statx, AT_FDCWD, scratch, AT_SYMLINK_NOFOLLOW,
+		    STATX_BASIC_STATS, stx) != 0)
+		BUG("stat recall: cannot statx the scratch file");
+}
+
+/*
+ * The shared cases, for statx: and since its sanitiser draws the mask, an
+ * answer that filled no stx_ctime, which leaves the field 0 in both
+ * answers whenever the re-call fills none either, is not judged.
+ */
+static void statx_recall_cases(void)
+{
+	char other[sizeof(scratch) + 2];
+	struct statx stx, moved;
+	struct stat st;
+	int fd;
+
+	scratch_file(&st);
+	scratch_statx(&stx);
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+
+	moved = stx;
+	moved.stx_mode ^= S_IXUSR;
+	check("a mode that moved under a held ctime was not reported", "statx",
+	      statx_anomalies(scratch, &moved) > 0);
+
+	moved = stx;
+	moved.stx_blocks += 8;
+	moved.stx_blksize *= 2;
+	check("stx_blocks or stx_blksize was judged", "statx",
+	      statx_anomalies(scratch, &moved) == 0);
+
+	fake_ctime_rule = FAKE_CTIME_FAILS;
+	moved = stx;
+	moved.stx_mode ^= S_IXUSR;
+	check("a moved mode the ctime cannot vouch for was reported", "statx",
+	      statx_anomalies(scratch, &moved) == 0);
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+
+	nanosleep(&(const struct timespec) { 0, 20 * 1000 * 1000 }, NULL);
+	if (chmod(scratch, (stx.stx_mode ^ S_IXUSR) & 07777) != 0)
+		BUG("stat recall: cannot chmod the scratch file");
+	check("a sibling's chmod between the calls was reported", "statx",
+	      statx_anomalies(scratch, &stx) == 0);
+
+	moved = stx;
+	moved.stx_mask &= ~STATX_CTIME;
+	memset(&moved.stx_ctime, 0, sizeof(moved.stx_ctime));
+	check("an answer that filled no stx_ctime was judged", "statx",
+	      statx_anomalies(scratch, &moved) == 0);
+
+	snprintf(other, sizeof(other), "%s.o", scratch);
+	fd = open(other, O_CREAT | O_WRONLY, 0600);
+	if (fd < 0 || rename(other, scratch) != 0)
+		BUG("stat recall: cannot rename over the scratch file");
+	close(fd);
+	check("the attributes of a file renamed over the path were reported",
+	      "statx", statx_anomalies(scratch, &stx) == 0);
+
+	fake_ctime_rule = FAKE_CTIME_REAL;
+	unlink(scratch);
+}
+
 void stat_recall_self_check(void);
 void stat_recall_self_check(void)
 {
@@ -232,6 +325,7 @@ void stat_recall_self_check(void)
 	recall_cases(&newlstat_oracle);
 	recall_cases(&newfstatat_oracle);
 	recall_cases(&newfstat_oracle);
+	statx_recall_cases();
 
 	fake_mnt_ids = false;
 	fake_snapshot_str_copies = false;
