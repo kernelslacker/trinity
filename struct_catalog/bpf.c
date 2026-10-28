@@ -462,9 +462,9 @@ const struct union_variant bpf_attr_variants[] = {
 		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_fields),
 		.effective_size	= sizeof(((union bpf_attr *)NULL)->link_create),
 		/*
-		 * attach_type is the inner discriminator; sub-variants in
-		 * nested_variants[] are not yet populated.  base runs first
-		 * so the catch-all target_btf_id slot is filled before any
+		 * attach_type is the inner discriminator, naming the arm in
+		 * nested_variants[] that fills the tail.  base runs first so
+		 * the catch-all target_btf_id slot is filled before any
 		 * specific arm overlays its tail.
 		 */
 		.nested_discrim_offset = offsetof(union bpf_attr, link_create.attach_type),
