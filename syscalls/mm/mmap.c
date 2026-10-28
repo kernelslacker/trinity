@@ -384,12 +384,12 @@ static void sanitise_mmap(struct syscallrecord *rec)
 		struct old_mmap_args *args = get_writable_struct(sizeof(*args));
 
 		if (args != NULL) {
-			args->addr   = rec->a1;
-			args->len    = rec->a2;
-			args->prot   = rec->a3;
-			args->flags  = rec->a4;
-			args->fd     = rec->a5;
-			args->offset = rec->a6;
+			args->addr   = (uint32_t) rec->a1;
+			args->len    = (uint32_t) rec->a2;
+			args->prot   = (uint32_t) rec->a3;
+			args->flags  = (uint32_t) rec->a4;
+			args->fd     = (uint32_t) rec->a5;
+			args->offset = (uint32_t) rec->a6;
 			rec->a1 = (unsigned long) args;
 			rec->a2 = args->len;
 			rec->a3 = args->prot;
