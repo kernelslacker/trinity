@@ -22,12 +22,15 @@
  * sibling syscall scribbling rec->aN between the syscall returning
  * and the post handler running cannot retarget the re-issue at a
  * different fd or redirect the source memcpy at a foreign user buffer.
+ * before is the coarse clock read ahead of the call, which
+ * stat_recall_diverged() judges the answer's ctime by.
  */
 #define NEWFSTAT_POST_STATE_MAGIC	0x4E465354UL	/* "NFST" */
 struct newfstat_post_state {
 	unsigned long magic;
 	unsigned long fd;
 	unsigned long statbuf;
+	struct timespec before;
 	/*
 	 * Seed for the poison pattern stamped into statbuf at sanitise
 	 * time.  Returned by poison_output_struct() and fed back into
@@ -61,6 +64,7 @@ static void sanitise_newfstat(struct syscallrecord *rec)
 	snap->magic   = NEWFSTAT_POST_STATE_MAGIC;
 	snap->fd      = rec->a1;
 	snap->statbuf = rec->a2;
+	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
 	/*
 	 * Stamp a per-call poison pattern into the user buffer the kernel
 	 * is about to fill.  The post handler asks check_output_struct()
@@ -83,40 +87,36 @@ static void sanitise_newfstat(struct syscallrecord *rec)
  * snapshot and no name-resolution TOCTOU window for a sibling to widen
  * by scribbling user memory between original return and re-call.
  *
- * The same ten inode-attribute fields that newlstat / newstat compare
- * are byte-stable across the ~150ms re-call window absent chmod / chown
- * / link / truncate / unlink-and-replace on the underlying inode:
- * st_dev, st_ino, st_mode, st_nlink, st_uid, st_gid, st_rdev, st_size,
- * st_blksize, st_blocks.  Timestamps (st_atim, st_mtim, st_ctim) are
- * deliberately excluded — sibling read / write / chmod on the same
- * inode legitimately advances them, and including them would dwarf any
- * real signal in benign drift.  A divergence in the remaining ten
- * fields points at one of:
+ * The file the fd names still changes between the calls: siblings
+ * write, truncate, chmod, chown and link the testfiles its fds name.
+ * Nor does every filesystem report one dev and ino for an fd for good:
+ * for a hardlinked file without the index feature, overlayfs reports the
+ * lower st_ino until a copy-up and the upper one after it
+ * (ovl_getattr()).  So it is judged as the path calls are, a moved
+ * attribute counting only as stat_recall_diverged() judges it, and then
+ * points at one of:
  *
  *   - copy_to_user mis-write that leaves a torn struct stat in user
  *     memory (partial write, wrong-offset fill, residual stack data).
- *   - struct-layout shift on a kernel/glibc skew that lands st_dev in
- *     the st_ino slot, or st_blocks in st_blksize.
- *   - 32-bit-on-64-bit compat sign-extension of st_size, st_dev, or
- *     st_rdev (e.g. a small positive size sign-extending to 0xFFFF...).
+ *   - struct-layout shift on a kernel/glibc skew.
+ *   - 32-bit-on-64-bit compat sign-extension of st_size or st_rdev
+ *     (e.g. a small positive size sign-extending to 0xFFFF...).
  *   - sibling-thread scribble of the user receive buffer between the
  *     original syscall return and our post-hook re-read.
  *
- * The only benign-divergence path is a sibling closing the fd between
- * the original syscall and the recheck — that just makes the recheck
- * fail with -EBADF.  Treat any non-zero return from syscall(SYS_fstat)
- * as "give up, sample skipped" so we never report on a torn-down fd.
- * Sample one in a hundred to stay in line with the rest of the oracle
- * family; compare each field individually with no early-return so
- * multi-field corruption surfaces in a single sample, but bump the
- * anomaly counter only once per sample.
+ * A sibling closing the fd between the original syscall and the recheck
+ * makes the recheck fail with -EBADF.  Treat any non-zero return from
+ * syscall(SYS_fstat) as "give up, sample skipped" so we never report on
+ * a torn-down fd.  Sample one in a hundred to stay in line with the rest
+ * of the oracle family.  The anomaly line prints every field, so
+ * multi-field corruption surfaces in a single sample, and the counter is
+ * bumped once per sample.
  */
 static void post_newfstat(struct syscallrecord *rec)
 {
 	struct newfstat_post_state *snap;
 	struct stat first, recheck;
 	int fd;
-	int diverged = 0;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -164,18 +164,8 @@ static void post_newfstat(struct syscallrecord *rec)
 	if (syscall(SYS_fstat, fd, &recheck) != 0)
 		goto out_release;
 
-	if (first.st_dev     != recheck.st_dev)     diverged = 1;
-	if (first.st_ino     != recheck.st_ino)     diverged = 1;
-	if (first.st_mode    != recheck.st_mode)    diverged = 1;
-	if (first.st_nlink   != recheck.st_nlink)   diverged = 1;
-	if (first.st_uid     != recheck.st_uid)     diverged = 1;
-	if (first.st_gid     != recheck.st_gid)     diverged = 1;
-	if (first.st_rdev    != recheck.st_rdev)    diverged = 1;
-	if (first.st_size    != recheck.st_size)    diverged = 1;
-	if (first.st_blksize != recheck.st_blksize) diverged = 1;
-	if (first.st_blocks  != recheck.st_blocks)  diverged = 1;
-
-	if (!diverged)
+	if (!stat_recall_diverged(&first, &recheck, fd, "", AT_EMPTY_PATH,
+				  &snap->before))
 		goto out_release;
 
 	output(0,

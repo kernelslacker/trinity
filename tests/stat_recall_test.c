@@ -111,6 +111,31 @@ static unsigned long newfstatat_anomalies(const char *path,
 	return shm->stats.oracle.newfstatat_oracle_anomalies - before;
 }
 
+/* newfstat() calls on an fd it opens on @path. */
+static unsigned long newfstat_anomalies(const char *path,
+					const struct stat *answer)
+{
+	unsigned long before = shm->stats.oracle.newfstat_oracle_anomalies;
+	static struct syscallrecord rec;
+	static struct stat buf;
+	unsigned int i;
+	int fd = open(path, O_RDONLY);
+
+	if (fd < 0)
+		BUG("stat recall: cannot open the scratch file");
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) fd;
+		rec.a2 = (unsigned long) &buf;
+		syscall_newfstat.sanitise(&rec);
+		memcpy((void *) rec.a2, answer, sizeof(*answer));
+		rec.retval = 0;
+		syscall_newfstat.post(&rec);
+	}
+	close(fd);
+	return shm->stats.oracle.newfstat_oracle_anomalies - before;
+}
+
 static const struct recall_oracle newstat_oracle = {
 	.name = "newstat", .anomalies = newstat_anomalies,
 };
@@ -121,6 +146,10 @@ static const struct recall_oracle newlstat_oracle = {
 
 static const struct recall_oracle newfstatat_oracle = {
 	.name = "newfstatat", .anomalies = newfstatat_anomalies,
+};
+
+static const struct recall_oracle newfstat_oracle = {
+	.name = "newfstat", .anomalies = newfstat_anomalies,
 };
 
 static char scratch[] = "/tmp/trinity-stat-recall-test.XXXXXX";
@@ -138,12 +167,13 @@ static void scratch_file(struct stat *st)
 }
 
 /*
- * The cases every path oracle shares.  An attribute the inode does not have
- * is reported, and so is not one that moves with no ctime stamped, nor one
- * the ctime rule cannot vouch for, nor a mode a sibling's chmod moved
- * between the calls, nor the attributes of a file renamed over the path.
+ * The cases every oracle shares.  An attribute the inode does not have is
+ * reported, and so is not one that moves with no ctime stamped, nor one the
+ * ctime rule cannot vouch for, nor a mode a sibling's chmod moved between
+ * the calls, nor the attributes of a file renamed over the path, which
+ * newfstat meets as an fd on another inode than its answer's.
  */
-static void path_recall_cases(const struct recall_oracle *o)
+static void recall_cases(const struct recall_oracle *o)
 {
 	char other[sizeof(scratch) + 2];
 	struct stat st, moved;
@@ -198,9 +228,10 @@ void stat_recall_self_check(void)
 	fake_snapshot_str_copies = true;
 	fake_mnt_ids = true;
 
-	path_recall_cases(&newstat_oracle);
-	path_recall_cases(&newlstat_oracle);
-	path_recall_cases(&newfstatat_oracle);
+	recall_cases(&newstat_oracle);
+	recall_cases(&newlstat_oracle);
+	recall_cases(&newfstatat_oracle);
+	recall_cases(&newfstat_oracle);
 
 	fake_mnt_ids = false;
 	fake_snapshot_str_copies = false;
