@@ -9,10 +9,8 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 #include <asm/unistd.h>
-#include <fcntl.h>
 #include <stdio.h>
 #include <sys/stat.h>
-#include <string.h>
 #include "csfu.h"
 #include "deferred-free.h"
 #include "random.h"
@@ -89,12 +87,15 @@ struct statmount_post_state {
 #define STATMOUNT_BUF_BYTES	(64u * 1024u)
 
 /*
- * Cached pool of real mount ids drawn from /proc/self/mountinfo at
- * first use.  Random mnt_id values almost never hit the kernel's
- * find_mnt_by_id() lookup gate; biasing toward real ids steers past
- * that arm into the per-mask copy_to_user paths where the actual
- * coverage of statmount() lives.  16 ids is enough to keep the pool
- * varied without bloating the cache on hosts with hundreds of mounts.
+ * Cached pool of real mount ids, loaded from listmount() at first use.
+ * Random mnt_id values almost never hit the kernel's find_mnt_by_id()
+ * lookup gate; biasing toward real ids steers past that arm into the
+ * per-mask copy_to_user paths where the actual coverage of statmount()
+ * lives.  They have to be the unique ids listmount() hands out:
+ * statmount() refuses any id at or below MNT_UNIQUE_ID_OFFSET with
+ * -EINVAL, and the reused ids /proc/self/mountinfo lists all are.  16
+ * ids is enough to keep the pool varied without bloating the cache on
+ * hosts with hundreds of mounts.
  *
  * Per-process static is fine -- the cache survives fork() and the
  * child inherits the parent's loaded ids; if no child of trinity
@@ -107,44 +108,20 @@ static int statmount_mnt_id_pool_loaded;
 
 static void load_statmount_mnt_id_pool(void)
 {
-	static char buf[32768];
-	ssize_t n;
-	char *p, *end;
-	int fd;
+#ifdef SYS_listmount
+	struct mnt_id_req req = {
+		.size = MNT_ID_REQ_SIZE_VER0,
+		.mnt_id = LSMT_ROOT,
+	};
+	long n;
 
+	n = syscall(SYS_listmount, &req, statmount_mnt_id_pool,
+		    STATMOUNT_MNT_ID_POOL_SIZE, 0);
+	if (n > 0)
+		statmount_mnt_id_pool_n =
+			min(n, (long) STATMOUNT_MNT_ID_POOL_SIZE);
+#endif
 	statmount_mnt_id_pool_loaded = 1;
-
-	/* Raw open/read instead of fopen/fgets/fclose: avoid stdio's
-	 * per-call malloc of the FILE struct + IO buffer.  One bounded read
-	 * of /proc/self/mountinfo into a fixed buffer is enough to pull the
-	 * first POOL_SIZE mount IDs out -- if mountinfo overflows the
-	 * buffer we simply parse fewer lines, which only affects the
-	 * biasing distribution, not correctness. */
-	fd = open("/proc/self/mountinfo", O_RDONLY);
-	if (fd < 0)
-		return;
-	n = read(fd, buf, sizeof(buf) - 1);
-	close(fd);
-	if (n <= 0)
-		return;
-	buf[n] = '\0';
-
-	p = buf;
-	end = buf + n;
-	while (p < end &&
-	       statmount_mnt_id_pool_n < STATMOUNT_MNT_ID_POOL_SIZE) {
-		unsigned long long id;
-		char *nl = memchr(p, '\n', end - p);
-
-		if (nl != NULL)
-			*nl = '\0';
-		if (sscanf(p, "%llu ", &id) == 1)
-			statmount_mnt_id_pool[statmount_mnt_id_pool_n++] =
-				(__u64) id;
-		if (nl == NULL)
-			break;
-		p = nl + 1;
-	}
 }
 
 static __u64 pick_statmount_mnt_id(void)

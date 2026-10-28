@@ -71,6 +71,7 @@ void post_oracle_self_check(void);
 void dup_pool_self_check(void);
 void ctime_rule_self_check(void);
 void stat_recall_self_check(void);
+void mount_pool_self_check(void);
 void bpf_gen_self_check(void);
 void objpool_reader_self_check(void);
 void sanitiser_owned_mask_pool_self_check(void);
@@ -389,6 +390,11 @@ int main(int argc, char **argv)
 	printf("  stat_recall_self_check ... ");
 	fflush(stdout);
 	stat_recall_self_check();
+	printf("OK\n");
+
+	printf("  mount_pool_self_check ... ");
+	fflush(stdout);
+	mount_pool_self_check();
 	printf("OK\n");
 
 	printf("  bpf_gen_self_check ... ");

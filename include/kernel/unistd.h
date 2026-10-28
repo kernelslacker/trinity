@@ -16,3 +16,6 @@
 #if !defined(SYS_statmount) && defined(__NR_statmount)
 #define SYS_statmount	__NR_statmount
 #endif
+#if !defined(SYS_listmount) && defined(__NR_listmount)
+#define SYS_listmount	__NR_listmount
+#endif

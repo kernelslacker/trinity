@@ -21,12 +21,10 @@
 #include "shm.h"
 #include "trinity.h"
 #include "kernel/mount.h"
+#include "kernel/unistd.h"
 #include "utils.h"
 
-#if defined(SYS_listmount) || defined(__NR_listmount)
-#ifndef SYS_listmount
-#define SYS_listmount __NR_listmount
-#endif
+#ifdef SYS_listmount
 #define HAVE_SYS_LISTMOUNT 1
 #endif
 

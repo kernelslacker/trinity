@@ -475,6 +475,7 @@ FAKE_SRCS	:= \
 	dup_pool_test.c \
 	ctime_rule_test.c \
 	stat_recall_test.c \
+	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
 
@@ -539,7 +540,8 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 # stat_recall_test.c runs on a file of its own, and stat-recall.c the
 # verdict their re-call oracles reach.  syscalls/fs/mount/statmount.c
 # brings syscall_statmount, whose sanitiser and post handler it runs on
-# the mount / lies on.
+# the mount / lies on, and whose pool of mount ids mount_pool_test.c holds
+# to ids a real statmount() answers for.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/mount/statmount.c \
 		   $(TOP)/syscalls/fs/stat/newstat.c \
 		   $(TOP)/syscalls/fs/stat/newlstat.c \
