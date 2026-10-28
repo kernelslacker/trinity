@@ -323,6 +323,14 @@ static unsigned long seccomp_ops[] = {
 	SECCOMP_GET_ACTION_AVAIL, SECCOMP_GET_NOTIF_SIZES,
 };
 
+/*
+ * The two wait flags need NEW_LISTENER, and post_seccomp() closes every
+ * listener a call makes before the child issues another syscall, so no
+ * filter installed here ever leaves a task waiting for a reply.  That
+ * matters for RESTART_BEFORE_RECV: such a wait restarts on a signal
+ * instead of failing with EINTR, so the alarm(1) backstop could not
+ * break it.
+ */
 static unsigned long seccomp_flags[] = {
 	SECCOMP_FILTER_FLAG_TSYNC,
 	SECCOMP_FILTER_FLAG_LOG,
@@ -330,6 +338,7 @@ static unsigned long seccomp_flags[] = {
 	SECCOMP_FILTER_FLAG_NEW_LISTENER,
 	SECCOMP_FILTER_FLAG_TSYNC_ESRCH,
 	SECCOMP_FILTER_FLAG_WAIT_KILLABLE_RECV,
+	SECCOMP_FILTER_FLAG_RESTART_BEFORE_RECV,
 };
 
 struct syscallentry syscall_seccomp = {
