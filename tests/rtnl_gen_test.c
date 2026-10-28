@@ -627,6 +627,41 @@ static void expect_probe_interval(const struct probe_interval *t)
 			"rtnl: the probe interval is not often a short one");
 }
 
+/* ---------- The types no kernel handler takes ---------------------------- */
+
+#ifndef RTM_GETLINKPROP
+#define RTM_GETLINKPROP		110
+#endif
+
+/*
+ * The types the kernel only sends, as replies or notifications, and the two
+ * it has never registered: rtnetlink_rcv_msg() finds no handler for them
+ * and answers -EOPNOTSUPP whatever they carry.  Only the random type in 20
+ * names one, about once in 160000 messages.
+ */
+static bool unhandled(unsigned short type)
+{
+	switch (type) {
+	case RTM_NEWPREFIX:
+	case RTM_NEWNDUSEROPT:
+	case RTM_NEWNEIGHTBL:
+	case RTM_NEWNETCONF:
+	case RTM_NEWSTATS:
+	case RTM_NEWNEXTHOPBUCKET:
+	case RTM_DELNEXTHOPBUCKET:
+	case RTM_GETLINKPROP:
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void expect_handled_types(unsigned int unhandled_msgs, unsigned int msgs)
+{
+	expect_fraction(unhandled_msgs, msgs, 0.0, 0.001, "rtnl types",
+			"rtnl: a type no kernel handler takes is drawn from the table");
+}
+
 /* ---------- The dump bits of a GET with one kind of handler ------------- */
 
 /*
@@ -684,6 +719,7 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
+	unsigned int msgs, unhandled;
 	struct dump_bits dumps, dcb;
 	struct addr_header getaddr, newdeladdr;
 	struct tunnel_attrs tunnel;
@@ -712,6 +748,8 @@ static void run_rounds(struct tallies *t)
 		    NLMSG_ALIGN(nlh->nlmsg_len) != len)
 			goto next;
 
+		t->msgs++;
+		t->unhandled += unhandled(nlh->nlmsg_type);
 		if (dumpit_only(nlh->nlmsg_type))
 			tally_dump_bits(&t->dumps, nlh, true);
 		else if (nlh->nlmsg_type == RTM_GETDCB)
@@ -742,7 +780,6 @@ static void run_rounds(struct tallies *t)
 		case RTM_SETLINK:
 			tally_link_limits(t->limits, nlh);
 			break;
-		case RTM_NEWNEIGHTBL:
 		case RTM_GETNEIGHTBL:
 		case RTM_SETNEIGHTBL:
 			tally_probe_interval(&t->probe_interval, nlh);
@@ -759,6 +796,7 @@ void rtnl_gen_self_check(void)
 	static struct tallies t;
 
 	run_rounds(&t);
+	expect_handled_types(t.unhandled, t.msgs);
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_tunnel_attrs(&t.tunnel);
