@@ -144,6 +144,13 @@ LDFLAGS		+= -Wl,--wrap=get_map -Wl,--wrap=get_map_with_prot
 # valresult_alloc() to register both buffers, as production's does.
 LDFLAGS		+= -Wl,--wrap=valresult_alloc
 
+# syscall() stand-in: landlock_test.c wraps it so that, while it has a model
+# kernel armed, the Landlock calls trinity_raw_syscall() makes in the fd
+# provider land in that model.  The wrapper forwards every other call, and the
+# Landlock ones when nothing is armed, to the real
+# syscall().
+LDFLAGS		+= -Wl,--wrap=syscall
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -643,8 +650,11 @@ FAKE_SRCS	+= perf_attr_test.c
 
 # syscalls/landlock/landlock_add_rule.c brings syscall_landlock_add_rule,
 # whose sanitiser landlock_test.c runs and holds to what the kernel answers a
-# rule with.
-PARENT_SRCS	+= $(TOP)/syscalls/landlock/landlock_add_rule.c
+# rule with, and fds/landlock.c the provider, whose init hook it runs against
+# the fake object-pool hooks and a model of the two Landlock syscalls.
+PARENT_SRCS	+= $(TOP)/syscalls/landlock/landlock_add_rule.c \
+		   $(TOP)/fds/landlock.c \
+		   $(TOP)/fds/fds-diag.c
 FAKE_SRCS	+= landlock_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

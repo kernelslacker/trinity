@@ -9,6 +9,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "landlock.h"
 #include "syscall-gate.h"
 #include "objects.h"
 #include "random.h"
@@ -33,6 +34,57 @@ static bool unsupported_landlock;
 static const char *landlock_paths[] = {
 	"/tmp", "/dev", "/proc", "/sys", "/dev/shm",
 };
+
+/*
+ * A ruleset that handles a permission and holds no rule for it denies every
+ * member of it: hook_capable() and check_ns_type() (security/landlock/cap.c,
+ * ns.c) turn away whatever the layer does not allow, so a child that
+ * restricted itself with one would lose every capability, or every namespace
+ * type, for the rest of its life.  Rules only add to what a layer allows, so
+ * one rule per permission in @handled that allows every member (the kernel
+ * masks ~0 to the members it knows), made before the ruleset reaches a pool,
+ * leaves those permissions as they were however landlock_add_rule() draws
+ * after it.
+ *
+ * @handled is exactly what the ruleset handles.  A rule for a permission it
+ * does not handle is answered -EINVAL, which cannot be told from a rule the
+ * kernel refuses for any other reason, so one asked for without need counts
+ * as a refusal.  False means a rule was refused, or @handled names a
+ * permission this has no rule for: the ruleset still denies what it handles,
+ * and the caller has to close it.
+ */
+bool landlock_allow_permissions(int ruleset_fd, __u64 handled)
+{
+#ifdef __NR_landlock_add_rule
+	struct landlock_permission_attr rule = { .allowed = ~0ULL };
+
+	if (handled & ~(LANDLOCK_PERMISSION_NAMESPACE_USE |
+			LANDLOCK_PERMISSION_CAPABILITY_USE)) {
+		errno = EINVAL;
+		return false;
+	}
+
+	if (handled & LANDLOCK_PERMISSION_NAMESPACE_USE) {
+		rule.permissions = LANDLOCK_PERMISSION_NAMESPACE_USE;
+		if (trinity_raw_syscall(__NR_landlock_add_rule, ruleset_fd,
+				LANDLOCK_RULE_NAMESPACE_COMPAT, &rule, 0) != 0)
+			return false;
+	}
+	if (handled & LANDLOCK_PERMISSION_CAPABILITY_USE) {
+		rule.permissions = LANDLOCK_PERMISSION_CAPABILITY_USE;
+		if (trinity_raw_syscall(__NR_landlock_add_rule, ruleset_fd,
+				LANDLOCK_RULE_CAPABILITY_COMPAT, &rule, 0) != 0)
+			return false;
+	}
+	return true;
+#else
+	(void) ruleset_fd;
+	if (handled == 0)
+		return true;
+	errno = ENOSYS;
+	return false;
+#endif
+}
 
 /*
  * Add a few path-beneath rules to the landlock ruleset so it
@@ -90,15 +142,18 @@ static void arm_landlock(int ruleset_fd)
 /* Bytes of struct landlock_ruleset_attr valid for each ABI version.
  * ABI v1–v3 only have handled_access_fs (8 bytes).
  * ABI v4+ adds handled_access_net (16 bytes).
- * ABI v5+ adds scoped (24 bytes). */
+ * ABI v5+ adds scoped (24 bytes).
+ * ABI v10+ adds the quiet masks (48 bytes), v12+ handled_permissions (56). */
 #define LANDLOCK_ATTR_SIZE_V1  (sizeof(__u64))
 #define LANDLOCK_ATTR_SIZE_V4  (sizeof(__u64) * 2)
-#define LANDLOCK_ATTR_SIZE_V5  (sizeof(struct landlock_ruleset_attr))
+#define LANDLOCK_ATTR_SIZE_V5  \
+	offsetof(struct landlock_ruleset_attr_abi12, quiet_access_fs)
+#define LANDLOCK_ATTR_SIZE_V12 (sizeof(struct landlock_ruleset_attr_abi12))
 
 static int open_landlock_fd(void)
 {
 #ifdef __NR_landlock_create_ruleset
-	struct landlock_ruleset_attr attr;
+	struct landlock_ruleset_attr_abi12 attr;
 	struct object *obj;
 	size_t attr_size;
 	int abi, fd;
@@ -116,7 +171,12 @@ static int open_landlock_fd(void)
 
 	memset(&attr, 0, sizeof(attr));
 
-	if (abi >= 5) {
+	if (abi >= 12) {
+		attr.handled_access_fs = LANDLOCK_FS_ABI5;
+		attr.handled_permissions = LANDLOCK_PERMISSION_NAMESPACE_USE |
+					   LANDLOCK_PERMISSION_CAPABILITY_USE;
+		attr_size = LANDLOCK_ATTR_SIZE_V12;
+	} else if (abi >= 5) {
 		attr.handled_access_fs = LANDLOCK_FS_ABI5;
 		attr_size = LANDLOCK_ATTR_SIZE_V5;
 	} else if (abi >= 3) {
@@ -150,6 +210,18 @@ static int open_landlock_fd(void)
 		return false;
 	}
 
+	/* A ruleset that handles a permission and allows none of it must not
+	 * reach the pool, so a refused rule costs the provider its ruleset. */
+	if (!landlock_allow_permissions(fd, attr.handled_permissions)) {
+		int err = errno;
+
+		outputerr("open_landlock_fd: landlock_add_rule(abi=%d) refused a permission rule: %s\n",
+			abi, strerror(err));
+		close(fd);
+		fd_provider_init_fail(FD_INIT_REASON_ERRNO, err,
+				      "landlock_add_rule");
+		return false;
+	}
 	arm_landlock(fd);
 
 	obj = alloc_object();

@@ -56,4 +56,25 @@ struct landlock_permission_attr {
 _Static_assert(sizeof(struct landlock_permission_attr) == 24,
 	       "the permission rules are three u64s");
 
+/*
+ * struct landlock_ruleset_attr as ABI 12 has it: the access masks, the quiet
+ * masks that must be subsets of them, and the permissions the ruleset
+ * handles.  A host header stops at @scoped, or at @quiet_scoped, so the layout
+ * is kept here under a name of its own.
+ */
+struct landlock_ruleset_attr_abi12 {
+	__u64 handled_access_fs;
+	__u64 handled_access_net;
+	__u64 scoped;
+	__u64 quiet_access_fs;
+	__u64 quiet_access_net;
+	__u64 quiet_scoped;
+	__u64 handled_permissions;
+};
+_Static_assert(sizeof(struct landlock_ruleset_attr_abi12) == 56,
+	       "the ABI 12 ruleset attr is seven u64s");
+_Static_assert(offsetof(struct landlock_ruleset_attr_abi12,
+			handled_permissions) == 48,
+	       "handled_permissions moved");
+
 #endif

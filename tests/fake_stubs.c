@@ -136,6 +136,10 @@ int get_random_fd(void)
 	abort();
 }
 
+/* Owned by main/params/state.c.  No -x in a test run, so the gate
+ * trinity_raw_syscall() consults before it issues a syscall stays open. */
+bool do_exclude_syscall;
+
 void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 				    const struct struct_desc *desc,
 				    struct syscallrecord *rec)
