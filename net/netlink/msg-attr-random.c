@@ -51,12 +51,6 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /* Same shape as gen_rta_neightbl_payload above: declaration inline
- * here to keep the rtnl_prefix wire-up confined to the two TUs that
- * actually need it. */
-size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
-			      unsigned short nla_type);
-
-/* Same shape as gen_rta_neightbl_payload above: declaration inline
  * here to keep the rtnl_nsid wire-up confined to the two TUs that
  * actually need it. */
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
@@ -97,7 +91,6 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 6:
 	case 7: return gen_rta_tc_payload(p, avail, nla_type);
 	case 8: return gen_rta_action_payload(p, avail, nla_type);
-	case 9: return gen_rta_prefix_payload(p, avail, nla_type);
 	case 12: return gen_rta_neightbl_payload(p, avail, nla_type);
 	case 14: return gen_rta_addrlabel_payload(p, avail, nla_type);
 	case 15: return gen_rta_dcb_payload(p, avail, nla_type);
@@ -130,16 +123,6 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 11: /* RTM_GETANYCAST */
 		return gen_rta_addr_payload(p, avail, nla_type, family);
 
-	/*
-	 * Group 13: RTM_NEWNDUSEROPT (=68).  Purely a kernel-to-user
-	 * notification; the kernel sends it when Neighbor Discovery
-	 * processes Router Advertisement user options
-	 * (net/ipv6/ndisc.c, ndisc_send_nduseropt).  No userspace .doit
-	 * or .dumpit handler is registered; a sendmsg from userspace
-	 * would be rejected by rtnetlink before any RTA is parsed.
-	 */
-	case 13: /* RTM_NEWNDUSEROPT - kernel-to-user notify only */
-		/* fall through */
 	default: return 0;
 	}
 }

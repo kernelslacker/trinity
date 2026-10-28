@@ -5,7 +5,6 @@
  * the message reaches the attribute walker.
  */
 #include <sys/socket.h>
-#include <arpa/inet.h>
 #include <stddef.h>
 #include <string.h>
 #include <linux/netlink.h>
@@ -197,24 +196,6 @@ static size_t gen_rtnl_body_action(unsigned char *body, size_t buflen, unsigned 
 	return sizeof(tca);
 }
 
-/* RTM_*PREFIX: struct prefixmsg */
-static size_t gen_rtnl_body_prefix(unsigned char *body, size_t buflen, unsigned char *out_family)
-{
-	struct prefixmsg pmsg;
-
-	if (sizeof(pmsg) > buflen)
-		return 0;
-	memset(&pmsg, 0, sizeof(pmsg));
-	pmsg.prefix_family = rand_family();
-	pmsg.prefix_ifindex = rnd_modulo_u32(64);
-	pmsg.prefix_type = rnd_modulo_u32(256);
-	pmsg.prefix_len = rnd_modulo_u32(129);
-	pmsg.prefix_flags = rnd_modulo_u32(256);
-	*out_family = pmsg.prefix_family;
-	memcpy(body, &pmsg, sizeof(pmsg));
-	return sizeof(pmsg);
-}
-
 /* RTM_*NEIGHTBL: struct ndtmsg */
 static size_t gen_rtnl_body_neightbl(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
@@ -227,24 +208,6 @@ static size_t gen_rtnl_body_neightbl(unsigned char *body, size_t buflen, unsigne
 	*out_family = ndt.ndtm_family;
 	memcpy(body, &ndt, sizeof(ndt));
 	return sizeof(ndt);
-}
-
-/* RTM_*NDUSEROPT: struct nduseroptmsg */
-static size_t gen_rtnl_body_nduseropt(unsigned char *body, size_t buflen, unsigned char *out_family)
-{
-	struct nduseroptmsg ndu;
-
-	if (sizeof(ndu) > buflen)
-		return 0;
-	memset(&ndu, 0, sizeof(ndu));
-	ndu.nduseropt_family = rand_family();
-	ndu.nduseropt_opts_len = htons(rnd_modulo_u32(256));
-	ndu.nduseropt_ifindex = rand32();
-	ndu.nduseropt_icmp_type = rnd_modulo_u32(256);
-	ndu.nduseropt_icmp_code = rnd_modulo_u32(256);
-	*out_family = ndu.nduseropt_family;
-	memcpy(body, &ndu, sizeof(ndu));
-	return sizeof(ndu);
 }
 
 /* RTM_*ADDRLABEL: struct ifaddrlblmsg */
@@ -440,12 +403,10 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 3:  return gen_rtnl_body_neigh(body, buflen, out_family);
 	case 4:  return gen_rtnl_body_rule(body, buflen, out_family);
 	case 8:  return gen_rtnl_body_action(body, buflen, out_family);
-	case 9:  return gen_rtnl_body_prefix(body, buflen, out_family);
 	case 10: /* RTM_*MULTICAST */
 	case 11: /* RTM_*ANYCAST */
 		return gen_rtnl_body_addr_dump(body, buflen, group == 11, out_family);
 	case 12: return gen_rtnl_body_neightbl(body, buflen, out_family);
-	case 13: return gen_rtnl_body_nduseropt(body, buflen, out_family);
 	case 14: return gen_rtnl_body_addrlabel(body, buflen, out_family);
 	case 15: return gen_rtnl_body_dcb(body, buflen, out_family);
 	case 16: return gen_rtnl_body_netconf(body, buflen, out_family);

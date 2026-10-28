@@ -1,6 +1,6 @@
 /*
- * Rtnetlink payload builders for the route, rule, nexthop, prefix, nsid and
- * chain groups.
+ * Rtnetlink payload builders for the route, rule, nexthop, nsid and chain
+ * groups.
  */
 #include <sys/socket.h>
 #include <stddef.h>
@@ -29,8 +29,6 @@
  * these self-declarations satisfy -Wmissing-prototypes without
  * widening the per-family wire-up beyond the two TUs that need it
  * (this file and msg-core.c). */
-size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
-			      unsigned short nla_type);
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type);
 size_t gen_rta_chain_payload(unsigned char *p, size_t avail,
@@ -378,51 +376,6 @@ size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
 		}
 		return written;
 	}
-
-	default:
-		return 0;
-	}
-}
-
-/*
- * Generate a structured payload for prefix-information rtnetlink
- * attributes (PREFIX_*).  Covers the RTM_*PREFIX message group (9),
- * emitted by the kernel from net/ipv6/addrconf.c::inet6_prefix_notify
- * on receipt of an IPv6 Router Advertisement carrying a Prefix
- * Information option.  The two non-UNSPEC slots in the kernel's
- * enum -- PREFIX_ADDRESS and PREFIX_CACHEINFO -- are fixed-width:
- * PREFIX_ADDRESS is a 16-byte struct in6_addr (the advertised prefix)
- * and PREFIX_CACHEINFO is a struct prefix_cacheinfo carrying two u32
- * lifetimes (preferred_time, valid_time).  A random-byte payload of
- * length [0, 64) almost never lands at exactly 16 / 8 bytes wide, so
- * a length-checking parse would reject the message before the per-attr
- * writers run.  Size both to the struct widths so the parse reaches
- * the value-carrying path.
- */
-size_t gen_rta_prefix_payload(unsigned char *p, size_t avail,
-			      unsigned short nla_type)
-{
-	switch (nla_type) {
-	case PREFIX_ADDRESS:
-		if (avail >= sizeof(struct in6_addr)) {
-			struct in6_addr addr;
-
-			rand_ipv6(&addr);
-			memcpy(p, &addr, sizeof(addr));
-			return sizeof(addr);
-		}
-		return 0;
-
-	case PREFIX_CACHEINFO:
-		if (avail >= sizeof(struct prefix_cacheinfo)) {
-			struct prefix_cacheinfo ci;
-
-			ci.preferred_time = rand32();
-			ci.valid_time = rand32();
-			memcpy(p, &ci, sizeof(ci));
-			return sizeof(ci);
-		}
-		return 0;
 
 	default:
 		return 0;
