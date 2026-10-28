@@ -22,11 +22,13 @@
 #include "objects.h"		/* struct bpfobj */
 #include "rnd.h"
 #include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
+#include "struct_catalog.h"	/* struct union_variant */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_bpf */
 #include "utils.h"		/* ARRAY_SIZE */
 
 #include "net/bpf/ebpf-internal.h"
+#include "struct_catalog-internal.h"	/* bpf_attr_variants */
 #include "syscalls/bpf-internal.h"
 
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
@@ -1069,6 +1071,71 @@ static void map_elem_draws_reach_the_maps_code(void)
 	fake_get_rand_bpf_map = NULL;
 }
 
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+/*
+ * bpf_tracing_multi_attach() reads link_create.tracing_multi.ids, .cookies
+ * and .cnt, and only for the three attach types is_tracing_multi() names;
+ * every other tracing type goes through bpf_tracing_prog_attach().  So the
+ * catalog's sub-variant of LINK_CREATE for those three fills those three
+ * members, the two arrays under the one count and nothing past it, and no
+ * other attach type resolves to it.
+ */
+static void link_create_catalog_has_the_tracing_multi_tail(void)
+{
+	const struct union_variant *outer = NULL;
+	static union bpf_attr attr;
+	unsigned int i, multi = 0;
+
+	for (i = 0; i < ARRAY_SIZE(bpf_attr_variants); i++) {
+		if (bpf_attr_variants[i].name != NULL &&
+		    strcmp(bpf_attr_variants[i].name, "LINK_CREATE") == 0)
+			outer = &bpf_attr_variants[i];
+	}
+	check("the catalog has no LINK_CREATE variant", "tracing multi",
+	      outer != NULL);
+	if (outer == NULL)
+		return;
+
+	for (i = 0; i < bpf_attach_types_count; i++) {
+		unsigned long type = bpf_attach_types[i];
+		bool is_multi = type == BPF_TRACE_FENTRY_MULTI ||
+				type == BPF_TRACE_FEXIT_MULTI ||
+				type == BPF_TRACE_FSESSION_MULTI;
+		const struct union_variant *nested;
+
+		attr.link_create.attach_type = type;
+		nested = struct_desc_resolve_nested_variant(outer,
+					(const unsigned char *) &attr,
+					sizeof(attr));
+		if (nested == NULL || strcmp(nested->name,
+					     "LINK_CREATE/TRACING_MULTI") != 0) {
+			check("a tracing_multi attach type has another tail",
+			      "tracing multi", !is_multi);
+			continue;
+		}
+		check("another attach type takes the tracing_multi tail",
+		      "tracing multi", is_multi);
+		multi++;
+
+		check("the tail is not the ids, cookies and cnt",
+		      "tracing multi", nested->num_fields == 3 &&
+		      nested->fields[0].offset ==
+		      offsetof(union bpf_attr, link_create.tracing_multi.ids) &&
+		      nested->fields[1].offset ==
+		      offsetof(union bpf_attr, link_create.tracing_multi.cookies) &&
+		      nested->fields[2].offset ==
+		      offsetof(union bpf_attr, link_create.tracing_multi.cnt) &&
+		      nested->fields[2].tag == FT_LEN_COUNT);
+		check("the tail's size stops short of cnt", "tracing multi",
+		      nested->effective_size ==
+		      offsetof(union bpf_attr, link_create.tracing_multi.cnt) +
+		      sizeof(attr.link_create.tracing_multi.cnt));
+	}
+	check("not all three tracing_multi attach types are drawn",
+	      "tracing multi", multi == 3);
+}
+#endif /* USE_BPF_LINK_CREATE_TRACING_MULTI */
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -1083,6 +1150,9 @@ void bpf_gen_self_check(void)
 	prog_load_draws_flags_the_kernel_takes();
 	common_attr_follows_the_kernels_rules();
 	map_elem_draws_reach_the_maps_code();
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+	link_create_catalog_has_the_tracing_multi_tail();
+#endif
 
 	if (failed != 0)
 		BUG("a bpf sanitiser or generator drew what the kernel does not take");

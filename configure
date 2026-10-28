@@ -503,6 +503,32 @@ else
 fi
 
 #############################################################################################
+# Does linux/bpf.h give union bpf_attr the link_create.tracing_multi member
+# (BPF_TRACE_FENTRY_MULTI and its two siblings, added in 7.4)
+#
+echo -n "[*] Checking if bpf_attr has link_create.tracing_multi.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .link_create.tracing_multi.cnt = 0 };
+	return a.link_create.tracing_multi.cnt;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_LINK_CREATE_TRACING_MULTI 1" >> $CONFIGH
+fi
+
+#############################################################################################
 # Does linux/iommufd.h give the IOMMU_HWPT_ALLOC_PASID flag
 # (added in 6.14). The flag is an enum value, not a #define, so we
 # need a compile test rather than #ifdef.
