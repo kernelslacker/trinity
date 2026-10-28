@@ -528,9 +528,6 @@
 #ifndef SOL_UDPLITE
 #define SOL_UDPLITE	136
 #endif
-#ifndef SOL_DCCP
-#define SOL_DCCP	269
-#endif
 
 /* linux/socket.h */
 #ifndef MSG_SPLICE_PAGES

@@ -328,7 +328,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_UDP] = { .sol = SOL_UDP, .func = &udp_setsockopt },
 	[IPPROTO_IDP] = { .func = NULL },
 	[IPPROTO_TP] = { .func = NULL },
-	[IPPROTO_DCCP] = { .sol = SOL_DCCP, .func = &dccp_setsockopt },
+	[IPPROTO_DCCP] = { .func = NULL },
 #ifdef USE_IPV6
 	[IPPROTO_IPV6] = { .sol = SOL_IPV6, .func = &icmpv6_setsockopt },
 #endif
@@ -469,8 +469,6 @@ static struct socket_triplet ipv4_triplets[] = {
 	{ .family = PF_INET, .protocol = IPPROTO_MPTCP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET, .protocol = IPPROTO_UDP, .type = SOCK_DGRAM },
-
-	{ .family = PF_INET, .protocol = IPPROTO_DCCP, .type = SOCK_DCCP },
 
 	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
 	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_STREAM },

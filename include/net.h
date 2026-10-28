@@ -116,5 +116,4 @@ void udplite_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void icmpv6_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void sctp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void raw_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
-void dccp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
 void mptcp_setsockopt(struct sockopt *so, struct socket_triplet *triplet);

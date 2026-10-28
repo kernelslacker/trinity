@@ -143,7 +143,7 @@ static void pick_invalid_protocol(struct socket_triplet *st)
 
 void rand_proto_type(struct socket_triplet *st)
 {
-	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_DCCP, SOCK_PACKET };
+	int types[] = { SOCK_STREAM, SOCK_DGRAM, SOCK_RAW, SOCK_RDM, SOCK_SEQPACKET, SOCK_PACKET };
 
 	st->type = RAND_ARRAY(types);
 	st->protocol = 0;
