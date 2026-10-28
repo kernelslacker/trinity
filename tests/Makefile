@@ -240,6 +240,8 @@ REAL_SRCS	:= \
 # ioctls/socket.c, epoll.c and perf_event.c bring the other groups that
 # name a typed-fd class, whose fd_test the same test runs against fake
 # object pools.
+# ioctls/ext.c brings the ext group, whose sanitiser ioctl_args_test.c runs
+# with the drm group's, for the args they build; its fd_test is not run.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c and
 # syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler
 # and the recv family, whose post handlers post_oracle_test.c drives
@@ -314,6 +316,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/socket.c \
 	$(TOP)/ioctls/epoll.c \
 	$(TOP)/ioctls/perf_event.c \
+	$(TOP)/ioctls/ext.c \
 	$(TOP)/syscalls/ioctl.c \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
