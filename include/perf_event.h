@@ -13,6 +13,7 @@
  *
  * For licencing details see kernel-base/COPYING
  */
+#include <stddef.h>
 #include <linux/types.h>
 #include <linux/ioctl.h>
 #include <asm/byteorder.h>
@@ -297,8 +298,9 @@ enum {
  */
 enum perf_sample_regs_abi {
 	PERF_SAMPLE_REGS_ABI_NONE	= 0,
-	PERF_SAMPLE_REGS_ABI_32		= 1,
-	PERF_SAMPLE_REGS_ABI_64		= 2,
+	PERF_SAMPLE_REGS_ABI_32		= (1 << 0),
+	PERF_SAMPLE_REGS_ABI_64		= (1 << 1),
+	PERF_SAMPLE_REGS_ABI_SIMD	= (1 << 2),
 };
 
 /*
@@ -364,6 +366,7 @@ enum perf_event_read_format {
 #define PERF_ATTR_SIZE_VER7	128	/* add: sig_data */
 #define PERF_ATTR_SIZE_VER8	136	/* add: config3 */
 #define PERF_ATTR_SIZE_VER9	144	/* add: config4 */
+#define PERF_ATTR_SIZE_VER10	176	/* add: sample_simd_{vec|pred}_reg_* */
 
 /*
  * Hardware event_id to monitor via a performance monitoring event:
@@ -496,7 +499,52 @@ struct perf_event_attr {
 	__u64	sig_data;
 	__u64	config3;	/* extension of config2 */
 	__u64	config4;	/* extension of config3 */
+
+	/*
+	 * Defines the sampling SIMD/PRED(predicate) registers bitmap and
+	 * qwords (8 bytes) length.
+	 *
+	 * sample_simd_regs_enabled != 0 indicates there are SIMD/PRED
+	 * registers to be sampled, the SIMD/PRED registers bitmap and
+	 * qwords length are represented in
+	 * sample_simd_{vec|pred}_reg_{intr|user} and
+	 * sample_simd_{vec|pred}_reg_qwords fields separately.
+	 *
+	 * sample_simd_regs_enabled == 0 indicates no SIMD/PRED registers
+	 * are sampled.
+	 */
+	__u16	sample_simd_regs_enabled;
+	__u16	sample_simd_pred_reg_qwords;
+	__u16	sample_simd_vec_reg_qwords;
+	__u16	__reserved_4;
+
+	__u32	sample_simd_pred_reg_intr;
+	__u32	sample_simd_pred_reg_user;
+	__u64	sample_simd_vec_reg_intr;
+	__u64	sample_simd_vec_reg_user;
 };
+
+/*
+ * The layout of the uapi header, held at build time: perf_event_open()
+ * reads the VER10 tail from these offsets, so a field that slid would be
+ * sent to the kernel as something else without a word.
+ */
+_Static_assert(sizeof(struct perf_event_attr) == PERF_ATTR_SIZE_VER10,
+	       "struct perf_event_attr is not the VER10 size");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_regs_enabled) ==
+	       PERF_ATTR_SIZE_VER9, "sample_simd_regs_enabled moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_pred_reg_qwords) ==
+	       146, "sample_simd_pred_reg_qwords moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_vec_reg_qwords) ==
+	       148, "sample_simd_vec_reg_qwords moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_pred_reg_intr) ==
+	       152, "sample_simd_pred_reg_intr moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_pred_reg_user) ==
+	       156, "sample_simd_pred_reg_user moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_vec_reg_intr) ==
+	       160, "sample_simd_vec_reg_intr moved");
+_Static_assert(offsetof(struct perf_event_attr, sample_simd_vec_reg_user) ==
+	       168, "sample_simd_vec_reg_user moved");
 
 #define perf_flags(attr)	(*(&(attr)->read_format + 1))
 
@@ -885,7 +933,15 @@ enum perf_event_type {
 	 *        { u64 from, to, flags } lbr[nr];} && PERF_SAMPLE_BRANCH_STACK
 	 *
 	 * 	{ u64			abi; # enum perf_sample_regs_abi
-	 * 	  u64			regs[weight(mask)]; } && PERF_SAMPLE_REGS_USER
+	 * 	  u64			regs[weight(mask)];
+	 * 	  struct {
+	 * 		u64 nr_vectors;		# 0 ... weight(sample_simd_vec_reg_user)
+	 * 		u64 vector_qwords;	# 0 ... sample_simd_vec_reg_qwords
+	 * 		u64 nr_pred;		# 0 ... weight(sample_simd_pred_reg_user)
+	 * 		u64 pred_qwords;	# 0 ... sample_simd_pred_reg_qwords
+	 * 		u64 data[nr_vectors * vector_qwords + nr_pred * pred_qwords];
+	 * 	  } && (abi & PERF_SAMPLE_REGS_ABI_SIMD)
+	 * 	} && PERF_SAMPLE_REGS_USER
 	 *
 	 * 	{ u64			size;
 	 * 	  char			data[size];
@@ -895,7 +951,15 @@ enum perf_event_type {
 	 *	{ u64			data_src; } && PERF_SAMPLE_DATA_SRC
 	 *	{ u64			transaction; } && PERF_SAMPLE_TRANSACTION
 	 *	{ u64			abi; # enum perf_sample_regs_abi
-	 *	  u64			regs[weight(mask)]; } && PERF_SAMPLE_REGS_INTR
+	 *	  u64			regs[weight(mask)];
+	 *	  struct {
+	 *		u64 nr_vectors;		# 0 ... weight(sample_simd_vec_reg_intr)
+	 *		u64 vector_qwords;	# 0 ... sample_simd_vec_reg_qwords
+	 *		u64 nr_pred;		# 0 ... weight(sample_simd_pred_reg_intr)
+	 *		u64 pred_qwords;	# 0 ... sample_simd_pred_reg_qwords
+	 *		u64 data[nr_vectors * vector_qwords + nr_pred * pred_qwords];
+	 *	  } && (abi & PERF_SAMPLE_REGS_ABI_SIMD)
+	 *	} && PERF_SAMPLE_REGS_INTR
 	 *	{ u64			phys_addr;} && PERF_SAMPLE_PHYS_ADDR
 	 * };
 	 */

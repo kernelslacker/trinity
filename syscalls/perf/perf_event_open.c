@@ -36,7 +36,7 @@
  * Pre-ksize ABI floors for the csfu UNDERSIZE bucket.  The kernel
  * accepts a perf_event_open call whose attr->size matches any prior
  * ABI version and zero-pads the remainder.  build_csfu_struct()
- * draws uniformly from this pool for UNDERSIZE; PERF_ATTR_SIZE_VER9
+ * draws uniformly from this pool for UNDERSIZE; PERF_ATTR_SIZE_VER10
  * equals sizeof(struct perf_event_attr) on a current kernel and is
  * kept in the pool so the table stays self-documenting and remains
  * correct once the kernel grows a further ABI version.
@@ -52,6 +52,7 @@ static const size_t perf_event_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER7,
 	PERF_ATTR_SIZE_VER8,
 	PERF_ATTR_SIZE_VER9,
+	PERF_ATTR_SIZE_VER10,
 };
 
 static const struct csfu_desc desc_perf_event_attr = {

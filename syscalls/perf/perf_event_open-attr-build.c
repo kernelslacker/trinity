@@ -331,6 +331,15 @@ void maybe_fill_perf_attr_body(struct perf_event_attr *attr,
 	if (bucket != CSFU_BUCKET_EXACT)
 		return;
 
+	/*
+	 * The EXACT size is sizeof(struct perf_event_attr), which holds the
+	 * VER10 tail the builders below leave zero.  A kernel that predates
+	 * VER10 takes a longer size when the extra bytes are zero and
+	 * answers -E2BIG when they are not, so the body declares the size
+	 * it fills.
+	 */
+	attr->size = PERF_ATTR_SIZE_VER9;
+
 	switch (rnd_modulo_u32(4)) {
 	case 0:
 		create_mostly_valid_counting_event(attr, group_leader);

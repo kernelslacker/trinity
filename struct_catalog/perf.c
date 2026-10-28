@@ -77,6 +77,7 @@ static const unsigned long perf_attr_known_sizes[] = {
 	PERF_ATTR_SIZE_VER7,
 	PERF_ATTR_SIZE_VER8,
 	PERF_ATTR_SIZE_VER9,
+	PERF_ATTR_SIZE_VER10,
 };
 
 /*
@@ -206,6 +207,18 @@ static const unsigned long clockid_values[] = {
  */
 #define PERF_AUX_ACTION_MASK ((1UL << 0) | (1UL << 1) | (1UL << 2))
 
+/*
+ * SIMD register sampling (VER10).  sample_simd_regs_enabled != 0 turns it
+ * on, and perf_simd_reg_validate() on x86 then takes a vector width of 2, 4
+ * or 8 qwords (XMM, YMM, ZMM), an opmask width of 1, and a mask that names
+ * every register of the width or none of them: the low 16 bits for XMM and
+ * YMM, the low 32 for ZMM, all 8 of k0..k7 for the opmask.
+ */
+static const unsigned long simd_vec_qwords_values[] = { 0, 2, 4, 8 };
+static const unsigned long simd_pred_qwords_values[] = { 0, 1 };
+static const unsigned long simd_vec_mask_values[] = { 0, 0xffff, 0xffffffff };
+static const unsigned long simd_pred_mask_values[] = { 0, 0xff };
+
 const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N] = {
 	FIELDX(struct perf_event_attr, type, FT_ENUM,
 	       .u.enum_ = { perf_type_values, ARRAY_SIZE(perf_type_values) },
@@ -285,6 +298,34 @@ const struct struct_field perf_event_attr_fields[PERF_EVENT_ATTR_FIELDS_N] = {
 	       .mutate_weight = 60),
 	FIELD(struct perf_event_attr, sig_data),
 	FIELD(struct perf_event_attr, config3),
+	FIELD(struct perf_event_attr, config4),
+	FIELDX(struct perf_event_attr, sample_simd_regs_enabled, FT_RANGE,
+	       .u.range = { 0, 1 },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_pred_reg_qwords, FT_ENUM,
+	       .u.enum_ = { simd_pred_qwords_values,
+			    ARRAY_SIZE(simd_pred_qwords_values) },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_vec_reg_qwords, FT_ENUM,
+	       .u.enum_ = { simd_vec_qwords_values,
+			    ARRAY_SIZE(simd_vec_qwords_values) },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_pred_reg_intr, FT_ENUM,
+	       .u.enum_ = { simd_pred_mask_values,
+			    ARRAY_SIZE(simd_pred_mask_values) },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_pred_reg_user, FT_ENUM,
+	       .u.enum_ = { simd_pred_mask_values,
+			    ARRAY_SIZE(simd_pred_mask_values) },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_vec_reg_intr, FT_ENUM,
+	       .u.enum_ = { simd_vec_mask_values,
+			    ARRAY_SIZE(simd_vec_mask_values) },
+	       .mutate_weight = 60),
+	FIELDX(struct perf_event_attr, sample_simd_vec_reg_user, FT_ENUM,
+	       .u.enum_ = { simd_vec_mask_values,
+			    ARRAY_SIZE(simd_vec_mask_values) },
+	       .mutate_weight = 60),
 };
 
 /*

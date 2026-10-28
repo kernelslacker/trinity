@@ -630,13 +630,15 @@ FAKE_SRCS	+= maps_pick_test.c
 # syscalls/perf/ brings the perf_event_attr body builders, linked for
 # maybe_fill_perf_attr_body() with the sample, tuple and config pickers it
 # draws from and the PMU table those read, which stays empty here.
+# struct_catalog/perf.c brings the field rows that describe the struct.
 # perf_attr_test.c fills attrs through that entry point and holds them to the
-# rules perf_copy_attr() applies.
+# rules perf_copy_attr() applies, and the rows to the struct.
 PARENT_SRCS	+= $(TOP)/syscalls/perf/perf_event_open-attr-build.c \
 		   $(TOP)/syscalls/perf/perf_event_open-config-picker.c \
 		   $(TOP)/syscalls/perf/perf_event_open-pmu-discovery.c \
 		   $(TOP)/syscalls/perf/perf_event_open-sample-flags.c \
-		   $(TOP)/syscalls/perf/perf_event_open-tuples.c
+		   $(TOP)/syscalls/perf/perf_event_open-tuples.c \
+		   $(TOP)/struct_catalog/perf.c
 FAKE_SRCS	+= perf_attr_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

@@ -12,6 +12,7 @@
 #include "csfu.h"
 #include "debug.h"		/* BUG */
 #include "perf_event.h"
+#include "struct_catalog-internal.h"	/* perf_event_attr_fields */
 #include "syscalls/perf/perf_event_open-internal.h"
 
 void perf_attr_self_check(void);
@@ -64,9 +65,74 @@ static void check_regs_intr(void)
 	       accepted);
 }
 
+/*
+ * perf_event_open() has no size argument: the kernel takes attr->size, which
+ * the sanitiser plants from the csfu bucket, and for the EXACT bucket that is
+ * sizeof(struct perf_event_attr), VER10 now.  A kernel that predates the VER10
+ * tail takes a longer size only when the extra bytes are zero, so the body
+ * has to declare the size it fills: VER9 while the tail is empty, VER10 once
+ * a builder has drawn into it.
+ */
+static void check_declared_size(void)
+{
+	unsigned char buf[PERF_ATTR_SIZE_VER10 + 32];
+	struct perf_event_attr *attr = (struct perf_event_attr *) buf;
+	unsigned long ver9 = 0, i;
+	unsigned int b;
+
+	for (i = 0; i < NR_ATTRS; i++) {
+		bool tail_set = false;
+
+		memset(buf, 0, sizeof(buf));
+		attr->size = PERF_ATTR_SIZE_VER10;
+		maybe_fill_perf_attr_body(attr, CSFU_BUCKET_EXACT, i & 1);
+
+		for (b = PERF_ATTR_SIZE_VER9; b < PERF_ATTR_SIZE_VER10; b++)
+			tail_set |= buf[b] != 0;
+
+		if (tail_set) {
+			expect(attr->size == PERF_ATTR_SIZE_VER10,
+			       "a drawn VER10 field is declared", attr->size);
+		} else {
+			ver9++;
+			expect(attr->size == PERF_ATTR_SIZE_VER9,
+			       "an empty VER10 tail is left undeclared", attr->size);
+		}
+	}
+
+	expect(ver9 > NR_ATTRS / 2, "most attrs stay at VER9", ver9);
+}
+
+/*
+ * The struct_field rows that describe perf_event_attr stand for the whole
+ * struct: a row that is not filled in (PERF_EVENT_ATTR_FIELDS_N ran past the
+ * initialisers) has no name and no width, and rows that stop short of
+ * sizeof(struct perf_event_attr) are a header that grew without the table.
+ */
+static void check_catalog(void)
+{
+	unsigned long end = 0, i;
+
+	for (i = 0; i < PERF_EVENT_ATTR_FIELDS_N; i++) {
+		const struct struct_field *f = &perf_event_attr_fields[i];
+
+		expect(f->name != NULL && f->size != 0, "a catalog row is filled", i);
+		expect(f->offset <= sizeof(struct perf_event_attr) &&
+		       f->size <= sizeof(struct perf_event_attr) - f->offset,
+		       "a catalog row lies inside the struct", i);
+		if (f->offset + f->size > end)
+			end = f->offset + f->size;
+	}
+
+	expect(end == sizeof(struct perf_event_attr),
+	       "the catalog rows reach the end of the struct", end);
+}
+
 void perf_attr_self_check(void)
 {
 	check_regs_intr();
+	check_declared_size();
+	check_catalog();
 
 	if (failed != 0)
 		BUG("perf attr: a check failed");

@@ -428,7 +428,7 @@ extern const struct struct_field timeval_fields[TIMEVAL_FIELDS_N];
  * static const.
  */
 enum {
-	PERF_EVENT_ATTR_FIELDS_N	= 22,
+	PERF_EVENT_ATTR_FIELDS_N	= 30,
 	PERF_EVENT_ATTR_VARIANTS_N	= 6,
 };
 
