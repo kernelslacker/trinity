@@ -14,6 +14,7 @@ Largest / structurally distinct per-device files:
 - `firewire.c` — IEEE1394 character device ioctls.
 - `cdrom.c` — CDROM/ATAPI command family.
 - `binder.c` takes its requests from the uapi `<linux/android/binder.h>`, and builds only where configure finds it (`USE_BINDER`); the requests after the first seven are enum members, which configure probes, with fallbacks in `include/kernel/binder.h`.
+- `procfs-self.c` — `PROCMAP_QUERY` on `/proc/<pid>/maps`, the one group that never uses the fd it is handed. The kernel binds the mm when the file is opened, so an fd names the process that opened it, and the procfs pool was opened by the parent: the default walk of `/proc` stops at `/proc/<pid>`, so the pool has no maps file, but a `-V` walk follows symlinks and takes the parent's `/proc/self` files into it. Any regular procfs file therefore only draws the group (`fd_test` compares `st_dev` with procfs's, read off `/proc/self/maps` once) and the sanitiser opens the child's own file for each call. Those files sit in an `owned_fd_ring` (`fds/owned-fd-ring.c`), which closes the oldest once it is full; a call that cannot open its file is left on fd -1, never on the one the draw came with. The address is in a pool mapping or the program's own text, whose VMA has a name and a build id.
 
 ## Key design decisions
 
