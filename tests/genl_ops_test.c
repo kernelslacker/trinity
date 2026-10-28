@@ -1034,9 +1034,13 @@ static struct slot ethtool_stringset[] = {
 static struct slot ethtool_stringsets[] = {
 	S_NEST(ETHTOOL_A_STRINGSETS_STRINGSET, ethtool_stringset),
 };
+/* net/ethtool/ts.h: ethnl_ts_hwtst_prov_policy, whose INDEX is a range from 0
+ * to INT_MAX, since phc_index is an int and -1 means no PHC, and whose
+ * QUALIFIER is NLA_POLICY_MAX(NLA_U32, HWTSTAMP_PROVIDER_QUALIFIER_CNT - 1),
+ * the count being 2. */
 static struct slot ethtool_ts_provider[] = {
-	S_U32(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX),
-	S_U32(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER),
+	S_U32_RANGE(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX, 0, INT_MAX),
+	S_U32_RANGE(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER, 0, 1),
 };
 static struct slot ethtool_get[] = {
 	S_NEST(ETHTOOL_A_LINKINFO_HEADER, ethtool_header),

@@ -8,6 +8,7 @@
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
 
+#include <limits.h>
 #include <linux/ethtool.h>
 #include "kernel/ethtool_netlink_generated.h"
 
@@ -61,9 +62,14 @@ static const struct nla_attr_spec ethtool_stringsets_attrs[] = {
 	  ethtool_stringset_attrs, ARRAY_SIZE(ethtool_stringset_attrs) },
 };
 
+/*
+ * The provider's INDEX is a range from 0 to INT_MAX, since phc_index is an
+ * int and -1 means no PHC, and its QUALIFIER is at most
+ * HWTSTAMP_PROVIDER_QUALIFIER_CNT - 1, which is 1.
+ */
 static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
-	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX,		NLA_KIND_U32, 4 },
-	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX,		NLA_KIND_U32_RANGE, INT_MAX, 0 },
+	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER,	NLA_KIND_U32_RANGE, 1, 0 },
 };
 
 /*
