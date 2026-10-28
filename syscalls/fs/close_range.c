@@ -124,7 +124,9 @@ refuse:
  * (NR_FILE_FDS == 250) so close_range() can run for real against
  * targets the rest of the fuzzer doesn't care about.  Without this
  * the syscall sat behind AVOID_SYSCALL because every ARG_FD-derived
- * range risked closing live trinity-tracked fds.
+ * range risked closing live trinity-tracked fds.  About half the
+ * slots are close-on-exec, so CLOEXEC_ONLY finds some to close and
+ * some to leave: dup2() would clear the flag on every one.
  *
  * State is __thread so each forked child gets its own slots without
  * coordination.  Slots are populated lazily on the first sanitise
@@ -162,7 +164,7 @@ static void close_range_init_sandbox(void)
 		if (fcntl(slot, F_GETFD) != -1 || errno != EBADF)
 			break;
 
-		if (dup2(devnull, slot) != slot) {
+		if (dup3(devnull, slot, RAND_BOOL() ? O_CLOEXEC : 0) != slot) {
 			/* EMFILE / ENFILE / EINTR -- accept whatever
 			 * we managed to populate and fall through
 			 * gracefully rather than abort the sanitise. */
