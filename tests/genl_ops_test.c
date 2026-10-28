@@ -2603,6 +2603,142 @@ static struct slot ctrl_policy[] = {
 
 #define CTRL_ROUNDS	40000
 
+/* The families the canned reply resolved, and how many requests named each. */
+static struct {
+	const struct genl_family_grammar *fam;
+	unsigned int named;
+} resolved[64];
+static unsigned int n_resolved;
+
+/*
+ * What the requests of one cmd name.  A family is named by a FAMILY_ID or a
+ * FAMILY_NAME that is a resolved family's; the last of each in a request is
+ * the one the kernel reads.
+ */
+struct ctrl_names {
+	unsigned int msgs;		/* requests parsed */
+	unsigned int named;		/* ... that name a resolved family */
+	unsigned int ids, ids_ok;	/* FAMILY_ID attributes, those that do */
+	unsigned int names, names_ok;	/* the same of FAMILY_NAME */
+	unsigned int both, agree;	/* with both, those naming one family */
+	unsigned int ops, ops_ok;	/* OP beside a family, those it has */
+};
+
+static void count_named(const struct genl_family_grammar *fam)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_resolved; i++) {
+		if (resolved[i].fam == fam)
+			resolved[i].named++;
+	}
+}
+
+/* The ids and names in the stream, which has conformed, and what they name. */
+static void tally_ctrl_names(struct ctrl_names *t, const unsigned char *attrs,
+			     size_t len)
+{
+	const struct genl_family_grammar *by_id = NULL, *by_name = NULL, *fam;
+	bool have_id = false, have_name = false, have_op = false;
+	uint32_t op = 0;
+	size_t off = 0;
+	unsigned int i, j;
+
+	while (off < len) {
+		const struct nlattr *nla = (const struct nlattr *) (attrs + off);
+		const unsigned char *payload = attrs + off + NLA_HDRLEN;
+		uint16_t id;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case CTRL_ATTR_FAMILY_ID:
+			memcpy(&id, payload, sizeof(id));
+			by_id = genl_lookup_by_id(id);
+			have_id = true;
+			break;
+		case CTRL_ATTR_FAMILY_NAME:
+			by_name = NULL;
+			for (i = 0; i < n_resolved; i++) {
+				if (strcmp(resolved[i].fam->name, (const char *) payload) == 0)
+					by_name = resolved[i].fam;
+			}
+			have_name = true;
+			break;
+		case CTRL_ATTR_OP:
+			memcpy(&op, payload, sizeof(op));
+			have_op = true;
+			break;
+		}
+		off += NLA_ALIGN(nla->nla_len);
+	}
+
+	t->msgs++;
+	t->ids += have_id;
+	t->ids_ok += by_id != NULL;
+	t->names += have_name;
+	t->names_ok += by_name != NULL;
+	if (by_id != NULL || by_name != NULL)
+		t->named++;
+	if (have_id && have_name) {
+		t->both++;
+		t->agree += by_id != NULL && by_id == by_name;
+	}
+	count_named(by_id);
+	count_named(by_name);
+
+	/* The kernel reads the family from the id when there is one. */
+	fam = have_id ? by_id : by_name;
+	if (have_op && fam != NULL) {
+		t->ops++;
+		for (j = 0; j < fam->n_cmds; j++) {
+			if (fam->cmds[j].cmd == op) {
+				t->ops_ok++;
+				break;
+			}
+		}
+	}
+}
+
+static void expect_fraction(unsigned int part, unsigned int whole, double lo,
+			    double hi, const char *what, const char *bug)
+{
+	if (whole < 300 || part < whole * lo || part > whole * hi) {
+		fprintf(stderr, "%s: %u of %u, want a fraction in [%.2f, %.2f]\n",
+			what, part, whole, lo, hi);
+		BUG(bug);
+	}
+}
+
+/*
+ * A request names a resolved family, by id, by name or by both, and a
+ * GETPOLICY request with an OP asks for a cmd of that family.  The
+ * generator draws each attribute from the family it picked for the request
+ * seven times in eight and leaves the eighth random bytes, so the ids and
+ * names are a resolved family's 0.875 of the time and no more, and the two
+ * name one family 0.766 of the time they are both there.  A request has
+ * one to seven attributes about seven times in eight, each a third of the
+ * three ids (a half of the two), so it names a family 0.762 of the time
+ * for GETPOLICY and 0.834 for GETFAMILY, and the OP beside a family is one
+ * of its cmds 0.875 of the time.  Each fraction is held to a band that is
+ * five standard deviations or more from its value over the 1000 requests or
+ * so each cmd has; a request that never names a family, as the random bytes
+ * of the old table did, has none.
+ */
+static void expect_ctrl_names(const struct ctrl_names *t, double named_floor,
+			      bool has_op, const char *what)
+{
+	expect_fraction(t->named, t->msgs, named_floor, 1.0, what,
+			"genl ops: the controller is not asked about a resolved family");
+	expect_fraction(t->ids_ok, t->ids, 0.80, 0.95, what,
+			"genl ops: a FAMILY_ID is not a resolved family's seven times in eight");
+	expect_fraction(t->names_ok, t->names, 0.80, 0.95, what,
+			"genl ops: a FAMILY_NAME is not a resolved family's seven times in eight");
+	expect_fraction(t->agree, t->both, 0.65, 1.0, what,
+			"genl ops: the id and the name of a request name two families");
+	if (has_op)
+		expect_fraction(t->ops_ok, t->ops, 0.80, 0.95, what,
+				"genl ops: an OP is not a cmd of the family it is asked of");
+}
+
 /*
  * What a request to the controller carries.  Only GETFAMILY and GETPOLICY
  * have handlers; genl_family_rcv_msg() answers any other cmd before it
@@ -2627,7 +2763,18 @@ static void check_ctrl_requests(void)
 	unsigned int msgs = 0, unserved = 0;
 	unsigned int family_msgs = 0, family_dump = 0;
 	unsigned int policy_msgs = 0, policy_dump = 0;
-	unsigned int round;
+	struct ctrl_names family_names = { 0 }, policy_names = { 0 };
+	unsigned int round, id, i;
+
+	for (id = 1; id < 1024; id++) {
+		const struct genl_family_grammar *fam = genl_lookup_by_id(id);
+
+		if (fam == NULL)
+			continue;
+		if (n_resolved == ARRAY_SIZE(resolved))
+			BUG("genl ops: more resolved families than the controller check holds");
+		resolved[n_resolved++].fam = fam;
+	}
 
 	for (round = 0; round < CTRL_ROUNDS; round++) {
 		const unsigned char *attrs;
@@ -2673,6 +2820,9 @@ static void check_ctrl_requests(void)
 			hexdump(attrs, nlh->nlmsg_len - hdrs);
 			BUG("genl ops: a request to the controller carries what its policy refuses");
 		}
+		if (slots != NULL)
+			tally_ctrl_names(slots == ctrl_family ? &family_names :
+					 &policy_names, attrs, nlh->nlmsg_len - hdrs);
 next:
 		free(buf);
 	}
@@ -2695,6 +2845,16 @@ next:
 	}
 	expect_slots_seen(ctrl_family, ARRAY_SIZE(ctrl_family), "controller GETFAMILY");
 	expect_slots_seen(ctrl_policy, ARRAY_SIZE(ctrl_policy), "controller GETPOLICY");
+
+	expect_ctrl_names(&family_names, 0.75, false, "controller GETFAMILY");
+	expect_ctrl_names(&policy_names, 0.70, true, "controller GETPOLICY");
+	for (i = 0; i < n_resolved; i++) {
+		if (resolved[i].named == 0) {
+			fprintf(stderr, "controller: no request names %s\n",
+				resolved[i].fam->name);
+			BUG("genl ops: the controller is never asked about a resolved family");
+		}
+	}
 }
 
 /* ---------- Checking how a nest is filled -------------------------------- */
