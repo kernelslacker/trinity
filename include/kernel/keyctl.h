@@ -2,9 +2,13 @@
 
 /*
  * Wrapper around <linux/keyctl.h> that ships #ifndef-guarded fallbacks
- * for KEYCTL_* values added after our installed uapi header.
+ * for KEY_SPEC_* and KEYCTL_* values added after our installed uapi header.
  */
 #include <linux/keyctl.h>
+
+#ifndef KEY_SPEC_BPF_KEYRING
+#define KEY_SPEC_BPF_KEYRING		-9
+#endif
 
 #ifndef KEYCTL_GET_PERSISTENT
 #define KEYCTL_GET_PERSISTENT		22

@@ -3,12 +3,12 @@
  *         const char __user *, _description, const void __user *, _payload,
  *         size_t, plen, key_serial_t, ringid)
  */
-#include <linux/keyctl.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include "kernel/keyctl.h"
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
@@ -438,6 +438,7 @@ static unsigned long addkey_ringids[] = {
 	KEY_SPEC_GROUP_KEYRING,
 	KEY_SPEC_REQKEY_AUTH_KEY,
 	KEY_SPEC_REQUESTOR_KEYRING,
+	KEY_SPEC_BPF_KEYRING,
 };
 
 struct syscallentry syscall_add_key = {

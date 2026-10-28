@@ -3,7 +3,7 @@
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
  * pidfs namespace getters, the typed producers and epoll_create, close and
- * close_range.  Whatever object a number
+ * close_range, and the key serials keyctl pools.  Whatever object a number
  * held is retired, copy pooled or not, and a retire never closes the number.
  */
 
@@ -49,6 +49,7 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
+#include "kernel/keyctl.h"	/* KEY_SPEC_BPF_KEYRING */
 #include "kernel/socket.h"	/* SOCK_NONBLOCK */
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
@@ -3255,6 +3256,52 @@ static void epoll_create_pools_an_epoll_object(void)
 	syscall_epoll_create1.is_epoll_create1 = false;
 }
 
+/* keyctl pools the keyring GET_KEYRING_ID resolves and the key SEARCH
+ * finds, but never under KEY_SPEC_BPF_KEYRING, the kernel's own .bpf
+ * keyring, which the pool's destructor would invalidate.  The kernel
+ * reads the id as a key_serial_t, so bits above the low 32 do not hide
+ * it. */
+static void keyctl_never_pools_the_bpf_keyring(void)
+{
+	static const struct {
+		const char *name;
+		unsigned long cmd;
+		unsigned long id;
+		bool pooled;
+	} cases[] = {
+		{ "GET_KEYRING_ID(session)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_SESSION_KEYRING, true },
+		{ "SEARCH(session)", KEYCTL_SEARCH,
+		  (unsigned long) KEY_SPEC_SESSION_KEYRING, true },
+		{ "GET_KEYRING_ID(bpf)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
+		{ "SEARCH(bpf)", KEYCTL_SEARCH,
+		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
+		{ "GET_KEYRING_ID(bpf), high bits", KEYCTL_GET_KEYRING_ID,
+		  0x1fffffff7UL, false },
+	};
+	const int serial = 4242;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		struct syscallrecord rec;
+
+		reset();
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = cases[i].cmd;
+		rec.a2 = cases[i].id;
+		rec.arg_shadow[0] = cases[i].cmd;
+		rec.arg_shadow[1] = cases[i].id;
+		rec.arg_snapshot_mask = syscall_keyctl.arg_snapshot_mask;
+		rec.retval = (unsigned long) serial;
+		syscall_keyctl.post(&rec);
+		check(cases[i].pooled ? "the serial was not pooled" :
+					"the .bpf keyring's result was pooled",
+		      cases[i].name,
+		      (pool_find(serial, OBJ_KEY_SERIAL) != NULL) == cases[i].pooled);
+	}
+}
+
 #define NS_GETTERS_MAX	16
 
 /* The requests of the pidfs namespace getters, from the pidfd group's
@@ -3702,6 +3749,7 @@ void dup_pool_self_check(void)
 	typed_fd_pool_is_capped_per_type();
 	typed_fd_the_pool_cannot_own_is_closed();
 	epoll_create_pools_an_epoll_object();
+	keyctl_never_pools_the_bpf_keyring();
 	for (i = 0; i < ARRAY_SIZE(ioctl_rettypes); i++) {
 		ioctl_rettype = ioctl_rettypes[i];
 		ioctl_pools_the_ns_fd_a_getter_returned();

@@ -6,9 +6,9 @@
  * Without the sanitiser, random _type / _description pointers fail early, so
  * request_key_and_link() never runs and the key-serial pool sees no success.
  */
-#include <linux/keyctl.h>
 #include <stdio.h>
 #include <string.h>
+#include "kernel/keyctl.h"
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
@@ -29,6 +29,7 @@ static const long request_key_specs[] = {
 	KEY_SPEC_SESSION_KEYRING, KEY_SPEC_USER_KEYRING,
 	KEY_SPEC_USER_SESSION_KEYRING, KEY_SPEC_GROUP_KEYRING,
 	KEY_SPEC_REQKEY_AUTH_KEY, KEY_SPEC_REQUESTOR_KEYRING,
+	KEY_SPEC_BPF_KEYRING,
 };
 
 static long request_key_pick_destring(void)

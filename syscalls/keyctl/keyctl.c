@@ -85,6 +85,7 @@ static long key_specs[] = {
 	KEY_SPEC_SESSION_KEYRING, KEY_SPEC_USER_KEYRING,
 	KEY_SPEC_USER_SESSION_KEYRING, KEY_SPEC_GROUP_KEYRING,
 	KEY_SPEC_REQKEY_AUTH_KEY, KEY_SPEC_REQUESTOR_KEYRING,
+	KEY_SPEC_BPF_KEYRING,
 };
 
 static long random_key_id(void)
@@ -606,6 +607,11 @@ static void sanitise_keyctl(struct syscallrecord *rec)
  * KEYCTL_INSTANTIATE_IOV all return 0 on success — they operate on an
  * already-allocated key, they don't mint a new serial.  Pool teardown
  * is handled by the existing OBJ_KEY_SERIAL destructor (KEYCTL_INVALIDATE).
+ *
+ * KEY_SPEC_BPF_KEYRING names the kernel's own .bpf keyring, which every
+ * process shares and nothing re-creates, so what GET_KEYRING_ID and
+ * SEARCH return under it, that keyring or a key in it, is never pooled:
+ * the destructor would invalidate it for good.
  */
 static void post_keyctl(struct syscallrecord *rec)
 {
@@ -616,8 +622,12 @@ static void post_keyctl(struct syscallrecord *rec)
 
 	switch (get_arg_snapshot(rec, 1)) {
 	case KEYCTL_GET_KEYRING_ID:
-	case KEYCTL_JOIN_SESSION_KEYRING:
 	case KEYCTL_SEARCH:
+		/* The kernel reads the id as a key_serial_t. */
+		if ((int32_t) get_arg_snapshot(rec, 2) != KEY_SPEC_BPF_KEYRING)
+			register_key_serial((int32_t) ret);
+		break;
+	case KEYCTL_JOIN_SESSION_KEYRING:
 	case KEYCTL_GET_PERSISTENT:
 		register_key_serial((int32_t) ret);
 		break;
@@ -643,8 +653,10 @@ struct syscallentry syscall_keyctl = {
 	 * fabricated serial under the wrong cmd or skip a legitimate one;
 	 * mismatch bumps arg_shadow_stomp from inside get_arg_snapshot()
 	 * and the handler still dispatches against the cmd the kernel
-	 * actually executed. */
-	.arg_snapshot_mask = (1u << 0),
+	 * actually executed.  a2 is shadowed for the same reason: it says
+	 * whether GET_KEYRING_ID or SEARCH ran under KEY_SPEC_BPF_KEYRING,
+	 * whose result must never be pooled. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	/* sanitise_keyctl() draws the cmd itself and never reads a1, so the
 	 * ARG_OP draw, and any CMP hint pulled into it, is always thrown
 	 * away.  arg2..arg5 hold something different for every cmd, and an
