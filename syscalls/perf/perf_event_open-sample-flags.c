@@ -182,3 +182,57 @@ long long random_sample_regs(void)
 		return 1 + rnd_modulo_u32(PERF_REGS_PORTABLE);
 	}
 }
+
+/*
+ * The VER10 sample_simd_* fields, drawn the way perf_simd_reg_validate() on
+ * x86 takes them: a vector width of 2, 4 or 8 qwords (XMM, YMM, ZMM) with a
+ * mask that holds every register of that width or none, and the same for the
+ * 1-qword opmask.  The kernel reads them only for an attr whose sample_type
+ * asks for REGS_USER or REGS_INTR, so one of the two is set, and the type is
+ * cut to the bits the kernel defines and loses BRANCH_STACK and STACK_USER,
+ * whose companion fields the builders fill at random and perf_copy_attr()
+ * refuses.  Only x86_pmu_hw_config() asks for PERF_PMU_CAP_SIMD_REGS, so an
+ * event on any other PMU gets as far as the sample path with these too.  The
+ * size grows to VER10 with them: a kernel that predates it answers -E2BIG to
+ * the tail.
+ */
+void random_simd_regs(struct perf_event_attr *attr)
+{
+	unsigned int width = rnd_modulo_u32(4);		/* none, XMM, YMM, ZMM */
+	__u64 full = 0xffff;
+
+	attr->sample_type &= (PERF_SAMPLE_MAX - 1) &
+			     ~(PERF_SAMPLE_BRANCH_STACK | PERF_SAMPLE_STACK_USER);
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		attr->sample_type |= PERF_SAMPLE_REGS_USER;
+		break;
+	case 1:
+		attr->sample_type |= PERF_SAMPLE_REGS_INTR;
+		break;
+	default:
+		attr->sample_type |= PERF_SAMPLE_REGS_USER | PERF_SAMPLE_REGS_INTR;
+		break;
+	}
+	attr->sample_regs_user = random_sample_regs();
+	attr->sample_regs_intr = random_sample_regs();
+
+	attr->sample_simd_regs_enabled = ONE_IN(8) ? 1 + rnd_modulo_u32(0xffff) : 1;
+
+	if (width != 0) {
+		attr->sample_simd_vec_reg_qwords = 1 << width;
+		/* ZMM names 32 registers, XMM and YMM 16 and take the 32 too. */
+		if (width == 3 || RAND_BOOL())
+			full = 0xffffffff;
+		attr->sample_simd_vec_reg_intr = ONE_IN(4) ? 0 : full;
+		attr->sample_simd_vec_reg_user = ONE_IN(4) ? 0 : full;
+	}
+
+	if (RAND_BOOL()) {
+		attr->sample_simd_pred_reg_qwords = 1;
+		attr->sample_simd_pred_reg_intr = ONE_IN(4) ? 0 : 0xff;
+		attr->sample_simd_pred_reg_user = ONE_IN(4) ? 0 : 0xff;
+	}
+
+	attr->size = PERF_ATTR_SIZE_VER10;
+}

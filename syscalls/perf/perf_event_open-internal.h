@@ -82,6 +82,7 @@ long long random_sample_type(void);
 long long random_read_format(void);
 long long random_branch_sample_type(void);
 long long random_sample_regs(void);
+void random_simd_regs(struct perf_event_attr *attr);
 
 bool pick_perf_tuple(struct perf_event_attr *attr);
 

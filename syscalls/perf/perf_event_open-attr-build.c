@@ -211,6 +211,9 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 
 	attr->aux_watermark = rand32();
 	attr->sample_max_stack = rand32();
+
+	if (ONE_IN(4))
+		random_simd_regs(attr);
 }
 
 
@@ -314,6 +317,17 @@ static void create_random_event(struct perf_event_attr *attr)
 		attr->sample_regs_intr = random_sample_regs();
 	attr->sample_stack_user = rand32();
 
+	/* The VER10 tail, whole and at random; the size has to reach it. */
+	if (ONE_IN(4)) {
+		attr->sample_simd_regs_enabled = rand32();
+		attr->sample_simd_pred_reg_qwords = rand32();
+		attr->sample_simd_vec_reg_qwords = rand32();
+		attr->sample_simd_pred_reg_intr = rand32();
+		attr->sample_simd_pred_reg_user = rand32();
+		attr->sample_simd_vec_reg_intr = rand64();
+		attr->sample_simd_vec_reg_user = rand64();
+		attr->size = PERF_ATTR_SIZE_VER10;
+	}
 }
 
 void maybe_fill_perf_attr_body(struct perf_event_attr *attr,
