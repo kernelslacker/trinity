@@ -6,10 +6,11 @@
  * new one; a future upstream reword then fails here, not silently.
  */
 
-#include <assert.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+
+#include "debug.h"		/* BUG_ON */
 
 void kmsg_trigger_self_check(void);
 
@@ -66,16 +67,16 @@ void kmsg_trigger_self_check(void)
 {
 	/* --- CURRENT trigger ("WARNING: ") must match everything --- */
 
-	assert(trigger_matches(BANNER_OLD_FORMAT, TRIGGER_CURRENT));
-	assert(trigger_matches(BANNER_NEW_FORMAT, TRIGGER_CURRENT));
-	assert(trigger_matches(BANNER_NEW_FORMAT_2, TRIGGER_CURRENT));
-	assert(trigger_matches(BANNER_LOCKDEP, TRIGGER_CURRENT));
+	BUG_ON(!trigger_matches(BANNER_OLD_FORMAT, TRIGGER_CURRENT));
+	BUG_ON(!trigger_matches(BANNER_NEW_FORMAT, TRIGGER_CURRENT));
+	BUG_ON(!trigger_matches(BANNER_NEW_FORMAT_2, TRIGGER_CURRENT));
+	BUG_ON(!trigger_matches(BANNER_LOCKDEP, TRIGGER_CURRENT));
 
 	/* --- OLD trigger ("WARNING: CPU:") is blind to the new format --- */
 
-	assert(trigger_matches(BANNER_OLD_FORMAT, TRIGGER_OLD));  /* old matched old */
-	assert(!trigger_matches(BANNER_NEW_FORMAT, TRIGGER_OLD)); /* old MISSES new */
-	assert(!trigger_matches(BANNER_NEW_FORMAT_2, TRIGGER_OLD)); /* old MISSES new */
+	BUG_ON(!trigger_matches(BANNER_OLD_FORMAT, TRIGGER_OLD));  /* old matched old */
+	BUG_ON(trigger_matches(BANNER_NEW_FORMAT, TRIGGER_OLD)); /* old MISSES new */
+	BUG_ON(trigger_matches(BANNER_NEW_FORMAT_2, TRIGGER_OLD)); /* old MISSES new */
 
 	printf("    kmsg_trigger: current trigger matches old+new banner formats OK\n");
 	printf("    kmsg_trigger: old trigger blind-spot on v6.19+ format confirmed OK\n");

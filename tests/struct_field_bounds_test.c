@@ -6,13 +6,13 @@
  * non-wrapping `offset > size || f->size > size - f->offset`.
  */
 
-#include <assert.h>
 #include <limits.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "args-internal.h"
+#include "debug.h"		/* BUG_ON */
 #include "struct_catalog.h"
 
 /* Entry point declared in test_main.c. */
@@ -29,7 +29,7 @@ void struct_field_bounds_self_check(void)
 	 */
 	unsigned int bad_sum = (unsigned int)(UINT_MAX - 4) + (unsigned int)8;
 
-	assert(bad_sum == 3u); /* wraps: a summing predicate is blind to this */
+	BUG_ON(bad_sum != 3u); /* wraps: a summing predicate is blind to this */
 
 	/*
 	 * 2. The non-wrapping predicate must catch the same pair.
@@ -39,7 +39,7 @@ void struct_field_bounds_self_check(void)
 	unsigned int bufsz = 16;
 	int skipped_new = (off > bufsz || fsz > bufsz - off);
 
-	assert(skipped_new); /* the two-disjunct predicate catches the wrap */
+	BUG_ON(!skipped_new); /* the two-disjunct predicate catches the wrap */
 
 	/*
 	 * 3. Call the real struct_fill_passes() with the wrapping field.
@@ -76,7 +76,7 @@ void struct_field_bounds_self_check(void)
 	unsigned char expected[16];
 
 	memset(expected, 0xAA, sizeof(expected));
-	assert(memcmp(buf, expected, sizeof(buf)) == 0);
+	BUG_ON(memcmp(buf, expected, sizeof(buf)) != 0);
 
 	printf("    struct_field_bounds: predicate arithmetic OK, "
 	       "struct_fill_passes skipped wrapping field OK\n");
