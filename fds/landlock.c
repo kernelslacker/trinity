@@ -190,6 +190,7 @@ static int open_landlock_fd(void)
 		attr_size = LANDLOCK_ATTR_SIZE_V1;
 	}
 
+retry:
 	fd = trinity_raw_syscall(__NR_landlock_create_ruleset, &attr, attr_size, 0);
 	if (fd < 0) {
 		int err = errno;
@@ -210,17 +211,24 @@ static int open_landlock_fd(void)
 		return false;
 	}
 
-	/* A ruleset that handles a permission and allows none of it must not
-	 * reach the pool, so a refused rule costs the provider its ruleset. */
+	/*
+	 * A ruleset that handles a permission and allows none of it must not
+	 * reach the pool, so a refused rule (every one is, under -x
+	 * landlock_add_rule) costs the ruleset: it is closed, and another is
+	 * made that handles no permission, as an older kernel's does.  That
+	 * one cannot take a capability or a namespace type from a child, so it
+	 * needs no rule, and with nothing handled landlock_allow_permissions()
+	 * has nothing to ask and cannot refuse, so this goes round once.
+	 */
 	if (!landlock_allow_permissions(fd, attr.handled_permissions)) {
 		int err = errno;
 
-		outputerr("open_landlock_fd: landlock_add_rule(abi=%d) refused a permission rule: %s\n",
+		outputerr("open_landlock_fd: landlock_add_rule(abi=%d) refused a permission rule: %s -- making the ruleset without handled_permissions\n",
 			abi, strerror(err));
 		close(fd);
-		fd_provider_init_fail(FD_INIT_REASON_ERRNO, err,
-				      "landlock_add_rule");
-		return false;
+		attr.handled_permissions = 0;
+		attr_size = LANDLOCK_ATTR_SIZE_V5;
+		goto retry;
 	}
 	arm_landlock(fd);
 

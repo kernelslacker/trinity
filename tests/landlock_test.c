@@ -206,11 +206,26 @@ static void check_rule_types_drawn(void)
  */
 static int fake_abi;
 static unsigned long last_create_size;
-static int last_create_fd = -1;
+
+/* Every ruleset a case made, in order, for a provider that makes a second one:
+ * the size its create call sent and the fd it got.  Each gets a number of its
+ * own, so that a ruleset the provider closes is not the number the next one
+ * opens at. */
+static unsigned int nr_creates;
+static unsigned long create_sizes[4];
+static int create_fds[4];
+#define RULESET_FD_BASE	64
+
+/* The create call that would make this ruleset of the case, the first being 1,
+ * and every one after it is turned away with -ENOMEM; 0 turns none away. */
+static unsigned int fake_create_refuse_from;
 
 /* A rule type the model turns away with fake_refuse_errno, whatever it says,
- * as a seccomp filter or a kernel with one more check would: nothing is added. */
+ * as a seccomp filter or a kernel with one more check would: nothing is added.
+ * With fake_refuse_any it is every rule type, as -x landlock_add_rule has
+ * trinity_raw_syscall() answer without making the call. */
 static unsigned int fake_refuse_type;
+static bool fake_refuse_any;
 static int fake_refuse_errno;
 
 /* The create call comes from a 32-bit task: the kernel sees the low 32 bits of
@@ -268,7 +283,7 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	unsigned long long f[7] = { 0 };
 	unsigned long ksize = fake_ksize(), i;
 	struct fake_ruleset *rs;
-	int fd;
+	int fd, high;
 
 	if (flags) {
 		if (attr || size)
@@ -304,10 +319,20 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 		return -EINVAL;
 	if (!f[0] && !f[1] && !f[2] && !f[6])
 		return -ENOMSG;
+	if (fake_create_refuse_from != 0 &&
+	    nr_creates + 1 >= fake_create_refuse_from)
+		return -ENOMEM;
 
+	if (nr_creates == ARRAY_SIZE(create_fds))
+		BUG("landlock: the provider made more rulesets than expected");
 	fd = open("/dev/null", O_RDONLY | O_CLOEXEC);
 	if (fd < 0)
 		return -errno;
+	high = fcntl(fd, F_DUPFD_CLOEXEC, RULESET_FD_BASE + nr_creates);
+	close(fd);
+	if (high < 0)
+		return -errno;
+	fd = high;
 	rs = find_ruleset(fd);
 	if (rs == NULL) {
 		for (i = 0; i < ARRAY_SIZE(rulesets) && rulesets[i].used; i++)
@@ -321,7 +346,8 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	rs->fd = fd;
 	rs->handled_permissions = f[6];
 	rs->handled_access = f[0] | f[1] | f[2];
-	last_create_fd = fd;
+	create_sizes[nr_creates] = size;
+	create_fds[nr_creates++] = fd;
 	return fd;
 }
 
@@ -343,7 +369,8 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 		ret = -EINVAL;
 	else if (rs == NULL)
 		ret = -EBADF;
-	else if (fake_refuse_errno != 0 && type == fake_refuse_type)
+	else if (fake_refuse_errno != 0 &&
+		 (fake_refuse_any || type == fake_refuse_type))
 		ret = -fake_refuse_errno;
 	else if ((type == LANDLOCK_RULE_NAMESPACE_COMPAT ||
 		  type == LANDLOCK_RULE_CAPABILITY_COMPAT) && fake_abi < 12)
@@ -505,8 +532,12 @@ static void reset_kernel(void)
 	nr_objs = 0;
 	published = 0;
 	last_create_size = 0;
-	last_create_fd = -1;
+	nr_creates = 0;
+	memset(create_sizes, 0, sizeof(create_sizes));
+	memset(create_fds, 0, sizeof(create_fds));
+	fake_create_refuse_from = 0;
 	fake_refuse_type = 0;
+	fake_refuse_any = false;
 	fake_refuse_errno = 0;
 	fake_compat = false;
 }
@@ -543,6 +574,8 @@ static void check_provider(void)
 	reset_kernel();
 	expect(run_provider_init(), "the provider makes its ruleset on ABI 12", 0);
 	expect(published == 1, "the ruleset is published once", published);
+	expect(nr_creates == 1, "a ruleset whose rules went in is made once",
+	       nr_creates);
 	expect(last_create_size == 56, "the ABI 12 struct is sent whole",
 	       last_create_size);
 	expect(at_publish.handled_permissions == BOTH_PERMISSIONS,
@@ -569,6 +602,7 @@ static void check_provider(void)
 		expect(run_provider_init(),
 		       "the provider makes its ruleset on an older ABI", older[i]);
 		expect(published == 1, "the older ruleset is published once", published);
+		expect(nr_creates == 1, "the older ruleset is made once", nr_creates);
 		expect(last_create_size == 24, "an older kernel is sent 24 bytes",
 		       last_create_size);
 		expect(at_publish.handled_permissions == 0,
@@ -586,10 +620,53 @@ static void check_provider(void)
 }
 
 /*
- * A permission rule the kernel turns away, whatever its errno, leaves a ruleset
- * that handles the permission and allows none of it.  The provider must not
- * publish that, and must close it: an fd left open and out of the pool can
- * still be named by a guessed number and restrict a child with it.
+ * What a provider that was refused a permission rule owes: the ruleset whose
+ * rule was refused handles a permission and allows none of it, so it is not
+ * published and it is closed, since an fd left open and out of the pool can
+ * still be named by a guessed number and restrict a child with it.  A second
+ * ruleset is made as an older kernel's is, in 24 bytes, so it handles no
+ * permission, and a child restricted with that loses no capability and no
+ * namespace type however it is drawn on, which is what the pool is for.  That
+ * is the one published, and it is asked for no permission rule.
+ */
+static void expect_ruleset_without_permissions(void)
+{
+	struct fake_ruleset *rs;
+	unsigned int i;
+	int first;
+
+	expect(published == 1,
+	       "the ruleset made without permissions is published once",
+	       published);
+	expect(nr_creates == 2 && create_sizes[0] == 56 && create_sizes[1] == 24,
+	       "the second ruleset is made as an older kernel's is", nr_creates);
+	expect(at_publish.handled_permissions == 0,
+	       "the published ruleset handles no permission",
+	       at_publish.handled_permissions);
+	expect(nr_objs == 1 && objs[0].landlockobj.fd == create_fds[1],
+	       "the ruleset that is published is the second", nr_objs);
+
+	first = create_fds[0];
+	expect(first >= 0 && fcntl(first, F_GETFD) == -1 && errno == EBADF,
+	       "the ruleset whose permission rule was refused is closed", first);
+	/* Closed already, so reset_kernel() must not close it again. */
+	rs = find_ruleset(first);
+	if (rs != NULL)
+		rs->used = false;
+
+	for (i = 0; i < nr_rule_calls; i++) {
+		if (rule_calls[i].type != LANDLOCK_RULE_NAMESPACE_COMPAT &&
+		    rule_calls[i].type != LANDLOCK_RULE_CAPABILITY_COMPAT)
+			continue;
+		expect(rule_calls[i].fd == first,
+		       "the second ruleset is asked for a permission rule",
+		       rule_calls[i].type);
+	}
+}
+
+/*
+ * A permission rule the kernel turns away, whatever its errno, costs the
+ * provider the ruleset it was made for, not the pool.
  */
 static void check_provider_refused(void)
 {
@@ -602,29 +679,70 @@ static void check_provider_refused(void)
 	fake_abi = 12;
 	for (t = 0; t < ARRAY_SIZE(types); t++) {
 		for (e = 0; e < ARRAY_SIZE(errnos); e++) {
-			struct fake_ruleset *rs;
-			int fd;
-
 			reset_kernel();
 			fake_refuse_type = types[t];
 			fake_refuse_errno = errnos[e];
 
-			expect(!run_provider_init(),
-			       "a refused permission rule fails the provider", types[t]);
-			expect(published == 0,
-			       "a ruleset whose permission rule was refused is not published",
-			       published);
-
-			fd = last_create_fd;
-			expect(fd >= 0 && fcntl(fd, F_GETFD) == -1 && errno == EBADF,
-			       "the ruleset whose permission rule was refused is closed",
-			       fd);
-			/* Closed already, so reset_kernel() must not close it again. */
-			rs = find_ruleset(fd);
-			if (rs != NULL)
-				rs->used = false;
+			expect(run_provider_init(),
+			       "a refused permission rule costs the provider its ruleset",
+			       types[t]);
+			expect_ruleset_without_permissions();
 		}
 	}
+
+	fake_abi = 0;
+	reset_kernel();
+}
+
+/*
+ * -x landlock_add_rule has trinity_raw_syscall() answer every add_rule call
+ * with -ENOSYS without making it, which turns away the permission rule of a
+ * ruleset that handles one, every time.  The provider still has a ruleset.
+ */
+static void check_provider_excluded(void)
+{
+	fake_abi = 12;
+	reset_kernel();
+	fake_refuse_any = true;
+	fake_refuse_errno = ENOSYS;
+
+	expect(run_provider_init(),
+	       "-x landlock_add_rule costs the provider its ruleset", 0);
+	expect_ruleset_without_permissions();
+
+	fake_abi = 0;
+	reset_kernel();
+}
+
+/*
+ * The ruleset whose rule was refused is closed before the provider asks for
+ * another, so a second create that fails leaves nothing open and nothing in
+ * the pool.
+ */
+static void check_provider_refused_then_refused(void)
+{
+	struct fake_ruleset *rs;
+	int first;
+
+	fake_abi = 12;
+	reset_kernel();
+	fake_refuse_type = LANDLOCK_RULE_NAMESPACE_COMPAT;
+	fake_refuse_errno = EPERM;
+	fake_create_refuse_from = 2;
+
+	expect(!run_provider_init(),
+	       "a second create the kernel refuses fails the provider", 0);
+	expect(published == 0, "nothing is published when the second create fails",
+	       published);
+	expect(nr_creates == 1, "only the first ruleset was made", nr_creates);
+
+	first = create_fds[0];
+	expect(first >= 0 && fcntl(first, F_GETFD) == -1 && errno == EBADF,
+	       "the ruleset whose permission rule was refused is closed", first);
+	/* Closed already, so reset_kernel() must not close it again. */
+	rs = find_ruleset(first);
+	if (rs != NULL)
+		rs->used = false;
 
 	fake_abi = 0;
 	reset_kernel();
@@ -1301,6 +1419,8 @@ void landlock_self_check(void)
 #ifdef __NR_landlock_create_ruleset
 	check_provider();
 	check_provider_refused();
+	check_provider_excluded();
+	check_provider_refused_then_refused();
 	check_allow_permissions();
 	check_allow_refused();
 	check_create();
