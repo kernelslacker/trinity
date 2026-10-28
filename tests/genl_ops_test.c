@@ -402,6 +402,8 @@ struct slot {
 	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits, ##__VA_ARGS__ }
 #define S_U32_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_U16_RANGE(id, from, to, ...) \
+	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 
 /*
  * What a cmd's request takes.  A cmd with one row is checked the same
@@ -2140,9 +2142,15 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 			if (plen < slot->min || plen > slot->max)
 				return false;
 			if (slot->bound != SB_NONE) {
+				uint16_t narrow;
 				uint32_t v;
 
-				memcpy(&v, p + off + NLA_HDRLEN, sizeof(v));
+				if (plen == sizeof(narrow)) {
+					memcpy(&narrow, p + off + NLA_HDRLEN, sizeof(narrow));
+					v = narrow;
+				} else {
+					memcpy(&v, p + off + NLA_HDRLEN, sizeof(v));
+				}
 				tally_bound(slot, v);
 			}
 			break;
@@ -2232,8 +2240,8 @@ static void expect_slots_seen(const struct slot *slots, unsigned int n_slots,
 /*
  * A bounded slot is filled inside its bound seven draws in eight; the
  * eighth is random bytes, which land inside as often as the bound's share
- * of the 2^32 values, so the fraction inside is 0.875 plus that share of
- * 0.125.  Over the 1000 draws or more asked for it has a standard deviation
+ * of the 2^32 values (2^16 for a u16), so the fraction inside is 0.875 plus
+ * that share of 0.125.  Over the 1000 draws or more asked for it has a standard deviation
  * of about 0.01, so 0.06 either way turns away a spec that never strays
  * outside the bound and one that never settles inside it.  The eighth draw
  * of an array or a nest goes past its cap, so never lands inside.  The draws inside
@@ -2266,7 +2274,8 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		else if (slot->bound == SB_MASK)
 			share = (double) (1ULL << __builtin_popcount(slot->hi)) / 4294967296.0;
 		else
-			share = ((double) slot->hi - slot->lo + 1) / 4294967296.0;
+			share = ((double) slot->hi - slot->lo + 1) /
+				(slot->max == sizeof(uint16_t) ? 65536.0 : 4294967296.0);
 		want = 0.875 + 0.125 * share;
 		frac = (double) slot->in_bound / slot->seen;
 		if (frac < want - 0.06 || frac > want + 0.06) {
@@ -2713,8 +2722,9 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * Each bounded kind through the emitter: a mask of one bit and one of
  * eighteen, as wide as nfsd's export flags; a range from 1 and one from 0,
  * which is NLA_POLICY_MAX; one that runs to the top of the type, as
- * NLA_POLICY_MIN does; an array of two elements at most; and a nest of two
- * children at most.
+ * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
+ * host order; an array of two elements at most; and a nest of two children
+ * at most.
  */
 static void check_bounded_tables(void)
 {
@@ -2729,6 +2739,9 @@ static void check_bounded_tables(void)
 		{ 5, NLA_KIND_U32_RANGE, UINT32_MAX, 68 },
 		{ 6, NLA_KIND_NESTED_ARRAY, 2, 0, leaf, ARRAY_SIZE(leaf) },
 		{ 7, NLA_KIND_NESTED, 2, 0, leaf, ARRAY_SIZE(leaf) },
+		{ 8, NLA_KIND_U16_RANGE, 1000, 10 },
+		{ 9, NLA_KIND_U16_RANGE, 255 },
+		{ 10, NLA_KIND_U16_RANGE, UINT16_MAX, 1 },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -2739,6 +2752,9 @@ static void check_bounded_tables(void)
 		S_U32_RANGE(5, 68, UINT32_MAX),
 		S_ARRAY_MAX(6, leaf_mirror, 2),
 		S_NEST_MAX(7, leaf_mirror, 2),
+		S_U16_RANGE(8, 10, 1000),
+		S_U16_RANGE(9, 0, 255),
+		S_U16_RANGE(10, 1, UINT16_MAX),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),

@@ -56,6 +56,11 @@ enum nla_kind {
 	 * a max_len of UINT32_MAX.  One draw in eight is random bytes. */
 	NLA_KIND_U32_MASK,
 	NLA_KIND_U32_RANGE,
+	/* NLA_KIND_U32_RANGE for a u16, which is two bytes in host order:
+	 * a number in [min_len, max_len], both ends inclusive, so a min_len
+	 * and a max_len that are one number pin it.  One draw in eight is
+	 * random bytes. */
+	NLA_KIND_U16_RANGE,
 	/* A scalar the handler, not the policy, narrows to a few values,
 	 * which the spec lists in oneof.  Stored as the policy's width reads
 	 * it: a byte, or big-endian.  One draw in eight is random bytes, so
