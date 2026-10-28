@@ -196,6 +196,38 @@ static void check_rule_types_drawn(void)
 	}
 }
 
+/* The provider's pool head names these two, which objects/registry-diag.c owns. */
+void close_fd_destructor(struct object *obj)
+{
+	(void) obj;
+}
+
+void generic_fd_dump(struct object *obj, enum obj_scope scope)
+{
+	(void) obj;
+	(void) scope;
+}
+
+/*
+ * publish_resource() stand-in: the post handler publishes its fd through it,
+ * and what the ruleset held at that moment is what a restrict_self() could
+ * see.  Unhooked, the call goes on to the pool fake of dup_pool_test.c.
+ */
+struct object *(*fake_publish_resource)(enum objecttype type, unsigned long id,
+					const struct resource_meta *meta);
+struct object *__real_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta);
+struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta);
+
+struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
+				       const struct resource_meta *meta)
+{
+	if (fake_publish_resource != NULL)
+		return fake_publish_resource(type, id, meta);
+	return __real_publish_resource(type, id, meta);
+}
+
 #ifdef __NR_landlock_create_ruleset
 
 /*
@@ -401,57 +433,6 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 		rc->ret = ret;
 	}
 	return ret;
-}
-
-/*
- * A call another suite models: it sets this while it runs the code that makes
- * the call, and the hook answers true, with the result or -errno in *ret, for
- * a call it took.  One it does not take goes on to the real syscall().
- */
-bool (*fake_syscall)(long number, const unsigned long a[6], long *ret);
-
-long __real_syscall(long number, ...);
-long __wrap_syscall(long number, ...);
-
-long __wrap_syscall(long number, ...)
-{
-	unsigned long a[6];
-	va_list ap;
-	long ret;
-	int i;
-
-	va_start(ap, number);
-	for (i = 0; i < 6; i++)
-		a[i] = va_arg(ap, unsigned long);
-	va_end(ap);
-
-	if (fake_abi != 0 && number == __NR_landlock_create_ruleset)
-		ret = fake_create_ruleset((const unsigned char *) a[0],
-					  fake_compat ? (uint32_t) a[1] : a[1],
-					  (unsigned int) a[2]);
-	else if (fake_abi != 0 && number == __NR_landlock_add_rule)
-		ret = fake_add_rule((int) a[0], (unsigned int) a[1],
-				    (const void *) a[2], (unsigned int) a[3]);
-	else if (fake_syscall == NULL || !fake_syscall(number, a, &ret))
-		return __real_syscall(number, a[0], a[1], a[2], a[3], a[4], a[5]);
-
-	if (ret < 0) {
-		errno = (int) -ret;
-		return -1;
-	}
-	return ret;
-}
-
-/* The provider's pool head names these two, which objects/registry-diag.c owns. */
-void close_fd_destructor(struct object *obj)
-{
-	(void) obj;
-}
-
-void generic_fd_dump(struct object *obj, enum obj_scope scope)
-{
-	(void) obj;
-	(void) scope;
 }
 
 static struct objhead fake_head;
@@ -872,26 +853,6 @@ static void check_allow_refused(void)
 
 	fake_abi = 0;
 	reset_kernel();
-}
-
-/*
- * publish_resource() stand-in: the post handler publishes its fd through it,
- * and what the ruleset held at that moment is what a restrict_self() could
- * see.  Unhooked, the call goes on to the pool fake of dup_pool_test.c.
- */
-struct object *(*fake_publish_resource)(enum objecttype type, unsigned long id,
-					const struct resource_meta *meta);
-struct object *__real_publish_resource(enum objecttype type, unsigned long id,
-				       const struct resource_meta *meta);
-struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
-				       const struct resource_meta *meta);
-
-struct object *__wrap_publish_resource(enum objecttype type, unsigned long id,
-				       const struct resource_meta *meta)
-{
-	if (fake_publish_resource != NULL)
-		return fake_publish_resource(type, id, meta);
-	return __real_publish_resource(type, id, meta);
 }
 
 static unsigned long publishes;
@@ -1410,6 +1371,48 @@ static void check_create(void)
 }
 
 #endif /* __NR_landlock_create_ruleset */
+
+/*
+ * A call another suite models: it sets this while it runs the code that makes
+ * the call, and the hook answers true, with the result or -errno in *ret, for
+ * a call it took.  One it does not take goes on to the real syscall().
+ */
+bool (*fake_syscall)(long number, const unsigned long a[6], long *ret);
+
+long __real_syscall(long number, ...);
+long __wrap_syscall(long number, ...);
+
+long __wrap_syscall(long number, ...)
+{
+	unsigned long a[6];
+	va_list ap;
+	long ret;
+	int i;
+
+	va_start(ap, number);
+	for (i = 0; i < 6; i++)
+		a[i] = va_arg(ap, unsigned long);
+	va_end(ap);
+
+#ifdef __NR_landlock_create_ruleset
+	if (fake_abi != 0 && number == __NR_landlock_create_ruleset)
+		ret = fake_create_ruleset((const unsigned char *) a[0],
+					  fake_compat ? (uint32_t) a[1] : a[1],
+					  (unsigned int) a[2]);
+	else if (fake_abi != 0 && number == __NR_landlock_add_rule)
+		ret = fake_add_rule((int) a[0], (unsigned int) a[1],
+				    (const void *) a[2], (unsigned int) a[3]);
+	else
+#endif
+	if (fake_syscall == NULL || !fake_syscall(number, a, &ret))
+		return __real_syscall(number, a[0], a[1], a[2], a[3], a[4], a[5]);
+
+	if (ret < 0) {
+		errno = (int) -ret;
+		return -1;
+	}
+	return ret;
+}
 
 void landlock_self_check(void)
 {
