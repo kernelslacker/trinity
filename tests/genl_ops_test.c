@@ -1284,9 +1284,15 @@ extern struct genl_family_grammar fam_ovs_ct_limit;
 static struct slot ovs_ct_limit[] = {
 	S_BLOB(OVS_CT_LIMIT_ATTR_ZONE_LIMIT, NLA_HDRLEN, 0xffff),
 };
+/* SET and DEL answer -EINVAL without ZONE_LIMIT; GET reads all limits
+ * when it is absent, so only those two mark it. */
+static struct slot ovs_ct_limit_set_del[] = {
+	S_BLOB(OVS_CT_LIMIT_ATTR_ZONE_LIMIT, NLA_HDRLEN, 0xffff,
+	       .required = true),
+};
 static struct cmd_policy ovs_ct_limit_cmds[] = {
-	P_CMD(OVS_CT_LIMIT_CMD_SET, ovs_ct_limit),
-	P_CMD(OVS_CT_LIMIT_CMD_DEL, ovs_ct_limit),
+	P_CMD(OVS_CT_LIMIT_CMD_SET, ovs_ct_limit_set_del),
+	P_CMD(OVS_CT_LIMIT_CMD_DEL, ovs_ct_limit_set_del),
 	P_CMD(OVS_CT_LIMIT_CMD_GET, ovs_ct_limit),
 };
 
@@ -1338,37 +1344,45 @@ static struct slot ovs_nsh_key[] = {
 	S_FIXED(OVS_NSH_KEY_ATTR_MD1, ovs_nsh_key_md1),
 	S_BLOB(OVS_NSH_KEY_ATTR_MD2, 1, 244),
 };
+/* A key's entries, ENCAP apart: the key a VLAN's payload carries, in the
+ * same namespace, draws from these, without an ENCAP of its own. */
+#define OVS_KEY_SLOTS \
+	S_U32(OVS_KEY_ATTR_PRIORITY, .once = true), \
+	S_U32(OVS_KEY_ATTR_IN_PORT, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true), \
+	S_U16(OVS_KEY_ATTR_VLAN, .once = true), \
+	S_U16(OVS_KEY_ATTR_ETHERTYPE, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd, .once = true), \
+	S_U32(OVS_KEY_ATTR_SKB_MARK, .once = true), \
+	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp, .once = true), \
+	S_U16(OVS_KEY_ATTR_TCP_FLAGS, .once = true), \
+	S_U32(OVS_KEY_ATTR_DP_HASH, .once = true), \
+	S_U32(OVS_KEY_ATTR_RECIRC_ID, .once = true), \
+	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12, .once = true), \
+	S_U32(OVS_KEY_ATTR_CT_STATE, .once = true), \
+	S_U16(OVS_KEY_ATTR_CT_ZONE, .once = true), \
+	S_U32(OVS_KEY_ATTR_CT_MARK, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4, \
+		.once = true), \
+	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6, \
+		.once = true), \
+	S_NEST(OVS_KEY_ATTR_NSH, ovs_nsh_key, .once = true), \
+	S_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs, .once = true)
+static struct slot ovs_encap_key[] = {
+	OVS_KEY_SLOTS,
+};
 static struct slot ovs_key[] = {
-	S_U32(OVS_KEY_ATTR_PRIORITY, .once = true),
-	S_U32(OVS_KEY_ATTR_IN_PORT, .once = true),
-	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true),
-	S_U16(OVS_KEY_ATTR_VLAN, .once = true),
-	S_U16(OVS_KEY_ATTR_ETHERTYPE, .once = true),
-	S_FIXED(OVS_KEY_ATTR_IPV4, ovs_key_ipv4, .once = true),
-	S_FIXED(OVS_KEY_ATTR_IPV6, ovs_key_ipv6, .once = true),
-	S_FIXED(OVS_KEY_ATTR_TCP, ovs_key_tcp, .once = true),
-	S_FIXED(OVS_KEY_ATTR_UDP, ovs_key_udp, .once = true),
-	S_FIXED(OVS_KEY_ATTR_ICMP, ovs_key_icmp, .once = true),
-	S_FIXED(OVS_KEY_ATTR_ICMPV6, ovs_key_icmpv6, .once = true),
-	S_FIXED(OVS_KEY_ATTR_ARP, ovs_key_arp, .once = true),
-	S_FIXED(OVS_KEY_ATTR_ND, ovs_key_nd, .once = true),
-	S_U32(OVS_KEY_ATTR_SKB_MARK, .once = true),
-	S_NEST(OVS_KEY_ATTR_TUNNEL, ovs_tunnel_key, .once = true),
-	S_FIXED(OVS_KEY_ATTR_SCTP, ovs_key_sctp, .once = true),
-	S_U16(OVS_KEY_ATTR_TCP_FLAGS, .once = true),
-	S_U32(OVS_KEY_ATTR_DP_HASH, .once = true),
-	S_U32(OVS_KEY_ATTR_RECIRC_ID, .once = true),
-	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12, .once = true),
-	S_U32(OVS_KEY_ATTR_CT_STATE, .once = true),
-	S_U16(OVS_KEY_ATTR_CT_ZONE, .once = true),
-	S_U32(OVS_KEY_ATTR_CT_MARK, .once = true),
-	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true),
-	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV4, ovs_key_ct_tuple_ipv4,
-		.once = true),
-	S_FIXED(OVS_KEY_ATTR_CT_ORIG_TUPLE_IPV6, ovs_key_ct_tuple_ipv6,
-		.once = true),
-	S_NEST(OVS_KEY_ATTR_NSH, ovs_nsh_key, .once = true),
-	S_FIXED(OVS_KEY_ATTR_IPV6_EXTHDRS, ovs_key_ipv6_exthdrs, .once = true),
+	OVS_KEY_SLOTS,
+	S_NEST(OVS_KEY_ATTR_ENCAP, ovs_encap_key, .once = true),
 };
 static struct slot ovs_set_key[] = {
 	S_U32(OVS_KEY_ATTR_PRIORITY),
