@@ -2015,6 +2015,82 @@ static void check_ctnetlink_filter(void)
 }
 
 /*
+ * ctnetlink_parse_tuple() parses every tuple, in ctnetlink and in
+ * ctnetlink_exp, against tuple_nla_policy, cta_ip_nla_policy and
+ * proto_nla_policy in nf_conntrack_netlink.c: the IP nest holds the
+ * V4 pair, each a U32, or the V6 pair, each 16 bytes, and the PROTO
+ * nest the number and the fields the L4 protocol reads.  CTA_FILTER
+ * is the only nest the handler parses, so the filter check above
+ * cannot speak for these; the tuples take tables of their own, and
+ * the families are the two the tuple parse takes, since anything
+ * else is -EOPNOTSUPP before it looks at a tuple.
+ */
+#define KERNEL_CTA_TUPLE_IP	1
+#define KERNEL_CTA_TUPLE_PROTO	2
+#define KERNEL_CTA_TUPLE_ZONE	3
+
+static struct pslot tuple_ip_pol[] = {
+	PS(1, false, NLA_KIND_U32),
+	PS(2, false, NLA_KIND_U32),
+	PS(3, false, NLA_KIND_BINARY),
+	PS(4, false, NLA_KIND_BINARY),
+};
+static struct pslot tuple_proto_pol[] = {
+	PS(1, false, NLA_KIND_U8),
+	PS(2, false, NLA_KIND_U16),
+	PS(3, false, NLA_KIND_U16),
+	PS(4, false, NLA_KIND_U16),
+	PS(5, false, NLA_KIND_U8),
+	PS(6, false, NLA_KIND_U8),
+	PS(7, false, NLA_KIND_U16),
+	PS(8, false, NLA_KIND_U8),
+	PS(9, false, NLA_KIND_U8),
+};
+static struct pslot tuple_pol[] = {
+	PSN(KERNEL_CTA_TUPLE_IP, false, tuple_ip_pol),
+	PSN(KERNEL_CTA_TUPLE_PROTO, false, tuple_proto_pol),
+	PS(KERNEL_CTA_TUPLE_ZONE, false, NLA_KIND_U16),
+};
+
+static void check_tuple_spec(const struct nla_attr_spec *spec,
+			     const char *name)
+{
+	if (spec == NULL || spec->kind != NLA_KIND_NESTED || spec->nest == NULL)
+		BUG("nfnl grammar: a tuple nest has no table of its own");
+	expect_declared(spec->nest, spec->n_nest, tuple_pol,
+			ARRAY_SIZE(tuple_pol), name);
+}
+
+static void check_ctnetlink_tuples(void)
+{
+	const struct nfnl_subsys_grammar *sub;
+	size_t i;
+
+	sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK);
+	if (sub == NULL)
+		BUG("nfnl grammar: ctnetlink is not registered");
+	expect_families(NFNL_SUBSYS_CTNETLINK, "ctnetlink",
+			(const unsigned char[]){ AF_INET, AF_INET6 }, 2);
+	for (i = 0; i < sub->n_attrs; i++) {
+		if (sub->attrs[i].type == CTA_TUPLE_ORIG ||
+		    sub->attrs[i].type == CTA_TUPLE_REPLY ||
+		    sub->attrs[i].type == CTA_TUPLE_MASTER)
+			check_tuple_spec(&sub->attrs[i], "CTA_TUPLE");
+	}
+	sub = nfnl_lookup_by_subsys(NFNL_SUBSYS_CTNETLINK_EXP);
+	if (sub == NULL)
+		BUG("nfnl grammar: ctnetlink_exp is not registered");
+	expect_families(NFNL_SUBSYS_CTNETLINK_EXP, "ctnetlink_exp",
+			(const unsigned char[]){ AF_INET, AF_INET6 }, 2);
+	for (i = 0; i < sub->n_attrs; i++) {
+		if (sub->attrs[i].type == CTA_EXPECT_MASTER ||
+		    sub->attrs[i].type == CTA_EXPECT_TUPLE ||
+		    sub->attrs[i].type == CTA_EXPECT_MASK)
+			check_tuple_spec(&sub->attrs[i], "CTA_EXPECT_TUPLE");
+	}
+}
+
+/*
  * nf_tables_cb[] gives every nftables command but NFT_MSG_GETGEN a policy,
  * and the grammar a table for each; GETGEN takes no attribute at all, so it
  * has none and the subsystem has no union to fall back on.
@@ -2428,6 +2504,7 @@ void nfnl_gen_self_check(void)
 	for (i = 0; i < ARRAY_SIZE(cmd_rows); i++)
 		check_cmd_row(&cmd_rows[i]);
 	check_ctnetlink_filter();
+	check_ctnetlink_tuples();
 	for (i = 0; i < ARRAY_SIZE(word_slots); i++)
 		check_word_slot(&word_slots[i]);
 }
