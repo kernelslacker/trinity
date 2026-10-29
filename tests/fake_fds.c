@@ -12,6 +12,8 @@
 #include <string.h>
 
 #include "bpf.h"
+#include "cgroup.h"
+#include "perf.h"
 #include "list.h"
 #include "objects.h"
 #include "utils.h"
@@ -99,6 +101,21 @@ int get_rand_bpf_prog_fd(void)
 int get_rand_bpf_link_fd(void)
 {
 	return -1;
+}
+
+/* The pickers of fds/perf.c and fds/cgroup.c, which answer with the fd a
+ * test sets, -1 from an empty pool. */
+int fake_perf_fd = -1;
+int fake_cgroup_fd = -1;
+
+int get_rand_perf_fd(void)
+{
+	return fake_perf_fd;
+}
+
+int get_rand_cgroup_fd(void)
+{
+	return fake_cgroup_fd;
 }
 
 int get_rand_bpf_btf_fd(void)

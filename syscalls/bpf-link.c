@@ -10,7 +10,9 @@
 
 #include "bpf.h"
 #include "bpf-internal.h"
+#include "cgroup.h"
 #include "objects.h"
+#include "perf.h"
 #include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
@@ -98,6 +100,60 @@ static bool pick_link_attach_type(const struct bpfprogobj *prog,
 	}
 }
 
+/*
+ * What the taker of @type reads link_create.target_fd as: a cgroup for
+ * cgroup_bpf_link_attach(), a perf event for bpf_perf_link_attach(), and the
+ * union's target_ifindex for bpf_xdp_link_attach(), tcx_link_attach() and
+ * netkit_link_attach(), which lo, in every netns, answers half the time.  The
+ * netns and sockmap takers want a netns fd and a sockmap or sockhash, which no
+ * pool holds, and like the rest get a map.
+ */
+static unsigned int link_target(unsigned int type)
+{
+	switch (type) {
+	case BPF_PERF_EVENT:
+		return get_rand_perf_fd();
+	case BPF_XDP:
+	case BPF_TCX_INGRESS:
+	case BPF_TCX_EGRESS:
+	case BPF_NETKIT_PRIMARY:
+	case BPF_NETKIT_PEER:
+		return RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	case BPF_CGROUP_INET_INGRESS:
+	case BPF_CGROUP_INET_EGRESS:
+	case BPF_CGROUP_INET_SOCK_CREATE:
+	case BPF_CGROUP_INET_SOCK_RELEASE:
+	case BPF_CGROUP_INET4_POST_BIND:
+	case BPF_CGROUP_INET6_POST_BIND:
+	case BPF_CGROUP_INET4_BIND:
+	case BPF_CGROUP_INET6_BIND:
+	case BPF_CGROUP_INET4_CONNECT:
+	case BPF_CGROUP_INET6_CONNECT:
+	case BPF_CGROUP_UNIX_CONNECT:
+	case BPF_CGROUP_INET4_GETPEERNAME:
+	case BPF_CGROUP_INET6_GETPEERNAME:
+	case BPF_CGROUP_UNIX_GETPEERNAME:
+	case BPF_CGROUP_INET4_GETSOCKNAME:
+	case BPF_CGROUP_INET6_GETSOCKNAME:
+	case BPF_CGROUP_UNIX_GETSOCKNAME:
+	case BPF_CGROUP_UDP4_SENDMSG:
+	case BPF_CGROUP_UDP6_SENDMSG:
+	case BPF_CGROUP_UNIX_SENDMSG:
+	case BPF_CGROUP_UDP4_RECVMSG:
+	case BPF_CGROUP_UDP6_RECVMSG:
+	case BPF_CGROUP_UNIX_RECVMSG:
+	case BPF_CGROUP_SOCK_OPS:
+	case BPF_CGROUP_DEVICE:
+	case BPF_CGROUP_SYSCTL:
+	case BPF_CGROUP_GETSOCKOPT:
+	case BPF_CGROUP_SETSOCKOPT:
+	case BPF_LSM_CGROUP:
+		return get_rand_cgroup_fd();
+	default:
+		return get_rand_bpf_fd();
+	}
+}
+
 void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 {
 	struct bpfprogobj prog;
@@ -109,7 +165,7 @@ void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 	 * program does not pair with before any taker runs, so the attach
 	 * type is one the program pairs with but one draw in eight, which
 	 * takes any.  The catalog fills the tail of the arm it names and
-	 * sizes the call; the other head fields come from the bpf pools.
+	 * sizes the call; target_fd comes from the pool its taker reads.
 	 */
 	have_prog = get_rand_bpf_prog(&prog);
 	attr->link_create.prog_fd = have_prog ? prog.fd : -1;
@@ -119,7 +175,7 @@ void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 		attr->link_create.attach_type =
 			bpf_attach_types[rnd_modulo_u32(bpf_attach_types_count)];
 	sanitise_bpf_nested(attr, rec);
-	attr->link_create.target_fd = get_rand_bpf_fd();
+	attr->link_create.target_fd = link_target(attr->link_create.attach_type);
 	attr->link_create.flags = rnd_modulo_u32(16);
 
 	/*

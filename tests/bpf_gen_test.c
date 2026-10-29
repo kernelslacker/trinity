@@ -36,6 +36,8 @@ extern bool fake_catalog_lookup;	/* fake_stubs.c */
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 extern int fake_bpf_prog_fd;		/* fake_fds.c */
 extern bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);	/* fake_fds.c */
+extern int fake_perf_fd;		/* fake_fds.c */
+extern int fake_cgroup_fd;		/* fake_fds.c */
 int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
@@ -1184,6 +1186,62 @@ static bool kernel_gets_its_tail(const union bpf_attr *attr)
  * catalog's own draw of a head field is an fd of the generic pool, here -1. */
 #define LINK_PROG_FD	88
 #define LINK_MAP_FD	100
+#define LINK_PERF_FD	120
+#define LINK_CGROUP_FD	130
+
+enum link_target_kind { TARGET_MAP, TARGET_PERF, TARGET_CGROUP, TARGET_IFINDEX };
+
+/*
+ * What the taker of @type reads target_fd as: a perf event for
+ * bpf_perf_link_attach(), a cgroup for cgroup_bpf_link_attach(), the union's
+ * target_ifindex for bpf_xdp_link_attach(), tcx_link_attach() and
+ * netkit_link_attach().  The rest are handed a map.
+ */
+static enum link_target_kind kernel_target_kind(unsigned long type)
+{
+	switch (type) {
+	case BPF_PERF_EVENT:
+		return TARGET_PERF;
+	case BPF_XDP:
+	case BPF_TCX_INGRESS:
+	case BPF_TCX_EGRESS:
+	case BPF_NETKIT_PRIMARY:
+	case BPF_NETKIT_PEER:
+		return TARGET_IFINDEX;
+	case BPF_CGROUP_INET_INGRESS:
+	case BPF_CGROUP_INET_EGRESS:
+	case BPF_CGROUP_INET_SOCK_CREATE:
+	case BPF_CGROUP_INET_SOCK_RELEASE:
+	case BPF_CGROUP_INET4_POST_BIND:
+	case BPF_CGROUP_INET6_POST_BIND:
+	case BPF_CGROUP_INET4_BIND:
+	case BPF_CGROUP_INET6_BIND:
+	case BPF_CGROUP_INET4_CONNECT:
+	case BPF_CGROUP_INET6_CONNECT:
+	case BPF_CGROUP_UNIX_CONNECT:
+	case BPF_CGROUP_INET4_GETPEERNAME:
+	case BPF_CGROUP_INET6_GETPEERNAME:
+	case BPF_CGROUP_UNIX_GETPEERNAME:
+	case BPF_CGROUP_INET4_GETSOCKNAME:
+	case BPF_CGROUP_INET6_GETSOCKNAME:
+	case BPF_CGROUP_UNIX_GETSOCKNAME:
+	case BPF_CGROUP_UDP4_SENDMSG:
+	case BPF_CGROUP_UDP6_SENDMSG:
+	case BPF_CGROUP_UNIX_SENDMSG:
+	case BPF_CGROUP_UDP4_RECVMSG:
+	case BPF_CGROUP_UDP6_RECVMSG:
+	case BPF_CGROUP_UNIX_RECVMSG:
+	case BPF_CGROUP_SOCK_OPS:
+	case BPF_CGROUP_DEVICE:
+	case BPF_CGROUP_SYSCTL:
+	case BPF_CGROUP_GETSOCKOPT:
+	case BPF_CGROUP_SETSOCKOPT:
+	case BPF_LSM_CGROUP:
+		return TARGET_CGROUP;
+	default:
+		return TARGET_MAP;
+	}
+}
 
 static bool pick_link_map(struct bpfobj *map)
 {
@@ -1195,6 +1253,7 @@ static bool pick_link_map(struct bpfobj *map)
 
 struct link_tally {
 	unsigned int draws, refused, flags_set, pool_target, prog_target;
+	unsigned int perf_target, cgroup_target, ifindex_target, ifindex_lo;
 	unsigned int generic_prog;
 	unsigned int tail_set, no_tail, tail_uncovered;
 };
@@ -1240,6 +1299,8 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 	fake_catalog_lookup = true;
 	fake_random_fd_empty = true;
 	fake_bpf_prog_fd = LINK_PROG_FD;
+	fake_perf_fd = LINK_PERF_FD;
+	fake_cgroup_fd = LINK_CGROUP_FD;
 	fake_get_rand_bpf_map = pick_link_map;
 
 	for (round = 0; round < ROUNDS; round++) {
@@ -1276,6 +1337,10 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			t->flags_set += attr->link_create.flags != 0;
 			t->pool_target += (int) attr->link_create.target_fd == LINK_MAP_FD;
 			t->prog_target += (int) attr->link_create.target_fd == LINK_PROG_FD;
+			t->perf_target += (int) attr->link_create.target_fd == LINK_PERF_FD;
+			t->cgroup_target += (int) attr->link_create.target_fd == LINK_CGROUP_FD;
+			t->ifindex_target += attr->link_create.target_ifindex < 64;
+			t->ifindex_lo += attr->link_create.target_ifindex == 1;
 			t->generic_prog += (int) attr->link_create.prog_fd != LINK_PROG_FD;
 
 			/* Past the head are the arm's fields, and with them the
@@ -1301,6 +1366,8 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 
 	fake_get_rand_bpf_map = NULL;
 	fake_bpf_prog_fd = -1;
+	fake_perf_fd = -1;
+	fake_cgroup_fd = -1;
 	fake_random_fd_empty = false;
 	fake_catalog_lookup = false;
 
@@ -1329,7 +1396,21 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			check("a tracing attach never names a program to attach in",
 			      name, t->prog_target > 0 &&
 			      t->prog_target * 2 < t->draws);
-		} else if (!kernel_refuses_target_fd(type)) {
+		} else if (kernel_refuses_target_fd(type)) {
+			continue;
+		} else if (kernel_target_kind(type) == TARGET_PERF) {
+			check("a perf link's target is not a perf event", name,
+			      t->perf_target == t->draws);
+		} else if (kernel_target_kind(type) == TARGET_CGROUP) {
+			check("a cgroup link's target is not a cgroup", name,
+			      t->cgroup_target == t->draws);
+		} else if (kernel_target_kind(type) == TARGET_IFINDEX) {
+			check("a device link's target is not a small ifindex", name,
+			      t->ifindex_target == t->draws);
+			check("a device link does not name lo about half the time",
+			      name, t->ifindex_lo * 100 >= t->draws * 30 &&
+			      t->ifindex_lo * 100 <= t->draws * 75);
+		} else {
 			check("a target_fd is not the pool's map", name,
 			      t->pool_target == t->draws);
 		}
