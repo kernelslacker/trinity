@@ -89,9 +89,16 @@ static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
  * them; the cmds that nest the stats or the PHY-aware header have tables
  * of theirs.  The stats sources go up to ETHTOOL_MAC_STATS_SRC_PMAC and the
  * EEPROM offset and length stay within a page pair and a page; the I2C
- * address, an NLA_U8 range, is plain, and STATS_GET's GROUPS, a bitset
- * nest, is left out.
+ * address is an NLA_U8 range to ETH_MODULE_MAX_I2C_ADDRESS, and
+ * STATS_GET's GROUPS, a bitset nest, is left out.
  */
+
+/* ETH_MODULE_MAX_I2C_ADDRESS lives in the kernel-internal <linux/ethtool.h>,
+ * not the uapi header, so a build host never defines it; the value is the
+ * kernel's. */
+#ifndef ETH_MODULE_MAX_I2C_ADDRESS
+#define ETH_MODULE_MAX_I2C_ADDRESS	0x7f
+#endif
 static const struct nla_attr_spec ethtool_get_attrs[] = {
 	{ ETHTOOL_A_LINKINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
 	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
@@ -147,8 +154,8 @@ static const struct nla_attr_spec ethtool_module_eeprom_get_attrs[] = {
 	  .required = true },
 	{ ETHTOOL_A_MODULE_EEPROM_PAGE,	NLA_KIND_U8,     1, .required = true },
 	{ ETHTOOL_A_MODULE_EEPROM_BANK,	NLA_KIND_U8,     1 },
-	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8, 1,
-	  .required = true },
+	{ ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, NLA_KIND_U8_RANGE,
+	  ETH_MODULE_MAX_I2C_ADDRESS, 0, .required = true },
 };
 
 static const struct nla_attr_spec ethtool_stats_get_attrs[] = {

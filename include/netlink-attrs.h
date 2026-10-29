@@ -61,6 +61,19 @@ enum nla_kind {
 	 * and a max_len that are one number pin it.  One draw in eight is
 	 * random bytes. */
 	NLA_KIND_U16_RANGE,
+	/* The same for a u8, which is one byte: NLA_KIND_U8_RANGE mirrors
+	 * NLA_POLICY_RANGE(NLA_U8, min_len, max_len), so NLA_POLICY_MAX
+	 * is a min_len of 0 and NLA_POLICY_MIN a max_len of UINT8_MAX.
+	 * One draw in eight is random bytes. */
+	NLA_KIND_U8_RANGE,
+	/* The same for an NLA_UINT, which the kernel reads as 4 or 8 bytes
+	 * in host order: NLA_KIND_UINT_RANGE mirrors NLA_POLICY_RANGE or
+	 * NLA_POLICY_FULL_RANGE(NLA_UINT, min_len, max_len), with the
+	 * bound a u32's, and NLA_KIND_UINT_MASK mirrors
+	 * NLA_POLICY_MASK(NLA_UINT, max_len), filling a random subset of
+	 * its bits at either width.  One draw in eight is random bytes. */
+	NLA_KIND_UINT_RANGE,
+	NLA_KIND_UINT_MASK,
 	/* A scalar the handler, not the policy, narrows to a few values,
 	 * which the spec lists in oneof.  Stored as the policy's width reads
 	 * it: a byte, or big-endian.  One draw in eight is random bytes, so
@@ -106,9 +119,11 @@ struct nla_attr_spec {
 				 * NLA_KIND_NESTED, 0 for 1-3 */
 	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
-				 * max_len}; for NLA_KIND_U32_RANGE and
-				 * NLA_KIND_BE32_RANGE the smallest number.
-				 * Zero on other kinds. */
+				 * max_len}; for NLA_KIND_U32_RANGE,
+				 * NLA_KIND_BE32_RANGE, NLA_KIND_U16_RANGE,
+				 * NLA_KIND_U8_RANGE and NLA_KIND_UINT_RANGE
+				 * the smallest number.  Zero on other
+				 * kinds. */
 
 	/* NLA_KIND_NESTED, NLA_KIND_NESTED_ARRAY: the table the nest's
 	 * children are drawn from, n_nest long, typed as the nest's own

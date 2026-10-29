@@ -18,9 +18,10 @@
 /*
  * The nests, from netdev_queue_id_nl_policy, netdev_page_pool_info_nl_policy
  * and netdev_lease_nl_policy.  A page pool's id is an NLA_UINT, so 4 or 8
- * bytes.  The handlers answer -EINVAL to a queue nest without its id and
- * type, a lease without its ifindex and queue, and a page pool stats
- * request without the pool's id, so those are marked required.
+ * bytes, in the range 1 to U32_MAX.  The handlers answer -EINVAL to a queue
+ * nest without its id and type, a lease without its ifindex and queue, and
+ * a page pool stats request without the pool's id, so those are marked
+ * required.
  */
 static const struct nla_attr_spec netdev_queue_id_attrs[] = {
 	{ NETDEV_A_QUEUE_ID,		NLA_KIND_U32,    4, .required = true },
@@ -29,7 +30,7 @@ static const struct nla_attr_spec netdev_queue_id_attrs[] = {
 };
 
 static const struct nla_attr_spec netdev_page_pool_info_attrs[] = {
-	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_BINARY_FIXED2, 8, 4,
+	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_UINT_RANGE, UINT32_MAX, 1,
 	  .required = true },
 	{ NETDEV_A_PAGE_POOL_IFINDEX,	NLA_KIND_U32_RANGE, INT32_MAX, 1 },
 };
@@ -50,18 +51,21 @@ static const struct nla_attr_spec netdev_lease_attrs[] = {
  * a NAPI_GET doit no IFINDEX.  What the replies carry, the counters, the
  * XDP features and the ids of a queue's NAPI, is not in a request policy.
  * The bounded u32s draw inside their bounds, an ifindex from 1 and a queue
- * type of 0 or 1 among them, and the NETNS_ID s32 from 0; an NLA_UINT's
- * bound, and RX_PAGE_SIZE's floor, the kernel's PAGE_SIZE, are not
- * modelled.  QUEUE_GET's doit, QUEUE_CREATE, NAPI_SET and the two binds
- * answer -EINVAL without the attributes they look up, which are marked
- * required; the single-attribute tables need no mark.
+ * type of 0 or 1 among them, and the NETNS_ID s32 from 0.  QSTATS_SCOPE,
+ * an NLA_UINT mask of the queue scope bit, and RX_PAGE_SIZE, whose floor
+ * is the kernel's PAGE_SIZE, 4096 on the 4 KiB-page kernels this table
+ * targets, draw inside theirs; RX_PAGE_SIZE's handler check, that the
+ * size is a power of two, is not modelled.  QUEUE_GET's doit,
+ * QUEUE_CREATE, NAPI_SET and the two binds answer -EINVAL without the
+ * attributes they look up, which are marked required; the single-attribute
+ * tables need no mark.
  */
 static const struct nla_attr_spec netdev_dev_get_attrs[] = {
 	{ NETDEV_A_DEV_IFINDEX,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_page_pool_get_attrs[] = {
-	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_BINARY_FIXED2, 8, 4 },
+	{ NETDEV_A_PAGE_POOL_ID,	NLA_KIND_UINT_RANGE, UINT32_MAX, 1 },
 };
 
 static const struct nla_attr_spec netdev_page_pool_get_dump_attrs[] = {
@@ -112,10 +116,11 @@ static const struct nla_attr_spec netdev_napi_set_attrs[] = {
 	{ NETDEV_A_NAPI_THREADED,	NLA_KIND_U32_RANGE, 2, 0 },
 };
 
-/* QSTATS_GET is a dumpit alone.  SCOPE is an NLA_UINT, 4 or 8 bytes. */
+/* QSTATS_GET is a dumpit alone.  SCOPE is an NLA_UINT mask of the one
+ * scope bit, queue scope. */
 static const struct nla_attr_spec netdev_qstats_get_attrs[] = {
 	{ NETDEV_A_QSTATS_IFINDEX,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
-	{ NETDEV_A_QSTATS_SCOPE,	NLA_KIND_BINARY_FIXED2, 8, 4 },
+	{ NETDEV_A_QSTATS_SCOPE,	NLA_KIND_UINT_MASK, 0x1 },
 };
 
 static const struct nla_attr_spec netdev_bind_rx_attrs[] = {
@@ -125,7 +130,7 @@ static const struct nla_attr_spec netdev_bind_rx_attrs[] = {
 	  netdev_queue_id_attrs, ARRAY_SIZE(netdev_queue_id_attrs),
 	  .required = true },
 	{ NETDEV_A_DMABUF_FD,		NLA_KIND_U32,    4, .required = true },
-	{ NETDEV_A_DMABUF_RX_PAGE_SIZE,	NLA_KIND_U32,    4 },
+	{ NETDEV_A_DMABUF_RX_PAGE_SIZE,	NLA_KIND_U32_RANGE, UINT32_MAX, 4096 },
 };
 
 static const struct nla_attr_spec netdev_bind_tx_attrs[] = {

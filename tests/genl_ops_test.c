@@ -340,9 +340,9 @@ static void put_ops_first_family(struct reply *r,
 /*
  * A slot of a kernel nla_policy as far as the generator shapes it: the
  * attribute's id, the payload lengths it takes and, for a nest, the policy
- * its children meet.  A u32 that the policy bounds with a mask or a range
- * says so, and so does one that its handler bounds where the policy leaves
- * it a plain NLA_U32; the generator draws inside the bound most of the
+ * its children meet.  A scalar that the policy bounds with a mask or a
+ * range says so, and so does one that its handler bounds where the policy
+ * leaves it a plain NLA_U32; the generator draws inside the bound most of the
  * time, so a draw outside it is tallied rather than refused: the reject
  * arm wants some.  An array whose handler counts its elements against a
  * cap, or a nest whose parser takes a few children at most, is bounded the
@@ -368,10 +368,12 @@ struct slot {
 	struct slot *nest;		/* SK_NEST, SK_ARRAY: the children's policy */
 	unsigned int n_nest;
 	unsigned int seen;
-	unsigned char bound;		/* a u32's bound, host order, or a count's */
-	unsigned int lo, hi;
+	unsigned char bound;		/* a scalar's bound, host order, or a count's */
+	/* Wide enough for an NLA_UINT's 8-byte form; a byte's and a u32's
+	 * bounds fit, as do the or/and/min/max of the draws inside one. */
+	uint64_t lo, hi;
 	unsigned int in_bound;		/* draws inside it, and what they span: */
-	unsigned int or_all, and_all, min_v, max_v;
+	uint64_t or_all, and_all, min_v, max_v;
 	bool required;			/* its handler needs it */
 	bool once;			/* and refuses it twice */
 	unsigned int streams;		/* the streams of its policy built, */
@@ -404,6 +406,13 @@ struct slot {
 	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_U8_RANGE(id, from, to, ...) \
+	{ id, SK_BYTES, 1, 1, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+/* An NLA_UINT takes 4 or 8 bytes, host order, and its bound is a u32's. */
+#define S_UINT_RANGE(id, from, to, ...) \
+	{ id, SK_BYTES, 4, 8, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_UINT_MASK(id, bits, ...) \
+	{ id, SK_BYTES, 4, 8, .bound = SB_MASK, .hi = bits, ##__VA_ARGS__ }
 
 /*
  * What a cmd's request takes.  A cmd with one row is checked the same
@@ -466,7 +475,7 @@ static struct slot vdpa_policy[] = {
 	S_STR(VDPA_ATTR_DEV_NAME, 0),
 	S_BLOB(VDPA_ATTR_DEV_NET_CFG_MACADDR, 6, 6),
 	S_U16(VDPA_ATTR_DEV_NET_CFG_MAX_VQP),
-	S_U16(VDPA_ATTR_DEV_NET_CFG_MTU),
+	S_U16_RANGE(VDPA_ATTR_DEV_NET_CFG_MTU, 68, UINT16_MAX),
 	S_U32(VDPA_ATTR_DEV_QUEUE_INDEX),
 	S_U64(VDPA_ATTR_DEV_FEATURES),
 };
@@ -480,7 +489,7 @@ static struct slot vdpa_dev_new[] = {
 	S_STR(VDPA_ATTR_DEV_NAME, 0, .required = true),
 	S_BLOB(VDPA_ATTR_DEV_NET_CFG_MACADDR, 6, 6),
 	S_U16(VDPA_ATTR_DEV_NET_CFG_MAX_VQP),
-	S_U16(VDPA_ATTR_DEV_NET_CFG_MTU),
+	S_U16_RANGE(VDPA_ATTR_DEV_NET_CFG_MTU, 68, UINT16_MAX),
 	S_U64(VDPA_ATTR_DEV_FEATURES),
 };
 static struct slot vdpa_dev_name[] = {
@@ -906,9 +915,10 @@ extern struct genl_family_grammar fam_netdev;
 
 /*
  * net/core/netdev-genl-gen.c: the netdev_*_nl_policy tables.  An NLA_UINT
- * takes 4 or 8 bytes, as an NLA_SINT does, so its bounds go unmirrored, as
- * does RX_PAGE_SIZE's, whose floor is the kernel's PAGE_SIZE.  The handlers
- * in net/core/netdev-genl.c and page_pool_user.c answer -EINVAL without
+ * takes 4 or 8 bytes, host order, and its bounds are mirrored as
+ * NLA_KIND_UINT_*; RX_PAGE_SIZE's floor is the kernel's PAGE_SIZE, 4096
+ * on the 4 KiB-page kernels this table targets.  The handlers in
+ * net/core/netdev-genl.c and page_pool_user.c answer -EINVAL without
  * what they look up: a queue's id, type and ifindex, a lease's ifindex and
  * queue, a dmabuf's ifindex, fd and queues, a NAPI id, a page pool id.
  */
@@ -917,7 +927,7 @@ static struct slot netdev_queue_id[] = {
 	S_U32_RANGE(NETDEV_A_QUEUE_TYPE, 0, 1, .required = true),
 };
 static struct slot netdev_page_pool_info[] = {
-	S_SINT(NETDEV_A_PAGE_POOL_ID, .required = true),
+	S_UINT_RANGE(NETDEV_A_PAGE_POOL_ID, 1, UINT32_MAX, .required = true),
 	S_U32_RANGE(NETDEV_A_PAGE_POOL_IFINDEX, 1, INT32_MAX),
 };
 static struct slot netdev_lease[] = {
@@ -929,7 +939,7 @@ static struct slot netdev_dev_get[] = {
 	S_U32_RANGE(NETDEV_A_DEV_IFINDEX, 1, UINT32_MAX),
 };
 static struct slot netdev_page_pool_get_do[] = {
-	S_SINT(NETDEV_A_PAGE_POOL_ID),
+	S_UINT_RANGE(NETDEV_A_PAGE_POOL_ID, 1, UINT32_MAX),
 };
 static struct slot netdev_page_pool_get_dump[] = {
 	S_U32_RANGE(NETDEV_A_PAGE_POOL_IFINDEX, 1, INT32_MAX),
@@ -953,13 +963,13 @@ static struct slot netdev_napi_get_dump[] = {
 };
 static struct slot netdev_qstats_get[] = {
 	S_U32_RANGE(NETDEV_A_QSTATS_IFINDEX, 1, UINT32_MAX),
-	S_SINT(NETDEV_A_QSTATS_SCOPE),
+	S_UINT_MASK(NETDEV_A_QSTATS_SCOPE, 0x1),
 };
 static struct slot netdev_bind_rx[] = {
 	S_U32_RANGE(NETDEV_A_DMABUF_IFINDEX, 1, UINT32_MAX, .required = true),
 	S_U32(NETDEV_A_DMABUF_FD, .required = true),
 	S_NEST(NETDEV_A_DMABUF_QUEUES, netdev_queue_id, .required = true),
-	S_U32(NETDEV_A_DMABUF_RX_PAGE_SIZE),
+	S_U32_RANGE(NETDEV_A_DMABUF_RX_PAGE_SIZE, 4096, UINT32_MAX),
 };
 static struct slot netdev_napi_set[] = {
 	S_U32(NETDEV_A_NAPI_ID, .required = true),
@@ -1070,14 +1080,15 @@ static struct slot ethtool_tsinfo_get[] = {
 	S_NEST(ETHTOOL_A_TSINFO_HWTSTAMP_PROVIDER, ethtool_ts_provider),
 };
 /* eeprom_parse_request() answers -EINVAL without OFFSET, LENGTH, PAGE or
- * I2C_ADDRESS. */
+ * I2C_ADDRESS, and the policy bounds that last to
+ * ETH_MODULE_MAX_I2C_ADDRESS, 0x7f. */
 static struct slot ethtool_module_eeprom_get[] = {
 	S_NEST(ETHTOOL_A_MODULE_EEPROM_HEADER, ethtool_header, .required = true),
 	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_OFFSET, 0, 255, .required = true),
 	S_U32_RANGE(ETHTOOL_A_MODULE_EEPROM_LENGTH, 1, 128, .required = true),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_PAGE, .required = true),
 	S_U8(ETHTOOL_A_MODULE_EEPROM_BANK),
-	S_U8(ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, .required = true),
+	S_U8_RANGE(ETHTOOL_A_MODULE_EEPROM_I2C_ADDRESS, 0, 0x7f, .required = true),
 };
 static struct slot ethtool_stats_get[] = {
 	S_NEST(ETHTOOL_A_STATS_HEADER, ethtool_header, .required = true),
@@ -2050,13 +2061,13 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 }
 
 /*
- * Whether v, a host-order u32 or the count of an array's elements, is
+ * Whether v, a host-order scalar or the count of an array's elements, is
  * inside the slot's bound.  What is inside is kept apart, with the bits it
  * sets and the ends it reaches, so that a spec which draws from less of the
  * bound than the policy allows shows up as well as one that strays outside
  * it.
  */
-static void tally_bound(struct slot *slot, uint32_t v)
+static void tally_bound(struct slot *slot, uint64_t v)
 {
 	if (slot->bound == SB_MASK ? (v & ~slot->hi) != 0 :
 				     (v < slot->lo || v > slot->hi))
@@ -2160,15 +2171,12 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 			if (plen < slot->min || plen > slot->max)
 				return false;
 			if (slot->bound != SB_NONE) {
-				uint16_t narrow;
-				uint32_t v;
+				uint64_t v = 0;
 
-				if (plen == sizeof(narrow)) {
-					memcpy(&narrow, p + off + NLA_HDRLEN, sizeof(narrow));
-					v = narrow;
-				} else {
-					memcpy(&v, p + off + NLA_HDRLEN, sizeof(v));
-				}
+				/* A bound is read at the payload's own width:
+				 * a byte, a u16, a u32 or an NLA_UINT's 8. */
+				memcpy(&v, p + off + NLA_HDRLEN,
+				       plen < sizeof(v) ? plen : sizeof(v));
 				tally_bound(slot, v);
 			}
 			break;
@@ -2258,14 +2266,16 @@ static void expect_slots_seen(const struct slot *slots, unsigned int n_slots,
 /*
  * A bounded slot is filled inside its bound seven draws in eight; the
  * eighth is random bytes, which land inside as often as the bound's share
- * of the 2^32 values (2^16 for a u16), so the fraction inside is 0.875 plus
- * that share of 0.125.  Over the 1000 draws or more asked for it has a standard deviation
- * of about 0.01, so 0.06 either way turns away a spec that never strays
- * outside the bound and one that never settles inside it.  The eighth draw
- * of an array or a nest goes past its cap, so never lands inside.  The draws inside
- * must also span the bound, which a spec with a narrower one than the
- * policy's does not: a mask sets and clears each of its bits, and a range
- * reaches to within a tenth of its width of both ends.
+ * of the values its width takes (2^8 for a byte, 2^16 for a u16, 2^32
+ * for a u32, 2^64 for an NLA_UINT's 8-byte form), so the fraction inside
+ * is 0.875 plus that share of 0.125.  Over the 1000 draws or more asked
+ * for it has a standard deviation of about 0.01, so 0.06 either way turns
+ * away a spec that never strays outside the bound and one that never
+ * settles inside it.  The eighth draw of an array or a nest goes past
+ * its cap, so never lands inside.  The draws inside must also span the
+ * bound, which a spec with a narrower one than the policy's does not: a
+ * mask sets and clears each of its bits, and a range reaches to within a
+ * tenth of its width of both ends.
  */
 static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 				 const char *what)
@@ -2287,13 +2297,34 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 			BUG("genl ops: too few draws to judge a bounded attribute");
 		}
 
-		if (slot->kind == SK_ARRAY || slot->kind == SK_NEST)
+		/* The share of random bytes that land inside the bound:
+		 * the bound's share of the values one width takes, 2^64
+		 * for an NLA_UINT's 8-byte form, which no shift reaches.
+		 * An NLA_UINT draws 4 or 8 bytes equally often, so its
+		 * share is the mean of the two widths'. */
+		if (slot->kind == SK_ARRAY || slot->kind == SK_NEST) {
 			share = 0;
-		else if (slot->bound == SB_MASK)
-			share = (double) (1ULL << __builtin_popcount(slot->hi)) / 4294967296.0;
-		else
-			share = ((double) slot->hi - slot->lo + 1) /
-				(slot->max == sizeof(uint16_t) ? 65536.0 : 4294967296.0);
+		} else {
+			unsigned int w;
+
+			share = 0;
+			for (w = slot->min; ; w = slot->max) {
+				double values = w >= 8 ? 18446744073709551616.0 :
+						 (double) (1ULL << (8 * w));
+
+				if (slot->bound == SB_MASK)
+					share += (double) (1ULL <<
+							  __builtin_popcountll(slot->hi)) /
+					       values;
+				else
+					share += ((double) slot->hi -
+						  slot->lo + 1) / values;
+				if (w == slot->max)
+					break;
+			}
+			if (slot->min < slot->max)
+				share /= 2;
+		}
 		want = 0.875 + 0.125 * share;
 		frac = (double) slot->in_bound / slot->seen;
 		if (frac < want - 0.06 || frac > want + 0.06) {
@@ -2305,15 +2336,17 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		if (slot->bound == SB_MASK) {
 			spans = slot->or_all == slot->hi && slot->and_all == 0;
 		} else {
-			uint32_t slack = (slot->hi - slot->lo) / 10;
+			uint64_t slack = (slot->hi - slot->lo) / 10;
 
 			spans = slot->min_v - slot->lo <= slack &&
 				slot->hi - slot->max_v <= slack;
 		}
 		if (!spans) {
-			fprintf(stderr, "%s: draws of attribute %u inside the bound set %#x and keep %#x, from %u to %u\n",
-				what, slot->id, slot->or_all, slot->and_all,
-				slot->min_v, slot->max_v);
+			fprintf(stderr, "%s: draws of attribute %u inside the bound set %#llx and keep %#llx, from %llu to %llu\n",
+				what, slot->id, (unsigned long long) slot->or_all,
+				(unsigned long long) slot->and_all,
+				(unsigned long long) slot->min_v,
+				(unsigned long long) slot->max_v);
 			BUG("genl ops: a bounded attribute does not cover its bound");
 		}
 	}
@@ -3015,8 +3048,9 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * eighteen, as wide as nfsd's export flags; a range from 1 and one from 0,
  * which is NLA_POLICY_MAX; one that runs to the top of the type, as
  * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
- * host order; an array of two elements at most; and a nest of two children
- * at most.
+ * host order; a byte's range, one of them pinned to one number; an
+ * NLA_UINT's range and two of its masks, at 4 or 8 bytes; an array of
+ * two elements at most; and a nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
@@ -3034,6 +3068,11 @@ static void check_bounded_tables(void)
 		{ 8, NLA_KIND_U16_RANGE, 1000, 10 },
 		{ 9, NLA_KIND_U16_RANGE, 255 },
 		{ 10, NLA_KIND_U16_RANGE, UINT16_MAX, 1 },
+		{ 11, NLA_KIND_U8_RANGE, 127 },
+		{ 12, NLA_KIND_U8_RANGE, 5, 5 },
+		{ 13, NLA_KIND_UINT_RANGE, UINT32_MAX, 1 },
+		{ 14, NLA_KIND_UINT_MASK, 0x1 },
+		{ 15, NLA_KIND_UINT_MASK, 0x3ffff },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3047,6 +3086,11 @@ static void check_bounded_tables(void)
 		S_U16_RANGE(8, 10, 1000),
 		S_U16_RANGE(9, 0, 255),
 		S_U16_RANGE(10, 1, UINT16_MAX),
+		S_U8_RANGE(11, 0, 127),
+		S_U8_RANGE(12, 5, 5),
+		S_UINT_RANGE(13, 1, UINT32_MAX),
+		S_UINT_MASK(14, 0x1),
+		S_UINT_MASK(15, 0x3ffff),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3110,6 +3154,49 @@ static void check_sockaddr_kind(void)
 }
 
 /*
+ * Whether spec declares slot's bound: a mask or range kind at the slot's
+ * width, with the bound's ends, or a nest or array capped where its
+ * handler caps it.  A byte's range is NLA_KIND_U8_RANGE, a u16's
+ * NLA_KIND_U16_RANGE, a u32's NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE,
+ * and an NLA_UINT's, at 4 or 8 bytes, NLA_KIND_UINT_MASK or
+ * NLA_KIND_UINT_RANGE.
+ */
+static bool spec_declares_bound(const struct nla_attr_spec *spec,
+				const struct slot *slot)
+{
+	if (slot->kind == SK_ARRAY)
+		return spec->kind == NLA_KIND_NESTED_ARRAY &&
+		       spec->max_len == slot->hi;
+	if (slot->kind == SK_NEST)
+		return spec->kind == NLA_KIND_NESTED &&
+		       spec->max_len == slot->hi;
+	if (slot->bound == SB_NONE)
+		return false;
+	if (slot->bound == SB_MASK) {
+		if (slot->min == 4 && slot->max == 8)
+			return spec->kind == NLA_KIND_UINT_MASK &&
+			       spec->max_len == slot->hi;
+		return spec->kind == NLA_KIND_U32_MASK &&
+		       spec->max_len == slot->hi;
+	}
+	if (slot->min == 1 && slot->max == 1)
+		return spec->kind == NLA_KIND_U8_RANGE &&
+		       spec->max_len == slot->hi &&
+		       spec->min_len == slot->lo;
+	if (slot->min == 2 && slot->max == 2)
+		return spec->kind == NLA_KIND_U16_RANGE &&
+		       spec->max_len == slot->hi &&
+		       spec->min_len == slot->lo;
+	if (slot->min == 4 && slot->max == 8)
+		return spec->kind == NLA_KIND_UINT_RANGE &&
+		       spec->max_len == slot->hi &&
+		       spec->min_len == slot->lo;
+	return spec->kind == NLA_KIND_U32_RANGE &&
+	       spec->max_len == slot->hi &&
+	       spec->min_len == slot->lo;
+}
+
+/*
  * What each spec declares, its bound and whether it is marked required, is
  * what its policy and its handler give: none declares a bound that both
  * lack or a mark the handler does not need, and an array is capped where
@@ -3157,23 +3244,20 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
 			  spec->kind == NLA_KIND_U32_RANGE ||
+			  spec->kind == NLA_KIND_U16_RANGE ||
+			  spec->kind == NLA_KIND_U8_RANGE ||
+			  spec->kind == NLA_KIND_UINT_MASK ||
+			  spec->kind == NLA_KIND_UINT_RANGE ||
 			  ((spec->kind == NLA_KIND_NESTED_ARRAY ||
 			    spec->kind == NLA_KIND_NESTED) && spec->max_len != 0);
 		if (slot->bound == SB_NONE && !bounded)
 			continue;
-		if (slot->kind == SK_ARRAY ? spec->kind == NLA_KIND_NESTED_ARRAY &&
-					     spec->max_len == slot->hi :
-		    slot->kind == SK_NEST ? spec->kind == NLA_KIND_NESTED &&
-					    spec->max_len == slot->hi :
-		    slot->bound == SB_MASK ? spec->kind == NLA_KIND_U32_MASK &&
-					     spec->max_len == slot->hi :
-					     spec->kind == NLA_KIND_U32_RANGE &&
-					     spec->max_len == slot->hi &&
-					     spec->min_len == slot->lo)
+		if (spec_declares_bound(spec, slot))
 			continue;
-		fprintf(stderr, "%s: attribute %u is declared kind %u from %u to %u, its policy has bound %u from %u to %u\n",
+		fprintf(stderr, "%s: attribute %u is declared kind %u from %u to %u, its policy has bound %u from %llu to %llu\n",
 			what, slot->id, spec->kind, spec->min_len, spec->max_len,
-			slot->bound, slot->lo, slot->hi);
+			slot->bound, (unsigned long long) slot->lo,
+			(unsigned long long) slot->hi);
 		BUG("genl ops: a spec does not declare its policy's bound");
 	}
 }
