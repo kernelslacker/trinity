@@ -16,8 +16,11 @@
 #include <sys/socket.h>
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_acct.h>
+#include <linux/netfilter/nfnetlink_conntrack.h>
 #include <linux/netfilter/nfnetlink_cttimeout.h>
 #include <linux/netlink.h>
+
+#include "kernel/ipset.h"
 
 #include "debug.h"		/* BUG */
 #include "netlink-attrs.h"	/* struct nla_attr_spec */
@@ -270,6 +273,10 @@ static const struct bounded_slot slots[] = {
 	  .kind = NLA_KIND_BE32_RANGE, .limit = 4, .lo = 1 },
 	{ .name = "NFCTH_POLICY_EXPECT_MAX", .subsys = NFNL_SUBSYS_CTHELPER,
 	  .id = 2, .kind = NLA_KIND_BE32_RANGE, .limit = 255 },
+	/* ip_set_create_policy bounds REVISION with NLA_POLICY_MAX(NLA_U8,
+	 * IPSET_REVISION_MAX), 9, in the kernel-internal ip_set.h. */
+	{ .name = "IPSET_ATTR_REVISION", .subsys = NFNL_SUBSYS_IPSET, .id = 4,
+	  .kind = NLA_KIND_U8_RANGE, .limit = 9 },
 };
 
 /*
@@ -447,6 +454,7 @@ static unsigned int slot_width(unsigned short kind)
 {
 	switch (kind) {
 	case NLA_KIND_U8_ONEOF:
+	case NLA_KIND_U8_RANGE:
 		return 1;
 	case NLA_KIND_BE16_MASK:
 	case NLA_KIND_BE16_ONEOF:
@@ -514,7 +522,8 @@ static void check_slot_fraction(const char *name, unsigned int in_bounds)
 static void check_bounded_spec(const struct nla_attr_spec *spec,
 			       const struct bounded_slot *slot)
 {
-	const bool mask = slot->kind != NLA_KIND_BE32_RANGE;
+	const bool mask = slot->kind == NLA_KIND_BE32_MASK ||
+			    slot->kind == NLA_KIND_BE16_MASK;
 	uint32_t min_v = UINT32_MAX, max_v = 0, or_all = 0, and_all = UINT32_MAX;
 	unsigned int round, in_bounds = 0, below = 0;
 
@@ -1648,6 +1657,124 @@ static struct pslot cthelper_find[] = {
 #define ACCT		NFNL_SUBSYS_ACCT
 #define HOOK		NFNL_SUBSYS_HOOK
 #define CTHELPER	NFNL_SUBSYS_CTHELPER
+#define IPSET		NFNL_SUBSYS_IPSET
+
+/*
+ * net/netfilter/ipset/ip_set_core.c: the per-command policies.  CREATE
+ * needs the protocol, the name, the type name, the revision and the
+ * family; ADD and DEL need the protocol, the name and exactly one of
+ * DATA and ADT, which no mark says, and TEST the name and DATA; a
+ * rename or a swap needs both names, the second in the TYPENAME slot;
+ * a set-name command needs the protocol, and a header or a lookup by
+ * name the name as well; a type lookup needs the protocol, the type
+ * name and the family; a lookup by index the protocol and the index.
+ * The protocol is at least IPSET_PROTOCOL_MIN where a minimum is
+ * checked, and exactly IPSET_PROTOCOL where it is compared.  DATA's
+ * children are the set types' adt_policy ids, and a CREATE's DATA the
+ * ids the create policies read, the CADT ids some of them take and
+ * the sizing ones; the two reuse the same numbers, so neither list
+ * holds the other's.  ADT holds DATA nests.
+ */
+#define IPSET_DATA_SLOTS \
+	PS(IPSET_ATTR_IP, false, NLA_KIND_NESTED), \
+	PS(IPSET_ATTR_IP_TO, false, NLA_KIND_NESTED), \
+	PS(IPSET_ATTR_CIDR, false, NLA_KIND_U8), \
+	PS(IPSET_ATTR_PORT, false, NLA_KIND_U16), \
+	PS(IPSET_ATTR_PORT_TO, false, NLA_KIND_U16), \
+	PS(IPSET_ATTR_TIMEOUT, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_PROTO, false, NLA_KIND_U8), \
+	PS(IPSET_ATTR_CADT_FLAGS, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_CADT_LINENO, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_MARK, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_MARKMASK, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_BITMASK, false, NLA_KIND_NESTED), \
+	PS(IPSET_ATTR_ETHER, false, NLA_KIND_BINARY), \
+	PS(IPSET_ATTR_NAME, false, NLA_KIND_STRING), \
+	PS(IPSET_ATTR_NAMEREF, false, NLA_KIND_STRING), \
+	PS(IPSET_ATTR_IP2, false, NLA_KIND_NESTED), \
+	PS(IPSET_ATTR_CIDR2, false, NLA_KIND_U8), \
+	PS(IPSET_ATTR_IP2_TO, false, NLA_KIND_NESTED), \
+	PS(IPSET_ATTR_IFACE, false, NLA_KIND_STRING), \
+	PS(IPSET_ATTR_BYTES, false, NLA_KIND_U64), \
+	PS(IPSET_ATTR_PACKETS, false, NLA_KIND_U64), \
+	PS(IPSET_ATTR_COMMENT, false, NLA_KIND_STRING), \
+	PS(IPSET_ATTR_SKBMARK, false, NLA_KIND_U64), \
+	PS(IPSET_ATTR_SKBPRIO, false, NLA_KIND_U32), \
+	PS(IPSET_ATTR_SKBQUEUE, false, NLA_KIND_U16)
+static struct pslot ipset_data[] = {
+	IPSET_DATA_SLOTS,
+};
+static struct pslot ipset_create_data[] = {
+	PS(IPSET_ATTR_IP, false, NLA_KIND_NESTED),
+	PS(IPSET_ATTR_IP_TO, false, NLA_KIND_NESTED),
+	PS(IPSET_ATTR_CIDR, false, NLA_KIND_U8),
+	PS(IPSET_ATTR_PORT, false, NLA_KIND_U16),
+	PS(IPSET_ATTR_PORT_TO, false, NLA_KIND_U16),
+	PS(IPSET_ATTR_TIMEOUT, false, NLA_KIND_U32),
+	PS(IPSET_ATTR_PROTO, false, NLA_KIND_U8),
+	PS(IPSET_ATTR_CADT_FLAGS, false, NLA_KIND_U32),
+	PS(IPSET_ATTR_BITMASK, false, NLA_KIND_NESTED),
+	PS(IPSET_ATTR_INITVAL, false, NLA_KIND_U32),
+	PS(IPSET_ATTR_HASHSIZE, false, NLA_KIND_U32),
+	PS(IPSET_ATTR_MAXELEM, false, NLA_KIND_U32),
+	PS(IPSET_ATTR_NETMASK, false, NLA_KIND_U8),
+	PS(IPSET_ATTR_BUCKETSIZE, false, NLA_KIND_U8),
+	PS(IPSET_ATTR_RESIZE, false, NLA_KIND_U8),
+	PS(IPSET_ATTR_SIZE, false, NLA_KIND_U32),
+};
+static struct pslot ipset_adt_elem[] = {
+	PSN(IPSET_ATTR_DATA, false, ipset_data),
+};
+static struct pslot ipset_protocol[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 7, 7),
+};
+static struct pslot ipset_create[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, true, NLA_KIND_STRING_WORD),
+	PS(IPSET_ATTR_TYPENAME, true, NLA_KIND_STRING),
+	PSB(IPSET_ATTR_REVISION, true, NLA_KIND_U8_RANGE, 0, 9),
+	PS(IPSET_ATTR_FAMILY, true, NLA_KIND_U8),
+	PSN(IPSET_ATTR_DATA, false, ipset_create_data),
+};
+static struct pslot ipset_setname[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, false, NLA_KIND_STRING_WORD),
+};
+static struct pslot ipset_setname_req[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, true, NLA_KIND_STRING_WORD),
+};
+static struct pslot ipset_setname2[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, true, NLA_KIND_STRING_WORD),
+	PS(IPSET_ATTR_SETNAME2, true, NLA_KIND_STRING_WORD),
+};
+static struct pslot ipset_dump[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, false, NLA_KIND_STRING_WORD),
+	PS(IPSET_ATTR_FLAGS, false, NLA_KIND_U32),
+};
+static struct pslot ipset_adt[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, true, NLA_KIND_STRING_WORD),
+	PS(IPSET_ATTR_LINENO, false, NLA_KIND_U32),
+	PSN(IPSET_ATTR_DATA, false, ipset_data),
+	PSN(IPSET_ATTR_ADT, false, ipset_adt_elem),
+};
+static struct pslot ipset_test[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_SETNAME, true, NLA_KIND_STRING_WORD),
+	PSN(IPSET_ATTR_DATA, true, ipset_data),
+};
+static struct pslot ipset_type[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 6, 255),
+	PS(IPSET_ATTR_TYPENAME, true, NLA_KIND_STRING),
+	PS(IPSET_ATTR_FAMILY, true, NLA_KIND_U8),
+};
+static struct pslot ipset_byindex[] = {
+	PSB(IPSET_ATTR_PROTOCOL, true, NLA_KIND_U8_RANGE, 7, 7),
+	PS(IPSET_ATTR_INDEX, true, NLA_KIND_U16),
+};
 
 static struct cmd_row cmd_rows[] = {
 	{ "NFT_MSG_NEWTABLE", NFTABLES, 0, table_new, ARRAY_SIZE(table_new) },
@@ -1696,6 +1823,21 @@ static struct cmd_row cmd_rows[] = {
 	{ "NFNL_MSG_CTHELPER_NEW", CTHELPER, 0, cthelper_new, ARRAY_SIZE(cthelper_new) },
 	{ "NFNL_MSG_CTHELPER_GET", CTHELPER, 1, cthelper_find, ARRAY_SIZE(cthelper_find) },
 	{ "NFNL_MSG_CTHELPER_DEL", CTHELPER, 2, cthelper_find, ARRAY_SIZE(cthelper_find) },
+	{ "IPSET_CMD_PROTOCOL", IPSET, IPSET_CMD_PROTOCOL, ipset_protocol, ARRAY_SIZE(ipset_protocol) },
+	{ "IPSET_CMD_CREATE", IPSET, IPSET_CMD_CREATE, ipset_create, ARRAY_SIZE(ipset_create) },
+	{ "IPSET_CMD_DESTROY", IPSET, IPSET_CMD_DESTROY, ipset_setname, ARRAY_SIZE(ipset_setname) },
+	{ "IPSET_CMD_FLUSH", IPSET, IPSET_CMD_FLUSH, ipset_setname, ARRAY_SIZE(ipset_setname) },
+	{ "IPSET_CMD_RENAME", IPSET, IPSET_CMD_RENAME, ipset_setname2, ARRAY_SIZE(ipset_setname2) },
+	{ "IPSET_CMD_SWAP", IPSET, IPSET_CMD_SWAP, ipset_setname2, ARRAY_SIZE(ipset_setname2) },
+	{ "IPSET_CMD_LIST", IPSET, IPSET_CMD_LIST, ipset_dump, ARRAY_SIZE(ipset_dump) },
+	{ "IPSET_CMD_SAVE", IPSET, IPSET_CMD_SAVE, ipset_setname, ARRAY_SIZE(ipset_setname) },
+	{ "IPSET_CMD_ADD", IPSET, IPSET_CMD_ADD, ipset_adt, ARRAY_SIZE(ipset_adt) },
+	{ "IPSET_CMD_DEL", IPSET, IPSET_CMD_DEL, ipset_adt, ARRAY_SIZE(ipset_adt) },
+	{ "IPSET_CMD_TEST", IPSET, IPSET_CMD_TEST, ipset_test, ARRAY_SIZE(ipset_test) },
+	{ "IPSET_CMD_HEADER", IPSET, IPSET_CMD_HEADER, ipset_setname_req, ARRAY_SIZE(ipset_setname_req) },
+	{ "IPSET_CMD_TYPE", IPSET, IPSET_CMD_TYPE, ipset_type, ARRAY_SIZE(ipset_type) },
+	{ "IPSET_CMD_GET_BYNAME", IPSET, IPSET_CMD_GET_BYNAME, ipset_setname_req, ARRAY_SIZE(ipset_setname_req) },
+	{ "IPSET_CMD_GET_BYINDEX", IPSET, IPSET_CMD_GET_BYINDEX, ipset_byindex, ARRAY_SIZE(ipset_byindex) },
 };
 
 /*
