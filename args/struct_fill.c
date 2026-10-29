@@ -562,6 +562,39 @@ static void fill_bpf_program(unsigned char *buf, const struct struct_field *f,
 }
 #endif
 
+/*
+ * Whether an FT_PTR_ARRAY field with an xor_sibling keeps its slot
+ * NULL, so exactly one of the pair gets a buffer.  The sibling named
+ * by xor_sibling is read where the pointer pass has got to: one
+ * already filled with a pointer leaves this one NULL, and one still
+ * NULL leaves this one to take the buffer.  A sibling not yet
+ * reached rolls: the sibling's own check then takes the buffer
+ * unconditionally when it finds this slot empty, so a roll either
+ * way leaves exactly one.  chosen_len[] is left alone for a skipped
+ * field: the pre-pin pass already wrote it the shared count, and the
+ * length pass reads the first sibling's, so the count the allocated
+ * array holds is what the LEN field reports.
+ */
+static bool ptr_array_xor_skip(unsigned char *buf,
+			       const struct struct_field *fields,
+			       unsigned int n, unsigned int i)
+{
+	const struct struct_field *f = &fields[i];
+	const char *sibling = f->u.ptr_array.xor_sibling;
+	int p;
+
+	if (sibling == NULL)
+		return false;
+	p = find_field_index_in(fields, n, sibling);
+	if (p < 0 || (unsigned int) p >= n || (unsigned int) p == i)
+		return false;
+	if (fields[p].tag != FT_PTR_ARRAY)
+		return false;
+	if ((unsigned int) p < i)
+		return read_field_uint(buf, &fields[p]) != 0;
+	return rnd_modulo_u32(2) == 0;
+}
+
 /* Pass 2 of struct_fill_passes(): pointer tags. */
 static void fill_pointer_pass(unsigned char *buf, unsigned int size,
 			      const struct struct_field *fields,
@@ -610,6 +643,10 @@ static void fill_pointer_pass(unsigned char *buf, unsigned int size,
 		}
 
 		case FT_PTR_ARRAY:
+			if (ptr_array_xor_skip(buf, fields, n, i)) {
+				write_field_uint(buf, f, 0);
+				break;
+			}
 			fill_ptr_array(buf, f, rec, &chosen_len[i]);
 			break;
 

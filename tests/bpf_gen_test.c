@@ -1256,6 +1256,7 @@ struct link_tally {
 	unsigned int perf_target, cgroup_target, ifindex_target, ifindex_lo;
 	unsigned int generic_prog;
 	unsigned int tail_set, no_tail, tail_uncovered;
+	unsigned int both_syms_addrs, negative_pid;
 };
 
 /* The sub-buffers the fill made for the pointer fields of the arm the attr's
@@ -1355,6 +1356,18 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			t->tail_set += tail_set;
 			t->no_tail += !kernel_gets_its_tail(attr);
 			t->tail_uncovered += rec.a3 <= last;
+			/* bpf_kprobe_multi_link_attach() takes exactly one of
+			 * syms and addrs, and bpf_uprobe_multi_link_attach()
+			 * reads pid as a pid_t, so a negative one is refused. */
+			if (type == BPF_TRACE_KPROBE_MULTI ||
+			    type == BPF_TRACE_KPROBE_SESSION)
+				t->both_syms_addrs +=
+					attr->link_create.kprobe_multi.syms != 0 &&
+					attr->link_create.kprobe_multi.addrs != 0;
+			if (type == BPF_TRACE_UPROBE_MULTI ||
+			    type == BPF_TRACE_UPROBE_SESSION)
+				t->negative_pid +=
+					(int32_t) attr->link_create.uprobe_multi.pid < 0;
 		}
 
 		rec.retval = (unsigned long) -1L;
@@ -1384,6 +1397,10 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 		      t->tail_set * 2 >= t->draws);
 		check("a multi attach has no count, or no array under it", name,
 		      t->no_tail == 0);
+		check("a kprobe_multi names both syms and addrs", name,
+		      t->both_syms_addrs == 0);
+		check("an uprobe_multi names a negative pid", name,
+		      t->negative_pid == 0);
 		check("the size stops short of what the draw filled", name,
 		      t->tail_uncovered == 0);
 		check("a program is not the pool's", name, t->generic_prog == 0);
@@ -1622,6 +1639,11 @@ static void link_create_catalog_has_the_tracing_multi_tail(void)
 		      nested->fields[2].offset ==
 		      offsetof(union bpf_attr, link_create.tracing_multi.cnt) &&
 		      nested->fields[2].tag == FT_LEN_COUNT);
+		/* bpf_tracing_multi_attach() reads ids as u32s, cookies
+		 * as u64s, so the arrays are sized at 4 and 8. */
+		check("the ids are not u32s", "tracing multi",
+		      nested->fields[0].u.ptr_array.elem_size == sizeof(uint32_t) &&
+		      nested->fields[1].u.ptr_array.elem_size == sizeof(uint64_t));
 		check("the tail's size stops short of cnt", "tracing multi",
 		      nested->effective_size ==
 		      offsetof(union bpf_attr, link_create.tracing_multi.cnt) +

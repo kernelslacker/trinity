@@ -86,12 +86,24 @@ struct struct_field {
 		 * its struct_size), or elem_size carries the scalar byte
 		 * width directly (e.g. 8 for a u64 array).  When both are
 		 * set, elem_struct wins.
+		 *
+		 * xor_sibling names a sibling FT_PTR_ARRAY field (dotted
+		 * form, as buf_fields[] spells it) of which exactly one
+		 * gets a buffer: the first of the pair the pointer pass
+		 * reaches rolls whether it takes one, the other then
+		 * takes one only when its sibling's slot is still NULL,
+		 * so a taker that reads exactly one of two arrays (the
+		 * kprobe_multi syms/addrs pair) never sees both.  The
+		 * field left NULL keeps its pre-pinned shared count,
+		 * so the paired LEN field still reports the count the
+		 * allocated sibling holds.
 		 */
 		struct {
 			const char	*len_field;
 			const char	*elem_struct;
 			unsigned int	 elem_size;
 			unsigned int	 max_count;
+			const char	*xor_sibling;
 		} ptr_array;
 		/* FT_PTR_STRUCT: pointer to one cataloged struct. */
 		struct {

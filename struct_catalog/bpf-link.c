@@ -265,7 +265,9 @@ const unsigned long bpf_attach_types_cgroup[] = {
  * The element type is scalar (u64 for symbol pointers, addresses,
  * file offsets, cookies) -- this is the first user of FT_PTR_ARRAY's
  * elem_size override path that lets the pointer pass size its
- * sub-buffer without a cataloged elem_struct.
+ * sub-buffer without a cataloged elem_struct.  syms and addrs name
+ * each other as xor_siblings, so the fill plants exactly one of
+ * them, as bpf_kprobe_multi_link_attach() requires.
  */
 const unsigned long bpf_attach_types_kprobe_multi[] = {
 	BPF_TRACE_KPROBE_MULTI, BPF_TRACE_KPROBE_SESSION,
@@ -285,10 +287,12 @@ const struct struct_field bpf_attr_LINK_CREATE_KPROBE_MULTI_fields[] = {
 			     .n_buf_fields = ARRAY_SIZE(bpf_attr_link_create_kprobe_multi_arrays) }),
 	FIELDX(union bpf_attr, link_create.kprobe_multi.syms, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
-				.max_count = 32 }),
+				.max_count = 32,
+				.xor_sibling = "link_create.kprobe_multi.addrs" }),
 	FIELDX(union bpf_attr, link_create.kprobe_multi.addrs, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
-				.max_count = 32 }),
+				.max_count = 32,
+				.xor_sibling = "link_create.kprobe_multi.syms" }),
 	FIELDX(union bpf_attr, link_create.kprobe_multi.cookies, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32 }),
@@ -324,7 +328,10 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
 	FIELDX(union bpf_attr, link_create.uprobe_multi.flags, FT_FLAGS,
 	       .u.flags.mask = BPF_F_UPROBE_MULTI_RETURN |
 			       BPF_F_UPROBE_MULTI_PATH_FD),
-	FIELD(union bpf_attr, link_create.uprobe_multi.pid),
+	/* pid is read as a pid_t: a value past INT32_MAX reads
+	 * negative and the taker refuses it. */
+	FIELDX(union bpf_attr, link_create.uprobe_multi.pid, FT_RANGE,
+	       .u.range = { 0, INT32_MAX }),
 };
 
 /*
@@ -354,7 +361,7 @@ const char *const bpf_attr_link_create_tracing_multi_arrays[] = {
 
 const struct struct_field bpf_attr_LINK_CREATE_TRACING_MULTI_fields[] = {
 	FIELDX(union bpf_attr, link_create.tracing_multi.ids, FT_PTR_ARRAY,
-	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
+	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
 				.max_count = 32 }),
 	FIELDX(union bpf_attr, link_create.tracing_multi.cookies, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
