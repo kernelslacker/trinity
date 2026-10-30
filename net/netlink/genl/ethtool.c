@@ -1,9 +1,11 @@
 /*
  * Genetlink family grammar: ethtool, targeting net/ethtool/netlink.c and
- * the per-command files beside it.  Only the read-side commands are listed;
- * WOL_GET and MODULE_EEPROM_GET are GENL_UNS_ADMIN_PERM, the rest carry no
- * flag.  Each is keyed on the nested *_HEADER attribute that names the
- * net_device, and takes the table of its own policy.
+ * the per-command files beside it.  The read-side commands are listed, and
+ * the SET/ACT commands as they are added; WOL_GET and MODULE_EEPROM_GET
+ * are GENL_UNS_ADMIN_PERM, the rest of the read side carries no flag, and
+ * every SET/ACT command carries GENL_UNS_ADMIN_PERM.  Each is keyed on
+ * the nested *_HEADER attribute that names the net_device, and takes the
+ * table of its own policy.
  */
 
 #if __has_include(<linux/ethtool_netlink_generated.h>)
@@ -189,11 +191,28 @@ static const struct nla_attr_spec ethtool_port_get_attrs[] = {
 	  .required = true },
 };
 
+/*
+ * LINKINFO_SET, from ethnl_linkinfo_set_policy: the header and three
+ * plain U8s that ethnl_set_linkinfo assigns un-narrowed, so no bound.
+ * The header is required, by GENL_REQ_ATTR_CHECK in
+ * ethnl_default_set_doit.
+ */
+static const struct nla_attr_spec ethtool_linkinfo_set_attrs[] = {
+	{ ETHTOOL_A_LINKINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_LINKINFO_PORT,		NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_LINKINFO_PHYADDR,		NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_LINKINFO_TP_MDIX_CTRL,	NLA_KIND_U8,     1 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
 	{ ETHTOOL_MSG_LINKINFO_GET,      "ETHTOOL_MSG_LINKINFO_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_LINKINFO_SET,      "ETHTOOL_MSG_LINKINFO_SET",
+	  ethtool_linkinfo_set_attrs, ARRAY_SIZE(ethtool_linkinfo_set_attrs) },
 	{ ETHTOOL_MSG_LINKMODES_GET,     "ETHTOOL_MSG_LINKMODES_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_LINKSTATE_GET,     "ETHTOOL_MSG_LINKSTATE_GET",

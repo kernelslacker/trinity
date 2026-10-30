@@ -1108,9 +1108,20 @@ static struct slot ethtool_port_get[] = {
 	S_NEST(ETHTOOL_A_PORT_HEADER, ethtool_header, .required = true),
 	S_U32_RANGE(ETHTOOL_A_PORT_ID, 1, UINT32_MAX, .required = true),
 };
+/* net/ethtool/linkinfo.c: ethnl_linkinfo_set_policy, whose PORT, PHYADDR
+ * and TP_MDIX_CTRL are plain NLA_U8s that ethnl_set_linkinfo assigns
+ * un-narrowed.  The header is required, by GENL_REQ_ATTR_CHECK in
+ * ethnl_default_set_doit. */
+static struct slot ethtool_linkinfo_set[] = {
+	S_NEST(ETHTOOL_A_LINKINFO_HEADER, ethtool_header, .required = true),
+	S_U8(ETHTOOL_A_LINKINFO_PORT),
+	S_U8(ETHTOOL_A_LINKINFO_PHYADDR),
+	S_U8(ETHTOOL_A_LINKINFO_TP_MDIX_CTRL),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_LINKINFO_SET, ethtool_linkinfo_set),
 	P_CMD(ETHTOOL_MSG_LINKMODES_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_LINKSTATE_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_DEBUG_GET, ethtool_get),
