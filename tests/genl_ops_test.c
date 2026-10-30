@@ -1383,6 +1383,15 @@ static struct slot ethtool_cable_test_tdr_act[] = {
 	       .required = true),
 	S_NEST(ETHTOOL_A_CABLE_TEST_TDR_CFG, ethtool_cable_test_tdr_cfg),
 };
+/* net/ethtool/module.c: ethnl_module_fw_flash_act_policy.  FILE_NAME
+ * is required, by GENL_REQ_ATTR_CHECK in module_flash_fw, and the
+ * policy sets no length on the NUL string. */
+static struct slot ethtool_module_fw_flash_act[] = {
+	S_NEST(ETHTOOL_A_MODULE_FW_FLASH_HEADER, ethtool_header,
+	       .required = true),
+	S_STR(ETHTOOL_A_MODULE_FW_FLASH_FILE_NAME, 128, .required = true),
+	S_U32(ETHTOOL_A_MODULE_FW_FLASH_PASSWORD),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1419,6 +1428,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_PHC_VCLOCKS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MODULE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MODULE_SET, ethtool_module_set),
+	P_CMD(ETHTOOL_MSG_MODULE_FW_FLASH_ACT, ethtool_module_fw_flash_act),
 	P_CMD(ETHTOOL_MSG_PSE_GET, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_PSE_SET, ethtool_pse_set),
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),

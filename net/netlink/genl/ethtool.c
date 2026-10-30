@@ -646,6 +646,22 @@ static const struct nla_attr_spec ethtool_cable_test_tdr_act_attrs[] = {
 	  ARRAY_SIZE(ethtool_cable_test_tdr_cfg_attrs) },
 };
 
+/*
+ * MODULE_FW_FLASH_ACT, from ethnl_module_fw_flash_act_policy: the
+ * header, FILE_NAME as a NUL string and PASSWORD as a U32.  FILE_NAME
+ * is required, by GENL_REQ_ATTR_CHECK in module_flash_fw, and the
+ * policy sets no length on it, so it is capped at 128 bytes for the
+ * message window.
+ */
+static const struct nla_attr_spec ethtool_module_fw_flash_act_attrs[] = {
+	{ ETHTOOL_A_MODULE_FW_FLASH_HEADER, NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_MODULE_FW_FLASH_FILE_NAME, NLA_KIND_STRING, 128, 1,
+	  .required = true },
+	{ ETHTOOL_A_MODULE_FW_FLASH_PASSWORD, NLA_KIND_U32, 4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -720,6 +736,9 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_MODULE_SET,        "ETHTOOL_MSG_MODULE_SET",
 	  ethtool_module_set_attrs, ARRAY_SIZE(ethtool_module_set_attrs) },
+	{ ETHTOOL_MSG_MODULE_FW_FLASH_ACT, "ETHTOOL_MSG_MODULE_FW_FLASH_ACT",
+	  ethtool_module_fw_flash_act_attrs,
+	  ARRAY_SIZE(ethtool_module_fw_flash_act_attrs) },
 	{ ETHTOOL_MSG_PSE_GET,           "ETHTOOL_MSG_PSE_GET",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_PSE_SET,           "ETHTOOL_MSG_PSE_SET",
