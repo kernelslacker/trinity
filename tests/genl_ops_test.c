@@ -1244,6 +1244,14 @@ static struct slot ethtool_coalesce_set[] = {
 	S_U32(ETHTOOL_A_COALESCE_RX_CQE_FRAMES),
 	S_U32(ETHTOOL_A_COALESCE_RX_CQE_NSECS),
 };
+/* net/ethtool/pause.c: ethnl_pause_set_policy, whose STATS_SRC is
+ * NLA_REJECT and is left out. */
+static struct slot ethtool_pause_set[] = {
+	S_NEST(ETHTOOL_A_PAUSE_HEADER, ethtool_header, .required = true),
+	S_U8(ETHTOOL_A_PAUSE_AUTONEG),
+	S_U8(ETHTOOL_A_PAUSE_RX),
+	S_U8(ETHTOOL_A_PAUSE_TX),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1266,6 +1274,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_COALESCE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_COALESCE_SET, ethtool_coalesce_set),
 	P_CMD(ETHTOOL_MSG_PAUSE_GET, ethtool_pause_get),
+	P_CMD(ETHTOOL_MSG_PAUSE_SET, ethtool_pause_set),
 	P_CMD(ETHTOOL_MSG_EEE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),

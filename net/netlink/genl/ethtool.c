@@ -418,6 +418,20 @@ static const struct nla_attr_spec ethtool_coalesce_set_attrs[] = {
 	{ ETHTOOL_A_COALESCE_RX_CQE_NSECS,		NLA_KIND_U32, 4 },
 };
 
+/*
+ * PAUSE_SET, from ethnl_pause_set_policy: the header and the three
+ * plain U8s.  STATS_SRC is NLA_REJECT in the set policy, so it is
+ * left out: the kernel answers -EINVAL to it before the handler.
+ */
+static const struct nla_attr_spec ethtool_pause_set_attrs[] = {
+	{ ETHTOOL_A_PAUSE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_PAUSE_AUTONEG,	NLA_KIND_U8, 1 },
+	{ ETHTOOL_A_PAUSE_RX,		NLA_KIND_U8, 1 },
+	{ ETHTOOL_A_PAUSE_TX,		NLA_KIND_U8, 1 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -461,6 +475,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_coalesce_set_attrs, ARRAY_SIZE(ethtool_coalesce_set_attrs) },
 	{ ETHTOOL_MSG_PAUSE_GET,         "ETHTOOL_MSG_PAUSE_GET",
 	  ethtool_pause_get_attrs, ARRAY_SIZE(ethtool_pause_get_attrs) },
+	{ ETHTOOL_MSG_PAUSE_SET,         "ETHTOOL_MSG_PAUSE_SET",
+	  ethtool_pause_set_attrs, ARRAY_SIZE(ethtool_pause_set_attrs) },
 	{ ETHTOOL_MSG_EEE_GET,           "ETHTOOL_MSG_EEE_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_TSINFO_GET,        "ETHTOOL_MSG_TSINFO_GET",
