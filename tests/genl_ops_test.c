@@ -559,8 +559,10 @@ static struct slot nfsd_expkey[] = {
 	S_STR(NFSD_A_EXPKEY_PATH, 0),
 };
 static struct slot nfsd_version[] = {
-	S_U32(NFSD_A_VERSION_MAJOR, .required = true),
-	S_U32(NFSD_A_VERSION_MINOR),
+	/* nfsd_nl_version_set_doit() acts on majors 2, 3 and 4, and
+	 * nfsd_minorversion() on minors up to 2 */
+	S_U32_RANGE(NFSD_A_VERSION_MAJOR, 2, 4, .required = true),
+	S_U32_RANGE(NFSD_A_VERSION_MINOR, 0, 2),
 	S_FLAG(NFSD_A_VERSION_ENABLED),
 };
 static struct slot nfsd_sock[] = {

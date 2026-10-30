@@ -69,10 +69,17 @@ static const struct nla_attr_spec nfsd_expkey_attrs[] = {
 	{ NFSD_A_EXPKEY_PATH,		NLA_KIND_STRING, 64, 1 },
 };
 
-/* nfsd_nl_version_set_doit() skips a version that has no MAJOR. */
+/*
+ * nfsd_nl_version_set_doit() skips a version that has no MAJOR.  Its
+ * switch takes 2, 3 and 4 and ignores any other major, and
+ * nfsd_minorversion() takes minors up to NFSD_SUPPORTED_MINOR_VERSION,
+ * 2, ignoring the rest, so the two are ranged to the values the handler
+ * acts on.
+ */
 static const struct nla_attr_spec nfsd_version_attrs[] = {
-	{ NFSD_A_VERSION_MAJOR,		NLA_KIND_U32,    4, .required = true },
-	{ NFSD_A_VERSION_MINOR,		NLA_KIND_U32,    4 },
+	{ NFSD_A_VERSION_MAJOR,		NLA_KIND_U32_RANGE, 4, 2,
+	  .required = true },
+	{ NFSD_A_VERSION_MINOR,		NLA_KIND_U32_RANGE, 2, 0 },
 	{ NFSD_A_VERSION_ENABLED,	NLA_KIND_FLAG,   0 },
 };
 
