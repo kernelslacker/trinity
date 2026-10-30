@@ -1333,12 +1333,20 @@ static struct pslot table_del[] = {
  * leaves out; the other three commands read the table and the name.  HOOK is
  * nft_hook_policy's hook number (1) and priority (2), which a base chain
  * needs both of, and COUNTERS nft_counter_policy's bytes (1) and packets (2),
- * of which nft_stats_alloc() wants both; the hook's device (3 and 4) is only
- * for a netdev chain, and a chain of another family answers one -EOPNOTSUPP.
+ * of which nft_stats_alloc() wants both.  HOOK may also name devices, one
+ * DEV (3) or a DEVS (4) nest of device names (1) and prefixes (2), which
+ * nft_chain_parse_netdev() looks up; a chain of another family answers a
+ * device -EOPNOTSUPP.
  */
+static struct pslot nft_devs[] = {
+	PS(1, false, NLA_KIND_STRING_WORD),
+	PS(2, false, NLA_KIND_STRING_WORD),
+};
 static struct pslot chain_hook[] = {
 	PS(1, true, NLA_KIND_BE32_ONEOF),
 	PS(2, true, 0),
+	PS(3, false, NLA_KIND_STRING_WORD),
+	PSN(4, false, nft_devs),
 };
 static struct pslot chain_counters[] = {
 	PS(1, true, 0),
@@ -1502,15 +1510,15 @@ static struct pslot obj_name[] = {
  * (5) and the flags (7); the use count (4) is for replies.  NEWFLOWTABLE
  * answers -EINVAL unless the request holds the table, the name and HOOK, so it
  * marks all three.  HOOK is nft_flowtable_hook_policy's NUM (1), PRIORITY (2)
- * and DEVS (3): nft_flowtable_parse_hook() answers -ENOENT unless it has the
- * first two, and the grammar leaves DEVS out, since a flowtable without
- * devices is accepted.  GETFLOWTABLE needs the name and the table, and the
- * deletes the table and the name or the handle, which the grammar leaves out;
- * a HOOK in a delete takes devices out of the flowtable, so it is left out too.
+ * and DEVS (3), a nest of device names and prefixes.  GETFLOWTABLE needs
+ * the name and the table, and the deletes the table and the name or the
+ * handle, which the grammar leaves out; a HOOK in a delete takes devices
+ * out of the flowtable, so it is left out too.
  */
 static struct pslot flowtable_hook[] = {
 	PS(1, true, NLA_KIND_BE32_ONEOF),
 	PS(2, true, 0),
+	PSN(3, false, nft_devs),
 };
 static struct pslot flowtable_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),

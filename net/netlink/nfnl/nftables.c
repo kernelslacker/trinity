@@ -146,6 +146,9 @@
  */
 static const char nft_word[] = "trinity";
 
+/* The one device a hook names: lo, which every netns has. */
+static const char nft_dev_word[] = "lo";
+
 /*
  * A command draws its attributes from a table of its own, which holds what
  * its handler reads of its namespace's policy.  The namespaces number their
@@ -193,7 +196,9 @@ static const struct nla_attr_spec nft_deltable_attrs[] = {
  * NEWCHAIN makes a base chain only if HOOK holds a hook number and a priority
  * (nft_chain_parse_hook() answers -ENOENT unless it has both), and COUNTERS
  * must hold both counters (nft_stats_alloc()), so both nests have tables of
- * their own.  The number must be below NFT_MAX_HOOKS and in the chain type's
+ * their own.  HOOK may also name devices, one DEV or a DEVS nest of device
+ * names and prefixes, which nft_chain_parse_netdev() looks up; a name that
+ * is none answers -ENODEV.  The number must be below NFT_MAX_HOOKS and in the chain type's
  * hook_mask: the five inet hooks are the ones every IPv4, IPv6 and bridge
  * filter chain has, ARP and netdev chains have fewer, and what they refuse
  * keeps the reject arm in view.  The handlers read the number, the priority
@@ -211,11 +216,24 @@ static const unsigned int nft_policies[] = { NF_DROP, NF_ACCEPT };
 
 static const char *const nft_chain_types[] = { "filter", "nat", "route" };
 
+/*
+ * The devices a hook names: nft_tables_parse_netdev_hooks() walks DEVS for
+ * NFTA_DEVICE_NAME and NFTA_DEVICE_PREFIX children and looks each up, and
+ * nft_chain_parse_netdev() takes one DEV the same way.
+ */
+static const struct nla_attr_spec nft_device_attrs[] = {
+	{ NFTA_DEVICE_NAME,   NLA_KIND_STRING_WORD, 0, 0, .word = nft_dev_word },
+	{ NFTA_DEVICE_PREFIX, NLA_KIND_STRING_WORD, 0, 0, .word = nft_dev_word },
+};
+
 static const struct nla_attr_spec nft_chain_hook_attrs[] = {
 	{ NFTA_HOOK_HOOKNUM,   NLA_KIND_BE32_ONEOF, 0, 0,
 	  .oneof = nft_hooknums, .n_oneof = ARRAY_SIZE(nft_hooknums),
 	  .required = true },
 	{ NFTA_HOOK_PRIORITY,  NLA_KIND_U32, 4, .required = true },
+	{ NFTA_HOOK_DEV,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_dev_word },
+	{ NFTA_HOOK_DEVS,      NLA_KIND_NESTED, 0, 0,
+	  nft_device_attrs, ARRAY_SIZE(nft_device_attrs) },
 };
 
 static const struct nla_attr_spec nft_chain_counters_attrs[] = {
@@ -454,9 +472,9 @@ static const struct nla_attr_spec nft_obj_name_attrs[] = {
  * holds the table, the name and HOOK, so all three are marked.  HOOK is
  * nft_flowtable_hook_policy's number, priority and devices:
  * nft_flowtable_parse_hook() answers -ENOENT unless it has the first two, and
- * -EOPNOTSUPP to a number other than NF_NETDEV_INGRESS.  The devices are
- * left out, since a flowtable without any is accepted and naming one that
- * exists is not something the draw can do.  GETFLOWTABLE needs the name and
+ * -EOPNOTSUPP to a number other than NF_NETDEV_INGRESS.  DEVS names the
+ * devices the flowtable hooks, looked up by nft_tables_parse_netdev_hooks()
+ * as the chain hook's are.  GETFLOWTABLE needs the name and
  * the table, and DELFLOWTABLE and DESTROYFLOWTABLE the table and a name or a
  * handle, which is left out like the others; a HOOK in a delete takes devices
  * out of the flowtable instead of deleting it, so it is left out as well.
@@ -468,6 +486,8 @@ static const struct nla_attr_spec nft_flowtable_hook_attrs[] = {
 	  .oneof = nft_flowtable_hooknums,
 	  .n_oneof = ARRAY_SIZE(nft_flowtable_hooknums), .required = true },
 	{ NFTA_FLOWTABLE_HOOK_PRIORITY, NLA_KIND_U32, 4, .required = true },
+	{ NFTA_FLOWTABLE_HOOK_DEVS,     NLA_KIND_NESTED, 0, 0,
+	  nft_device_attrs, ARRAY_SIZE(nft_device_attrs) },
 };
 
 static const struct nla_attr_spec nft_newflowtable_attrs[] = {
