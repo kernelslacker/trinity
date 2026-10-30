@@ -1190,6 +1190,15 @@ static struct slot ethtool_rings_set[] = {
 	S_U32(ETHTOOL_A_RINGS_TX_PUSH_BUF_LEN),
 	S_U32(ETHTOOL_A_RINGS_HDS_THRESH),
 };
+/* net/ethtool/channels.c: ethnl_channels_set_policy, whose counts are
+ * plain NLA_U32s; the maxima are the device's. */
+static struct slot ethtool_channels_set[] = {
+	S_NEST(ETHTOOL_A_CHANNELS_HEADER, ethtool_header, .required = true),
+	S_U32(ETHTOOL_A_CHANNELS_RX_COUNT),
+	S_U32(ETHTOOL_A_CHANNELS_TX_COUNT),
+	S_U32(ETHTOOL_A_CHANNELS_OTHER_COUNT),
+	S_U32(ETHTOOL_A_CHANNELS_COMBINED_COUNT),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1208,6 +1217,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_RINGS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_RINGS_SET, ethtool_rings_set),
 	P_CMD(ETHTOOL_MSG_CHANNELS_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_CHANNELS_SET, ethtool_channels_set),
 	P_CMD(ETHTOOL_MSG_COALESCE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_PAUSE_GET, ethtool_pause_get),
 	P_CMD(ETHTOOL_MSG_EEE_GET, ethtool_get),

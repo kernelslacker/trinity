@@ -337,6 +337,22 @@ static const struct nla_attr_spec ethtool_rings_set_attrs[] = {
 	{ ETHTOOL_A_RINGS_HDS_THRESH,	NLA_KIND_U32,    4 },
 };
 
+/*
+ * CHANNELS_SET, from ethnl_channels_set_policy: the header and the
+ * four counts as plain U32s.  The maxima are the device's, and the
+ * at-least-one-RX-and-TX rule is between attributes, so neither is
+ * a bound here.
+ */
+static const struct nla_attr_spec ethtool_channels_set_attrs[] = {
+	{ ETHTOOL_A_CHANNELS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_CHANNELS_RX_COUNT,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CHANNELS_TX_COUNT,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CHANNELS_OTHER_COUNT,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CHANNELS_COMBINED_COUNT,	NLA_KIND_U32, 4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -372,6 +388,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_rings_set_attrs, ARRAY_SIZE(ethtool_rings_set_attrs) },
 	{ ETHTOOL_MSG_CHANNELS_GET,      "ETHTOOL_MSG_CHANNELS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_CHANNELS_SET,      "ETHTOOL_MSG_CHANNELS_SET",
+	  ethtool_channels_set_attrs, ARRAY_SIZE(ethtool_channels_set_attrs) },
 	{ ETHTOOL_MSG_COALESCE_GET,      "ETHTOOL_MSG_COALESCE_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_PAUSE_GET,         "ETHTOOL_MSG_PAUSE_GET",
