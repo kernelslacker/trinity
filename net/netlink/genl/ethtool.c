@@ -612,6 +612,15 @@ static const struct nla_attr_spec ethtool_tsconfig_set_attrs[] = {
 	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
 };
 
+/*
+ * CABLE_TEST_ACT, from ethnl_cable_test_act_policy: the PHY-aware
+ * header alone.  A table of one needs no required mark.
+ */
+static const struct nla_attr_spec ethtool_cable_test_act_attrs[] = {
+	{ ETHTOOL_A_CABLE_TEST_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs) },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -663,6 +672,9 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_eee_set_attrs, ARRAY_SIZE(ethtool_eee_set_attrs) },
 	{ ETHTOOL_MSG_TSINFO_GET,        "ETHTOOL_MSG_TSINFO_GET",
 	  ethtool_tsinfo_get_attrs, ARRAY_SIZE(ethtool_tsinfo_get_attrs) },
+	{ ETHTOOL_MSG_CABLE_TEST_ACT,    "ETHTOOL_MSG_CABLE_TEST_ACT",
+	  ethtool_cable_test_act_attrs,
+	  ARRAY_SIZE(ethtool_cable_test_act_attrs) },
 	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET",

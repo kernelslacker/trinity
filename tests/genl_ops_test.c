@@ -1364,6 +1364,11 @@ static struct slot ethtool_tsconfig_set[] = {
 	S_NEST(ETHTOOL_A_TSCONFIG_RX_FILTERS, ethtool_bitset),
 	S_NEST(ETHTOOL_A_TSCONFIG_TX_TYPES, ethtool_bitset),
 };
+/* net/ethtool/cabletest.c: ethnl_cable_test_act_policy, the
+ * PHY-aware header alone. */
+static struct slot ethtool_cable_test_act[] = {
+	S_NEST(ETHTOOL_A_CABLE_TEST_HEADER, ethtool_header_phy),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1390,6 +1395,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_EEE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_EEE_SET, ethtool_eee_set),
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
+	P_CMD(ETHTOOL_MSG_CABLE_TEST_ACT, ethtool_cable_test_act),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_FEC_SET, ethtool_fec_set),
