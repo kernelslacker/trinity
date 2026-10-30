@@ -494,6 +494,70 @@ static const struct nla_attr_spec ethtool_pse_set_attrs[] = {
 	{ ETHTOOL_A_PSE_PRIO,		NLA_KIND_U32, 4 },
 };
 
+/*
+ * The nest of RSS_SET's FLOW_HASH, from ethnl_rss_flows_policy: each
+ * flow type takes an NLA_UINT masked to RFH_MASK, or to RFH_MASKv6
+ * for the IPv6 types.  Both masks are local to net/ethtool/rss.c:
+ * RFH_MASK is RXH_L2DA, RXH_VLAN, RXH_L3_PROTO, RXH_IP_SRC,
+ * RXH_IP_DST, RXH_L4_B_0_1, RXH_L4_B_2_3, RXH_GTP_TEID and
+ * RXH_DISCARD, bits 1-8 and 31, and RFH_MASKv6 adds RXH_IP6_FL,
+ * bit 9.
+ */
+#define ETHTOOL_RFH_MASK	0x800001fe
+#define ETHTOOL_RFH_MASK_V6	0x800003fe
+
+static const struct nla_attr_spec ethtool_rss_flow_attrs[] = {
+	{ ETHTOOL_A_FLOW_ETHER,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_IP4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_IP6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_TCP4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_UDP4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_SCTP4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_AH_ESP4,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_TCP6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_UDP6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_SCTP6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_AH_ESP6,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_AH4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_ESP4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_AH6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_ESP6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPU4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPU6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPC4,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPC6,		NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPC_TEID4,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPC_TEID6,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPU_EH4,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPU_EH6,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPU_UL4,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPU_UL6,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+	{ ETHTOOL_A_FLOW_GTPU_DL4,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK },
+	{ ETHTOOL_A_FLOW_GTPU_DL6,	NLA_KIND_UINT_MASK, ETHTOOL_RFH_MASK_V6 },
+};
+
+/*
+ * RSS_SET, from ethnl_rss_set_policy: the header, CONTEXT as a plain
+ * U32, HFUNC in [1, 255], INDIR and HKEY as binaries whose lengths
+ * the handler matches against the device's indir table and key size,
+ * INPUT_XFRM at most RXH_XFRM_SYM_OR_XOR, and the FLOW_HASH nest.
+ * The binaries are capped where the policy leaves them unbounded:
+ * INDIR at 512 bytes, 128 queue indices, and HKEY at 64 bytes, both
+ * past the sizes devices report.
+ */
+static const struct nla_attr_spec ethtool_rss_set_attrs[] = {
+	{ ETHTOOL_A_RSS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_RSS_CONTEXT,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RSS_HFUNC,		NLA_KIND_U32_RANGE, UINT8_MAX, 1 },
+	{ ETHTOOL_A_RSS_INDIR,		NLA_KIND_BINARY, 512, 0 },
+	{ ETHTOOL_A_RSS_HKEY,		NLA_KIND_BINARY, 64, 1 },
+	{ ETHTOOL_A_RSS_INPUT_XFRM,	NLA_KIND_U32_RANGE, RXH_XFRM_SYM_OR_XOR, 0 },
+	{ ETHTOOL_A_RSS_FLOW_HASH,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_rss_flow_attrs, ARRAY_SIZE(ethtool_rss_flow_attrs) },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -568,6 +632,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_pse_set_attrs, ARRAY_SIZE(ethtool_pse_set_attrs) },
 	{ ETHTOOL_MSG_RSS_GET,           "ETHTOOL_MSG_RSS_GET",
 	  ethtool_rss_get_attrs, ARRAY_SIZE(ethtool_rss_get_attrs) },
+	{ ETHTOOL_MSG_RSS_SET,           "ETHTOOL_MSG_RSS_SET",
+	  ethtool_rss_set_attrs, ARRAY_SIZE(ethtool_rss_set_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_STATUS,   "ETHTOOL_MSG_PLCA_GET_STATUS",
