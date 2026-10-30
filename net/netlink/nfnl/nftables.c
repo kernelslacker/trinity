@@ -156,10 +156,14 @@ static const char nft_dev_word[] = "lo";
  * another to a chain or a set command, and no one table can serve them all.
  * A table marks .required the attributes its handler returns early without:
  * nft_table_lookup() and its kin answer -EINVAL to a name that is missing, so
- * a request without one never reaches the main path.  The handles are left
- * out of every table.  The kernel numbers tables, chains and the rest itself,
- * so a handle drawn at random matches none, and a handler that is given one
- * looks the object up by it in place of its name.
+ * a request without one never reaches the main path.  The handles are drawn
+ * small, from 1 to 64: the kernel numbers tables, chains and the rest itself,
+ * one counter per table from 1, so only a small handle names an object an
+ * earlier command made, and a handler that is given one looks the object up
+ * by it in place of its name.  The transaction ids are left out: a chain, a
+ * rule or a set id names only what the same batch gave that id, which no
+ * draw knows, and neither do POSITION_ID, which names the rule to insert
+ * beside, or CHAIN_ID, which names the chain to add a rule to.
  */
 
 /*
@@ -183,12 +187,13 @@ static const struct nla_attr_spec nft_gettable_attrs[] = {
 
 static const struct nla_attr_spec nft_deltable_attrs[] = {
 	{ NFTA_TABLE_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_TABLE_HANDLE,   NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 /*
  * The chain commands.  NEWCHAIN reads the table and the chain's name of
- * nft_chain_policy, and answers -EINVAL if either is missing (a handle or an
- * id may stand in for the name, which the grammar leaves out); GETCHAIN,
+ * nft_chain_policy, and answers -EINVAL if either is missing (a handle may
+ * stand in for the name, and an id, which the grammar leaves out); GETCHAIN,
  * DELCHAIN and DESTROYCHAIN need both as well, and read nothing else a request
  * can usefully carry: a delete's HOOK names the devices of a netdev chain, and
  * DESTROYCHAIN answers it -EOPNOTSUPP.
@@ -244,6 +249,7 @@ static const struct nla_attr_spec nft_chain_counters_attrs[] = {
 static const struct nla_attr_spec nft_newchain_attrs[] = {
 	{ NFTA_CHAIN_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_CHAIN_HANDLE,   NLA_KIND_BE64_RANGE, 64, 1 },
 	{ NFTA_CHAIN_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
 	{ NFTA_CHAIN_HOOK,     NLA_KIND_NESTED, 0, 0,
@@ -261,6 +267,7 @@ static const struct nla_attr_spec nft_newchain_attrs[] = {
 static const struct nla_attr_spec nft_chain_name_attrs[] = {
 	{ NFTA_CHAIN_TABLE,    NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_CHAIN_HANDLE,   NLA_KIND_BE64_RANGE, 64, 1 },
 	{ NFTA_CHAIN_NAME,     NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
 };
@@ -272,12 +279,13 @@ static const struct nla_attr_spec nft_chain_name_attrs[] = {
  * the rule's id as well.  GETRULE and GETRULE_RESET need the table and the
  * chain, and a dump takes them as the filters of what it lists.  DELRULE and
  * DESTROYRULE need the table, and without a chain delete the rules of every
- * chain in it.  The handle, POSITION, POSITION_ID and CHAIN_ID are left out:
- * each names a rule or a chain by a number that a draw cannot know, fails the
- * request -ENOENT when none matches, and a handle makes NEWRULE replace a rule
- * where it would add one.  GETRULE then ends in the -EINVAL that asks for the
- * handle, and a delete deletes the chain's rules, not one.  COMPAT is read
- * only by the nft_compat expressions.
+ * chain in it.  The handle and POSITION are drawn small: a handle makes
+ * NEWRULE replace the rule it names, or answer -EOPNOTSUPP without REPLACE,
+ * and POSITION names the rule to insert beside, failing -ENOENT when none
+ * matches.  POSITION_ID and CHAIN_ID are left out, as the transaction ids
+ * above.  GETRULE then ends in the -EINVAL that asks for the handle when it
+ * carries none, and a delete without one deletes the chain's rules, not one.
+ * COMPAT is read only by the nft_compat expressions.
  *
  * NFTA_RULE_EXPRESSIONS is a nest with no table of its own.  An element must
  * be of type NFTA_LIST_ELEM and name a registered expression
@@ -290,7 +298,9 @@ static const struct nla_attr_spec nft_newrule_attrs[] = {
 	  .required = true },
 	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_RULE_HANDLE,      NLA_KIND_BE64_RANGE, 64, 1 },
 	{ NFTA_RULE_EXPRESSIONS, NLA_KIND_NESTED, 0 },
+	{ NFTA_RULE_POSITION,    NLA_KIND_BE64_RANGE, 64, 1 },
 	{ NFTA_RULE_USERDATA,    NLA_KIND_BINARY, 64 },
 	{ NFTA_RULE_ID,          NLA_KIND_U32, 4 },
 };
@@ -300,12 +310,14 @@ static const struct nla_attr_spec nft_getrule_attrs[] = {
 	  .required = true },
 	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_RULE_HANDLE,      NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 static const struct nla_attr_spec nft_delrule_attrs[] = {
 	{ NFTA_RULE_TABLE,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
 	{ NFTA_RULE_CHAIN,       NLA_KIND_STRING_WORD, 0, 0, .word = nft_word },
+	{ NFTA_RULE_HANDLE,      NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 /*
@@ -318,9 +330,10 @@ static const struct nla_attr_spec nft_delrule_attrs[] = {
  * attributes need another: DATA_TYPE needs the NFT_SET_MAP flag and, unless
  * it is a verdict, a DATA_LEN, TIMEOUT and GC_INTERVAL need NFT_SET_TIMEOUT,
  * OBJ_TYPE NFT_SET_OBJECT, and the grammar does not tie them together.  DESC,
- * EXPR and EXPRESSIONS are nests it cannot build yet, and the handle names a
- * set by a number that a draw cannot know, so none of the four is in the
- * table.  GETSET, DELSET and DESTROYSET need the table and the name.
+ * EXPR and EXPRESSIONS are nests it cannot build yet, so none of the three is
+ * in the table.  GETSET, DELSET and DESTROYSET need the table and the name,
+ * or the set's handle, drawn small as the others are; NEWSET never reads the
+ * handle, its sets being numbered as they are made.
  */
 static const unsigned int nft_set_policies[] = {
 	NFT_SET_POL_PERFORMANCE, NFT_SET_POL_MEMORY,
@@ -354,6 +367,7 @@ static const struct nla_attr_spec nft_set_name_attrs[] = {
 	  .required = true },
 	{ NFTA_SET_NAME,      NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_SET_HANDLE,    NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 /*
@@ -437,7 +451,7 @@ static const struct nla_attr_spec nft_delsetelem_attrs[] = {
  * type, the name and DATA, and fails a missing table the same way, so all four
  * are marked.  GETOBJ and GETOBJ_RESET need the table, the name and the type,
  * as do DELOBJ and DESTROYOBJ, which may name the object by a handle instead
- * of its name; the handle is left out as the others are.  The type is read
+ * of its name, drawn small as the others are.  The type is read
  * with ntohl(), and a number that no object type has makes nft_obj_type_get()
  * ask nft_request_module() for "nft-obj-<type>", which the batch loads with
  * request_module() before it runs again.  NFTA_OBJ_TYPE is therefore drawn
@@ -465,6 +479,7 @@ static const struct nla_attr_spec nft_obj_name_attrs[] = {
 	  .required = true },
 	{ NFTA_OBJ_TYPE,     NLA_KIND_BE32_RANGE, NFT_OBJECT_MAX,
 	  NFT_OBJECT_COUNTER, .required = true },
+	{ NFTA_OBJ_HANDLE,   NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 /*
@@ -476,7 +491,7 @@ static const struct nla_attr_spec nft_obj_name_attrs[] = {
  * devices the flowtable hooks, looked up by nft_tables_parse_netdev_hooks()
  * as the chain hook's are.  GETFLOWTABLE needs the name and
  * the table, and DELFLOWTABLE and DESTROYFLOWTABLE the table and a name or a
- * handle, which is left out like the others; a HOOK in a delete takes devices
+ * handle, drawn small as the others are; a HOOK in a delete takes devices
  * out of the flowtable instead of deleting it, so it is left out as well.
  */
 static const unsigned int nft_flowtable_hooknums[] = { NF_NETDEV_INGRESS };
@@ -506,6 +521,7 @@ static const struct nla_attr_spec nft_flowtable_name_attrs[] = {
 	  .required = true },
 	{ NFTA_FLOWTABLE_NAME,  NLA_KIND_STRING_WORD, 0, 0, .word = nft_word,
 	  .required = true },
+	{ NFTA_FLOWTABLE_HANDLE, NLA_KIND_BE64_RANGE, 64, 1 },
 };
 
 /*

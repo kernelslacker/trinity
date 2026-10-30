@@ -48,6 +48,14 @@ enum nla_kind {
 	NLA_KIND_BE16_MASK,
 	NLA_KIND_BE32_MASK,
 	NLA_KIND_BE32_RANGE,
+	/* The same for a u64 the kernel reads in network byte order, as
+	 * nf_tables reads a handle with nla_get_be64(): fills a number in
+	 * [min_len, max_len], both ends inclusive, stored big-endian in
+	 * eight bytes.  The bound is a 32-bit number, since a handle drawn
+	 * at random matches none and the kernel numbers objects itself
+	 * from 1, so only small handles name one.  One draw in eight is
+	 * random bytes. */
+	NLA_KIND_BE64_RANGE,
 	/* The same for a u32 the genl policies read in host byte order.
 	 * NLA_KIND_U32_MASK mirrors NLA_POLICY_MASK(NLA_U32, max_len);
 	 * NLA_KIND_U32_RANGE mirrors NLA_POLICY_RANGE(NLA_U32, min_len,
@@ -120,7 +128,8 @@ struct nla_attr_spec {
 	unsigned int min_len;	/* lower bound; for NLA_KIND_BINARY_FIXED2 the
 				 * payload is exactly one of {min_len,
 				 * max_len}; for NLA_KIND_U32_RANGE,
-				 * NLA_KIND_BE32_RANGE, NLA_KIND_U16_RANGE,
+				 * NLA_KIND_BE32_RANGE, NLA_KIND_BE64_RANGE,
+				 * NLA_KIND_U16_RANGE,
 				 * NLA_KIND_U8_RANGE and NLA_KIND_UINT_RANGE
 				 * the smallest number.  Zero on other
 				 * kinds. */

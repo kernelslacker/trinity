@@ -43,7 +43,9 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 		 * since drawing it again could disagree with this one. */
 		return ONE_IN(2) ? sizeof(uint32_t) : sizeof(uint64_t);
 	case NLA_KIND_U32:	return 4;
-	case NLA_KIND_U64:	return 8;
+	case NLA_KIND_U64:
+	case NLA_KIND_BE64_RANGE:
+		return 8;
 	case NLA_KIND_BE16_MASK:
 	case NLA_KIND_BE16_ONEOF:
 		return 2;
@@ -113,6 +115,7 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 	case NLA_KIND_U16_RANGE:
 	case NLA_KIND_U32_RANGE:
 	case NLA_KIND_BE32_RANGE:
+	case NLA_KIND_BE64_RANGE:
 	case NLA_KIND_UINT_RANGE:
 		v = spec->min_len + rnd_modulo_u32(spec->max_len - spec->min_len + 1U);
 		break;
@@ -149,6 +152,14 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 		uint16_t be = htons(v);
 
 		memcpy(p, &be, sizeof(be));
+	} else if (spec->kind == NLA_KIND_BE64_RANGE) {
+		/* A handle is big-endian on the wire: its halves, each
+		 * converted, in order. */
+		uint32_t hi = htonl((uint32_t)(v >> 32));
+		uint32_t lo = htonl((uint32_t)v);
+
+		memcpy(p, &hi, sizeof(hi));
+		memcpy(p + sizeof(hi), &lo, sizeof(lo));
 	} else {
 		uint32_t be = htonl(v);
 
@@ -260,6 +271,7 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	case NLA_KIND_BE16_MASK:
 	case NLA_KIND_BE32_MASK:
 	case NLA_KIND_BE32_RANGE:
+	case NLA_KIND_BE64_RANGE:
 	case NLA_KIND_U32_MASK:
 	case NLA_KIND_U32_RANGE:
 	case NLA_KIND_U16_RANGE:

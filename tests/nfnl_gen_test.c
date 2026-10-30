@@ -260,6 +260,12 @@ static const struct bounded_slot slots[] = {
 	 * to NFT_OBJECT_MAX, 10 */
 	{ .name = "NFTA_OBJ_TYPE", .subsys = NFNL_SUBSYS_NFTABLES, .id = 3,
 	  .kind = NLA_KIND_BE32_RANGE, .limit = 10, .lo = 1 },
+	/* nft_rule_policy types NFTA_RULE_HANDLE NLA_U64, which
+	 * nf_tables_newrule() and its kin read with nla_get_be64() and
+	 * look up by; the kernel numbers rules itself from 1 per table,
+	 * so a small handle names one */
+	{ .name = "NFTA_RULE_HANDLE", .subsys = NFNL_SUBSYS_NFTABLES, .id = 3,
+	  .kind = NLA_KIND_BE64_RANGE, .limit = 64, .lo = 1 },
 	/* nfnl_cthelper_create() reads NFCTH_PRIV_DATA_LEN, which
 	 * nfnl_cthelper_policy types NLA_U32, with ntohl() and answers more
 	 * than the 32 bytes of nf_conn_help's data -ENOMEM.  An expectation
@@ -459,6 +465,8 @@ static unsigned int slot_width(unsigned short kind)
 	case NLA_KIND_BE16_MASK:
 	case NLA_KIND_BE16_ONEOF:
 		return 2;
+	case NLA_KIND_BE64_RANGE:
+		return 8;
 	default:
 		return 4;
 	}
@@ -488,6 +496,16 @@ static uint32_t draw_slot(const struct nla_attr_spec *spec,
 
 		memcpy(&be, buf + NLA_HDRLEN, sizeof(be));
 		return ntohs(be);
+	} else if (width == 8) {
+		/* A handle's bound fits in 32 bits, the limit of a slot,
+		 * so its value is the low half; the high half is zero
+		 * for a draw inside the bound. */
+		uint64_t be = 0;
+		unsigned int i;
+
+		for (i = 0; i < 8; i++)
+			be = (be << 8) | buf[NLA_HDRLEN + i];
+		return (uint32_t)be;
 	} else {
 		uint32_t be;
 
@@ -581,6 +599,31 @@ static void check_be32_range(void)
 		.name = "the range",
 		.id = 9,
 		.kind = NLA_KIND_BE32_RANGE,
+		.limit = 64,
+		.lo = 1,
+	};
+
+	check_bounded_spec(&spec, &slot);
+}
+
+/*
+ * NLA_KIND_BE64_RANGE fills a number from min_len to max_len, both ends
+ * included, in network byte order in eight bytes: seven draws in eight
+ * inside, both ends reached, and read back as a handler does with
+ * nla_get_be64().
+ */
+static void check_be64_range(void)
+{
+	const struct nla_attr_spec spec = {
+		.type = 9,
+		.kind = NLA_KIND_BE64_RANGE,
+		.max_len = 64,
+		.min_len = 1,
+	};
+	const struct bounded_slot slot = {
+		.name = "the 64-bit range",
+		.id = 9,
+		.kind = NLA_KIND_BE64_RANGE,
 		.limit = 64,
 		.lo = 1,
 	};
@@ -1309,8 +1352,9 @@ static void check_cmd_row(struct cmd_row *row)
 
 /*
  * nft_table_policy has the name (1), the flags (2) and the user data (6) that
- * a table command can use, and the handle (4) a delete may name a table by.
- * The grammar leaves the handle out.  NEWTABLE and a GETTABLE that is not a
+ * a table command can use, and the handle (4) a delete may name a table by,
+ * drawn small, since the kernel numbers tables itself from 1 per netns.
+ * NEWTABLE and a GETTABLE that is not a
  * dump answer a missing name -EINVAL; a delete without a name or a handle
  * flushes the family, so its name is not marked.
  */
@@ -1324,13 +1368,15 @@ static struct pslot table_get[] = {
 };
 static struct pslot table_del[] = {
 	PS(1, false, NLA_KIND_STRING_WORD),
+	PSB(4, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 
 /*
  * nft_chain_policy has the table (1), the handle (2), the name (3), HOOK (4),
  * POLICY (5), TYPE (7), COUNTERS (8), the flags (10), the id (11) and the user
- * data (12).  NEWCHAIN reads all but the handle and the id, which the grammar
- * leaves out; the other three commands read the table and the name.  HOOK is
+ * data (12).  NEWCHAIN reads all but the id, which the grammar leaves out;
+ * the handle is drawn small, since the kernel numbers chains itself from 1
+ * per table.  The other three commands read the table and the name.  HOOK is
  * nft_hook_policy's hook number (1) and priority (2), which a base chain
  * needs both of, and COUNTERS nft_counter_policy's bytes (1) and packets (2),
  * of which nft_stats_alloc() wants both.  HOOK may also name devices, one
@@ -1354,6 +1400,7 @@ static struct pslot chain_counters[] = {
 };
 static struct pslot chain_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
+	PSB(2, false, NLA_KIND_BE64_RANGE, 1, 64),
 	PS(3, true, NLA_KIND_STRING_WORD),
 	PSN(4, false, chain_hook),
 	PS(5, false, NLA_KIND_BE32_ONEOF),
@@ -1364,6 +1411,7 @@ static struct pslot chain_new[] = {
 };
 static struct pslot chain_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
+	PSB(2, false, NLA_KIND_BE64_RANGE, 1, 64),
 	PS(3, true, NLA_KIND_STRING_WORD),
 };
 
@@ -1376,24 +1424,29 @@ static struct pslot chain_name[] = {
  * GETRULE and GETRULE_RESET read the table and the chain, and a dump takes
  * them as the filters of what it lists.  DELRULE and DESTROYRULE need the
  * table, and with no chain delete the rules of every chain in it.  The
- * grammar leaves out the handle, POSITION, POSITION_ID and CHAIN_ID, which
- * name a rule or a chain by a number that a draw cannot know, and COMPAT, which
- * only the nft_compat expressions read.
+ * handle and POSITION are drawn small, since the kernel numbers rules
+ * itself from 1 per table; POSITION_ID and CHAIN_ID are left out, as
+ * transaction ids that only the same batch gives.  COMPAT is left out,
+ * which only the nft_compat expressions read.
  */
 static struct pslot rule_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
+	PSB(3, false, NLA_KIND_BE64_RANGE, 1, 64),
 	PS(4, false, NLA_KIND_NESTED),
+	PSB(6, false, NLA_KIND_BE64_RANGE, 1, 64),
 	PS(7, false, 0),
 	PS(9, false, 0),
 };
 static struct pslot rule_get[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
+	PSB(3, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 static struct pslot rule_del[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, false, NLA_KIND_STRING_WORD),
+	PSB(3, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 
 /*
@@ -1404,8 +1457,8 @@ static struct pslot rule_del[] = {
  * and COUNT (20).  NEWSET answers -EINVAL unless the request holds the table,
  * the name, KEY_LEN and the set's id, and reads the rest of what a set is made
  * from; the grammar leaves out DESC, EXPR and EXPRESSIONS, nests it cannot
- * build, and the handle, which a draw cannot know.  GETSET, DELSET and
- * DESTROYSET need the table and the name.
+ * build.  GETSET, DELSET and DESTROYSET need the table and the name, or
+ * the set's handle, drawn small as the others are; NEWSET never reads it.
  */
 static struct pslot set_new[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
@@ -1425,6 +1478,7 @@ static struct pslot set_new[] = {
 static struct pslot set_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
+	PSB(16, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 
 /*
@@ -1488,8 +1542,8 @@ static struct pslot setelem_del[] = {
  * DATA, and fails a missing table the same way, so it marks all four.
  * GETOBJ and GETOBJ_RESET need the table, the name and the type, as do
  * DELOBJ and DESTROYOBJ, which may name the object by its handle instead of
- * its name; the grammar leaves the handle out, as a number a draw cannot
- * know.  DATA is a bare nest that the handler parses against the policy of
+ * its name, drawn small as the others are.  DATA is a bare nest that
+ * the handler parses against the policy of
  * the object's type, which nothing in a request ties to the type drawn.
  */
 static struct pslot obj_new[] = {
@@ -1503,6 +1557,7 @@ static struct pslot obj_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
 	PSB(3, true, NLA_KIND_BE32_RANGE, 1, 10),
+	PSB(6, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 
 /*
@@ -1512,7 +1567,7 @@ static struct pslot obj_name[] = {
  * marks all three.  HOOK is nft_flowtable_hook_policy's NUM (1), PRIORITY (2)
  * and DEVS (3), a nest of device names and prefixes.  GETFLOWTABLE needs
  * the name and the table, and the deletes the table and the name or the
- * handle, which the grammar leaves out; a HOOK in a delete takes devices
+ * handle, drawn small as the others are; a HOOK in a delete takes devices
  * out of the flowtable, so it is left out too.
  */
 static struct pslot flowtable_hook[] = {
@@ -1529,6 +1584,7 @@ static struct pslot flowtable_new[] = {
 static struct pslot flowtable_name[] = {
 	PS(1, true, NLA_KIND_STRING_WORD),
 	PS(2, true, NLA_KIND_STRING_WORD),
+	PSB(5, false, NLA_KIND_BE64_RANGE, 1, 64),
 };
 
 /*
@@ -2492,6 +2548,7 @@ void nfnl_gen_self_check(void)
 	check_spec_table_dispatch();
 	check_string_oneof();
 	check_be32_range();
+	check_be64_range();
 	check_cttimeout_commands();
 	for (i = 0; i < ARRAY_SIZE(slots); i++)
 		check_bounded_slot(&slots[i]);
