@@ -286,6 +286,20 @@ static const struct nla_attr_spec ethtool_wol_set_attrs[] = {
 	{ ETHTOOL_A_WOL_SOPASS,		NLA_KIND_BINARY, SOPASS_MAX, 0 },
 };
 
+/*
+ * FEATURES_SET, from ethnl_features_set_policy: the header and the
+ * WANTED bitset.  Both are required: ethnl_set_features answers
+ * -EINVAL without WANTED, and parses the header with require_dev.
+ */
+static const struct nla_attr_spec ethtool_features_set_attrs[] = {
+	{ ETHTOOL_A_FEATURES_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_FEATURES_WANTED,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs),
+	  .required = true },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -309,6 +323,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_wol_set_attrs, ARRAY_SIZE(ethtool_wol_set_attrs) },
 	{ ETHTOOL_MSG_FEATURES_GET,      "ETHTOOL_MSG_FEATURES_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_FEATURES_SET,      "ETHTOOL_MSG_FEATURES_SET",
+	  ethtool_features_set_attrs, ARRAY_SIZE(ethtool_features_set_attrs) },
 	{ ETHTOOL_MSG_PRIVFLAGS_GET,     "ETHTOOL_MSG_PRIVFLAGS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_RINGS_GET,         "ETHTOOL_MSG_RINGS_GET",
