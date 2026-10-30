@@ -1146,6 +1146,12 @@ static struct slot ethtool_linkmodes_set[] = {
 	S_U8(ETHTOOL_A_LINKMODES_MASTER_SLAVE_CFG),
 	S_U32_RANGE(ETHTOOL_A_LINKMODES_LANES, 1, 8),
 };
+/* net/ethtool/debug.c: ethnl_debug_set_policy, whose MSGMASK is a
+ * bitset parsed by ethnl_parse_bitset(). */
+static struct slot ethtool_debug_set[] = {
+	S_NEST(ETHTOOL_A_DEBUG_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_DEBUG_MSGMASK, ethtool_bitset),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1154,6 +1160,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_LINKMODES_SET, ethtool_linkmodes_set),
 	P_CMD(ETHTOOL_MSG_LINKSTATE_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_DEBUG_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_DEBUG_SET, ethtool_debug_set),
 	P_CMD(ETHTOOL_MSG_WOL_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEATURES_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_PRIVFLAGS_GET, ethtool_get),
