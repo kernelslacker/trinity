@@ -1369,6 +1369,20 @@ static struct slot ethtool_tsconfig_set[] = {
 static struct slot ethtool_cable_test_act[] = {
 	S_NEST(ETHTOOL_A_CABLE_TEST_HEADER, ethtool_header_phy),
 };
+/* net/ethtool/cabletest.c: cable_test_tdr_act_cfg_policy and
+ * ethnl_cable_test_tdr_act_policy.  PAIR is refused past
+ * ETHTOOL_A_CABLE_PAIR_D, the last of the four pairs, 3. */
+static struct slot ethtool_cable_test_tdr_cfg[] = {
+	S_U32(ETHTOOL_A_CABLE_TEST_TDR_CFG_FIRST),
+	S_U32(ETHTOOL_A_CABLE_TEST_TDR_CFG_LAST),
+	S_U32(ETHTOOL_A_CABLE_TEST_TDR_CFG_STEP),
+	S_U8_RANGE(ETHTOOL_A_CABLE_TEST_TDR_CFG_PAIR, 0, 3),
+};
+static struct slot ethtool_cable_test_tdr_act[] = {
+	S_NEST(ETHTOOL_A_CABLE_TEST_TDR_HEADER, ethtool_header_phy,
+	       .required = true),
+	S_NEST(ETHTOOL_A_CABLE_TEST_TDR_CFG, ethtool_cable_test_tdr_cfg),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1396,6 +1410,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_EEE_SET, ethtool_eee_set),
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
 	P_CMD(ETHTOOL_MSG_CABLE_TEST_ACT, ethtool_cable_test_act),
+	P_CMD(ETHTOOL_MSG_CABLE_TEST_TDR_ACT, ethtool_cable_test_tdr_act),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_FEC_SET, ethtool_fec_set),

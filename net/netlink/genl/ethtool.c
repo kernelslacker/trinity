@@ -621,6 +621,31 @@ static const struct nla_attr_spec ethtool_cable_test_act_attrs[] = {
 	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs) },
 };
 
+/*
+ * The CFG nest of CABLE_TEST_TDR_ACT, from cable_test_tdr_act_cfg_policy:
+ * three plain U32s and PAIR, which ethnl_act_cable_test_tdr_cfg refuses
+ * past ETHTOOL_A_CABLE_PAIR_D, the last of the four pairs, 3.
+ */
+static const struct nla_attr_spec ethtool_cable_test_tdr_cfg_attrs[] = {
+	{ ETHTOOL_A_CABLE_TEST_TDR_CFG_FIRST,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CABLE_TEST_TDR_CFG_LAST,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CABLE_TEST_TDR_CFG_STEP,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_CABLE_TEST_TDR_CFG_PAIR,	NLA_KIND_U8_RANGE, 3, 0 },
+};
+
+/*
+ * CABLE_TEST_TDR_ACT, from ethnl_cable_test_tdr_act_policy: the
+ * PHY-aware header and the CFG nest.
+ */
+static const struct nla_attr_spec ethtool_cable_test_tdr_act_attrs[] = {
+	{ ETHTOOL_A_CABLE_TEST_TDR_HEADER, NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs),
+	  .required = true },
+	{ ETHTOOL_A_CABLE_TEST_TDR_CFG, NLA_KIND_NESTED, 0, 0,
+	  ethtool_cable_test_tdr_cfg_attrs,
+	  ARRAY_SIZE(ethtool_cable_test_tdr_cfg_attrs) },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -675,6 +700,9 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_CABLE_TEST_ACT,    "ETHTOOL_MSG_CABLE_TEST_ACT",
 	  ethtool_cable_test_act_attrs,
 	  ARRAY_SIZE(ethtool_cable_test_act_attrs) },
+	{ ETHTOOL_MSG_CABLE_TEST_TDR_ACT, "ETHTOOL_MSG_CABLE_TEST_TDR_ACT",
+	  ethtool_cable_test_tdr_act_attrs,
+	  ARRAY_SIZE(ethtool_cable_test_tdr_act_attrs) },
 	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET",
