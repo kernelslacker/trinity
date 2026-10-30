@@ -1335,6 +1335,16 @@ static struct slot ethtool_rss_set[] = {
 	S_U32_RANGE(ETHTOOL_A_RSS_INPUT_XFRM, 0, RXH_XFRM_SYM_OR_XOR),
 	S_NEST(ETHTOOL_A_RSS_FLOW_HASH, ethtool_rss_flow),
 };
+/* net/ethtool/plca.c: ethnl_plca_set_cfg_policy. */
+static struct slot ethtool_plca_set_cfg[] = {
+	S_NEST(ETHTOOL_A_PLCA_HEADER, ethtool_header_phy, .required = true),
+	S_U8_RANGE(ETHTOOL_A_PLCA_ENABLED, 0, 1),
+	S_U32_RANGE(ETHTOOL_A_PLCA_NODE_ID, 0, 255),
+	S_U32_RANGE(ETHTOOL_A_PLCA_NODE_CNT, 1, 255),
+	S_U32_RANGE(ETHTOOL_A_PLCA_TO_TMR, 0, 255),
+	S_U32_RANGE(ETHTOOL_A_PLCA_BURST_CNT, 0, 255),
+	S_U32_RANGE(ETHTOOL_A_PLCA_BURST_TMR, 0, 255),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1374,6 +1384,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),
 	P_CMD(ETHTOOL_MSG_RSS_SET, ethtool_rss_set),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_CFG, ethtool_get_phy),
+	P_CMD(ETHTOOL_MSG_PLCA_SET_CFG, ethtool_plca_set_cfg),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_STATUS, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_MM_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_PHY_GET, ethtool_get),

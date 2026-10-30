@@ -558,6 +558,23 @@ static const struct nla_attr_spec ethtool_rss_set_attrs[] = {
 	  ethtool_rss_flow_attrs, ARRAY_SIZE(ethtool_rss_flow_attrs) },
 };
 
+/*
+ * PLCA_SET_CFG, from ethnl_plca_set_cfg_policy: the PHY-aware header,
+ * ENABLED at most 1, NODE_ID, TO_TMR, BURST_CNT and BURST_TMR at
+ * most 255, and NODE_CNT in [1, 255].
+ */
+static const struct nla_attr_spec ethtool_plca_set_cfg_attrs[] = {
+	{ ETHTOOL_A_PLCA_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs),
+	  .required = true },
+	{ ETHTOOL_A_PLCA_ENABLED,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_PLCA_NODE_ID,	NLA_KIND_U32_RANGE, 255, 0 },
+	{ ETHTOOL_A_PLCA_NODE_CNT,	NLA_KIND_U32_RANGE, 255, 1 },
+	{ ETHTOOL_A_PLCA_TO_TMR,	NLA_KIND_U32_RANGE, 255, 0 },
+	{ ETHTOOL_A_PLCA_BURST_CNT,	NLA_KIND_U32_RANGE, 255, 0 },
+	{ ETHTOOL_A_PLCA_BURST_TMR,	NLA_KIND_U32_RANGE, 255, 0 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -636,6 +653,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_rss_set_attrs, ARRAY_SIZE(ethtool_rss_set_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_PLCA_SET_CFG,      "ETHTOOL_MSG_PLCA_SET_CFG",
+	  ethtool_plca_set_cfg_attrs, ARRAY_SIZE(ethtool_plca_set_cfg_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_STATUS,   "ETHTOOL_MSG_PLCA_GET_STATUS",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET",
