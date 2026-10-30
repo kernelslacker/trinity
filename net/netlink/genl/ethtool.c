@@ -300,6 +300,19 @@ static const struct nla_attr_spec ethtool_features_set_attrs[] = {
 	  .required = true },
 };
 
+/*
+ * PRIVFLAGS_SET, from ethnl_privflags_set_policy: the header and the
+ * FLAGS bitset, which ethnl_set_privflags parses with
+ * ethnl_parse_bitset().
+ */
+static const struct nla_attr_spec ethtool_privflags_set_attrs[] = {
+	{ ETHTOOL_A_PRIVFLAGS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_PRIVFLAGS_FLAGS,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -327,6 +340,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_features_set_attrs, ARRAY_SIZE(ethtool_features_set_attrs) },
 	{ ETHTOOL_MSG_PRIVFLAGS_GET,     "ETHTOOL_MSG_PRIVFLAGS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_PRIVFLAGS_SET,     "ETHTOOL_MSG_PRIVFLAGS_SET",
+	  ethtool_privflags_set_attrs, ARRAY_SIZE(ethtool_privflags_set_attrs) },
 	{ ETHTOOL_MSG_RINGS_GET,         "ETHTOOL_MSG_RINGS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_CHANNELS_GET,      "ETHTOOL_MSG_CHANNELS_GET",

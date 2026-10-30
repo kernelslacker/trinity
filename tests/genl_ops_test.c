@@ -1165,6 +1165,12 @@ static struct slot ethtool_features_set[] = {
 	S_NEST(ETHTOOL_A_FEATURES_HEADER, ethtool_header, .required = true),
 	S_NEST(ETHTOOL_A_FEATURES_WANTED, ethtool_bitset, .required = true),
 };
+/* net/ethtool/privflags.c: ethnl_privflags_set_policy, whose FLAGS is
+ * a bitset parsed by ethnl_parse_bitset(). */
+static struct slot ethtool_privflags_set[] = {
+	S_NEST(ETHTOOL_A_PRIVFLAGS_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_PRIVFLAGS_FLAGS, ethtool_bitset),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1179,6 +1185,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_FEATURES_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEATURES_SET, ethtool_features_set),
 	P_CMD(ETHTOOL_MSG_PRIVFLAGS_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_PRIVFLAGS_SET, ethtool_privflags_set),
 	P_CMD(ETHTOOL_MSG_RINGS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_CHANNELS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_COALESCE_GET, ethtool_get),
