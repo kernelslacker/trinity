@@ -1171,6 +1171,25 @@ static struct slot ethtool_privflags_set[] = {
 	S_NEST(ETHTOOL_A_PRIVFLAGS_HEADER, ethtool_header, .required = true),
 	S_NEST(ETHTOOL_A_PRIVFLAGS_FLAGS, ethtool_bitset),
 };
+/* net/ethtool/rings.c: ethnl_rings_set_policy, whose RX_BUF_LEN and
+ * CQE_SIZE are NLA_POLICY_MIN(NLA_U32, 1), TCP_DATA_SPLIT is
+ * NLA_POLICY_MAX(NLA_U8, ETHTOOL_TCP_DATA_SPLIT_ENABLED), 2, and
+ * TX_PUSH and RX_PUSH are NLA_POLICY_MAX(NLA_U8, 1). */
+static struct slot ethtool_rings_set[] = {
+	S_NEST(ETHTOOL_A_RINGS_HEADER, ethtool_header, .required = true),
+	S_U32(ETHTOOL_A_RINGS_RX),
+	S_U32(ETHTOOL_A_RINGS_RX_MINI),
+	S_U32(ETHTOOL_A_RINGS_RX_JUMBO),
+	S_U32(ETHTOOL_A_RINGS_TX),
+	S_U32_RANGE(ETHTOOL_A_RINGS_RX_BUF_LEN, 1, UINT32_MAX),
+	S_U8_RANGE(ETHTOOL_A_RINGS_TCP_DATA_SPLIT, 0,
+		   ETHTOOL_TCP_DATA_SPLIT_ENABLED),
+	S_U32_RANGE(ETHTOOL_A_RINGS_CQE_SIZE, 1, UINT32_MAX),
+	S_U8_RANGE(ETHTOOL_A_RINGS_TX_PUSH, 0, 1),
+	S_U8_RANGE(ETHTOOL_A_RINGS_RX_PUSH, 0, 1),
+	S_U32(ETHTOOL_A_RINGS_TX_PUSH_BUF_LEN),
+	S_U32(ETHTOOL_A_RINGS_HDS_THRESH),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1187,6 +1206,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_PRIVFLAGS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_PRIVFLAGS_SET, ethtool_privflags_set),
 	P_CMD(ETHTOOL_MSG_RINGS_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_RINGS_SET, ethtool_rings_set),
 	P_CMD(ETHTOOL_MSG_CHANNELS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_COALESCE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_PAUSE_GET, ethtool_pause_get),

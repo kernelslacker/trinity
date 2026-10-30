@@ -313,6 +313,30 @@ static const struct nla_attr_spec ethtool_privflags_set_attrs[] = {
 	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
 };
 
+/*
+ * RINGS_SET, from ethnl_rings_set_policy: the header, the four ring
+ * counts as plain U32s, RX_BUF_LEN and CQE_SIZE at least 1,
+ * TCP_DATA_SPLIT at most ETHTOOL_TCP_DATA_SPLIT_ENABLED, TX_PUSH and
+ * RX_PUSH at most 1, and TX_PUSH_BUF_LEN and HDS_THRESH as plain U32s.
+ */
+static const struct nla_attr_spec ethtool_rings_set_attrs[] = {
+	{ ETHTOOL_A_RINGS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_RINGS_RX,		NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RINGS_RX_MINI,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RINGS_RX_JUMBO,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RINGS_TX,		NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_RINGS_RX_BUF_LEN,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ ETHTOOL_A_RINGS_TCP_DATA_SPLIT, NLA_KIND_U8_RANGE,
+	  ETHTOOL_TCP_DATA_SPLIT_ENABLED, 0 },
+	{ ETHTOOL_A_RINGS_CQE_SIZE,	NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
+	{ ETHTOOL_A_RINGS_TX_PUSH,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_RINGS_RX_PUSH,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_RINGS_TX_PUSH_BUF_LEN, NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_RINGS_HDS_THRESH,	NLA_KIND_U32,    4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -344,6 +368,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_privflags_set_attrs, ARRAY_SIZE(ethtool_privflags_set_attrs) },
 	{ ETHTOOL_MSG_RINGS_GET,         "ETHTOOL_MSG_RINGS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_RINGS_SET,         "ETHTOOL_MSG_RINGS_SET",
+	  ethtool_rings_set_attrs, ARRAY_SIZE(ethtool_rings_set_attrs) },
 	{ ETHTOOL_MSG_CHANNELS_GET,      "ETHTOOL_MSG_CHANNELS_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_COALESCE_GET,      "ETHTOOL_MSG_COALESCE_GET",
