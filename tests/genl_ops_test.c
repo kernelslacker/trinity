@@ -1260,6 +1260,13 @@ static struct slot ethtool_eee_set[] = {
 	S_U8(ETHTOOL_A_EEE_TX_LPI_ENABLED),
 	S_U32(ETHTOOL_A_EEE_TX_LPI_TIMER),
 };
+/* net/ethtool/fec.c: ethnl_fec_set_policy, whose AUTO is
+ * NLA_POLICY_MAX(NLA_U8, 1). */
+static struct slot ethtool_fec_set[] = {
+	S_NEST(ETHTOOL_A_FEC_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_FEC_MODES, ethtool_bitset),
+	S_U8_RANGE(ETHTOOL_A_FEC_AUTO, 0, 1),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1288,6 +1295,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get_stats),
+	P_CMD(ETHTOOL_MSG_FEC_SET, ethtool_fec_set),
 	P_CMD(ETHTOOL_MSG_MODULE_EEPROM_GET, ethtool_module_eeprom_get),
 	P_CMD(ETHTOOL_MSG_STATS_GET, ethtool_stats_get),
 	P_CMD(ETHTOOL_MSG_PHC_VCLOCKS_GET, ethtool_get),

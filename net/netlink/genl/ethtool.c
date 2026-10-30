@@ -448,6 +448,19 @@ static const struct nla_attr_spec ethtool_eee_set_attrs[] = {
 	{ ETHTOOL_A_EEE_TX_LPI_TIMER,	NLA_KIND_U32,    4 },
 };
 
+/*
+ * FEC_SET, from ethnl_fec_set_policy: the header, the MODES bitset,
+ * and AUTO at most 1.
+ */
+static const struct nla_attr_spec ethtool_fec_set_attrs[] = {
+	{ ETHTOOL_A_FEC_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_FEC_MODES,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_FEC_AUTO,		NLA_KIND_U8_RANGE, 1, 0 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -503,6 +516,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_FEC_GET,           "ETHTOOL_MSG_FEC_GET",
 	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
+	{ ETHTOOL_MSG_FEC_SET,           "ETHTOOL_MSG_FEC_SET",
+	  ethtool_fec_set_attrs, ARRAY_SIZE(ethtool_fec_set_attrs) },
 	{ ETHTOOL_MSG_MODULE_EEPROM_GET, "ETHTOOL_MSG_MODULE_EEPROM_GET",
 	  ethtool_module_eeprom_get_attrs,
 	  ARRAY_SIZE(ethtool_module_eeprom_get_attrs) },
