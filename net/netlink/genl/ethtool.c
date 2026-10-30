@@ -679,6 +679,19 @@ static const struct nla_attr_spec ethtool_rss_create_act_attrs[] = {
 	{ ETHTOOL_A_RSS_INPUT_XFRM,	NLA_KIND_U32_RANGE, RXH_XFRM_SYM_OR_XOR, 0 },
 };
 
+/*
+ * RSS_DELETE_ACT, from ethnl_rss_delete_policy: the header and
+ * CONTEXT at least 1, both required, the context by
+ * GENL_REQ_ATTR_CHECK in ethnl_rss_delete_doit.
+ */
+static const struct nla_attr_spec ethtool_rss_delete_act_attrs[] = {
+	{ ETHTOOL_A_RSS_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_RSS_CONTEXT,	NLA_KIND_U32_RANGE, UINT32_MAX, 1,
+	  .required = true },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -767,6 +780,9 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_RSS_CREATE_ACT,    "ETHTOOL_MSG_RSS_CREATE_ACT",
 	  ethtool_rss_create_act_attrs,
 	  ARRAY_SIZE(ethtool_rss_create_act_attrs) },
+	{ ETHTOOL_MSG_RSS_DELETE_ACT,    "ETHTOOL_MSG_RSS_DELETE_ACT",
+	  ethtool_rss_delete_act_attrs,
+	  ARRAY_SIZE(ethtool_rss_delete_act_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_PLCA_SET_CFG,      "ETHTOOL_MSG_PLCA_SET_CFG",

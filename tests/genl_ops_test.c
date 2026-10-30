@@ -1403,6 +1403,12 @@ static struct slot ethtool_rss_create_act[] = {
 	S_BLOB(ETHTOOL_A_RSS_HKEY, 1, 64),
 	S_U32_RANGE(ETHTOOL_A_RSS_INPUT_XFRM, 0, RXH_XFRM_SYM_OR_XOR),
 };
+/* net/ethtool/rss.c: ethnl_rss_delete_policy.  CONTEXT is required,
+ * by GENL_REQ_ATTR_CHECK in ethnl_rss_delete_doit. */
+static struct slot ethtool_rss_delete_act[] = {
+	S_NEST(ETHTOOL_A_RSS_HEADER, ethtool_header, .required = true),
+	S_U32_RANGE(ETHTOOL_A_RSS_CONTEXT, 1, UINT32_MAX, .required = true),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1445,6 +1451,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),
 	P_CMD(ETHTOOL_MSG_RSS_SET, ethtool_rss_set),
 	P_CMD(ETHTOOL_MSG_RSS_CREATE_ACT, ethtool_rss_create_act),
+	P_CMD(ETHTOOL_MSG_RSS_DELETE_ACT, ethtool_rss_delete_act),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_CFG, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_PLCA_SET_CFG, ethtool_plca_set_cfg),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_STATUS, ethtool_get_phy),
