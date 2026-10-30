@@ -432,6 +432,22 @@ static const struct nla_attr_spec ethtool_pause_set_attrs[] = {
 	{ ETHTOOL_A_PAUSE_TX,		NLA_KIND_U8, 1 },
 };
 
+/*
+ * EEE_SET, from ethnl_eee_set_policy: the header, the MODES_OURS
+ * bitset, the two enable U8s that ethnl_set_eee reads as bools, and
+ * the TX_LPI_TIMER U32.
+ */
+static const struct nla_attr_spec ethtool_eee_set_attrs[] = {
+	{ ETHTOOL_A_EEE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_EEE_MODES_OURS,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_EEE_ENABLED,	NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_EEE_TX_LPI_ENABLED, NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_EEE_TX_LPI_TIMER,	NLA_KIND_U32,    4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -479,6 +495,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_pause_set_attrs, ARRAY_SIZE(ethtool_pause_set_attrs) },
 	{ ETHTOOL_MSG_EEE_GET,           "ETHTOOL_MSG_EEE_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_EEE_SET,           "ETHTOOL_MSG_EEE_SET",
+	  ethtool_eee_set_attrs, ARRAY_SIZE(ethtool_eee_set_attrs) },
 	{ ETHTOOL_MSG_TSINFO_GET,        "ETHTOOL_MSG_TSINFO_GET",
 	  ethtool_tsinfo_get_attrs, ARRAY_SIZE(ethtool_tsinfo_get_attrs) },
 	{ ETHTOOL_MSG_TUNNEL_INFO_GET,   "ETHTOOL_MSG_TUNNEL_INFO_GET",

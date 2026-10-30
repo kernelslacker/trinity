@@ -1252,6 +1252,14 @@ static struct slot ethtool_pause_set[] = {
 	S_U8(ETHTOOL_A_PAUSE_RX),
 	S_U8(ETHTOOL_A_PAUSE_TX),
 };
+/* net/ethtool/eee.c: ethnl_eee_set_policy. */
+static struct slot ethtool_eee_set[] = {
+	S_NEST(ETHTOOL_A_EEE_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_EEE_MODES_OURS, ethtool_bitset),
+	S_U8(ETHTOOL_A_EEE_ENABLED),
+	S_U8(ETHTOOL_A_EEE_TX_LPI_ENABLED),
+	S_U32(ETHTOOL_A_EEE_TX_LPI_TIMER),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1276,6 +1284,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_PAUSE_GET, ethtool_pause_get),
 	P_CMD(ETHTOOL_MSG_PAUSE_SET, ethtool_pause_set),
 	P_CMD(ETHTOOL_MSG_EEE_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_EEE_SET, ethtool_eee_set),
 	P_CMD(ETHTOOL_MSG_TSINFO_GET, ethtool_tsinfo_get),
 	P_CMD(ETHTOOL_MSG_TUNNEL_INFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_FEC_GET, ethtool_get_stats),
