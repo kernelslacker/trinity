@@ -24,7 +24,9 @@
 /*
  * Datapath policy lives in net/openvswitch/datapath.c::datapath_policy.
  * NAME is an NLA_NUL_STRING (IFNAMSIZ - 1), so a byte at least, for the
- * terminator.  UPCALL_PID and USER_FEATURES are u32.  PER_CPU_PIDS is a
+ * terminator.  UPCALL_PID is a u32, and USER_FEATURES a mask of the four
+ * OVS_DP_F_* bits, which ovs_dp_change() refuses any other bit of.
+ * PER_CPU_PIDS is a
  * per-cpu array of u32 PIDs (cap at a small multiple to keep payloads
  * bounded).  STATS / MEGAFLOW_STATS are pure response payloads but we
  * list them so SET paths exercise the validator's "ignore on input"
@@ -37,7 +39,7 @@ static const struct nla_attr_spec ovs_dp_attrs[] = {
 	{ OVS_DP_ATTR_UPCALL_PID,	NLA_KIND_U32,    4 },
 	{ OVS_DP_ATTR_STATS,		NLA_KIND_BINARY, sizeof(struct ovs_dp_stats) },
 	{ OVS_DP_ATTR_MEGAFLOW_STATS,	NLA_KIND_BINARY, sizeof(struct ovs_dp_megaflow_stats) },
-	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32,    4 },
+	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32_MASK, 0xf },
 	{ OVS_DP_ATTR_MASKS_CACHE_SIZE,	NLA_KIND_U32_RANGE, 4096, 0 },
 	{ OVS_DP_ATTR_PER_CPU_PIDS,	NLA_KIND_BINARY, 64 },
 	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
@@ -52,7 +54,7 @@ static const struct nla_attr_spec ovs_dp_new_attrs[] = {
 	  .required = true },
 	{ OVS_DP_ATTR_UPCALL_PID,	NLA_KIND_U32,    4,
 	  .required = true },
-	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32,    4 },
+	{ OVS_DP_ATTR_USER_FEATURES,	NLA_KIND_U32_MASK, 0xf },
 	{ OVS_DP_ATTR_MASKS_CACHE_SIZE,	NLA_KIND_U32_RANGE, 4096, 0 },
 	{ OVS_DP_ATTR_PER_CPU_PIDS,	NLA_KIND_BINARY, 64 },
 	{ OVS_DP_ATTR_IFINDEX,		NLA_KIND_U32_RANGE, INT32_MAX, 0 },
@@ -100,8 +102,10 @@ static const struct nla_attr_spec ovs_vport_upcall_attrs[] = {
 
 /*
  * vport_policy in net/openvswitch/datapath.c, which the ops share and
- * validate liberally.  TYPE is u32 OVS_VPORT_TYPE_* (NETDEV / INTERNAL /
- * GRE / VXLAN / GENEVE).  NAME is an NLA_NUL_STRING (IFNAMSIZ - 1), so a
+ * validate liberally.  PORT_NO is below DP_MAX_PORTS, 65535, and TYPE
+ * is NETDEV or INTERNAL, the only types with registered ops; the GRE /
+ * VXLAN / GENEVE types are legacy and unregistered.  NAME is an
+ * NLA_NUL_STRING (IFNAMSIZ - 1), so a
  * byte at least, for the terminator.  STATS is a slot with a length, so
  * exactly struct ovs_vport_stats: any shorter payload is refused.
  * UPCALL_PID is an array of u32 PIDs, which the policy takes at any
@@ -112,8 +116,8 @@ static const struct nla_attr_spec ovs_vport_upcall_attrs[] = {
  * where a u16 DST_PORT is too short for an NLA_U32.
  */
 static const struct nla_attr_spec ovs_vport_attrs[] = {
-	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32,    4 },
-	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32,    4 },
+	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32_RANGE, 65534, 0 },
+	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32_RANGE, 2, 1 },
 	{ OVS_VPORT_ATTR_NAME,			NLA_KIND_STRING, 15, 1 },
 	{ OVS_VPORT_ATTR_OPTIONS,		NLA_KIND_NESTED, 0, 0,
 	  ovs_vport_tunnel_attrs, ARRAY_SIZE(ovs_vport_tunnel_attrs) },
@@ -131,8 +135,8 @@ static const struct nla_attr_spec ovs_vport_attrs[] = {
  * NAME, TYPE or UPCALL_PID.  IFINDEX counts for an internal port alone.
  */
 static const struct nla_attr_spec ovs_vport_new_attrs[] = {
-	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32,    4 },
-	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32,    4,
+	{ OVS_VPORT_ATTR_PORT_NO,		NLA_KIND_U32_RANGE, 65534, 0 },
+	{ OVS_VPORT_ATTR_TYPE,			NLA_KIND_U32_RANGE, 2, 1,
 	  .required = true },
 	{ OVS_VPORT_ATTR_NAME,			NLA_KIND_STRING, 15, 1,
 	  .required = true },
@@ -219,13 +223,15 @@ static const struct nla_attr_spec ovs_nsh_key_attrs[] = {
 /*
  * ovs_key_lens, less PACKET_TYPE, ND_EXTENSIONS and TUNNEL_INFO, which
  * __parse_flow_nlattrs() refuses.  MPLS is one label or two of the three
- * it holds.  The parser refuses a key given twice.  ENCAP, the key of a
+ * it holds.  The parser refuses a key given twice.  IN_PORT is below
+ * DP_MAX_PORTS, and CT_STATE a mask of CT_SUPPORTED_MASK, 0xff, both
+ * refused past their bounds.  ENCAP, the key of a
  * VLAN's payload in the same namespace, draws from the same entries, in
  * ovs_encap_key_attrs, without an ENCAP of its own.
  */
 #define OVS_KEY_ENTRIES \
 	{ OVS_KEY_ATTR_PRIORITY,		NLA_KIND_U32,    4, .once = true }, \
-	{ OVS_KEY_ATTR_IN_PORT,			NLA_KIND_U32,    4, .once = true }, \
+	{ OVS_KEY_ATTR_IN_PORT,			NLA_KIND_U32_RANGE, 65534, 0, .once = true }, \
 	OVS_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true), \
 	{ OVS_KEY_ATTR_VLAN,			NLA_KIND_U16,    2, .once = true }, \
 	{ OVS_KEY_ATTR_ETHERTYPE,		NLA_KIND_U16,    2, .once = true }, \
@@ -247,7 +253,7 @@ static const struct nla_attr_spec ovs_nsh_key_attrs[] = {
 	{ OVS_KEY_ATTR_MPLS,			NLA_KIND_BINARY_FIXED2, \
 	  2 * sizeof(struct ovs_key_mpls), sizeof(struct ovs_key_mpls), \
 	  .once = true }, \
-	{ OVS_KEY_ATTR_CT_STATE,		NLA_KIND_U32,    4, .once = true }, \
+	{ OVS_KEY_ATTR_CT_STATE,		NLA_KIND_U32_MASK, 0xff, .once = true }, \
 	{ OVS_KEY_ATTR_CT_ZONE,			NLA_KIND_U16,    2, .once = true }, \
 	{ OVS_KEY_ATTR_CT_MARK,			NLA_KIND_U32,    4, .once = true }, \
 	OVS_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true), \
@@ -549,12 +555,12 @@ struct genl_family_grammar fam_ovs_packet = {
  * band_policy in net/openvswitch/meter.c, the policy of one band.  STATS is
  * a slot with a length and no type, so exactly struct ovs_flow_stats: a
  * shorter payload is refused.  dp_meter_create() answers -EINVAL to a band
- * without TYPE, RATE or BURST.
+ * without TYPE, RATE or BURST, or with a zero RATE.
  */
 static const struct nla_attr_spec ovs_meter_band_attrs[] = {
 	{ OVS_BAND_ATTR_TYPE,		NLA_KIND_U32,    4,
 	  .required = true },
-	{ OVS_BAND_ATTR_RATE,		NLA_KIND_U32,    4,
+	{ OVS_BAND_ATTR_RATE,		NLA_KIND_U32_RANGE, UINT32_MAX, 1,
 	  .required = true },
 	{ OVS_BAND_ATTR_BURST,		NLA_KIND_U32,    4,
 	  .required = true },

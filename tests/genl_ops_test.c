@@ -1484,7 +1484,7 @@ static struct slot ovs_datapath[] = {
 	S_U32(OVS_DP_ATTR_UPCALL_PID),
 	S_BLOB(OVS_DP_ATTR_STATS, 0, 0xffff),
 	S_BLOB(OVS_DP_ATTR_MEGAFLOW_STATS, 0, 0xffff),
-	S_U32(OVS_DP_ATTR_USER_FEATURES),
+	S_U32_MASK(OVS_DP_ATTR_USER_FEATURES, 0xf),
 	S_U32_RANGE(OVS_DP_ATTR_MASKS_CACHE_SIZE, 0, 4096),
 	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
 	S_U32_RANGE(OVS_DP_ATTR_IFINDEX, 0, INT32_MAX),
@@ -1494,7 +1494,7 @@ static struct slot ovs_datapath[] = {
 static struct slot ovs_datapath_new[] = {
 	S_STR(OVS_DP_ATTR_NAME, 15, .required = true),
 	S_U32(OVS_DP_ATTR_UPCALL_PID, .required = true),
-	S_U32(OVS_DP_ATTR_USER_FEATURES),
+	S_U32_MASK(OVS_DP_ATTR_USER_FEATURES, 0xf),
 	S_U32_RANGE(OVS_DP_ATTR_MASKS_CACHE_SIZE, 0, 4096),
 	S_BLOB(OVS_DP_ATTR_PER_CPU_PIDS, 0, 0xffff),
 	S_U32_RANGE(OVS_DP_ATTR_IFINDEX, 0, INT32_MAX),
@@ -1527,8 +1527,8 @@ static struct slot ovs_vport_upcall[] = {
 	S_U64(OVS_VPORT_UPCALL_ATTR_FAIL),
 };
 static struct slot ovs_vport[] = {
-	S_U32(OVS_VPORT_ATTR_PORT_NO),
-	S_U32(OVS_VPORT_ATTR_TYPE),
+	S_U32_RANGE(OVS_VPORT_ATTR_PORT_NO, 0, 65534),
+	S_U32_RANGE(OVS_VPORT_ATTR_TYPE, 1, 2),
 	S_STR(OVS_VPORT_ATTR_NAME, 15),
 	S_NEST(OVS_VPORT_ATTR_OPTIONS, ovs_vport_tunnel),
 	S_BLOB(OVS_VPORT_ATTR_UPCALL_PID, 0, 0xffff),
@@ -1541,8 +1541,8 @@ static struct slot ovs_vport[] = {
 /* What ovs_vport_cmd_new() reads, NAME, TYPE and UPCALL_PID without which
  * it answers -EINVAL. */
 static struct slot ovs_vport_new[] = {
-	S_U32(OVS_VPORT_ATTR_PORT_NO),
-	S_U32(OVS_VPORT_ATTR_TYPE, .required = true),
+	S_U32_RANGE(OVS_VPORT_ATTR_PORT_NO, 0, 65534),
+	S_U32_RANGE(OVS_VPORT_ATTR_TYPE, 1, 2, .required = true),
 	S_STR(OVS_VPORT_ATTR_NAME, 15, .required = true),
 	S_BLOB(OVS_VPORT_ATTR_UPCALL_PID, 0, 0xffff, .required = true),
 	S_U32_RANGE(OVS_VPORT_ATTR_IFINDEX, 0, INT32_MAX),
@@ -1560,11 +1560,12 @@ extern struct genl_family_grammar fam_ovs_meter;
  * net/openvswitch/meter.c: meter_policy and band_policy.  STATS has a slot
  * with a length and no type, so exactly that of struct ovs_flow_stats.
  * BANDS is a nest of band nests, which dp_meter_create() walks and refuses
- * past DP_MAX_BANDS, 1, or when a band lacks its TYPE, RATE or BURST.
+ * past DP_MAX_BANDS, 1, or when a band lacks its TYPE, RATE or BURST,
+ * or its RATE is zero.
  */
 static struct slot ovs_meter_band[] = {
 	S_U32(OVS_BAND_ATTR_TYPE, .required = true),
-	S_U32(OVS_BAND_ATTR_RATE, .required = true),
+	S_U32_RANGE(OVS_BAND_ATTR_RATE, 1, UINT32_MAX, .required = true),
 	S_U32(OVS_BAND_ATTR_BURST, .required = true),
 	S_BLOB(OVS_BAND_ATTR_STATS, sizeof(struct ovs_flow_stats),
 	       sizeof(struct ovs_flow_stats)),
@@ -1671,10 +1672,12 @@ static struct slot ovs_nsh_key[] = {
 	S_BLOB(OVS_NSH_KEY_ATTR_MD2, 1, 244),
 };
 /* A key's entries, ENCAP apart: the key a VLAN's payload carries, in the
- * same namespace, draws from these, without an ENCAP of its own. */
+ * same namespace, draws from these, without an ENCAP of its own.
+ * IN_PORT is below DP_MAX_PORTS, and CT_STATE a mask of
+ * CT_SUPPORTED_MASK, 0xff. */
 #define OVS_KEY_SLOTS \
 	S_U32(OVS_KEY_ATTR_PRIORITY, .once = true), \
-	S_U32(OVS_KEY_ATTR_IN_PORT, .once = true), \
+	S_U32_RANGE(OVS_KEY_ATTR_IN_PORT, 0, 65534, .once = true), \
 	S_FIXED(OVS_KEY_ATTR_ETHERNET, ovs_key_ethernet, .once = true), \
 	S_U16(OVS_KEY_ATTR_VLAN, .once = true), \
 	S_U16(OVS_KEY_ATTR_ETHERTYPE, .once = true), \
@@ -1693,7 +1696,7 @@ static struct slot ovs_nsh_key[] = {
 	S_U32(OVS_KEY_ATTR_DP_HASH, .once = true), \
 	S_U32(OVS_KEY_ATTR_RECIRC_ID, .once = true), \
 	S_BLOB(OVS_KEY_ATTR_MPLS, 4, 12, .once = true), \
-	S_U32(OVS_KEY_ATTR_CT_STATE, .once = true), \
+	S_U32_MASK(OVS_KEY_ATTR_CT_STATE, 0xff, .once = true), \
 	S_U16(OVS_KEY_ATTR_CT_ZONE, .once = true), \
 	S_U32(OVS_KEY_ATTR_CT_MARK, .once = true), \
 	S_FIXED(OVS_KEY_ATTR_CT_LABELS, ovs_key_ct_labels, .once = true), \
