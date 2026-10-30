@@ -1931,13 +1931,13 @@ static struct slot tipc_media[] = {
 	S_NEST(TIPC_NLA_MEDIA_PROP, tipc_prop),
 };
 static struct slot tipc_net[] = {
-	S_U32(TIPC_NLA_NET_ID),
-	S_U32(TIPC_NLA_NET_ADDR),
+	S_U32_RANGE(TIPC_NLA_NET_ID, 1, 9999),
+	S_U32_RANGE(TIPC_NLA_NET_ADDR, 1, UINT32_MAX),
 	S_U64(TIPC_NLA_NET_NODEID),
 	S_U64(TIPC_NLA_NET_NODEID_W1),
 };
 static struct slot tipc_mon[] = {
-	S_U32(TIPC_NLA_MON_ACTIVATION_THRESHOLD),
+	S_U32_RANGE(TIPC_NLA_MON_ACTIVATION_THRESHOLD, 0, TIPC_CLUSTER_SIZE),
 };
 static struct slot tipc_mon_peer[] = {
 	S_U32(TIPC_NLA_MON_REF),

@@ -103,15 +103,20 @@ static const struct nla_attr_spec tipc_media_attrs[] = {
 	  tipc_prop_attrs, ARRAY_SIZE(tipc_prop_attrs) },
 };
 
+/* tipc_nl_net_set() refuses a NET_ID outside 1 to 9999 and a zero
+ * NET_ADDR. */
 static const struct nla_attr_spec tipc_net_attrs[] = {
-	{ TIPC_NLA_NET_ID,		NLA_KIND_U32,    4 },
-	{ TIPC_NLA_NET_ADDR,		NLA_KIND_U32,    4 },
+	{ TIPC_NLA_NET_ID,		NLA_KIND_U32_RANGE, 9999, 1 },
+	{ TIPC_NLA_NET_ADDR,		NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 	{ TIPC_NLA_NET_NODEID,		NLA_KIND_U64,    8 },
 	{ TIPC_NLA_NET_NODEID_W1,	NLA_KIND_U64,    8 },
 };
 
+/* tipc_nl_monitor_set_threshold() refuses a threshold past
+ * TIPC_CLUSTER_SIZE. */
 static const struct nla_attr_spec tipc_mon_attrs[] = {
-	{ TIPC_NLA_MON_ACTIVATION_THRESHOLD, NLA_KIND_U32, 4 },
+	{ TIPC_NLA_MON_ACTIVATION_THRESHOLD, NLA_KIND_U32_RANGE,
+	  TIPC_CLUSTER_SIZE, 0 },
 };
 
 /* MON_PEER_GET's dumpit refuses a MON nest without REF, the bearer whose
