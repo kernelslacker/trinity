@@ -33,3 +33,12 @@
 #ifndef HAVE_ETHTOOL_A_PORT_ID
 #define ETHTOOL_A_PORT_ID 2
 #endif
+
+/* COALESCE_SET's receive-CQE counters, which follow the profile nests in
+ * the coalesce attribute enum.  Probed by configure like the ones above. */
+#ifndef HAVE_ETHTOOL_A_COALESCE_RX_CQE_FRAMES
+#define ETHTOOL_A_COALESCE_RX_CQE_FRAMES 31
+#endif
+#ifndef HAVE_ETHTOOL_A_COALESCE_RX_CQE_NSECS
+#define ETHTOOL_A_COALESCE_RX_CQE_NSECS 32
+#endif

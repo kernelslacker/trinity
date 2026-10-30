@@ -717,6 +717,11 @@ check_enum_member linux/ethtool_netlink_generated.h \
 check_enum_member linux/ethtool_netlink_generated.h \
 	ETHTOOL_MSG_PORT_GET ETHTOOL_A_PORT_HEADER ETHTOOL_A_PORT_ID
 
+# ethtool's COALESCE_SET receive-CQE counters, added after the rest of
+# the coalesce attributes.
+check_enum_member linux/ethtool_netlink_generated.h \
+	ETHTOOL_A_COALESCE_RX_CQE_FRAMES ETHTOOL_A_COALESCE_RX_CQE_NSECS
+
 # ethtool's newest string set, which ends the ids STRSET_GET takes.
 check_enum_member linux/ethtool.h ETH_SS_PHY_INTERFACES
 

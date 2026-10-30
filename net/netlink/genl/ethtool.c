@@ -353,6 +353,71 @@ static const struct nla_attr_spec ethtool_channels_set_attrs[] = {
 	{ ETHTOOL_A_CHANNELS_COMBINED_COUNT,	NLA_KIND_U32, 4 },
 };
 
+/*
+ * The nests of COALESCE_SET's RX_PROFILE and TX_PROFILE, from
+ * coalesce_profile_policy and coalesce_irq_moderation_policy: a profile
+ * holds one IRQ_MODERATION nest of three plain U32s.
+ */
+static const struct nla_attr_spec ethtool_irq_moderation_attrs[] = {
+	{ ETHTOOL_A_IRQ_MODERATION_USEC,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_IRQ_MODERATION_PKTS,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_IRQ_MODERATION_COMPS,	NLA_KIND_U32, 4 },
+};
+
+static const struct nla_attr_spec ethtool_coalesce_profile_attrs[] = {
+	{ ETHTOOL_A_PROFILE_IRQ_MODERATION, NLA_KIND_NESTED, 0, 0,
+	  ethtool_irq_moderation_attrs,
+	  ARRAY_SIZE(ethtool_irq_moderation_attrs) },
+};
+
+/*
+ * COALESCE_SET, from ethnl_coalesce_set_policy: the header, the
+ * timing and frame-count U32s, the USE_ADAPTIVE U8s, the USE_CQE_MODE
+ * U8s at most 1, the aggregation and CQE U32s, and the two profile
+ * nests.  Which parameters a device supports is the driver's, checked
+ * in ethnl_set_coalesce_validate, so no bound beyond the policy's.
+ */
+static const struct nla_attr_spec ethtool_coalesce_set_attrs[] = {
+	{ ETHTOOL_A_COALESCE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_COALESCE_RX_USECS,			NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_MAX_FRAMES,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_USECS_IRQ,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_MAX_FRAMES_IRQ,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_USECS,			NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_MAX_FRAMES,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_USECS_IRQ,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_MAX_FRAMES_IRQ,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_STATS_BLOCK_USECS,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_USE_ADAPTIVE_RX,		NLA_KIND_U8,  1 },
+	{ ETHTOOL_A_COALESCE_USE_ADAPTIVE_TX,		NLA_KIND_U8,  1 },
+	{ ETHTOOL_A_COALESCE_PKT_RATE_LOW,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_USECS_LOW,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_MAX_FRAMES_LOW,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_USECS_LOW,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_MAX_FRAMES_LOW,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_PKT_RATE_HIGH,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_USECS_HIGH,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_MAX_FRAMES_HIGH,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_USECS_HIGH,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_MAX_FRAMES_HIGH,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RATE_SAMPLE_INTERVAL,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_USE_CQE_MODE_TX,		NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_COALESCE_USE_CQE_MODE_RX,		NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_COALESCE_TX_AGGR_MAX_BYTES,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_AGGR_MAX_FRAMES,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_TX_AGGR_TIME_USECS,	NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_PROFILE,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_coalesce_profile_attrs,
+	  ARRAY_SIZE(ethtool_coalesce_profile_attrs) },
+	{ ETHTOOL_A_COALESCE_TX_PROFILE,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_coalesce_profile_attrs,
+	  ARRAY_SIZE(ethtool_coalesce_profile_attrs) },
+	{ ETHTOOL_A_COALESCE_RX_CQE_FRAMES,		NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_COALESCE_RX_CQE_NSECS,		NLA_KIND_U32, 4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -392,6 +457,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_channels_set_attrs, ARRAY_SIZE(ethtool_channels_set_attrs) },
 	{ ETHTOOL_MSG_COALESCE_GET,      "ETHTOOL_MSG_COALESCE_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_COALESCE_SET,      "ETHTOOL_MSG_COALESCE_SET",
+	  ethtool_coalesce_set_attrs, ARRAY_SIZE(ethtool_coalesce_set_attrs) },
 	{ ETHTOOL_MSG_PAUSE_GET,         "ETHTOOL_MSG_PAUSE_GET",
 	  ethtool_pause_get_attrs, ARRAY_SIZE(ethtool_pause_get_attrs) },
 	{ ETHTOOL_MSG_EEE_GET,           "ETHTOOL_MSG_EEE_GET",
