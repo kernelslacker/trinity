@@ -475,6 +475,25 @@ static const struct nla_attr_spec ethtool_module_set_attrs[] = {
 	  ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH },
 };
 
+/*
+ * PSE_SET, from ethnl_pse_set_policy: the PHY-aware header and the
+ * two admin controls in [DISABLED, ENABLED], that is [2, 3], plus
+ * C33_PSE_AVAIL_PW_LIMIT and PRIO as plain U32s.
+ */
+static const struct nla_attr_spec ethtool_pse_set_attrs[] = {
+	{ ETHTOOL_A_PSE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_phy_attrs, ARRAY_SIZE(ethtool_header_phy_attrs),
+	  .required = true },
+	{ ETHTOOL_A_PODL_PSE_ADMIN_CONTROL, NLA_KIND_U32_RANGE,
+	  ETHTOOL_PODL_PSE_ADMIN_STATE_ENABLED,
+	  ETHTOOL_PODL_PSE_ADMIN_STATE_DISABLED },
+	{ ETHTOOL_A_C33_PSE_ADMIN_CONTROL, NLA_KIND_U32_RANGE,
+	  ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED,
+	  ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED },
+	{ ETHTOOL_A_C33_PSE_AVAIL_PW_LIMIT, NLA_KIND_U32, 4 },
+	{ ETHTOOL_A_PSE_PRIO,		NLA_KIND_U32, 4 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -545,6 +564,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_module_set_attrs, ARRAY_SIZE(ethtool_module_set_attrs) },
 	{ ETHTOOL_MSG_PSE_GET,           "ETHTOOL_MSG_PSE_GET",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
+	{ ETHTOOL_MSG_PSE_SET,           "ETHTOOL_MSG_PSE_SET",
+	  ethtool_pse_set_attrs, ARRAY_SIZE(ethtool_pse_set_attrs) },
 	{ ETHTOOL_MSG_RSS_GET,           "ETHTOOL_MSG_RSS_GET",
 	  ethtool_rss_get_attrs, ARRAY_SIZE(ethtool_rss_get_attrs) },
 	{ ETHTOOL_MSG_PLCA_GET_CFG,      "ETHTOOL_MSG_PLCA_GET_CFG",

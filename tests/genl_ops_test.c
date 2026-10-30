@@ -1277,6 +1277,20 @@ static struct slot ethtool_module_set[] = {
 		   ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH,
 		   ETHTOOL_MODULE_POWER_MODE_POLICY_AUTO),
 };
+/* net/ethtool/pse-pd.c: ethnl_pse_set_policy, whose admin controls are
+ * NLA_POLICY_RANGE(NLA_U32, DISABLED, ENABLED), [2, 3], for both the
+ * PoDL and the C33 states. */
+static struct slot ethtool_pse_set[] = {
+	S_NEST(ETHTOOL_A_PSE_HEADER, ethtool_header_phy, .required = true),
+	S_U32_RANGE(ETHTOOL_A_PODL_PSE_ADMIN_CONTROL,
+		    ETHTOOL_PODL_PSE_ADMIN_STATE_DISABLED,
+		    ETHTOOL_PODL_PSE_ADMIN_STATE_ENABLED),
+	S_U32_RANGE(ETHTOOL_A_C33_PSE_ADMIN_CONTROL,
+		    ETHTOOL_C33_PSE_ADMIN_STATE_DISABLED,
+		    ETHTOOL_C33_PSE_ADMIN_STATE_ENABLED),
+	S_U32(ETHTOOL_A_C33_PSE_AVAIL_PW_LIMIT),
+	S_U32(ETHTOOL_A_PSE_PRIO),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1312,6 +1326,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_MODULE_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MODULE_SET, ethtool_module_set),
 	P_CMD(ETHTOOL_MSG_PSE_GET, ethtool_get_phy),
+	P_CMD(ETHTOOL_MSG_PSE_SET, ethtool_pse_set),
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_CFG, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_STATUS, ethtool_get_phy),
