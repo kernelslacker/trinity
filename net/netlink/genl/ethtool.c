@@ -575,6 +575,23 @@ static const struct nla_attr_spec ethtool_plca_set_cfg_attrs[] = {
 	{ ETHTOOL_A_PLCA_BURST_TMR,	NLA_KIND_U32_RANGE, 255, 0 },
 };
 
+/*
+ * MM_SET, from ethnl_mm_set_policy: the header, the three enable U8s
+ * at most 1, VERIFY_TIME in [1, 128] and TX_MIN_FRAG_SIZE in
+ * [60, 252].  The verify-requires-TX and TX-requires-pMAC rules are
+ * between attributes, and the verify-time ceiling is the device's.
+ */
+static const struct nla_attr_spec ethtool_mm_set_attrs[] = {
+	{ ETHTOOL_A_MM_HEADER,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_MM_VERIFY_ENABLED,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_MM_VERIFY_TIME,	NLA_KIND_U32_RANGE, 128, 1 },
+	{ ETHTOOL_A_MM_TX_ENABLED,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_MM_PMAC_ENABLED,	NLA_KIND_U8_RANGE, 1, 0 },
+	{ ETHTOOL_A_MM_TX_MIN_FRAG_SIZE, NLA_KIND_U32_RANGE, 252, 60 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -659,6 +676,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_MM_GET,            "ETHTOOL_MSG_MM_GET",
 	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
+	{ ETHTOOL_MSG_MM_SET,            "ETHTOOL_MSG_MM_SET",
+	  ethtool_mm_set_attrs, ARRAY_SIZE(ethtool_mm_set_attrs) },
 	{ ETHTOOL_MSG_PHY_GET,           "ETHTOOL_MSG_PHY_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET",

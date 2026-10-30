@@ -1345,6 +1345,15 @@ static struct slot ethtool_plca_set_cfg[] = {
 	S_U32_RANGE(ETHTOOL_A_PLCA_BURST_CNT, 0, 255),
 	S_U32_RANGE(ETHTOOL_A_PLCA_BURST_TMR, 0, 255),
 };
+/* net/ethtool/mm.c: ethnl_mm_set_policy. */
+static struct slot ethtool_mm_set[] = {
+	S_NEST(ETHTOOL_A_MM_HEADER, ethtool_header, .required = true),
+	S_U8_RANGE(ETHTOOL_A_MM_VERIFY_ENABLED, 0, 1),
+	S_U32_RANGE(ETHTOOL_A_MM_VERIFY_TIME, 1, 128),
+	S_U8_RANGE(ETHTOOL_A_MM_TX_ENABLED, 0, 1),
+	S_U8_RANGE(ETHTOOL_A_MM_PMAC_ENABLED, 0, 1),
+	S_U32_RANGE(ETHTOOL_A_MM_TX_MIN_FRAG_SIZE, 60, 252),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1387,6 +1396,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_PLCA_SET_CFG, ethtool_plca_set_cfg),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_STATUS, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_MM_GET, ethtool_get_stats),
+	P_CMD(ETHTOOL_MSG_MM_SET, ethtool_mm_set),
 	P_CMD(ETHTOOL_MSG_PHY_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSCONFIG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MSE_GET, ethtool_get_phy),
