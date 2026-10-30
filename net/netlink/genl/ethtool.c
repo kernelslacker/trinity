@@ -592,6 +592,26 @@ static const struct nla_attr_spec ethtool_mm_set_attrs[] = {
 	{ ETHTOOL_A_MM_TX_MIN_FRAG_SIZE, NLA_KIND_U32_RANGE, 252, 60 },
 };
 
+/*
+ * TSCONFIG_SET, from ethnl_tsconfig_set_policy: the header, the
+ * HWTSTAMP_PROVIDER nest shared with TSINFO_GET, and the
+ * HWTSTAMP_FLAGS, RX_FILTERS and TX_TYPES bitsets, which the set
+ * handler parses with ethnl_update_bitset32().
+ */
+static const struct nla_attr_spec ethtool_tsconfig_set_attrs[] = {
+	{ ETHTOOL_A_TSCONFIG_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_TSCONFIG_HWTSTAMP_PROVIDER, NLA_KIND_NESTED, 0, 0,
+	  ethtool_ts_provider_attrs, ARRAY_SIZE(ethtool_ts_provider_attrs) },
+	{ ETHTOOL_A_TSCONFIG_HWTSTAMP_FLAGS, NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_TSCONFIG_RX_FILTERS, NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_TSCONFIG_TX_TYPES,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -682,6 +702,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_TSCONFIG_GET,      "ETHTOOL_MSG_TSCONFIG_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_TSCONFIG_SET,      "ETHTOOL_MSG_TSCONFIG_SET",
+	  ethtool_tsconfig_set_attrs, ARRAY_SIZE(ethtool_tsconfig_set_attrs) },
 	{ ETHTOOL_MSG_MSE_GET,           "ETHTOOL_MSG_MSE_GET",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_PORT_GET,          "ETHTOOL_MSG_PORT_GET",

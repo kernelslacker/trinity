@@ -1354,6 +1354,16 @@ static struct slot ethtool_mm_set[] = {
 	S_U8_RANGE(ETHTOOL_A_MM_PMAC_ENABLED, 0, 1),
 	S_U32_RANGE(ETHTOOL_A_MM_TX_MIN_FRAG_SIZE, 60, 252),
 };
+/* net/ethtool/tsconfig.c: ethnl_tsconfig_set_policy, whose provider
+ * nest is ethnl_ts_hwtst_prov_policy and whose flags, filters and
+ * types are bitsets. */
+static struct slot ethtool_tsconfig_set[] = {
+	S_NEST(ETHTOOL_A_TSCONFIG_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_TSCONFIG_HWTSTAMP_PROVIDER, ethtool_ts_provider),
+	S_NEST(ETHTOOL_A_TSCONFIG_HWTSTAMP_FLAGS, ethtool_bitset),
+	S_NEST(ETHTOOL_A_TSCONFIG_RX_FILTERS, ethtool_bitset),
+	S_NEST(ETHTOOL_A_TSCONFIG_TX_TYPES, ethtool_bitset),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1399,6 +1409,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_MM_SET, ethtool_mm_set),
 	P_CMD(ETHTOOL_MSG_PHY_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_TSCONFIG_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_TSCONFIG_SET, ethtool_tsconfig_set),
 	P_CMD(ETHTOOL_MSG_MSE_GET, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_PORT_GET, ethtool_port_get),
 	P_DUMP(ETHTOOL_MSG_PORT_GET, ethtool_get),
