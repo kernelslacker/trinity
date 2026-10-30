@@ -1055,6 +1055,22 @@ static struct slot ethtool_ts_provider[] = {
 	S_U32_RANGE(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_INDEX, 0, INT_MAX),
 	S_U32_RANGE(ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER, 0, 1),
 };
+/* net/ethtool/bitset.c: bitset_policy and bit_policy.  SIZE is capped at
+ * ETHNL_MAX_BITSET_SIZE, 32767, and the compact form's VALUE and MASK are
+ * each DIV_ROUND_UP(SIZE, 32) words long, a coupling between two
+ * attributes no slot expresses, so the blobs are capped at 64 bytes. */
+static struct slot ethtool_bit[] = {
+	S_U32(ETHTOOL_A_BITSET_BIT_INDEX),
+	S_STR(ETHTOOL_A_BITSET_BIT_NAME, 32),
+	S_FLAG(ETHTOOL_A_BITSET_BIT_VALUE),
+};
+static struct slot ethtool_bitset[] = {
+	S_FLAG(ETHTOOL_A_BITSET_NOMASK),
+	S_U32_RANGE(ETHTOOL_A_BITSET_SIZE, 0, 32767),
+	S_ARRAY(ETHTOOL_A_BITSET_BITS, ethtool_bit),
+	S_BLOB(ETHTOOL_A_BITSET_VALUE, 0, 64),
+	S_BLOB(ETHTOOL_A_BITSET_MASK, 0, 64),
+};
 static struct slot ethtool_get[] = {
 	S_NEST(ETHTOOL_A_LINKINFO_HEADER, ethtool_header),
 };
@@ -1118,11 +1134,24 @@ static struct slot ethtool_linkinfo_set[] = {
 	S_U8(ETHTOOL_A_LINKINFO_PHYADDR),
 	S_U8(ETHTOOL_A_LINKINFO_TP_MDIX_CTRL),
 };
+/* net/ethtool/linkmodes.c: ethnl_linkmodes_set_policy, whose AUTONEG,
+ * DUPLEX and MASTER_SLAVE_CFG are plain NLA_U8s, SPEED a plain NLA_U32,
+ * OURS a bitset, and LANES NLA_POLICY_RANGE(NLA_U32, 1, 8). */
+static struct slot ethtool_linkmodes_set[] = {
+	S_NEST(ETHTOOL_A_LINKMODES_HEADER, ethtool_header, .required = true),
+	S_U8(ETHTOOL_A_LINKMODES_AUTONEG),
+	S_NEST(ETHTOOL_A_LINKMODES_OURS, ethtool_bitset),
+	S_U32(ETHTOOL_A_LINKMODES_SPEED),
+	S_U8(ETHTOOL_A_LINKMODES_DUPLEX),
+	S_U8(ETHTOOL_A_LINKMODES_MASTER_SLAVE_CFG),
+	S_U32_RANGE(ETHTOOL_A_LINKMODES_LANES, 1, 8),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_SET, ethtool_linkinfo_set),
 	P_CMD(ETHTOOL_MSG_LINKMODES_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_LINKMODES_SET, ethtool_linkmodes_set),
 	P_CMD(ETHTOOL_MSG_LINKSTATE_GET, ethtool_get_stats),
 	P_CMD(ETHTOOL_MSG_DEBUG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_WOL_GET, ethtool_get),

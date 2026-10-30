@@ -83,6 +83,40 @@ static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
 	{ ETHTOOL_A_TS_HWTSTAMP_PROVIDER_QUALIFIER,	NLA_KIND_U32_RANGE, 1, 0 },
 };
 
+/* ETHNL_MAX_BITSET_SIZE lives in the kernel-internal net/ethtool/bitset.h,
+ * not a uapi header; the value is the kernel's. */
+#ifndef ETHNL_MAX_BITSET_SIZE
+#define ETHNL_MAX_BITSET_SIZE	32767
+#endif
+
+/*
+ * The bitset nest the SET handlers parse with ethnl_parse_bitset(), from
+ * bitset_policy and bit_policy in net/ethtool/bitset.c.  The policy's
+ * BITS is a bare NLA_NESTED whose children ethnl_parse_bitset() walks
+ * with nla_for_each_nested and parses each as a bit nest, so it is an
+ * array of bit nests here.  SIZE is capped at ETHNL_MAX_BITSET_SIZE.
+ * The compact form's coupling, that VALUE and MASK are each
+ * DIV_ROUND_UP(SIZE, 32) words long, is between two attributes and no
+ * spec kind expresses it; the blobs are capped at 64 bytes, which holds
+ * every in-tree bitset these handlers parse.  A NAME is a NUL string
+ * the handler looks up in the bit names of the set being written.
+ */
+static const struct nla_attr_spec ethtool_bit_attrs[] = {
+	{ ETHTOOL_A_BITSET_BIT_INDEX,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_BITSET_BIT_NAME,	NLA_KIND_STRING, 32 },
+	{ ETHTOOL_A_BITSET_BIT_VALUE,	NLA_KIND_FLAG,   0 },
+};
+
+static const struct nla_attr_spec ethtool_bitset_attrs[] = {
+	{ ETHTOOL_A_BITSET_NOMASK,	NLA_KIND_FLAG,		0 },
+	{ ETHTOOL_A_BITSET_SIZE,	NLA_KIND_U32_RANGE,
+	  ETHNL_MAX_BITSET_SIZE, 0 },
+	{ ETHTOOL_A_BITSET_BITS,	NLA_KIND_NESTED_ARRAY, 0, 0,
+	  ethtool_bit_attrs, ARRAY_SIZE(ethtool_bit_attrs) },
+	{ ETHTOOL_A_BITSET_VALUE,	NLA_KIND_BINARY,	64, 0 },
+	{ ETHTOOL_A_BITSET_MASK,	NLA_KIND_BINARY,	64, 0 },
+};
+
 /*
  * The ops validate strictly against an ethnl_*_get_policy of their own that
  * ends at its own last id, so a request meets only the ids of its cmd's.
@@ -101,6 +135,7 @@ static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
 #ifndef ETH_MODULE_MAX_I2C_ADDRESS
 #define ETH_MODULE_MAX_I2C_ADDRESS	0x7f
 #endif
+
 static const struct nla_attr_spec ethtool_get_attrs[] = {
 	{ ETHTOOL_A_LINKINFO_HEADER,	NLA_KIND_NESTED, 0, 0,
 	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs) },
@@ -206,6 +241,25 @@ static const struct nla_attr_spec ethtool_linkinfo_set_attrs[] = {
 	{ ETHTOOL_A_LINKINFO_TP_MDIX_CTRL,	NLA_KIND_U8,     1 },
 };
 
+/*
+ * LINKMODES_SET, from ethnl_linkmodes_set_policy: the header, the
+ * autoneg/duplex/master-slave U8s that ethnl_set_linkmodes assigns
+ * un-narrowed, SPEED as a plain U32, the OURS bitset, and LANES in
+ * [1, 8] from NLA_POLICY_RANGE.
+ */
+static const struct nla_attr_spec ethtool_linkmodes_set_attrs[] = {
+	{ ETHTOOL_A_LINKMODES_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_LINKMODES_AUTONEG,	NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_LINKMODES_OURS,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_LINKMODES_SPEED,	NLA_KIND_U32,    4 },
+	{ ETHTOOL_A_LINKMODES_DUPLEX,	NLA_KIND_U8,     1 },
+	{ ETHTOOL_A_LINKMODES_MASTER_SLAVE_CFG, NLA_KIND_U8, 1 },
+	{ ETHTOOL_A_LINKMODES_LANES,	NLA_KIND_U32_RANGE, 8, 1 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -215,6 +269,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_linkinfo_set_attrs, ARRAY_SIZE(ethtool_linkinfo_set_attrs) },
 	{ ETHTOOL_MSG_LINKMODES_GET,     "ETHTOOL_MSG_LINKMODES_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_LINKMODES_SET,     "ETHTOOL_MSG_LINKMODES_SET",
+	  ethtool_linkmodes_set_attrs, ARRAY_SIZE(ethtool_linkmodes_set_attrs) },
 	{ ETHTOOL_MSG_LINKSTATE_GET,     "ETHTOOL_MSG_LINKSTATE_GET",
 	  ethtool_get_stats_attrs, ARRAY_SIZE(ethtool_get_stats_attrs) },
 	{ ETHTOOL_MSG_DEBUG_GET,         "ETHTOOL_MSG_DEBUG_GET",
