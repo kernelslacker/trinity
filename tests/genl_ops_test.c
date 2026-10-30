@@ -1267,6 +1267,16 @@ static struct slot ethtool_fec_set[] = {
 	S_NEST(ETHTOOL_A_FEC_MODES, ethtool_bitset),
 	S_U8_RANGE(ETHTOOL_A_FEC_AUTO, 0, 1),
 };
+/* net/ethtool/module.c: ethnl_module_set_policy, whose
+ * POWER_MODE_POLICY is NLA_POLICY_RANGE(NLA_U8,
+ * ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH,
+ * ETHTOOL_MODULE_POWER_MODE_POLICY_AUTO), [1, 2]. */
+static struct slot ethtool_module_set[] = {
+	S_NEST(ETHTOOL_A_MODULE_HEADER, ethtool_header, .required = true),
+	S_U8_RANGE(ETHTOOL_A_MODULE_POWER_MODE_POLICY,
+		   ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH,
+		   ETHTOOL_MODULE_POWER_MODE_POLICY_AUTO),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1300,6 +1310,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STATS_GET, ethtool_stats_get),
 	P_CMD(ETHTOOL_MSG_PHC_VCLOCKS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_MODULE_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_MODULE_SET, ethtool_module_set),
 	P_CMD(ETHTOOL_MSG_PSE_GET, ethtool_get_phy),
 	P_CMD(ETHTOOL_MSG_RSS_GET, ethtool_rss_get),
 	P_CMD(ETHTOOL_MSG_PLCA_GET_CFG, ethtool_get_phy),

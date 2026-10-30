@@ -461,6 +461,20 @@ static const struct nla_attr_spec ethtool_fec_set_attrs[] = {
 	{ ETHTOOL_A_FEC_AUTO,		NLA_KIND_U8_RANGE, 1, 0 },
 };
 
+/*
+ * MODULE_SET, from ethnl_module_set_policy: the header and
+ * POWER_MODE_POLICY in [ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH,
+ * ETHTOOL_MODULE_POWER_MODE_POLICY_AUTO], that is [1, 2].
+ */
+static const struct nla_attr_spec ethtool_module_set_attrs[] = {
+	{ ETHTOOL_A_MODULE_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_MODULE_POWER_MODE_POLICY, NLA_KIND_U8_RANGE,
+	  ETHTOOL_MODULE_POWER_MODE_POLICY_AUTO,
+	  ETHTOOL_MODULE_POWER_MODE_POLICY_HIGH },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -527,6 +541,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_MODULE_GET,        "ETHTOOL_MSG_MODULE_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_MODULE_SET,        "ETHTOOL_MSG_MODULE_SET",
+	  ethtool_module_set_attrs, ARRAY_SIZE(ethtool_module_set_attrs) },
 	{ ETHTOOL_MSG_PSE_GET,           "ETHTOOL_MSG_PSE_GET",
 	  ethtool_get_phy_attrs, ARRAY_SIZE(ethtool_get_phy_attrs) },
 	{ ETHTOOL_MSG_RSS_GET,           "ETHTOOL_MSG_RSS_GET",
