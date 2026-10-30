@@ -272,6 +272,20 @@ static const struct nla_attr_spec ethtool_debug_set_attrs[] = {
 	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
 };
 
+/*
+ * WOL_SET, from ethnl_wol_set_policy: the header, the MODES bitset,
+ * and SOPASS, an NLA_BINARY of at most SOPASS_MAX bytes that
+ * ethnl_set_wol copies into wol.sopass.
+ */
+static const struct nla_attr_spec ethtool_wol_set_attrs[] = {
+	{ ETHTOOL_A_WOL_HEADER,	NLA_KIND_NESTED, 0, 0,
+	  ethtool_header_attrs, ARRAY_SIZE(ethtool_header_attrs),
+	  .required = true },
+	{ ETHTOOL_A_WOL_MODES,		NLA_KIND_NESTED, 0, 0,
+	  ethtool_bitset_attrs, ARRAY_SIZE(ethtool_bitset_attrs) },
+	{ ETHTOOL_A_WOL_SOPASS,		NLA_KIND_BINARY, SOPASS_MAX, 0 },
+};
+
 static const struct genl_cmd_grammar ethtool_cmds[] = {
 	{ ETHTOOL_MSG_STRSET_GET,        "ETHTOOL_MSG_STRSET_GET",
 	  ethtool_strset_get_attrs, ARRAY_SIZE(ethtool_strset_get_attrs) },
@@ -291,6 +305,8 @@ static const struct genl_cmd_grammar ethtool_cmds[] = {
 	  ethtool_debug_set_attrs, ARRAY_SIZE(ethtool_debug_set_attrs) },
 	{ ETHTOOL_MSG_WOL_GET,           "ETHTOOL_MSG_WOL_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
+	{ ETHTOOL_MSG_WOL_SET,           "ETHTOOL_MSG_WOL_SET",
+	  ethtool_wol_set_attrs, ARRAY_SIZE(ethtool_wol_set_attrs) },
 	{ ETHTOOL_MSG_FEATURES_GET,      "ETHTOOL_MSG_FEATURES_GET",
 	  ethtool_get_attrs, ARRAY_SIZE(ethtool_get_attrs) },
 	{ ETHTOOL_MSG_PRIVFLAGS_GET,     "ETHTOOL_MSG_PRIVFLAGS_GET",

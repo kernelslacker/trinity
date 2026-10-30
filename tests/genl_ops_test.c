@@ -1152,6 +1152,13 @@ static struct slot ethtool_debug_set[] = {
 	S_NEST(ETHTOOL_A_DEBUG_HEADER, ethtool_header, .required = true),
 	S_NEST(ETHTOOL_A_DEBUG_MSGMASK, ethtool_bitset),
 };
+/* net/ethtool/wol.c: ethnl_wol_set_policy, whose SOPASS is an NLA_BINARY
+ * of at most SOPASS_MAX, 6, bytes. */
+static struct slot ethtool_wol_set[] = {
+	S_NEST(ETHTOOL_A_WOL_HEADER, ethtool_header, .required = true),
+	S_NEST(ETHTOOL_A_WOL_MODES, ethtool_bitset),
+	S_BLOB(ETHTOOL_A_WOL_SOPASS, 0, SOPASS_MAX),
+};
 static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_STRSET_GET, ethtool_strset_get),
 	P_CMD(ETHTOOL_MSG_LINKINFO_GET, ethtool_get),
@@ -1162,6 +1169,7 @@ static struct cmd_policy ethtool_cmds[] = {
 	P_CMD(ETHTOOL_MSG_DEBUG_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_DEBUG_SET, ethtool_debug_set),
 	P_CMD(ETHTOOL_MSG_WOL_GET, ethtool_get),
+	P_CMD(ETHTOOL_MSG_WOL_SET, ethtool_wol_set),
 	P_CMD(ETHTOOL_MSG_FEATURES_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_PRIVFLAGS_GET, ethtool_get),
 	P_CMD(ETHTOOL_MSG_RINGS_GET, ethtool_get),
