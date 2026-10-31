@@ -43,12 +43,23 @@ int __wrap_mprotect(void *addr, size_t len, int prot);
  * regardless of the countdown.  Used by fixture 8 to simulate a
  * persistent mprotect failure so that deferred_free_seal_all() never
  * recovers and the caller cannot "race past" a transient window.
+ *
+ * When g_mprotect_fail_rc_unlock > 0, that many calls opening the
+ * ring_control page (df_rc, with PROT_WRITE) fail with ENOMEM, as a
+ * refused VMA split would.  Used by fixture 13.
  */
 static volatile int  g_mprotect_fail_countdown;
 static volatile bool g_mprotect_fail_permanent;
+static volatile int  g_mprotect_fail_rc_unlock;
 
 int __wrap_mprotect(void *addr, size_t len, int prot)
 {
+	if (g_mprotect_fail_rc_unlock > 0 && addr == (void *) df_rc &&
+	    (prot & PROT_WRITE)) {
+		g_mprotect_fail_rc_unlock--;
+		errno = ENOMEM;
+		return -1;
+	}
 	if ((prot == PROT_READ || prot == PROT_NONE) &&
 	    (g_mprotect_fail_permanent ||
 	     g_mprotect_fail_countdown > 0)) {
@@ -378,8 +389,8 @@ static void fixture_generation_retirement(void)
 /* bumps.                                                             */
 /*                                                                     */
 /* "Not a partial state transition": the ring slot is fully cleared    */
-/* (ring[i].ptr = NULL, ring_count decremented) even though ptr_A was  */
-/* not freed.  The ring is left in a consistent zero-count state.      */
+/* (ring[i].ptr = NULL, occupied_mask bit clear) even though ptr_A    */
+/* was not freed.  The ring is left in a consistent empty state.       */
 /* The leak is counted: deferred_free_corrupt_ptr (via parent_stats).  */
 /*                                                                     */
 /* ASAN validation: ptr_A memory remains accessible after the flush    */
@@ -990,6 +1001,58 @@ static void fixture_arena_eviction_burst(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 13: A failed ring_control unlock does not skew the ring    */
+/*                                                                     */
+/* An enqueue whose ring_control unlock fails has already stored its   */
+/* pointer in ring[], but sets no occupied_mask bit.  The drain walks  */
+/* ring[] by pointer and still frees it at TTL expiry; nothing the     */
+/* ring counts may go below zero when it does, or the full-ring check  */
+/* sends every later enqueue down the immediate-free pressure path.    */
+/* Batching is off so every unlock is a real mprotect.                 */
+/* ------------------------------------------------------------------ */
+
+static void fixture_failed_rc_unlock(void)
+{
+	bool batch = deferred_free_batch;
+	void *pa, *pb, *pc;
+	unsigned long fallback;
+	unsigned int i;
+
+	deferred_free_batch = false;
+
+	pa = malloc(8);
+	pb = malloc(8);
+	pc = malloc(8);
+	DF_ASSERT(pa != NULL && pb != NULL && pc != NULL);
+	deferred_alloc_track(pa, 8);
+	deferred_alloc_track(pb, 8);
+	deferred_alloc_track(pc, 8);
+
+	deferred_free_enqueue(pb);		/* slot 0, bookkept */
+	g_mprotect_fail_rc_unlock = 1;
+	deferred_free_enqueue(pa);		/* slot 1, no mask bit */
+	DF_ASSERT(g_mprotect_fail_rc_unlock == 0);
+	DF_ASSERT(df_rc->occupied_mask == 1);
+
+	/* Both expire in the same drain. */
+	DF_ASSERT(df_ring_unlock() == RING_UNLOCK_OK);
+	df_rc->ring[0].ttl = 0;
+	df_rc->ring[1].ttl = 0;
+	df_ring_lock();
+	for (i = 0; i < DEFERRED_TICK_BATCH; i++)
+		deferred_free_tick();
+	DF_ASSERT(df_rc->occupied_mask == 0);
+
+	fallback = shm->stats.deferred_free.vma_fallback_immediate;
+	deferred_free_enqueue(pc);
+	DF_ASSERT(shm->stats.deferred_free.vma_fallback_immediate == fallback);
+	DF_ASSERT(df_rc->occupied_mask != 0);
+
+	deferred_free_flush();
+	deferred_free_batch = batch;
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1076,5 +1139,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 12 (arena_eviction_burst) ... ");
 	fflush(stdout);
 	fixture_arena_eviction_burst();
+	printf("OK\n");
+
+	printf("    fixture 13 (failed_rc_unlock) ... ");
+	fflush(stdout);
+	fixture_failed_rc_unlock();
 	printf("OK\n");
 }

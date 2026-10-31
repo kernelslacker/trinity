@@ -248,8 +248,8 @@ leaked alongside the ring slots themselves.
 Idempotent: a second caller (e.g. a flush after the enqueue path already
 disposed) sees `ring==NULL` and returns.  After dispose every
 `deferred_free_*` entry point falls through to the no-op path -- enqueue's
-`ring==NULL` gate routes to immediate `free()`, tick/flush bail on
-`ring_count==0` -- so the deferred-free machinery is functionally off in
+`ring==NULL` gate routes to immediate `free()`, tick/flush bail on an
+empty `occupied_mask` -- so the deferred-free machinery is functionally off in
 this child for the rest of its life.  Per-child by fork's COW, so a flap in
 one child doesn't perturb siblings.
 
@@ -310,7 +310,7 @@ scribbles in a single 6.76h run (~2/sec), so the ring DOES get scribbled in
 practice; every entry the tick guard would have rejected was being silently
 freed by flush instead.
 
-Caller must clear `ring[slot].ptr` (and decrement `ring_count` where it
+Caller must clear `ring[slot].ptr` (and its `occupied_mask` bit where it
 tracks per-slot) before calling.  Clearing first means a signal that
 `longjmp`s out of `fn()` can't leave a freed pointer pending in the ring.
 

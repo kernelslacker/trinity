@@ -73,31 +73,27 @@ struct deferred_entry {
  * the tracker.
  */
 /*
- * Ring control state -- the ring pointer, its mmap'd size, the
- * in-flight slot count, and the per-slot occupancy bitmap.  All four
- * live in their own small mmap'd armor page so a sibling fuzzed
- * value-result syscall cannot scribble the values that DRIVE ring[]'s
- * own mprotect/munmap bracket: a stomped ring would point mprotect at
- * an arbitrary VA, a stomped ring_bytes would extend munmap into
- * unrelated VMAs, a stomped ring_count would mis-gate the enqueue
- * full-ring check and the tick early-bail, and a stomped
- * occupied_mask would either (mask=0 while ring is really full)
- * bypass the full-ring eviction and orphan a live slot on the next
- * enqueue, or (mask=~0ULL while ring is really empty) drive
- * __builtin_ctzll(~mask) into its UB-on-zero case.  ring and
- * ring_bytes are write-once during init (plus the dispose-time
- * NULL/zero clear); ring_count and occupied_mask mutate per enqueue
- * and drain.  Steady state of the armor page is PROT_READ so the
- * dominant reads (the "if (ring == NULL)" / "if (ring_count == 0)"
- * fast-bail checks, the ring_count comparison in the full-ring
- * branch, and __builtin_ctzll(~occupied_mask) in the slot-hunt)
- * execute without a syscall; the few writer paths flip RW via
- * df_rc_unlock()/df_rc_lock() for the duration of the mutation.
+ * Ring control state -- the ring pointer, its mmap'd size and the
+ * per-slot occupancy bitmap.  All three live in their own small mmap'd
+ * armor page so a sibling fuzzed value-result syscall cannot scribble
+ * the values that DRIVE ring[]'s own mprotect/munmap bracket: a stomped
+ * ring would point mprotect at an arbitrary VA, a stomped ring_bytes
+ * would extend munmap into unrelated VMAs, and a stomped occupied_mask
+ * would either (mask=0 while ring is really full) bypass the full-ring
+ * eviction and orphan a live slot on the next enqueue, or (mask=~0ULL
+ * while ring is really empty) drive __builtin_ctzll(~mask) into its
+ * UB-on-zero case.  ring and ring_bytes are write-once during init
+ * (plus the dispose-time NULL/zero clear); occupied_mask mutates per
+ * enqueue and drain.  Steady state of the armor page is PROT_READ so
+ * the dominant reads (the "if (ring == NULL)" and empty-mask fast-bail
+ * checks, the occupancy test in the full-ring branch, and
+ * __builtin_ctzll(~occupied_mask) in the slot-hunt) execute without a
+ * syscall; the few writer paths flip RW via df_rc_unlock()/df_rc_lock()
+ * for the duration of the mutation.
  */
 struct ring_control {
 	struct deferred_entry *ring;
 	size_t ring_bytes;
-	unsigned int ring_count;
 	uint64_t occupied_mask;
 };
 
@@ -105,12 +101,14 @@ struct ring_control {
  * occupied_mask: one bit per ring slot (1 == occupied, 0 == free).
  * Lets enqueue find the next empty slot in O(1) via
  * __builtin_ctzll(~occupied_mask) instead of a linear scan over all
- * 64 entries.  Maintained alongside ring_count: every ptr write that
- * fills a slot sets the bit, every clear that empties a slot clears
- * it.  Lives in the ring_control armor page (see struct definition
- * above) -- reads at rest hit PROT_READ without a syscall; writers
- * update it inside the same df_rc_unlock/df_rc_lock bracket that guards
- * ring_count.  uint64_t suffices because DEFERRED_RING_SIZE == 64.
+ * 64 entries.  Every ptr write that fills a slot sets the bit, every
+ * clear that empties a slot clears it, and the ring's occupancy is its
+ * popcount: no separate count is kept, since one would drift from the
+ * mask whenever an unlock fails between the two writes.  Lives in the
+ * ring_control armor page (see struct definition above) -- reads at
+ * rest hit PROT_READ without a syscall; writers update it inside a
+ * df_rc_unlock/df_rc_lock bracket.  uint64_t suffices because
+ * DEFERRED_RING_SIZE == 64.
  */
 
 /*

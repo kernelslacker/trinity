@@ -320,7 +320,6 @@ void df_ring_dispose_after_enomem(void)
 
 	if (df_rc_unlock() == 0) {
 		df_rc->ring = NULL;
-		df_rc->ring_count = 0;
 		df_rc->occupied_mask = 0;
 		df_rc_lock();
 	}
@@ -455,7 +454,7 @@ void deferred_free_init(void)
 
 	/*
 	 * Ring control armor page first -- writes to ring/ring_bytes/
-	 * ring_count below all go through df_rc->* fields, so the page must
+	 * occupied_mask below all go through df_rc->* fields, so the page must
 	 * be live and writable for the duration of init.  Locked to
 	 * PROT_READ at the tail of init alongside the data ring.
 	 */
@@ -481,7 +480,6 @@ void deferred_free_init(void)
 	}
 	memset(df_rc->ring, 0, df_rc->ring_bytes);
 	track_shared_region((unsigned long)df_rc->ring, df_rc->ring_bytes);
-	df_rc->ring_count = 0;
 	df_rc->occupied_mask = 0;
 	df_ring_lock();
 	df_rc_lock();

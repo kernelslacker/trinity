@@ -195,7 +195,7 @@ void tracked_free_now(void *ptr)
 #define DEFERRED_DEFAULT_MAX_VMAS	65536U
 /*
  * Compile-time guard: if DEFERRED_RING_SIZE ever grows to the point
- * where ring_count could reach g_max_vmas/2 under the default
+ * where the ring's occupancy could reach g_max_vmas/2 under the default
  * max_map_count, this fires loudly instead of silently re-activating
  * a runtime check that has been dead since DEFERRED_RING_SIZE == 64.
  */
@@ -382,7 +382,6 @@ static void ring_evict_oldest_safe(void)
 	df_rc->ring[oldest].ptr = NULL;
 	if (df_rc_unlock() == 0) {
 		df_rc->occupied_mask &= ~(1ULL << oldest);
-		df_rc->ring_count--;
 		df_rc_lock();
 	}
 
@@ -561,7 +560,8 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	 * the slot has since rotated out) bumps deferred_free_reject_
 	 * untracked instead of being silently freed.
 	 */
-	if (df_rc->ring_count > g_max_vmas / 2) {
+	if ((unsigned int) __builtin_popcountll(df_rc->occupied_mask) >
+	    g_max_vmas / 2) {
 		__atomic_add_fetch(&shm->stats.deferred_free.vma_fallback_immediate,
 				   1, __ATOMIC_RELAXED);
 		if (leak_on_pressure) {
@@ -699,10 +699,10 @@ static void deferred_free_enqueue_internal(void *ptr, void *caller_pc,
 	df_rc->ring[i].ttl = RAND_RANGE(DEFERRED_TTL_MIN, DEFERRED_TTL_MAX);
 	if (df_rc_unlock() == 0) {
 		df_rc->occupied_mask |= 1ULL << i;
-		df_rc->ring_count++;
 		df_rc_lock();
 	}
-	deferred_free_record_outstanding(df_rc->ring_count);
+	deferred_free_record_outstanding(
+		(unsigned int) __builtin_popcountll(df_rc->occupied_mask));
 
 	df_ring_lock();
 
@@ -729,8 +729,8 @@ void deferred_freeptr(unsigned long *p)
  * Free one ring entry's payload, dropping it if the pointer fails the
  * sanity bands.  Both tick (TTL expiry) and flush (child exit) route
  * through here so a scribbled ring entry cannot silently reach free()
- * via flush.  Caller MUST clear ring[slot].ptr (and decrement
- * ring_count where per-slot) before calling -- a signal that longjmps
+ * via flush.  Caller MUST clear ring[slot].ptr (and its occupied_mask
+ * bit where per-slot) before calling -- a signal that longjmps
  * mid-free must not leave a freed ptr pending in the ring.  Re-runs the
  * enqueue-time stateless gates (shape / heap-bounds / shared-region);
  * binding ownership gate is df_alloc_track_consume via
@@ -770,11 +770,12 @@ void deferred_free_tick(void)
 	unsigned int i;
 	enum ring_unlock_result r;
 
-	/* Cheap path: ring_count is read while still locked, but it lives
-	 * in BSS (not in the protected ring), so this access is safe.
-	 * ring_count is also zero when the ring has been disposed after
-	 * an ENOMEM event, so this guard doubles as the ring==NULL bail.
-	 * NOTE: even when ring_count == 0 we still fall through to the
+	/* Cheap path: occupied_mask is read while the ring is still
+	 * locked; it lives in the ring_control page, PROT_READ at rest,
+	 * not in the PROT_NONE ring, so this access is safe.  The mask is
+	 * also empty when the ring has been disposed after an ENOMEM
+	 * event, so this guard doubles as the ring==NULL bail.
+	 * NOTE: even when the mask is empty we still fall through to the
 	 * batch check below so the generation arena can age and retire --
 	 * arena entries were admitted by prior evictions and their
 	 * retirement clock must keep advancing regardless of current
@@ -801,7 +802,7 @@ void deferred_free_tick(void)
 	 * tick, be re-populated by a fresh admission below. */
 	df_gen_arena_tick();
 
-	if (df_rc->ring_count == 0)
+	if (df_rc->occupied_mask == 0)
 		return;
 
 	/*
@@ -836,10 +837,10 @@ void deferred_free_tick(void)
 
 	/*
 	 * Hoist the ring_control bracket around the whole drain loop:
-	 * every ring_count-- inside the loop runs at PROT_READ|WRITE
+	 * every occupied_mask update inside the loop runs at PROT_READ|WRITE
 	 * without a per-iteration mprotect pair, and locks back to
 	 * PROT_READ once the loop has settled.  Bail before touching
-	 * ring_count if the unlock fails -- the next tick will retry.
+	 * the mask if the unlock fails -- the next tick will retry.
 	 */
 	if (df_rc_unlock() != 0) {
 		df_ring_lock();
@@ -854,7 +855,7 @@ void deferred_free_tick(void)
 			 * Stomped corpse: a fuzzed value-result syscall
 			 * scribbled this slot's ptr to NULL while it was
 			 * still marked occupied.  Reconcile the bookkeeping
-			 * so occupied_mask and ring_count track reality;
+			 * so occupied_mask tracks reality;
 			 * otherwise accumulated stomps drive occupied_mask
 			 * toward ~0ULL and the enqueue path pins itself in
 			 * the fallback immediate-free branch instead of
@@ -863,10 +864,7 @@ void deferred_free_tick(void)
 			 * so this is the sole remaining path that lets its
 			 * bits diverge from ring[]'s ptr state.
 			 */
-			if (df_rc->occupied_mask & (1ULL << i)) {
-				df_rc->occupied_mask &= ~(1ULL << i);
-				df_rc->ring_count--;
-			}
+			df_rc->occupied_mask &= ~(1ULL << i);
 			continue;
 		}
 
@@ -881,7 +879,6 @@ void deferred_free_tick(void)
 		ptr = df_rc->ring[i].ptr;
 		df_rc->ring[i].ptr = NULL;
 		df_rc->occupied_mask &= ~(1ULL << i);
-		df_rc->ring_count--;
 
 		free_ring_entry(ptr, i);
 	}
@@ -948,7 +945,6 @@ void deferred_free_flush(void)
 		free_ring_entry(ptr, i);
 	}
 	if (df_rc_unlock() == 0) {
-		df_rc->ring_count = 0;
 		df_rc->occupied_mask = 0;
 		df_rc_lock();
 	}
