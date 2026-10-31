@@ -57,10 +57,12 @@ extern bool dry_run;
  * simultaneously wedged.  The post-mortem is drained (bounded) from
  * /dev/kmsg and emitted to the run's diagnostic output.  With the flag
  * absent the entire trigger path, sysrq write, and kmsg drain are
- * unreachable and the default build is byte-identical.  Requires the
- * parent to hold CAP_SYS_ADMIN (setcap on the binary).  The
- * kernel.sysrq sysctl gates only the keyboard; a trigger write is
- * honoured whatever it says, so it is never touched.
+ * unreachable and the default build is byte-identical.
+ * /proc/sysrq-trigger is mode 0200 and root's, so a parent that is not
+ * root needs CAP_DAC_OVERRIDE to open it; write_sysrq_trigger() checks
+ * no capability of its own.  The kernel.sysrq sysctl gates only the
+ * keyboard; a trigger write is honoured whatever it says, so it is
+ * never touched.
  */
 extern bool sysrq_on_lockup;
 extern bool self_corrupt_canary;
