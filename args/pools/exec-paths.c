@@ -3,10 +3,10 @@
  * paths of regular files with an execute bit, scanned lazily on
  * first use from the top level of the bin directories (no recursion
  * -- binaries live at the top, and a recursive walk is unbounded).
- * /bin is a symlink to /usr/bin on merged-usr systems, so entries
- * are deduplicated by path string.  When the scan yields nothing,
- * /proc/self/exe -- the fuzzer's own binary, always an ELF -- is
- * the fallback when it is executable.  An empty pool leaves the
+ * /bin is a symlink to /usr/bin on merged-usr systems, so a directory
+ * that stat()s to one already scanned is skipped.  When the scan yields
+ * nothing, /proc/self/exe -- the fuzzer's own binary, always an ELF --
+ * is the fallback when it is executable.  An empty pool leaves the
  * path fill on random bytes, the pre-pool shape.
  */
 
@@ -20,6 +20,7 @@
 
 #include "exec-paths.h"
 #include "rnd.h"
+#include "utils-macros.h"
 
 #define EXEC_PATHS_CAP		1024U
 
@@ -32,24 +33,11 @@ static const char *exec_paths[EXEC_PATHS_CAP];
 static unsigned int num_exec_paths;
 static bool exec_paths_built;
 
-static bool exec_path_known(const char *path)
-{
-	unsigned int i;
-
-	for (i = 0; i < num_exec_paths; i++) {
-		if (strcmp(exec_paths[i], path) == 0)
-			return true;
-	}
-	return false;
-}
-
 static void exec_paths_add(const char *path)
 {
 	char *copy;
 
 	if (num_exec_paths >= EXEC_PATHS_CAP)
-		return;
-	if (exec_path_known(path))
 		return;
 	copy = strdup(path);
 	if (copy == NULL)
@@ -88,14 +76,29 @@ static void exec_paths_scan_dir(const char *dir)
 
 static void exec_paths_build(void)
 {
-	unsigned int i;
+	struct stat scanned[ARRAY_SIZE(exec_dirs)];
+	unsigned int nr_scanned = 0;
+	unsigned int i, j;
 
 	if (exec_paths_built)
 		return;
 	exec_paths_built = true;
 
-	for (i = 0; i < sizeof(exec_dirs) / sizeof(exec_dirs[0]); i++)
+	for (i = 0; i < ARRAY_SIZE(exec_dirs); i++) {
+		struct stat st;
+
+		if (stat(exec_dirs[i], &st) != 0)
+			continue;
+		for (j = 0; j < nr_scanned; j++) {
+			if (scanned[j].st_dev == st.st_dev &&
+			    scanned[j].st_ino == st.st_ino)
+				break;
+		}
+		if (j < nr_scanned)
+			continue;
+		scanned[nr_scanned++] = st;
 		exec_paths_scan_dir(exec_dirs[i]);
+	}
 
 	if (num_exec_paths == 0 &&
 	    access("/proc/self/exe", X_OK) == 0)
