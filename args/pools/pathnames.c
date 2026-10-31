@@ -343,7 +343,9 @@ static int ignore_files(const char *path)
 	return 0;
 }
 
-static void add_to_namelist(const char *name)
+/* Whether the entry was kept: list_to_index() sizes the index by the
+ * entries counted, and fills it from the list. */
+static bool add_to_namelist(const char *name)
 {
 	struct namelist *newnode;
 
@@ -356,21 +358,22 @@ static void add_to_namelist(const char *name)
 	if (strlen(name) >= MAX_PATH_LEN) {
 		debugf("Skipping overlong path (%zu bytes): %s\n",
 			strlen(name), name);
-		return;
+		return false;
 	}
 
 	newnode = zmalloc(sizeof(struct namelist));
 	if (newnode == NULL) {
 		outputerr("add_to_namelist: zmalloc failed for %s\n", name);
-		return;
+		return false;
 	}
 	newnode->name = strdup(name);
 	if (!newnode->name) {
 		free(newnode);
-		return;
+		return false;
 	}
 	INIT_LIST_HEAD(&newnode->list);
 	list_add_tail(&newnode->list, &names->list);
+	return true;
 }
 
 int check_stat_file(const struct stat *sb)
@@ -465,8 +468,8 @@ static int file_tree_callback(const char *fpath, const struct stat *sb, int type
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) != STILL_RUNNING)
 		return FTW_STOP;
 
-	add_to_namelist(fpath);
-	files_in_index++;
+	if (add_to_namelist(fpath))
+		files_in_index++;
 
 	return FTW_CONTINUE;
 }
