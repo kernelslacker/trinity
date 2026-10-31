@@ -103,7 +103,7 @@ static const struct nla_attr_spec ethtool_ts_provider_attrs[] = {
  */
 static const struct nla_attr_spec ethtool_bit_attrs[] = {
 	{ ETHTOOL_A_BITSET_BIT_INDEX,	NLA_KIND_U32,    4 },
-	{ ETHTOOL_A_BITSET_BIT_NAME,	NLA_KIND_STRING, 32 },
+	{ ETHTOOL_A_BITSET_BIT_NAME,	NLA_KIND_STRING, 32, 1 },
 	{ ETHTOOL_A_BITSET_BIT_VALUE,	NLA_KIND_FLAG,   0 },
 };
 
