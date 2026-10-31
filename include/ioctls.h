@@ -84,6 +84,10 @@ void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 unsigned long ioctl_arg_for_request(const struct ioctl_group *grp, int fd,
 				    unsigned int request);
 
+/* A random scalar or a writable page of random bytes, half and half: the
+ * arg of a request whose shape nothing knows, and a4 to a6. */
+unsigned long random_ioctl_arg(void);
+
 /* Whether @cmd, as the kernel reads it, is one of the pidfs namespace
  * getters: the cmds whose return value is the nsfd they made. */
 bool pidfd_ns_getter(unsigned long cmd);
