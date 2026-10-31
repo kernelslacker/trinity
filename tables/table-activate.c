@@ -120,6 +120,31 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 	assert_pool_partition(*nr_active, *nr_active_cheap, *nr_active_exp);
 }
 
+/*
+ * The deactivate swap trusts a back-index (active_number, pool_number) and
+ * the neighbour it moves, all of which live in RW memory; one that names no
+ * slot or no table entry would store past the arrays.  Drift is a hard
+ * stop, as for assert_pool_partition(), not something to repair.
+ */
+static void deactivate_drift(const char *what, long value, long bound)
+{
+	output(0, "[tables] deactivate drift: %s %ld, bound %ld\n",
+	       what, value, bound);
+	trinity_exit(EXIT_FAILURE);
+}
+
+/* The entry an active or pool slot value names, by the table do32 picks. */
+static struct syscallentry *slot_entry(int value, bool do32)
+{
+	struct syscallentry *e = NULL;
+
+	if (value >= 1)
+		e = get_syscall_entry((unsigned int) value - 1, do32);
+	if (e == NULL)
+		deactivate_drift("slot value", value, 0);
+	return e;
+}
+
 void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 				 const struct syscalltable *table,
 				 int *active_syscall, bool do32,
@@ -137,10 +162,14 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		unsigned int idx = syscall_rt(entry)->active_number - 1;
 		unsigned int last = *nr_active - 1;
 
+		if (idx > last)
+			deactivate_drift("active_number", (long) idx + 1, (long) last + 1);
 		// Swap with the last active entry to avoid O(N) memmove.
 		if (idx != last) {
+			struct syscallentry *moved = slot_entry(active_syscall[last], do32);
+
 			active_syscall[idx] = active_syscall[last];
-			syscall_rt(table[active_syscall[idx] - 1].entry)->active_number = idx + 1;
+			syscall_rt(moved)->active_number = idx + 1;
 		}
 		active_syscall[last] = 0;
 		(*nr_active) -= 1;
@@ -168,9 +197,14 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 				unsigned int pidx = syscall_rt(entry)->pool_number - 1;
 				unsigned int plast = *nr_pool - 1;
 
+				if (pidx > plast)
+					deactivate_drift("pool_number", (long) pidx + 1,
+							 (long) plast + 1);
 				if (pidx != plast) {
+					struct syscallentry *moved = slot_entry(pool[plast], do32);
+
 					pool[pidx] = pool[plast];
-					syscall_rt(table[pool[pidx] - 1].entry)->pool_number = pidx + 1;
+					syscall_rt(moved)->pool_number = pidx + 1;
 				}
 				pool[plast] = 0;
 				(*nr_pool) -= 1;
