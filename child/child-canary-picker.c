@@ -72,34 +72,58 @@ bool canary_last_plateau = false;
  * Picker.
  * -------------------------------------------------------------------- */
 
+/*
+ * Whether @op may start a canary window now, by its state alone: not
+ * config-blocked or phase-1-ineligible, not promoted or canarying, and not
+ * DEMOTED inside its backoff.  A DEMOTED op whose backoff has elapsed goes
+ * back to DORMANT here, so both passes treat a demoted op alike: a
+ * setup-broken op carries the longer backoff, its failure shape needing a
+ * code fix rather than a wait (enter_canarying() clears the flag, so a
+ * recovered op falls back to the normal cadence).  Fork pressure is the
+ * caller's to judge.
+ */
+static bool canary_op_eligible(enum child_op_type op, time_t now)
+{
+	if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES)
+		return false;
+	if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED ||
+	    canary_ops[op].phase1_ineligible ||
+	    canary_ops[op].state == CANARY_STATE_PROMOTED ||
+	    canary_ops[op].state == CANARY_STATE_CANARYING)
+		return false;
+	if (canary_ops[op].state == CANARY_STATE_DEMOTED) {
+		time_t backoff = canary_op_setup_broken[op]
+			? (time_t)CANARY_SETUP_BROKEN_BACKOFF_TIME
+			: (time_t)CANARY_BACKOFF_TIME;
+
+		if (now - canary_ops[op].last_state_transition < backoff)
+			return false;
+		canary_ops[op].state = CANARY_STATE_DORMANT;
+		canary_ops[op].last_state_transition = now;
+		output(0, "canary: %s backoff complete, re-queued for canary\n",
+			canary_ops[op].name);
+	}
+	return canary_ops[op].state == CANARY_STATE_DORMANT;
+}
+
 bool pick_next_canary(enum child_op_type *out)
 {
 	unsigned int safety;
 	enum child_op_type op;
-	time_t now;
+	time_t now = monotonic_seconds();
 
 	/* Priority pass: the randomised first-pass order (or operator
-	 * override).  fork-pressure drain is consulted here so a pid-heavy
-	 * op defers to the next entry during the recovery window instead
-	 * of being skipped permanently:
-	 * the cursor is NOT advanced past a suppressed entry, so the
-	 * picker walks back to it once the window expires and a later
-	 * tick re-enters via retry_parked_slot(). */
+	 * override).  An entry whose op is not eligible is consumed: an
+	 * op that ran already comes back through the FIFO pass once its
+	 * backoff is over.  fork-pressure drain is consulted here so a
+	 * pid-heavy op defers to the next entry during the recovery
+	 * window instead of being skipped permanently: the cursor is NOT
+	 * advanced past a suppressed entry, so the picker walks back to
+	 * it once the window expires and a later tick re-enters via
+	 * retry_parked_slot(). */
 	while (canary_priority_cursor < canary_priority_list_count) {
 		op = canary_priority_list[canary_priority_cursor];
-		if (op == CHILD_OP_SYSCALL || op >= NR_CHILD_OP_TYPES) {
-			canary_priority_cursor++;
-			continue;
-		}
-		if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED) {
-			canary_priority_cursor++;
-			continue;
-		}
-		if (canary_ops[op].phase1_ineligible) {
-			canary_priority_cursor++;
-			continue;
-		}
-		if (canary_ops[op].state == CANARY_STATE_PROMOTED) {
+		if (!canary_op_eligible(op, now)) {
 			canary_priority_cursor++;
 			continue;
 		}
@@ -110,67 +134,24 @@ bool pick_next_canary(enum child_op_type *out)
 		return true;
 	}
 
-	/* FIFO fallback: walk the general dormant pool.  Walks
-	 * the enum in numerical order from fifo_cursor+1, wrapping.
-	 * Skips CONFIG_BLOCKED, risky-defer, priority seeds (already consumed
-	 * or skipped above), PROMOTED, and DEMOTED entries still inside
-	 * their backoff window.  A DEMOTED whose backoff has elapsed
-	 * transitions back to DORMANT here and is then eligible. */
-	now = monotonic_seconds();
+	/* FIFO fallback: walk the general dormant pool in numerical order
+	 * from fifo_cursor+1, wrapping, and take the first eligible op,
+	 * priority seeds included: a seed that demoted and served its
+	 * backoff is eligible again like any other op.  fork-pressure
+	 * drain skips pid-heavy ops while the recovery window is active;
+	 * the cursor has already moved past a suppressed op, so a later
+	 * tick wraps back around to it once the window expires. */
 	for (safety = 0; safety < NR_CHILD_OP_TYPES; safety++) {
 		canary_fifo_cursor =
 			(enum child_op_type)((canary_fifo_cursor + 1) %
 					     NR_CHILD_OP_TYPES);
 		op = canary_fifo_cursor;
-		if (op == CHILD_OP_SYSCALL)
+		if (!canary_op_eligible(op, now))
 			continue;
-		if (canary_ops[op].state == CANARY_STATE_CONFIG_BLOCKED)
+		if (fork_pressure_should_suppress(op))
 			continue;
-		if (canary_ops[op].phase1_ineligible)
-			continue;
-		if (canary_ops[op].state == CANARY_STATE_PROMOTED)
-			continue;
-		if (canary_ops[op].state == CANARY_STATE_CANARYING)
-			continue;
-		if (canary_ops[op].state == CANARY_STATE_DEMOTED) {
-			/* A setup-broken op carries a longer backoff than a
-			 * routine zero-edges demotion: its failure shape
-			 * needs a code fix, not a wait.  The flag is
-			 * cleared in enter_canarying() so a recovered op
-			 * falls back to the normal cadence on its next
-			 * demote (if any). */
-			time_t backoff = canary_op_setup_broken[op]
-				? (time_t)CANARY_SETUP_BROKEN_BACKOFF_TIME
-				: (time_t)CANARY_BACKOFF_TIME;
-			if (now - canary_ops[op].last_state_transition <
-			    backoff)
-				continue;
-			/* Backoff elapsed -- promote back to DORMANT
-			 * and re-enter the picker pool.  Log the
-			 * transition for operator visibility. */
-			canary_ops[op].state = CANARY_STATE_DORMANT;
-			canary_ops[op].last_state_transition = now;
-			output(0, "canary: %s backoff complete, re-queued for canary\n",
-				canary_ops[op].name);
-		}
-		/* Skip priority seeds in the FIFO walk only if it's already been
-		 * canaried at least once (queue handled it already); a
-		 * priority seed that demoted-then-recovered should be
-		 * eligible again via the same backoff path as any other
-		 * op. */
-		if (canary_ops[op].state == CANARY_STATE_DORMANT) {
-			/* fork-pressure drain: skip pid-heavy ops while
-			 * the recovery window is active.  The FIFO cursor
-			 * has already been advanced for this iteration,
-			 * so a suppressed op falls through to the next
-			 * candidate; once the window expires a later tick
-			 * re-enters the picker and wraps back around to
-			 * pick it up. */
-			if (fork_pressure_should_suppress(op))
-				continue;
-			*out = op;
-			return true;
-		}
+		*out = op;
+		return true;
 	}
 	return false;
 }
