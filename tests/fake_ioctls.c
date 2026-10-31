@@ -60,14 +60,3 @@ void pick_random_ioctl(const struct ioctl_group *grp, struct syscallrecord *rec)
 	rec->a2 = fake_ioctl_request;
 	rec->a3 = FAKE_IOCTL_JUNK_ARG;
 }
-
-unsigned long fake_ioctl_arg_request;
-
-unsigned long ioctl_arg_for_request(const struct ioctl_group *grp, int fd,
-				    unsigned int request)
-{
-	(void)grp;
-	(void)fd;
-	fake_ioctl_arg_request = request;
-	return FAKE_IOCTL_ARG;
-}

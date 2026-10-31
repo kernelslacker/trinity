@@ -18,6 +18,7 @@
 #include <linux/input.h>
 #include <linux/joystick.h>
 
+#include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
@@ -342,11 +343,14 @@ static void ext_checkpoint_never_flushes_the_journal(void)
  * The hidraw, input and joystick groups list their variable-length cmds
  * with a length of 0 and rewrite a2 to a random length after the pick,
  * whose a3 was built for the size-0 request: a scalar the kernel's copy
- * of the new length then faults on.  A rewritten request has to get an
- * arg built for it, and the length has to stay inside _IOC_SIZE, since
- * one that spills into the direction bits misses the handler's exact
- * match.  input's EVIOCGBIT draws its event index unbounded one time in
- * ten, on purpose, which can change any field, hence eight in ten.
+ * of the new length then faults on.  A rewritten request that encodes a
+ * size has to get a writable buffer of it, as ioctl_arg_for_request()
+ * builds, and the length has to stay inside _IOC_SIZE, since one that
+ * spills into the direction bits misses the handler's exact match.
+ * input's EVIOCGBIT draws its event index unbounded one time in ten, on
+ * purpose, which can change any field, hence eight in ten.  The fd is
+ * -1, so a request that falls through to the EFAULT probe does not
+ * probe the test's own stdin.
  */
 #define REWRITE_ROUNDS	400
 
@@ -389,17 +393,25 @@ static void size_rewrites_rebuild_the_arg(void)
 				continue;
 
 			for (round = 0; round < REWRITE_ROUNDS; round++) {
+				unsigned long size;
+
 				memset(&rec, 0, sizeof(rec));
+				rec.a1 = (unsigned long) -1;
 				fake_ioctl_request = ioc->request;
 				grp->sanitise(grp, &rec);
 				if (rec.a2 == ioc->request)
 					continue;
 				rewritten++;
-				if (_IOC_DIR(rec.a2) == _IOC_DIR(ioc->request))
-					kept_dir++;
-				if (rec.a3 != FAKE_IOCTL_ARG ||
-				    fake_ioctl_arg_request != rec.a2) {
-					fprintf(stderr, "%s: a3 %#lx was not built for the rewritten request %#lx\n",
+				if (_IOC_DIR(rec.a2) != _IOC_DIR(ioc->request))
+					continue;
+				kept_dir++;
+				size = _IOC_SIZE(rec.a2);
+				if (_IOC_TYPE(rec.a2) == 0 || size == 0)
+					continue;
+				if (size > page_size)
+					size = page_size;
+				if (!range_in_writable_pool(rec.a3, size)) {
+					fprintf(stderr, "%s: a3 %#lx is no buffer for the rewritten request %#lx\n",
 						ioc->name, rec.a3, rec.a2);
 					BUG("ioctl args: a size rewrite kept the size-0 request's arg");
 				}

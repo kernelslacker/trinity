@@ -260,7 +260,9 @@ REAL_SRCS	:= \
 # with the drm group's, for the args they build; its fd_test is not run.
 # ioctls/hidraw.c, input.c and joystick.c bring the groups that rewrite a
 # size-0 request to a random length, whose sanitisers ioctl_args_test.c
-# runs; fake_ioctls.c stands in for the arg builder they call.
+# runs.  ioctls/ioctl-arg.c brings the arg tiers they rebuild a3 with,
+# which ioctl_args_test.c also runs on its own; the EFAULT probe they
+# reach is efault_cache.c's.
 # ioctls/procfs-self.c brings the procfs-self group, whose fd_test and
 # sanitiser procfs_self_test.c runs: the sanitiser opens real procfs files of
 # the test process, and get_map() hands out the mapping the test names, as
@@ -352,6 +354,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/procfs-self.c \
 	$(TOP)/ioctls/nsfs.c \
 	$(TOP)/ioctls/efault_cache.c \
+	$(TOP)/ioctls/ioctl-arg.c \
 	$(TOP)/syscalls/ioctl.c \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
