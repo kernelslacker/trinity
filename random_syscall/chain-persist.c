@@ -535,30 +535,8 @@ const char *chain_corpus_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(dir))
 		return NULL;
 
-	/* mkdir -p the leaf directory.  EEXIST is acceptable; success is
-	 * defined by the final directory existing, not by which racing
-	 * creator won. */
-	{
-		char *p;
-		mode_t saved_umask = umask(0);
-
-		for (p = dir + 1; *p; p++) {
-			if (*p == '/') {
-				*p = '\0';
-				if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
-					*p = '/';
-					(void)umask(saved_umask);
-					return NULL;
-				}
-				*p = '/';
-			}
-		}
-		if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
-			(void)umask(saved_umask);
-			return NULL;
-		}
-		(void)umask(saved_umask);
-	}
+	if (persist_mkdir_p(dir) != 0)
+		return NULL;
 
 	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s",
 		       dir, arch, u.release);
