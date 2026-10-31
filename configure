@@ -628,6 +628,10 @@ check_enum_member linux/if_link.h IFLA_GRO_MAX_SIZE IFLA_GSO_IPV4_MAX_SIZE \
 # The ctnetlink filter attribute that says CTA_ZONE is filtered on.
 check_enum_member linux/netfilter/nfnetlink_conntrack.h CTA_FILTER_ZONE
 
+# The nftables hook device attribute that names a device-name prefix,
+# added in 6.17.
+check_enum_member linux/netfilter/nf_tables.h NFTA_DEVICE_PREFIX
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

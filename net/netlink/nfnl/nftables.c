@@ -15,6 +15,8 @@
 #include "netlink-nfnl-subsystems.h"
 #include "utils.h"
 
+#include "kernel/nf_tables.h"
+
 /*
  * Message-type and attribute shims for build hosts whose uapi
  * linux/netfilter/nf_tables.h predates the setelem / obj /
