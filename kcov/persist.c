@@ -20,7 +20,7 @@
 #include "fd.h"			/* read_all, write_all */
 #include "kcov-internal.h"	/* kcov_kaslr_base, public kcov API */
 #include "persist-envelope.h"
-#include "persist-util.h"	/* persist_sweep_stale_tmp */
+#include "persist-util.h"	/* persist_sweep_stale_tmp, persist_mkdir_p */
 #include "pids.h"		/* mypid */
 #include "shm.h"		/* shm */
 #include "stats.h"		/* stats_log_write */
@@ -1388,22 +1388,8 @@ const char *kcov_bitmap_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(dir))
 		return NULL;
 
-	{
-		char *p;
-
-		for (p = dir + 1; *p; p++) {
-			if (*p == '/') {
-				*p = '\0';
-				if (mkdir(dir, 0755) != 0 && errno != EEXIST) {
-					*p = '/';
-					return NULL;
-				}
-				*p = '/';
-			}
-		}
-		if (mkdir(dir, 0755) != 0 && errno != EEXIST)
-			return NULL;
-	}
+	if (persist_mkdir_p(dir) != 0)
+		return NULL;
 
 	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s",
 		       dir, arch, release);
