@@ -11,6 +11,13 @@ struct ioctl_group;
 /* The request pick_random_ioctl() picks.  The test sets it. */
 extern unsigned long fake_ioctl_request;
 
+/*
+ * What ioctl_arg_for_request() returns, and the request it was last asked
+ * for: a sanitiser that rebuilds a3 for a rewritten a2 leaves both.
+ */
+#define FAKE_IOCTL_ARG		0xfeedf00dUL
+extern unsigned long fake_ioctl_arg_request;
+
 /* The registered group called @name, or NULL. */
 const struct ioctl_group *fake_ioctl_group(const char *name);
 

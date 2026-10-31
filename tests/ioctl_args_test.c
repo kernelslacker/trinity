@@ -14,6 +14,9 @@
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
 #endif
+#include <linux/hidraw.h>
+#include <linux/input.h>
+#include <linux/joystick.h>
 
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
@@ -335,6 +338,86 @@ static void ext_checkpoint_never_flushes_the_journal(void)
 		BUG("ioctl args: a flag shape of EXT4_IOC_CHECKPOINT is never drawn");
 }
 
+/*
+ * The hidraw, input and joystick groups list their variable-length cmds
+ * with a length of 0 and rewrite a2 to a random length after the pick,
+ * whose a3 was built for the size-0 request: a scalar the kernel's copy
+ * of the new length then faults on.  A rewritten request has to get an
+ * arg built for it, and the length has to stay inside _IOC_SIZE, since
+ * one that spills into the direction bits misses the handler's exact
+ * match.  input's EVIOCGBIT draws its event index unbounded one time in
+ * ten, on purpose, which can change any field, hence eight in ten.
+ */
+#define REWRITE_ROUNDS	400
+
+static const struct ioctl_group *group_listing(unsigned int request)
+{
+	const struct ioctl_group *const *grps;
+	unsigned int n, g;
+	size_t i;
+
+	grps = fake_ioctl_groups(&n);
+	for (g = 0; g < n; g++)
+		for (i = 0; i < grps[g]->ioctls_cnt; i++)
+			if (grps[g]->ioctls[i].request == request)
+				return grps[g];
+	return NULL;
+}
+
+static void size_rewrites_rebuild_the_arg(void)
+{
+	static const unsigned int listed[] = {
+		HIDIOCGRAWNAME(0), EVIOCGNAME(0), JSIOCGNAME(0),
+	};
+	static struct syscallrecord rec;
+	unsigned int g;
+
+	for (g = 0; g < ARRAY_SIZE(listed); g++) {
+		const struct ioctl_group *grp = group_listing(listed[g]);
+		size_t i;
+
+		if (grp == NULL)
+			BUG("ioctl args: a size-rewriting group is not linked");
+
+		for (i = 0; i < grp->ioctls_cnt; i++) {
+			const struct ioctl *ioc = &grp->ioctls[i];
+			unsigned int rewritten = 0, kept_dir = 0;
+			int round;
+
+			if (_IOC_DIR(ioc->request) == _IOC_NONE ||
+			    _IOC_SIZE(ioc->request) != 0)
+				continue;
+
+			for (round = 0; round < REWRITE_ROUNDS; round++) {
+				memset(&rec, 0, sizeof(rec));
+				fake_ioctl_request = ioc->request;
+				grp->sanitise(grp, &rec);
+				if (rec.a2 == ioc->request)
+					continue;
+				rewritten++;
+				if (_IOC_DIR(rec.a2) == _IOC_DIR(ioc->request))
+					kept_dir++;
+				if (rec.a3 != FAKE_IOCTL_ARG ||
+				    fake_ioctl_arg_request != rec.a2) {
+					fprintf(stderr, "%s: a3 %#lx was not built for the rewritten request %#lx\n",
+						ioc->name, rec.a3, rec.a2);
+					BUG("ioctl args: a size rewrite kept the size-0 request's arg");
+				}
+			}
+
+			if (rewritten == 0) {
+				fprintf(stderr, "%s: never rewritten\n", ioc->name);
+				BUG("ioctl args: a size-0 cmd is never given a length");
+			}
+			if (kept_dir < rewritten * 8 / 10) {
+				fprintf(stderr, "%s: %u of %u rewrites kept the direction\n",
+					ioc->name, kept_dir, rewritten);
+				BUG("ioctl args: a size rewrite spills into the direction bits");
+			}
+		}
+	}
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -349,4 +432,5 @@ void ioctl_args_self_check(void)
 	ext_getfsuuid_args_fit_the_copy();
 	ext_get_es_cache_args_fit_the_extents();
 	ext_checkpoint_never_flushes_the_journal();
+	size_rewrites_rebuild_the_arg();
 }

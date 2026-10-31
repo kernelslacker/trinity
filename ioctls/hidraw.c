@@ -94,14 +94,17 @@ static const char *const hidraw_devs[] = {
  * commands encode a userspace-chosen length in the _IOC_SIZE field of
  * the request.  Each entry above carries length 0; rewrite a2 with a
  * random length so the dispatched cmd actually exercises the kernel's
- * size handling instead of repeatedly hitting the len==0 path.
+ * size handling instead of repeatedly hitting the len==0 path, and
+ * rebuild a3 for it: the pick built a3 for the size-0 request.
  */
 static void hidraw_sanitise(const struct ioctl_group *grp,
 			    struct syscallrecord *rec)
 {
+	unsigned long picked;
 	unsigned int u;
 
 	pick_random_ioctl(grp, rec);
+	picked = rec->a2;
 
 	switch (rec->a2) {
 #ifdef HIDIOCGRAWNAME
@@ -161,6 +164,10 @@ static void hidraw_sanitise(const struct ioctl_group *grp,
 	default:
 		break;
 	}
+
+	if (rec->a2 != picked)
+		rec->a3 = ioctl_arg_for_request(grp, (int) rec->a1,
+						(unsigned int) rec->a2);
 }
 
 static const struct ioctl_group hidraw_grp = {

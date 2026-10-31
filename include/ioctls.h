@@ -77,6 +77,13 @@ const struct ioctl_group *get_random_fd_class_ioctl_group(void);
 
 void pick_random_ioctl(const struct ioctl_group *, struct syscallrecord *rec);
 
+/* The a3 that @request takes on @fd, as pick_random_ioctl() builds it: a
+ * buffer of its _IOC_SIZE when it encodes one, else what the EFAULT probe
+ * makes of it.  A sanitiser that rewrites a2 after the pick rebuilds a3
+ * with this. */
+unsigned long ioctl_arg_for_request(const struct ioctl_group *grp, int fd,
+				    unsigned int request);
+
 /* Whether @cmd, as the kernel reads it, is one of the pidfs namespace
  * getters: the cmds whose return value is the nsfd they made. */
 bool pidfd_ns_getter(unsigned long cmd);

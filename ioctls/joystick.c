@@ -94,26 +94,34 @@ static int joystick_fd_test(int fd __attribute__((unused)),
 
 /*
  * JSIOCGNAME encodes a userspace-chosen length in the _IOC_SIZE field;
- * the table entry carries length 0, so rewrite a2 with a random length
- * to actually exercise the kernel's size-handling path.
+ * the table entry carries length 0, so rewrite a2 with a random length,
+ * inside the field so the direction bits stay intact, to actually
+ * exercise the kernel's size-handling path, and rebuild a3 for it: the
+ * pick built a3 for the size-0 request.
  */
 static void joystick_sanitise(const struct ioctl_group *grp,
 			      struct syscallrecord *rec)
 {
+	unsigned long picked;
 	unsigned int u;
 
 	pick_random_ioctl(grp, rec);
+	picked = rec->a2;
 
 	switch (rec->a2) {
 #ifdef JSIOCGNAME
 	case JSIOCGNAME(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = JSIOCGNAME(u);
 		break;
 #endif
 	default:
 		break;
 	}
+
+	if (rec->a2 != picked)
+		rec->a3 = ioctl_arg_for_request(grp, (int) rec->a1,
+						(unsigned int) rec->a2);
 }
 
 static const char *const joystick_devs[] = {

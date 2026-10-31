@@ -167,8 +167,8 @@ static unsigned long random_ioctl_arg(void)
  *     mismatched fd), fall back to the historical coin flip between
  *     a random scalar and a writable page.
  */
-static unsigned long ioctl_arg_for_request(const struct ioctl_group *grp,
-					   int fd, unsigned int request)
+unsigned long ioctl_arg_for_request(const struct ioctl_group *grp, int fd,
+				    unsigned int request)
 {
 	unsigned int dir, size;
 	void *buf;

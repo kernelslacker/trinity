@@ -102,58 +102,67 @@ static const char *const input_devs[] = {
 	"input",
 };
 
+/*
+ * The EVIOCG* string and bitmap cmds encode a userspace-chosen length in
+ * _IOC_SIZE, which the table lists as 0: draw one inside the field, so
+ * the direction bits the handler matches stay intact, and rebuild a3 for
+ * the rewritten request, since the pick built it for the size-0 one.
+ * The event and axis indexes of EVIOCGBIT and EVIOC[GS]ABS go unbounded
+ * one time in ten.
+ */
 static void input_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
+	unsigned long picked;
 	unsigned int u, r;
 
 	pick_random_ioctl(grp, rec);
+	picked = rec->a2;
 
 	switch (rec->a2) {
 	case EVIOCGNAME(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGNAME(u);
 		break;
 	case EVIOCGPHYS(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGPHYS(u);
 		break;
 	case EVIOCGUNIQ(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGUNIQ(u);
 		break;
 #ifdef EVIOCGPROP
 	case EVIOCGPROP(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGPROP(u);
 		break;
 #endif
 #ifdef EVIOCGMTSLOTS
 	case EVIOCGMTSLOTS(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGMTSLOTS(u);
 		break;
 #endif
 	case EVIOCGKEY(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGKEY(u);
 		break;
 	case EVIOCGLED(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGLED(u);
 		break;
 	case EVIOCGSND(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGSND(u);
 		break;
 	case EVIOCGSW(0):
-		u = rnd_u32();
+		u = rnd_u32() & _IOC_SIZEMASK;
 		rec->a2 = EVIOCGSW(u);
 		break;
 	case EVIOCGBIT(0,0):
 		u = rnd_u32();
-		r = rnd_u32();
+		r = rnd_u32() & _IOC_SIZEMASK;
 		if (u % 10) u %= EV_CNT;
-		if (r % 10) r /= 4;
 		rec->a2 = EVIOCGBIT(u, r);
 		break;
 	case EVIOCGABS(0):
@@ -169,6 +178,10 @@ static void input_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 	default:
 		break;
 	}
+
+	if (rec->a2 != picked)
+		rec->a3 = ioctl_arg_for_request(grp, (int) rec->a1,
+						(unsigned int) rec->a2);
 }
 
 static const struct ioctl_group input_grp = {
