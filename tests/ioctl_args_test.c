@@ -9,6 +9,10 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <linux/sockios.h>
 
 #ifdef USE_DRM
 #include <drm/drm.h>
@@ -20,6 +24,7 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
+#include "efault_cache.h"
 #include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
 #include "kernel/ext4.h"
@@ -430,6 +435,41 @@ static void size_rewrites_rebuild_the_arg(void)
 	}
 }
 
+/*
+ * A request whose number encodes no size, as the legacy raw constants do,
+ * goes to the EFAULT probe, and when the probe finds that the kernel
+ * dereferences the arg, the arg has to be memory it can copy to and from:
+ * a scalar is refused EFAULT on every call, the probe's verdict standing
+ * for the whole run.  SIOCGIFFLAGS on a socket copies a struct ifreq from
+ * the arg, so the probe calls it a pointer.
+ */
+static void size0_pointer_requests_get_a_buffer(void)
+{
+	const struct ioctl_group *grp = group_listing(SIOCGIFFLAGS);
+	int fd, round;
+
+	if (grp == NULL)
+		BUG("ioctl args: the socket group is not linked");
+
+	fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (fd < 0) {
+		printf("(no AF_INET socket, size-0 pointer check skipped) ");
+		return;
+	}
+	if (ioctl_efault_classify(grp, fd, SIOCGIFFLAGS) != IOCTL_ARG_POINTER)
+		BUG("ioctl args: the probe does not call SIOCGIFFLAGS a pointer");
+
+	for (round = 0; round < 16; round++) {
+		unsigned long arg = ioctl_arg_for_request(grp, fd, SIOCGIFFLAGS);
+
+		if (!range_in_writable_pool(arg, page_size)) {
+			fprintf(stderr, "SIOCGIFFLAGS: arg %#lx is no buffer\n", arg);
+			BUG("ioctl args: a size-0 request the probe calls a pointer got no buffer");
+		}
+	}
+	close(fd);
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -445,4 +485,5 @@ void ioctl_args_self_check(void)
 	ext_get_es_cache_args_fit_the_extents();
 	ext_checkpoint_never_flushes_the_journal();
 	size_rewrites_rebuild_the_arg();
+	size0_pointer_requests_get_a_buffer();
 }

@@ -106,18 +106,15 @@ unsigned long ioctl_arg_for_request(const struct ioctl_group *grp, int fd,
 	case IOCTL_ARG_SCALAR:
 		return (unsigned long) rand64();
 	case IOCTL_ARG_POINTER:
-		size = _IOC_SIZE(request);
 		/*
-		 * The probe confirmed the kernel dereferences arg, but
-		 * a size==0 request carries no width hint.  Rather than
-		 * fabricate a page-sized buffer of random bytes (which
-		 * the kernel treats as garbage after its first field
-		 * check), fall back to a raw scalar — the next probe
-		 * cycle will re-classify.
+		 * The probe confirmed the kernel dereferences arg.  A
+		 * size==0 request carries no width hint, so it gets a page,
+		 * room for the structs the legacy requests copy: a scalar
+		 * would be refused EFAULT on every call, the verdict
+		 * standing for the whole run.
 		 */
-		if (size == 0)
-			return (unsigned long) rand64();
-		if (size > page_size)
+		size = _IOC_SIZE(request);
+		if (size == 0 || size > page_size)
 			size = page_size;
 		buf = get_writable_address(size);
 		if (buf == NULL)
