@@ -14,10 +14,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "arch.h"		/* page_size */
 #include "bpf.h"
+#include "exec-paths.h"
 #include "kallsyms-symbols.h"
 #include "debug.h"		/* BUG */
 #include "objects.h"		/* struct bpfobj */
@@ -1260,6 +1262,7 @@ struct link_tally {
 	unsigned int both_syms_addrs, negative_pid;
 	unsigned int bad_ids;
 	unsigned int bad_syms, bad_addrs, syms_present, addrs_present;
+	unsigned int bad_path, path_present;
 };
 
 /* The sub-buffers the fill made for the pointer fields of the arm the attr's
@@ -1485,6 +1488,45 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 				t->bad_ids += bad;
 			}
 #endif
+			/* A present uprobe path must be NUL-terminated
+			 * within its 256-byte buffer (the field's
+			 * max_bytes) and, when the executable pool is
+			 * populated, name a pool executable. */
+			if (type == BPF_TRACE_UPROBE_MULTI ||
+			    type == BPF_TRACE_UPROBE_SESSION) {
+				const char *path = (const char *)(uintptr_t)
+					attr->link_create.uprobe_multi.path;
+				bool bad = false;
+
+				if (path != NULL) {
+					size_t len;
+					unsigned int npaths, m;
+
+					t->path_present++;
+					len = strnlen(path, 256);
+					if (len >= 256) {
+						bad = true;
+					} else {
+						npaths = exec_paths_count();
+						if (npaths > 0) {
+							bool known = false;
+							struct stat st;
+
+							for (m = 0; m < npaths; m++) {
+								if (strcmp(path, exec_path_at(m)) == 0) {
+									known = true;
+									break;
+								}
+							}
+							if (!known || stat(path, &st) != 0 ||
+							    !S_ISREG(st.st_mode) ||
+							    (st.st_mode & 0111) == 0)
+								bad = true;
+						}
+					}
+				}
+				t->bad_path += bad;
+			}
 		}
 
 		rec.retval = (unsigned long) -1L;
@@ -1541,6 +1583,14 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 					check("a kprobe_multi names addrs with no address pool",
 					      name, t->addrs_present == 0);
 			}
+		}
+		if (type == BPF_TRACE_UPROBE_MULTI ||
+		    type == BPF_TRACE_UPROBE_SESSION) {
+			check("an uprobe_multi path is unterminated or not a pool executable",
+			      name, t->bad_path == 0);
+			if (exec_paths_count() > 0)
+				check("an uprobe_multi never names a path",
+				      name, t->path_present > 0);
 		}
 		check("the size stops short of what the draw filled", name,
 		      t->tail_uncovered == 0);

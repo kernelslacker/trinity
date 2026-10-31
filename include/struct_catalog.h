@@ -73,12 +73,20 @@ struct struct_field {
 		struct { unsigned long lo, hi; } range;
 		struct { long lo, hi; } srange;
 		struct { unsigned long mask; } flags;
-		/* FT_PTR_BYTES: pointer to a buffer of [1, max_bytes] bytes. */
+		/*
+		 * FT_PTR_BYTES: pointer to a buffer of [1, max_bytes]
+		 * bytes.  str_pick names a real string for the buffer
+		 * (an uprobe path) instead of random bytes; NULL from
+		 * the pick falls back to the random fill.  The string
+		 * is copied, capped at max_bytes, and NUL-terminated
+		 * when null_terminated asks for it.
+		 */
 		struct {
 			const char	*len_field;
 			bool		 optional;
 			bool		 null_terminated;
 			unsigned int	 max_bytes;
+			const char *(*str_pick)(void);
 		} ptr_bytes;
 		/*
 		 * FT_PTR_ARRAY: pointer to [1, max_count] elements.

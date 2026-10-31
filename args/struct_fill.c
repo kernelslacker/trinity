@@ -808,6 +808,50 @@ static void fill_pointer_pass(unsigned char *buf, unsigned int size,
 			}
 
 			/*
+			 * A string source names a real value for the
+			 * buffer (an uprobe path) instead of random
+			 * bytes.  The copy is capped at the pre-pinned
+			 * size when one exists, else max_bytes, and
+			 * NUL-terminated when the field asks for it.  A
+			 * NULL pick falls through to the random fill.
+			 */
+			if (f->u.ptr_bytes.str_pick != NULL) {
+				const char *pick = f->u.ptr_bytes.str_pick();
+
+				if (pick != NULL) {
+					unsigned long limit = chosen_len[i] != 0
+						? chosen_len[i] : cap;
+					size_t len = strlen(pick);
+					size_t copy_len;
+
+					if (f->u.ptr_bytes.null_terminated) {
+						nbytes = len + 1;
+						if (nbytes > limit)
+							nbytes = limit;
+						copy_len = nbytes - 1;
+					} else {
+						nbytes = len;
+						if (nbytes > limit)
+							nbytes = limit;
+						if (nbytes == 0)
+							nbytes = 1;
+						copy_len = nbytes;
+						if (copy_len > len)
+							copy_len = len;
+					}
+					sub = zmalloc_tracked(nbytes);
+					memcpy(sub, pick, copy_len);
+					if (f->u.ptr_bytes.null_terminated)
+						((unsigned char *) sub)[nbytes - 1] = 0;
+					deferred_free_enqueue_or_leak(sub);
+					write_field_uint(buf, f,
+							 (uint64_t)(uintptr_t) sub);
+					chosen_len[i] = nbytes;
+					break;
+				}
+			}
+
+			/*
 			 * chosen_len[i] != 0 here means a multi-pair LEN
 			 * field pre-pinned this buffer's size in the
 			 * pin-pass above.  Use the shared value rather

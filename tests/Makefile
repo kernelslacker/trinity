@@ -206,6 +206,7 @@ endif
 REAL_SRCS	:= \
 	$(TOP)/args/struct_fill.c \
 	$(TOP)/args/pools/kallsyms-symbols.c \
+	$(TOP)/args/pools/exec-paths.c \
 	$(TOP)/args/struct_validate.c \
 	$(TOP)/args/struct_mutate.c \
 	$(TOP)/args/struct_mutate_selftest.c \

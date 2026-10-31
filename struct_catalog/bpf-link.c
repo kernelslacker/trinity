@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "exec-paths.h"
 #include "kallsyms-symbols.h"
 #include "rnd.h"
 #include "struct_catalog.h"
@@ -324,7 +325,8 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
 	FIELDX(union bpf_attr, link_create.uprobe_multi.path, FT_PTR_BYTES,
 	       .u.ptr_bytes = { .null_terminated = true,
 				.optional = true,
-				.max_bytes = 256 }),
+				.max_bytes = 256,
+				.str_pick = exec_path_pick }),
 	FIELDX(union bpf_attr, link_create.uprobe_multi.offsets, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32 }),
