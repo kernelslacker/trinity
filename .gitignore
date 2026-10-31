@@ -1,4 +1,5 @@
 build-uapi/
+.agents/
 .claude
 config.h
 core
