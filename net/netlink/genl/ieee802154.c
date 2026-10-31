@@ -41,7 +41,7 @@ static const struct nla_attr_spec ieee802154_attrs[] = {
 	 * .type = NLA_STRING with no explicit .len bound; the message
 	 * generator caps the emitted payload via the standard string
 	 * sizing path. */
-	{ IEEE802154_ATTR_DEV_NAME,			NLA_KIND_STRING, 15 },
+	{ IEEE802154_ATTR_DEV_NAME,			NLA_KIND_STRING, 15, 1 },
 	{ IEEE802154_ATTR_DEV_INDEX,			NLA_KIND_U32,    4 },
 	{ IEEE802154_ATTR_STATUS,			NLA_KIND_U8,     1 },
 	{ IEEE802154_ATTR_SHORT_ADDR,			NLA_KIND_U16,    2 },
@@ -80,7 +80,7 @@ static const struct nla_attr_spec ieee802154_attrs[] = {
 	{ IEEE802154_ATTR_PAGE,				NLA_KIND_U8,     1 },
 	/* CHANNEL_PAGE_LIST: 32 pages * 4 bytes per page == 128. */
 	{ IEEE802154_ATTR_CHANNEL_PAGE_LIST,		NLA_KIND_BINARY, 128 },
-	{ IEEE802154_ATTR_PHY_NAME,			NLA_KIND_STRING, 15 },
+	{ IEEE802154_ATTR_PHY_NAME,			NLA_KIND_STRING, 15, 1 },
 	{ IEEE802154_ATTR_DEV_TYPE,			NLA_KIND_U8,     1 },
 	/* TXPOWER and FRAME_RETRIES: kernel-side NLA_S8 -- same wire
 	 * width as U8, signed interpretation happens in the handler. */

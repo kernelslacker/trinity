@@ -45,8 +45,8 @@ static const struct genl_cmd_grammar smc_gen_cmds[] = {
  * nested containers and have no input policy on the parser side.
  */
 static const struct nla_attr_spec smc_gen_attrs[] = {
-	{ SMC_NLA_EID_TABLE_ENTRY,	NLA_KIND_STRING, SMC_MAX_EID_LEN },
-	{ SMC_NLA_SEID_ENTRY,		NLA_KIND_STRING, SMC_MAX_EID_LEN },
+	{ SMC_NLA_EID_TABLE_ENTRY,	NLA_KIND_STRING, SMC_MAX_EID_LEN, 1 },
+	{ SMC_NLA_SEID_ENTRY,		NLA_KIND_STRING, SMC_MAX_EID_LEN, 1 },
 	{ SMC_NLA_HS_LIMITATION_ENABLED, NLA_KIND_U8,    1 },
 };
 

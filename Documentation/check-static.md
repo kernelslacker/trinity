@@ -184,6 +184,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   carry a fixture and a negative control.  Regression fixture: the pre-fix pre-image of
   `dump_stats_json_netfilter_and_xfrm()` (872757fb803b ("stats/json: fix missing comma before ip6mr_churn in network section")^) is replayed
   inline as a known-bad input and must produce exactly one hit.
+- `netlink-string-floor`: every `NLA_KIND_STRING` and
+  `NLA_KIND_STRING_CPULIST` spec row under `net/netlink/` has a `min_len`
+  of at least 1.  `spec_payload_len()` adds no floor of its own, and the
+  kernel refuses an empty `NLA_STRING` or `NLA_NUL_STRING` payload, strict
+  parse or liberal, so a row without one wastes a draw in `max_len + 1` on
+  a refused request.  Rows spanning several lines are read whole.
 - `no-bare-waitpid`: reject bare `waitpid()` callsites outside the
   `waitpid_eintr()` wrapper (`include/utils.h`) and the wait-family
   syscall definitions (`syscalls/process/wait4.c`, `waitpid.c`,

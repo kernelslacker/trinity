@@ -164,14 +164,14 @@ static const struct nla_attr_spec ctnetlink_exp_attrs[] = {
 	  ctnetlink_tuple_attrs, ARRAY_SIZE(ctnetlink_tuple_attrs) },
 	{ CTA_EXPECT_TIMEOUT,   NLA_KIND_U32,    4  },
 	{ CTA_EXPECT_ID,        NLA_KIND_U32,    4  },
-	{ CTA_EXPECT_HELP_NAME, NLA_KIND_STRING, 15 },
+	{ CTA_EXPECT_HELP_NAME, NLA_KIND_STRING, 15, 1 },
 	{ CTA_EXPECT_ZONE,      NLA_KIND_U32,    4  },
 	{ CTA_EXPECT_FLAGS,     NLA_KIND_BE32_MASK,
 				NF_CT_EXPECT_PERMANENT | NF_CT_EXPECT_INACTIVE |
 				NF_CT_EXPECT_USERSPACE },
 	{ CTA_EXPECT_CLASS,     NLA_KIND_U32,    4  },
 	{ CTA_EXPECT_NAT,       NLA_KIND_NESTED, 0  },
-	{ CTA_EXPECT_FN,        NLA_KIND_STRING, 31 },
+	{ CTA_EXPECT_FN,        NLA_KIND_STRING, 31, 1 },
 };
 
 /*

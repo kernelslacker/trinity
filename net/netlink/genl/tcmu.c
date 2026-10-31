@@ -30,7 +30,7 @@ static const struct genl_cmd_grammar tcmu_cmds[] = {
  * by the kernel but not in tcmu_attr_policy, so they have no entry.
  */
 static const struct nla_attr_spec tcmu_attrs[] = {
-	{ TCMU_ATTR_DEVICE,		NLA_KIND_STRING, 64 },
+	{ TCMU_ATTR_DEVICE,		NLA_KIND_STRING, 64, 1 },
 	{ TCMU_ATTR_MINOR,		NLA_KIND_U32,    4 },
 	{ TCMU_ATTR_CMD_STATUS,		NLA_KIND_U32,    4 },
 	{ TCMU_ATTR_DEVICE_ID,		NLA_KIND_U32,    4 },

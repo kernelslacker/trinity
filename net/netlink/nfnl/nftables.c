@@ -404,7 +404,7 @@ static const struct nla_attr_spec nft_set_elem_attrs[] = {
 	{ NFTA_SET_ELEM_EXPIRATION,  NLA_KIND_U64,    8 },
 	{ NFTA_SET_ELEM_USERDATA,    NLA_KIND_BINARY, 64 },
 	{ NFTA_SET_ELEM_EXPR,        NLA_KIND_NESTED, 0 },
-	{ NFTA_SET_ELEM_OBJREF,      NLA_KIND_STRING, 32 },
+	{ NFTA_SET_ELEM_OBJREF,      NLA_KIND_STRING, 32, 1 },
 	{ NFTA_SET_ELEM_KEY_END,     NLA_KIND_NESTED, 0, 0,
 	  nft_set_data_attrs, ARRAY_SIZE(nft_set_data_attrs) },
 	{ NFTA_SET_ELEM_EXPRESSIONS, NLA_KIND_NESTED, 0 },

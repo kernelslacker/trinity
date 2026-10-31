@@ -60,7 +60,7 @@ static const struct nla_attr_spec l2tp_attrs[] = {
 	{ L2TP_ATTR_L2SPEC_TYPE,		NLA_KIND_U8,     1 },
 	{ L2TP_ATTR_L2SPEC_LEN,			NLA_KIND_U8,     1 },
 	{ L2TP_ATTR_PROTO_VERSION,		NLA_KIND_U8,     1 },
-	{ L2TP_ATTR_IFNAME,			NLA_KIND_STRING, 15 },
+	{ L2TP_ATTR_IFNAME,			NLA_KIND_STRING, 15, 1 },
 	{ L2TP_ATTR_CONN_ID,			NLA_KIND_U32,    4 },
 	{ L2TP_ATTR_PEER_CONN_ID,		NLA_KIND_U32,    4 },
 	{ L2TP_ATTR_SESSION_ID,			NLA_KIND_U32,    4 },

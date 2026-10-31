@@ -31,9 +31,9 @@ static const struct genl_cmd_grammar smc_pnetid_cmds[] = {
  * in-range and over-cap payloads.
  */
 static const struct nla_attr_spec smc_pnetid_attrs[] = {
-	{ SMC_PNETID_NAME,	NLA_KIND_STRING, 16 },
-	{ SMC_PNETID_ETHNAME,	NLA_KIND_STRING, 16 },
-	{ SMC_PNETID_IBNAME,	NLA_KIND_STRING, 64 },
+	{ SMC_PNETID_NAME,	NLA_KIND_STRING, 16, 1 },
+	{ SMC_PNETID_ETHNAME,	NLA_KIND_STRING, 16, 1 },
+	{ SMC_PNETID_IBNAME,	NLA_KIND_STRING, 64, 1 },
 	{ SMC_PNETID_IBPORT,	NLA_KIND_U8,     1 },
 };
 

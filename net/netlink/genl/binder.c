@@ -20,7 +20,7 @@ static const struct genl_cmd_grammar binder_cmds[] = {
  */
 static const struct nla_attr_spec binder_attrs[] = {
 	{ BINDER_A_REPORT_ERROR,     NLA_KIND_U32,    4 },
-	{ BINDER_A_REPORT_CONTEXT,   NLA_KIND_STRING, 32 },
+	{ BINDER_A_REPORT_CONTEXT,   NLA_KIND_STRING, 32, 1 },
 	{ BINDER_A_REPORT_FROM_PID,  NLA_KIND_U32,    4 },
 	{ BINDER_A_REPORT_FROM_TID,  NLA_KIND_U32,    4 },
 	{ BINDER_A_REPORT_TO_PID,    NLA_KIND_U32,    4 },

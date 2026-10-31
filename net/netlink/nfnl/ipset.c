@@ -47,15 +47,15 @@ static const struct nla_attr_spec ipset_data_attrs[] = {
 	{ IPSET_ATTR_MARKMASK,    NLA_KIND_U32,    4 },
 	{ IPSET_ATTR_BITMASK,     NLA_KIND_NESTED, 0 },
 	{ IPSET_ATTR_ETHER,       NLA_KIND_BINARY, 6 },
-	{ IPSET_ATTR_NAME,        NLA_KIND_STRING, IPSET_MAXNAMELEN - 1 },
-	{ IPSET_ATTR_NAMEREF,     NLA_KIND_STRING, IPSET_MAXNAMELEN - 1 },
+	{ IPSET_ATTR_NAME,        NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1 },
+	{ IPSET_ATTR_NAMEREF,     NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1 },
 	{ IPSET_ATTR_IP2,         NLA_KIND_NESTED, 0 },
 	{ IPSET_ATTR_CIDR2,       NLA_KIND_U8,     1 },
 	{ IPSET_ATTR_IP2_TO,      NLA_KIND_NESTED, 0 },
-	{ IPSET_ATTR_IFACE,       NLA_KIND_STRING, IFNAMSIZ - 1 },
+	{ IPSET_ATTR_IFACE,       NLA_KIND_STRING, IFNAMSIZ - 1, 1 },
 	{ IPSET_ATTR_BYTES,       NLA_KIND_U64,    8 },
 	{ IPSET_ATTR_PACKETS,     NLA_KIND_U64,    8 },
-	{ IPSET_ATTR_COMMENT,     NLA_KIND_STRING, IPSET_MAX_COMMENT_SIZE },
+	{ IPSET_ATTR_COMMENT,     NLA_KIND_STRING, IPSET_MAX_COMMENT_SIZE, 1 },
 	{ IPSET_ATTR_SKBMARK,     NLA_KIND_U64,    8 },
 	{ IPSET_ATTR_SKBPRIO,     NLA_KIND_U32,    4 },
 	{ IPSET_ATTR_SKBQUEUE,    NLA_KIND_U16,    2 },
@@ -107,7 +107,7 @@ static const struct nla_attr_spec ipset_create_attrs[] = {
 	  IPSET_PROTOCOL_MIN, .required = true },
 	{ IPSET_ATTR_SETNAME,     NLA_KIND_STRING_WORD, 0, 0,
 	  .word = ipset_word, .required = true },
-	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1,
+	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1,
 	  .required = true },
 	{ IPSET_ATTR_REVISION,    NLA_KIND_U8_RANGE, IPSET_REVISION_MAX, 0,
 	  .required = true },
@@ -171,7 +171,7 @@ static const struct nla_attr_spec ipset_test_attrs[] = {
 static const struct nla_attr_spec ipset_type_attrs[] = {
 	{ IPSET_ATTR_PROTOCOL,    NLA_KIND_U8_RANGE, 255,
 	  IPSET_PROTOCOL_MIN, .required = true },
-	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1,
+	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1,
 	  .required = true },
 	{ IPSET_ATTR_FAMILY,      NLA_KIND_U8,     1, .required = true },
 };
@@ -229,7 +229,7 @@ static const struct nla_attr_spec ipset_attrs[] = {
 	  IPSET_PROTOCOL_MIN },
 	{ IPSET_ATTR_SETNAME,     NLA_KIND_STRING_WORD, 0, 0,
 	  .word = ipset_word },
-	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1 },
+	{ IPSET_ATTR_TYPENAME,    NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1 },
 	{ IPSET_ATTR_REVISION,    NLA_KIND_U8_RANGE, IPSET_REVISION_MAX, 0 },
 	{ IPSET_ATTR_FAMILY,      NLA_KIND_U8,     1 },
 	{ IPSET_ATTR_FLAGS,       NLA_KIND_U32,    4 },
@@ -264,12 +264,12 @@ static const struct nla_attr_spec ipset_attrs[] = {
 	/* ADT-only attrs (hash:mac ETHER; list:set NAME/NAMEREF;
 	 * hash:net,iface IFACE; hash:net,net IP2/CIDR2/IP2_TO). */
 	{ IPSET_ATTR_ETHER,       NLA_KIND_BINARY, 6 },
-	{ IPSET_ATTR_NAME,        NLA_KIND_STRING, IPSET_MAXNAMELEN - 1 },
-	{ IPSET_ATTR_NAMEREF,     NLA_KIND_STRING, IPSET_MAXNAMELEN - 1 },
+	{ IPSET_ATTR_NAME,        NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1 },
+	{ IPSET_ATTR_NAMEREF,     NLA_KIND_STRING, IPSET_MAXNAMELEN - 1, 1 },
 	{ IPSET_ATTR_IP2,         NLA_KIND_NESTED, 0 },
 	{ IPSET_ATTR_CIDR2,       NLA_KIND_U8,     1 },
 	{ IPSET_ATTR_IP2_TO,      NLA_KIND_NESTED, 0 },
-	{ IPSET_ATTR_IFACE,       NLA_KIND_STRING, IFNAMSIZ - 1 },
+	{ IPSET_ATTR_IFACE,       NLA_KIND_STRING, IFNAMSIZ - 1, 1 },
 
 	/* Inner IPSET_ATTR_IP / IP_TO / IP2 / IP2_TO nest — the addr
 	 * block that carries IPADDR_IPV4 (already collides with the

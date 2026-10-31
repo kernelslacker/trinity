@@ -46,7 +46,7 @@ static const struct genl_cmd_grammar net_dm_cmds[] = {
 static const struct nla_attr_spec net_dm_attrs[] = {
 	{ NET_DM_ATTR_ALERT_MODE,		NLA_KIND_U8,     1 },
 	{ NET_DM_ATTR_PC,			NLA_KIND_U64,    8 },
-	{ NET_DM_ATTR_SYMBOL,			NLA_KIND_STRING, 64 },
+	{ NET_DM_ATTR_SYMBOL,			NLA_KIND_STRING, 64, 1 },
 	{ NET_DM_ATTR_IN_PORT,			NLA_KIND_NESTED, 0 },
 	{ NET_DM_ATTR_TIMESTAMP,		NLA_KIND_U64,    8 },
 	{ NET_DM_ATTR_PROTO,			NLA_KIND_U16,    2 },
@@ -58,15 +58,15 @@ static const struct nla_attr_spec net_dm_attrs[] = {
 	{ NET_DM_ATTR_STATS,			NLA_KIND_NESTED, 0 },
 	{ NET_DM_ATTR_HW_STATS,			NLA_KIND_NESTED, 0 },
 	{ NET_DM_ATTR_ORIGIN,			NLA_KIND_U16,    2 },
-	{ NET_DM_ATTR_HW_TRAP_GROUP_NAME,	NLA_KIND_STRING, 64 },
-	{ NET_DM_ATTR_HW_TRAP_NAME,		NLA_KIND_STRING, 64 },
+	{ NET_DM_ATTR_HW_TRAP_GROUP_NAME,	NLA_KIND_STRING, 64, 1 },
+	{ NET_DM_ATTR_HW_TRAP_NAME,		NLA_KIND_STRING, 64, 1 },
 	{ NET_DM_ATTR_HW_ENTRIES,		NLA_KIND_NESTED, 0 },
 	{ NET_DM_ATTR_HW_ENTRY,			NLA_KIND_NESTED, 0 },
 	{ NET_DM_ATTR_HW_TRAP_COUNT,		NLA_KIND_U32,    4 },
 	{ NET_DM_ATTR_SW_DROPS,			NLA_KIND_FLAG,   0 },
 	{ NET_DM_ATTR_HW_DROPS,			NLA_KIND_FLAG,   0 },
 	{ NET_DM_ATTR_FLOW_ACTION_COOKIE,	NLA_KIND_BINARY, 64 },
-	{ NET_DM_ATTR_REASON,			NLA_KIND_STRING, 64 },
+	{ NET_DM_ATTR_REASON,			NLA_KIND_STRING, 64, 1 },
 };
 
 struct genl_family_grammar fam_net_dm = {

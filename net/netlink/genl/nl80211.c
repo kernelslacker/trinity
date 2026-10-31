@@ -34,10 +34,10 @@ static const struct genl_cmd_grammar nl80211_cmds[] = {
  */
 static const struct nla_attr_spec nl80211_attrs[] = {
 	{ NL80211_ATTR_WIPHY,             NLA_KIND_U32,    4 },
-	{ NL80211_ATTR_WIPHY_NAME,        NLA_KIND_STRING, 64 },
+	{ NL80211_ATTR_WIPHY_NAME,        NLA_KIND_STRING, 64, 1 },
 	{ NL80211_ATTR_WIPHY_FREQ,        NLA_KIND_U32,    4 },
 	{ NL80211_ATTR_IFINDEX,           NLA_KIND_U32,    4 },
-	{ NL80211_ATTR_IFNAME,            NLA_KIND_STRING, 15 },
+	{ NL80211_ATTR_IFNAME,            NLA_KIND_STRING, 15, 1 },
 	{ NL80211_ATTR_IFTYPE,            NLA_KIND_U32,    4 },
 	{ NL80211_ATTR_MAC,               NLA_KIND_BINARY, 6 },
 	{ NL80211_ATTR_KEY_IDX,           NLA_KIND_U8,     1 },

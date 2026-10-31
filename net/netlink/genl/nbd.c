@@ -99,7 +99,7 @@ static const struct nla_attr_spec nbd_attrs[] = {
 	{ NBD_ATTR_SOCKETS,		NLA_KIND_NESTED, 0 },
 	{ NBD_ATTR_DEAD_CONN_TIMEOUT,	NLA_KIND_U64,    8 },
 	{ NBD_ATTR_DEVICE_LIST,		NLA_KIND_NESTED, 0 },
-	{ NBD_ATTR_BACKEND_IDENTIFIER,	NLA_KIND_STRING, 32 },
+	{ NBD_ATTR_BACKEND_IDENTIFIER,	NLA_KIND_STRING, 32, 1 },
 };
 
 struct genl_family_grammar fam_nbd = {

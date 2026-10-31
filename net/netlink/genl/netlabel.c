@@ -42,7 +42,7 @@ static const struct genl_cmd_grammar nlbl_mgmt_cmds[] = {
  * ADDRSELECTOR entries.  FAMILY is u16 (AF_INET / AF_INET6).
  */
 static const struct nla_attr_spec nlbl_mgmt_attrs[] = {
-	{ NLBL_MGMT_A_DOMAIN,		NLA_KIND_STRING, 64 },
+	{ NLBL_MGMT_A_DOMAIN,		NLA_KIND_STRING, 64, 1 },
 	{ NLBL_MGMT_A_PROTOCOL,		NLA_KIND_U32,    4 },
 	{ NLBL_MGMT_A_VERSION,		NLA_KIND_U32,    4 },
 	{ NLBL_MGMT_A_CV4DOI,		NLA_KIND_U32,    4 },
@@ -140,7 +140,7 @@ static const struct nla_attr_spec nlbl_unlabel_attrs[] = {
 	{ NLBL_UNLABEL_A_IPV6MASK,	NLA_KIND_BINARY, 16 },
 	{ NLBL_UNLABEL_A_IPV4ADDR,	NLA_KIND_BINARY, 4 },
 	{ NLBL_UNLABEL_A_IPV4MASK,	NLA_KIND_BINARY, 4 },
-	{ NLBL_UNLABEL_A_IFACE,		NLA_KIND_STRING, 15 },
+	{ NLBL_UNLABEL_A_IFACE,		NLA_KIND_STRING, 15, 1 },
 	{ NLBL_UNLABEL_A_SECCTX,	NLA_KIND_BINARY, 64 },
 };
 
