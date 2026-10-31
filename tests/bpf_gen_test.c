@@ -1257,6 +1257,7 @@ struct link_tally {
 	unsigned int generic_prog;
 	unsigned int tail_set, no_tail, tail_uncovered;
 	unsigned int both_syms_addrs, negative_pid;
+	unsigned int bad_ids;
 };
 
 /* The sub-buffers the fill made for the pointer fields of the arm the attr's
@@ -1368,6 +1369,37 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			    type == BPF_TRACE_UPROBE_SESSION)
 				t->negative_pid +=
 					(int32_t) attr->link_create.uprobe_multi.pid < 0;
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+			/* check_dup_ids() refuses a repeated id, and id 0
+			 * names no BTF function: every id drawn must be
+			 * nonzero and distinct within its array. */
+			if (type == BPF_TRACE_FENTRY_MULTI ||
+			    type == BPF_TRACE_FEXIT_MULTI ||
+			    type == BPF_TRACE_FSESSION_MULTI) {
+				const uint32_t *ids;
+				uint32_t cnt, j, k;
+				bool bad = false;
+
+				ids = (const uint32_t *)(uintptr_t)
+					attr->link_create.tracing_multi.ids;
+				cnt = attr->link_create.tracing_multi.cnt;
+				if (ids != NULL) {
+					for (j = 0; j < cnt && !bad; j++) {
+						if (ids[j] == 0) {
+							bad = true;
+							break;
+						}
+						for (k = 0; k < j; k++) {
+							if (ids[k] == ids[j]) {
+								bad = true;
+								break;
+							}
+						}
+					}
+				}
+				t->bad_ids += bad;
+			}
+#endif
 		}
 
 		rec.retval = (unsigned long) -1L;
@@ -1401,6 +1433,13 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 		      t->both_syms_addrs == 0);
 		check("an uprobe_multi names a negative pid", name,
 		      t->negative_pid == 0);
+#ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+		if (type == BPF_TRACE_FENTRY_MULTI ||
+		    type == BPF_TRACE_FEXIT_MULTI ||
+		    type == BPF_TRACE_FSESSION_MULTI)
+			check("a tracing_multi draw has a zero or repeated id",
+			      name, t->bad_ids == 0);
+#endif
 		check("the size stops short of what the draw filled", name,
 		      t->tail_uncovered == 0);
 		check("a program is not the pool's", name, t->generic_prog == 0);

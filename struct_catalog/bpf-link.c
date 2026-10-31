@@ -8,7 +8,9 @@
  */
 
 #include <stddef.h>
+#include <stdint.h>
 
+#include "rnd.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
 #include "arch.h"
@@ -349,6 +351,17 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
  * arm's (target_btf_id, cookie) overlay.
  */
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
+/*
+ * Tracing-multi ids must be nonzero and distinct: check_dup_ids()
+ * refuses a repeated id, and id 0 names no BTF function.  Drawn
+ * uniform over [1, UINT32_MAX]; distinctness across the array is
+ * the fill's elem_unique retries, not this draw.
+ */
+static unsigned long long tracing_multi_id_pick(void)
+{
+	return 1ULL + rnd_modulo_u32(UINT32_MAX);
+}
+
 const unsigned long bpf_attach_types_tracing_multi[] = {
 	BPF_TRACE_FENTRY_MULTI, BPF_TRACE_FEXIT_MULTI,
 	BPF_TRACE_FSESSION_MULTI,
@@ -362,7 +375,9 @@ const char *const bpf_attr_link_create_tracing_multi_arrays[] = {
 const struct struct_field bpf_attr_LINK_CREATE_TRACING_MULTI_fields[] = {
 	FIELDX(union bpf_attr, link_create.tracing_multi.ids, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint32_t),
-				.max_count = 32 }),
+				.max_count = 32,
+				.elem_pick = tracing_multi_id_pick,
+				.elem_unique = true }),
 	FIELDX(union bpf_attr, link_create.tracing_multi.cookies, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32 }),
