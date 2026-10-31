@@ -178,6 +178,16 @@ int find_field_index_in(const struct struct_field *fields,
 #define PTR_BYTES_DEFAULT_MAX	4096U
 #define OPTIONAL_PRESENT_PCT	80U
 
+/*
+ * Bounded retries when elem_unique asks for a value not already in
+ * the array, the cap on string-array elements collected on the stack
+ * before one allocation is sized for them, and the longest string
+ * copy a string element takes from its picker.
+ */
+#define PTR_ARRAY_UNIQUE_RETRIES	16U
+#define ELEM_STR_PICK_MAX		64U
+#define ELEM_STR_MAX_LEN		1024U
+
 /* True ~OPTIONAL_PRESENT_PCT% of the time. */
 static bool optional_present(void)
 {
@@ -445,6 +455,144 @@ static void pin_shared_lens(const struct struct_field *fields,
 	}
 }
 
+/*
+ * Read/write one array element at elem_size width through the
+ * field-slot helpers, via a throwaway descriptor carrying the width
+ * -- so the element fill reuses their width dispatch instead of
+ * duplicating it.  Widths outside 1/2/4/8 read 0 / write nothing,
+ * the helpers' own contract.
+ */
+static uint64_t read_elem_uint(const unsigned char *p, unsigned int size)
+{
+	struct struct_field ef = { .offset = 0, .size = size };
+
+	return read_field_uint(p, &ef);
+}
+
+static void write_elem_uint(unsigned char *p, unsigned int size,
+			    uint64_t v)
+{
+	struct struct_field ef = { .offset = 0, .size = size };
+
+	write_field_uint(p, &ef, v);
+}
+
+/*
+ * Scalar-element fill for an FT_PTR_ARRAY whose annotation carries
+ * elem_pick.  Draws one value per element; with elem_unique, a draw
+ * already present in the array is retried (bounded) so the kernel
+ * sees distinct values.  Retries exhausted, the last draw stands: a
+ * source narrower than the count must not wedge the fill.
+ */
+static void fill_scalar_array_elems(unsigned char *sub,
+				     const struct struct_field *f,
+				     unsigned int elem_size,
+				     unsigned long count)
+{
+	unsigned long j;
+
+	for (j = 0; j < count; j++) {
+		uint64_t v = f->u.ptr_array.elem_pick();
+		unsigned int tries = 0;
+
+		if (f->u.ptr_array.elem_unique) {
+			while (tries < PTR_ARRAY_UNIQUE_RETRIES) {
+				unsigned long k;
+				bool seen = false;
+
+				for (k = 0; k < j; k++) {
+					if (read_elem_uint(sub + k * elem_size,
+							   elem_size) == v) {
+						seen = true;
+						break;
+					}
+				}
+				if (!seen)
+					break;
+				v = f->u.ptr_array.elem_pick();
+				tries++;
+			}
+		}
+		write_elem_uint(sub + j * elem_size, elem_size, v);
+	}
+}
+
+/*
+ * String-element fill: each element is a pointer to a NUL-terminated
+ * string the picker names (kprobe_multi syms).  Picks are collected
+ * first so one allocation can be sized exactly: pointers at the
+ * head, string bytes after them, so a single deferred-free slot owns
+ * the pointers and everything they point at.  A NULL pick leaves
+ * that element NULL, the empty-pool fallback; with elem_unique, a
+ * repeated name is retried bounded, then kept.  The caller gates
+ * count at ELEM_STR_PICK_MAX, which bounds both the stack pick list
+ * and the allocation (each string copy is capped at ELEM_STR_MAX_LEN).
+ */
+static void fill_ptr_string_array(unsigned char *buf,
+				  const struct struct_field *f,
+				  unsigned long count, unsigned long *chosen)
+{
+	const char *picked[ELEM_STR_PICK_MAX];
+	unsigned char *sub;
+	unsigned long nbytes;
+	unsigned long str_off;
+	unsigned long j;
+
+	for (j = 0; j < count; j++) {
+		const char *pick = f->u.ptr_array.elem_str_pick();
+		unsigned int tries = 0;
+
+		if (pick != NULL && f->u.ptr_array.elem_unique) {
+			while (tries < PTR_ARRAY_UNIQUE_RETRIES) {
+				unsigned long k;
+				bool seen = false;
+
+				for (k = 0; k < j; k++) {
+					if (picked[k] != NULL &&
+					    strcmp(picked[k], pick) == 0) {
+						seen = true;
+						break;
+					}
+				}
+				if (!seen)
+					break;
+				pick = f->u.ptr_array.elem_str_pick();
+				tries++;
+				if (pick == NULL)
+					break;
+			}
+		}
+		picked[j] = pick;
+	}
+
+	nbytes = count * sizeof(uint64_t);
+	for (j = 0; j < count; j++) {
+		if (picked[j] != NULL)
+			nbytes += strnlen(picked[j], ELEM_STR_MAX_LEN) + 1;
+	}
+
+	sub = zmalloc_tracked(nbytes);
+	deferred_free_enqueue_or_leak(sub);
+
+	str_off = count * sizeof(uint64_t);
+	for (j = 0; j < count; j++) {
+		uint64_t ptr = 0;
+
+		if (picked[j] != NULL) {
+			size_t len = strnlen(picked[j], ELEM_STR_MAX_LEN);
+
+			memcpy(sub + str_off, picked[j], len);
+			sub[str_off + len] = '\0';
+			ptr = (uint64_t)(uintptr_t)(sub + str_off);
+			str_off += len + 1;
+		}
+		write_elem_uint(sub + j * sizeof(uint64_t),
+				sizeof(uint64_t), ptr);
+	}
+	write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
+	*chosen = count;
+}
+
 /* FT_PTR_ARRAY arm of fill_pointer_pass(); *chosen is chosen_len[i]. */
 static void fill_ptr_array(unsigned char *buf, const struct struct_field *f,
 			   struct syscallrecord *rec, unsigned long *chosen)
@@ -498,6 +646,18 @@ static void fill_ptr_array(unsigned char *buf, const struct struct_field *f,
 	 */
 	if (count > SIZE_MAX / elem_size)
 		count = SIZE_MAX / elem_size;
+	/*
+	 * String-element arrays take their own allocation (pointers
+	 * plus string bytes in one block).  Over ELEM_STR_PICK_MAX the
+	 * pick list would not fit the stack, so the array falls
+	 * through to the zero-filled shape below.
+	 */
+	if ((elem == NULL || elem->struct_size == 0) &&
+	    f->u.ptr_array.elem_str_pick != NULL &&
+	    elem_size == sizeof(uint64_t) && count <= ELEM_STR_PICK_MAX) {
+		fill_ptr_string_array(buf, f, count, chosen);
+		return;
+	}
 	nbytes = count * elem_size;
 	sub = zmalloc_tracked(nbytes);
 	deferred_free_enqueue_or_leak(sub);
@@ -508,9 +668,11 @@ static void fill_ptr_array(unsigned char *buf, const struct struct_field *f,
 	 * reach the kernel as count all-zero structs and
 	 * the elem_struct annotation would be silently
 	 * inert.  Mirrors the per-buffer fill the single-
-	 * pointer FT_PTR_STRUCT case does.  The
-	 * scalar elem_size-override path (elem == NULL or
-	 * elem->struct_size == 0) stays zero-filled.
+	 * pointer FT_PTR_STRUCT case does.  The scalar
+	 * elem_size-override path (elem == NULL or
+	 * elem->struct_size == 0) draws per-element values
+	 * from elem_pick when the annotation carries one,
+	 * and stays zero-filled otherwise.
 	 */
 	if (elem != NULL && elem->struct_size != 0) {
 		unsigned long j;
@@ -520,6 +682,8 @@ static void fill_ptr_array(unsigned char *buf, const struct struct_field *f,
 				(unsigned char *) sub
 					+ j * elem_size,
 				elem->struct_size, elem, rec);
+	} else if (f->u.ptr_array.elem_pick != NULL) {
+		fill_scalar_array_elems(sub, f, elem_size, count);
 	}
 	write_field_uint(buf, f, (uint64_t)(uintptr_t) sub);
 	*chosen = count;
@@ -570,7 +734,10 @@ static void fill_bpf_program(unsigned char *buf, const struct struct_field *f,
  * NULL leaves this one to take the buffer.  A sibling not yet
  * reached rolls: the sibling's own check then takes the buffer
  * unconditionally when it finds this slot empty, so a roll either
- * way leaves exactly one.  chosen_len[] is left alone for a skipped
+ * way leaves exactly one.  Before the roll, a side whose
+ * elem_available reports an empty source loses to the side that
+ * has values, so a pair never rolls toward an empty pool.
+ * chosen_len[] is left alone for a skipped
  * field: the pre-pin pass already wrote it the shared count, and the
  * length pass reads the first sibling's, so the count the allocated
  * array holds is what the LEN field reports.
@@ -592,6 +759,23 @@ static bool ptr_array_xor_skip(unsigned char *buf,
 		return false;
 	if ((unsigned int) p < i)
 		return read_field_uint(buf, &fields[p]) != 0;
+	/*
+	 * Neither side filled yet: a side whose element source reports
+	 * nothing to give loses the roll to the side that has values.
+	 * No callback means always available.  Callbacks must be
+	 * side-effect-free -- this probes without consuming a draw.
+	 * Both sides the same (both available or both empty) falls
+	 * through to the roll below, which leaves exactly one.
+	 */
+	{
+		bool mine = f->u.ptr_array.elem_available == NULL ||
+			    f->u.ptr_array.elem_available();
+		bool sib = fields[p].u.ptr_array.elem_available == NULL ||
+			   fields[p].u.ptr_array.elem_available();
+
+		if (mine != sib)
+			return !mine;
+	}
 	return rnd_modulo_u32(2) == 0;
 }
 

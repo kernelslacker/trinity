@@ -104,6 +104,30 @@ struct struct_field {
 			unsigned int	 elem_size;
 			unsigned int	 max_count;
 			const char	*xor_sibling;
+			/*
+			 * Per-element value sources for the scalar
+			 * (elem_size) path, which otherwise leaves the
+			 * buffer zero-filled.  elem_struct wins when it
+			 * resolves; neither source is consulted then.
+			 * elem_pick returns the u64 written at elem_size
+			 * width; elem_str_pick names a NUL-terminated
+			 * string per pointer-width element (kprobe syms),
+			 * copied into the same allocation as the
+			 * pointers.  elem_available reports whether the
+			 * source behind either pick has values to give
+			 * (NULL means always available); the xor rule
+			 * consults it so a pair never rolls toward an
+			 * empty pool.  It must be side-effect-free: the
+			 * xor check calls it without consuming a draw.
+			 * elem_unique asks for distinct elements,
+			 * best-effort via bounded retries -- a source
+			 * narrower than the count keeps the last draw
+			 * rather than wedging the fill.
+			 */
+			unsigned long long (*elem_pick)(void);
+			bool (*elem_available)(void);
+			const char *(*elem_str_pick)(void);
+			bool		 elem_unique;
 		} ptr_array;
 		/* FT_PTR_STRUCT: pointer to one cataloged struct. */
 		struct {

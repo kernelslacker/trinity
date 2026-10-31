@@ -433,6 +433,7 @@ FAKE_SRCS	:= \
 	deferred_free_test.c \
 	stats_opclock_lossless_test.c \
 	struct_field_bounds_test.c \
+	struct_fill_elem_test.c \
 	kmsg_trigger_selftest.c \
 	pidstat_probe_selftest.c \
 	exit_reason_test.c \
