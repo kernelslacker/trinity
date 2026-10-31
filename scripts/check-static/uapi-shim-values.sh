@@ -611,19 +611,16 @@ TEXT_TABLE="$WORKDIR/text-table.txt"
 TEXT_VERIFIED=0
 TEXT_RAN=0
 : > "$TEXT_TABLE"
-case "$TIER2_STATUS" in
-ran*)
-    if [ -s "$SYMS_BAD" ]; then
-        TEXT_RAN=1
-        # "SYM VALUE FILE WIDE" for every object-like #define of an ALL_CAPS
-        # name: VALUE is a signed 32-bit decimal as in the compiler table, or
-        # ? for a definition of any other shape, and WIDE the 64 bits in hex
-        # of a constant that has an 8-byte type and needs them, - for any
-        # other.  Deciding per symbol is left to awk below, so that xargs
-        # cannot split a symbol's definitions between two perl processes.
-        if ! (set -o pipefail
-              find "$HDR_INSTALL/include" -name '*.h' | sort | \
-              xargs perl -0777 -ne '
+
+# text_scan DIR...: "SYM VALUE FILE WIDE" for every object-like #define of an
+# ALL_CAPS name in the headers under DIR: VALUE is a signed 32-bit decimal as
+# in the compiler table, or ? for a definition of any other shape, and WIDE
+# the 64 bits in hex of a constant that has an 8-byte type and needs them, -
+# for any other.  Deciding per symbol is left to text_resolve, so that xargs
+# cannot split a symbol's definitions between two perl processes.
+text_scan() {
+    find "$@" -name '*.h' | sort | \
+    xargs perl -0777 -ne '
 	# The value, and whether the constant has an 8-byte type: an L in the
 	# suffix, or more bits than the 4-byte types hold (int for a decimal
 	# without a suffix, unsigned int for the rest).
@@ -661,30 +658,43 @@ ran*)
 			$v -= 4294967296 if $v >= 2147483648;
 		}
 		printf("%s %s %s %s\n", $sym, defined $v ? $v : "?", $ARGV, $w);
-	}' > "$TEXT_OBS"); then
+	}'
+}
+
+# text_resolve WANT ROOT OBS: "VALUE SYM FILE", sorted by symbol, for each
+# symbol named in WANT that text_scan's output OBS defines one way, with FILE
+# relative to ROOT.  The 64 bits of one that needs them go to the wide table.
+text_resolve() {
+    awk -v want_file="$1" -v root="$2" -v wide_out="$WIDE_TABLE" '
+        FILENAME == want_file { want[$1]; next }
+        !($1 in want) { next }
+        $2 == "?" { bad[$1]; next }
+        !($1 in val) { val[$1] = $2; src[$1] = $3; wid[$1] = $4; next }
+        val[$1] != $2 || wid[$1] != $4 { bad[$1] }
+        END {
+            for (s in val) {
+                if (s in bad)
+                    continue
+                f = src[s]
+                if (index(f, root "/") == 1)
+                    f = substr(f, length(root) + 2)
+                print val[s], s, f
+                if (wid[s] != "-")
+                    print s, wid[s] >> wide_out
+            }
+        }
+    ' "$1" "$3" | sort -k2
+}
+
+case "$TIER2_STATUS" in
+ran*)
+    if [ -s "$SYMS_BAD" ]; then
+        TEXT_RAN=1
+        if ! (set -o pipefail; text_scan "$HDR_INSTALL/include" > "$TEXT_OBS"); then
             echo "FAIL: $NAME: Tier-2 text scan of $HDR_INSTALL/include failed"
             exit 1
         fi
-        awk -v want_file="$SYMS_BAD" -v root="$HDR_INSTALL/include" \
-            -v wide_out="$WIDE_TABLE" '
-            FILENAME == want_file { want[$1]; next }
-            !($1 in want) { next }
-            $2 == "?" { bad[$1]; next }
-            !($1 in val) { val[$1] = $2; src[$1] = $3; wid[$1] = $4; next }
-            val[$1] != $2 || wid[$1] != $4 { bad[$1] }
-            END {
-                for (s in val) {
-                    if (s in bad)
-                        continue
-                    f = src[s]
-                    if (index(f, root "/") == 1)
-                        f = substr(f, length(root) + 2)
-                    print val[s], s, f
-                    if (wid[s] != "-")
-                        print s, wid[s] >> wide_out
-                }
-            }
-        ' "$SYMS_BAD" "$TEXT_OBS" | sort -k2 > "$TEXT_TABLE"
+        text_resolve "$SYMS_BAD" "$HDR_INSTALL/include" "$TEXT_OBS" > "$TEXT_TABLE"
 
         # A symbol read from text leaves the unresolved set.
         cut -d' ' -f2 "$TEXT_TABLE" | sort -u > "$WORKDIR/syms-text.txt"
