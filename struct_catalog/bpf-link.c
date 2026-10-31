@@ -10,6 +10,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "kallsyms-symbols.h"
 #include "rnd.h"
 #include "struct_catalog.h"
 #include "struct_catalog-internal.h"
@@ -269,7 +270,10 @@ const unsigned long bpf_attach_types_cgroup[] = {
  * elem_size override path that lets the pointer pass size its
  * sub-buffer without a cataloged elem_struct.  syms and addrs name
  * each other as xor_siblings, so the fill plants exactly one of
- * them, as bpf_kprobe_multi_link_attach() requires.
+ * them, as bpf_kprobe_multi_link_attach() requires.  syms elements
+ * are names and addrs elements addresses from the kallsyms pool
+ * (args/pools/kallsyms-symbols.c); with the address pool empty the
+ * xor availability rule lands every draw on syms.
  */
 const unsigned long bpf_attach_types_kprobe_multi[] = {
 	BPF_TRACE_KPROBE_MULTI, BPF_TRACE_KPROBE_SESSION,
@@ -290,11 +294,17 @@ const struct struct_field bpf_attr_LINK_CREATE_KPROBE_MULTI_fields[] = {
 	FIELDX(union bpf_attr, link_create.kprobe_multi.syms, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32,
-				.xor_sibling = "link_create.kprobe_multi.addrs" }),
+				.xor_sibling = "link_create.kprobe_multi.addrs",
+				.elem_str_pick = kallsyms_symbol_name_pick,
+				.elem_available = kallsyms_symbols_have_names,
+				.elem_unique = true }),
 	FIELDX(union bpf_attr, link_create.kprobe_multi.addrs, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32,
-				.xor_sibling = "link_create.kprobe_multi.syms" }),
+				.xor_sibling = "link_create.kprobe_multi.syms",
+				.elem_pick = kallsyms_symbol_addr_pick,
+				.elem_available = kallsyms_symbols_have_addrs,
+				.elem_unique = true }),
 	FIELDX(union bpf_attr, link_create.kprobe_multi.cookies, FT_PTR_ARRAY,
 	       .u.ptr_array = { .elem_size = sizeof(uint64_t),
 				.max_count = 32 }),

@@ -18,6 +18,7 @@
 
 #include "arch.h"		/* page_size */
 #include "bpf.h"
+#include "kallsyms-symbols.h"
 #include "debug.h"		/* BUG */
 #include "objects.h"		/* struct bpfobj */
 #include "rnd.h"
@@ -1258,6 +1259,7 @@ struct link_tally {
 	unsigned int tail_set, no_tail, tail_uncovered;
 	unsigned int both_syms_addrs, negative_pid;
 	unsigned int bad_ids;
+	unsigned int bad_syms, bad_addrs, syms_present, addrs_present;
 };
 
 /* The sub-buffers the fill made for the pointer fields of the arm the attr's
@@ -1365,6 +1367,89 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 				t->both_syms_addrs +=
 					attr->link_create.kprobe_multi.syms != 0 &&
 					attr->link_create.kprobe_multi.addrs != 0;
+			/* syms elements must name pool symbols and addrs
+			 * elements pool addresses -- or stay NULL / zero
+			 * when the pool feeding them is empty -- and
+			 * each array must hold distinct values. */
+			if (type == BPF_TRACE_KPROBE_MULTI ||
+			    type == BPF_TRACE_KPROBE_SESSION) {
+				uint32_t cnt = attr->link_create.kprobe_multi.cnt;
+				const uint64_t *syms = (const uint64_t *)(uintptr_t)
+					attr->link_create.kprobe_multi.syms;
+				const uint64_t *addrs = (const uint64_t *)(uintptr_t)
+					attr->link_create.kprobe_multi.addrs;
+				unsigned int npool = kallsyms_symbols_count();
+				unsigned int m;
+				uint32_t j, k;
+				bool bad_s = false, bad_a = false;
+
+				if (syms != NULL) {
+					t->syms_present++;
+					for (j = 0; j < cnt && !bad_s; j++) {
+						const char *s;
+						bool known = false;
+
+						if (npool == 0) {
+							bad_s = syms[j] != 0;
+							continue;
+						}
+						if (syms[j] == 0) {
+							bad_s = true;
+							break;
+						}
+						s = (const char *)(uintptr_t) syms[j];
+						for (m = 0; m < npool; m++) {
+							if (strcmp(s, kallsyms_symbol_at(m)->name) == 0) {
+								known = true;
+								break;
+							}
+						}
+						if (!known) {
+							bad_s = true;
+							break;
+						}
+						for (k = 0; k < j; k++) {
+							if (strcmp(s, (const char *)(uintptr_t) syms[k]) == 0) {
+								bad_s = true;
+								break;
+							}
+						}
+					}
+					t->bad_syms += bad_s;
+				}
+				if (addrs != NULL) {
+					t->addrs_present++;
+					for (j = 0; j < cnt && !bad_a; j++) {
+						bool known = false;
+
+						if (!kallsyms_symbols_have_addrs()) {
+							bad_a = addrs[j] != 0;
+							continue;
+						}
+						if (addrs[j] == 0) {
+							bad_a = true;
+							break;
+						}
+						for (m = 0; m < npool; m++) {
+							if (kallsyms_symbol_at(m)->addr == addrs[j]) {
+								known = true;
+								break;
+							}
+						}
+						if (!known) {
+							bad_a = true;
+							break;
+						}
+						for (k = 0; k < j; k++) {
+							if (addrs[k] == addrs[j]) {
+								bad_a = true;
+								break;
+							}
+						}
+					}
+					t->bad_addrs += bad_a;
+				}
+			}
 			if (type == BPF_TRACE_UPROBE_MULTI ||
 			    type == BPF_TRACE_UPROBE_SESSION)
 				t->negative_pid +=
@@ -1440,6 +1525,23 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			check("a tracing_multi draw has a zero or repeated id",
 			      name, t->bad_ids == 0);
 #endif
+		if (type == BPF_TRACE_KPROBE_MULTI ||
+		    type == BPF_TRACE_KPROBE_SESSION) {
+			check("a kprobe_multi syms element is not a pool symbol",
+			      name, t->bad_syms == 0);
+			check("a kprobe_multi addrs element is not a pool address",
+			      name, t->bad_addrs == 0);
+			if (kallsyms_symbols_have_names()) {
+				check("a kprobe_multi never names syms",
+				      name, t->syms_present > 0);
+				if (kallsyms_symbols_have_addrs())
+					check("a kprobe_multi never names addrs",
+					      name, t->addrs_present > 0);
+				else
+					check("a kprobe_multi names addrs with no address pool",
+					      name, t->addrs_present == 0);
+			}
+		}
 		check("the size stops short of what the draw filled", name,
 		      t->tail_uncovered == 0);
 		check("a program is not the pool's", name, t->generic_prog == 0);
