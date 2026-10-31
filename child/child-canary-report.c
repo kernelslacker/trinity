@@ -304,6 +304,11 @@ void canary_queue_on_crash(int childno, int signo)
 	canary_crash_sig_fold(op, (int32_t)signo, sig_code, fault_ip);
 }
 
+bool canary_queue_is_live(void)
+{
+	return canary_queue_live;
+}
+
 bool canary_slot_active(int childno)
 {
 	if (!canary_queue_live)

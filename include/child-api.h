@@ -516,6 +516,11 @@ void canary_queue_on_child_respawn(int childno);
 bool canary_slot_active(int childno);
 enum child_op_type canary_active_op(void);
 
+/* Whether the canary queue runs at all: not --no-canary-queue, not
+ * canary_slots==0 and not a targeted-syscall run.  Only then are the
+ * first canary_slots alt-op slots carved out of the rotation. */
+bool canary_queue_is_live(void);
+
 /* Returns true iff the canary queue has graduated the given op into
  * CANARY_STATE_PROMOTED.  Used by parent-side post-mortem paths (e.g.
  * the watchdog kill record) to attribute a stuck child to a recently-

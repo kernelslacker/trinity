@@ -82,17 +82,19 @@ void assign_dedicated_alt_op(struct childdata *child, int childno)
 	 * alt_op_rotation[] entry they would otherwise use.  The
 	 * remaining alt-op slots continue with the rotation, shifted past
 	 * the canary carve so the rotation walk stays stable.  When the
-	 * queue is disabled (--no-canary-queue or canary_slots=0), or
-	 * before the first canarying op has been selected,
-	 * canary_slot_active() returns false and the rotation handles
-	 * every slot from index 0 as it did pre-queue. */
+	 * queue does not run (--no-canary-queue, canary_slots=0 or a
+	 * targeted-syscall run) nothing is carved, canary_slots keeps the
+	 * value it was configured with, and the rotation handles every
+	 * slot from index 0 as it did pre-queue.  A carved slot whose
+	 * queue has no op picked yet runs the rotation entry of its own
+	 * index. */
 	if (canary_slot_active(childno)) {
 		child->op_type = canary_active_op();
 		return;
 	}
 
 	unsigned int rotation_idx = (unsigned int)childno;
-	if (canary_slots > 0 && rotation_idx >= canary_slots)
+	if (canary_queue_is_live() && rotation_idx >= canary_slots)
 		rotation_idx -= canary_slots;
 	child->op_type = alt_op_rotation[rotation_idx % NR_ALT_OP_ROTATION];
 }
