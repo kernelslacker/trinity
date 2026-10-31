@@ -71,9 +71,10 @@
  * rnd_modulo_u32(0) is defined to return 0, no_syscalls_enabled()
  * bails on the sustained-zero case, and a transient zero from a
  * racing deactivate is absorbed by the picker's existing val==0
- * retry guard.  The picked-syscall-number bound (syscallnr <
- * MAX_NR_SYSCALL) is guarded at its own indexing sites and is not
- * this helper's concern.
+ * retry guard.  The picked syscall number is bounded by each picker
+ * arm, which retries a slot value get_syscall_entry() does not know
+ * before validate_specific_syscall_silent() or the validation counters
+ * index with it, and is not this helper's concern.
  *
  * RELAXED matches the pre-existing pick-hot-path atomic shape (no
  * ordering is inferred from the count against the active_syscalls[]

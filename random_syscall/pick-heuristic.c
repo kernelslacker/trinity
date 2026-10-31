@@ -343,6 +343,13 @@ retry:
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
+	/* The slot is plain RW shm, so the value may not name a table
+	 * entry; get_syscall_entry() bounds it before the validation
+	 * below indexes the table and the failure counters with it. */
+	entry = get_syscall_entry(syscallnr, do32);
+	if (entry == NULL)
+		goto retry;
+
 	/* PRE-GATE cost-pool attribution: candidate has survived the
 	 * uniform draw + expensive_accept throttle -- the exact population
 	 * the shadow closed-form models.  Bumped here so a shadow-only
@@ -359,10 +366,6 @@ retry:
 		goto retry;
 	}
 	note_validation_success(syscallnr, do32);
-
-	entry = get_syscall_entry(syscallnr, do32);
-	if (entry == NULL)
-		goto retry;
 
 	if (group_bias_retry(syscallnr, do32, child, &group_attempts))
 		goto retry;

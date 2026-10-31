@@ -164,6 +164,12 @@ retry:
 	if (!expensive_accept(syscallnr, do32))
 		goto retry;
 
+	/* The slot is plain RW shm, so the value may not name a table
+	 * entry; get_syscall_entry() bounds it before the validation
+	 * below indexes the table and the failure counters with it. */
+	if (get_syscall_entry(syscallnr, do32) == NULL)
+		goto retry;
+
 	/* PRE-GATE cost-pool attribution.  See the matching call in
 	 * set_syscall_nr_heuristic above -- this is the RANDOM-arm sibling.
 	 * Fires after expensive_accept survives and before anti_prior /
