@@ -1,9 +1,8 @@
 /*
- * Stale staging-file sweeper for persisted-state loaders.  Writers save via
- * "<path>.tmp.<pid>" and rename over <path>, so a writer killed between fsync
- * and rename (watchdog SIGKILL, OOM kill, segfault) orphans its sibling;
- * persist_sweep_stale_tmp() unlinks those whose PID is gone.  Best-effort:
- * errors are swallowed and never block a load.
+ * Helpers for persisted-state files: the stale staging-file sweeper (writers
+ * save via "<path>.tmp.<pid>" and rename over <path>, so one killed between
+ * fsync and rename orphans its sibling; best-effort, never blocks a load),
+ * and the mkdir -p the cache paths are made with.
  */
 
 #include <dirent.h>
@@ -14,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "persist-util.h"
@@ -91,4 +91,30 @@ void persist_sweep_stale_tmp(const char *path)
 out:
 	free(dir_dup);
 	free(base_dup);
+}
+
+/*
+ * The umask is 0 for the cascade so every component comes out 0755, as the
+ * saved files are fchmod()ed to 0644 whatever it is.  EEXIST is fine at each
+ * level: what counts is that the directory exists afterwards, not which
+ * racing creator made it.
+ */
+int persist_mkdir_p(char *dir)
+{
+	mode_t saved_umask = umask(0);
+	int ret = 0;
+	char *p;
+
+	for (p = dir + 1; *p != '\0' && ret == 0; p++) {
+		if (*p != '/')
+			continue;
+		*p = '\0';
+		if (mkdir(dir, 0755) != 0 && errno != EEXIST)
+			ret = -1;
+		*p = '/';
+	}
+	if (ret == 0 && mkdir(dir, 0755) != 0 && errno != EEXIST)
+		ret = -1;
+	(void) umask(saved_umask);
+	return ret;
 }

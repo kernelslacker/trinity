@@ -39,6 +39,7 @@ void fd_replenish_self_check(void);
 void epoch_reset_self_check(void);
 void drop_privs_self_check(void);
 void tmpdir_self_check(void);
+void persist_util_self_check(void);
 void reap_stop_self_check(void);
 void reap_dead_kids_self_check(void);
 void extrafork_reap_self_check(void);
@@ -231,6 +232,11 @@ int main(int argc, char **argv)
 	printf("  tmpdir_self_check ... ");
 	fflush(stdout);
 	tmpdir_self_check();
+	printf("OK\n");
+
+	printf("  persist_util_self_check ... ");
+	fflush(stdout);
+	persist_util_self_check();
 	printf("OK\n");
 
 	printf("  reap_stop_self_check ... ");

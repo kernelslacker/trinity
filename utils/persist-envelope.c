@@ -3,7 +3,6 @@
  * include/persist-envelope.h for the motivation and format.
  */
 
-#include <errno.h>
 #include <fcntl.h>
 #include <libgen.h>
 #include <limits.h>
@@ -18,6 +17,7 @@
 
 #include "fd.h"
 #include "persist-envelope.h"
+#include "persist-util.h"
 #include "trinity.h"
 
 /*
@@ -132,8 +132,7 @@ const char *persist_manifest_default_path(void)
 	if (ret < 0 || (size_t)ret >= sizeof(dir))
 		return NULL;
 
-	/* mkdir -p the trinity cache dir on demand.  EEXIST is fine. */
-	if (mkdir(dir, 0755) != 0 && errno != EEXIST)
+	if (persist_mkdir_p(dir) != 0)
 		return NULL;
 
 	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s", dir,
