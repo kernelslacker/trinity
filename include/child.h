@@ -463,10 +463,9 @@ struct childdata {
 	 * via fork's table dup, so a snapshot of bookkeeping is the only
 	 * per-child state this lift adds.  Mutations from inside this
 	 * child stay local; sibling pools cannot reach each other through
-	 * cross-process scribble.  NULL between fork and the clone — the
-	 * resolver (get_objhead) falls back to shm->global_objects in that
-	 * window so any early lookup degrades gracefully instead of
-	 * dereferencing NULL.
+	 * cross-process scribble.  NULL between fork and the clone, when
+	 * get_objhead() answers NULL for OBJ_GLOBAL and the pool readers
+	 * take that as an empty pool.
 	 */
 	struct objhead *global_objects;
 
@@ -477,9 +476,8 @@ struct childdata {
 	 * resolve against this snapshot instead of the shm-resident table,
 	 * which lets the shm table die alongside the OBJ_GLOBAL pool.
 	 * Allocated by clone_global_objects_to_child(); NULL between fork
-	 * and the clone, in which case the per-process router falls back
-	 * to shm->fd_hash / shm->fd_live the same way the objhead resolver
-	 * does for early lookups.
+	 * and the clone, when the fd lookups read the fork's copy of the
+	 * parent's table, parent_fd_hash.
 	 */
 	struct fd_hash_entry *fd_hash;
 	int *fd_live;

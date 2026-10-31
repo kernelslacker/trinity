@@ -290,6 +290,22 @@ static void arena_extent_is_checked(struct object *arena_obj)
 	fake_heap_size = heap_size;
 }
 
+/*
+ * get_objhead() answers NULL for a scope with no pool, as for a child's
+ * OBJ_GLOBAL before its snapshot is made, and a walk takes that as an
+ * empty pool instead of loading through it.
+ */
+static void null_head_walks_empty(void)
+{
+	struct objhead *head = NULL;
+	struct object *obj;
+	unsigned int idx;
+
+	for_each_obj(head, obj, idx) {
+		BUG("objpool reader: for_each_obj walked a NULL head");
+	}
+}
+
 void objpool_reader_self_check(void);
 void objpool_reader_self_check(void)
 {
@@ -305,6 +321,7 @@ void objpool_reader_self_check(void)
 	stray_storage_is_refused();
 	dedup_refreshes_only_fallback_copies();
 	arena_extent_is_checked(arena_objs[0]);
+	null_head_walks_empty();
 
 	fake_get_objhead = NULL;
 	fake_heap_size = 0;

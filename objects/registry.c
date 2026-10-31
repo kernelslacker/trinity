@@ -118,8 +118,8 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
 		 * The child's COW page captured the pre-replacement pointer
 		 * value; the indexed read off it lands inside a recycled chunk
 		 * (the UAF this fix addresses).  Return NULL instead so any
-		 * child whose snapshot did not complete (early init, snapshot
-		 * alloc failure) gracefully takes the "empty pool" branch
+		 * child whose snapshot is not made yet (early init)
+		 * gracefully takes the "empty pool" branch
 		 * rather than dereferencing the wrong address space's
 		 * bookkeeping.
 		 */
@@ -157,11 +157,19 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  * makes.  A scribbled head->array that survives the NULL test still
  * lands the indexed load off for_each_obj's array_snap[idx] on an
  * unmapped page; forcing n_snap to 0 makes the iterator bail cleanly
- * instead.
+ * instead.  A NULL head, which get_objhead() returns for a scope with no
+ * pool (a child's OBJ_GLOBAL before its snapshot is made), walks as an
+ * empty pool.
  */
 void __for_each_obj_init(struct objhead *head,
 			 struct __for_each_obj_state *s)
 {
+	if (head == NULL) {
+		s->n_snap = 0;
+		s->array_snap = NULL;
+		return;
+	}
+
 	s->n_snap = head->num_entries;
 	s->array_snap = head->array;
 

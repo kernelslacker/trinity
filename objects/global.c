@@ -58,10 +58,9 @@ void init_global_objects(void)
  * exactly num_entries pointers, keeping the per-child memory cost
  * proportional to the live working set.
  *
- * NULL on out-of-memory leaves child->global_objects unset so the
- * get_objhead() fallback to shm->global_objects[] is selected for
- * this child's lifetime; the OBJ_GLOBAL path degrades to its pre-
- * lift behaviour rather than crashing.
+ * Until this runs child->global_objects is NULL, and get_objhead()
+ * answers NULL for OBJ_GLOBAL, which the pool readers take as an
+ * empty pool.
  */
 void clone_global_objects_to_child(struct childdata *child)
 {
