@@ -3,7 +3,9 @@
  * scrub_field_array() and struct_fill_passes(): a field {offset = UINT_MAX-4,
  * size = 8} wraps offset + size to 3, so a sum-then-compare check passes it
  * and the fill writes 4 GB past the buffer.  The predicate must be the
- * non-wrapping `offset > size || f->size > size - f->offset`.
+ * non-wrapping `offset > size || f->size > size - f->offset`.  The
+ * FT_SRANGE draw has the same trap: hi - lo + 1 over the full signed
+ * range wraps to 0, and a modulo of 0 pins every draw to lo.
  */
 
 #include <limits.h>
@@ -14,6 +16,39 @@
 #include "args-internal.h"
 #include "debug.h"		/* BUG_ON */
 #include "struct_catalog.h"
+
+#define SRANGE_DRAWS	64
+
+static long srange_draw(long lo, long hi)
+{
+	const struct struct_field fields[1] = {{
+		.name          = "srange_probe",
+		.offset        = 0,
+		.size          = sizeof(long),
+		.tag           = FT_SRANGE,
+		.u.srange      = { lo, hi },
+	}};
+	long v;
+
+	struct_fill_passes((unsigned char *) &v, sizeof(v), fields, 1, NULL);
+	return v;
+}
+
+/* A full-range FT_SRANGE field draws more than lo, and a narrow one stays
+ * inside its bounds. */
+static void srange_spans_its_range(void)
+{
+	unsigned int i, at_lo = 0;
+
+	for (i = 0; i < SRANGE_DRAWS; i++) {
+		long v = srange_draw(-5, 5);
+
+		BUG_ON(v < -5 || v > 5);
+		if (srange_draw(LONG_MIN, LONG_MAX) == LONG_MIN)
+			at_lo++;
+	}
+	BUG_ON(at_lo == SRANGE_DRAWS);	/* the span wrapped to 0 */
+}
 
 /* Entry point declared in test_main.c. */
 void struct_field_bounds_self_check(void);
@@ -78,6 +113,9 @@ void struct_field_bounds_self_check(void)
 	memset(expected, 0xAA, sizeof(expected));
 	BUG_ON(memcmp(buf, expected, sizeof(buf)) != 0);
 
+	srange_spans_its_range();
+
 	printf("    struct_field_bounds: predicate arithmetic OK, "
-	       "struct_fill_passes skipped wrapping field OK\n");
+	       "struct_fill_passes skipped wrapping field OK, "
+	       "full signed range drawn OK\n");
 }

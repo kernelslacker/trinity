@@ -338,16 +338,18 @@ static void fill_scalar_pass(unsigned char *buf, unsigned int size,
 			long lo = f->u.srange.lo;
 			long hi = f->u.srange.hi;
 			uint64_t span;
-			int64_t v;
 
 			if (hi <= lo) {
 				fill_field_raw(buf, f);
 				break;
 			}
+			/* hi - lo + 1 wraps to 0 over the full signed range,
+			 * and unsigned arithmetic keeps lo + the draw from
+			 * overflowing a signed type. */
 			span = (uint64_t) hi - (uint64_t) lo + 1;
-			v = (int64_t) lo +
-			    (int64_t) rnd_modulo_u64(span);
-			write_field_uint(buf, f, (uint64_t) v);
+			write_field_uint(buf, f, (uint64_t) lo +
+					 (span != 0 ? rnd_modulo_u64(span) :
+						      rnd_u64()));
 			break;
 		}
 		case FT_MAGIC: {
