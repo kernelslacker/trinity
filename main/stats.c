@@ -431,7 +431,8 @@ static void print_stats_pool_ratio(void)
 		}
 		last_explorer_edges = e_cur;
 	} else {
-		/* No explorer pool: all live non-altop slots are bandit. */
+		/* No explorer pool: every live slot, the alt-op lane's
+		 * included, counts as bandit, as live_band does above. */
 		unsigned int live_band_solo = live_child_slots;
 		if (b_delta > 0)
 			output(0, "bandit: %u/%u children, %lu edges (+%lu)\n",
