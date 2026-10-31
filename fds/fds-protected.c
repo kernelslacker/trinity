@@ -252,11 +252,10 @@ bool stat_names_protected_file(const struct stat *st)
  * Belt-and-suspenders gate for size-changing fd-arg syscalls
  * (ftruncate / ftruncate64, fallocate, lseek / llseek, write / writev /
  * pwrite64 / pwritev / pwritev2).  gen_arg_fd() already filters
- * fd_is_protected() picks out of the ARG_FD pool, but its bounded
- * reroll falls back to the last (possibly protected) draw on pool
- * exhaustion, and the per-syscall RAND_RANGE / typed-fd-pool buckets in
- * the size-changing sanitisers can independently land on a protected
- * slot.  Per-syscall sanitisers feed rec->a1 through this gate after
+ * fd_is_protected() picks out of the ARG_FD pool, and hands out -1 when
+ * its bounded reroll ends on one, but the per-syscall RAND_RANGE /
+ * typed-fd-pool buckets in the size-changing sanitisers can
+ * independently land on a protected slot.  Per-syscall sanitisers feed rec->a1 through this gate after
  * their own rewrites and before any snap->fd capture: if the slot
  * names a protected fd, reroll up to FAILED_FD_REROLL_LIMIT times via
  * get_random_fd(); on exhaustion stamp the slot with (unsigned long)-1

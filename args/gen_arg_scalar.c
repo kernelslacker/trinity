@@ -157,12 +157,14 @@ unsigned long gen_arg_fd(struct syscallentry *entry,
 					if (!fd_is_protected(fd))
 						return (unsigned long) fd;
 				}
-				return (unsigned long) fd;
+				return (unsigned long) -1;
 			}
 		}
 	}
 
-	/* Same failed_fds re-roll bias as the typed-fd path. */
+	/* Same failed_fds re-roll bias as the typed-fd path.  A budget
+	 * spent on protected draws ends on one: hand the kernel -1, the
+	 * EBADF sentinel get_random_fd() itself uses, never that fd. */
 	filter = rnd_modulo_u32(10) < 7;
 	for (tries = 0; tries < FAILED_FD_REROLL_LIMIT; tries++) {
 		fd = get_random_fd();
@@ -171,6 +173,8 @@ unsigned long gen_arg_fd(struct syscallentry *entry,
 		if (!filter || !fd_recently_failed(results, fd))
 			break;
 	}
+	if (fd_is_protected(fd))
+		fd = -1;
 	return (unsigned long) fd;
 }
 
@@ -216,6 +220,8 @@ unsigned long gen_arg_typed_fd(struct syscallentry *entry,
 		if (!filter || !fd_recently_failed(results, fd))
 			break;
 	}
+	if (fd_is_protected(fd))
+		fd = -1;
 	return (unsigned long) fd;
 }
 
