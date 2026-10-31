@@ -278,7 +278,9 @@ void mutate_field_raw(unsigned char *buf, const struct struct_field *f)
 /*
  * Build a candidate list of mutable fields reachable from buf via the
  * cataloged struct descriptor, walking FT_PTR_STRUCT children up to a
- * fixed depth.  Skip-list discipline lives here: any tag for which
+ * fixed depth.  A variant with a nested table contributes its base's
+ * fields and its matched arm's too, the overlay fill and scrub run.
+ * Skip-list discipline lives here: any tag for which
  * field_tag_is_mutable_c2b() returns false (PTR/LEN/FD/ADDRESS/
  * BPF_PROGRAM/TAGGED_UNION as well as the not-yet-mutable future tags)
  * never becomes a candidate, so the picker can't waste a trial on a
@@ -307,33 +309,22 @@ static const struct struct_desc *mutate_lookup_desc(const char *name)
 	return struct_catalog_lookup(name);
 }
 
-unsigned int collect_mutable_candidates(unsigned char *buf,
-					unsigned int size,
-					const struct struct_desc *desc,
-					struct syscallrecord *rec,
-					unsigned int depth,
-					struct mutate_candidate *out,
-					unsigned int out_max)
+/*
+ * One field list's candidates, appended at @out: its mutable fields, and
+ * the candidates of the structs its FT_PTR_STRUCT and FT_EMBEDDED_STRUCT
+ * fields reach.
+ */
+static unsigned int collect_field_list(unsigned char *buf, unsigned int size,
+				       const struct struct_field *fields,
+				       unsigned int n_fields,
+				       struct syscallrecord *rec,
+				       unsigned int depth,
+				       struct mutate_candidate *out,
+				       unsigned int out_max)
 {
-	const struct union_variant *variant;
-	const struct struct_field *fields;
-	unsigned int n_fields;
 	unsigned int collected = 0;
 	unsigned int i;
 
-	if (buf == NULL || desc == NULL)
-		return 0;
-	if (depth >= STRUCT_MUTATE_DEPTH_CAP)
-		return 0;
-
-	variant = struct_desc_resolve_variant(desc, rec, buf);
-	if (variant != NULL) {
-		fields = variant->fields;
-		n_fields = variant->num_fields;
-	} else {
-		fields = desc->fields;
-		n_fields = desc->num_fields;
-	}
 	if (n_fields > STRUCT_FILL_MAX_FIELDS)
 		n_fields = STRUCT_FILL_MAX_FIELDS;
 
@@ -404,6 +395,51 @@ unsigned int collect_mutable_candidates(unsigned char *buf,
 				out + collected, out_max - collected);
 		}
 	}
+	return collected;
+}
+
+unsigned int collect_mutable_candidates(unsigned char *buf,
+					unsigned int size,
+					const struct struct_desc *desc,
+					struct syscallrecord *rec,
+					unsigned int depth,
+					struct mutate_candidate *out,
+					unsigned int out_max)
+{
+	const struct union_variant *variant, *nested;
+	unsigned int collected;
+
+	if (buf == NULL || desc == NULL)
+		return 0;
+	if (depth >= STRUCT_MUTATE_DEPTH_CAP)
+		return 0;
+
+	variant = struct_desc_resolve_variant(desc, rec, buf);
+	if (variant == NULL)
+		return collect_field_list(buf, size, desc->fields,
+					  desc->num_fields, rec, depth,
+					  out, out_max);
+
+	collected = collect_field_list(buf, size, variant->fields,
+				       variant->num_fields, rec, depth,
+				       out, out_max);
+	if (variant->nested_variants == NULL)
+		return collected;
+
+	/* The overlay the fill and the scrub run: the shared base, then the
+	 * arm the buffer's sub-discriminator names. */
+	if (variant->base != NULL)
+		collected += collect_field_list(buf, size,
+						variant->base->fields,
+						variant->base->num_fields,
+						rec, depth, out + collected,
+						out_max - collected);
+	nested = struct_desc_resolve_nested_variant(variant, buf, size);
+	if (nested != NULL)
+		collected += collect_field_list(buf, size, nested->fields,
+						nested->num_fields, rec, depth,
+						out + collected,
+						out_max - collected);
 	return collected;
 }
 

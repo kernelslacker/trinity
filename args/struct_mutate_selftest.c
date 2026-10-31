@@ -320,6 +320,92 @@ static void selftest_skiplist(void)
 }
 
 /*
+ * Nested-scope invariant: a variant with a nested table is filled and
+ * scrubbed as its own fields, its base's and the arm its in-buffer
+ * sub-discriminator names (struct_variant_overlay_nested()), so the
+ * collector has to offer exactly those three lists, never a sibling arm.
+ */
+static void selftest_nested_scope(void)
+{
+	static const struct struct_field outer_fields[] = {
+		{ .name = "outer", .offset = 1, .size = 1, .tag = FT_RAW },
+	};
+	static const struct struct_field head_fields[] = {
+		{ .name = "head", .offset = 3, .size = 1, .tag = FT_RAW },
+	};
+	static const struct struct_field arm5_fields[] = {
+		{ .name = "arm5", .offset = 4, .size = 1, .tag = FT_RAW },
+	};
+	static const struct struct_field arm6_fields[] = {
+		{ .name = "arm6", .offset = 5, .size = 1, .tag = FT_RAW },
+	};
+	static const struct union_variant base = {
+		.name		= "base",
+		.fields		= head_fields,
+		.num_fields	= ARRAY_SIZE(head_fields),
+	};
+	static const struct union_variant arms[] = {
+		{
+			.discrim_value	= 5,
+			.name		= "arm5",
+			.fields		= arm5_fields,
+			.num_fields	= ARRAY_SIZE(arm5_fields),
+		},
+		{
+			.discrim_value	= 6,
+			.name		= "arm6",
+			.fields		= arm6_fields,
+			.num_fields	= ARRAY_SIZE(arm6_fields),
+		},
+	};
+	static const struct union_variant variants[] = {
+		{
+			.discrim_value		= 1,
+			.name			= "outer",
+			.fields			= outer_fields,
+			.num_fields		= ARRAY_SIZE(outer_fields),
+			.nested_discrim_offset	= 2,
+			.nested_discrim_size	= 1,
+			.base			= &base,
+			.nested_variants	= arms,
+			.num_nested_variants	= ARRAY_SIZE(arms),
+		},
+	};
+	struct struct_desc desc = {
+		.name			= "selftest_nested",
+		.struct_size		= 16,
+		.variants		= variants,
+		.num_variants		= ARRAY_SIZE(variants),
+		.buffer_discrim_offset	= 0,
+		.buffer_discrim_size	= 1,
+	};
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned char buf[16];
+	unsigned int n, i;
+	bool outer = false, head = false, arm5 = false;
+
+	memset(buf, 0, sizeof(buf));
+	buf[0] = 1;
+	buf[2] = 5;
+	n = collect_mutable_candidates(buf, sizeof(buf), &desc, NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	for (i = 0; i < n; i++) {
+		const char *name = cands[i].field->name;
+
+		if (strcmp(name, "outer") == 0)
+			outer = true;
+		else if (strcmp(name, "head") == 0)
+			head = true;
+		else if (strcmp(name, "arm5") == 0)
+			arm5 = true;
+		else
+			BUG("nested scope offered a sibling arm's field");
+	}
+	if (n != 3 || !outer || !head || !arm5)
+		BUG("nested scope missed the base or the matched arm");
+}
+
+/*
  * Variant-scope invariant: when the resolved desc carries variants
  * keyed off a buffer-derived discriminator, collect_mutable_candidates
  * must only emit fields from the resolved variant -- never the parent's
@@ -736,6 +822,7 @@ void struct_field_mutate_self_check(void)
 	selftest_wide_raw();
 	selftest_skiplist();
 	selftest_variant_scope();
+	selftest_nested_scope();
 	selftest_depth_cap();
 	selftest_variant_address_walk();
 }
