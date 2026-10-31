@@ -344,6 +344,11 @@ unsigned int collect_mutable_candidates(unsigned char *buf,
 			continue;
 
 		if (field_tag_is_mutable_c2b(f->tag)) {
+			/* mutate_field_raw() leaves an FT_RAW field wider
+			 * than 4 bytes alone: a pick that lands on one would
+			 * be a trial spent on nothing. */
+			if (f->tag == FT_RAW && (f->size == 0 || f->size > 4))
+				continue;
 			out[collected].buf = buf;
 			out[collected].field = f;
 			out[collected].weight =

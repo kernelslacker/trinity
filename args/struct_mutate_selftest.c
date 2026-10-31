@@ -212,6 +212,46 @@ static void selftest_raw(void)
 }
 
 /*
+ * mutate_field_raw() leaves an FT_RAW field wider than 4 bytes alone, the
+ * shape fill_field_raw() walks past, so the collector must not offer one:
+ * a weighted pick that lands there is a trial that changes nothing.
+ */
+static void selftest_wide_raw(void)
+{
+	struct struct_field fields[] = {
+		{
+			.name		= "narrow",
+			.offset		= 0,
+			.size		= 4,
+			.tag		= FT_RAW,
+			.mutate_weight	= 60,
+		},
+		{
+			.name		= "wide",
+			.offset		= 4,
+			.size		= 16,
+			.tag		= FT_RAW,
+			.mutate_weight	= 40,
+		},
+	};
+	struct struct_desc desc = {
+		.name		= "selftest_wide_raw",
+		.struct_size	= 20,
+		.fields		= fields,
+		.num_fields	= ARRAY_SIZE(fields),
+	};
+	struct mutate_candidate cands[STRUCT_MUTATE_MAX_CANDIDATES];
+	unsigned char buf[20];
+	unsigned int n;
+
+	memset(buf, 0, sizeof(buf));
+	n = collect_mutable_candidates(buf, sizeof(buf), &desc, NULL, 0,
+				       cands, STRUCT_MUTATE_MAX_CANDIDATES);
+	if (n != 1 || strcmp(cands[0].field->name, "narrow") != 0)
+		BUG("collector offered an FT_RAW field mutate_field_raw ignores");
+}
+
+/*
  * Skip-list invariant: a struct whose only fields carry skip-listed
  * tags must round-trip byte-identical across many gated invocations
  * of struct_field_mutate_one().  The candidate collector should yield
@@ -693,6 +733,7 @@ void struct_field_mutate_self_check(void)
 	selftest_vocab();
 	selftest_range();
 	selftest_raw();
+	selftest_wide_raw();
 	selftest_skiplist();
 	selftest_variant_scope();
 	selftest_depth_cap();

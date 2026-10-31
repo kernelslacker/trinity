@@ -403,12 +403,12 @@ const struct struct_field sctp_event_fields[SCTP_EVENT_FIELDS_N] = {
  * peer-address retransmit / partial-failure threshold opt (RFC 5062 +
  * the peer-failure draft).  spt_assoc_id picks the target association
  * (FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP);
- * spt_address embeds a struct sockaddr_storage and is treated as a
- * single opaque FT_RAW blob spanning sizeof(struct sockaddr_storage)
- * -- the kernel matches it against the live peer address list rather
- * than parsing it field-wise, so the per-byte splat is the right
- * shape and field-splitting it would just give KCOV-CMP misleading
- * sub-field offsets for a value that is logically atomic.
+ * spt_address embeds a struct sockaddr_storage, one opaque FT_RAW
+ * field spanning it, not split into sub-fields KCOV-CMP would misread:
+ * the kernel matches it against the live peer address list rather
+ * than parsing it field-wise.  No fill or mutation touches an FT_RAW
+ * field over 4 bytes, so it keeps the zero bytes optval starts as, the
+ * wildcard address sctp_is_any() takes.
  * spt_pathmaxrxt is the per-path max retransmit (__u16, FT_RANGE
  * [0, 16] -- keeps it inside plausible retry budgets) and
  * spt_pathpfthld is the partial-failure threshold (__u16, FT_RANGE
@@ -461,12 +461,9 @@ const struct struct_field sctp_paddrthlds_v2_fields[SCTP_PADDRTHLDS_V2_FIELDS_N]
  * Per-peer UDP encapsulation port for SCTP-over-UDP (RFC 6951).
  * sue_assoc_id picks the target association (sctp_assoc_t / __u32,
  * FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP).
- * sue_address embeds a struct sockaddr_storage and is treated as a
- * single opaque FT_RAW blob spanning sizeof(struct sockaddr_storage)
- * -- the kernel matches it against the live peer address list rather
- * than parsing it field-wise, so the per-byte splat is the right
- * shape and field-splitting it would just give KCOV-CMP misleading
- * sub-field offsets for a value that is logically atomic.  sue_port
+ * sue_address embeds a struct sockaddr_storage, one opaque FT_RAW
+ * field that keeps optval's zero bytes, the wildcard address, as
+ * spt_address does in sctp_paddrthlds above.  sue_port
  * is the UDP encapsulation port (__u16, network/big-endian; FT_RAW
  * to let the per-byte splat exercise both bytes without anchoring
  * KCOV-CMP at a single canonical value).  Bespoke
@@ -486,13 +483,10 @@ const struct struct_field sctp_udpencaps_fields[SCTP_UDPENCAPS_FIELDS_N] = {
  * Per-peer-address heartbeat / PMTU / SACK-delay parameter block
  * (RFC 6458 7.1.13).  spp_assoc_id picks the target association
  * (sctp_assoc_t / __u32, FT_RAW so the per-assoc lookup constant
- * shows up to KCOV-CMP); spp_address embeds a struct sockaddr_storage
- * and is treated as a single opaque FT_RAW blob spanning
- * sizeof(struct sockaddr_storage) -- the kernel matches it against
- * the live peer address list rather than parsing it field-wise, so
- * the per-byte splat is the right shape and field-splitting it would
- * just give KCOV-CMP misleading sub-field offsets for a value that
- * is logically atomic.  spp_hbinterval / spp_pathmtu / spp_sackdelay
+ * shows up to KCOV-CMP); spp_address embeds a struct sockaddr_storage,
+ * one opaque FT_RAW field that keeps optval's zero bytes, the wildcard
+ * address, as spt_address does in sctp_paddrthlds above.
+ * spp_hbinterval / spp_pathmtu / spp_sackdelay
  * are __u32 timer/MTU/delay knobs (FT_RAW -- letting the per-byte
  * splat exercise the full range without anchoring KCOV-CMP at a
  * single canonical value); spp_pathmaxrxt is __u16, FT_RANGE
@@ -539,12 +533,10 @@ const struct struct_field sctp_paddrparams_fields[SCTP_PADDRPARAMS_FIELDS_N] = {
  * PLPMTUD (Packetization Layer Path MTU Discovery, RFC 8899) probe-interval
  * knob exposed by SCTP.  spi_assoc_id (sctp_assoc_t / __u32) picks the
  * target association -- FT_RAW so the per-assoc lookup constant shows up
- * to KCOV-CMP.  spi_address embeds a struct sockaddr_storage and is
- * treated as a single opaque FT_RAW blob; the kernel matches it against
- * the live peer address list rather than parsing it field-wise, so the
- * per-byte splat is the right shape and field-splitting it would just
- * give KCOV-CMP misleading sub-field offsets for a value that is
- * logically atomic.  spi_interval is the probe interval in milliseconds
+ * to KCOV-CMP.  spi_address embeds a struct sockaddr_storage, one
+ * opaque FT_RAW field that keeps optval's zero bytes, the wildcard
+ * address, as spt_address does in sctp_paddrthlds above.  spi_interval
+ * is the probe interval in milliseconds
  * (__u32, unsigned) -- FT_RANGE [0, 60000] keeps the splat inside the
  * documented kernel envelope (0 disables, otherwise plausible PMTUD
  * cadence) rather than scattering across the full u32 space.  Bespoke
@@ -570,12 +562,10 @@ const struct struct_field sctp_probeinterval_fields[SCTP_PROBEINTERVAL_FIELDS_N]
  * with no trailing padding; FIELD()/FIELDX() pick up that layout via
  * offsetof, no manual offset arithmetic required.  ssp_assoc_id
  * (FT_RAW) lets the per-assoc lookup constant flow to KCOV-CMP.
- * ssp_addr is opaque to the kernel's address-match path (it's
- * compared against the live peer list rather than parsed field-wise),
- * so a single FT_RAW splat over the whole sockaddr_storage is the
- * right granularity; field-splitting it would only give KCOV-CMP
- * misleading sub-field offsets for a value the kernel treats as
- * atomic.  Bespoke build_sctp_prim() zero-fills as a miss-fallback.
+ * ssp_addr, one opaque FT_RAW field over the whole sockaddr_storage,
+ * keeps optval's zero bytes, the wildcard address, as spt_address does
+ * in sctp_paddrthlds above.  Bespoke build_sctp_prim() zero-fills as a
+ * miss-fallback.
  */
 const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N] = {
 	FIELDX(struct sctp_prim, ssp_assoc_id, FT_RAW,
