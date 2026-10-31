@@ -5,9 +5,11 @@
 # entry its headers predate is skipped, a stale one or a wrong value fails, a
 # symbol only the Tier-2 kernel tree resolves is checked even under a hook's
 # GIT_DIR, a macro no probe header declares is compared with its definition in
-# the tree's installed headers, a constant that needs 64 bits is compared on
-# all of them, and unresolved symbols are one count.  No git runs here: a stub
-# answers the gate's revision lookup.
+# the tree's installed headers, a kernel name no installed header declares
+# with its definition in the tree's own headers unless trinity owns its
+# namespace, a constant that needs 64 bits is compared on all of them, and
+# unresolved symbols are one count.  No git runs here: a stub answers the
+# gate's revision lookup.
 
 set -u
 
@@ -36,7 +38,7 @@ cat > "$tree/shims.h" <<'EOF'
 EOF
 
 # The scratch tree harvests a handful of symbols, so every ratchet floor is 1.
-for floor in harvest probed tier1-probed text hdr; do
+for floor in harvest probed tier1-probed text hdr internal; do
 	echo 1 > "$tree/scripts/check-static/uapi-shim-$floor-floor.baseline"
 done
 
@@ -123,11 +125,16 @@ expect "listing requested: leaves out the other two" \
 # selftest_text.h is a header no probe set includes, which only the text
 # lookup of Case 7 reads, and its selftest_hdr.h one that declares an
 # expression and an enum member, which only the per-header probe of Case 8
-# can evaluate.  Like the real git, the stub answers for the caller's
+# can evaluate.  The tree's own linux/selftest_internal.h declares
+# SELFTEST_INTERNAL_BASE, which no header installs, for the internal-header
+# lookup of Case 9.  Like the real git, the stub answers for the caller's
 # repository if GIT_* redirects it.
 linus="$work/linus"
 hdrs="$work/cache/trinity/linus-hdrs-0123abc/include"
-mkdir -p "$linus/include/uapi" "$work/bin" "$hdrs/linux"
+mkdir -p "$linus/include/uapi" "$linus/include/linux" "$linus/include/net" \
+	"$linus/net" "$work/bin" "$hdrs/linux"
+printf '#define SELFTEST_INTERNAL_BASE 6\n' > "$linus/include/linux/selftest_internal.h"
+printf '#define SELFTEST_INTERNAL_BASE 6\n' > "$tree/internal-shims.h"
 cat > "$work/bin/git" <<'EOF'
 #!/bin/sh
 if env | grep -qE '^GIT_(DIR|WORK_TREE|INDEX_FILE|OBJECT_DIRECTORY|COMMON_DIR|PREFIX)='; then
@@ -176,6 +183,8 @@ expect "tier2 tree: the one macro only its header text declares is verified" \
 	grep -q 'text-verified 1 ' "$work/out"
 expect "tier2 tree: the expression and the enum member only their header evaluates are verified" \
 	grep -q 'hdr-verified 2 ' "$work/out"
+expect "tier2 tree: the kernel name only an internal header declares is verified" \
+	grep -q 'internal-verified 1 ' "$work/out"
 expect "wide constants: the three that need 64 bits are compared on all of them" \
 	grep -q 'wide-checked 3 ' "$work/out"
 
@@ -391,6 +400,81 @@ run_gate "NDA_DST 1" "${tier2[@]}"
 expect "hdr floor above the verified count: gate fails" [ "$rc" -ne 0 ]
 expect "hdr floor above the verified count: names both numbers" \
 	grep -q 'coverage ratchet: hdr-verified 4 < hdr_floor 99' "$work/out"
+
+# Case 9: a kernel name that no installed header declares is compared with its
+# definition in the tree's own include/linux, include/net and net/ headers.
+# Besides SELFTEST_INTERNAL_BASE of Case 5, include/net/selftest_internal.h
+# declares a flag and a taint bit number, which are read, and a name in a
+# namespace trinity owns, a name with no underscore and one defined for two
+# configs, which are not.  It also gives SELFTEST_HDR_TWO, which an installed
+# header declares, a value that the shim does not carry: an installed header
+# goes first.  A header deeper in net/ is read; one in drivers/ is not.  The
+# shims of the names not read match nothing the internal headers say, so a
+# lookup that judged them anyway would fail.
+echo 1 > "$tree/scripts/check-static/uapi-shim-hdr-floor.baseline"
+cat > "$linus/include/net/selftest_internal.h" <<'EOF'
+#define SELFTEST_INTERNAL_FLAG (1 << 6)
+#define TAINT_SELFTEST 21
+#define MAX_SELFTEST_LEN 64
+#define SELFTESTINTERNALBUF 31744
+#ifdef CONFIG_SELFTEST
+#define SELFTEST_INTERNAL_CFG 0x80000000
+#else
+#define SELFTEST_INTERNAL_CFG 0
+#endif
+#define SELFTEST_HDR_TWO 5
+EOF
+mkdir -p "$linus/net/selftest" "$linus/drivers"
+printf '#define SELFTEST_INTERNAL_PROTO 3\n' > "$linus/net/selftest/selftest.h"
+printf '#define SELFTEST_INTERNAL_DRIVER 5\n' > "$linus/drivers/selftest.h"
+cat > "$tree/internal-more-shims.h" <<'EOF'
+#define SELFTEST_INTERNAL_FLAG	64
+#define TAINT_SELFTEST	21
+#define MAX_SELFTEST_LEN	4096
+#define SELFTESTINTERNALBUF	1024
+#define SELFTEST_INTERNAL_CFG	0x80000000
+#define SELFTEST_INTERNAL_PROTO	3
+#define SELFTEST_INTERNAL_DRIVER	6
+EOF
+
+run_gate "NDA_DST 1" "${tier2[@]}" UAPI_SHIM_VALUES_LIST=1
+expect "internal headers: gate passes" [ "$rc" -eq 0 ]
+expect "internal headers: the flag, the taint bit and the names in net/ and include/linux are verified" \
+	grep -q 'internal-verified 4 ' "$work/out"
+expect "internal headers: what an installed header evaluates is not looked up again" \
+	test "$(grep -c SELFTEST_HDR_TWO "$work/err")" -eq 0
+for sym in SELFTEST_INTERNAL_CFG SELFTEST_INTERNAL_DRIVER; do
+	expect "internal headers: $sym stays unresolved" \
+		grep -q "^WARN: uapi-shim-values: unresolved uapi-shaped symbol: $sym\$" "$work/err"
+done
+expect "internal headers: the names trinity owns are counted, not judged" \
+	grep -q 'not-uapi-shaped 3 ' "$work/out"
+
+# One run catches a wrong value read from an internal header, in include/net,
+# for a taint bit and deeper in net/, and names the header it came from.
+cp "$tree/internal-more-shims.h" "$work/internal-more-shims.good"
+sed -i -E -e 's/^(#define SELFTEST_INTERNAL_FLAG[[:space:]]+)64$/\132/' \
+	-e 's/^(#define TAINT_SELFTEST[[:space:]]+)21$/\122/' \
+	-e 's/^(#define SELFTEST_INTERNAL_PROTO[[:space:]]+)3$/\14/' \
+	"$tree/internal-more-shims.h"
+run_gate "NDA_DST 1" "${tier2[@]}"
+expect "internal header values differ: gate fails" [ "$rc" -ne 0 ]
+for row in \
+	"SELFTEST_INTERNAL_FLAG|32|64|include/net/selftest_internal.h" \
+	"TAINT_SELFTEST|22|21|include/net/selftest_internal.h" \
+	"SELFTEST_INTERNAL_PROTO|4|3|net/selftest/selftest.h"; do
+	IFS='|' read -r sym have want header <<< "$row"
+	expect "internal header value differs, $sym: names the symbol, both values and the header" \
+		grep -qF "FAIL: uapi-shim-values: $sym shim wrong: have $have (=$have), want $want (internal header $header)" "$work/err"
+done
+
+# The count of symbols read from internal headers is ratcheted like the others.
+cp "$work/internal-more-shims.good" "$tree/internal-more-shims.h"
+echo 99 > "$tree/scripts/check-static/uapi-shim-internal-floor.baseline"
+run_gate "NDA_DST 1" "${tier2[@]}"
+expect "internal floor above the verified count: gate fails" [ "$rc" -ne 0 ]
+expect "internal floor above the verified count: names both numbers" \
+	grep -q 'coverage ratchet: internal-verified 4 < internal_floor 99' "$work/out"
 
 total=$((pass + fail))
 

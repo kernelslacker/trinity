@@ -27,9 +27,11 @@
 #                  obtain the authoritative integer value for each symbol.
 #                  With TRINITY_LINUS_SRC set the probe repeats against that
 #                  kernel tree's installed headers, a macro still unresolved
-#                  is read out of their text instead (Step 4c), and what is
-#                  left is evaluated by compiling the one installed header
-#                  that declares it (Step 4d).
+#                  is read out of their text instead (Step 4c), what is left
+#                  is evaluated by compiling the one installed header that
+#                  declares it (Step 4d), and a kernel name that no installed
+#                  header declares is read out of the tree's own headers
+#                  (Step 4e).
 #   3. Compare  -- for every compiler-resolved symbol, every occurrence of
 #                  that symbol in trinity's source must carry the compiler's
 #                  value, and for every text-resolved or header-compiled one
@@ -55,6 +57,7 @@ TIER1_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-tier1-probed-floor.b
 HARVEST_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-harvest-floor.baseline"
 TEXT_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-text-floor.baseline"
 HDR_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-hdr-floor.baseline"
+INTERNAL_FLOOR_FILE="$(dirname "$PROBED_FLOOR_FILE")/uapi-shim-internal-floor.baseline"
 
 # ---------------------------------------------------------------------------
 # Prerequisites
@@ -855,27 +858,73 @@ ran*)
 esac
 
 # ---------------------------------------------------------------------------
+# Step 4e: Tier 2 internal text -- kernel names that no uapi header declares
+# Some of what trinity shims is not uapi: the taint bit numbers of
+# linux/panic.h, the SOL_* levels and kernel-only MSG_* flags of
+# linux/socket.h, the bluetooth socket options, TSO_LEGACY_MAX_SIZE.
+# headers_install exports none of them.  When Tier 2 ran, a symbol still
+# unresolved is read out of the tree's include/linux, include/net and net/
+# headers as Step 4c reads the installed ones, and compared like them.  An
+# enum member stays unresolved, since an internal header does not compile
+# alone, and so does a macro with two definitions (MSG_CMSG_COMPAT is 0
+# without CONFIG_COMPAT).
+#
+# Those headers share names with constants of trinity's own (f2fs's
+# MAX_PATH_LEN, a USB driver's BUFSIZE), which a lookup would accuse.  Only
+# a name with an underscore outside the namespaces trinity owns is read:
+#   TRINITY_ NR_ MAX_ MIN_ DEFAULT_ __NR_   bookkeeping names
+#   HAVE_ USE_                              configure and per-syscall switches
+#   GROUP_ RET_                             syscall group and return enums
+#   _FUZZ_ (anywhere)                       ioctl generator tunables
+# ---------------------------------------------------------------------------
+TRINITY_OWNED_RE='^(TRINITY_|NR_|MAX_|MIN_|DEFAULT_|__NR_|HAVE_|USE_|GROUP_|RET_)|_FUZZ_'
+INTERNAL_WANT="$WORKDIR/internal-want.txt"
+INTERNAL_OBS="$WORKDIR/internal-obs.txt"
+INTERNAL_TABLE="$WORKDIR/internal-table.txt"
+INTERNAL_VERIFIED=0
+INTERNAL_RAN=0
+: > "$INTERNAL_TABLE"
+case "$TIER2_STATUS" in
+ran*)
+    grep _ "$SYMS_BAD" | grep -vE "$TRINITY_OWNED_RE" > "$INTERNAL_WANT" || true
+    if [ -s "$INTERNAL_WANT" ]; then
+        INTERNAL_RAN=1
+        if ! (set -o pipefail
+              text_scan "$LINUS_SRC/include/linux" "$LINUS_SRC/include/net" \
+                  "$LINUS_SRC/net" > "$INTERNAL_OBS"); then
+            echo "FAIL: $NAME: Tier-2 text scan of the internal headers of $LINUS_SRC failed"
+            exit 1
+        fi
+        text_resolve "$INTERNAL_WANT" "$LINUS_SRC" "$INTERNAL_OBS" > "$INTERNAL_TABLE"
+
+        # A symbol read from an internal header leaves the unresolved set.
+        cut -d' ' -f2 "$INTERNAL_TABLE" | sort -u > "$WORKDIR/syms-internal.txt"
+        comm -23 "$SYMS_BAD" "$WORKDIR/syms-internal.txt" > "$WORKDIR/syms-bad-internal.txt"
+        cp "$WORKDIR/syms-bad-internal.txt" "$SYMS_BAD"
+        INTERNAL_VERIFIED=$(wc -l < "$INTERNAL_TABLE" | tr -d ' ')
+    fi
+    ;;
+esac
+
+# ---------------------------------------------------------------------------
 # Unresolved-uapi reporting
-# After both tiers, the text lookup and the per-header probe, a symbol still
-# unresolved is either trinity's own or a constant no installed uapi header
-# declares: newer or older than the tree, from a kernel-internal header, or a
-# header no probe compiles.  Neither is a FAIL, because there is nothing to
-# compare the second kind against.  It is also a large standing property of
-# the tree, and a line per symbol would drown the FAIL lines, so it is
-# reported as one count.
+# After the text lookups and the per-header probe, a symbol still unresolved
+# is either trinity's own or a constant no installed uapi header declares:
+# newer or older than the tree, an enum member or an expression of a
+# kernel-internal header, or in a header no probe compiles.  Neither is a
+# FAIL, because there is nothing to compare the second kind against.  It is
+# also a large standing property of the tree, and a line per symbol would
+# drown the FAIL lines, so it is reported as one count.
 # UAPI_SHIM_VALUES_LIST=1 names the uapi-shaped symbols.
 #
 # "uapi-shaped" is ALL_CAPS with an underscore that no known-private prefix
 # claims.  Everything else unresolved is only counted (not-uapi-shaped): the
-# prefixes below, and names with no underscore, a few of which are real
-# constants (CLOCKFD).  The prefixes are namespaces trinity owns:
-#   TRINITY_ NR_ MAX_ MIN_ DEFAULT_ __NR_   bookkeeping names
-#   HAVE_ USE_                              configure and per-syscall switches
-#   TAINT_                                  kernel taint bit numbers
-#   GROUP_ RET_                             syscall group and return enums
-#   _FUZZ_ (anywhere)                       ioctl generator tunables
+# prefixes, and names with no underscore, a few of which are real constants
+# (CLOCKFD).  The prefixes are the namespaces trinity owns (TRINITY_OWNED_RE,
+# Step 4e) and TAINT_, the kernel's taint bit numbers, which no uapi header
+# declares and only Step 4e reads.
 # ---------------------------------------------------------------------------
-KNOWN_MISSING_RE='^(TRINITY_|NR_|MAX_|MIN_|DEFAULT_|__NR_|HAVE_|USE_|TAINT_|GROUP_|RET_)|_FUZZ_'
+KNOWN_MISSING_RE="$TRINITY_OWNED_RE|^TAINT_"
 SYMS_UAPI_SHAPED="$WORKDIR/syms-uapi-shaped.txt"
 total_unresolved=$(wc -l < "$SYMS_BAD" | tr -d ' ')
 grep -E '_' "$SYMS_BAD" | grep -vE "$KNOWN_MISSING_RE" > "$SYMS_UAPI_SHAPED" || true
@@ -958,6 +1007,18 @@ if [ "$hdr_floor" -eq 0 ]; then
     exit 1
 fi
 
+internal_floor=0
+if [ -f "$INTERNAL_FLOOR_FILE" ]; then
+    internal_floor=$(grep -oE '^[0-9]+' "$INTERNAL_FLOOR_FILE" | head -1 || true)
+    internal_floor=${internal_floor:-0}
+fi
+
+if [ "$internal_floor" -eq 0 ]; then
+    echo "FAIL: $NAME: internal floor is unseeded (uapi-shim-internal-floor.baseline contains 0 or is missing)"
+    echo "FAIL: $NAME: seed it with a real observed internal-verified count before enabling the ratchet"
+    exit 1
+fi
+
 # Tier-2 breakage states: the linus tree was present and Tier-2 was entered
 # but failed to produce usable output.  These are not environment differences --
 # they indicate a broken build environment or a regressed probe path.  Fail
@@ -981,9 +1042,9 @@ fi
 #
 #   ran*         Tier-2 ran and augmented Tier-1 results.  Enforce the
 #                Tier-2-inclusive floor (PROBED_FLOOR_FILE), and, when the
-#                text lookup or the per-header probe had symbols to
-#                resolve, the count each verified (TEXT_FLOOR_FILE,
-#                HDR_FLOOR_FILE).
+#                text lookup, the per-header probe or the internal-header
+#                lookup had symbols to resolve, the count each verified
+#                (TEXT_FLOOR_FILE, HDR_FLOOR_FILE, INTERNAL_FLOOR_FILE).
 #
 #   skipped: linus tree absent
 #                Genuine environment difference; skip both floors.
@@ -999,6 +1060,10 @@ ran*)
     fi
     if [ "$HDR_RAN" -eq 1 ] && [ "$HDR_VERIFIED" -lt "$hdr_floor" ]; then
         echo "FAIL: $NAME: coverage ratchet: hdr-verified $HDR_VERIFIED < hdr_floor $hdr_floor"
+        exit 1
+    fi
+    if [ "$INTERNAL_RAN" -eq 1 ] && [ "$INTERNAL_VERIFIED" -lt "$internal_floor" ]; then
+        echo "FAIL: $NAME: coverage ratchet: internal-verified $INTERNAL_VERIFIED < internal_floor $internal_floor"
         exit 1
     fi
     ;;
@@ -1021,8 +1086,8 @@ esac
 # Step 5: Compare trinity values against compiler values
 # For each compiler-resolvable symbol, every occurrence in the harvest must
 # carry the compiler's authoritative value, for each symbol read from header
-# text (Step 4c) the value that text gives, and for each one a header was
-# compiled for (Step 4d) the value that compile gives.
+# text (Steps 4c and 4e) the value that text gives, and for each one a header
+# was compiled for (Step 4d) the value that compile gives.
 #
 # Normalisation: both sides are converted to signed 32-bit integer to match
 # what the probe C code does ((int)SYM via printf("%d",...)).  This means:
@@ -1042,7 +1107,8 @@ esac
 MISMATCH_FILE="$WORKDIR/mismatches.txt"
 
 awk -v harvest_file="$HARVEST" -v wide_file="$WIDE_TABLE" \
-    -v text_file="$TEXT_TABLE" -v hdr_file="$HDR_TABLE" '
+    -v text_file="$TEXT_TABLE" -v hdr_file="$HDR_TABLE" \
+    -v internal_file="$INTERNAL_TABLE" '
 # Return numeric value of a single hex digit character (0-9, a-f, A-F)
 function hd(c) {
     return (c >= "0" && c <= "9") ? (c + 0) : (index("0123456789abcdef", tolower(c)) - 1)
@@ -1086,7 +1152,7 @@ function hex8(x,   s, i) {
     }
     return s
 }
-BEGIN { fail = 0; checked = 0; checked_text = 0; checked_hdr = 0; checked_wide = 0 }
+BEGIN { fail = 0; checked = 0; checked_text = 0; checked_hdr = 0; checked_internal = 0; checked_wide = 0 }
 # Pass 1: load harvest into memory (SYM -> space-separated list of values),
 # then the symbols that need 64 bits (SYM -> HEX).
 # Use FILENAME == harvest_file rather than the FNR == NR idiom: if the harvest
@@ -1100,7 +1166,8 @@ FILENAME == harvest_file {
 }
 FILENAME == wide_file { wide[$1] = $2; next }
 # Pass 2: process the compiler table (format: DECIMAL_VALUE SYM), then the
-# text and header tables (DECIMAL_VALUE SYM FILE), counting them apart.
+# text, header and internal tables (DECIMAL_VALUE SYM FILE), counting them
+# apart.
 {
     compiler_val = int($1)
     sym = $2
@@ -1111,6 +1178,9 @@ FILENAME == wide_file { wide[$1] = $2; next }
     } else if (FILENAME == hdr_file) {
         checked_hdr++
         source = "compiled with installed header " $3
+    } else if (FILENAME == internal_file) {
+        checked_internal++
+        source = "internal header " $3
     } else {
         checked++
         source = "compiler"
@@ -1140,14 +1210,16 @@ FILENAME == wide_file { wide[$1] = $2; next }
         }
     }
 }
-END { print fail, checked, checked_text, checked_hdr, checked_wide }
-' "$HARVEST" "$WIDE_TABLE" "$COMPILER_TABLE" "$TEXT_TABLE" "$HDR_TABLE" > "$MISMATCH_FILE"
+END { print fail, checked, checked_text, checked_hdr, checked_internal, checked_wide }
+' "$HARVEST" "$WIDE_TABLE" "$COMPILER_TABLE" "$TEXT_TABLE" "$HDR_TABLE" \
+    "$INTERNAL_TABLE" > "$MISMATCH_FILE"
 
-read fail checked checked_text checked_hdr checked_wide < "$MISMATCH_FILE"
+read fail checked checked_text checked_hdr checked_internal checked_wide < "$MISMATCH_FILE"
 fail=${fail:-0}
 checked=${checked:-0}
 checked_text=${checked_text:-0}
 checked_hdr=${checked_hdr:-0}
+checked_internal=${checked_internal:-0}
 checked_wide=${checked_wide:-0}
 
 # ---------------------------------------------------------------------------
@@ -1214,25 +1286,27 @@ if [ "$total_fail" -gt 0 ]; then
 fi
 
 # Invariant 1: every harvested symbol is either resolvable, read from header
-# text, evaluated in its header or unresolved.  harvested = resolvable
-# + text-verified + hdr-verified + total_unresolved; a mismatch indicates a
-# bookkeeping bug.
+# text, evaluated in its header, read from an internal header or unresolved.
+# harvested = resolvable + text-verified + hdr-verified + internal-verified
+# + total_unresolved; a mismatch indicates a bookkeeping bug.
 #
 # Note: the not-uapi-shaped class (names matching KNOWN_MISSING_RE, or with no
 # underscore) is NOT a separate term here.  Those symbols failed the compiler
 # probe and therefore live in SYMS_BAD, folded into total_unresolved.  They are
 # only split out in the *reporting* step (unresolved-uapi count).
 # So the identity is: harvested = resolvable + text-verified + hdr-verified
+#                                 + internal-verified
 #                                 + (unresolved-uapi + not-uapi-shaped)
 #                   = resolvable + text-verified + hdr-verified
-#                                 + total_unresolved  ✓
-if [ "$harvested" -ne $((probed + TEXT_VERIFIED + HDR_VERIFIED + total_unresolved)) ]; then
-    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + text-verified $TEXT_VERIFIED + hdr-verified $HDR_VERIFIED + unresolved $total_unresolved" >&2
+#                                 + internal-verified + total_unresolved  ✓
+if [ "$harvested" -ne $((probed + TEXT_VERIFIED + HDR_VERIFIED + INTERNAL_VERIFIED + total_unresolved)) ]; then
+    echo "FAIL: $NAME: invariant broken: harvested $harvested != resolvable $probed + text-verified $TEXT_VERIFIED + hdr-verified $HDR_VERIFIED + internal-verified $INTERNAL_VERIFIED + unresolved $total_unresolved" >&2
     exit 1
 fi
 
 # Invariant 2: every resolvable symbol must have been verified, and so must
-# every symbol read from text or evaluated in its header.
+# every symbol read from text, evaluated in its header or read from an
+# internal header.
 # verified (checked) < resolvable (probed) means symbols were silently skipped.
 if [ "$checked" -ne "$probed" ]; then
     echo "FAIL: $NAME: invariant broken: verified $checked != resolvable $probed ($((probed - checked)) symbol(s) resolved but not verified)" >&2
@@ -1246,11 +1320,15 @@ if [ "$checked_hdr" -ne "$HDR_VERIFIED" ]; then
     echo "FAIL: $NAME: invariant broken: verified from headers $checked_hdr != hdr-verified $HDR_VERIFIED" >&2
     exit 1
 fi
+if [ "$checked_internal" -ne "$INTERNAL_VERIFIED" ]; then
+    echo "FAIL: $NAME: invariant broken: verified from internal headers $checked_internal != internal-verified $INTERNAL_VERIFIED" >&2
+    exit 1
+fi
 
 case "$TIER1_STATUS" in
     ok) ;;
     *) echo "FAIL: $NAME: unknown TIER1_STATUS '$TIER1_STATUS'" >&2; exit 1 ;;
 esac
 
-echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / hdr-verified $HDR_VERIFIED / wide-checked $checked_wide / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor / hdr_floor=$hdr_floor)"
+echo "PASS: $NAME (harvested $harvested / resolvable $probed / verified $checked / text-verified $TEXT_VERIFIED / hdr-verified $HDR_VERIFIED / internal-verified $INTERNAL_VERIFIED / wide-checked $checked_wide / baseline-skipped $baseline_skipped / unresolved-uapi $unresolved_uapi_count / not-uapi-shaped $not_uapi_shaped_count / tier1=$TIER1_STATUS / tier2=$TIER2_STATUS / ratchet_floor=$probed_floor / tier1_floor=$tier1_floor / text_floor=$text_floor / hdr_floor=$hdr_floor / internal_floor=$internal_floor)"
 exit 0

@@ -454,7 +454,17 @@ update this section to match `ls scripts/check-static/*.sh`.)
   the enum members of the generic-netlink headers and the expression macros
   that no probe set holds.  A symbol the header only names in a comment, one
   two headers evaluate differently, and one whose header no retry compiles
-  stay unresolved.  Symbols still unresolved are
+  stay unresolved.
+  A kernel name that no installed header declares (the taint bit numbers,
+  the `SOL_*` levels, the bluetooth socket options) is then read, again only
+  with a `TRINITY_LINUS_SRC` tree, out of that tree's own `include/linux`,
+  `include/net` and `net/` headers as the text lookup reads the installed
+  ones (`internal-verified` in the `PASS` line, ratcheted by
+  `scripts/check-static/uapi-shim-internal-floor.baseline`).  Those headers
+  reuse names that trinity gives constants of its own, so only a name with an
+  underscore outside the namespaces trinity owns (`MAX_`, `NR_`, `DEFAULT_`
+  and the like) is looked up, and an enum member stays unresolved, since an
+  internal header does not compile alone.  Symbols still unresolved are
   reported as one count: `unresolved-uapi` for the uapi-shaped
   ones (ALL_CAPS with an underscore) and `not-uapi-shaped` for names with a
   trinity-owned prefix or no underscore, a few of which are real constants.
@@ -473,7 +483,13 @@ update this section to match `ls scripts/check-static/*.sh`.)
   either, or of a symbol whose header needs the base include, fails and names
   the header, that a symbol two headers evaluate differently, one a header
   only names and one whose header does not compile stay unresolved, and that
-  its own floor is enforced.  For the 64-bit comparison it asserts that
+  its own floor is enforced.  For the internal-header lookup it asserts that
+  a kernel name only the tree's own headers declare, in `include/linux`,
+  `include/net` or deeper in `net/`, is verified and a wrong one fails and
+  names the header, that a name in a namespace trinity owns, one with no
+  underscore, one defined for two configs and one under `drivers/` are not
+  judged, that a name an installed header declares is not looked up again,
+  and that its floor is enforced.  For the 64-bit comparison it asserts that
   constants the host's headers, the kernel tree's headers, a header compiled
   alone and header text give 64 bits are compared on all of them, so that a
   shim with only a high bit wrong, or the 32-bit all-ones for a 64-bit one,
