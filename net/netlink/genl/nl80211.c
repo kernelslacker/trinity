@@ -30,11 +30,11 @@ static const struct genl_cmd_grammar nl80211_cmds[] = {
  *   KEY_IDX     U8, max 7
  *   REG_ALPHA2  BINARY, 2..3
  *   SSID        BINARY, up to IEEE80211_MAX_SSID_LEN (32)
- *   WIPHY_NAME  NUL_STRING, no .len => 64 is plenty
+ *   WIPHY_NAME  NUL_STRING, len 20-1 (19)
  */
 static const struct nla_attr_spec nl80211_attrs[] = {
 	{ NL80211_ATTR_WIPHY,             NLA_KIND_U32,    4 },
-	{ NL80211_ATTR_WIPHY_NAME,        NLA_KIND_STRING, 64, 1 },
+	{ NL80211_ATTR_WIPHY_NAME,        NLA_KIND_STRING, 19, 1 },
 	{ NL80211_ATTR_WIPHY_FREQ,        NLA_KIND_U32,    4 },
 	{ NL80211_ATTR_IFINDEX,           NLA_KIND_U32,    4 },
 	{ NL80211_ATTR_IFNAME,            NLA_KIND_STRING, 15, 1 },
