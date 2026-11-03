@@ -232,47 +232,69 @@ REG_FD_PROV(bpf_map_fd_provider);
  * BPF program fd provider.
  *
  * Loads a small set of verifier-clean template programs at startup
- * (one per supported program type) and publishes the resulting fds
- * into the global object pool.  Other syscalls — setsockopt with
- * SO_ATTACH_BPF, perf_event_open + PERF_EVENT_IOC_SET_BPF, the
- * bpf(PROG_ATTACH/LINK_CREATE) commands, etc. — pull these fds via
- * get_rand_bpf_prog_fd() and end up exercising the cross-subsystem
- * paths that hold most live BPF CVEs.
+ * (one per supported program type, plus one per multi attach type)
+ * and publishes the resulting fds into the global object pool.
+ * Other syscalls — setsockopt with SO_ATTACH_BPF, perf_event_open +
+ * PERF_EVENT_IOC_SET_BPF, the bpf(PROG_ATTACH/LINK_CREATE) commands,
+ * etc. — pull these fds via get_rand_bpf_prog_fd() and end up
+ * exercising the cross-subsystem paths that hold most live BPF CVEs.
+ *
+ * The multi entries matter because link_create() pairs a program
+ * with the attach type it was loaded for: a kprobe program loaded
+ * with no expected attach type can only take a perf-event link, so
+ * the kprobe_multi / uprobe_multi arms never saw a pooled prog.
+ * Loading one template per multi attach type gives each arm a prog
+ * whose expected attach type names it.
  *
  * Capability gates reject most program types when trinity runs
  * unprivileged; the init loop tries each template and keeps whichever
  * successfully loaded.  ENOSYS on any attempt latches the whole
  * provider off (kernel built without BPF).  EPERM/EACCES on a single
- * type just skips that template.
+ * type just skips that template.  The tracing-multi entries also
+ * need vmlinux BTF at load time and fail with -EINVAL without it,
+ * which skips them the same way.
  */
 struct bpf_prog_template {
 	u32 prog_type;
+	u32 expected_attach_type;
 	const char *name;
 };
 
 static struct bpf_prog_template bpf_prog_templates[] = {
-	{ BPF_PROG_TYPE_SOCKET_FILTER,	"socket_filter" },
-	{ BPF_PROG_TYPE_KPROBE,		"kprobe" },
-	{ BPF_PROG_TYPE_TRACEPOINT,	"tracepoint" },
-	{ BPF_PROG_TYPE_CGROUP_SKB,	"cgroup_skb" },
-	{ BPF_PROG_TYPE_CGROUP_SOCK,	"cgroup_sock" },
-	{ BPF_PROG_TYPE_XDP,		"xdp" },
-	{ BPF_PROG_TYPE_PERF_EVENT,	"perf_event" },
-	{ BPF_PROG_TYPE_RAW_TRACEPOINT,	"raw_tracepoint" },
-	{ BPF_PROG_TYPE_SCHED_CLS,	"sched_cls" },
-	{ BPF_PROG_TYPE_SCHED_ACT,	"sched_act" },
+	{ BPF_PROG_TYPE_SOCKET_FILTER,	0,				"socket_filter" },
+	{ BPF_PROG_TYPE_KPROBE,		0,				"kprobe" },
+	{ BPF_PROG_TYPE_TRACEPOINT,	0,				"tracepoint" },
+	{ BPF_PROG_TYPE_CGROUP_SKB,	0,				"cgroup_skb" },
+	{ BPF_PROG_TYPE_CGROUP_SOCK,	0,				"cgroup_sock" },
+	{ BPF_PROG_TYPE_XDP,		0,				"xdp" },
+	{ BPF_PROG_TYPE_PERF_EVENT,	0,				"perf_event" },
+	{ BPF_PROG_TYPE_RAW_TRACEPOINT,	0,				"raw_tracepoint" },
+	{ BPF_PROG_TYPE_SCHED_CLS,	0,				"sched_cls" },
+	{ BPF_PROG_TYPE_SCHED_ACT,	0,				"sched_act" },
+	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_MULTI,		"kprobe_multi" },
+	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_SESSION,	"kprobe_session" },
+	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_UPROBE_MULTI,		"uprobe_multi" },
+	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_UPROBE_SESSION,	"uprobe_session" },
+	{ BPF_PROG_TYPE_TRACING,	BPF_TRACE_FENTRY_MULTI,		"tracing_fentry_multi" },
+	{ BPF_PROG_TYPE_TRACING,	BPF_TRACE_FEXIT_MULTI,		"tracing_fexit_multi" },
+	{ BPF_PROG_TYPE_TRACING,	BPF_TRACE_FSESSION_MULTI,	"tracing_fsession_multi" },
 };
 
-#define MAX_BPF_PROG_FDS	10
+/* One fd slot per template, so adding a template never silently
+ * drops one past the cap. */
+#define MAX_BPF_PROG_FDS	ARRAY_SIZE(bpf_prog_templates)
 
 static const char bpf_prog_license[] = "GPL";
 
-static int bpf_load_template_prog(unsigned int prog_type)
+static int bpf_load_template_prog(unsigned int prog_type,
+				  unsigned int expected_attach_type)
 {
 	/*
 	 * The minimal verifier-clean program: r0 = 0; exit.
 	 * Two instructions, no helper calls, no map references — passes
-	 * every prog type that doesn't require a BTF attach target.
+	 * every prog type that doesn't require a BTF attach target,
+	 * including the multi attach types, which need vmlinux BTF
+	 * only for the tracing-multi trio.
 	 */
 	struct bpf_insn insns[] = {
 		EBPF_MOV64_IMM(BPF_REG_0, 0),
@@ -282,6 +304,7 @@ static int bpf_load_template_prog(unsigned int prog_type)
 
 	memset(&attr, 0, sizeof(attr));
 	attr.prog_type = prog_type;
+	attr.expected_attach_type = expected_attach_type;
 	attr.insn_cnt = ARRAY_SIZE(insns);
 	attr.insns = (u64)(uintptr_t)insns;
 	attr.license = (u64)(uintptr_t)bpf_prog_license;
@@ -289,10 +312,15 @@ static int bpf_load_template_prog(unsigned int prog_type)
 	return bpf(BPF_PROG_LOAD, &attr, sizeof(attr));
 }
 
-static const char *bpf_prog_template_name(u32 prog_type)
+static const char *bpf_prog_template_name(u32 prog_type,
+					  u32 expected_attach_type)
 {
 	unsigned int i;
 
+	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++)
+		if (bpf_prog_templates[i].prog_type == prog_type &&
+		    bpf_prog_templates[i].expected_attach_type == expected_attach_type)
+			return bpf_prog_templates[i].name;
 	for (i = 0; i < ARRAY_SIZE(bpf_prog_templates); i++)
 		if (bpf_prog_templates[i].prog_type == prog_type)
 			return bpf_prog_templates[i].name;
@@ -310,7 +338,8 @@ static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf prog fd:%d type:%s scope:%d\n",
 		obj->bpfprogobj.fd,
-		bpf_prog_template_name(obj->bpfprogobj.prog_type),
+		bpf_prog_template_name(obj->bpfprogobj.prog_type,
+				       obj->bpfprogobj.expected_attach_type),
 		scope);
 }
 
@@ -333,7 +362,8 @@ static int init_bpf_prog_fds(void)
 		struct object *obj;
 		int fd;
 
-		fd = bpf_load_template_prog(bpf_prog_templates[i].prog_type);
+		fd = bpf_load_template_prog(bpf_prog_templates[i].prog_type,
+					bpf_prog_templates[i].expected_attach_type);
 		if (fd < 0) {
 			/*
 			 * ENOSYS = no BPF in this kernel; fail the whole
@@ -354,7 +384,8 @@ static int init_bpf_prog_fds(void)
 		obj->bpfprogobj.fd = fd;
 		obj->bpfprogobj.prog_type = bpf_prog_templates[i].prog_type;
 		obj->bpfprogobj.expected_attach_type =
-			bpf_prog_loaded_attach_type(bpf_prog_templates[i].prog_type, 0);
+			bpf_prog_loaded_attach_type(bpf_prog_templates[i].prog_type,
+						    bpf_prog_templates[i].expected_attach_type);
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 		__atomic_add_fetch(&shm->stats.ebpf_gen.progs_provided, 1,
 				   __ATOMIC_RELAXED);
