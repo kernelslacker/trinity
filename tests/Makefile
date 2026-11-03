@@ -63,9 +63,10 @@ LDFLAGS		+= -Wl,--wrap=lseek
 # exactly once.  The wrapper always forwards to the real close().
 LDFLAGS		+= -Wl,--wrap=close
 
-# NETLINK_GENERIC socket seam: genl_ops_test.c wraps socket() to hand the
-# genl family resolver a unix socketpair that carries a canned controller
-# reply.  Any other AF_NETLINK request fails, so no test can open a real
+# Netlink socket seam: fake_net.c wraps socket() so a test can say what
+# an AF_NETLINK socket() returns; genl_ops_test.c hands the genl family
+# resolver a unix socketpair that carries a canned controller reply.
+# Unhooked, an AF_NETLINK request fails, so no test can open a real
 # netlink socket; every other domain goes to the real call.
 LDFLAGS		+= -Wl,--wrap=socket
 

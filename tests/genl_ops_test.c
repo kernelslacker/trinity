@@ -102,20 +102,17 @@ static struct reply canned;
 static const struct reply *serve;	/* what socket() hands out; NULL turns netlink away */
 static int peer_fd = -1;
 
+extern int (*fake_netlink_socket)(int type, int protocol);	/* fake_net.c */
+
 /*
  * The resolver's socket: a unix datagram socketpair with the canned reply
- * already queued on its end.  Netlink is refused otherwise, so nothing
- * here can reach a real netlink socket.
+ * already queued on its end.  Any other netlink socket is refused.
  */
-int __real_socket(int domain, int type, int protocol);
-int __wrap_socket(int domain, int type, int protocol);
-int __wrap_socket(int domain, int type, int protocol)
+static int genl_socket(int type, int protocol)
 {
 	int sv[2];
 
-	if (domain != AF_NETLINK)
-		return __real_socket(domain, type, protocol);
-
+	(void)type;
 	if (serve == NULL || protocol != NETLINK_GENERIC) {
 		errno = EPROTONOSUPPORT;
 		return -1;
@@ -4073,7 +4070,9 @@ void genl_ops_self_check(void)
 {
 	build_reply(&canned);
 	serve = &canned;
+	fake_netlink_socket = genl_socket;
 	genl_resolve_families();
+	fake_netlink_socket = NULL;
 	if (serve != NULL)
 		BUG("genl ops: the resolver never opened its socket");
 
