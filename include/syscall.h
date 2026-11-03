@@ -727,12 +727,14 @@ struct syscallentry {
 	/*
 	 * Opt-in flag for the userns-admin lane.  When any active entry
 	 * sets it, init_child_setup_sandbox() performs
-	 * unshare(CLONE_NEWUSER|CLONE_NEWNET) and writes an identity
-	 * uid/gid map after the capset(empty) drop.  The child then
-	 * holds full capabilities inside its own user namespace, making
-	 * ns_capable(net->user_ns, cap) gates reachable for GENL_UNS_
-	 * ADMIN_PERM commands sent on sockets opened in the child's
-	 * private netns, which holds only lo.  The capset(empty) drop
+	 * unshare(CLONE_NEWUSER|CLONE_NEWNET|CLONE_NEWNS) and writes an
+	 * identity uid/gid map after the capset(empty) drop.  The child
+	 * then holds full capabilities inside its own user namespace,
+	 * making ns_capable(net->user_ns, cap) gates reachable for
+	 * GENL_UNS_ADMIN_PERM commands sent on sockets opened in the
+	 * child's private netns, which holds only lo, and making the
+	 * mount namespace the unshare copied one the child administers.
+	 * The capset(empty) drop
 	 * still runs first; the child holds no capabilities in
 	 * init_user_ns.  Gated on
 	 * /proc/sys/user/max_user_namespaces > 0 via shm->no_userns_lane.

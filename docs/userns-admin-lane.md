@@ -128,7 +128,7 @@ The mechanism, in the order `init_child_setup_sandbox()` runs it:
 ```
 capset(empty)                         /* no caps left in init_user_ns */
 capture cap-drop oracle ns anchors    /* names the pre-lane namespaces */
-unshare(CLONE_NEWUSER|CLONE_NEWNET)   /* new userns + new netns */
+unshare(CLONE_NEWUSER|CLONE_NEWNET|CLONE_NEWNS)   /* new userns + new netns + new mount ns */
 write uid_map / setgroups / gid_map   /* identity map */
 ```
 
@@ -146,9 +146,10 @@ How the oracle probes see a lane-active child:
 - The `bpf(BPF_PROG_LOAD, KPROBE)` probe is unconditional and still fails:
   the gate calls `capable(CAP_SYS_ADMIN)` → `ns_capable(&init_user_ns, ...)`
   → false (no caps in `init_user_ns`).
-- The `mount()` probe hits `may_mount()`, which checks the user namespace
-  that owns the child's mount namespace — `init_user_ns`, because the lane
-  unshares only the user and net namespaces — also false.
+- The `mount()` probe is skipped once the lane has moved the child's
+  mount namespace: its anchor, captured before the lane, no longer
+  matches, and `may_mount()` legitimately holds inside the lane's
+  mount namespace, which the child's own user namespace owns.
 - The `SO_RCVBUFFORCE` probe opens its socket at probe time, inside the
   lane's netns, where the child holds `CAP_NET_ADMIN`.  Its polarity is
   therefore inverted while `child_userns_lane_is_active()` is true: success
@@ -172,11 +173,15 @@ The two privilege lanes must not interfere:
   set, no uid_map write.  The cap-drop oracle behaves identically to today.
 
 - Children that **do** have `userns_admin_lane` set run the extended sandbox
-  (unshare + map write) after the cap-drop.  These children are structurally
-  separated from the host-cap surface: after `capset(empty)` they cannot reach
-  class-1 or class-3 surfaces any more than an unextended child can.  The
-  ns_capable-gated surfaces are reachable inside the child's private namespaces;
-  they are not reachable from the host perspective.
+  (unshare of user, net and mount namespaces + map write) after the
+  cap-drop.  These children are structurally separated from the host-cap
+  surface: after `capset(empty)` they cannot reach class-1 or class-3
+  surfaces any more than an unextended child can.  The ns_capable-gated
+  surfaces are reachable inside the child's private namespaces; they
+  are not reachable from the host perspective.  The mount namespace
+  copy is owned by the child's user namespace, which is also what
+  lets `NS_MNT_GET_NEXT` / `NS_MNT_GET_PREV` steps return the
+  namespaces the child administers instead of answering `-ENOENT`.
 
 - The opt-in flag on `struct syscallentry` is the sole control point.
   `sendmsg` sets it: its sanitiser is the only one that builds
@@ -197,14 +202,16 @@ The two privilege lanes must not interfere:
 
 These are the lowest-friction starting point:
 
-- `unshare(CLONE_NEWUSER|CLONE_NEWNET)` plus an identity uid/gid map write is
-  the complete setup; no secondary mounts, no filesystem teardown.
+- `unshare(CLONE_NEWUSER|CLONE_NEWNET|CLONE_NEWNS)` plus an identity uid/gid
+  map write is the complete setup; no secondary mounts, no filesystem
+  teardown.
 - The gate resolves `net->user_ns` from the sending socket's netns, which is
   guaranteed to be the child's private netns after the unshare.  There is no
   ambiguity about which `user_ns` the kernel will use.
 - The cap-drop oracle needs only one adjustment: the `SO_RCVBUFFORCE` probe
-  flips polarity under the lane (described above); the `bpf` and `mount`
-  probes keep their `init_user_ns` expectation.
+  flips polarity under the lane (described above); the `bpf` probe keeps
+  its `init_user_ns` expectation, and the `mount` and `capget` probes are
+  skipped once the lane has moved their anchor namespaces.
 - Failure modes are limited: the child either gets `EPERM` (userns disabled,
   handled by the latch) or successfully enters the lane and fuzzes genl write
   cmds.
@@ -240,7 +247,7 @@ The scaffold adds:
      if set.
    - reads `/proc/sys/user/max_user_namespaces`; if the value is `<= 0` or
      unreadable, sets the latch and returns.
-   - calls `unshare(CLONE_NEWUSER | CLONE_NEWNET)`.
+   - calls `unshare(CLONE_NEWUSER | CLONE_NEWNET | CLONE_NEWNS)`.
    - writes uid_map, setgroups, gid_map for an identity map.
    - on `EPERM` from the unshare: sets the `no_userns_lane` latch and returns.
 

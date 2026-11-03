@@ -54,8 +54,8 @@
 /*
  * Check whether any active syscall entry requests the userns-admin lane.
  * Returns the first matching entry, or NULL if none does.  Used at child
- * setup time to decide whether to unshare into a private user+net namespace
- * after the capset(empty) drop.
+ * setup time to decide whether to unshare into a private user, net and
+ * mount namespace after the capset(empty) drop.
  *
  * Only the shm-level active_syscalls array is consulted because
  * child->active_syscalls is not yet assigned when init_child_setup_sandbox
@@ -122,9 +122,13 @@ static bool child_userns_lane_active;
  *      unreadable, latch shm->no_userns_lane and return.
  *   2. Capture euid/egid before the unshare (kernel checks the pre-unshare
  *      euid when validating the single-line identity idmap write).
- *   3. unshare(CLONE_NEWUSER | CLONE_NEWNET).
+ *   3. unshare(CLONE_NEWUSER | CLONE_NEWNET | CLONE_NEWNS).
  *      On EPERM: latch shm->no_userns_lane and return (policy denial).
  *      On other failure: return without latching (transient, may not recur).
+ *      The mount namespace copy is owned by the new user namespace, so
+ *      may_mount() holds inside it and the mount namespace is one the
+ *      child administers: NS_MNT_GET_NEXT/PREV steps can return it and
+ *      the namespaces a fuzzed unshare creates after it.
  *   4. Write uid_map, setgroups=deny, gid_map.
  *      Failure here is logged but does not latch; the cap-drop has already
  *      run and the child fuzz loop runs without userns-lane caps.
@@ -140,11 +144,11 @@ static bool child_userns_lane_active;
  * private user namespace, never in init_user_ns, so:
  *   - capable(CAP_*)   -> ns_capable(&init_user_ns, cap) -> false
  *   - ns_capable(child_userns, cap)                      -> true
- * The cap-drop oracle stays correct: its bpf and mount probes gate on
- * init_user_ns paths and still fail, the net_admin probe flips polarity
- * while child_userns_lane_is_active(), and the capget probe is skipped
- * because the anchors, captured before this call, no longer match the
- * child's user namespace.
+ * The cap-drop oracle stays correct: its bpf probe gates on
+ * init_user_ns and still fails, the net_admin probe flips polarity
+ * while child_userns_lane_is_active(), and the capget and mount probes
+ * are skipped because the anchors, captured before this call, no longer
+ * match the child's user and mount namespaces.
  */
 static void maybe_enter_userns_admin_lane(int childno)
 {
@@ -195,13 +199,14 @@ static void maybe_enter_userns_admin_lane(int childno)
 	uid = geteuid();
 	gid = getegid();
 
-	if (unshare(CLONE_NEWUSER | CLONE_NEWNET) != 0) {
+	if (unshare(CLONE_NEWUSER | CLONE_NEWNET | CLONE_NEWNS) != 0) {
 		if (errno == EPERM) {
 			if (!__atomic_exchange_n(&shm->no_userns_lane, true,
 						 __ATOMIC_RELAXED))
 				outputerr("child %d: userns-admin lane: "
-					  "unshare(CLONE_NEWUSER|CLONE_NEWNET) "
-					  "EPERM (policy); latching off\n",
+					  "unshare(CLONE_NEWUSER|CLONE_NEWNET|"
+					  "CLONE_NEWNS) EPERM (policy); "
+					  "latching off\n",
 					  childno);
 		} else {
 			outputerr("child %d: userns-admin lane: "

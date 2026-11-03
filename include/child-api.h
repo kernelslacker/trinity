@@ -169,7 +169,7 @@ void capdrop_oracle_capture_init_ns_anchors(void);
 
 /*
  * True iff this child entered the userns-admin lane: it holds a full
- * capability set over a user and net namespace of its own
+ * capability set over user, net and mount namespaces of its own
  * (child-init-sandbox.c).
  */
 bool child_userns_lane_is_active(void);
