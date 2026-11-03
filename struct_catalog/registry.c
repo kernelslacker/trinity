@@ -80,14 +80,16 @@ struct slot_binding {
 /*
  * Slot-binding pool.  A registered row takes at most one cell per arch
  * table, and rows for the same (nr, arg) slot share it, so twice the
- * row count bounds the pool on any arch.  The 41 rows (every optional
- * family compiled in) cover 11 distinct (syscall, arg) slots: at most
- * 22 cells, and 82 under the up-front bound.  The pool holds about
- * twice that bound.  struct_catalog_init() BUG()s up front when twice
- * the rows no longer fits, so an overgrown table fails on every arch
- * rather than on whichever resolves enough names to overflow it, and
- * BUG()s again if a registration overflows the pool or the per-slot
- * variant cap, rather than silently dropping mappings.
+ * number of distinct (syscall_name, arg_idx) pairs bounds the pool on
+ * any arch: a pair resolves to at most one cell in each of the two
+ * tables, and a name that resolves in neither, or an arg_idx outside
+ * 1..6, takes none.  The 41 rows (every optional family compiled in)
+ * cover 11 distinct slots: at most 22 cells.  The pool holds about
+ * eight times that.  struct_catalog_init() BUG()s up front when twice
+ * the distinct slots no longer fits, so an overgrown table fails on
+ * every arch rather than on whichever resolves enough names to
+ * overflow it, and BUG()s again if a registration overflows the pool
+ * or the per-slot variant cap, rather than silently dropping mappings.
  */
 #define SLOT_POOL_MAX			192
 
@@ -255,11 +257,46 @@ static void slot_binding_attach(const struct slot_binding *table[MAX_NR_SYSCALL]
 	b->discrim[b->num_discrim++] = sa;
 }
 
+/*
+ * Distinct (syscall_name, arg_idx) pairs in the registration table.
+ * Compared by name, not by resolved number, so the count is the same
+ * on every arch: name resolution is what differs between them.  Rows
+ * sharing a pair share one slot_binding cell per table, so this is
+ * the count the SLOT_POOL_MAX pre-check bounds.  Init-only, over a
+ * small table, so the quadratic rescan is immaterial.  Rows with an
+ * arg_idx the attach loop skips take no cell and are not counted.
+ */
+static unsigned int count_distinct_slots(void)
+{
+	const struct syscall_struct_arg_group *g, *g2;
+	const struct syscall_struct_arg *sa, *sb;
+	unsigned int distinct = 0;
+
+	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa) {
+		bool seen = false;
+
+		if (sa->arg_idx < 1 || sa->arg_idx > 6)
+			continue;
+		FOR_EACH_SYSCALL_STRUCT_ARG(g2, sb) {
+			if (sb == sa)
+				break;
+			if (sb->arg_idx == sa->arg_idx &&
+			    strcmp(sb->syscall_name, sa->syscall_name) == 0) {
+				seen = true;
+				break;
+			}
+		}
+		if (!seen)
+			distinct++;
+	}
+	return distinct;
+}
+
 void struct_catalog_init(void)
 {
 	const struct syscall_struct_arg_group *g;
 	const struct syscall_struct_arg *sa;
-	unsigned int rows = 0;
+	unsigned int slots;
 	unsigned int i;
 	int nr;
 
@@ -280,14 +317,14 @@ void struct_catalog_init(void)
 
 	validate_syscall_struct_args();
 
-	FOR_EACH_SYSCALL_STRUCT_ARG(g, sa)
-		rows++;
-	if (2 * rows > SLOT_POOL_MAX) {
-		output(0, "struct_catalog: %u registered rows can take up to "
-		       "%u slot cells but SLOT_POOL_MAX is %u -- raise "
-		       "SLOT_POOL_MAX or trim the registration tables\n",
-		       rows, 2 * rows, (unsigned int) SLOT_POOL_MAX);
-		BUG("struct_catalog: SLOT_POOL_MAX too small for the registered rows");
+	slots = count_distinct_slots();
+	if (2 * slots > SLOT_POOL_MAX) {
+		output(0, "struct_catalog: %u distinct (syscall, arg) slots "
+		       "can take up to %u slot cells but SLOT_POOL_MAX is "
+		       "%u -- raise SLOT_POOL_MAX or trim the registration "
+		       "tables\n",
+		       slots, 2 * slots, (unsigned int) SLOT_POOL_MAX);
+		BUG("struct_catalog: SLOT_POOL_MAX too small for the distinct slots");
 	}
 
 	memset(desc_by_nr_64, 0, sizeof(desc_by_nr_64));
