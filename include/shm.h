@@ -267,7 +267,7 @@ struct shm_s {
 	 * /proc/sys/user/max_user_namespaces read as <= 0.  Stored in shm
 	 * so all children latch off the lane without repeated EPERM
 	 * probes.  The latch is consulted only when at least one active
-	 * syscallentry has userns_admin_lane set; baseline runs are
+	 * syscallentry has userns_admin_lane set; runs without one are
 	 * unaffected. */
 	bool no_userns_lane;
 

@@ -725,21 +725,24 @@ struct syscallentry {
 	bool is_execve;
 
 	/*
-	 * Opt-in flag for the userns-admin lane.  When true,
-	 * init_child_setup_sandbox() performs
+	 * Opt-in flag for the userns-admin lane.  When any active entry
+	 * sets it, init_child_setup_sandbox() performs
 	 * unshare(CLONE_NEWUSER|CLONE_NEWNET) and writes an identity
-	 * uid/gid map before the capset(empty) drop.  The child then
+	 * uid/gid map after the capset(empty) drop.  The child then
 	 * holds full capabilities inside its own user namespace, making
 	 * ns_capable(net->user_ns, cap) gates reachable for GENL_UNS_
 	 * ADMIN_PERM commands sent on sockets opened in the child's
-	 * private netns.  The capset(empty) drop still runs; the child
-	 * holds no capabilities in init_user_ns.  Gated on
+	 * private netns, which holds only lo.  The capset(empty) drop
+	 * still runs first; the child holds no capabilities in
+	 * init_user_ns.  Gated on
 	 * /proc/sys/user/max_user_namespaces > 0 via shm->no_userns_lane.
 	 *
-	 * Default false for all entries.  Set explicitly on per-childop
-	 * syscallentry descriptors after the stray-namespace audit has
-	 * been completed for that surface.  The generic random-fuzz path
-	 * never activates this lane.
+	 * Default false.  Set only on entries whose sanitiser sends
+	 * the gated requests: sendmsg, the sole entry whose
+	 * sanitiser builds structured netlink messages.  Because the
+	 * lane decision walks the run's whole active set, a set
+	 * entry engages the lane for every child of the run, not
+	 * only for children sending that call.
 	 */
 	bool userns_admin_lane;
 

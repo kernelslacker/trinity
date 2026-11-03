@@ -178,10 +178,16 @@ The two privilege lanes must not interfere:
   ns_capable-gated surfaces are reachable inside the child's private namespaces;
   they are not reachable from the host perspective.
 
-- The opt-in flag on `struct syscallentry` is the sole control point.  No
-  childop sets it until it has been audited to confirm it does not leak userns
-  credentials back into host-scoped objects.  The flag is never set by the
-  generic random-fuzz path; it is a per-childop annotation applied explicitly.
+- The opt-in flag on `struct syscallentry` is the sole control point.
+  `sendmsg` sets it: its sanitiser is the only one that builds
+  structured netlink messages, which a lane child sends on sockets of
+  its own (see the unlock mechanism above), and the lane decision walks
+  the run's whole active set, so the flag engages the lane for every
+  child of a run with `sendmsg` active.  Keeping host-netns children
+  alongside lane children (a per-child coin) was decided against: every
+  child runs in the private netns, which holds only lo.  No childop sets
+  the flag until it has been audited to confirm it does not leak userns
+  credentials back into host-scoped objects.
 
 ---
 
@@ -226,7 +232,7 @@ ioctl's file argument was not opened before the namespace transition.
 The scaffold adds:
 
 1. `bool userns_admin_lane` field on `struct syscallentry` (default `false`;
-   no existing entry sets it).
+   set only by `sendmsg`).
 
 2. A helper `maybe_enter_userns_admin_lane()` in `child/child-init-sandbox.c`
    that:

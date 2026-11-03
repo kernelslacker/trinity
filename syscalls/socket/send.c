@@ -487,6 +487,18 @@ out_free:
 	post_state_release(rec, snap);
 }
 
+/*
+ * The userns-admin lane's entry: sanitise_sendmsg() is the only
+ * sanitiser that builds structured netlink messages (the gen_msg
+ * hook), so the GENL_UNS_ADMIN_PERM / rtnl / nfnetlink grammars
+ * reach their handlers only from a child in a private user+net
+ * namespace, sending on a socket it opened there
+ * (lane_netlink_socketinfo()).  The lane decision walks the run's
+ * active set, so this engages the lane for every child while
+ * sendmsg is active; a child that never sends netlink still runs
+ * in the private netns, which holds only lo.  The cap-drop
+ * oracle's net_admin probe flips polarity while the lane is active.
+ */
 struct syscallentry syscall_sendmsg = {
 	.name = "sendmsg",
 	.num_args = 3,
@@ -498,6 +510,7 @@ struct syscallentry syscall_sendmsg = {
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.rettype = RET_NUM_BYTES,
+	.userns_admin_lane = true,
 };
 /*
  * SYSCALL_DEFINE4(sendmmsg, int, fd, struct mmsghdr __user *, mmsg,

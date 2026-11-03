@@ -567,8 +567,9 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 *
 	 * Only engaged when at least one active syscallentry has
 	 * userns_admin_lane set and the kernel permits unprivileged user
-	 * namespaces.  No entry currently sets the flag; this is a no-op
-	 * for all baseline runs.
+	 * namespaces.  sendmsg sets it, so a run with sendmsg active
+	 * engages the lane for every child; a run without it (for
+	 * example -c on another call) is unchanged.
 	 */
 	if (find_userns_lane_entry() != NULL)
 		maybe_enter_userns_admin_lane(childno);
