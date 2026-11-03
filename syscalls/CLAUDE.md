@@ -74,7 +74,11 @@ literals `tables/` copies into shared memory.
    the writable pool lies past 4 GiB, so `get_writable_address()` and its
    siblings draw a compat call's buffers from the MAP_32BIT low pool,
    going by the ABI of `this_child()`'s record, which the sanitiser builds
-   the call in (`rand/CLAUDE.md`).
+   the call in (`rand/CLAUDE.md`).  Iovec arrays go further: a compat
+   call reads 32-bit entries, so the generic iovec path and the socket
+   sanitisers draw `struct compat_iovec` arrays from a MAP_32BIT pool
+   twin, and `sendmsg`/`recvmsg` build a `struct compat_msghdr` in the
+   low pool instead of the native heap layout.
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

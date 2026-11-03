@@ -240,9 +240,10 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 * Mirrors madvise.c's throwaway mapping for the same advice on the
 	 * plain madvise(2) path.  The kernel reads the advice as an int, and
 	 * vet_final_process_madvise() refuses a GUARD_INSTALL a rewrite makes
-	 * later, or one whose iovecs leave the mapping.  A compat call reads
-	 * 32-bit iovecs at the low 32 bits of the slot, never the array set
-	 * here, so it is handed a count of 0 instead.
+	 * later, or one whose iovecs leave the mapping.  The throwaway
+	 * logic below writes native iovec entries, which a compat call
+	 * would read as 32-bit entries, so a compat call is handed a
+	 * count of 0 instead.
 	 */
 	if ((int) rec->a4 == MADV_GUARD_INSTALL) {
 		struct process_madvise_post_state *snap;

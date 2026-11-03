@@ -389,10 +389,111 @@ struct recvmsg_post_state {
 	void *name;
 };
 
+/*
+ * Compat twin of sanitise_recvmsg().  Same shape as
+ * sanitise_sendmsg_compat(): a struct compat_msghdr in the low pool,
+ * a compat iovec array, and a low name/control buffer, so the compat
+ * kernel reads the layout it expects at an address its 32-bit
+ * pointer reaches.  The msghdr is pool memory, never rec_owned, and
+ * its name is NULL in the snapshot.
+ */
+static void sanitise_recvmsg_compat(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct compat_msghdr *msg;
+	struct compat_iovec *iov = NULL;
+	struct recvmsg_post_state *snap;
+	unsigned long iov_len_sum = 0;
+
+	if (si == NULL)
+		goto skip_si;
+
+	rec->a1 = fd_from_socketinfo(si);
+
+skip_si:
+	msg = get_writable_struct(sizeof(struct compat_msghdr));
+	if (msg == NULL || (unsigned long) msg > UINT_MAX)
+		goto no_msg;
+	memset(msg, 0, sizeof(*msg));
+
+	/* msg_name is purely a kernel write-target, as in the native
+	 * path: a full sockaddr_storage slot in the low pool. */
+	{
+		void *namebuf = get_writable_struct(sizeof(struct sockaddr_storage));
+
+		if (namebuf != NULL) {
+			msg->msg_name = (unsigned int)(unsigned long) namebuf;
+			msg->msg_namelen = sizeof(struct sockaddr_storage);
+		}
+	}
+
+	if (RAND_BOOL()) {
+		unsigned int num_entries = RAND_RANGE(1, 3);
+
+		iov = alloc_compat_iovec(num_entries, IOV_KERNEL_WRITE);
+		if (iov != NULL) {
+			msg->msg_iov = (unsigned int)(unsigned long) iov;
+			msg->msg_iovlen = num_entries;
+		}
+	}
+
+	if (RAND_BOOL()) {
+		void *control = get_writable_address(4096);
+
+		if (control != NULL &&
+		    (unsigned long) control <= UINT_MAX) {
+			msg->msg_control = (unsigned int)(unsigned long) control;
+			msg->msg_controllen = rnd_modulo_u32(4096);
+		} else {
+			msg->msg_controllen = 0;
+		}
+	}
+
+	if (ONE_IN(100))
+		msg->msg_flags = rand32();
+	else
+		msg->msg_flags = 0;
+
+	scrub_compat_msghdr_for_kernel_write(msg);
+
+	if (msg->msg_iov != 0 && msg->msg_iovlen != 0) {
+		unsigned int i;
+
+		for (i = 0; i < msg->msg_iovlen; i++)
+			iov_len_sum += iov[i].iov_len;
+	}
+
+	rec->a2 = (unsigned long) msg;
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = RECVMSG_POST_STATE_MAGIC;
+	snap->msg = (struct msghdr *) msg;
+	snap->iov_len_sum = iov_len_sum;
+	snap->name = NULL;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	return;
+
+no_msg:
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = RECVMSG_POST_STATE_MAGIC;
+	snap->msg = NULL;
+	snap->iov_len_sum = 0;
+	snap->name = NULL;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	rec->a2 = 0;
+}
+
 static void sanitise_recvmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
+
+	if (rec->do32bit) {
+		sanitise_recvmsg_compat(rec);
+		return;
+	}
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
 	struct recvmsg_post_state *snap;

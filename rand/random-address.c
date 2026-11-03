@@ -609,6 +609,17 @@ void scrub_msghdr_for_kernel_write(struct msghdr *msg)
 	scrub_iovec_for_kernel_write(msg->msg_iov, msg->msg_iovlen);
 }
 
+void scrub_compat_msghdr_for_kernel_write(struct compat_msghdr *msg)
+{
+	struct compat_iovec *iov;
+
+	if (msg == NULL || msg->msg_iov == 0 || msg->msg_iovlen == 0)
+		return;
+
+	iov = (struct compat_iovec *) (unsigned long) msg->msg_iov;
+	scrub_compat_iovec_for_kernel_write(iov, msg->msg_iovlen);
+}
+
 /*
  * Per-entry iovec shape picker.  Returns a bucket index that the
  * alloc_iovec() loop dispatches on so individual entries get NULL /

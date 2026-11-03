@@ -167,10 +167,169 @@ struct sendmsg_post_state {
 	unsigned int _pad;
 };
 
+/*
+ * Compat twin of sanitise_sendmsg().  A compat call's kernel reads a
+ * struct compat_msghdr at the low 32 bits of the pointer and
+ * 32-bit iovec entries, so the native msghdr -- a heap struct the
+ * 32-bit pointer truncates, read field-by-field as compat layout --
+ * would hand it msg_control as the high half of msg_iov.  Build the
+ * compat layout in the low pool instead, with a compat iovec array
+ * and a low name buffer.  Pointers that do not fit in 32 bits drop
+ * to NULL / 0 rather than truncating to a different mapping.
+ * Ancillary data is not built: cmsg_build() writes native
+ * struct cmsghdr, which the compat converter would misread, so a
+ * compat call gets the random-buffer or empty control arms only.
+ * The msghdr itself is pool memory, not a tracked allocation, so
+ * it is never rec_owned and its name is NULL in the snapshot; the
+ * post handler frees nothing for it.
+ */
+static void sanitise_sendmsg_compat(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct compat_msghdr *msg;
+	struct compat_iovec *iov = NULL;
+	struct sockaddr *sa = NULL;
+	socklen_t salen = 0;
+	struct sendmsg_post_state *snap;
+	unsigned long iov_len_sum = 0;
+	unsigned int iovlen = 0;
+
+	rec->a4 = 0;
+
+	if (si == NULL)
+		goto skip_si;
+
+	si = lane_netlink_socketinfo(si);
+	rec->a1 = fd_from_socketinfo(si);
+	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
+
+skip_si:
+	msg = get_writable_struct(sizeof(struct compat_msghdr));
+	if (msg == NULL || (unsigned long) msg > UINT_MAX)
+		goto no_msg;
+	memset(msg, 0, sizeof(*msg));
+
+	if (sa != NULL && salen != 0) {
+		void *namebuf = get_writable_struct(salen);
+
+		if (namebuf != NULL &&
+		    (unsigned long) namebuf <= UINT_MAX) {
+			memcpy(namebuf, sa, salen);
+			msg->msg_name = (unsigned int)(unsigned long) namebuf;
+			msg->msg_namelen = (int) salen;
+		}
+	}
+	tracked_free_now(sa);
+
+	if (si != NULL && !ONE_IN(4)) {
+		const struct netproto *proto;
+		unsigned int family = si->triplet.family;
+
+		if (family < TRINITY_PF_MAX) {
+			proto = net_protocols[family].proto;
+			if (proto != NULL && proto->gen_msg != NULL) {
+				void *gen_buf = NULL;
+				size_t gen_len = 0;
+				void *kbuf;
+
+				proto->gen_msg(&si->triplet, &gen_buf, &gen_len);
+				if (gen_buf != NULL && gen_len != 0) {
+					kbuf = get_writable_struct(gen_len);
+					if (kbuf != NULL &&
+					    (unsigned long) kbuf <= UINT_MAX) {
+						memcpy(kbuf, gen_buf, gen_len);
+						iov = get_writable_address(
+							UIO_MAXIOV * sizeof(struct compat_iovec));
+						if (iov != NULL) {
+							memset(iov, 0,
+							       UIO_MAXIOV * sizeof(struct compat_iovec));
+							iov[0].iov_base = (unsigned int)(unsigned long) kbuf;
+							iov[0].iov_len = (unsigned int) gen_len;
+							iovlen = 1;
+							iov_len_sum = gen_len;
+							rec->a4 = 1;
+						}
+					}
+					free(gen_buf);
+				} else {
+					free(gen_buf);
+				}
+			}
+		}
+	}
+
+	if (iov == NULL) {
+		iov = alloc_compat_iovec(1, IOV_KERNEL_READ);
+		if (iov != NULL) {
+			scrub_compat_iovec_for_kernel_write(iov, 1);
+			iovlen = 1;
+			iov_len_sum = iov[0].iov_len;
+		}
+	}
+
+	if (iov != NULL) {
+		msg->msg_iov = (unsigned int)(unsigned long) iov;
+		msg->msg_iovlen = iovlen;
+	}
+
+	if (ONE_IN(5)) {
+		void *control = get_writable_address(72);
+
+		if (control != NULL &&
+		    (unsigned long) control <= UINT_MAX) {
+			msg->msg_control = (unsigned int)(unsigned long) control;
+			msg->msg_controllen = RAND_BOOL() ? 0 : 72;
+		}
+	}
+
+	if (ONE_IN(100))
+		msg->msg_flags = rand32();
+	else
+		msg->msg_flags = 0;
+
+	scrub_compat_msghdr_for_kernel_write(msg);
+
+	if (msg->msg_iov != 0 && msg->msg_iovlen != 0) {
+		/* Recompute after the scrub, as in the native path. */
+		iov_len_sum = iov[0].iov_len;
+	}
+
+	rec->a2 = (unsigned long) msg;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct compat_msghdr));
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SENDMSG_POST_STATE_MAGIC;
+	snap->msg = (struct msghdr *) msg;
+	snap->iov_len_sum = iov_len_sum;
+	snap->name = NULL;
+	snap->family = (si != NULL) ? (unsigned int) si->triplet.family : 0u;
+	snap->_pad = 0;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	return;
+
+no_msg:
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SENDMSG_POST_STATE_MAGIC;
+	snap->msg = NULL;
+	snap->iov_len_sum = 0;
+	snap->name = NULL;
+	snap->family = 0;
+	snap->_pad = 0;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	rec->a2 = 0;
+}
+
 static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
+
+	if (rec->do32bit) {
+		sanitise_sendmsg_compat(rec);
+		return;
+	}
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
 	struct sendmsg_post_state *snap;

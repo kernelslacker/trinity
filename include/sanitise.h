@@ -71,6 +71,7 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
 void scrub_compat_iovec_for_kernel_write(struct compat_iovec *iov,
 					 unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
+void scrub_compat_msghdr_for_kernel_write(struct compat_msghdr *msg);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
 /*
