@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>	// UINT_MAX for compat entry fit checks
 #include <setjmp.h>	// sigsetjmp for asb_relocate copy-fault recovery
 #include <stdlib.h>	// exit / EXIT_FAILURE for alloc_iovec_init
 #include <sys/uio.h>
@@ -483,6 +484,39 @@ unsigned long find_previous_arg_address(struct syscallentry *entry, struct sysca
 
 
 /*
+ * Whether the iovec scrubs below zero the entry [base, base + len), by
+ * the rule scrub_iovec_for_kernel_write() describes.  An entry they zero
+ * for a libc heap overlap is counted here.
+ */
+static bool iov_entry_needs_scrub(unsigned long base, unsigned long len)
+{
+	bool overlap_shared, overlap_heap;
+
+	if (base == 0 || len == 0)
+		return false;
+
+	if (range_in_call_pools(base, len))
+		return false;
+
+	overlap_shared = range_overlaps_shared(base, len);
+	overlap_heap = range_overlaps_libc_heap(base, len);
+	if (!overlap_shared && !overlap_heap)
+		return false;
+
+	if (shm != NULL && overlap_heap) {
+		struct childdata *c = this_child();
+
+		if (c != NULL && c->stats_ring != NULL)
+			stats_ring_enqueue(c->stats_ring,
+					   STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
+					   0, 1);
+		else
+			parent_stats.libc_heap_embedded_redirected++;
+	}
+	return true;
+}
+
+/*
  * Second-pass scrub of an iovec[] handed to a kernel-write syscall
  * (readv / preadv* / process_vm_readv / recvmsg / recvmmsg / process_
  * madvise -- and the corresponding kernel-read syscalls where a
@@ -524,33 +558,31 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
 		count = UIO_MAXIOV;
 
 	for (i = 0; i < count; i++) {
-		unsigned long base = (unsigned long) iov[i].iov_base;
-		unsigned long len = iov[i].iov_len;
-		bool overlap_shared, overlap_heap;
-
-		if (base == 0 || len == 0)
+		if (!iov_entry_needs_scrub((unsigned long) iov[i].iov_base,
+					   iov[i].iov_len))
 			continue;
-
-		if (range_in_call_pools(base, len))
-			continue;
-
-		overlap_shared = range_overlaps_shared(base, len);
-		overlap_heap = range_overlaps_libc_heap(base, len);
-		if (!overlap_shared && !overlap_heap)
-			continue;
-
 		iov[i].iov_base = NULL;
 		iov[i].iov_len = 0;
-		if (shm != NULL && overlap_heap) {
-			struct childdata *c = this_child();
+	}
+}
 
-			if (c != NULL && c->stats_ring != NULL)
-				stats_ring_enqueue(c->stats_ring,
-						   STATS_FIELD_LIBC_HEAP_EMBEDDED_REDIRECTED,
-						   0, 1);
-			else
-				parent_stats.libc_heap_embedded_redirected++;
-		}
+/* Compat twin of scrub_iovec_for_kernel_write(), walking 32-bit entries. */
+void scrub_compat_iovec_for_kernel_write(struct compat_iovec *iov,
+					 unsigned long count)
+{
+	unsigned long i;
+
+	if (iov == NULL || count == 0)
+		return;
+
+	if (count > UIO_MAXIOV)
+		count = UIO_MAXIOV;
+
+	for (i = 0; i < count; i++) {
+		if (!iov_entry_needs_scrub(iov[i].iov_base, iov[i].iov_len))
+			continue;
+		iov[i].iov_base = 0;
+		iov[i].iov_len = 0;
 	}
 }
 
@@ -773,6 +805,76 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 }
 
 /*
+ * Compat twin of fill_iov_entry_map_backed(): same map pick, length
+ * choice and scrub tail, writing 32-bit entries.  A base that does
+ * not fit in 32 bits names a different mapping once truncated, so
+ * the entry drops to NULL / 0 instead of being truncated: the map
+ * pick already prefers a sub-4 GiB mapping for a compat call, but
+ * it falls back to the first passing draw when none turns up, and
+ * the writable-pool replacement in a parent or test context can
+ * also sit high.  The scrub relocation is re-checked for the same
+ * reason.
+ */
+static inline void fill_compat_iov_entry_map_backed(struct compat_iovec *iov,
+						    unsigned int i,
+						    enum iov_direction dir,
+						    enum iovec_entry_shape shape)
+{
+	struct map *map;
+	unsigned long base;
+
+	if (dir == IOV_KERNEL_READ)
+		map = get_map_with_prot(PROT_READ);
+	else
+		map = get_map();
+	if (map == NULL || (unsigned long) map->ptr > UINT_MAX) {
+		if (dir == IOV_KERNEL_READ) {
+			void *scratch = get_writable_address(page_size);
+
+			if (scratch != NULL &&
+			    (unsigned long) scratch <= UINT_MAX) {
+				iov[i].iov_base = (unsigned int)(unsigned long) scratch;
+				iov[i].iov_len = (shape == SHAPE_TINY)
+					? 1
+					: page_size / 2;
+				return;
+			}
+		}
+		iov[i].iov_base = 0;
+		iov[i].iov_len = 0;
+		return;
+	}
+
+	iov[i].iov_base = (unsigned int)(unsigned long) map->ptr;
+	if (shape == SHAPE_TINY) {
+		iov[i].iov_len = 1;
+	} else if (shape == SHAPE_PAGECROSS && map->size > page_size) {
+		unsigned long len = page_size + RAND_RANGE(1, 64);
+
+		if (len > map->size)
+			len = map->size;
+		iov[i].iov_len = (unsigned int) len;
+	} else if (RAND_BOOL()) {
+		const unsigned int lens[] = {
+			0, 1, page_size - 1, page_size,
+			page_size + 1, page_size * 2,
+		};
+		iov[i].iov_len = lens[rnd_modulo_u32(ARRAY_SIZE(lens))];
+	} else {
+		iov[i].iov_len = map->size > 0 ? rnd_modulo_u32(map->size) : 0;
+	}
+
+	base = iov[i].iov_base;
+	avoid_shared_buffer_out(&base, iov[i].iov_len);
+	if (base > UINT_MAX) {
+		iov[i].iov_base = 0;
+		iov[i].iov_len = 0;
+		return;
+	}
+	iov[i].iov_base = (unsigned int) base;
+}
+
+/*
  * Dedicated backing buffer for alloc_iovec()'s iov[] arrays.  The
  * buffer is carved into NR_IOVEC_SLICES disjoint slices of UIO_MAXIOV
  * entries each; alloc_iovec() returns the slice at iovec_pool_cursor
@@ -794,6 +896,16 @@ static inline void fill_iov_entry_map_backed(struct iovec *iov,
 #define IOVEC_POOL_BYTES (NR_IOVEC_SLICES * UIO_MAXIOV * sizeof(struct iovec))
 static struct iovec *iovec_pool;
 static unsigned int iovec_pool_cursor;
+
+/*
+ * MAP_32BIT twin of the iovec pool, holding struct compat_iovec
+ * arrays for compat calls.  Same slice discipline and COW
+ * inheritance as iovec_pool; the mapping's low address is what a
+ * compat call's 32-bit pointer reaches.
+ */
+#define COMPAT_IOVEC_POOL_BYTES (NR_IOVEC_SLICES * UIO_MAXIOV * sizeof(struct compat_iovec))
+static struct compat_iovec *compat_iovec_pool;
+static unsigned int compat_iovec_pool_cursor;
 
 /*
  * A private, zeroed pool of @bytes with a PROT_NONE page behind it.  A
@@ -884,6 +996,23 @@ void alloc_iovec_init(void)
 	iovec_pool = map_guarded_pool(IOVEC_POOL_BYTES, 0, __func__);
 	if (iovec_pool == NULL)
 		exit(EXIT_FAILURE);
+}
+
+/*
+ * Compat twin's mapping.  On a non-biarch build there are no compat
+ * calls and MAP_32BIT may not exist, so the pool stays NULL and
+ * alloc_compat_iovec() reports that.  Same fatal posture as
+ * alloc_iovec_init() on a biarch build: without the buffer no compat
+ * iovec arg can be built at all.
+ */
+void alloc_compat_iovec_init(void)
+{
+#if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
+	compat_iovec_pool = map_guarded_pool(COMPAT_IOVEC_POOL_BYTES,
+					     MAP_32BIT, __func__);
+	if (compat_iovec_pool == NULL)
+		exit(EXIT_FAILURE);
+#endif
 }
 
 bool range_in_iovec_pool(unsigned long addr, unsigned long len)
@@ -991,6 +1120,76 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
 		}
 
 		fill_iov_entry_map_backed(iov, i, dir, shape);
+	}
+
+	return iov;
+}
+
+/*
+ * Compat twin of alloc_iovec().  Same shape buckets, writing
+ * 32-bit entries into the MAP_32BIT pool twin.  Two shapes need
+ * compat-specific bases, since the native constants do not survive
+ * truncation: the user-range EFAULT arm uses an address below every
+ * biarch compat TASK_SIZE, and the kernel-range access_ok arm uses
+ * UINT32_MAX, above every compat TASK_SIZE.  Entries whose base
+ * cannot be represented in 32 bits drop to NULL / 0 in the fill
+ * helper rather than truncating.
+ */
+struct compat_iovec * alloc_compat_iovec(unsigned int num,
+					 enum iov_direction dir)
+{
+	struct compat_iovec *iov;
+	unsigned int i;
+
+	if (num == 0 || compat_iovec_pool == NULL)
+		return NULL;
+
+	iov = compat_iovec_pool + compat_iovec_pool_cursor * UIO_MAXIOV;
+	compat_iovec_pool_cursor = (compat_iovec_pool_cursor + 1) % NR_IOVEC_SLICES;
+	if (num > UIO_MAXIOV)
+		num = UIO_MAXIOV;
+
+	for (i = 0; i < num; i++) {
+		enum iovec_entry_shape shape = pick_iovec_entry_shape(i, dir);
+		void *pool;
+
+		switch (shape) {
+		case SHAPE_NULL:
+			iov[i].iov_base = 0;
+			iov[i].iov_len = 0;
+			continue;
+		case SHAPE_SHARED:
+			/* i > 0 guaranteed by pick_iovec_entry_shape. */
+			iov[i].iov_base = iov[i - 1].iov_base;
+			iov[i].iov_len = 1 + rnd_modulo_u32(page_size);
+			continue;
+		case SHAPE_POOL:
+			pool = get_writable_address(page_size);
+			if (pool != NULL &&
+			    (unsigned long) pool <= UINT_MAX) {
+				iov[i].iov_base = (unsigned int)(unsigned long) pool;
+				iov[i].iov_len = page_size / 2;
+				continue;
+			}
+			/* Pool exhaustion or a high pool slot -- fall
+			 * through to valid-map. */
+			shape = SHAPE_VALID_MAP;
+			break;
+		case SHAPE_INVALID:
+			iov[i].iov_base = 0x10000000U;
+			iov[i].iov_len = 1;
+			continue;
+		case SHAPE_KERNEL_RANGE:
+			iov[i].iov_base = 0xffffffffU;
+			iov[i].iov_len = 8;
+			continue;
+		case SHAPE_TINY:
+		case SHAPE_PAGECROSS:
+		case SHAPE_VALID_MAP:
+			break;
+		}
+
+		fill_compat_iov_entry_map_backed(iov, i, dir, shape);
 	}
 
 	return iov;

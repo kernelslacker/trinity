@@ -486,6 +486,7 @@ static void init_shm_publish_and_subsystems(void)
 	 * iovec_init() in rand/random-address.c for the full rationale.
 	 */
 	alloc_iovec_init();
+	alloc_compat_iovec_init();
 
 	/*
 	 * Same pre-fork-allocate / register-once / inherit-via-COW pattern

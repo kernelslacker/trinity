@@ -349,6 +349,17 @@ static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
 		num_entries = UIO_MAXIOV + 1;
 
 	publish_paired_length(entry, rec, argnum, num_entries);
+	/*
+	 * A compat call's kernel reads 32-bit entries at the low 32
+	 * bits of the pointer, so it gets the compat pool twin; a
+	 * native-layout array there would misread every entry's
+	 * base/len pair.  The count published above is the same for
+	 * both layouts, and callers that walk the array must scrub
+	 * with the matching width (see process_vm_readv and
+	 * process_madvise).
+	 */
+	if (rec->do32bit)
+		return (unsigned long) alloc_compat_iovec((unsigned int) num_entries, dir);
 	return (unsigned long) alloc_iovec(num_entries, dir);
 }
 

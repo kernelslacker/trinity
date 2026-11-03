@@ -17,7 +17,7 @@
 #include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out,
-				   scrub_iovec_for_kernel_write */
+				   the iovec scrubs, struct compat_iovec */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_overlaps_shared;	/* fake_shm.c */
@@ -129,20 +129,36 @@ struct scrub_case {
 	bool kept;
 };
 
-/* Each case's entry survives the scrub whole, or is zeroed whole. */
-static void run_scrub_cases(const struct scrub_case *cases, unsigned int nr)
+/* Each case's entry survives the scrub whole, or is zeroed whole, in a
+ * native iovec or, with @compat, a 32-bit one. */
+static void run_scrub_cases(const struct scrub_case *cases, unsigned int nr,
+			    bool compat)
 {
 	unsigned int i;
 
 	for (i = 0; i < nr; i++) {
 		const struct scrub_case *c = &cases[i];
-		struct iovec iov = { (void *) c->addr, c->len };
+		unsigned long base, len;
 		bool kept, zeroed;
 
-		scrub_iovec_for_kernel_write(&iov, 1);
+		if (compat) {
+			struct compat_iovec iov = {
+				(unsigned int) c->addr, (unsigned int) c->len,
+			};
 
-		kept = iov.iov_base == (void *) c->addr && iov.iov_len == c->len;
-		zeroed = iov.iov_base == NULL && iov.iov_len == 0;
+			scrub_compat_iovec_for_kernel_write(&iov, 1);
+			base = iov.iov_base;
+			len = iov.iov_len;
+		} else {
+			struct iovec iov = { (void *) c->addr, c->len };
+
+			scrub_iovec_for_kernel_write(&iov, 1);
+			base = (unsigned long) iov.iov_base;
+			len = iov.iov_len;
+		}
+
+		kept = base == c->addr && len == c->len;
+		zeroed = base == 0 && len == 0;
 		if (c->kept ? !kept : !zeroed) {
 			fprintf(stderr, "%s: %s\n", c->what,
 				c->kept ? "not left standing" : "not zeroed");
@@ -153,7 +169,8 @@ static void run_scrub_cases(const struct scrub_case *cases, unsigned int nr)
 
 /* Both pools are tracked, so every entry they vend is flagged, but both
  * are kernel-write scratch: an entry wholly in the writable pool stays, as
- * does one that starts in the low pool, which ends at a guard page. */
+ * does one that starts in the low pool, which ends at a guard page, in a
+ * compat iovec as in a native one. */
 static void scrub_pool_exemption(unsigned long base, unsigned long low)
 {
 	const unsigned long end = base + WRITABLE_POOL_BYTES;
@@ -178,9 +195,11 @@ static void scrub_pool_exemption(unsigned long base, unsigned long low)
 		{ "a range starting at the low pool's end", low_end, 64, false },
 	};
 
-	run_scrub_cases(cases, ARRAY_SIZE(cases));
-	if (low != 0)
-		run_scrub_cases(low_cases, ARRAY_SIZE(low_cases));
+	run_scrub_cases(cases, ARRAY_SIZE(cases), false);
+	if (low != 0) {
+		run_scrub_cases(low_cases, ARRAY_SIZE(low_cases), false);
+		run_scrub_cases(low_cases, ARRAY_SIZE(low_cases), true);
+	}
 }
 
 /* The sizes either side of the one whose round-up to the 16-byte slot

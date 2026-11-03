@@ -114,6 +114,7 @@ int main(int argc, char **argv)
 	 * arrays from it.  The low pool too, for the compat calls those
 	 * suites build. */
 	alloc_iovec_init();
+	alloc_compat_iovec_init();
 	low_pool_init();
 
 	printf("trinity test-bin: seed=0x%llx\n",

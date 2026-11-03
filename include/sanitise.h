@@ -5,6 +5,7 @@
 #include <sys/socket.h>
 
 #include "compiler.h"
+#include "kernel/compat.h"
 #include "syscall.h"
 
 void generic_sanitise(struct syscallentry *entry, struct syscallrecord *rec);
@@ -67,6 +68,8 @@ void avoid_shared_buffer_out(unsigned long *addr, unsigned long len);
  */
 void avoid_shared_buffer_inout(unsigned long *addr, unsigned long len);
 void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count);
+void scrub_compat_iovec_for_kernel_write(struct compat_iovec *iov,
+					 unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
@@ -87,6 +90,18 @@ enum iov_direction {
 	IOV_KERNEL_WRITE,
 };
 struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_check;
+/*
+ * Compat twin of alloc_iovec(): carves struct compat_iovec arrays
+ * from a MAP_32BIT pool twin so a compat call's kernel reads the
+ * 8-byte entries at an address its 32-bit pointer reaches.  Every
+ * entry base is checked to fit in 32 bits at fill time; a base that
+ * does not fit drops that entry to NULL / 0 rather than truncating
+ * it to a different mapping.  NULL when the compat pool was never
+ * initialised (non-biarch builds have no compat calls).
+ */
+struct compat_iovec * alloc_compat_iovec(unsigned int num,
+					 enum iov_direction dir) __must_check;
+void alloc_compat_iovec_init(void);
 /*
  * One-shot parent-side allocator for alloc_iovec()'s iov[] backing
  * buffer.  Allocates a dedicated UIO_MAXIOV-sized MAP_PRIVATE|MAP_ANON

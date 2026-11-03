@@ -2630,9 +2630,10 @@ static void process_madvise_guard_install_held(void)
 }
 
 /* process_madvise's iovecs name ranges to advise, not buffers, so an
- * entry the scrub leaves standing in the writable pool, scratch a kernel
- * write may land on, is dropped: advice like DONTFORK would outlive the
- * call.  An entry outside the pools is the kernel's to judge. */
+ * entry the scrubs leave standing in the writable pool, or a compat
+ * call's in the low pool, scratch a kernel write may land on, is
+ * dropped: advice like DONTFORK would outlive the call.  An entry outside
+ * the pools is the kernel's to judge. */
 static void process_madvise_advises_no_pool_page(void)
 {
 	struct iovec *iov = alloc_iovec(2, IOV_KERNEL_WRITE);
@@ -2659,7 +2660,73 @@ static void process_madvise_advises_no_pool_page(void)
 		BUG("process_madvise: an entry in the writable pool was left to advise");
 	if (iov[1].iov_base != (void *) POOL_MAP || iov[1].iov_len != page_size)
 		BUG("process_madvise: an entry outside the pools was dropped");
+
+#ifdef ARCH_IS_BIARCH
+	{
+		/* A compat call's entries are 32-bit, from the low pool. */
+		struct compat_iovec *civ = alloc_compat_iovec(2, IOV_KERNEL_WRITE);
+		unsigned long low;
+
+		memset(&mm_child.syscall, 0, sizeof(mm_child.syscall));
+		mm_child.syscall.do32bit = true;
+		fake_this_child = &mm_child;
+		low = (unsigned long) get_writable_address(page_size);
+		fake_this_child = NULL;
+		if (civ == NULL || low == 0 || low > UINT_MAX)
+			BUG("process_madvise: no compat iovec array or low pool slot to advise");
+
+		civ[0].iov_base = (unsigned int) low;
+		civ[0].iov_len = 64;
+		civ[1].iov_base = 0x1000;
+		civ[1].iov_len = page_size;
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_process_madvise;
+		rec.do32bit = true;
+		rec.a1 = (unsigned long) -1;
+		rec.a2 = (unsigned long) civ;
+		rec.a3 = 2;
+		rec.a4 = MADV_DONTFORK;
+		syscall_process_madvise.sanitise(&rec);
+		if (civ[0].iov_base != 0 || civ[0].iov_len != 0)
+			BUG("process_madvise: a compat entry in the low pool was left to advise");
+		if (civ[1].iov_base != 0x1000 || civ[1].iov_len != page_size)
+			BUG("process_madvise: a compat entry outside the pools was dropped");
+	}
+#endif
 }
+
+#ifdef ARCH_IS_BIARCH
+/* A compat call's iovec array must live where its 32-bit pointer
+ * reaches and cycle the pool slices the native array does: the
+ * first four draws land in disjoint arrays and the fifth reuses
+ * the first.  Entries are 8 bytes, and a zero count draws nothing. */
+static void compat_iovec_pool_held_low(void)
+{
+	/* Four slices, as in rand/random-address.c. */
+	struct compat_iovec *slices[5];
+	unsigned int i, j;
+
+	if (sizeof(struct compat_iovec) != 8)
+		BUG("arg coupling: a compat iovec entry is not two 32-bit words");
+	if (alloc_compat_iovec(0, IOV_KERNEL_WRITE) != NULL)
+		BUG("arg coupling: a zero-count compat iovec drew an array");
+	for (i = 0; i < 5; i++) {
+		slices[i] = alloc_compat_iovec(1, IOV_KERNEL_WRITE);
+		if (slices[i] == NULL)
+			BUG("arg coupling: a compat iovec draw came back empty");
+		if ((unsigned long) slices[i] > UINT_MAX)
+			BUG("arg coupling: a compat iovec array lies where its slots cannot reach");
+	}
+	for (i = 0; i < 4; i++) {
+		for (j = i + 1; j < 4; j++) {
+			if (slices[i] == slices[j])
+				BUG("arg coupling: two compat iovec slices share an array");
+		}
+	}
+	if (slices[0] != slices[4])
+		BUG("arg coupling: the compat iovec pool did not wrap to its first slice");
+}
+#endif
 
 /* The image table holds the pages of every segment of this binary's own
  * image, text, rodata and data alike, and nothing else: a function, a
@@ -5165,6 +5232,9 @@ void arg_coupling_self_check(void)
 	madvise_held();
 	process_madvise_guard_install_held();
 	process_madvise_advises_no_pool_page();
+#ifdef ARCH_IS_BIARCH
+	compat_iovec_pool_held_low();
+#endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
 	count_slot_checked_at_table_init();

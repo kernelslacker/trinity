@@ -36,7 +36,10 @@ static unsigned long process_vm_readv_flags[] = {
  */
 static void sanitise_process_vm_readv(struct syscallrecord *rec)
 {
-	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+	if (rec->do32bit)
+		scrub_compat_iovec_for_kernel_write((struct compat_iovec *)rec->a2, rec->a3);
+	else
+		scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
 }
 
 static void post_process_vm_readv(struct syscallrecord *rec)
