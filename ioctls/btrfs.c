@@ -75,58 +75,38 @@ IOCTL_SIZE_ASSERT(BTRFS_IOC_SUBVOL_GETFLAGS, __u64);
 
 static int btrfs_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct objhead *head;
-	struct object *obj;
-	unsigned int idx;
 	unsigned int count;
 	unsigned int i;
 	bool isolated;
-	bool seen_btrfs = false;
 
 	/*
 	 * Box-safety + isolation gate (mnt_ready + scratch_block_ready
-	 * double-check).  When the parent latched a private mount
-	 * namespace AND the scratch_block pool stood up AND it
-	 * published a btrfs-typed entry, the only block fd this group
-	 * is allowed to claim is that entry's loop fd -- never a host
-	 * disk node, never an OBJ_FD_TESTFILE plain file (those live in
-	 * trinity's cwd, which on a typical fuzz box sits on the host's
-	 * real-root btrfs filesystem).  When any latch is false, or no
-	 * btrfs entry is published in the pool, fall through to today's
-	 * OBJ_FD_TESTFILE walk byte-for-byte so the non-root /
-	 * non-isolated dev path is unchanged.
+	 * double-check).  The only fd this group claims is the loop fd
+	 * of a btrfs-typed scratch_block entry, and only when the
+	 * parent latched a private mount namespace and the
+	 * scratch_block pool stood up.  A testfile fd is never
+	 * claimed: testfiles live in trinity's cwd, which on a
+	 * typical fuzz box sits on the host's real-root btrfs
+	 * filesystem, and a btrfs ioctl on one hits production
+	 * storage.  Until the provider publishes a btrfs entry the
+	 * group claims nothing and issues no ioctls.
 	 */
 	isolated = __atomic_load_n(&shm->isolation.mnt_ready,
 				   __ATOMIC_RELAXED) &&
 		   __atomic_load_n(&shm->isolation.scratch_block_ready,
 				   __ATOMIC_RELAXED);
-	if (isolated) {
-		count = load_scratch_block_count();
-		for (i = 0; i < count; i++) {
-			struct scratch_block_entry *e =
-				&shm->isolation.scratch_block[i];
+	if (!isolated)
+		return -1;
 
-			if (strncmp(e->fs_type, "btrfs",
-				    sizeof(e->fs_type)) != 0)
-				continue;
-			seen_btrfs = true;
-			if (e->loop_fd >= 0 && e->loop_fd == fd)
-				return 0;
-		}
-		/*
-		 * A published btrfs entry exists but @fd isn't its loop
-		 * fd: refuse the claim.  Falling through to the
-		 * OBJ_FD_TESTFILE walk would put btrfs ioctls back on
-		 * host-fs files.
-		 */
-		if (seen_btrfs)
-			return -1;
-	}
+	count = load_scratch_block_count();
+	for (i = 0; i < count; i++) {
+		struct scratch_block_entry *e =
+			&shm->isolation.scratch_block[i];
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
-
-	for_each_obj(head, obj, idx) {
-		if (obj->testfileobj.fd == fd)
+		if (strncmp(e->fs_type, "btrfs",
+			    sizeof(e->fs_type)) != 0)
+			continue;
+		if (e->loop_fd >= 0 && e->loop_fd == fd)
 			return 0;
 	}
 
@@ -625,13 +605,11 @@ static void sanitise_btrfs_encoded_write_args(struct syscallrecord *rec)
  * mutators.
  *
  * 🛑 BOX-SAFETY DENYLIST (HARD -- read before adding any case below):
- * btrfs_grp's fd_test resolves OBJ_FD_TESTFILE -- plain open(O_CREAT|
- * O_RDWR) files in trinity's cwd.  On the fuzz box that cwd is the
- * REAL ROOT btrfs filesystem.  A destructive ioctl on that fd hits
- * production storage = box brick = zero coverage.  The cmds below
- * MUST NEVER be added to this switch -- leave them to the default:
- * case so pick_random_ioctl()'s random arg fill EFAULTs/EINVALs the
- * kernel out before the mutator runs:
+ * btrfs_grp's fd_test claims only the loop fd of a published btrfs
+ * scratch_block entry, never a testfile.  The cmds below MUST NEVER
+ * be added to this switch -- leave them to the default: case so
+ * pick_random_ioctl()'s random arg fill EFAULTs/EINVALs the kernel
+ * out before the mutator runs:
  *
  *   BTRFS_IOC_RESIZE                  -- shrink the live root fs
  *   BTRFS_IOC_DEV_REPLACE             -- starts a device replace

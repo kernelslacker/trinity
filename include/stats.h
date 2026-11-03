@@ -497,12 +497,13 @@ struct stats_s {
 	struct plateau_stats plateau __attribute__((aligned(64)));
 
 	/* btrfs ioctl dispatches into btrfs_grp.  Bumped from btrfs_sanitise()
-	 * each time pick_random_ioctl() lands on an ioctl destined for an
-	 * OBJ_FD_TESTFILE fd matching btrfs_fd_test().  A non-zero count
-	 * confirms the seeded-struct path (TREE_SEARCH / INO_LOOKUP /
-	 * GET_SUBVOL_INFO etc.) is reaching the kernel parsers rather than
-	 * EFAULTing on a random arg pointer; flat counter with active testfile
-	 * fds means find_ioctl_group() arbitration isn't picking btrfs_grp. */
+	 * each time pick_random_ioctl() lands on an ioctl destined for the
+	 * loop fd of a published btrfs scratch_block entry.  A non-zero
+	 * count confirms the seeded-struct path (TREE_SEARCH / INO_LOOKUP
+	 * / GET_SUBVOL_INFO etc.) is reaching the kernel parsers rather
+	 * than EFAULTing on a random arg pointer; flat is expected until
+	 * the provider publishes a btrfs entry, since btrfs_fd_test()
+	 * claims nothing else. */
 	unsigned long btrfs_ioctls_dispatched;
 
 	/* ioctl group-match rate accounting.  Bumped from sanitise_ioctl()
