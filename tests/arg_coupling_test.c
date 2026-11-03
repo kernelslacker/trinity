@@ -2726,6 +2726,52 @@ static void compat_iovec_pool_held_low(void)
 	if (slices[0] != slices[4])
 		BUG("arg coupling: the compat iovec pool did not wrap to its first slice");
 }
+
+/* The compat msghdr scrub walks the array its 32-bit msg_iov names
+ * as struct compat_iovec: two 8-byte entries, honouring msg_iovlen,
+ * and nothing when the header names no array.  A native-stride walk
+ * reads 16-byte entries and zeroes the sentinel third entry. */
+static void compat_msghdr_scrub_walks_compat_entries(void)
+{
+	struct compat_iovec *iov = alloc_compat_iovec(4, IOV_KERNEL_WRITE);
+	struct compat_msghdr msg;
+
+	if (iov == NULL || (unsigned long) iov > UINT_MAX)
+		BUG("arg coupling: no low compat iovec array to scrub through");
+	memset(&msg, 0, sizeof(msg));
+	msg.msg_iov = (unsigned int)(unsigned long) iov;
+	msg.msg_iovlen = 2;
+
+	iov[0].iov_base = 0x1000; iov[0].iov_len = 16;
+	iov[1].iov_base = 0x2000; iov[1].iov_len = 16;
+	iov[2].iov_base = 0x3000; iov[2].iov_len = 16;
+	iov[3].iov_base = 0x4000; iov[3].iov_len = 16;
+	scrub_compat_msghdr_for_kernel_write(&msg);
+	if (iov[0].iov_base != 0x1000 || iov[1].iov_base != 0x2000 ||
+	    iov[2].iov_base != 0x3000 || iov[3].iov_base != 0x4000)
+		BUG("arg coupling: a clean compat msghdr scrub moved an entry");
+
+	fake_overlaps_shared = true;
+	scrub_compat_msghdr_for_kernel_write(&msg);
+	fake_overlaps_shared = false;
+	if (iov[0].iov_base != 0 || iov[0].iov_len != 0 ||
+	    iov[1].iov_base != 0 || iov[1].iov_len != 0)
+		BUG("arg coupling: an overlapping compat msghdr scrub left an entry standing");
+	if (iov[2].iov_base != 0x3000 || iov[3].iov_base != 0x4000)
+		BUG("arg coupling: a compat msghdr scrub walked past msg_iovlen");
+
+	iov[0].iov_base = 0x1000; iov[0].iov_len = 16;
+	fake_overlaps_shared = true;
+	msg.msg_iov = 0;
+	scrub_compat_msghdr_for_kernel_write(&msg);
+	msg.msg_iov = (unsigned int)(unsigned long) iov;
+	msg.msg_iovlen = 0;
+	scrub_compat_msghdr_for_kernel_write(&msg);
+	scrub_compat_msghdr_for_kernel_write(NULL);
+	fake_overlaps_shared = false;
+	if (iov[0].iov_base != 0x1000 || iov[0].iov_len != 16)
+		BUG("arg coupling: a compat msghdr scrub acted on no array");
+}
 #endif
 
 /* The image table holds the pages of every segment of this binary's own
@@ -5234,6 +5280,7 @@ void arg_coupling_self_check(void)
 	process_madvise_advises_no_pool_page();
 #ifdef ARCH_IS_BIARCH
 	compat_iovec_pool_held_low();
+	compat_msghdr_scrub_walks_compat_entries();
 #endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
