@@ -218,6 +218,13 @@ bool range_in_writable_pool(unsigned long addr, unsigned long len)
 	return addr >= base && addr - base <= WRITABLE_POOL_BYTES - len;
 }
 
+bool range_in_call_pools(unsigned long addr, unsigned long len)
+{
+	return range_in_writable_pool(addr, len) ||
+	       (low_pool != NULL && addr >= (unsigned long) low_pool &&
+		addr - (unsigned long) low_pool < WRITABLE_POOL_BYTES);
+}
+
 /*
  * Defense-in-depth for output-buffer syscall args.  A fuzzed pointer that
  * lands inside one of trinity's own alloc_shared() regions — childdata,
@@ -496,8 +503,13 @@ unsigned long find_previous_arg_address(struct syscallentry *entry, struct sysca
  * Walk the array one final time and zero any entry whose [base, base+
  * len) overlaps either an alloc_shared region or the libc brk arena.
  * Zero base + zero len makes the kernel skip the entry without erroring
- * the whole call.  Bumps libc_heap_embedded_redirected so the operator
- * can see the second-pass coverage independently from the
+ * the whole call.  An entry asb_relocate() would leave in the writable
+ * pool or the low pool stays (range_in_call_pools()): both are tracked,
+ * so every entry they vend overlaps, but they are kernel-write scratch,
+ * and sendmsg's gen_msg payload and the SHAPE_POOL entries live there.
+ * process_madvise, whose entries are ranges to advise, drops them
+ * itself.  Bumps libc_heap_embedded_redirected so the operator can see
+ * the second-pass coverage independently from the
  * shared_buffer_redirected / libc_heap_redirected counters that track
  * the build-time defense.
  */
@@ -517,6 +529,9 @@ void scrub_iovec_for_kernel_write(struct iovec *iov, unsigned long count)
 		bool overlap_shared, overlap_heap;
 
 		if (base == 0 || len == 0)
+			continue;
+
+		if (range_in_call_pools(base, len))
 			continue;
 
 		overlap_shared = range_overlaps_shared(base, len);

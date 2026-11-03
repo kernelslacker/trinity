@@ -8,9 +8,10 @@
  * mapping), a munmap, mprotect, pkey_mprotect, madvise,
  * set_mempolicy_home_node or remap_file_pages range inside the pool mapping
  * its sanitiser picked, madvise's (addr, len) off trinity's tracked regions
- * too, a madvise or process_madvise never installs guard pages, an mseal
- * seals only a mapping its sanitiser made for it, and a move_pages count
- * stays inside the arrays its sanitiser built.
+ * too, a madvise or process_madvise never installs guard pages, a
+ * process_madvise advises no pool page, an mseal seals only a mapping its
+ * sanitiser made for it, and a move_pages count stays inside the arrays
+ * its sanitiser built.
  */
 
 #include <errno.h>
@@ -2628,6 +2629,38 @@ static void process_madvise_guard_install_held(void)
 #endif
 }
 
+/* process_madvise's iovecs name ranges to advise, not buffers, so an
+ * entry the scrub leaves standing in the writable pool, scratch a kernel
+ * write may land on, is dropped: advice like DONTFORK would outlive the
+ * call.  An entry outside the pools is the kernel's to judge. */
+static void process_madvise_advises_no_pool_page(void)
+{
+	struct iovec *iov = alloc_iovec(2, IOV_KERNEL_WRITE);
+	void *pool;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	pool = get_writable_address(page_size);
+	if (iov == NULL || pool == NULL)
+		BUG("process_madvise: no iovec array or pool slot to advise");
+
+	iov[0].iov_base = pool;
+	iov[0].iov_len = 64;
+	iov[1].iov_base = (void *) POOL_MAP;
+	iov[1].iov_len = page_size;
+	memset(&rec, 0, sizeof(rec));
+	rec.entry = &syscall_process_madvise;
+	rec.a1 = (unsigned long) -1;
+	rec.a2 = (unsigned long) iov;
+	rec.a3 = 2;
+	rec.a4 = MADV_DONTFORK;
+	syscall_process_madvise.sanitise(&rec);
+	if (iov[0].iov_base != NULL || iov[0].iov_len != 0)
+		BUG("process_madvise: an entry in the writable pool was left to advise");
+	if (iov[1].iov_base != (void *) POOL_MAP || iov[1].iov_len != page_size)
+		BUG("process_madvise: an entry outside the pools was dropped");
+}
+
 /* The image table holds the pages of every segment of this binary's own
  * image, text, rodata and data alike, and nothing else: a function, a
  * constant and a variable of the binary are in it, a fresh anonymous
@@ -5131,6 +5164,7 @@ void arg_coupling_self_check(void)
 	syslog_read_held_to_mapping();
 	madvise_held();
 	process_madvise_guard_install_held();
+	process_madvise_advises_no_pool_page();
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
 	count_slot_checked_at_table_init();

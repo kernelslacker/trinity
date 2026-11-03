@@ -181,6 +181,9 @@ static int vet_final_process_madvise(struct syscallrecord *rec,
  */
 static void sanitise_process_madvise(struct syscallrecord *rec)
 {
+	struct iovec *iov = (struct iovec *) rec->a2;
+	unsigned long i;
+
 	/*
 	 * Clear post_state up front so the final-slot hook and the cleanup
 	 * see no snapshot rather than a stale pointer carried over from an
@@ -188,7 +191,21 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 */
 	rec->post_state = 0;
 
-	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+	scrub_iovec_for_kernel_write(iov, rec->a3);
+
+	/*
+	 * The scrub leaves an entry in the call pools standing for a kernel
+	 * write, but these entries name ranges to advise, and advice such as
+	 * DONTFORK outlives the call: drop them, as madvise() refuses any
+	 * tracked range.
+	 */
+	for (i = 0; iov != NULL && i < rec->a3 && i < UIO_MAXIOV; i++) {
+		if (!range_in_call_pools((unsigned long) iov[i].iov_base,
+					 iov[i].iov_len))
+			continue;
+		iov[i].iov_base = NULL;
+		iov[i].iov_len = 0;
+	}
 
 	if (!pidfd_is_self((int)rec->a1)) {
 		rec->a4 = RAND_ARRAY(process_madvise_remote_behaviours);
@@ -218,8 +235,7 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 */
 	if ((int) rec->a4 == MADV_GUARD_INSTALL) {
 		struct process_madvise_post_state *snap;
-		struct iovec *iov = (struct iovec *)rec->a2;
-		unsigned long i, vlen = rec->a3, first, pages;
+		unsigned long vlen = rec->a3, first, pages;
 		void *p;
 
 		if (rec->do32bit) {

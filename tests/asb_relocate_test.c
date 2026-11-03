@@ -5,6 +5,8 @@
  * space included), and a length the pool cannot hold leaves the pointer.
  * get_writable_address() refuses such a size, a wrapping round-up included.
  * A pointer that starts in the low pool, a compat call's, stays too.
+ * The iovec scrub leaves the entries asb_relocate() would leave, where it
+ * zeroes any other flagged one.
  */
 
 #include <limits.h>
@@ -14,7 +16,8 @@
 #include "arch.h"		/* page_size */
 #include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
-#include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out */
+#include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out,
+				   scrub_iovec_for_kernel_write */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_overlaps_shared;	/* fake_shm.c */
@@ -119,6 +122,67 @@ static void low_pool_exemption(unsigned long base)
 	run_cases(cases, ARRAY_SIZE(cases));
 }
 
+struct scrub_case {
+	const char *what;
+	unsigned long addr;
+	unsigned long len;
+	bool kept;
+};
+
+/* Each case's entry survives the scrub whole, or is zeroed whole. */
+static void run_scrub_cases(const struct scrub_case *cases, unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		const struct scrub_case *c = &cases[i];
+		struct iovec iov = { (void *) c->addr, c->len };
+		bool kept, zeroed;
+
+		scrub_iovec_for_kernel_write(&iov, 1);
+
+		kept = iov.iov_base == (void *) c->addr && iov.iov_len == c->len;
+		zeroed = iov.iov_base == NULL && iov.iov_len == 0;
+		if (c->kept ? !kept : !zeroed) {
+			fprintf(stderr, "%s: %s\n", c->what,
+				c->kept ? "not left standing" : "not zeroed");
+			BUG("iovec scrub: wrong verdict on the pool test");
+		}
+	}
+}
+
+/* Both pools are tracked, so every entry they vend is flagged, but both
+ * are kernel-write scratch: an entry wholly in the writable pool stays, as
+ * does one that starts in the low pool, which ends at a guard page. */
+static void scrub_pool_exemption(unsigned long base, unsigned long low)
+{
+	const unsigned long end = base + WRITABLE_POOL_BYTES;
+	const unsigned long low_end = low + WRITABLE_POOL_BYTES;
+	const struct scrub_case cases[] = {
+		{ "the middle of the pool", base + 4096, 64, true },
+		{ "the whole pool", base, WRITABLE_POOL_BYTES, true },
+		{ "a range running a byte past the pool end",
+		  end - 64, 65, false },
+		{ "a range starting below the pool", base - 64, 64, false },
+		{ "a range straddling the pool start", base - 32, 64, false },
+		{ "a range outside the pools",
+		  (unsigned long) outside, sizeof(outside), false },
+	};
+	const struct scrub_case low_cases[] = {
+		{ "the low pool's start", low, 64, true },
+		{ "a range running past the low pool's end",
+		  low_end - 64, 2 * page_size, true },
+		{ "a range starting below the low pool", low - 64, 64, false },
+		{ "a range straddling the low pool's start",
+		  low - 32, 64, false },
+		{ "a range starting at the low pool's end", low_end, 64, false },
+	};
+
+	run_scrub_cases(cases, ARRAY_SIZE(cases));
+	if (low != 0)
+		run_scrub_cases(low_cases, ARRAY_SIZE(low_cases));
+}
+
 /* The sizes either side of the one whose round-up to the 16-byte slot
  * alignment wraps to zero, which passes a pool-size test made after the
  * rounding. */
@@ -172,6 +236,7 @@ void asb_relocate_self_check(void)
 	pool_exemption(base);
 	if (low != 0)
 		low_pool_exemption(low);
+	scrub_pool_exemption(base, low);
 	fake_overlaps_shared = false;
 
 	oversize_refused();
