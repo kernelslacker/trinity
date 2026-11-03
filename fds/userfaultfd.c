@@ -1,12 +1,14 @@
 /* userfaultfd FDs */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <sys/ioctl.h>
 #include <linux/userfaultfd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 
+#include "child.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "userfaultfd.h"
@@ -46,12 +48,8 @@ static int devuserfaultfd_create(unsigned int flag)
 }
 
 /*
- * Cross-process safe: only reads obj->userfaultobj scalar fields and
- * the scope scalar.  These survive fork/COW and no process-local
- * pointers are dereferenced, so it is correct to call this from a
- * different process than the one that allocated the obj — which matters
- * because head->dump runs from dump_childdata() in the parent's crash
- * diagnostics path even when a child triggered the crash.
+ * Only reads obj->userfaultobj scalar fields and the scope scalar;
+ * no process-local pointers are dereferenced.
  */
 static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 {
@@ -74,9 +72,8 @@ static void arm_userfaultfd(int fd)
 		 * (fork / mremap / madvise / munmap) block in
 		 * userfaultfd_event_wait_completion until a monitor read()s the
 		 * event -- and trinity runs no uffd monitor.  With EVENT_FORK set
-		 * on these parent-owned pool fds, the parent's respawn fork()
-		 * wedges forever with no reader (and can then neither reap
-		 * children nor honour --max-runtime).  Only enable these
+		 * on these child-owned pool fds, the child's own fork()
+		 * wedges forever with no reader.  Only enable these
 		 * alongside a thread that drains the uffd.
 		 */
 		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
@@ -107,7 +104,14 @@ static void arm_userfaultfd(int fd)
 	ioctl(fd, UFFDIO_API, &api);
 }
 
-static int open_userfaultfd(void)
+/*
+ * Create and arm one userfaultfd in the calling process and publish it
+ * into its OBJ_LOCAL pool.  The kernel binds a uffd to its creator's
+ * mm, so a uffd made by the parent acts on the parent's address space
+ * from every child that inherits it; only a per-child uffd registers,
+ * copies and write-protects the child's own ranges.
+ */
+static bool open_userfaultfd(void)
 {
 	struct object *obj;
 	int fd, flags;
@@ -121,6 +125,43 @@ static int open_userfaultfd(void)
 	else
 		fd = userfaultfd_create(flags);
 
+	if (fd < 0)
+		return false;
+
+	arm_userfaultfd(fd);
+
+	obj = alloc_object();
+	if (obj == NULL) {
+		close(fd);
+		return false;
+	}
+	obj->userfaultobj.fd = fd;
+	obj->userfaultobj.flags = flags;
+	add_object(obj, OBJ_LOCAL, OBJ_FD_USERFAULTFD);
+	return true;
+}
+
+/*
+ * Parent-side setup: wire the OBJ_GLOBAL head's destroy + dump slots so
+ * init_object_lists(OBJ_LOCAL, child) inherits them into every child's
+ * per-pool objhead, and probe that a userfaultfd can be created at all.
+ * The probe fd is closed at once, never published and never armed, so
+ * it registers no range in any mm.  The OBJ_GLOBAL pool stays empty:
+ * every uffd the pool holds is created per-child by
+ * userfaultfd_child_init() into that child's private OBJ_LOCAL pool.
+ */
+static int init_userfaultfds(void)
+{
+	struct objhead *head;
+	int fd;
+
+	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
+	head->destroy = &close_fd_destructor;
+	head->dump = &userfaultfd_dump;
+
+	fd = userfaultfd_create(0);
+	if (fd < 0)
+		fd = devuserfaultfd_create(0);
 	if (fd < 0) {
 		int err = errno;
 		enum fd_init_reason reason = (err == ENOSYS || err == ENXIO ||
@@ -129,72 +170,47 @@ static int open_userfaultfd(void)
 				(err == EACCES || err == EPERM) ?
 				FD_INIT_REASON_CAP_MISSING :
 				FD_INIT_REASON_ERRNO;
-		outputerr("open_userfaultfd: userfaultfd creation failed: %s\n",
-			strerror(err));
 		fd_provider_init_fail(reason, err, "userfaultfd_create");
 		return false;
 	}
-
-	arm_userfaultfd(fd);
-
-	obj = alloc_object();
-	if (obj == NULL) {
-		outputerr("open_userfaultfd: alloc_object failed\n");
-		fd_provider_init_fail(FD_INIT_REASON_RESOURCE, 0, "alloc_object");
-		close(fd);
-		return false;
-	}
-	obj->userfaultobj.fd = fd;
-	obj->userfaultobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
+	close(fd);
 	return true;
 }
 
-static int init_userfaultfds(void)
+/*
+ * Per-child seed: create the pool's uffds in the calling child's own
+ * mm, after the sandbox is in effect.  Creation can still fail there
+ * (an unprivileged userfaultfd needs the sysctl, or the capability,
+ * the child's context lacks); a child with no uffd simply draws none,
+ * as it did when the fuzzed userfaultfd() call failed.
+ */
+static void userfaultfd_child_init(struct childdata *child __attribute__((unused)))
 {
-	struct objhead *head;
 	unsigned int i;
-	int ret = false;
 
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-	head->destroy = &close_fd_destructor;
-	head->dump = &userfaultfd_dump;
-	/*
-	 * struct userfaultobj is {int fd; int flags;} — no pointer members
-	 * — so the OBJ_GLOBAL pool's scalars stay valid across fork/COW and
-	 * cross-process reads are safe.
-	 */
-
-	for (i = 0; i < 4; i++) {
-		if (open_userfaultfd())
-			ret = true;
-	}
-
-	return ret;
+	for (i = 0; i < 4; i++)
+		open_userfaultfd();
 }
 
+/*
+ * Per-child (OBJ_LOCAL) picker.  Every uffd tracked as an object
+ * lives in the calling child's OBJ_LOCAL pool -- seeded by
+ * userfaultfd_child_init() or published there by the userfaultfd()
+ * post handler -- and not exposed to the OBJ_GLOBAL lockless-reader
+ * UAF window (single-writer / single-reader inside one child).  The
+ * objpool_check() and retry cap match the shape the other per-child
+ * pickers use.
+ */
 static int get_rand_userfaultfd(void)
 {
-	if (objects_empty(OBJ_FD_USERFAULTFD) == true)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_USERFAULTFD) == true)
 		return -1;
 
-	/*
-	 * Versioned slot pick + objpool_check() before the
-	 * obj->userfaultobj.fd deref.  A version-validated object-slot read
-	 * guards the lockless reader against a recycled object
-	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
-	 * lockless-reader UAF window:
-	 * between the lockless slot pick and the consumer's read of
-	 * the userfaultfd handed to ioctl(UFFDIO_*)/read via the fd_provider .get callback,
-	 * the parent can destroy the obj; release_obj() zeroes the chunk
-	 * and routes it through deferred-free, so the stale slot pointer
-	 * can read a zeroed or recycled chunk.
-	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_GLOBAL);
+		obj = get_random_object(OBJ_FD_USERFAULTFD, OBJ_LOCAL);
 		if (!objpool_check(obj, OBJ_FD_USERFAULTFD))
 			continue;
 
@@ -214,6 +230,7 @@ static const struct fd_provider userfaultfd_provider = {
 	.enabled = true,
 	.init = &init_userfaultfds,
 	.get = &get_rand_userfaultfd,
+	.child_init = &userfaultfd_child_init,
 	/*
 	 * uffd_poll() blocks until the kernel has a pending page-fault event
 	 * to deliver; with no registered VMA / no fault driver, EPOLL_CTL_ADD

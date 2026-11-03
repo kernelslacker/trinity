@@ -48,6 +48,15 @@ static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unus
 			return 0;
 	}
 
+	/*
+	 * The per-child provider and the userfaultfd() post handler
+	 * publish into the child's own pool: a uffd is bound to its
+	 * creator's mm, so only a child-local one acts on the child's
+	 * ranges, and the group must claim it as its own.
+	 */
+	if (find_local_object_by_fd(OBJ_FD_USERFAULTFD, fd) != NULL)
+		return 0;
+
 	return -1;
 }
 

@@ -255,7 +255,9 @@ REAL_SRCS	:= \
 # them; ioctl_sanitise_test.c fakes the group lookup that entry reaches.
 # ioctls/socket.c, epoll.c and perf_event.c bring the other groups that
 # name a typed-fd class, whose fd_test the same test runs against fake
-# object pools.
+# object pools.  ioctls/userfaultfd.c brings the userfaultfd group, whose
+# fd_test the same test runs against the fake pools for the child-local
+# fds the per-child provider seeds.
 # ioctls/ext.c brings the ext group, whose sanitiser ioctl_args_test.c runs
 # with the drm group's, for the args they build; its fd_test is not run.
 # ioctls/hidraw.c, input.c and joystick.c bring the groups that rewrite a
@@ -345,6 +347,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/vduse.c \
 	$(TOP)/ioctls/drm.c \
 	$(TOP)/ioctls/socket.c \
+	$(TOP)/ioctls/userfaultfd.c \
 	$(TOP)/ioctls/epoll.c \
 	$(TOP)/ioctls/perf_event.c \
 	$(TOP)/ioctls/ext.c \

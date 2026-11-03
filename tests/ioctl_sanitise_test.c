@@ -700,6 +700,47 @@ static void fd_class_groups_claim_the_childs_own_fds(void)
 	fake_get_objhead = NULL;
 }
 
+/*
+ * The userfaultfd group names no typed-fd class, so the claim test
+ * above does not cover it, but it must claim the same two pools: the
+ * parent's (empty once the provider seeds per child, kept for any
+ * fd that lands there another way) and the child's, where the
+ * per-child provider and the userfaultfd() post handler publish.
+ * A uffd is bound to its creator's mm, so a child-local fd the group
+ * refused would leave every UFFDIO_* ioctl in the group aimed at a
+ * parent-owned uffd acting on the parent's address space.
+ */
+static void userfaultfd_group_claims_the_childs_own_fds(void)
+{
+	const struct ioctl_group *grp;
+	struct stat st;
+	int pass;
+
+	grp = fake_ioctl_group("userfaultfd");
+	if (grp == NULL || grp->fd_test == NULL)
+		BUG("ioctl fd claim: the userfaultfd group is not linked");
+
+	memset(&st, 0, sizeof(st));
+	pooled_type = OBJ_FD_USERFAULTFD;
+	memset(&pooled_obj, 0, sizeof(pooled_obj));
+	pooled_obj.userfaultobj.fd = POOLED_FD;
+
+	fake_get_objhead = the_pools;
+	fake_find_local_object_by_fd = the_childs_pool;
+
+	for (pass = 0; pass < 2; pass++) {
+		pooled_in_child = pass != 0;
+
+		if (grp->fd_test(POOLED_FD, &st) != 0)
+			BUG("ioctl fd claim: userfaultfd group did not claim a pooled fd");
+		if (grp->fd_test(POOLED_FD + 1, &st) == 0)
+			BUG("ioctl fd claim: userfaultfd group claimed an fd in no pool");
+	}
+
+	fake_find_local_object_by_fd = NULL;
+	fake_get_objhead = NULL;
+}
+
 void ioctl_sanitise_self_check(void);
 void ioctl_sanitise_self_check(void)
 {
@@ -713,5 +754,6 @@ void ioctl_sanitise_self_check(void)
 	only_the_ns_getters_are_getters();
 	only_the_nsfs_cmds_that_return_an_fd_are_getters();
 	fd_class_groups_claim_the_childs_own_fds();
+	userfaultfd_group_claims_the_childs_own_fds();
 	cmd_held_to_the_one_drawn();
 }
