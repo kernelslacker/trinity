@@ -628,6 +628,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 		   $(TOP)/syscalls/socket/send.c
 
+# fds/sockets-lane.c brings lane_netlink_socketinfo(), which the sendmsg
+# sanitiser of the send.c linked above calls, and which lane_socket_test.c
+# runs over a socket pool it installs through the get_objhead() stand-in,
+# with the netlink sockets of the fake_net.c seam.
+PARENT_SRCS	+= $(TOP)/fds/sockets-lane.c
+FAKE_SRCS	+= lane_socket_test.c
+
 # syscalls/hardware/getrandom.c brings getrandom, whose sanitiser and
 # .vet_final hook arg_coupling_test.c runs over a real mapping, as the
 # sanitiser stamps the buffer it hands the kernel.

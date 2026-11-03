@@ -59,6 +59,7 @@ struct protoptr {
 extern const struct protoptr net_protocols[TRINITY_PF_MAX];
 
 struct socketinfo * get_rand_socketinfo(void) __must_check;
+struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si);
 int fd_from_socketinfo(struct socketinfo *si);
 
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);

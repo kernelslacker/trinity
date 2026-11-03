@@ -182,7 +182,8 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	if (si == NULL)	// handle --disable-fds=sockets
 		goto skip_si;
 
-	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
+	si = lane_netlink_socketinfo(si);
+	rec->a1 = fd_from_socketinfo(si);
 
 	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 

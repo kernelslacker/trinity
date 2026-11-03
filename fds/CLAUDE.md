@@ -7,6 +7,7 @@ Trinity's fd-supply layer. Each file (mostly) implements a "provider" that knows
 | File | Role |
 |---|---|
 | sockets.c | Socket fd provider across address families/types |
+| sockets-lane.c | `lane_netlink_socketinfo()`: in a userns-admin lane child, sendmsg's netlink goes out, seven draws in eight, on the socket of the drawn protocol the child opened in the lane's netns, where `netlink_ns_capable()` passes; the parent's pooled sockets sit in a netns the child holds no capability over. The socket lives in the child's `OBJ_LOCAL` pool, known by its slot version, since a dup of a parent's socket joins the pool under the same triplet; once the pool retires it, the next swap opens another. Protocols whose kernel socket lives in `init_net` alone, and any `socket()` refused with EPROTONOSUPPORT, keep the parent's |
 | fds-pick.c | The pickers: `get_new_random_fd()`, `get_random_fd()` (cache + retry/decay), `get_typed_fd()`, `get_pollable_random_fd()`, `get_child_live_fd()` |
 | perf.c | `perf_event_open` fd provider |
 | testfiles.c | Regular-file test fd pool (open/create/fcntl-state tracked) |

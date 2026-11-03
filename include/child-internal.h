@@ -51,12 +51,8 @@ void init_child_rendezvous_parent(struct childdata *child, int childno);
  * signal mask, per-child unshare()s, root-only drop_privs,
  * capset()-to-empty + oracle anchor capture, and the random rlimit
  * / umask sweep in munge_process.  init_child (in child-init-core.c)
- * calls this across the TU boundary.
- * child_userns_lane_is_active() returns true iff this child entered
- * the userns-admin lane (used by the cap-drop oracle to select the
- * correct SO_RCVBUFFORCE probe direction). */
+ * calls this across the TU boundary. */
 void init_child_setup_sandbox(struct childdata *child, int childno);
-bool child_userns_lane_is_active(void);
 
 /* child-pidns-init.c -- the idle init that holds pid 1 of a pid
  * namespace the child unshared, started by init_child_setup_sandbox

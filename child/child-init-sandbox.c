@@ -249,7 +249,9 @@ static void maybe_enter_userns_admin_lane(int childno)
 /*
  * Returns true iff this child successfully entered the userns-admin
  * lane (unshare + all three idmap writes completed).  Consumed by the
- * cap-drop oracle to select the correct SO_RCVBUFFORCE probe direction.
+ * cap-drop oracle to select the correct SO_RCVBUFFORCE probe direction,
+ * and by lane_netlink_socketinfo() to send the child's netlink on
+ * sockets in the lane's netns.
  */
 bool child_userns_lane_is_active(void)
 {

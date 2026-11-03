@@ -168,6 +168,13 @@ void capdrop_oracle_tick(void);
 void capdrop_oracle_capture_init_ns_anchors(void);
 
 /*
+ * True iff this child entered the userns-admin lane: it holds a full
+ * capability set over a user and net namespace of its own
+ * (child-init-sandbox.c).
+ */
+bool child_userns_lane_is_active(void);
+
+/*
  * Pid of this child's idle pid namespace init (child-pidns-init.c) while
  * it runs, else 0; pidns_init_lost() clears it once the init has died.
  * The init has no exit signal and leads its own process group, so of the

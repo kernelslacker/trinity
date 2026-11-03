@@ -56,6 +56,19 @@ opened in this child now has `sock_net(sk)->user_ns` pointing at the child's
 user namespace — every `GENL_UNS_ADMIN_PERM` command sent on that socket
 passes the gate.
 
+The sockets a sanitiser draws from the socket pool were opened by the parent,
+in its netns, before the fork, and the gate refuses every admin command sent
+on them.  `lane_netlink_socketinfo()` (`fds/sockets-lane.c`) therefore sends a
+lane child's netlink, seven draws in eight, on a socket of the drawn protocol
+that the child opened in the lane's netns and keeps in its `OBJ_LOCAL` pool,
+opening another once the pool retires it.  A dup of one of the parent's
+sockets also joins that pool, under the parent's triplet, so the child knows
+its own socket by the slot version it was pooled with.  The eighth draw keeps
+the parent's socket, for the refused path and the parent netns's devices.
+Protocols whose kernel socket exists in `init_net` alone (connector, iSCSI,
+SCSI transport, SELinux) keep it always: a socket in the lane's netns has no
+kernel peer to send to.
+
 ### Mount-namespace surfaces (FIFREEZE / FITHAW)
 
 `FIFREEZE` and `FITHAW` call `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` where
