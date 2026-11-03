@@ -25,6 +25,7 @@
 #include <linux/netlink.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/netlabel.h"	/* NLBL_MGMT_A_PROTOCOL */
 #include "netlink-genl-families.h"
 #include "random.h"		/* rand16, generate_rand_bytes, set_rand_bitmask */
 #include "rnd.h"
@@ -358,8 +359,9 @@ enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
 /* NLA_POLICY_MASK: hi holds the bits a value may set.  NLA_POLICY_RANGE:
  * lo to hi, both inclusive; MAX and MIN are ranges that start at 0 and end
  * at the top of the type.  An array's range is of its elements, a nest's of
- * its children, from 1. */
-enum slot_bound { SB_NONE, SB_MASK, SB_RANGE };
+ * its children, from 1.  SB_ONEOF is the values a handler, not its
+ * policy, accepts, listed in oneof. */
+enum slot_bound { SB_NONE, SB_MASK, SB_RANGE, SB_ONEOF };
 
 struct slot {
 	unsigned short id;
@@ -372,6 +374,9 @@ struct slot {
 	/* Wide enough for an NLA_UINT's 8-byte form; a byte's and a u32's
 	 * bounds fit, as do the or/and/min/max of the draws inside one. */
 	uint64_t lo, hi;
+	const unsigned int *oneof;	/* SB_ONEOF: the values accepted */
+	unsigned int n_oneof;
+	unsigned int oneof_seen;	/* one bit per listed value drawn */
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	uint64_t or_all, and_all, min_v, max_v;
 	bool required;			/* its handler needs it */
@@ -404,6 +409,9 @@ struct slot {
 	{ id, SK_BYTES, 4, 4, .bound = SB_MASK, .hi = bits, ##__VA_ARGS__ }
 #define S_U32_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 4, 4, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_U32_ONEOF(id, vals, ...) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_ONEOF, .oneof = vals, \
+	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 #define S_U8_RANGE(id, from, to, ...) \
@@ -1891,13 +1899,17 @@ extern struct genl_family_grammar fam_tipc;
  * its NODE nest strictly.  What only replies carry is not listed.
  */
 /* tipc_nl_parse_link_prop() bounds PRIO, TOL and WIN, the broadcast link
- * BROADCAST_RATIO, and the policy MTU. */
+ * BROADCAST_RATIO, and the policy MTU.  tipc_bc_link_set_broadcast_mode()
+ * takes only the BCLINK_MODE_BCAST, RCAST and SEL values, 1, 2 and 4,
+ * and answers any other -EINVAL. */
+static const unsigned int tipc_bcast_modes[] = { 1, 2, 4 };
+
 static struct slot tipc_prop[] = {
 	S_U32_RANGE(TIPC_NLA_PROP_PRIO, 0, TIPC_MAX_LINK_PRI),
 	S_U32_RANGE(TIPC_NLA_PROP_TOL, TIPC_MIN_LINK_TOL, TIPC_MAX_LINK_TOL),
 	S_U32_RANGE(TIPC_NLA_PROP_WIN, TIPC_DEF_LINK_WIN, TIPC_MAX_LINK_WIN),
 	S_U32_RANGE(TIPC_NLA_PROP_MTU, 0, 65535),
-	S_U32(TIPC_NLA_PROP_BROADCAST),
+	S_U32_ONEOF(TIPC_NLA_PROP_BROADCAST, tipc_bcast_modes),
 	S_U32_RANGE(TIPC_NLA_PROP_BROADCAST_RATIO, 1, 100),
 };
 /* tipc_udp_enable() wants both addresses, a UDP bearer's add the remote
@@ -2412,9 +2424,21 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
  */
 static void tally_bound(struct slot *slot, uint64_t v)
 {
-	if (slot->bound == SB_MASK ? (v & ~slot->hi) != 0 :
-				     (v < slot->lo || v > slot->hi))
+	if (slot->bound == SB_ONEOF) {
+		unsigned int i;
+
+		for (i = 0; i < slot->n_oneof; i++) {
+			if (slot->oneof[i] == v) {
+				slot->oneof_seen |= 1U << i;
+				break;
+			}
+		}
+		if (i == slot->n_oneof)
+			return;
+	} else if (slot->bound == SB_MASK ? (v & ~slot->hi) != 0 :
+					    (v < slot->lo || v > slot->hi)) {
 		return;
+	}
 
 	if (slot->in_bound++ == 0) {
 		slot->or_all = slot->and_all = slot->min_v = slot->max_v = v;
@@ -2647,6 +2671,8 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		 * share is the mean of the two widths'. */
 		if (slot->kind == SK_ARRAY || slot->kind == SK_NEST) {
 			share = 0;
+		} else if (slot->bound == SB_ONEOF) {
+			share = (double) slot->n_oneof / 4294967296.0;
 		} else {
 			unsigned int w;
 
@@ -2676,7 +2702,10 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 			BUG("genl ops: a bounded attribute is not drawn from its bound");
 		}
 
-		if (slot->bound == SB_MASK) {
+		if (slot->bound == SB_ONEOF) {
+			spans = slot->n_oneof < 32 &&
+				slot->oneof_seen == (1U << slot->n_oneof) - 1U;
+		} else if (slot->bound == SB_MASK) {
 			spans = slot->or_all == slot->hi && slot->and_all == 0;
 		} else {
 			uint64_t slack = (slot->hi - slot->lo) / 10;
@@ -3392,11 +3421,13 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * which is NLA_POLICY_MAX; one that runs to the top of the type, as
  * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
  * host order; a byte's range, one of them pinned to one number; an
- * NLA_UINT's range and two of its masks, at 4 or 8 bytes; an array of
- * two elements at most; and a nest of two children at most.
+ * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof of
+ * three values, in host order; an array of two elements at most; and a
+ * nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
+	static const unsigned int oneof_values[] = { 2, 17, 300 };
 	static const struct nla_attr_spec leaf[] = {
 		{ 1, NLA_KIND_U32, 4 },
 	};
@@ -3416,6 +3447,8 @@ static void check_bounded_tables(void)
 		{ 13, NLA_KIND_UINT_RANGE, UINT32_MAX, 1 },
 		{ 14, NLA_KIND_UINT_MASK, 0x1 },
 		{ 15, NLA_KIND_UINT_MASK, 0x3ffff },
+		{ 16, NLA_KIND_U32_ONEOF, 0, 0, .oneof = oneof_values,
+		  .n_oneof = ARRAY_SIZE(oneof_values) },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3434,6 +3467,7 @@ static void check_bounded_tables(void)
 		S_UINT_RANGE(13, 1, UINT32_MAX),
 		S_UINT_MASK(14, 0x1),
 		S_UINT_MASK(15, 0x3ffff),
+		S_U32_ONEOF(16, oneof_values),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3498,11 +3532,11 @@ static void check_sockaddr_kind(void)
 
 /*
  * Whether spec declares slot's bound: a mask or range kind at the slot's
- * width, with the bound's ends, or a nest or array capped where its
- * handler caps it.  A byte's range is NLA_KIND_U8_RANGE, a u16's
- * NLA_KIND_U16_RANGE, a u32's NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE,
- * and an NLA_UINT's, at 4 or 8 bytes, NLA_KIND_UINT_MASK or
- * NLA_KIND_UINT_RANGE.
+ * width, with the bound's ends, a u32 oneof kind with the same values,
+ * or a nest or array capped where its handler caps it.  A byte's range
+ * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
+ * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
+ * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
  */
 static bool spec_declares_bound(const struct nla_attr_spec *spec,
 				const struct slot *slot)
@@ -3515,6 +3549,22 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 		       spec->max_len == slot->hi;
 	if (slot->bound == SB_NONE)
 		return false;
+	if (slot->bound == SB_ONEOF) {
+		unsigned int i, j;
+
+		if (spec->kind != NLA_KIND_U32_ONEOF ||
+		    spec->n_oneof != slot->n_oneof)
+			return false;
+		for (i = 0; i < slot->n_oneof; i++) {
+			for (j = 0; j < spec->n_oneof; j++) {
+				if (spec->oneof[j] == slot->oneof[i])
+					break;
+			}
+			if (j == spec->n_oneof)
+				return false;
+		}
+		return true;
+	}
 	if (slot->bound == SB_MASK) {
 		if (slot->min == 4 && slot->max == 8)
 			return spec->kind == NLA_KIND_UINT_MASK &&
@@ -3587,6 +3637,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
 			  spec->kind == NLA_KIND_U32_RANGE ||
+			  spec->kind == NLA_KIND_U32_ONEOF ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||
@@ -3661,6 +3712,38 @@ static void check_policy_specs(void)
 				expect_specs_declared(table, n_table, cp->slots,
 						      cp->n_slots, what);
 		}
+	}
+}
+
+/*
+ * NetLabel's families have no policy mirrors above, so the one bound
+ * this round adds there is checked directly: NLBL_MGMT_A_PROTOCOL is
+ * the u32 oneof of the three protocol types netlbl_mgmt_add_common()
+ * accepts, NETLBL_NLTYPE_CIPSOV4, UNLABELED and CALIPSO, 3, 5 and 7.
+ */
+static const unsigned int netlbl_mgmt_protocols[] = { 3, 5, 7 };
+
+static void check_netlabel_oneof_declared(void)
+{
+	const struct nla_attr_spec *spec = NULL;
+	unsigned int i, j;
+
+	for (i = 0; i < fam_nlbl_mgmt.n_attrs; i++) {
+		if (fam_nlbl_mgmt.attrs[i].type == NLBL_MGMT_A_PROTOCOL)
+			spec = &fam_nlbl_mgmt.attrs[i];
+	}
+	if (spec == NULL)
+		BUG("genl ops: NLBL_MGMT_A_PROTOCOL has no spec");
+	if (spec->kind != NLA_KIND_U32_ONEOF ||
+	    spec->n_oneof != ARRAY_SIZE(netlbl_mgmt_protocols))
+		BUG("genl ops: NLBL_MGMT_A_PROTOCOL is not the u32 oneof of its protocols");
+	for (i = 0; i < ARRAY_SIZE(netlbl_mgmt_protocols); i++) {
+		for (j = 0; j < spec->n_oneof; j++) {
+			if (spec->oneof[j] == netlbl_mgmt_protocols[i])
+				break;
+		}
+		if (j == spec->n_oneof)
+			BUG("genl ops: NLBL_MGMT_A_PROTOCOL omits a protocol its handler takes");
 	}
 }
 
@@ -4006,6 +4089,7 @@ void genl_ops_self_check(void)
 	check_attrs_in_policy();
 	check_ctrl_requests();
 	check_policy_specs();
+	check_netlabel_oneof_declared();
 	check_policy_required();
 	check_policy_values();
 	close(peer_fd);

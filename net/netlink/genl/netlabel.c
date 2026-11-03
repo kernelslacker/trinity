@@ -35,15 +35,24 @@ static const struct genl_cmd_grammar nlbl_mgmt_cmds[] = {
  * Mgmt policy lives in net/netlabel/netlabel_mgmt.c::netlbl_mgmt_genl_policy.
  * DOMAIN is a NUL-terminated LSM domain string (e.g. an SELinux type
  * name); 64 bytes is generous for the typical SELinux/SMACK shape.
- * PROTOCOL / VERSION / CV4DOI / CLPDOI are u32 selectors.  IPV4ADDR /
+ * PROTOCOL is the u32 oneof of the protocol types
+ * netlbl_mgmt_add_common() accepts, NETLBL_NLTYPE_CIPSOV4, UNLABELED
+ * and CALIPSO, and VERSION / CV4DOI / CLPDOI are u32 selectors.  IPV4ADDR /
  * IPV4MASK are 4-byte struct in_addr; IPV6ADDR / IPV6MASK are 16-byte
  * struct in6_addr.  ADDRSELECTOR opens an inner nest holding one
  * address + mask + protocol triple; SELECTORLIST is an outer nest of
  * ADDRSELECTOR entries.  FAMILY is u16 (AF_INET / AF_INET6).
  */
+/* The protocol types netlbl_mgmt_add_common() accepts: NETLBL_NLTYPE_*
+ * in include/net/netlabel.h.  RIPSO and CIPSOV6 have no family, and
+ * MGMT and ADDRSELECT are not user-passable protocol values. */
+static const unsigned int nlbl_mgmt_protocols[] = { 3, 5, 7 };
+
 static const struct nla_attr_spec nlbl_mgmt_attrs[] = {
 	{ NLBL_MGMT_A_DOMAIN,		NLA_KIND_STRING, 64, 1 },
-	{ NLBL_MGMT_A_PROTOCOL,		NLA_KIND_U32,    4 },
+	{ NLBL_MGMT_A_PROTOCOL,		NLA_KIND_U32_ONEOF, 0, 0,
+	  .oneof = nlbl_mgmt_protocols,
+	  .n_oneof = ARRAY_SIZE(nlbl_mgmt_protocols) },
 	{ NLBL_MGMT_A_VERSION,		NLA_KIND_U32,    4 },
 	{ NLBL_MGMT_A_CV4DOI,		NLA_KIND_U32,    4 },
 	{ NLBL_MGMT_A_IPV6ADDR,		NLA_KIND_BINARY, 16 },

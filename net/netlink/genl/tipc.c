@@ -27,7 +27,9 @@
  * most U16_MAX (tipc_nl_mtu_range), and tipc_nl_parse_link_prop(), which
  * every PROP nest goes through, refuses a PRIO, TOL or WIN outside the
  * TIPC_*_LINK_* bounds, as the broadcast link does a BROADCAST_RATIO
- * outside 1 to 100.  Every handler of a bearer, link or
+ * outside 1 to 100 and tipc_bc_link_set_broadcast_mode() a BROADCAST
+ * outside BCLINK_MODE_BCAST, RCAST and SEL, 1, 2 and 4.  Every handler
+ * of a bearer, link or
  * media nest answers -EINVAL to one without its NAME, and PUBL_GET's
  * dumpit to a SOCK nest without REF, the one attribute of the nest that a
  * request is read for.  A NAME is one the handlers find: "broadcast-link",
@@ -36,6 +38,10 @@
  * which bearer_name_validate() passes.  What only replies carry is left
  * out.
  */
+/* The broadcast modes tipc_bc_link_set_broadcast_mode() takes:
+ * BCLINK_MODE_BCAST, RCAST and SEL, in net/tipc/bcast.h. */
+static const unsigned int tipc_bcast_modes[] = { 1, 2, 4 };
+
 static const struct nla_attr_spec tipc_prop_attrs[] = {
 	{ TIPC_NLA_PROP_PRIO,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_PRI, 0 },
 	{ TIPC_NLA_PROP_TOL,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_TOL,
@@ -43,7 +49,8 @@ static const struct nla_attr_spec tipc_prop_attrs[] = {
 	{ TIPC_NLA_PROP_WIN,		NLA_KIND_U32_RANGE, TIPC_MAX_LINK_WIN,
 	  TIPC_DEF_LINK_WIN },
 	{ TIPC_NLA_PROP_MTU,		NLA_KIND_U32_RANGE, 65535, 0 },
-	{ TIPC_NLA_PROP_BROADCAST,	NLA_KIND_U32,    4 },
+	{ TIPC_NLA_PROP_BROADCAST,	NLA_KIND_U32_ONEOF, 0, 0,
+	  .oneof = tipc_bcast_modes, .n_oneof = ARRAY_SIZE(tipc_bcast_modes) },
 	{ TIPC_NLA_PROP_BROADCAST_RATIO, NLA_KIND_U32_RANGE, 100, 1 },
 };
 
