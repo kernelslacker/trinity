@@ -529,6 +529,34 @@ else
 fi
 
 #############################################################################################
+# Does linux/bpf.h give union bpf_attr the link_create.uprobe_multi.path_fd
+# member (added in 7.2-rc1).  A struct member, not a macro, so no #ifndef
+# shim can stand in for it: compile-test, and gate the catalog field,
+# the effective size and the sanitiser fixup on the result.
+#
+echo -n "[*] Checking if bpf_attr has link_create.uprobe_multi.path_fd.. "
+rm -f "$TMP" || exit 1
+
+cat >"$TMP.c" << EOF
+#include <linux/bpf.h>
+
+int main(void)
+{
+	union bpf_attr a = { .link_create.uprobe_multi.path_fd = 0 };
+	return a.link_create.uprobe_multi.path_fd;
+}
+EOF
+
+${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
+if [ ! -x "$TMP" ]; then
+	echo $RED "[NO]" $COL_RESET
+	MISSING_DEFS=1
+else
+	echo $GREEN "[YES]" $COL_RESET
+	echo "#define USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD 1" >> $CONFIGH
+fi
+
+#############################################################################################
 # Does linux/iommufd.h give the IOMMU_HWPT_ALLOC_PASID flag
 # (added in 6.14). The flag is an enum value, not a #define, so we
 # need a compile test rather than #ifdef.
