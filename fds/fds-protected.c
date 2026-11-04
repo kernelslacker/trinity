@@ -92,6 +92,13 @@
  *     relative to it, so a close or dup2 over its number loses the oracle
  *     its files for the rest of that child's life.
  *
+ *   - the bug-log directory handle (trinity_buglog_dir_fd()), which the
+ *     child opens in init_stderr_memfd() before the sandbox and lane,
+ *     and parks above PROTECTED_FD_HIGH_BASE: the fault handler opens
+ *     the per-pid bug log through it with openat(), so a close or dup2
+ *     over its number sends a later crash's log through the absolute
+ *     path the handle exists to avoid, or into another directory.
+ *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
  * stderr memfd, a per-child tainted_fd, or a per-child fail_nth_fd,
@@ -111,6 +118,7 @@ bool fd_is_protected(int fd)
 {
 	struct childdata *child;
 	int memfd;
+	int bugfd;
 	int taintfd;
 	int rotfd;
 
@@ -120,6 +128,9 @@ bool fd_is_protected(int fd)
 		return true;
 	memfd = trinity_stderr_memfd();
 	if (memfd >= 0 && fd == memfd)
+		return true;
+	bugfd = trinity_buglog_dir_fd();
+	if (bugfd >= 0 && fd == bugfd)
 		return true;
 	taintfd = trinity_tainted_fd_cached();
 	if (taintfd >= 0 && fd == taintfd)
@@ -161,6 +172,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 {
 	struct childdata *child;
 	int memfd;
+	int bugfd;
 	int taintfd;
 	int rotfd;
 	int dirfd;
@@ -178,6 +190,12 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	    (unsigned int) memfd >= lo && (unsigned int) memfd <= hi)
 		if (lowest < 0 || memfd < lowest)
 			lowest = memfd;
+
+	bugfd = trinity_buglog_dir_fd();
+	if (bugfd >= 0 &&
+	    (unsigned int) bugfd >= lo && (unsigned int) bugfd <= hi)
+		if (lowest < 0 || bugfd < lowest)
+			lowest = bugfd;
 
 	taintfd = trinity_tainted_fd_cached();
 	if (taintfd >= 0 &&

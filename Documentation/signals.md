@@ -66,16 +66,24 @@ crash: trinity's own `outputerr()` noise from healthy children is
 silently discarded with the process at clean exit.
 
 Paired with the drain block at the top of `child_fault_handler`: the
-handler `open()`s the bug log, `lseek()`s the memfd to 0, and splices
+handler opens the bug log, `lseek()`s the memfd to 0, and splices
 the buffered text into the log before its own writes.
 
 `snprintf()` is NOT async-signal-safe, so the bug-log path is formatted
 here at init time (under the inherited non-fuzzed locale state) and
-stashed in the file-static `buglog_path[]`.  `trinity_tmpdir_abs()` is
-used so a fuzzed `chdir()` can't move us off the writable tmp dir
-mid-run; `getpid()` is used instead of `mypid()` because the
-`cached_pid` backing `mypid()` isn't populated until `set_child_cache`
-runs later in `init_child_rendezvous_parent`.
+stashed in the file-static `buglog_path[]`, with its basename in
+`buglog_name[]`.  `trinity_tmpdir_abs()` is used so a fuzzed `chdir()`
+can't move us off the writable tmp dir mid-run; `getpid()` is used
+instead of `mypid()` because the `cached_pid` backing `mypid()` isn't
+populated until `set_child_cache` runs later in
+`init_child_rendezvous_parent`.  An `O_PATH|O_DIRECTORY` handle on the
+tmp dir is opened here too, before the sandbox and the userns-admin
+lane unshare, parked above `PROTECTED_FD_HIGH_BASE` and registered
+with the protected fds: the handler opens the log through it with
+`openat()`, so a fuzzed `chroot()` into the tmp dir or a lane
+`mount_setattr()` making `/` read-only can't move the log off the dir
+the parent watches.  If that open, or the handler's `openat()`, fails
+the handler falls back to `open()`ing `buglog_path[]`.
 
 On `memfd_create()` failure (`CONFIG_MEMFD_CREATE=n` or sandbox) stderr
 stays at `/dev/null` per `init_child_isolate_io()`'s baseline: the
@@ -273,10 +281,13 @@ every trinity `outputerr()` line accumulated this run.  The
 materialises on a real crash -- clean exits discard the memfd with the
 process.
 
-`buglog_path[]` was pre-formatted in `init_stderr_memfd()` so the
-`snprintf()` doesn't happen in this handler (not async-signal-safe per
-POSIX 2024 §2.4.3).  `open` / `lseek` / `read` / `write` / `dup2` /
-`close` ARE all on the POSIX safe list.
+`buglog_path[]` / `buglog_name[]` were pre-formatted in
+`init_stderr_memfd()` so the `snprintf()` doesn't happen in this
+handler (not async-signal-safe per POSIX 2024 §2.4.3).  `open` /
+`openat` / `lseek` / `read` / `write` / `dup2` / `close` ARE all on
+the POSIX safe list.  The log is opened via `openat()` on the parked
+tmp-dir handle, with `open()` of the absolute path as fallback when
+the handle was never opened or the `openat()` fails.
 
 If `init_stderr_memfd()` failed (`CONFIG_MEMFD_CREATE=n`) or this is a
 child that started before that init step, `stderr_memfd` is `-1` and

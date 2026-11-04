@@ -14,6 +14,7 @@
 #include <fcntl.h>	/* O_WRONLY, O_CREAT, O_APPEND, O_CLOEXEC */
 #include <sys/mman.h>	/* memfd_create() */
 
+#include "fd.h"		/* fd_relocate_high() */
 #include "tmpdir.h"	/* trinity_tmpdir_abs() */
 #include "signals.h"
 #include "signals-internal.h"
@@ -125,6 +126,23 @@ static int stderr_memfd = -1;
  */
 static char buglog_path[PATH_MAX + 64];
 
+/* An O_PATH handle on the trinity tmp dir, opened in
+ * init_stderr_memfd() before the sandbox drops caps and before the
+ * userns-admin lane unshares, so it names the pre-lane namespace's
+ * mount of the tmp dir.  The bug-log open in the fault handler goes
+ * through it with openat(), so a fuzzed chroot() into the tmp dir
+ * or a mount_setattr() making the lane's "/" read-only cannot move
+ * the log off the dir the parent watches.  -1 when the open failed.
+ * The handler falls back to open()ing buglog_path[] then, and when
+ * the openat fails: a close the registry cannot see (an io_uring or
+ * BPF one) frees the number.  The fd is parked above
+ * PROTECTED_FD_HIGH_BASE, out of the numbers fuzzed fd args reach,
+ * and registered with the protected fds (see fds-protected.c).
+ * buglog_name[] is the same file's basename, pre-formatted with
+ * buglog_path[] for the same async-signal-safety reason. */
+static int buglog_dir_fd = -1;
+static char buglog_name[64];
+
 /*
  * Buffer the child's stderr writes in an anonymous in-memory file
  * so pre-fault glibc text (malloc_printerr / __libc_message /
@@ -139,6 +157,10 @@ static char buglog_path[PATH_MAX + 64];
  * trinity_tmpdir_abs() guards against a fuzzed chdir(); getpid()
  * is used instead of mypid() because cached_pid isn't populated
  * until set_child_cache runs later in init_child_rendezvous_parent.
+ * This runs before init_child_setup_sandbox(), so before the
+ * userns-admin lane unshares: the O_PATH handle on the tmp dir
+ * opened here names the pre-lane namespace's mount, which the
+ * fault handler's openat() needs.
  *
  * The fd is intentionally NOT closed after dup2 onto STDERR_FILENO
  * -- the handler reads it back from the same fd.
@@ -150,6 +172,10 @@ void init_stderr_memfd(void)
 	snprintf(buglog_path, sizeof(buglog_path),
 		 "%s/trinity-bug-%d.log",
 		 trinity_tmpdir_abs(), (int)getpid());
+	snprintf(buglog_name, sizeof(buglog_name),
+		 "trinity-bug-%d.log", (int)getpid());
+	buglog_dir_fd = fd_relocate_high(open(trinity_tmpdir_abs(),
+					      O_PATH | O_DIRECTORY | O_CLOEXEC));
 
 	fd = memfd_create("trinity-stderr", MFD_CLOEXEC);
 	if (fd < 0)
@@ -161,6 +187,11 @@ void init_stderr_memfd(void)
 int trinity_stderr_memfd(void)
 {
 	return stderr_memfd;
+}
+
+int trinity_buglog_dir_fd(void)
+{
+	return buglog_dir_fd;
 }
 
 /*
@@ -176,9 +207,13 @@ int trinity_stderr_memfd(void)
 __attribute__((no_sanitize("address")))
 void open_buglog_and_drain_stderr(int sig)
 {
-	int bug_fd;
+	int bug_fd = -1;
 
-	bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (buglog_dir_fd >= 0)
+		bug_fd = openat(buglog_dir_fd, buglog_name,
+				O_WRONLY | O_CREAT | O_APPEND, 0644);
+	if (bug_fd < 0)
+		bug_fd = open(buglog_path, O_WRONLY | O_CREAT | O_APPEND, 0644);
 	if (bug_fd >= 0) {
 		/*
 		 * Capture __abort_msg directly into the per-pid bug

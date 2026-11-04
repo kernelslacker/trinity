@@ -269,3 +269,14 @@ void watchdog_signals_rearm(void);
  * memfd_create() call failed (no CONFIG_MEMFD_CREATE, sandbox refusal).
  */
 int trinity_stderr_memfd(void);
+
+/*
+ * The O_PATH handle on the trinity tmp dir opened by
+ * init_stderr_memfd(), through which the fault handler opens the
+ * per-pid bug log with openat().  Parked above PROTECTED_FD_HIGH_BASE
+ * and registered with the protected fds, so a fuzz-induced close is
+ * unlikely to drop it before the handler runs.  Returns -1 when the
+ * open failed; the handler then, and when the openat fails, falls
+ * back to open()ing the pre-formatted absolute bug-log path.
+ */
+int trinity_buglog_dir_fd(void);

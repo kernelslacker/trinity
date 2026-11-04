@@ -4,7 +4,8 @@
  * one file they all append to, and an exec'd image must not inherit it.
  * Runs the real stats_rotation_event_*() entry points against the
  * protected-fd registry; its other inputs (stderr memfd, taint fd) are
- * stubbed as not open.
+ * stubbed as not open, and the bug-log directory handle is a settable
+ * stub so the registry's consultation of it is checked too.
  */
 
 #include <errno.h>
@@ -23,7 +24,7 @@
 #include "params.h"		/* show_stats */
 #include "pids.h"		/* cached_pid */
 #include "rotation_event.h"
-#include "signals.h"		/* trinity_stderr_memfd */
+#include "signals.h"		/* trinity_stderr_memfd, trinity_buglog_dir_fd */
 #include "taint.h"		/* trinity_tainted_fd_cached */
 
 /* Owned by main/params/state.c and dispatch/pids.c in production. */
@@ -39,6 +40,17 @@ int trinity_stderr_memfd(void)
 int trinity_tainted_fd_cached(void)
 {
 	return -1;
+}
+
+/* Set by check_buglog_dir_fd(): the handle init_stderr_memfd() opens
+ * on the tmp dir in production, through which the fault handler
+ * opens the per-pid bug log.  -1 when the open failed and the
+ * handler falls back to the absolute path. */
+static int buglog_dir_fd_stub = -1;
+
+int trinity_buglog_dir_fd(void)
+{
+	return buglog_dir_fd_stub;
 }
 
 /* The registry must name @sink for single-fd and for range queries, and
@@ -63,6 +75,36 @@ static void check_registry(int sink, int other)
 	    lowest_protected_fd_in_range(STDERR_FILENO + 1,
 					 (unsigned int)sink - 1) != -1)
 		BUG("fd protected: a range below the sink reported a fd");
+}
+
+/* The registry must consult trinity_buglog_dir_fd() the same way it
+ * consults the stderr memfd: while the stub names an open directory
+ * fd it is protected and stops a range walk, and once the stub is
+ * back to -1 the number is not. */
+static void check_buglog_dir_fd(int other)
+{
+	int dirfd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+
+	if (dirfd < 0)
+		BUG("fd protected: cannot open the scratch dir");
+	if (fd_is_protected(dirfd))
+		BUG("fd protected: a bug-log dir fd counted before the stub named it");
+	buglog_dir_fd_stub = dirfd;
+	if (!fd_is_protected(dirfd))
+		BUG("fd protected: the bug-log dir fd is not protected");
+	if (lowest_protected_fd_in_range((unsigned int)dirfd,
+					 (unsigned int)dirfd) != dirfd)
+		BUG("fd protected: a range over the bug-log dir fd did not report it");
+	if (lowest_protected_fd_in_range((unsigned int)other,
+					 (unsigned int)dirfd) != dirfd)
+		BUG("fd protected: a range over an unrelated fd stopped early");
+	if (lowest_protected_fd_in_range((unsigned int)dirfd + 1,
+					 UINT_MAX) != -1)
+		BUG("fd protected: a range above the bug-log dir fd reported a fd");
+	close(dirfd);
+	buglog_dir_fd_stub = -1;
+	if (fd_is_protected(dirfd))
+		BUG("fd protected: a bug-log dir fd stayed protected after the stub cleared");
 }
 
 void fd_protected_self_check(void);
@@ -122,6 +164,7 @@ void fd_protected_self_check(void)
 	if (fcntl(sink, F_GETFD) == -1)
 		BUG("fd protected: a failed move closed the sink");
 	check_registry(sink, other);
+	check_buglog_dir_fd(other);
 
 	/* Moving the sink up needs a soft limit above the base, and a login
 	 * shell's 1024 is not.  Ask for as much as the hard limit allows. */

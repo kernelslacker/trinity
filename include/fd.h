@@ -239,6 +239,10 @@ int get_typed_fd(enum argtype type);
  *   - the canary pool's directory (canary_dir_fd(), see canary.h): opened
  *     and parked high by the parent and kept by every child, which reopens
  *     the pool's files relative to it.
+ *   - the bug-log directory handle (trinity_buglog_dir_fd(), see
+ *     signals.h): opened and parked high by each child in
+ *     init_stderr_memfd(); the fault handler opens the per-pid bug log
+ *     through it with openat().
  *
  * Parent-context callers (this_child() == NULL) still get STDERR_FILENO
  * and the rotation sink protected -- both are process-wide -- but
@@ -289,7 +293,7 @@ void reroll_protected_fd_arg(unsigned long *slot);
 
 /*
  * Where a child parks the fds trinity depends on (kcov PC/cmp, taint,
- * fail-nth, rotation sink).  Opened or inherited before the fuzz loop,
+ * fail-nth, rotation sink, bug-log directory).  Opened or inherited before the fuzz loop,
  * they sit on the lowest free numbers (3, 4, ...): inside the working
  * set of the pickers (live-fd rings, typed-fd rerolls) and among the
  * small numbers mutated fd args reach, paths the registry alone does
