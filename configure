@@ -761,6 +761,10 @@ check_enum_member linux/ethtool_netlink_generated.h \
 # ethtool's newest string set, which ends the ids STRSET_GET takes.
 check_enum_member linux/ethtool.h ETH_SS_PHY_INTERFACES
 
+# wireguard's allowed-IP flags attribute and its REMOVE_ME bit, members
+# of the wgallowedip_attr and wgallowedip_flags enums.
+check_enum_member linux/wireguard.h WGALLOWEDIP_A_FLAGS WGALLOWEDIP_F_REMOVE_ME
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP
