@@ -156,13 +156,14 @@ void divergence_sentinel_tick(struct childdata *child);
  * and emits an output(0, ...) line.  See child-capdrop-oracle.c.
  *
  * capdrop_oracle_capture_init_ns_anchors() stamps the (st_dev, st_ino)
- * identity of /proc/self/ns/{user,mnt,net} so subsequent ticks can skip
- * the ns-scoped probes after a legitimate userns/mntns/netns transition
+ * identity of /proc/self/ns/{user,mnt} so subsequent ticks can skip
+ * the ns-scoped probes after a legitimate userns/mntns transition
  * (the userns-admin lane, or an alt-op that unshares in place) that
  * would otherwise false-fire them.  Call once at child
  * sandbox setup, immediately after the capset()-to-empty drop.  The
- * bpf(KPROBE) probe is never gated -- its cap check pins to the init
- * userns and is the load-bearing init-ns invariant.
+ * bpf(KPROBE) and SO_RCVBUFFORCE probes are never gated -- their cap
+ * checks pin to the init userns and are the load-bearing init-ns
+ * invariants.
  */
 void capdrop_oracle_tick(void);
 void capdrop_oracle_capture_init_ns_anchors(void);

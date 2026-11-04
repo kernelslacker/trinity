@@ -734,6 +734,9 @@ struct syscallentry {
 	 * GENL_UNS_ADMIN_PERM commands sent on sockets opened in the
 	 * child's private netns, which holds only lo, and making the
 	 * mount namespace the unshare copied one the child administers.
+	 * Gates that check capable() against init_user_ns instead --
+	 * sockopt_capable() for SO_RCVBUFFORCE, the bpf KPROBE-load
+	 * check -- stay unreachable: the lane grants nothing there.
 	 * The capset(empty) drop
 	 * still runs first; the child holds no capabilities in
 	 * init_user_ns.  Gated on

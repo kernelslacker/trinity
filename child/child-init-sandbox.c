@@ -102,11 +102,12 @@ static int userns_lane_write_proc(const char *path, const char *line)
 
 /*
  * Set to true after maybe_enter_userns_admin_lane() completes all
- * three idmap writes successfully.  Consulted by the cap-drop oracle
- * to invert the SO_RCVBUFFORCE probe expectation: with the lane active
- * the socket lives in the lane's netns where the child holds
- * CAP_NET_ADMIN, so SO_RCVBUFFORCE must SUCCEED rather than fail.
- * Process-local: each forked child gets its own copy.
+ * three idmap writes successfully.  Consulted by lane_netlink_
+ * socketinfo() to send the child's netlink on sockets in the lane's
+ * netns.  Not consulted by the cap-drop oracle: its SO_RCVBUFFORCE
+ * probe expects EPERM in every namespace, since sockopt_capable()
+ * is capable() (the init user namespace), never ns_capable() on the
+ * socket's netns.  Process-local: each forked child gets its own copy.
  */
 static bool child_userns_lane_active;
 
@@ -144,9 +145,9 @@ static bool child_userns_lane_active;
  * private user namespace, never in init_user_ns, so:
  *   - capable(CAP_*)   -> ns_capable(&init_user_ns, cap) -> false
  *   - ns_capable(child_userns, cap)                      -> true
- * The cap-drop oracle stays correct: its bpf probe gates on
- * init_user_ns and still fails, the net_admin probe flips polarity
- * while child_userns_lane_is_active(), and the capget and mount probes
+ * The cap-drop oracle stays correct: its bpf and net_admin probes
+ * gate on init_user_ns and still fail (sockopt_capable() is
+ * capable(), never ns_capable()), and the capget and mount probes
  * are skipped because the anchors, captured before this call, no longer
  * match the child's user and mount namespaces.
  */
@@ -253,10 +254,9 @@ static void maybe_enter_userns_admin_lane(int childno)
 
 /*
  * Returns true iff this child successfully entered the userns-admin
- * lane (unshare + all three idmap writes completed).  Consumed by the
- * cap-drop oracle to select the correct SO_RCVBUFFORCE probe direction,
- * and by lane_netlink_socketinfo() to send the child's netlink on
- * sockets in the lane's netns.
+ * lane (unshare + all three idmap writes completed).  Consumed by
+ * lane_netlink_socketinfo() to send the child's netlink on sockets
+ * in the lane's netns.
  */
 bool child_userns_lane_is_active(void)
 {

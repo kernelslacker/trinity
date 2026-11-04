@@ -32,14 +32,14 @@
 
 /*
  * Per-child anchors capturing the (st_dev, st_ino) identity of the
- * /proc/self/ns/{user,mnt,net} symlinks at child-sandbox-setup time --
+ * /proc/self/ns/{user,mnt} symlinks at child-sandbox-setup time --
  * i.e. immediately after init_child_setup_sandbox()'s capset()-to-empty
  * drop, after any per-child unshare() dance has already run.  Stamped by
  * capdrop_oracle_capture_init_ns_anchors() and consulted by the per-
  * probe gates below.
  *
- * Rationale: the capget/mount/net_admin probes assert "no caps in this
- * task's userns / mntns / netns".  A child that legitimately enters a
+ * Rationale: the capget and mount probes assert "no caps in this
+ * task's userns / mntns".  A child that legitimately enters a
  * fresh userns (the userns-admin lane, or an alt-op that unshares in
  * place) makes those probes false-fire forever after, because the child
  * now has full caps in the bootstrapped userns.  Re-stat at tick-time and skip the gated probe
@@ -47,10 +47,12 @@
  * silent on legitimate ns transitions but still fires on a real cap-
  * drop regression that leaves the child in its init ns.
  *
- * bpf(BPF_PROG_LOAD, KPROBE) is NOT gated: the verifier's KPROBE-load
- * cap check is bound to the init user namespace specifically, so a
- * bootstrapped userns cannot fool it.  That probe remains the oracle's
- * load-bearing init-userns invariant and must keep firing on regression.
+ * bpf(BPF_PROG_LOAD, KPROBE) and setsockopt(SO_RCVBUFFORCE) are NOT
+ * gated: the verifier's KPROBE-load cap check and sock_setsockopt()'s
+ * SO_RCVBUFFORCE check are both bound to the init user namespace
+ * specifically (capable(), never ns_capable()), so a bootstrapped
+ * userns cannot fool them.  Those probes remain the oracle's
+ * load-bearing init-userns invariants and must keep firing on regression.
  */
 struct capdrop_ns_anchor {
 	bool valid;
@@ -60,7 +62,6 @@ struct capdrop_ns_anchor {
 
 static struct capdrop_ns_anchor anchor_user;
 static struct capdrop_ns_anchor anchor_mnt;
-static struct capdrop_ns_anchor anchor_net;
 
 static void capdrop_capture_anchor(struct capdrop_ns_anchor *a, const char *path)
 {
@@ -78,7 +79,6 @@ void capdrop_oracle_capture_init_ns_anchors(void)
 {
 	capdrop_capture_anchor(&anchor_user, "/proc/self/ns/user");
 	capdrop_capture_anchor(&anchor_mnt, "/proc/self/ns/mnt");
-	capdrop_capture_anchor(&anchor_net, "/proc/self/ns/net");
 }
 
 /*
@@ -210,41 +210,19 @@ static void capdrop_probe_net_admin(void)
 
 	/*
 	 * SO_RCVBUFFORCE is the CAP_NET_ADMIN-gated sibling of SO_RCVBUF;
-	 * sock_setsockopt() rejects it at the top of the case branch when
-	 * the caller lacks CAP_NET_ADMIN in the net namespace.
-	 *
-	 * Expectation depends on whether the userns-admin lane is active:
-	 *
-	 *   Lane NOT active: socket is in init_user_ns netns, child holds no
-	 *     caps in init_user_ns -> SO_RCVBUFFORCE must FAIL (EPERM/EACCES).
-	 *     Success is the anomaly (original behaviour).
-	 *
-	 *   Lane active: socket is in the lane's netns whose user_ns is the
-	 *     child's own userns where it holds CAP_FULL_SET.  ns_capable
-	 *     resolves against that userns -> SO_RCVBUFFORCE must SUCCEED.
-	 *     Failure is the anomaly: it proves the lane entered but
-	 *     ns_capable is still denied.  Do NOT skip when the lane is
-	 *     active -- a successful probe here is the one reliable
-	 *     observable that confirms the lane is live.
+	 * sock_setsockopt() rejects it at the top of the case branch
+	 * through sockopt_capable(), which is capable() -- the init
+	 * user namespace -- never ns_capable() on the socket's netns.
+	 * The child holds no capabilities in init_user_ns in any
+	 * namespace it can reach, lane or not, so the probe must FAIL
+	 * (EPERM/EACCES) everywhere; success is the anomaly, as with
+	 * the bpf probe.  A lane child that held CAP_NET_ADMIN in
+	 * init_user_ns would pass, and must be caught, not excused.
 	 */
 	ret = setsockopt(fd, SOL_SOCKET, SO_RCVBUFFORCE, &sz, sizeof(sz));
 	saved_errno = errno;
 	(void) close(fd);
 
-	if (child_userns_lane_is_active()) {
-		/* Lane active: expect SUCCESS; failure is the anomaly. */
-		if (ret != 0) {
-			output(0,
-			       "capdrop oracle anomaly: userns-admin lane active "
-			       "but setsockopt(SO_RCVBUFFORCE) failed (errno=%d) "
-			       "-- ns_capable denied in lane netns\n",
-			       saved_errno);
-			capdrop_bump_anomaly();
-		}
-		return;
-	}
-
-	/* Lane NOT active: expect FAIL; success is the anomaly. */
 	if (ret == 0) {
 		output(0,
 		       "capdrop oracle anomaly: setsockopt(SO_RCVBUFFORCE) "
@@ -296,21 +274,14 @@ static void capdrop_probe_capget_self(void)
  * ONE_IN gate around it; this function pays the four probes only on
  * the sample tick.
  *
- * The bpf KPROBE-load probe runs UNCONDITIONALLY -- its cap check is
- * pinned to the init user namespace, so it remains correct even after a
- * legitimate alt-op enters a bootstrapped userns and is the load-
- * bearing invariant of this oracle.  The capget/mount/net_admin probes
- * are skipped when the child has left its sandbox-time user / mnt / net
- * namespace respectively, because each then legitimately succeeds in
- * the new ns and would false-fire.
- *
- * Exception for net_admin: when the userns-admin lane is active the
- * child has unshared its net namespace (CLONE_NEWUSER | CLONE_NEWNET),
- * so capdrop_still_in_init_ns() returns false -- but the probe is still
- * meaningful.  capdrop_probe_net_admin() already handles the lane case
- * internally (flipped polarity: success is expected, failure is the
- * anomaly).  The extra || child_userns_lane_is_active() arm below
- * re-enables the probe in that context.
+ * The bpf KPROBE-load and net_admin probes run UNCONDITIONALLY --
+ * their cap checks are pinned to the init user namespace, so they
+ * remain correct even after a legitimate alt-op enters a
+ * bootstrapped userns, and are the load-bearing invariants of this
+ * oracle.  The capget/mount probes are skipped when the child has
+ * left its sandbox-time user / mount namespace respectively,
+ * because each then legitimately succeeds in the new ns and would
+ * false-fire.
  */
 void capdrop_oracle_tick(void)
 {
@@ -322,7 +293,5 @@ void capdrop_oracle_tick(void)
 	capdrop_probe_bpf();
 	if (capdrop_still_in_init_ns(&anchor_mnt, "/proc/self/ns/mnt"))
 		capdrop_probe_mount();
-	if (capdrop_still_in_init_ns(&anchor_net, "/proc/self/ns/net") ||
-	    child_userns_lane_is_active())
-		capdrop_probe_net_admin();
+	capdrop_probe_net_admin();
 }

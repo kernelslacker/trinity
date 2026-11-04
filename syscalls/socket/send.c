@@ -656,7 +656,8 @@ out_free:
  * active set, so this engages the lane for every child while
  * sendmsg is active; a child that never sends netlink still runs
  * in the private netns, which holds only lo.  The cap-drop
- * oracle's net_admin probe flips polarity while the lane is active.
+ * oracle's net_admin probe still expects EPERM while the lane is
+ * active: sockopt_capable() checks init_user_ns, never ns_capable().
  */
 struct syscallentry syscall_sendmsg = {
 	.name = "sendmsg",

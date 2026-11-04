@@ -151,18 +151,19 @@ How the oracle probes see a lane-active child:
   matches, and `may_mount()` legitimately holds inside the lane's
   mount namespace, which the child's own user namespace owns.
 - The `SO_RCVBUFFORCE` probe opens its socket at probe time, inside the
-  lane's netns, where the child holds `CAP_NET_ADMIN`.  Its polarity is
-  therefore inverted while `child_userns_lane_is_active()` is true: success
-  is expected, failure is the anomaly, and a successful probe is the one
-  reliable observable that the lane is live.
+  lane's netns, and still expects `EPERM`: `sock_setsockopt()` gates
+  `SO_RCVBUFFORCE` on `sockopt_capable()`, which is `capable()` — the
+  init user namespace — never `ns_capable()` on the socket's netns, so
+  the child holds nothing the gate accepts in any namespace it can
+  reach, lane or not. Success is the anomaly, as with the `bpf` probe.
 
 `capdrop_oracle_capture_init_ns_anchors()` runs right after the drop and
 before the lane, so the anchors record the namespaces the drop was applied
-in, not the lane's.  The capget/mount/net_admin probes compare against them
+in, not the lane's.  The capget and mount probes compare against them
 and are skipped once the child has legitimately moved out of those
 namespaces.  The lane's own move skips the capget probe (the user namespace
-no longer matches); the net_admin probe stays on for it through
-`child_userns_lane_is_active()`.
+no longer matches); the `bpf` and net_admin probes are ungated, since
+their gates pin to the init user namespace.
 
 ### 3. Preventing cross-contamination between the host-cap and userns-cap lanes
 
@@ -208,10 +209,11 @@ These are the lowest-friction starting point:
 - The gate resolves `net->user_ns` from the sending socket's netns, which is
   guaranteed to be the child's private netns after the unshare.  There is no
   ambiguity about which `user_ns` the kernel will use.
-- The cap-drop oracle needs only one adjustment: the `SO_RCVBUFFORCE` probe
-  flips polarity under the lane (described above); the `bpf` probe keeps
-  its `init_user_ns` expectation, and the `mount` and `capget` probes are
-  skipped once the lane has moved their anchor namespaces.
+- The cap-drop oracle needs no adjustment: the `SO_RCVBUFFORCE` probe
+  keeps its `EPERM` expectation under the lane (described above), the
+  `bpf` probe keeps its `init_user_ns` expectation, and the `mount`
+  and `capget` probes are skipped once the lane has moved their anchor
+  namespaces.
 - Failure modes are limited: the child either gets `EPERM` (userns disabled,
   handled by the latch) or successfully enters the lane and fuzzes genl write
   cmds.
