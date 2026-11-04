@@ -354,9 +354,9 @@ static unsigned long handle_arg_iovec_dir(struct syscallentry *entry,
 	 * bits of the pointer, so it gets the compat pool twin; a
 	 * native-layout array there would misread every entry's
 	 * base/len pair.  The count published above is the same for
-	 * both layouts, and callers that walk the array must scrub
-	 * with the matching width (see process_vm_readv and
-	 * process_madvise).
+	 * both layouts, and callers that walk the array must go
+	 * through the layout helpers in include/sanitise.h, keyed
+	 * on the record's do32bit, never by casting to struct iovec.
 	 */
 	if (rec->do32bit)
 		return (unsigned long) alloc_compat_iovec((unsigned int) num_entries, dir);

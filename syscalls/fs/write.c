@@ -223,7 +223,7 @@ struct syscallentry syscall_write = {
 
 static void sanitise_writev(struct syscallrecord *rec)
 {
-	struct iovec *iov = (struct iovec *) rec->a2;
+	void *iov = (void *) rec->a2;
 
 	/*
 	 * Per-fd-type bias: the generic ARG_FD pool rarely picks the
@@ -271,8 +271,10 @@ static void sanitise_writev(struct syscallrecord *rec)
 
 					rec->a1 = (unsigned long) efd;
 					rec->a3 = 1;
-					iov[0].iov_base = buf;
-					iov[0].iov_len = sizeof(uint64_t);
+					iovec_set_entry(iov, 0,
+							(unsigned long) buf,
+							sizeof(uint64_t),
+							rec->do32bit);
 					memcpy(buf, &val, sizeof(val));
 				}
 			}
@@ -284,7 +286,8 @@ static void sanitise_writev(struct syscallrecord *rec)
 				};
 				rec->a1 = (unsigned long) tfd;
 				rec->a3 = 1;
-				iov[0].iov_len = RAND_ARRAY(tsizes);
+				iovec_set_entry_len(iov, 0, RAND_ARRAY(tsizes),
+						    rec->do32bit);
 			}
 		} else if (roll < 40) {
 			int sfd = get_typed_fd(ARG_FD_SIGNALFD);
@@ -294,7 +297,8 @@ static void sanitise_writev(struct syscallrecord *rec)
 				};
 				rec->a1 = (unsigned long) sfd;
 				rec->a3 = 1;
-				iov[0].iov_len = RAND_ARRAY(ssizes);
+				iovec_set_entry_len(iov, 0, RAND_ARRAY(ssizes),
+						    rec->do32bit);
 			}
 		}
 	}

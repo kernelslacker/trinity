@@ -36,10 +36,8 @@ static unsigned long process_vm_writev_flags[] = {
  */
 static void sanitise_process_vm_writev(struct syscallrecord *rec)
 {
-	if (rec->do32bit)
-		scrub_compat_iovec_for_kernel_write((struct compat_iovec *)rec->a4, rec->a5);
-	else
-		scrub_iovec_for_kernel_write((struct iovec *)rec->a4, rec->a5);
+	scrub_iovec_for_kernel_write_layout((void *) rec->a4, rec->a5,
+					    rec->do32bit);
 }
 
 static void post_process_vm_writev(struct syscallrecord *rec)

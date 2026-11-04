@@ -606,6 +606,18 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/syscalls/xattr/listxattrat.c \
 		   $(TOP)/args/pools/xattr.c
 
+# syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
+# pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post
+# handler arg_coupling_test.c runs over compat arrays on the last
+# iovec-pool slice, and syscalls/process/process_vm_readv.c and
+# process_vm_writev.c the process_vm pair, whose directional scrub
+# the same case runs.  The writeable-pagecache fd pick the pwritev
+# sanitisers reach is faked there, returning -1 for an empty pool.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/write.c \
+		   $(TOP)/syscalls/fs/splice/vmsplice.c \
+		   $(TOP)/syscalls/process/process_vm_readv.c \
+		   $(TOP)/syscalls/process/process_vm_writev.c
+
 # syscalls/ipc/sysv/shmat.c brings shmat, whose sanitiser
 # arg_coupling_test.c runs over a fake pool mapping, which the get_map()
 # of post_oracle_test.c hands out, and a SysV segment of the test's own,

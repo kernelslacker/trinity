@@ -11,12 +11,14 @@
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
 
+#include "arch.h"		/* ARCH_IS_BIARCH */
 #include "debug.h"		/* BUG */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
@@ -447,6 +449,31 @@ static void recvmsg_count(void)
 	}
 }
 
+#ifdef ARCH_IS_BIARCH
+/* No compat base is a kernel address: x86-64's access_ok() passes
+ * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
+ * it moved, so a compat vmsplice that returns them is no finding. */
+static void vmsplice_compat_iovec(void)
+{
+	struct compat_iovec *iov = alloc_compat_iovec(2, IOV_KERNEL_WRITE);
+	struct syscallrecord rec;
+
+	if (iov == NULL || (unsigned long) iov > UINT_MAX)
+		BUG("vmsplice: no compat iovec array to judge");
+	iov[0].iov_base = 0x1000; iov[0].iov_len = 16;
+	iov[1].iov_base = UINT32_MAX; iov[1].iov_len = 8;
+	memset(&rec, 0, sizeof(rec));
+	rec.do32bit = true;
+	rec.a2 = (unsigned long) iov;
+	rec.a3 = 2;
+	rec.retval = 16;
+	bumps = 0;
+	syscall_vmsplice.post(&rec);
+	expect("vmsplice, a compat 0xffffffff base after a segment that moved bytes",
+	       bumps, 0);
+}
+#endif
+
 void post_oracle_self_check(void);
 void post_oracle_self_check(void)
 {
@@ -461,6 +488,9 @@ void post_oracle_self_check(void)
 	sched_getscheduler_policy();
 	recv_count();
 	recvmsg_count();
+#ifdef ARCH_IS_BIARCH
+	vmsplice_compat_iovec();
+#endif
 
 	if (failed != 0)
 		BUG("a post oracle judged a return value wrongly");

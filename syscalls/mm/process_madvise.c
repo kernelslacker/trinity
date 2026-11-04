@@ -197,25 +197,11 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 * DONTFORK outlives the call: drop them, as madvise() refuses any
 	 * tracked range.
 	 */
-	if (rec->do32bit) {
-		struct compat_iovec *civ = (struct compat_iovec *) rec->a2;
-
-		scrub_compat_iovec_for_kernel_write(civ, rec->a3);
-		for (i = 0; civ != NULL && i < rec->a3 && i < UIO_MAXIOV; i++) {
-			if (!range_in_call_pools(civ[i].iov_base, civ[i].iov_len))
-				continue;
-			civ[i].iov_base = 0;
-			civ[i].iov_len = 0;
-		}
-	} else {
-		scrub_iovec_for_kernel_write(iov, rec->a3);
-		for (i = 0; iov != NULL && i < rec->a3 && i < UIO_MAXIOV; i++) {
-			if (!range_in_call_pools((unsigned long) iov[i].iov_base,
-						 iov[i].iov_len))
-				continue;
-			iov[i].iov_base = NULL;
-			iov[i].iov_len = 0;
-		}
+	scrub_iovec_for_kernel_write_layout(iov, rec->a3, rec->do32bit);
+	for (i = 0; iov != NULL && i < rec->a3 && i < UIO_MAXIOV; i++) {
+		if (range_in_call_pools(iovec_entry_base(iov, i, rec->do32bit),
+					iovec_entry_len(iov, i, rec->do32bit)))
+			iovec_set_entry(iov, i, 0, 0, rec->do32bit);
 	}
 
 	if (!pidfd_is_self((int)rec->a1)) {

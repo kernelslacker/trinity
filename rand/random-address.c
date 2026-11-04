@@ -586,6 +586,79 @@ void scrub_compat_iovec_for_kernel_write(struct compat_iovec *iov,
 	}
 }
 
+void scrub_iovec_for_kernel_write_layout(void *iov, unsigned long count,
+					 bool do32bit)
+{
+	if (do32bit)
+		scrub_compat_iovec_for_kernel_write((struct compat_iovec *) iov,
+						    count);
+	else
+		scrub_iovec_for_kernel_write((struct iovec *) iov, count);
+}
+
+unsigned long iovec_entry_base(const void *iov, unsigned long idx,
+			       bool do32bit)
+{
+	if (iov == NULL || idx >= UIO_MAXIOV)
+		return 0;
+
+	if (do32bit)
+		return ((const struct compat_iovec *) iov)[idx].iov_base;
+	return (unsigned long) ((const struct iovec *) iov)[idx].iov_base;
+}
+
+unsigned long iovec_entry_len(const void *iov, unsigned long idx,
+			      bool do32bit)
+{
+	if (iov == NULL || idx >= UIO_MAXIOV)
+		return 0;
+
+	if (do32bit)
+		return ((const struct compat_iovec *) iov)[idx].iov_len;
+	return ((const struct iovec *) iov)[idx].iov_len;
+}
+
+void iovec_set_entry(void *iov, unsigned long idx, unsigned long base,
+		     unsigned long len, bool do32bit)
+{
+	struct compat_iovec *civ;
+	struct iovec *niv;
+
+	if (iov == NULL || idx >= UIO_MAXIOV)
+		return;
+
+	if (!do32bit) {
+		niv = (struct iovec *) iov;
+		niv[idx].iov_base = (void *) base;
+		niv[idx].iov_len = (size_t) len;
+		return;
+	}
+
+	civ = (struct compat_iovec *) iov;
+	if (base > UINT_MAX) {
+		civ[idx].iov_base = 0;
+		civ[idx].iov_len = 0;
+		return;
+	}
+	civ[idx].iov_base = (unsigned int) base;
+	civ[idx].iov_len = len > UINT_MAX ? UINT_MAX : (unsigned int) len;
+}
+
+void iovec_set_entry_len(void *iov, unsigned long idx, unsigned long len,
+			 bool do32bit)
+{
+	if (iov == NULL || idx >= UIO_MAXIOV)
+		return;
+
+	if (do32bit) {
+		struct compat_iovec *civ = (struct compat_iovec *) iov;
+
+		civ[idx].iov_len = len > UINT_MAX ? UINT_MAX : (unsigned int) len;
+		return;
+	}
+	((struct iovec *) iov)[idx].iov_len = (size_t) len;
+}
+
 /*
  * Per-msghdr second-pass scrub.  Walks the embedded msg_iov array via
  * scrub_iovec_for_kernel_write() so a sibling scribble that landed an

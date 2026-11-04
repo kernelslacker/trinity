@@ -96,7 +96,7 @@ struct syscallentry syscall_read = {
 
 static void sanitise_readv(struct syscallrecord *rec)
 {
-	struct iovec *iov = (struct iovec *) rec->a2;
+	void *iov = (void *) rec->a2;
 
 	/*
 	 * Mirror the bias step in sanitise_read: ~30% of the time
@@ -132,15 +132,18 @@ static void sanitise_readv(struct syscallrecord *rec)
 			case ARG_FD_EVENTFD:
 			case ARG_FD_TIMERFD:
 				rec->a3 = 1;
-				iov[0].iov_len = sizeof(uint64_t);
+				iovec_set_entry_len(iov, 0, sizeof(uint64_t),
+						    rec->do32bit);
 				break;
 			case ARG_FD_SIGNALFD:
 				rec->a3 = 1;
-				iov[0].iov_len = sizeof(struct signalfd_siginfo);
+				iovec_set_entry_len(iov, 0,
+						    sizeof(struct signalfd_siginfo),
+						    rec->do32bit);
 				break;
 			case ARG_FD_INOTIFY:
 				rec->a3 = 1;
-				iov[0].iov_len = 256;
+				iovec_set_entry_len(iov, 0, 256, rec->do32bit);
 				break;
 			default:
 				/* pipe / socket / fanotify: leave the
@@ -150,7 +153,8 @@ static void sanitise_readv(struct syscallrecord *rec)
 		}
 	}
 
-	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+	scrub_iovec_for_kernel_write_layout((void *) rec->a2, rec->a3,
+					    rec->do32bit);
 }
 
 struct syscallentry syscall_readv = {
@@ -211,7 +215,8 @@ static void sanitise_preadv(struct syscallrecord *rec)
 	rec->a5 = 0;	/* pos_h: keep offset < 4GB */
 	rec->a4 = rand64() & 0x7fffffff;	/* pos_l: non-negative */
 
-	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+	scrub_iovec_for_kernel_write_layout((void *) rec->a2, rec->a3,
+					    rec->do32bit);
 }
 
 struct syscallentry syscall_preadv = {
@@ -253,7 +258,8 @@ static void sanitise_preadv2(struct syscallrecord *rec)
 		rec->a4 = rand64() & 0x7fffffff;
 	}
 
-	scrub_iovec_for_kernel_write((struct iovec *)rec->a2, rec->a3);
+	scrub_iovec_for_kernel_write_layout((void *) rec->a2, rec->a3,
+					    rec->do32bit);
 }
 
 struct syscallentry syscall_preadv2 = {

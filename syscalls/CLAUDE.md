@@ -78,7 +78,12 @@ literals `tables/` copies into shared memory.
    call reads 32-bit entries, so the generic iovec path and the socket
    sanitisers draw `struct compat_iovec` arrays from a MAP_32BIT pool
    twin, and `sendmsg`/`recvmsg` build a `struct compat_msghdr` in the
-   low pool instead of the native heap layout.
+   low pool instead of the native heap layout.  A scrub, walk,
+   collapse or extent-repair over an iovec array goes through the
+   layout helpers in `include/sanitise.h`, keyed on the record's
+   `do32bit`, unless it returns on a compat call first — a
+   native-stride walk reads a full compat array on the last pool
+   slice off the slice, onto the guard page.
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

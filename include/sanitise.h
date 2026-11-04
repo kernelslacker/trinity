@@ -72,6 +72,34 @@ void scrub_compat_iovec_for_kernel_write(struct compat_iovec *iov,
 					 unsigned long count);
 void scrub_msghdr_for_kernel_write(struct msghdr *msg);
 void scrub_compat_msghdr_for_kernel_write(struct compat_msghdr *msg);
+
+/*
+ * Layout-aware iovec access for arrays whose entry width follows the
+ * call's ABI: a compat call's kernel reads 8-byte struct compat_iovec
+ * entries from the MAP_32BIT pool twin, a native call's 16-byte struct
+ * iovec entries.  Walkers, scrubs and collapses over an ARG_IOVEC
+ * array must go through these with the record's do32bit, never by
+ * casting to struct iovec: a native stride over a compat array reads
+ * entry 512 of a full array on the last pool slice off the slice, on
+ * the guard page, and writes the next entry's base with each entry's
+ * length.  scrub_iovec_for_kernel_write_layout() dispatches to the
+ * matching scrub twin.  The accessors read and write one entry at
+ * its ABI width and stride; an index past UIO_MAXIOV reads zero and
+ * writes nothing, since no array a walker may touch is longer.
+ * A setter under the compat layout fails closed on a value the
+ * 32-bit field cannot carry: a base past UINT_MAX zeroes the entry,
+ * a length past UINT_MAX clamps to UINT_MAX.
+ */
+void scrub_iovec_for_kernel_write_layout(void *iov, unsigned long count,
+					 bool do32bit);
+unsigned long iovec_entry_base(const void *iov, unsigned long idx,
+			       bool do32bit);
+unsigned long iovec_entry_len(const void *iov, unsigned long idx,
+			      bool do32bit);
+void iovec_set_entry(void *iov, unsigned long idx, unsigned long base,
+		     unsigned long len, bool do32bit);
+void iovec_set_entry_len(void *iov, unsigned long idx, unsigned long len,
+			 bool do32bit);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
 /*

@@ -163,10 +163,12 @@ static int reconcile_addr_len(struct syscallrecord *rec,
  * child SIGSEGV.  @j is volatile to silence -Wclobbered across the
  * sigsetjmp edge.
  */
-static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
+static void repair_iovec_extents_user(void *iov, unsigned long count,
+				      bool do32bit)
 {
 	volatile unsigned long j;
-	size_t bytes = count * sizeof(*iov);
+	size_t bytes = count * (do32bit ? sizeof(struct compat_iovec)
+					: sizeof(struct iovec));
 
 	if (!range_readable_user(iov, bytes))
 		return;
@@ -180,8 +182,8 @@ static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
 	asb_copy_active = 1;
 
 	for (j = 0; j < count; j++) {
-		unsigned long base = (unsigned long) iov[j].iov_base;
-		unsigned long ilen = (unsigned long) iov[j].iov_len;
+		unsigned long base = iovec_entry_base(iov, j, do32bit);
+		unsigned long ilen = iovec_entry_len(iov, j, do32bit);
 		unsigned long extent;
 
 		if (base == 0 || ilen == 0)
@@ -193,7 +195,7 @@ static void repair_iovec_extents_user(struct iovec *iov, unsigned long count)
 			arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_KEPT_INCOHERENT);
 			continue;
 		}
-		iov[j].iov_len = (size_t) extent;
+		iovec_set_entry_len(iov, j, extent, do32bit);
 		arg_coupling_bump(STATS_FIELD_ARG_CONSTRAINT_REPAIRED);
 	}
 
@@ -225,7 +227,7 @@ static void repair_iovec_extents(struct syscallrecord *rec,
 
 	for (i = 0; i < nargs; i++) {
 		enum argtype t = entry->argtype[i];
-		struct iovec *iov;
+		void *iov;
 		unsigned long count;
 
 		if (t != ARG_IOVEC && t != ARG_IOVEC_IN)
@@ -233,14 +235,14 @@ static void repair_iovec_extents(struct syscallrecord *rec,
 		if (i + 1 >= nargs || entry->argtype[i + 1] != ARG_IOVECLEN)
 			continue;
 
-		iov = (struct iovec *) get_argval(rec, i + 1);
+		iov = (void *) get_argval(rec, i + 1);
 		if (iov == NULL)
 			continue;
 		count = get_argval(rec, i + 2);
 		if (count == 0 || count > UIO_MAXIOV)
 			continue;
 
-		repair_iovec_extents_user(iov, count);
+		repair_iovec_extents_user(iov, count, rec->do32bit);
 	}
 }
 

@@ -78,6 +78,13 @@ int get_rand_pagecache_fd(void)
 	return -1;
 }
 
+/* The writeable page-cache fd pool pwritev's sanitiser draws from is
+ * not in this binary either; an empty one leaves the fd alone. */
+int get_rand_writeable_pagecache_fd(void)
+{
+	return -1;
+}
+
 /* The xattr getters plant a value in a testfile when there is one, and
  * snapshot their path for the post handler; with no testfiles and no
  * snapshot source they do neither.  A case that wants a sanitiser's
@@ -2772,6 +2779,265 @@ static void compat_msghdr_scrub_walks_compat_entries(void)
 	if (iov[0].iov_base != 0x1000 || iov[0].iov_len != 16)
 		BUG("arg coupling: a compat msghdr scrub acted on no array");
 }
+
+/* Whether the compat array still holds the pattern the case filled
+ * it with, entry 0 aside where a collapse may have rewritten its
+ * length: a native-stride walk over a compat array writes the next
+ * entry's base with every entry's length, and reads entry 512 of a
+ * full array on the last slice off the slice, on the guard page. */
+static void compat_array_intact_except_collapse(struct compat_iovec *iov,
+						unsigned long count_seen)
+{
+	unsigned int i;
+
+	for (i = 1; i < UIO_MAXIOV; i++) {
+		if (iov[i].iov_base != 0x1000UL + (unsigned long) i * 0x1000UL ||
+		    iov[i].iov_len != 16)
+			BUG("arg coupling: a compat iovec walker moved an entry past entry 0");
+	}
+	if (iov[0].iov_base != 0x1000UL)
+		BUG("arg coupling: a compat iovec walker moved entry 0's base");
+	if (count_seen == 1) {
+		if (iov[0].iov_len > 256)
+			BUG("arg coupling: a compat iovec collapse wrote past its width");
+	} else if (count_seen != UIO_MAXIOV || iov[0].iov_len != 16) {
+		BUG("arg coupling: a compat iovec sanitiser rewrote the count or entry 0");
+	}
+}
+
+static void compat_array_fill(struct compat_iovec *iov)
+{
+	unsigned int i;
+
+	for (i = 0; i < UIO_MAXIOV; i++) {
+		iov[i].iov_base = (unsigned int) (0x1000UL + (unsigned long) i * 0x1000UL);
+		iov[i].iov_len = 16;
+	}
+}
+
+/* Every walker over an ARG_IOVEC array must read it at the width the
+ * call's ABI reads: a compat array's entries are 8 bytes in the low
+ * pool, and a native 16-byte stride reads entry 512 of a full array
+ * on the last pool slice off the slice, on the guard page.  Runs
+ * each iovec sanitiser and post handler with do32bit and a full
+ * 1024-entry compat array on the last slice, clean and overlapping,
+ * and the final-stage validator over the same array.  The repair
+ * walk itself is not asserted through validate_arg_coupling() here:
+ * its range proof is a false stub in this binary, so the walk is
+ * gated off and only the validator's survival over the array is
+ * checked. */
+static void compat_iovec_walkers_use_compat_stride(void)
+{
+	struct compat_iovec *probes[4];
+	struct compat_iovec *iov;
+	unsigned long base, slice_bytes;
+	unsigned int s, advance, e;
+	struct syscallrecord *r;
+
+	slice_bytes = (unsigned long) UIO_MAXIOV * sizeof(struct compat_iovec);
+	for (s = 0; s < 4; s++) {
+		probes[s] = alloc_compat_iovec(1, IOV_KERNEL_WRITE);
+		if (probes[s] == NULL || (unsigned long) probes[s] > UINT_MAX)
+			BUG("arg coupling: no compat iovec slice to position on");
+	}
+	base = (unsigned long) probes[0];
+	for (s = 1; s < 4; s++)
+		if ((unsigned long) probes[s] < base)
+			base = (unsigned long) probes[s];
+	advance = (unsigned int) ((3UL - ((unsigned long) probes[0] - base) / slice_bytes + 4) % 4);
+	for (s = 0; s < advance; s++)
+		if (alloc_compat_iovec(1, IOV_KERNEL_WRITE) == NULL)
+			BUG("arg coupling: no compat iovec slice to step past");
+	iov = alloc_compat_iovec(UIO_MAXIOV, IOV_KERNEL_WRITE);
+	if (iov == NULL || (unsigned long) iov != base + 3 * slice_bytes)
+		BUG("arg coupling: a full compat array did not land on the last slice");
+
+	fake_random_fd_empty = true;
+	fake_overlaps_shared = false;
+	fake_overlaps_libc_heap = false;
+
+	/* Clean: every scrub leaves the pattern standing. */
+	{
+		static struct syscallentry *const entries[] = {
+			&syscall_readv, &syscall_preadv, &syscall_preadv2,
+			&syscall_writev, &syscall_pwritev, &syscall_pwritev2,
+			&syscall_process_vm_readv, &syscall_process_madvise,
+		};
+
+		for (e = 0; e < ARRAY_SIZE(entries); e++) {
+			compat_array_fill(iov);
+			r = child_call(entries[e], true);
+			r->a1 = (entries[e] == &syscall_process_madvise) ? (unsigned long) -1 : 10;
+			r->a2 = (unsigned long) iov;
+			r->a3 = UIO_MAXIOV;
+			r->a4 = 0;
+			entries[e]->sanitise(r);
+			compat_array_intact_except_collapse(iov, r->a3);
+		}
+		compat_array_fill(iov);
+		r = child_call(&syscall_process_vm_writev, true);
+		r->a1 = 10;
+		r->a4 = (unsigned long) iov;
+		r->a5 = UIO_MAXIOV;
+		syscall_process_vm_writev.sanitise(r);
+		compat_array_intact_except_collapse(iov, r->a5);
+	}
+
+	/* Overlapping: every scrub zeroes the array it is given. */
+	fake_overlaps_shared = true;
+	{
+		static struct syscallentry *const entries[] = {
+			&syscall_readv, &syscall_preadv, &syscall_preadv2,
+			&syscall_process_vm_readv, &syscall_process_madvise,
+		};
+
+		for (e = 0; e < ARRAY_SIZE(entries); e++) {
+			compat_array_fill(iov);
+			r = child_call(entries[e], true);
+			r->a1 = (entries[e] == &syscall_process_madvise) ? (unsigned long) -1 : 10;
+			r->a2 = (unsigned long) iov;
+			r->a3 = UIO_MAXIOV;
+			r->a4 = 0;
+			entries[e]->sanitise(r);
+			for (s = 0; s < UIO_MAXIOV; s++) {
+				if (iov[s].iov_base != 0 || iov[s].iov_len != 0)
+					BUG("arg coupling: an overlapping compat scrub left an entry standing");
+			}
+		}
+		compat_array_fill(iov);
+		r = child_call(&syscall_process_vm_writev, true);
+		r->a1 = 10;
+		r->a4 = (unsigned long) iov;
+		r->a5 = UIO_MAXIOV;
+		syscall_process_vm_writev.sanitise(r);
+		for (s = 0; s < UIO_MAXIOV; s++) {
+			if (iov[s].iov_base != 0 || iov[s].iov_len != 0)
+				BUG("arg coupling: an overlapping compat scrub left an entry standing");
+		}
+	}
+
+	/* A count of two scrubs exactly two entries, at 8-byte stride. */
+	fake_overlaps_shared = true;
+	compat_array_fill(iov);
+	r = child_call(&syscall_readv, true);
+	r->a1 = 10;
+	r->a2 = (unsigned long) iov;
+	r->a3 = 2;
+	syscall_readv.sanitise(r);
+	fake_overlaps_shared = false;
+	if (iov[0].iov_base != 0 || iov[0].iov_len != 0 ||
+	    iov[1].iov_base != 0 || iov[1].iov_len != 0 ||
+	    iov[2].iov_base != 0x3000UL || iov[2].iov_len != 16 ||
+	    iov[3].iov_base != 0x4000UL || iov[3].iov_len != 16)
+		BUG("arg coupling: a compat scrub walked past its count");
+
+	/* The layout helpers the collapses and the repair walk share,
+	 * at both widths, including the entry a native stride
+	 * misreads, and the fail-closed setters. */
+	{
+		struct iovec *niov = alloc_iovec(4, IOV_KERNEL_WRITE);
+		unsigned long low;
+
+		compat_array_fill(iov);
+		if (iovec_entry_base(iov, 512, true) != 0x201000UL ||
+		    iovec_entry_len(iov, 512, true) != 16 ||
+		    iovec_entry_base(iov, UIO_MAXIOV - 1, true) != 0x400000UL ||
+		    iovec_entry_base(NULL, 0, true) != 0 ||
+		    iovec_entry_base(iov, UIO_MAXIOV, true) != 0)
+			BUG("arg coupling: an iovec entry read used the wrong stride or width");
+		if (niov == NULL)
+			BUG("arg coupling: no native iovec array for the layout control");
+		niov[0].iov_base = (void *) 0x1000UL; niov[0].iov_len = 16;
+		niov[1].iov_base = (void *) 0x2000UL; niov[1].iov_len = 16;
+		niov[2].iov_base = (void *) 0x3000UL; niov[2].iov_len = 16;
+		niov[3].iov_base = (void *) 0x4000UL; niov[3].iov_len = 16;
+		if (iovec_entry_base(niov, 2, false) != 0x3000UL ||
+		    iovec_entry_len(niov, 2, false) != 16)
+			BUG("arg coupling: a native iovec entry read used the compat stride");
+		iovec_set_entry(niov, 2, 0x3000UL, 24, false);
+		iovec_set_entry_len(niov, 1, 7, false);
+		if (niov[1].iov_base != (void *) 0x2000UL || niov[1].iov_len != 7 ||
+		    niov[2].iov_base != (void *) 0x3000UL || niov[2].iov_len != 24 ||
+		    niov[3].iov_base != (void *) 0x4000UL || niov[3].iov_len != 16)
+			BUG("arg coupling: a native iovec entry write used the compat stride");
+		fake_overlaps_shared = true;
+		scrub_iovec_for_kernel_write_layout(niov, 4, false);
+		fake_overlaps_shared = false;
+		if (niov[0].iov_base != NULL || niov[0].iov_len != 0)
+			BUG("arg coupling: a native layout scrub left an overlapping entry standing");
+
+		memset(&mm_child.syscall, 0, sizeof(mm_child.syscall));
+		mm_child.syscall.do32bit = true;
+		fake_this_child = &mm_child;
+		low = (unsigned long) get_writable_struct(8);
+		fake_this_child = NULL;
+		if (low == 0 || low > UINT_MAX)
+			BUG("arg coupling: no low pool slot for a compat entry write");
+		iovec_set_entry_len(iov, 0, 256, true);
+		if (iov[0].iov_base != 0x1000UL || iov[0].iov_len != 256 ||
+		    iov[1].iov_base != 0x2000UL || iov[1].iov_len != 16)
+			BUG("arg coupling: a compat entry-length write moved a neighbour");
+		iovec_set_entry(iov, 0, low, 8, true);
+		if (iov[0].iov_base != (unsigned int) low || iov[0].iov_len != 8 ||
+		    iov[1].iov_base != 0x2000UL || iov[1].iov_len != 16)
+			BUG("arg coupling: a compat entry write moved a neighbour");
+		iovec_set_entry(iov, 0, 1UL << 32, 16, true);
+		if (iov[0].iov_base != 0 || iov[0].iov_len != 0)
+			BUG("arg coupling: a compat entry write truncated an unrepresentable base");
+		iovec_set_entry(iov, 0, 0x1000UL, 16, true);
+		iovec_set_entry_len(iov, 0, 1UL << 32, true);
+		if (iov[0].iov_base != 0x1000UL || iov[0].iov_len != UINT_MAX)
+			BUG("arg coupling: a compat entry-length write truncated");
+		scrub_iovec_for_kernel_write_layout(NULL, UIO_MAXIOV, true);
+		iovec_set_entry(NULL, 0, 0x1000UL, 16, true);
+		iovec_set_entry_len(iov, UIO_MAXIOV, 99, true);
+		if (iov[UIO_MAXIOV - 1].iov_base != 0x400000UL ||
+		    iov[UIO_MAXIOV - 1].iov_len != 16)
+			BUG("arg coupling: an iovec write past the kernel cap moved an entry");
+	}
+
+	/* vmsplice's post handler walks past entry 0 and must survive
+	 * the full last-slice array, at the kernel cap and past it. */
+	compat_array_fill(iov);
+	iov[1].iov_base = UINT32_MAX;
+	iov[1].iov_len = 8;
+	r = child_call(&syscall_vmsplice, true);
+	r->a1 = 10;
+	r->a2 = (unsigned long) iov;
+	r->a3 = UIO_MAXIOV;
+	r->retval = 1;
+	syscall_vmsplice.post(r);
+	if (iov[1].iov_base != UINT32_MAX || iov[1].iov_len != 8)
+		BUG("arg coupling: vmsplice's post handler moved a compat entry");
+	r = child_call(&syscall_vmsplice, true);
+	r->a1 = 10;
+	r->a2 = (unsigned long) iov;
+	r->a3 = UIO_MAXIOV + 1;
+	r->retval = 1;
+	syscall_vmsplice.post(r);
+
+	/* The final-stage validator over the same array, and a guard
+	 * install over an array it cannot judge, refused without
+	 * faulting. */
+	compat_array_fill(iov);
+	r = child_call(&syscall_readv, true);
+	r->a1 = 10;
+	r->a2 = (unsigned long) iov;
+	r->a3 = UIO_MAXIOV;
+	if (validate_arg_coupling(r, r->entry) != 0)
+		BUG("arg coupling: the validator refused a clean compat readv");
+	compat_array_fill(iov);
+	r = child_call(&syscall_process_madvise, true);
+	r->a1 = (unsigned long) -1;
+	r->a2 = (unsigned long) iov;
+	r->a3 = UIO_MAXIOV;
+	r->a4 = MADV_GUARD_INSTALL;
+	if (validate_arg_coupling(r, r->entry) != -1)
+		BUG("arg coupling: a guard install over a compat array was kept");
+
+	fake_random_fd_empty = false;
+	fake_this_child = NULL;
+}
 #endif
 
 /* The image table holds the pages of every segment of this binary's own
@@ -5281,6 +5547,7 @@ void arg_coupling_self_check(void)
 #ifdef ARCH_IS_BIARCH
 	compat_iovec_pool_held_low();
 	compat_msghdr_scrub_walks_compat_entries();
+	compat_iovec_walkers_use_compat_stride();
 #endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();

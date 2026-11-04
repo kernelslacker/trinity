@@ -34,8 +34,12 @@ check_kernel_range:
 	 * returned >= 0, access_ok was skipped or bypassed: a correct
 	 * kernel rejects kernel-space addresses before the page-table
 	 * walk and returns -EFAULT (or an earlier -errno).  Success
-	 * with a kernel-range base is a finding.
+	 * with a kernel-range base is a finding.  A compat entry's base
+	 * is 32 bits wide, below every kernel address, so only a native
+	 * call can carry one.
 	 */
+	if (rec->do32bit)
+		return;
 	iov = (struct iovec *) rec->a2;
 	nr_segs = rec->a3;
 	if (iov == NULL || nr_segs == 0)
