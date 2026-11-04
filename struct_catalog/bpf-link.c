@@ -346,6 +346,15 @@ const struct struct_field bpf_attr_LINK_CREATE_UPROBE_MULTI_fields[] = {
 	 * negative and the taker refuses it. */
 	FIELDX(union bpf_attr, link_create.uprobe_multi.pid, FT_RANGE,
 	       .u.range = { 0, INT32_MAX }),
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+	/* path_fd names the executable when BPF_F_UPROBE_MULTI_PATH_FD
+	 * is set.  The member arrived in 7.2-rc1, so the field is gated
+	 * on the configure probe -- offsetof() can't be #ifdef-shimmed
+	 * against a member the header doesn't declare.  The fill draws
+	 * a generic fd; the LINK_CREATE sanitiser conforms it to the
+	 * flag. */
+	FIELDX(union bpf_attr, link_create.uprobe_multi.path_fd, FT_FD),
+#endif
 };
 
 /*
@@ -467,10 +476,17 @@ const struct union_variant bpf_attr_LINK_CREATE_nested[BPF_ATTR_LINK_CREATE_NEST
 		.name		= "LINK_CREATE/UPROBE_MULTI",
 		.fields		= bpf_attr_LINK_CREATE_UPROBE_MULTI_fields,
 		.num_fields	= ARRAY_SIZE(bpf_attr_LINK_CREATE_UPROBE_MULTI_fields),
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+		.effective_size	= offsetof(union bpf_attr,
+					   link_create.uprobe_multi.path_fd) +
+				  sizeof(((union bpf_attr *)NULL)
+					 ->link_create.uprobe_multi.path_fd),
+#else
 		.effective_size	= offsetof(union bpf_attr,
 					   link_create.uprobe_multi.pid) +
 				  sizeof(((union bpf_attr *)NULL)
 					 ->link_create.uprobe_multi.pid),
+#endif
 	},
 	{
 		.discrim_value	= BPF_NETFILTER,
