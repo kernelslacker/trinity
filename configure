@@ -706,6 +706,10 @@ check_enum_member linux/bpf.h BPF_TRACE_KPROBE_SESSION \
 # map-update flags enum, unlike the other BPF_F_* flags, which are macros.
 check_enum_member linux/bpf.h BPF_F_LOCK BPF_F_CPU BPF_F_ALL_CPUS
 
+# link_create.uprobe_multi.flags' PATH_FD bit, a member of the anonymous
+# uprobe_multi flags enum, added in 7.2-rc1 with the path_fd member.
+check_enum_member linux/bpf.h BPF_F_UPROBE_MULTI_PATH_FD
+
 # drm-ras's error-threshold commands and attribute.
 check_enum_member drm/drm_ras.h DRM_RAS_CMD_GET_ERROR_THRESHOLD \
 	DRM_RAS_CMD_SET_ERROR_THRESHOLD \

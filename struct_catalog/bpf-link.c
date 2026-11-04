@@ -23,16 +23,6 @@
 #include "bpf.h"
 
 /*
- * uprobe_multi.flags bit added in v7.2-rc1: when set, the kernel reads
- * link_create.uprobe_multi.path_fd as an fd referring to the target
- * binary instead of copying path in as a filename string.  Fallback to
- * the upstream value so older /usr/include/linux/bpf.h still builds.
- */
-#ifndef BPF_F_UPROBE_MULTI_PATH_FD
-#define BPF_F_UPROBE_MULTI_PATH_FD	(1U << 1)
-#endif
-
-/*
  * The remaining annotated variants live inside NAMED struct
  * members of union bpf_attr (link_update.*, link_detach.*, ...),
  * so offsetof and the schema field names use dotted forms.

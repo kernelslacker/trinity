@@ -312,3 +312,9 @@ struct bpf_common_attr {
 #ifndef HAVE_BPF_F_ALL_CPUS
 #define BPF_F_ALL_CPUS			16
 #endif
+/* link_create.uprobe_multi.flags' PATH_FD bit, added in 7.2-rc1 with
+ * the path_fd member it gates: when set, the kernel takes path_fd as
+ * an fd of the target binary instead of copying path in by name. */
+#ifndef HAVE_BPF_F_UPROBE_MULTI_PATH_FD
+#define BPF_F_UPROBE_MULTI_PATH_FD	(1U << 1)
+#endif
