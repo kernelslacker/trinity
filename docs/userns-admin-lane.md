@@ -180,9 +180,18 @@ The two privilege lanes must not interfere:
   surfaces any more than an unextended child can.  The ns_capable-gated
   surfaces are reachable inside the child's private namespaces; they
   are not reachable from the host perspective.  The mount namespace
-  copy is owned by the child's user namespace, which is also what
-  lets `NS_MNT_GET_NEXT` / `NS_MNT_GET_PREV` steps return the
-  namespaces the child administers instead of answering `-ENOENT`.
+  copy is owned by the child's user namespace, which is what makes
+  `may_mount()` hold inside it: `mount()` and `move_mount()` on
+  sacrificial targets succeed there for the first time, and a
+  privately mounted tmpfs there unlocks `FIFREEZE` / `FITHAW`.  It
+  does not make `NS_MNT_GET_NEXT` / `NS_MNT_GET_PREV` steps
+  returnable: `ns_ioctl()` gates both on `may_see_all_namespaces()`
+  — the initial pid namespace plus `CAP_SYS_ADMIN` in `init_user_ns`
+  — before the mount-namespace walk runs, so the steps stay `-EPERM`
+  for a lane child as for any other.  The mount namespace stays for
+  the `mount()` / `move_mount()` and `FIFREEZE` coverage, at the cost
+  of a lane child stranding itself with a fuzzed `chroot()` / remount;
+  the per-pid bug log survives that through the parked tmpdir fd.
 
 - The opt-in flag on `struct syscallentry` is the sole control point.
   `sendmsg` sets it: its sanitiser is the only one that builds

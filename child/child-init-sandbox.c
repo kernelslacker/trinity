@@ -127,9 +127,18 @@ static bool child_userns_lane_active;
  *      On EPERM: latch shm->no_userns_lane and return (policy denial).
  *      On other failure: return without latching (transient, may not recur).
  *      The mount namespace copy is owned by the new user namespace, so
- *      may_mount() holds inside it and the mount namespace is one the
- *      child administers: NS_MNT_GET_NEXT/PREV steps can return it and
- *      the namespaces a fuzzed unshare creates after it.
+ *      may_mount() holds inside it: mount() and move_mount() on
+ *      sacrificial targets succeed there for the first time, and a
+ *      privately mounted tmpfs there unlocks FIFREEZE/FITHAW.  It
+ *      does NOT make NS_MNT_GET_NEXT/PREV steps returnable: ns_ioctl()
+ *      gates both on may_see_all_namespaces() (the initial pid
+ *      namespace plus CAP_SYS_ADMIN in init_user_ns) before the
+ *      mount-namespace walk runs, so the steps stay -EPERM for a
+ *      lane child as for any other.  The mount namespace stays for
+ *      the mount()/move_mount() coverage, at the cost of a lane
+ *      child stranding itself with a fuzzed chroot/remount; the
+ *      per-pid bug log survives that through the parked tmpdir fd,
+ *      other absolute-path state does not.
  *   4. Write uid_map, setgroups=deny, gid_map.
  *      Failure here is logged but does not latch; the cap-drop has already
  *      run and the child fuzz loop runs without userns-lane caps.
