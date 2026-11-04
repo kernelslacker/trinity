@@ -686,11 +686,89 @@ struct syscallentry syscall_sendmsg = {
 #define SENDMMSG_POST_STATE_MAGIC	0x53454E444D5453UL	/* "SENDMTS" */
 struct sendmmsg_post_state {
 	unsigned long magic;
-	struct mmsghdr *msgs;
+	/* The native struct mmsghdr array, or the compat twin's struct
+	 * compat_mmsghdr one; the post handler only shape-checks it. */
+	void *msgs;
 	unsigned int vlen;
 	unsigned int _pad;
 	void *name[SENDMMSG_MAX_VLEN];
 };
+
+/*
+ * Compat twin of sanitise_sendmmsg().  A compat call's kernel reads
+ * struct compat_mmsghdr at the low 32 bits of the array pointer and
+ * 32-bit entries, so the native mmsghdr array -- a heap array the
+ * 32-bit pointer truncates, read field-by-field as compat layout --
+ * would hand it msg_len as the high half of msg_hdr.msg_flags and
+ * every following entry misaligned.  Build the compat array in the
+ * low pool instead, each entry a compat iovec array filled through
+ * fill_compat_msghdr().  msg_len is a kernel OUT field and stays
+ * zeroed.  The per-i names are pool memory, so NULL in the snapshot;
+ * the post handler frees nothing for them, as for the compat sendmsg
+ * twin.
+ */
+static void sanitise_sendmmsg_compat(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct compat_mmsghdr *msgs;
+	struct sendmmsg_post_state *snap;
+	unsigned int vlen;
+	unsigned int i;
+
+	rec->a1 = fd_from_socketinfo(si);
+
+	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
+	msgs = get_writable_struct(vlen * sizeof(struct compat_mmsghdr));
+	if (msgs == NULL || (unsigned long) msgs > UINT_MAX)
+		goto no_msgs;
+	memset(msgs, 0, vlen * sizeof(struct compat_mmsghdr));
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SENDMMSG_POST_STATE_MAGIC;
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+
+	for (i = 0; i < vlen; i++) {
+		struct compat_msghdr *msg = &msgs[i].msg_hdr;
+		unsigned int num_entries = RAND_RANGE(1, 3);
+		struct sockaddr *sa = NULL;
+		socklen_t salen = 0;
+		struct compat_iovec *iov;
+
+		/*
+		 * alloc_compat_iovec() returns a MAP_32BIT pool slot;
+		 * see sanitise_sendmmsg for the structural rationale.
+		 * Left NULL / 0 when the pool cannot surface a slot.
+		 */
+		iov = alloc_compat_iovec(num_entries, IOV_KERNEL_READ);
+		if (iov != NULL) {
+			msg->msg_iov = (unsigned int)(unsigned long) iov;
+			msg->msg_iovlen = num_entries;
+		}
+
+		if (si != NULL)
+			generate_sockaddr(&sa, &salen, si->triplet.family);
+		fill_compat_msghdr(msg, sa, salen, IOV_KERNEL_READ);
+		tracked_free_now(sa);
+		snap->name[i] = NULL;
+	}
+
+	rec->a2 = (unsigned long) msgs;
+	avoid_shared_buffer_inout(&rec->a2, vlen * sizeof(struct compat_mmsghdr));
+	rec->a3 = vlen;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	return;
+
+no_msgs:
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = SENDMMSG_POST_STATE_MAGIC;
+	snap->msgs = NULL;
+	snap->vlen = vlen;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	rec->a2 = 0;
+}
 
 static void sanitise_sendmmsg(struct syscallrecord *rec)
 {
@@ -700,6 +778,10 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 	unsigned int vlen;
 	unsigned int i;
 
+	if (rec->do32bit) {
+		sanitise_sendmmsg_compat(rec);
+		return;
+	}
 	rec->a1 = fd_from_socketinfo(si);
 
 	vlen = RAND_RANGE(1, SENDMMSG_MAX_VLEN);
@@ -778,7 +860,7 @@ static void post_sendmmsg(struct syscallrecord *rec)
 {
 	struct sendmmsg_post_state *snap =
 		(struct sendmmsg_post_state *) rec->post_state;
-	struct mmsghdr *msgs;
+	void *msgs;
 	unsigned int vlen;
 	unsigned int i;
 	unsigned long retval = rec->retval;

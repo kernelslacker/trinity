@@ -785,11 +785,85 @@ struct syscallentry syscall_recvmsg = {
 #define RECVMMSG_POST_STATE_MAGIC	0x5243564D54534154UL	/* "RCVMTSAT" */
 struct recvmmsg_post_state {
 	unsigned long magic;
-	struct mmsghdr *msgs;
+	/* The native struct mmsghdr array, or the compat twin's struct
+	 * compat_mmsghdr one; the post handler only shape-checks it. */
+	void *msgs;
 	unsigned int vlen;
 	unsigned int _pad;
 	void *name[RECVMMSG_MAX_VLEN];
 };
+
+/*
+ * Compat twin of sanitise_recvmmsg().  A compat call's kernel reads
+ * struct compat_mmsghdr at the low 32 bits of the array pointer and
+ * writes msg_len and the received data through the 32-bit entries,
+ * so the native mmsghdr array would hand it every field misaligned
+ * and write through whatever the truncated pointer finds.  Build
+ * the compat array in the low pool instead, each entry a compat iovec
+ * array for kernel writes filled through fill_compat_msghdr().
+ * msg_len is a kernel OUT field and stays zeroed.  The per-i names
+ * are pool memory, so NULL in the snapshot; the post handler frees
+ * nothing for them, as for the compat recvmsg twin.
+ */
+static void sanitise_recvmmsg_compat(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct compat_mmsghdr *msgs;
+	struct recvmmsg_post_state *snap;
+	unsigned int vlen;
+	unsigned int i;
+
+	rec->a1 = fd_from_socketinfo(si);
+
+	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
+	msgs = get_writable_struct(vlen * sizeof(struct compat_mmsghdr));
+	if (msgs == NULL || (unsigned long) msgs > UINT_MAX)
+		goto no_msgs;
+	memset(msgs, 0, vlen * sizeof(struct compat_mmsghdr));
+
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = RECVMMSG_POST_STATE_MAGIC;
+	snap->msgs = msgs;
+	snap->vlen = vlen;
+
+	for (i = 0; i < vlen; i++) {
+		struct compat_msghdr *msg = &msgs[i].msg_hdr;
+		unsigned int num_entries = RAND_RANGE(1, 3);
+		struct compat_iovec *iov;
+
+		/*
+		 * alloc_compat_iovec() returns a MAP_32BIT pool slot;
+		 * see sanitise_recvmmsg for the structural rationale.
+		 * Left NULL / 0 when the pool cannot surface a slot.
+		 */
+		iov = alloc_compat_iovec(num_entries, IOV_KERNEL_WRITE);
+		if (iov != NULL) {
+			msg->msg_iov = (unsigned int)(unsigned long) iov;
+			msg->msg_iovlen = num_entries;
+		}
+
+		/* msg_name is purely a kernel write-target, as in the
+		 * native path: a full sockaddr_storage slot. */
+		fill_compat_msghdr(msg, NULL, sizeof(struct sockaddr_storage),
+				   IOV_KERNEL_WRITE);
+		snap->name[i] = NULL;
+	}
+
+	rec->a2 = (unsigned long) msgs;
+	rec->a3 = vlen;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	return;
+
+no_msgs:
+	snap = zmalloc_tracked(sizeof(*snap));
+	snap->magic = RECVMMSG_POST_STATE_MAGIC;
+	snap->msgs = NULL;
+	snap->vlen = vlen;
+	rec->post_state = (unsigned long) snap;
+	post_state_register(snap);
+	rec->a2 = 0;
+}
 
 static void sanitise_recvmmsg(struct syscallrecord *rec)
 {
@@ -799,6 +873,10 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	unsigned int vlen;
 	unsigned int i;
 
+	if (rec->do32bit) {
+		sanitise_recvmmsg_compat(rec);
+		return;
+	}
 	rec->a1 = fd_from_socketinfo(si);
 
 	vlen = RAND_RANGE(1, RECVMMSG_MAX_VLEN);
@@ -886,7 +964,7 @@ static void post_recvmmsg(struct syscallrecord *rec)
 {
 	struct recvmmsg_post_state *snap =
 		(struct recvmmsg_post_state *) rec->post_state;
-	struct mmsghdr *msgs;
+	void *msgs;
 	unsigned int vlen;
 	unsigned int i;
 	unsigned long retval = rec->retval;

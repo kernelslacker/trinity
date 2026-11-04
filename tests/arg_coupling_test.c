@@ -2839,6 +2839,75 @@ static void compat_msghdr_fill_places_low_buffers(void)
 	fake_this_child = NULL;
 }
 
+/* A compat sendmmsg/recvmmsg call reads struct compat_mmsghdr at the
+ * low 32 bits of the array pointer: 32-byte entries, a 28-byte compat
+ * msghdr plus the 32-bit msg_len the kernel writes back.  The native
+ * mmsghdr array in the libc heap reads back misaligned at every
+ * field and writes through the truncated pointer.  Drive both twins
+ * with no socket (si == NULL, so generate_sockaddr/cmsg_build are
+ * never reached) over several rounds and check the array is low,
+ * compat-strided, and cleaned up by the post handler. */
+static void compat_mmsg_twins_build_low_arrays(void)
+{
+	struct syscallentry *const entries[] = {
+		&syscall_sendmmsg, &syscall_recvmmsg,
+	};
+	unsigned int e, round;
+	bool saw_iov = false;
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+	fake_socket_fd_none = true;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (round = 0; round < 16; round++) {
+			struct syscallrecord *mrec = mm_call(entries[e]);
+			struct compat_mmsghdr *msgs;
+			unsigned int vlen, i;
+
+			mrec->a1 = 0;
+			mrec->do32bit = true;
+			entries[e]->sanitise(mrec);
+			if (mrec->a2 == 0)
+				BUG("arg coupling: a compat mmsg twin built no array");
+			if (mrec->a2 > UINT_MAX)
+				BUG("arg coupling: a compat mmsg array lies where its slots cannot reach");
+			if (mrec->a3 < 1 || mrec->a3 > 4)
+				BUG("arg coupling: a compat mmsg vlen is out of range");
+			vlen = (unsigned int) mrec->a3;
+			msgs = (struct compat_mmsghdr *) mrec->a2;
+			for (i = 0; i < vlen; i++) {
+				struct compat_msghdr *msg = &msgs[i].msg_hdr;
+
+				if (msgs[i].msg_len != 0)
+					BUG("arg coupling: a compat mmsg entry left msg_len set");
+				if (msg->msg_iovlen > 3)
+					BUG("arg coupling: a compat mmsg entry names too many iovecs");
+				if (msg->msg_iovlen == 0 && msg->msg_iov != 0)
+					BUG("arg coupling: a compat mmsg entry with no iovecs names an array");
+				if (msg->msg_iovlen > 0) {
+					saw_iov = true;
+					if (msg->msg_iov == 0)
+						BUG("arg coupling: a compat mmsg entry names no iovec array");
+				}
+				if (e == 1 && msg->msg_namelen != 0 &&
+				    msg->msg_namelen != (int) sizeof(struct sockaddr_storage))
+					BUG("arg coupling: a compat recvmmsg entry names a short name buffer");
+			}
+			mrec->retval = (unsigned long) -1L;
+			entries[e]->post(mrec);
+			if (mrec->a2 != 0)
+				BUG("arg coupling: a compat mmsg post handler left the array slot");
+			if (mrec->post_state != 0)
+				BUG("arg coupling: a compat mmsg post handler left the snapshot");
+		}
+	}
+	if (!saw_iov)
+		BUG("arg coupling: no compat mmsg entry built an iovec array");
+	deferred_free_flush();
+	fake_socket_fd_none = false;
+	fake_this_child = NULL;
+}
+
 /* Whether the compat array still holds the pattern the case filled
  * it with, entry 0 aside where a collapse may have rewritten its
  * length: a native-stride walk over a compat array writes the next
@@ -5608,6 +5677,7 @@ void arg_coupling_self_check(void)
 	compat_msghdr_scrub_walks_compat_entries();
 	compat_msghdr_fill_places_low_buffers();
 	compat_iovec_walkers_use_compat_stride();
+	compat_mmsg_twins_build_low_arrays();
 #endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
