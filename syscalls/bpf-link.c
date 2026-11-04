@@ -6,11 +6,17 @@
 
 #ifdef USE_BPF
 
+#include <fcntl.h>
+#include <stdint.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <linux/bpf.h>
 
 #include "bpf.h"
 #include "bpf-internal.h"
 #include "cgroup.h"
+#include "exec-paths.h"
 #include "objects.h"
 #include "perf.h"
 #include "publish_resource.h"
@@ -154,7 +160,59 @@ static unsigned int link_target(unsigned int type)
 	}
 }
 
-void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+/*
+ * bpf_uprobe_multi_get_path() (kernel/trace/bpf_trace.c) reads the
+ * executable from exactly one of the two: with
+ * BPF_F_UPROBE_MULTI_PATH_FD set, path_fd must name a regular file
+ * and path must be NULL; without it, path must name the file and
+ * path_fd must be 0.  The fill draws the flag half the time and
+ * path from the executable pool, but path_fd only as a generic fd,
+ * so half the draws arrive refusing.  Conform the pair to the flag
+ * the fill drew: open the planted path (a fresh pool pick when the
+ * fill left path NULL) and hand the kernel that fd with path NULL,
+ * or, when no regular file can be opened, drop the flag and take
+ * the path arm.  Returns the fd for the caller to own, closed once
+ * the call is done, or -1.
+ */
+static int conform_uprobe_multi_path_fd(union bpf_attr *attr)
+{
+	const char *path;
+	struct stat st;
+	int fd;
+
+	if (!(attr->link_create.uprobe_multi.flags &
+	      BPF_F_UPROBE_MULTI_PATH_FD)) {
+		attr->link_create.uprobe_multi.path_fd = 0;
+		return -1;
+	}
+
+	path = (const char *)(uintptr_t) attr->link_create.uprobe_multi.path;
+	if (path == NULL)
+		path = exec_path_pick();
+	if (path == NULL)
+		goto no_fd;
+
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (fd < 0)
+		goto no_fd;
+	if (fstat(fd, &st) != 0 || !S_ISREG(st.st_mode)) {
+		close(fd);
+		goto no_fd;
+	}
+
+	attr->link_create.uprobe_multi.path = 0;
+	attr->link_create.uprobe_multi.path_fd = (unsigned int) fd;
+	return fd;
+
+no_fd:
+	attr->link_create.uprobe_multi.flags &= ~BPF_F_UPROBE_MULTI_PATH_FD;
+	attr->link_create.uprobe_multi.path_fd = 0;
+	return -1;
+}
+#endif
+
+int sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 {
 	struct bpfprogobj prog;
 	unsigned int type;
@@ -226,6 +284,13 @@ void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 		attr->link_create.tracing.cookie = rnd_u64();
 		break;
 	}
+
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+	if (attr->link_create.attach_type == BPF_TRACE_UPROBE_MULTI ||
+	    attr->link_create.attach_type == BPF_TRACE_UPROBE_SESSION)
+		return conform_uprobe_multi_path_fd(attr);
+#endif
+	return -1;
 }
 
 void sanitise_bpf_link_update(union bpf_attr *attr, struct syscallrecord *rec)

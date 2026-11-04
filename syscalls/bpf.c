@@ -103,6 +103,14 @@ struct bpf_post_state {
 	unsigned int cmd;
 	bool classic_bpf_insns;
 	union bpf_attr *attr_original;
+	/* A descriptor the LINK_CREATE sanitiser opened for the call
+	 * (an uprobe_multi path_fd), closed with the snap: by post_bpf,
+	 * or by cleanup_bpf when .post never ran.  The number is
+	 * recorded here, never read back from the attr slot, which a
+	 * rewrite after sanitise may have replaced with a pool fd.  -1
+	 * when the call opened none.  A re-exec's inner dispatch closes
+	 * its own snap's fd, as it does the re-exec'd args. */
+	int owned_fd;
 };
 
 /*
@@ -169,6 +177,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	union bpf_attr *attr;
 	unsigned int cmd = rec->a1 & ~BPF_COMMON_ATTRS;
 	bool classic_bpf_insns = false;
+	int owned_fd = -1;
 
 	rec->post_state = 0;
 
@@ -239,7 +248,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 		sanitise_bpf_obj_get_info_by_fd(attr, rec);
 		break;
 	case BPF_LINK_CREATE:
-		sanitise_bpf_link_create(attr, rec);
+		owned_fd = sanitise_bpf_link_create(attr, rec);
 		rec->rettype = RET_FD;
 		break;
 	case BPF_LINK_UPDATE:
@@ -303,6 +312,7 @@ static void sanitise_bpf(struct syscallrecord *rec)
 	snap->cmd = cmd;
 	snap->classic_bpf_insns = classic_bpf_insns;
 	snap->attr_original = attr;
+	snap->owned_fd = owned_fd;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
 }
@@ -583,7 +593,34 @@ static void post_bpf(struct syscallrecord *rec)
 	if (fd >= 0)
 		post_bpf_close_orphan_fd(fd, cmd);
 
+	if (snap->owned_fd >= 0)
+		close(snap->owned_fd);
+
 	deferred_free_enqueue(attr);
+	post_state_release(rec, snap);
+}
+
+/*
+ * post_bpf consumes the snap on every path, so one still installed here
+ * belongs to a call whose .post never ran: a retval the dispatcher
+ * refused, or a record that never reached AFTER.  Close the fd its
+ * sanitiser opened and free the attr and the snap, as post_bpf's tail
+ * would have.  A snap whose attr pointer was scribbled may carry a
+ * scribbled fd as well, so both are left alone then, as post_bpf does.
+ */
+static void cleanup_bpf(struct syscallrecord *rec)
+{
+	struct bpf_post_state *snap;
+
+	snap = post_state_claim_owned(rec, BPF_POST_STATE_MAGIC, __func__);
+	if (snap == NULL)
+		return;
+
+	if (!looks_like_corrupted_ptr(rec, snap->attr_original)) {
+		if (snap->owned_fd >= 0)
+			close(snap->owned_fd);
+		deferred_free_enqueue(snap->attr_original);
+	}
 	post_state_release(rec, snap);
 }
 
@@ -624,5 +661,6 @@ struct syscallentry syscall_bpf = {
 	.sanitise = sanitise_bpf,
 	.sanitiser_owned_mask = (1u << 3) | (1u << 4),
 	.post = post_bpf,
+	.cleanup = cleanup_bpf,
 };
 #endif

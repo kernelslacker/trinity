@@ -1263,6 +1263,7 @@ struct link_tally {
 	unsigned int bad_ids;
 	unsigned int bad_syms, bad_addrs, syms_present, addrs_present;
 	unsigned int bad_path, path_present;
+	unsigned int bad_pathfd, pathfd_present, pathfd_leaked;
 };
 
 /* The sub-buffers the fill made for the pointer fields of the arm the attr's
@@ -1317,6 +1318,10 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 		size_t b, last = 0;
 		bool tail_set = false;
 		unsigned long type;
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+		int saved_pathfd = -1;
+		bool saved_flagset = false;
+#endif
 
 		memset(&rec, 0, sizeof(rec));
 		rec.a1 = BPF_LINK_CREATE;
@@ -1526,12 +1531,54 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 					}
 				}
 				t->bad_path += bad;
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+				/* The flag and the pair must agree, as
+				 * bpf_uprobe_multi_get_path() reads them:
+				 * the flag arm names a regular file by
+				 * fd with path NULL, the path arm names
+				 * the file by path with path_fd 0. */
+				{
+					bool flagset = (attr->link_create.uprobe_multi.flags &
+							BPF_F_UPROBE_MULTI_PATH_FD) != 0;
+					int pfd = (int) attr->link_create.uprobe_multi.path_fd;
+
+					saved_flagset = flagset;
+					saved_pathfd = pfd;
+					if (flagset) {
+						struct stat st;
+
+						t->pathfd_present++;
+						if (attr->link_create.uprobe_multi.path != 0 ||
+						    pfd < 0 || fstat(pfd, &st) != 0 ||
+						    !S_ISREG(st.st_mode))
+							t->bad_pathfd++;
+					} else if (pfd != 0) {
+						t->bad_pathfd++;
+					}
+				}
+#endif
 			}
 		}
 
 		rec.retval = (unsigned long) -1L;
 		rec.errno_post = EBADF;
-		syscall_bpf.post(&rec);
+		/* The dispatcher skips .post on a retval it refuses but
+		 * always runs .cleanup: take that path one round in
+		 * four. */
+		if (round % 4 != 0)
+			syscall_bpf.post(&rec);
+		syscall_bpf.cleanup(&rec);
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+		if (saved_flagset && t != NULL) {
+			struct stat st;
+
+			/* The fd the sanitiser opened is closed once
+			 * the call is done, with .post or without:
+			 * still open here is a leak past the call. */
+			if (fstat(saved_pathfd, &st) == 0)
+				t->pathfd_leaked++;
+		}
+#endif
 		free_arm_buffers(attr);
 		free((void *) attr);
 	}
@@ -1591,6 +1638,15 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			if (exec_paths_count() > 0)
 				check("an uprobe_multi never names a path",
 				      name, t->path_present > 0);
+#ifdef USE_BPF_LINK_CREATE_UPROBE_MULTI_PATH_FD
+			check("an uprobe_multi flag/path_fd pair disagrees",
+			      name, t->bad_pathfd == 0);
+			check("an uprobe_multi opened fd is still open after the call",
+			      name, t->pathfd_leaked == 0);
+			if (exec_paths_count() > 0)
+				check("an uprobe_multi never takes the path_fd arm",
+				      name, t->pathfd_present > 0);
+#endif
 		}
 		check("the size stops short of what the draw filled", name,
 		      t->tail_uncovered == 0);

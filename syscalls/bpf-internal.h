@@ -62,7 +62,9 @@ void sanitise_bpf_prog_stream_open(union bpf_attr *attr, struct syscallrecord *r
 void post_bpf_prog_stream_open(int fd);
 
 /* Link family (defined in syscalls/bpf-link.c). */
-void sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec);
+/* Returns an fd the caller owns (the path_fd the LINK_CREATE fixup
+ * opened, closed once the call is done), or -1 when it opened none. */
+int sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_link_update(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_link_detach(union bpf_attr *attr, struct syscallrecord *rec);
 void sanitise_bpf_iter_create(union bpf_attr *attr, struct syscallrecord *rec);
