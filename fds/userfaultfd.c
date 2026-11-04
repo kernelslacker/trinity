@@ -3,13 +3,13 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <sys/ioctl.h>
-#include <linux/userfaultfd.h>
 #include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 
 #include "child.h"
 #include "fd.h"
+#include "kernel/userfaultfd.h"
 #include "syscall-gate.h"
 #include "userfaultfd.h"
 #include "objects.h"
@@ -26,7 +26,8 @@ static int userfaultfd_create(__unused__ unsigned int flag)
 #ifdef SYS_userfaultfd
 	return trinity_raw_syscall(SYS_userfaultfd, flag);
 #else
-	return -ENOSYS;
+	errno = ENOSYS;
+	return -1;
 #endif
 }
 
@@ -44,6 +45,34 @@ static int devuserfaultfd_create(unsigned int flag)
 
 	fd = ioctl(devfd, USERFAULTFD_IOC_NEW, (unsigned long)flag);
 	close(devfd);
+	return fd;
+}
+
+/*
+ * Create a userfaultfd for the calling process, shared by the pool
+ * seeder below and the pagemap_wp_scan childop.  UFFD_USER_MODE_ONLY
+ * is ORed in: children run as nobody with an empty capability set
+ * and vm.unprivileged_userfaultfd at its default 0, so
+ * userfaultfd_syscall_allowed() passes an unprivileged caller only
+ * for a user-mode-only fd.  The flag arrived in 5.11, so a kernel
+ * that rejects it with EINVAL is retried without it, on each
+ * transport in turn: the syscall first, then /dev/userfaultfd.
+ * @flags carries only the O_CLOEXEC / O_NONBLOCK bits.  Returns the
+ * fd, or -1 with errno set from the last attempt.
+ */
+int create_userfaultfd(unsigned int flags)
+{
+	int fd;
+
+	fd = userfaultfd_create(flags | UFFD_USER_MODE_ONLY);
+	if (fd < 0 && errno == EINVAL)
+		fd = userfaultfd_create(flags);
+	if (fd >= 0)
+		return fd;
+
+	fd = devuserfaultfd_create(flags | UFFD_USER_MODE_ONLY);
+	if (fd < 0 && errno == EINVAL)
+		fd = devuserfaultfd_create(flags);
 	return fd;
 }
 
@@ -120,10 +149,7 @@ static bool open_userfaultfd(void)
 	if (RAND_BOOL())
 		flags |= O_CLOEXEC;
 
-	if (RAND_BOOL())
-		fd = devuserfaultfd_create(flags);
-	else
-		fd = userfaultfd_create(flags);
+	fd = create_userfaultfd(flags);
 
 	if (fd < 0)
 		return false;
@@ -144,7 +170,8 @@ static bool open_userfaultfd(void)
 /*
  * Parent-side setup: wire the OBJ_GLOBAL head's destroy + dump slots so
  * init_object_lists(OBJ_LOCAL, child) inherits them into every child's
- * per-pool objhead, and probe that a userfaultfd can be created at all.
+ * per-pool objhead, and probe that a userfaultfd can be created at all
+ * through create_userfaultfd(), the user-mode-only path children use.
  * The probe fd is closed at once, never published and never armed, so
  * it registers no range in any mm.  The OBJ_GLOBAL pool stays empty:
  * every uffd the pool holds is created per-child by
@@ -159,9 +186,7 @@ static int init_userfaultfds(void)
 	head->destroy = &close_fd_destructor;
 	head->dump = &userfaultfd_dump;
 
-	fd = userfaultfd_create(0);
-	if (fd < 0)
-		fd = devuserfaultfd_create(0);
+	fd = create_userfaultfd(0);
 	if (fd < 0) {
 		int err = errno;
 		enum fd_init_reason reason = (err == ENOSYS || err == ENXIO ||
@@ -180,8 +205,8 @@ static int init_userfaultfds(void)
 /*
  * Per-child seed: create the pool's uffds in the calling child's own
  * mm, after the sandbox is in effect.  Creation can still fail there
- * (an unprivileged userfaultfd needs the sysctl, or the capability,
- * the child's context lacks); a child with no uffd simply draws none,
+ * (a pre-5.11 kernel with vm.unprivileged_userfaultfd=0, a seccomp
+ * filter, or fd exhaustion); a child with no uffd simply draws none,
  * as it did when the fuzzed userfaultfd() call failed.
  */
 static void userfaultfd_child_init(struct childdata *child __attribute__((unused)))

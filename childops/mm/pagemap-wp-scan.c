@@ -21,7 +21,6 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 
 #include "arch.h"
@@ -30,7 +29,7 @@
 #include "kernel/fs.h"
 #include "kernel/userfaultfd.h"
 #include "shm.h"
-#include "syscall-gate.h"
+#include "userfaultfd.h"
 
 #define SCAN_PAGES	8
 #define SCAN_VEC_LEN	16
@@ -55,32 +54,6 @@ static int open_own_pagemap(void)
 	return fd;
 }
 
-/*
- * A userfaultfd made in this process, by the syscall or, since
- * kernel v6.1, through /dev/userfaultfd.  Mirrors the provider's
- * creation paths in fds/userfaultfd.c.
- */
-static int create_userfaultfd(void)
-{
-	int fd = -1;
-
-#ifdef SYS_userfaultfd
-	fd = trinity_raw_syscall(SYS_userfaultfd, O_CLOEXEC);
-#endif
-	if (fd >= 0)
-		return fd;
-
-	fd = open("/dev/userfaultfd", O_RDWR | O_CLOEXEC);
-	if (fd < 0)
-		return -1;
-	{
-		int uffd = ioctl(fd, USERFAULTFD_IOC_NEW, (unsigned long)O_CLOEXEC);
-
-		close(fd);
-		return uffd;
-	}
-}
-
 bool pagemap_wp_scan(struct childdata *child)
 {
 	const enum child_op_type op = child->op_type;
@@ -102,7 +75,7 @@ bool pagemap_wp_scan(struct childdata *child)
 	/* Fault the pages in so the scan walks present PTEs. */
 	memset(map, 0, len);
 
-	uffd = create_userfaultfd();
+	uffd = create_userfaultfd(O_CLOEXEC);
 	direct_calls++;
 	if (uffd < 0)
 		goto out;
