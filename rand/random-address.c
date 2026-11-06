@@ -1141,10 +1141,13 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir)
  * 32-bit entries into the MAP_32BIT pool twin.  Two shapes need
  * compat-specific bases, since the native constants do not survive
  * truncation: the user-range EFAULT arm uses an address below every
- * biarch compat TASK_SIZE, and the kernel-range access_ok arm uses
- * UINT32_MAX, above every compat TASK_SIZE.  Entries whose base
- * cannot be represented in 32 bits drop to NULL / 0 in the fill
- * helper rather than truncating.
+ * biarch compat TASK_SIZE, and the kernel-range arm UINT32_MAX.  No
+ * 32-bit base is a kernel address, though: x86-64's access_ok()
+ * checks every caller against USER_PTR_MAX, so UINT32_MAX passes it
+ * and is a second user-range EFAULT, one that faults only while its
+ * page is unmapped and runs across the 4 GiB line.  Entries whose
+ * base cannot be represented in 32 bits drop to NULL / 0 in the
+ * fill helper rather than truncating.
  */
 struct compat_iovec * alloc_compat_iovec(unsigned int num,
 					 enum iov_direction dir)
