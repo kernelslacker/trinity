@@ -378,43 +378,6 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 	return true;
 }
 
-/*
- * Add a tmpfs slot under the scratch subtree.  By default, tmpfs is
- * ALWAYS present even when the loop side fully degrades, so
- * mount-aware childops have a writable scratch fs to chase that does
- * not cross into block-device territory.  Sized small (16 MiB) so a
- * runaway fill from a fuzz syscall cannot eat host memory.
- */
-static bool scratch_make_tmpfs(unsigned int idx, struct scratch_block_entry *out)
-{
-	char mount_path[PATH_MAX];
-	int n;
-
-	if (!scratch_format_path(mount_path, sizeof(mount_path),
-				 "mnt%u", idx))
-		return false;
-	if (mkdir(mount_path, 0755) != 0 && errno != EEXIST)
-		return false;
-	if (mount("tmpfs", mount_path, "tmpfs", 0, "size=16M") != 0) {
-		output(0, "scratch_block: tmpfs mount %s failed: %s\n",
-		       mount_path, strerror(errno));
-		(void)rmdir(mount_path);
-		return false;
-	}
-
-	out->loop_num = -1;
-	out->loop_fd = -1;
-	out->dev_path[0] = '\0';
-	n = snprintf(out->mount_path, sizeof(out->mount_path),
-		     "%s", mount_path);
-	if (n < 0 || (size_t)n >= (int)sizeof(out->mount_path)) {
-		(void)umount2(mount_path, MNT_DETACH);
-		(void)rmdir(mount_path);
-		return false;
-	}
-	return true;
-}
-
 static void scratch_block_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fileobj *fo = &obj->fileobj;
@@ -428,8 +391,7 @@ static void scratch_block_dump(struct object *obj, enum obj_scope scope)
  * fd_provider .get() callback finds it.  fileobj.filename points into
  * shm->isolation directly: that memory lives for the process lifetime
  * and is parent-write / child-read, matching the "stable strings"
- * convention dev_template uses for its compile-time table.  tmpfs
- * slots have no loop fd and are not published.
+ * convention dev_template uses for its compile-time table.
  */
 static void scratch_publish_object(struct scratch_block_entry *e)
 {
@@ -458,7 +420,6 @@ static int init_scratch_block(void)
 {
 	struct objhead *head;
 	unsigned int next = 0;
-	unsigned int loop_published = 0;
 
 	/* Box-safety gate: without the parent's private mount namespace,
 	 * any mount() we issue lands in the host mount tree and any
@@ -479,8 +440,6 @@ static int init_scratch_block(void)
 		return false;
 	}
 
-	/* /dev/loop-control is only needed for the ext4-on-loop slot;
-	 * absence is tolerated so the pool can still publish tmpfs. */
 	loopctl_fd = open("/dev/loop-control", O_RDWR | O_CLOEXEC);
 	if (loopctl_fd < 0) {
 		output(0, "scratch_block: open(/dev/loop-control) failed: %s -- loop slot skipped\n",
@@ -491,17 +450,6 @@ static int init_scratch_block(void)
 
 		if (scratch_make_loop(next, e)) {
 			scratch_publish_object(e);
-			loop_published++;
-			next++;
-			shm->isolation.scratch_block_count = next;
-		}
-	}
-
-	if (next < SCRATCH_BLOCK_MAX) {
-		struct scratch_block_entry *e =
-			&shm->isolation.scratch_block[next];
-
-		if (scratch_make_tmpfs(next, e)) {
 			next++;
 			shm->isolation.scratch_block_count = next;
 		}
@@ -528,9 +476,8 @@ static int init_scratch_block(void)
 		atexit(scratch_block_atexit_cleanup);
 	}
 
-	output(0, "scratch_block: pool ready (%u entries, %u loop) under %s\n",
-	       shm->isolation.scratch_block_count, loop_published,
-	       scratch_root_abs);
+	output(0, "scratch_block: pool ready (%u entries) under %s\n",
+	       shm->isolation.scratch_block_count, scratch_root_abs);
 
 	return true;
 }

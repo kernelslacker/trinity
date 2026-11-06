@@ -296,9 +296,7 @@ struct shm_s {
 		 * /dev/loop-control -> LOOP_CTL_GET_FREE -> LOOP_CONFIGURE
 		 * over scratch image files and (best-effort) formats one with
 		 * mkfs.ext4 then mounts it inside the parent's private mount
-		 * ns.  A tmpfs slot is added unconditionally (default:
-		 * tmpfs always; ext4 when the loop side + mkfs.ext4 both
-		 * succeed).
+		 * ns.
 		 *
 		 * This pool is the BOX-SAFETY CHOKEPOINT for fuzzed block
 		 * I/O: it is the ONLY source of loop fds + device paths that
@@ -311,9 +309,6 @@ struct shm_s {
 		 *
 		 * scratch_block_count is 0 when the pool never stood up
 		 * (non-root, mnt_ready degraded, or provider init failed).
-		 * loop_fd / loop_num are -1 for the tmpfs slot, so an
-		 * entry with loop_num >= 0 is the only kind a block-fd
-		 * consumer should pick.
 		 *
 		 * Parent teardown via atexit (mirror self_cgroup_cleanup):
 		 * unmount + LOOP_CLR_FD on every published entry, close the

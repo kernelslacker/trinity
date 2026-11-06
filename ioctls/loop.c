@@ -125,8 +125,8 @@ static bool is_scratch_loop(int fd)
 	if (fstat(fd, &st) < 0)
 		return false;
 
-	/* A slot that holds no loop reads loop_num -1 (create_shm(), the
-	 * tmpfs entry, teardown), so the array can be walked in full. */
+	/* A slot that holds no loop reads loop_num -1 (create_shm(),
+	 * teardown), so the array can be walked in full. */
 	for (i = 0; i < SCRATCH_BLOCK_MAX; i++) {
 		const struct scratch_block_entry *e =
 			&shm->isolation.scratch_block[i];
