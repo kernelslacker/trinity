@@ -91,8 +91,19 @@ static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
  * Perform the UFFDIO_API handshake so the kernel accepts subsequent
  * userfaultfd ioctls (UFFDIO_REGISTER, UFFDIO_COPY, etc.) on this fd.
  * Without the handshake, all other ioctls return -EINVAL.
+ *
+ * UFFD_FEATURE_SIGBUS is always on.  Nothing reads these fds, so a
+ * fault on a range one of them registered would otherwise sleep in
+ * handle_userfault() until the parent's watchdog killed the child:
+ * the child's own store to a MISSING-registered fuzz map, say.  With
+ * it every such fault is answered VM_FAULT_SIGBUS; the fault
+ * injectors' guard recovers a store, and a kernel copy gets EFAULT.
+ * The kernel arms an fd once, with the first handshake that succeeds,
+ * so one refused for a feature this kernel lacks retries with SIGBUS
+ * alone, and an fd neither arms must not be pooled, where a fuzzed
+ * UFFDIO_API could arm it without SIGBUS.
  */
-static void arm_userfaultfd(int fd)
+static bool arm_userfaultfd(int fd)
 {
 	static const __u64 feature_flags[] = {
 		/*
@@ -108,7 +119,6 @@ static void arm_userfaultfd(int fd)
 		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
 		UFFD_FEATURE_MISSING_HUGETLBFS,
 		UFFD_FEATURE_MISSING_SHMEM,
-		UFFD_FEATURE_SIGBUS,
 		UFFD_FEATURE_THREAD_ID,
 		UFFD_FEATURE_MINOR_HUGETLBFS,
 		UFFD_FEATURE_MINOR_SHMEM,
@@ -124,13 +134,18 @@ static void arm_userfaultfd(int fd)
 
 	memset(&api, 0, sizeof(api));
 	api.api = UFFD_API;
-	api.features = 0;
+	api.features = UFFD_FEATURE_SIGBUS;
 	for (i = 0; i < ARRAY_SIZE(feature_flags); i++) {
 		if (rnd_u32() & 1)
 			api.features |= feature_flags[i];
 	}
+	if (ioctl(fd, UFFDIO_API, &api) == 0)
+		return true;
 
-	ioctl(fd, UFFDIO_API, &api);
+	memset(&api, 0, sizeof(api));
+	api.api = UFFD_API;
+	api.features = UFFD_FEATURE_SIGBUS;
+	return ioctl(fd, UFFDIO_API, &api) == 0;
 }
 
 /*
@@ -154,7 +169,10 @@ static bool open_userfaultfd(void)
 	if (fd < 0)
 		return false;
 
-	arm_userfaultfd(fd);
+	if (!arm_userfaultfd(fd)) {
+		close(fd);
+		return false;
+	}
 
 	obj = alloc_object();
 	if (obj == NULL) {
