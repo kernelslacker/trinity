@@ -2780,6 +2780,65 @@ static void compat_msghdr_scrub_walks_compat_entries(void)
 		BUG("arg coupling: a compat msghdr scrub acted on no array");
 }
 
+/* fill_compat_msghdr() builds each compat msghdr twin's entry: a send
+ * copies its sockaddr into a name buffer and draws its native twin's
+ * 72-byte control arm, a receive gets a blank sockaddr_storage-sized
+ * name and the 4 KiB arm, every buffer lies below 4 GiB, and the scrub
+ * runs over the iovecs the caller named. */
+static void compat_msghdr_fill_places_low_buffers(void)
+{
+	struct sockaddr_storage ss;
+	struct compat_msghdr msg;
+	struct compat_iovec *iov;
+	unsigned int round, controls[2] = { 0, 0 };
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+	memset(&ss, 0x5a, sizeof(ss));
+	for (round = 0; round < 128; round++) {
+		bool send = (round & 1) == 0;
+		socklen_t salen = send ? 16 : sizeof(struct sockaddr_storage);
+		void *name;
+
+		child_call(send ? &syscall_sendmsg : &syscall_recvmsg, true);
+		memset(&msg, 0, sizeof(msg));
+		fill_compat_msghdr(&msg, send ? (struct sockaddr *) &ss : NULL,
+				   salen, send ? IOV_KERNEL_READ : IOV_KERNEL_WRITE);
+		name = (void *)(unsigned long) msg.msg_name;
+		if (name == NULL || msg.msg_namelen != (int) salen)
+			BUG("arg coupling: a compat msghdr fill placed no name buffer");
+		if (send && memcmp(name, &ss, salen) != 0)
+			BUG("arg coupling: a compat send's name buffer lost its sockaddr");
+		if (msg.msg_control == 0) {
+			if (msg.msg_controllen != 0)
+				BUG("arg coupling: a compat msghdr fill gave no control buffer a length");
+			continue;
+		}
+		controls[send]++;
+		if (send ? msg.msg_controllen != 0 && msg.msg_controllen != 72 :
+			   msg.msg_controllen >= 4096)
+			BUG("arg coupling: a compat msghdr fill drew the other twin's control length");
+	}
+	if (controls[0] == 0 || controls[1] == 0)
+		BUG("arg coupling: a compat msghdr fill never drew a control buffer");
+
+	iov = alloc_compat_iovec(1, IOV_KERNEL_WRITE);
+	if (iov == NULL || (unsigned long) iov > UINT_MAX)
+		BUG("arg coupling: no low compat iovec array to fill through");
+	child_call(&syscall_recvmsg, true);
+	memset(&msg, 0, sizeof(msg));
+	iov[0].iov_base = 0x1000;
+	iov[0].iov_len = 16;
+	msg.msg_iov = (unsigned int)(unsigned long) iov;
+	msg.msg_iovlen = 1;
+	fake_overlaps_shared = true;
+	fill_compat_msghdr(&msg, NULL, 0, IOV_KERNEL_WRITE);
+	fake_overlaps_shared = false;
+	if (iov[0].iov_base != 0 || iov[0].iov_len != 0)
+		BUG("arg coupling: a compat msghdr fill left an overlapping iovec standing");
+	fake_this_child = NULL;
+}
+
 /* Whether the compat array still holds the pattern the case filled
  * it with, entry 0 aside where a collapse may have rewritten its
  * length: a native-stride walk over a compat array writes the next
@@ -5547,6 +5606,7 @@ void arg_coupling_self_check(void)
 #ifdef ARCH_IS_BIARCH
 	compat_iovec_pool_held_low();
 	compat_msghdr_scrub_walks_compat_entries();
+	compat_msghdr_fill_places_low_buffers();
 	compat_iovec_walkers_use_compat_stride();
 #endif
 	pools_end_at_a_guard_page();

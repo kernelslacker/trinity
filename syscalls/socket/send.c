@@ -173,15 +173,13 @@ struct sendmsg_post_state {
  * 32-bit iovec entries, so the native msghdr -- a heap struct the
  * 32-bit pointer truncates, read field-by-field as compat layout --
  * would hand it msg_control as the high half of msg_iov.  Build the
- * compat layout in the low pool instead, with a compat iovec array
- * and a low name buffer.  Pointers that do not fit in 32 bits drop
- * to NULL / 0 rather than truncating to a different mapping.
- * Ancillary data is not built: cmsg_build() writes native
- * struct cmsghdr, which the compat converter would misread, so a
- * compat call gets the random-buffer or empty control arms only.
- * The msghdr itself is pool memory, not a tracked allocation, so
- * it is never rec_owned and its name is NULL in the snapshot; the
- * post handler frees nothing for it.
+ * compat layout in the low pool instead, with a compat iovec array,
+ * through fill_compat_msghdr(), which places the name and control
+ * buffers and builds no ancillary data.  A gen_msg payload that does
+ * not fit in 32 bits drops rather than truncating to a different
+ * mapping.  The msghdr itself is pool memory, not a tracked
+ * allocation, so it is never rec_owned and its name is NULL in the
+ * snapshot; the post handler frees nothing for it.
  */
 static void sanitise_sendmsg_compat(struct syscallrecord *rec)
 {
@@ -209,18 +207,6 @@ skip_si:
 		goto no_msg;
 	memset(msg, 0, sizeof(*msg));
 
-	if (sa != NULL && salen != 0) {
-		void *namebuf = get_writable_struct(salen);
-
-		if (namebuf != NULL &&
-		    (unsigned long) namebuf <= UINT_MAX) {
-			memcpy(namebuf, sa, salen);
-			msg->msg_name = (unsigned int)(unsigned long) namebuf;
-			msg->msg_namelen = (int) salen;
-		}
-	}
-	tracked_free_now(sa);
-
 	if (si != NULL && !ONE_IN(4)) {
 		const struct netproto *proto;
 		unsigned int family = si->triplet.family;
@@ -246,7 +232,6 @@ skip_si:
 							iov[0].iov_base = (unsigned int)(unsigned long) kbuf;
 							iov[0].iov_len = (unsigned int) gen_len;
 							iovlen = 1;
-							iov_len_sum = gen_len;
 							rec->a4 = 1;
 						}
 					}
@@ -260,11 +245,8 @@ skip_si:
 
 	if (iov == NULL) {
 		iov = alloc_compat_iovec(1, IOV_KERNEL_READ);
-		if (iov != NULL) {
-			scrub_compat_iovec_for_kernel_write(iov, 1);
+		if (iov != NULL)
 			iovlen = 1;
-			iov_len_sum = iov[0].iov_len;
-		}
 	}
 
 	if (iov != NULL) {
@@ -272,27 +254,12 @@ skip_si:
 		msg->msg_iovlen = iovlen;
 	}
 
-	if (ONE_IN(5)) {
-		void *control = get_writable_address(72);
+	fill_compat_msghdr(msg, sa, salen, IOV_KERNEL_READ);
+	tracked_free_now(sa);
 
-		if (control != NULL &&
-		    (unsigned long) control <= UINT_MAX) {
-			msg->msg_control = (unsigned int)(unsigned long) control;
-			msg->msg_controllen = RAND_BOOL() ? 0 : 72;
-		}
-	}
-
-	if (ONE_IN(100))
-		msg->msg_flags = rand32();
-	else
-		msg->msg_flags = 0;
-
-	scrub_compat_msghdr_for_kernel_write(msg);
-
-	if (msg->msg_iov != 0 && msg->msg_iovlen != 0) {
-		/* Recompute after the scrub, as in the native path. */
+	/* Summed after the scrub, as in the native path. */
+	if (msg->msg_iov != 0 && msg->msg_iovlen != 0)
 		iov_len_sum = iov[0].iov_len;
-	}
 
 	rec->a2 = (unsigned long) msg;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct compat_msghdr));
@@ -309,6 +276,7 @@ skip_si:
 	return;
 
 no_msg:
+	tracked_free_now(sa);
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SENDMSG_POST_STATE_MAGIC;
 	snap->msg = NULL;

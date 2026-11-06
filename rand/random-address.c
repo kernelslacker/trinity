@@ -1281,3 +1281,32 @@ struct compat_iovec * alloc_compat_iovec(unsigned int num,
 
 	return iov;
 }
+
+void fill_compat_msghdr(struct compat_msghdr *msg, const struct sockaddr *sa,
+			socklen_t salen, enum iov_direction dir)
+{
+	bool send = (dir == IOV_KERNEL_READ);
+	void *buf;
+
+	if (salen != 0) {
+		buf = get_writable_struct(salen);
+		if (buf != NULL && (unsigned long) buf <= UINT_MAX) {
+			if (sa != NULL)
+				memcpy(buf, sa, salen);
+			msg->msg_name = (unsigned int)(unsigned long) buf;
+			msg->msg_namelen = (int) salen;
+		}
+	}
+
+	if (send ? ONE_IN(5) : RAND_BOOL()) {
+		buf = get_writable_address(send ? 72 : 4096);
+		if (buf != NULL && (unsigned long) buf <= UINT_MAX) {
+			msg->msg_control = (unsigned int)(unsigned long) buf;
+			msg->msg_controllen = send ? (RAND_BOOL() ? 0 : 72) :
+						     rnd_modulo_u32(4096);
+		}
+	}
+
+	msg->msg_flags = ONE_IN(100) ? rand32() : 0;
+	scrub_compat_msghdr_for_kernel_write(msg);
+}

@@ -130,6 +130,21 @@ struct iovec * alloc_iovec(unsigned int num, enum iov_direction dir) __must_chec
  */
 struct compat_iovec * alloc_compat_iovec(unsigned int num,
 					 enum iov_direction dir) __must_check;
+/*
+ * Fill @msg, a zeroed struct compat_msghdr in the low pool whose msg_iov
+ * the caller has set, the way every compat msghdr twin builds an entry:
+ * @salen bytes of @sa in a low name buffer (left blank when @sa is NULL,
+ * a receive's write target), on a coin flip a low control buffer, the
+ * rare random msg_flags, and the msghdr scrub.  @dir is IOV_KERNEL_READ
+ * for a send, whose name and control the kernel reads, IOV_KERNEL_WRITE
+ * for a receive, whose name and control it writes; each draws the
+ * control arm of its native twin.  A buffer the pool cannot place below
+ * 4 GiB stays out rather than truncating to another mapping.  No
+ * ancillary data: cmsg_build() writes a native struct cmsghdr, which
+ * the compat converter would misread.
+ */
+void fill_compat_msghdr(struct compat_msghdr *msg, const struct sockaddr *sa,
+			socklen_t salen, enum iov_direction dir);
 void alloc_compat_iovec_init(void);
 /*
  * One-shot parent-side allocator for alloc_iovec()'s iov[] backing

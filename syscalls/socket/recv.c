@@ -391,11 +391,11 @@ struct recvmsg_post_state {
 
 /*
  * Compat twin of sanitise_recvmsg().  Same shape as
- * sanitise_sendmsg_compat(): a struct compat_msghdr in the low pool,
- * a compat iovec array, and a low name/control buffer, so the compat
- * kernel reads the layout it expects at an address its 32-bit
- * pointer reaches.  The msghdr is pool memory, never rec_owned, and
- * its name is NULL in the snapshot.
+ * sanitise_sendmsg_compat(): a struct compat_msghdr in the low pool
+ * and a compat iovec array, filled through fill_compat_msghdr(), so
+ * the compat kernel reads the layout it expects at an address its
+ * 32-bit pointer reaches.  The msghdr is pool memory, never
+ * rec_owned, and its name is NULL in the snapshot.
  */
 static void sanitise_recvmsg_compat(struct syscallrecord *rec)
 {
@@ -416,17 +416,6 @@ skip_si:
 		goto no_msg;
 	memset(msg, 0, sizeof(*msg));
 
-	/* msg_name is purely a kernel write-target, as in the native
-	 * path: a full sockaddr_storage slot in the low pool. */
-	{
-		void *namebuf = get_writable_struct(sizeof(struct sockaddr_storage));
-
-		if (namebuf != NULL) {
-			msg->msg_name = (unsigned int)(unsigned long) namebuf;
-			msg->msg_namelen = sizeof(struct sockaddr_storage);
-		}
-	}
-
 	if (RAND_BOOL()) {
 		unsigned int num_entries = RAND_RANGE(1, 3);
 
@@ -437,24 +426,10 @@ skip_si:
 		}
 	}
 
-	if (RAND_BOOL()) {
-		void *control = get_writable_address(4096);
-
-		if (control != NULL &&
-		    (unsigned long) control <= UINT_MAX) {
-			msg->msg_control = (unsigned int)(unsigned long) control;
-			msg->msg_controllen = rnd_modulo_u32(4096);
-		} else {
-			msg->msg_controllen = 0;
-		}
-	}
-
-	if (ONE_IN(100))
-		msg->msg_flags = rand32();
-	else
-		msg->msg_flags = 0;
-
-	scrub_compat_msghdr_for_kernel_write(msg);
+	/* msg_name is purely a kernel write-target, as in the native
+	 * path: a full sockaddr_storage slot. */
+	fill_compat_msghdr(msg, NULL, sizeof(struct sockaddr_storage),
+			   IOV_KERNEL_WRITE);
 
 	if (msg->msg_iov != 0 && msg->msg_iovlen != 0) {
 		unsigned int i;
