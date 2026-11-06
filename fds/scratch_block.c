@@ -189,7 +189,6 @@ static void scratch_entry_release(unsigned int idx)
 		e->loop_num = -1;
 	}
 	e->dev_path[0] = '\0';
-	e->fs_type[0] = '\0';
 }
 
 /*
@@ -228,8 +227,6 @@ static void scratch_block_atexit_cleanup(void)
 	if (scratch_root_abs[0] != '\0')
 		(void)rmdir(scratch_root_abs);
 
-	__atomic_store_n(&shm->isolation.scratch_block_ready, false,
-			 __ATOMIC_RELAXED);
 	shm->isolation.scratch_block_count = 0;
 }
 
@@ -244,8 +241,8 @@ static void scratch_block_atexit_cleanup(void)
  *   4. close the backing fd -- the kernel holds its own reference
  *      until the loop unbinds;
  *   5. fork mkfs.ext4 -F -q; on failure publish a loop-only slot
- *      (no mount, fs_type = "none") so block-fd consumers still get
- *      a vetted /dev/loopN to fuzz;
+ *      (no mount) so block-fd consumers still get a vetted
+ *      /dev/loopN to fuzz;
  *   6. mount the loop dev as ext4 under the scratch subtree.
  *
  * Populates *out on success and any partial-loop-without-mount path.
@@ -350,7 +347,6 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 	out->loop_fd = loop_fd;
 	memcpy(out->dev_path, dev_path, sizeof(out->dev_path));
 	out->mount_path[0] = '\0';
-	memcpy(out->fs_type, "none", 5);
 
 	if (mkdir(mount_path, 0755) != 0 && errno != EEXIST)
 		return true;
@@ -378,9 +374,7 @@ static bool scratch_make_loop(unsigned int idx, struct scratch_block_entry *out)
 		(void)umount2(mount_path, MNT_DETACH);
 		(void)rmdir(mount_path);
 		out->mount_path[0] = '\0';
-		return true;
 	}
-	memcpy(out->fs_type, "ext4", 5);
 	return true;
 }
 
@@ -418,7 +412,6 @@ static bool scratch_make_tmpfs(unsigned int idx, struct scratch_block_entry *out
 		(void)rmdir(mount_path);
 		return false;
 	}
-	memcpy(out->fs_type, "tmpfs", 6);
 	return true;
 }
 
@@ -470,8 +463,7 @@ static int init_scratch_block(void)
 	/* Box-safety gate: without the parent's private mount namespace,
 	 * any mount() we issue lands in the host mount tree and any
 	 * loop binding pollutes a host-visible device node.  Degrade
-	 * silently -- the btrfs ioctl group consults scratch_block_ready
-	 * itself and falls back to the testfile pool. */
+	 * silently: the pool stays empty. */
 	if (!__atomic_load_n(&shm->isolation.mnt_ready, __ATOMIC_RELAXED)) {
 		fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
 				      "mnt_ready=0");
@@ -535,9 +527,6 @@ static int init_scratch_block(void)
 		scratch_block_atexit_armed = true;
 		atexit(scratch_block_atexit_cleanup);
 	}
-
-	__atomic_store_n(&shm->isolation.scratch_block_ready, true,
-			 __ATOMIC_RELAXED);
 
 	output(0, "scratch_block: pool ready (%u entries, %u loop) under %s\n",
 	       shm->isolation.scratch_block_count, loop_published,

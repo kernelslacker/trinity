@@ -309,18 +309,17 @@ struct shm_s {
 		 * (children inherit it via fork; a child close drops only
 		 * that child's ref).
 		 *
-		 * scratch_block_ready is false when the pool never stood
-		 * up (non-root, mnt_ready degraded, or provider init
-		 * failed).  loop_fd / loop_num are -1 for the tmpfs slot,
-		 * so an entry with loop_num >= 0 is the only kind a
-		 * block-fd consumer should pick.
+		 * scratch_block_count is 0 when the pool never stood up
+		 * (non-root, mnt_ready degraded, or provider init failed).
+		 * loop_fd / loop_num are -1 for the tmpfs slot, so an
+		 * entry with loop_num >= 0 is the only kind a block-fd
+		 * consumer should pick.
 		 *
 		 * Parent teardown via atexit (mirror self_cgroup_cleanup):
 		 * unmount + LOOP_CLR_FD on every published entry, close the
 		 * parent-held loop fd, unlink the backing image, rmdir the
 		 * scratch subtree.  Idempotent against partial teardown.
 		 */
-		bool scratch_block_ready;
 		unsigned int scratch_block_count;
 		struct scratch_block_entry scratch_block[SCRATCH_BLOCK_MAX];
 	} isolation;

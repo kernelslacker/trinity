@@ -13,8 +13,8 @@
  * fork(); the parent's fd outlives any child close so the loop binding
  * stays alive for the run.
  *
- * The provider hands out the loop fds, and the btrfs and loop ioctl
- * groups match the fd they were handed against the published entries.
+ * The provider hands out the loop fds, which the loop ioctl group
+ * matches against the published entries.
  */
 
 /*
@@ -50,8 +50,6 @@ struct scratch_block_entry {
 	 * loop-only entry (no filesystem).
 	 */
 	char mount_path[96];
-	/* "ext4", "tmpfs", or "none" (loop without a filesystem). */
-	char fs_type[8];
 };
 
 /*

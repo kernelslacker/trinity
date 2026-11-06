@@ -294,10 +294,6 @@ void dump_stats_fuzzer_subsystems(void)
 		stat_row("arggen", "wrong_fd_type_subst_generic",
 			 shm->stats.arg.wrong_fd_type_subst_generic);
 
-	if (shm->stats.btrfs_ioctls_dispatched)
-		stat_row("ioctl", "btrfs_ioctls_dispatched",
-			 shm->stats.btrfs_ioctls_dispatched);
-
 	if (shm->stats.ioctl_group_match)
 		stat_row("ioctl", "group_match",
 			 shm->stats.ioctl_group_match);
