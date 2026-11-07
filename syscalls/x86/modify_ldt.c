@@ -89,6 +89,9 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 
 		rec->a2 = (unsigned long) desc;
 		rec->a3 = sizeof(*desc);
+		/* The record's drain frees it after the call, as it does
+		 * the read func's buffer. */
+		rec_own(rec, desc);
 		break;
 	}
 	default:

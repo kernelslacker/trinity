@@ -1129,6 +1129,12 @@ FAKE_SRCS	+= struct_fill_fd_test.c
 # childop multipliers.
 FAKE_SRCS	+= budgeted_test.c
 
+# syscalls/x86/modify_ldt.c brings modify_ldt's sanitiser, whose buffers
+# modify_ldt_test.c checks; it compiles to nothing off x86, as the test
+# does.
+PARENT_SRCS	+= $(TOP)/syscalls/x86/modify_ldt.c
+FAKE_SRCS	+= modify_ldt_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
