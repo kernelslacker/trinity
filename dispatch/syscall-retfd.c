@@ -34,11 +34,12 @@
  * use and is fed straight back to the kernel as a real fd by close()
  * (or worse, lands on a file-table entry an unrelated path opened).
  *
- * 1<<20 = 1048576 matches the kernel's NR_OPEN ceiling
- * (include/uapi/linux/fs.h), the absolute upper bound RLIMIT_NOFILE
- * may be raised to on every distro we exercise.  No legitimate RET_FD
- * handler treats an out-of-range value as anything but a kernel ABI
- * violation, so the validator firing IS the bug report.
+ * 1<<20 = 1048576 is fs.nr_open's default (sysctl_nr_open,
+ * fs/file.c), past which do_prlimit() refuses to raise RLIMIT_NOFILE,
+ * and init_rlimits() caps RLIMIT_NOFILE at 262144 at startup, so a real
+ * fd sits well below it.  No legitimate RET_FD handler treats an
+ * out-of-range value as anything but a kernel ABI violation, so the
+ * validator firing IS the bug report.
  *
  * Rettype is read via effective_rettype(): static-contract entries are
  * sourced from entry->rettype (immune to per-rec stomp), op-multiplexed

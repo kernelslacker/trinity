@@ -63,7 +63,7 @@ static bool is_fd_type(enum objecttype type)
  *   - the verbose-mode caller trace (gated on -vv, used when
  *     attributing churn back to a specific .post handler),
  *   - the fd-bound rejection check for fd-typed objects (any
- *     value past NR_OPEN is upper-bit corruption that the loose
+ *     value from 1<<20 up is upper-bit corruption that the loose
  *     "(long)retval >= 0" gate in register_returned_fd / the
  *     per-syscall .post handlers let through),
  *   - the OBJ_GLOBAL post-fork guard (OBJ_GLOBAL is pre-fork-only
@@ -106,14 +106,14 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 
 	/*
 	 * Reject obviously-corrupted fd values before they enter any pool.
-	 * 1<<20 = 1048576 matches the kernel's NR_OPEN ceiling
-	 * (include/uapi/linux/fs.h), the absolute upper bound RLIMIT_NOFILE
-	 * may be raised to on every distro we exercise -- so any retval
-	 * decoding to a value past this is a smoking-gun upper-bit
-	 * corruption (sign-extended or wholesale-stomped rec->retval) that
-	 * the existing "(long)retval >= 0" gate in register_returned_fd /
-	 * the per-syscall .post handlers let through because the lower bits
-	 * happened to be positive.
+	 * 1<<20 = 1048576 is fs.nr_open's default (sysctl_nr_open,
+	 * fs/file.c), past which do_prlimit() refuses to raise
+	 * RLIMIT_NOFILE, and init_rlimits() caps RLIMIT_NOFILE at 262144 at
+	 * startup -- so any retval decoding to a value past this is a
+	 * smoking-gun upper-bit corruption (sign-extended or wholesale-
+	 * stomped rec->retval) that the existing "(long)retval >= 0" gate
+	 * in register_returned_fd / the per-syscall .post handlers let
+	 * through because the lower bits happened to be positive.
 	 */
 	if (is_fd && (fd < 0 || fd >= (1 << 20))) {
 		outputerr("add_object: rejecting out-of-bound fd=%d "
