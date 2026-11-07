@@ -1003,6 +1003,11 @@ PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
 		   $(TOP)/syscalls/poll/select.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
+# syscalls/concurrency/futex.c brings futex's sanitiser, which
+# futex_test.c runs with every futex word pool empty.
+PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex.c
+FAKE_SRCS	+= futex_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

@@ -448,6 +448,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 		break;
 	}
 
+out_setclock:
 	/*
 	 * utime (a4) is declared ARG_ADDRESS, so the generic generator
 	 * points it at an arbitrary VA.  For WAIT-family ops the kernel
@@ -455,7 +456,9 @@ static void sanitise_futex(struct syscallrecord *rec)
 	 * time_t and is >2^31 about half the time, parking the child in
 	 * FUTEX_WAIT past the in-child alarm(1) dodges (alarm-syscall
 	 * race, rt-mutex PI paths, transient D-state) until the parent's
-	 * 30s SIGKILL.  Clamp to a <=5 ms relative timespec instead.
+	 * 30s SIGKILL.  Clamp to a <=5 ms relative timespec instead, on
+	 * every branch: the generator's op is as likely a WAIT whichever
+	 * futex words were picked.
 	 */
 	switch (rec->a2) {
 	case FUTEX_WAIT:
@@ -476,7 +479,6 @@ static void sanitise_futex(struct syscallrecord *rec)
 		break;
 	}
 
-out_setclock:
 	switch (rec->a2) {
 	case FUTEX_WAIT:
 	case FUTEX_WAIT_PRIVATE:
