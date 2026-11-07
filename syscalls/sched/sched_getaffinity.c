@@ -20,18 +20,16 @@
 
 #include "kernel/sched.h"
 /*
- * Snapshot of the three sched_getaffinity input args read by the post
- * oracle, captured at sanitise time and consumed by the post handler.
- * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning and
- * the post handler running cannot redirect the oracle at a foreign mask
- * buffer, retarget the pid filter, or smear the cmp_len bound.
+ * Snapshot of the sched_getaffinity mask buffer read by the post oracle,
+ * captured at sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the oracle at a foreign mask buffer.
+ * The pid and len are read from the slots the kernel was handed instead.
  */
 #define SCHED_GETAFFINITY_POST_STATE_MAGIC	0x5343484741464659UL	/* "SCHGAFFY" */
 struct sched_getaffinity_post_state {
 	unsigned long magic;
-	unsigned long pid;
-	unsigned long len;
 	unsigned long mask;
 };
 
@@ -81,23 +79,19 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a3, page_size);
 
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
-	 * the post handler reads rec->a1/a2/a3 at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * mask pointer, and the post-handler's pid filter and the memcpy
-	 * bound would resolve against scribbled values.  post_state is
-	 * private to the post handler.  post_state_install pairs the
-	 * rec->post_state assign with the ownership-table register so the
-	 * observable window between the two is closed;
-	 * post_sched_getaffinity() will then gate the snap through
-	 * post_state_claim_owned() and prove ownership before dereferencing
-	 * any field.
+	 * Snapshot the mask pointer for the post oracle.  Without this
+	 * the post handler reads rec->a3 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original
+	 * user mask pointer.  post_state is private to the post handler.
+	 * post_state_install pairs the rec->post_state assign with the
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_sched_getaffinity() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SCHED_GETAFFINITY_POST_STATE_MAGIC;
-	snap->pid  = rec->a1;
-	snap->len  = rec->a2;
 	snap->mask = rec->a3;
 	post_state_install(rec, snap);
 }
@@ -123,6 +117,7 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	struct sched_getaffinity_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
+	pid_t pid;
 	char buf[2048];
 	cpu_set_t syscall_buf, proc_buf;
 	size_t copied, cmp_len;
@@ -141,29 +136,17 @@ static void post_sched_getaffinity(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	/*
-	 * Kernel ABI: sys_sched_getaffinity returns the cpumask size in
-	 * bytes copied (capped at snap->len) on success, or -1UL on failure.
-	 * Anything > snap->len (excluding -1UL) is a sign-extension tear or
-	 * kernel buffer-overrun — reject before the ONE_IN(100) sample gate,
-	 * which would otherwise miss 99% of corrupted retvals.
-	 */
-	if (retval != (unsigned long)-1L && retval > snap->len) {
-		outputerr("post_sched_getaffinity: retval %ld outside [0, %zu]\n",
-			  ret, (size_t)snap->len);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
-	}
-
 	if (!ONE_IN(100))
 		goto out_free;
 
 	if (ret <= 0)
 		goto out_free;
 
-	/* pid argument; sanitise leaves it caller-init.  Treat 0 as "self"
-	 * (kernel maps 0 -> current); skip if it names another task. */
-	if (snap->pid != 0 && snap->pid != (unsigned long)gettid())
+	/* pid argument, as the kernel read it; sanitise leaves it
+	 * caller-init.  Treat 0 as "self" (kernel maps 0 -> current); skip if
+	 * it names another task. */
+	pid = (pid_t) get_arg_snapshot(rec, 1);
+	if (pid != 0 && pid != gettid())
 		goto out_free;
 
 	copied = (size_t)retval;
@@ -244,6 +227,10 @@ struct syscallentry syscall_sched_getaffinity = {
 	.sanitise = sanitise_sched_getaffinity,
 	.post = post_sched_getaffinity,
 	.bound_arg = 2,
+	/* pid (a1) and len (a2): the oracle compares only a call on this
+	 * task, and enforce_count_bound() holds the return to the len, as
+	 * the kernel was handed them. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.rettype = RET_NUM_BYTES,
 	.flags = REEXEC_SANITISE_OK,
 };

@@ -2,7 +2,8 @@
  * Self-check for the values the post oracles accept on a call that
  * worked.  Each case hands a post handler the return a successful call
  * produces and counts the corrupt-pointer bumps it makes: a value the
- * kernel returns must not bump, one it cannot return must.  The handlers
+ * kernel returns must not bump, one it cannot return must.  A sampled
+ * compare is counted by the anomalies it reports instead.  The handlers
  * run as shipped; the post_state table, post_snapshot_or_skip() and the
  * bump itself are faked here.
  */
@@ -17,6 +18,7 @@
 #include <string.h>
 #include <sys/prctl.h>
 #include <sys/socket.h>
+#include <unistd.h>
 
 #include "arch.h"		/* ARCH_IS_BIARCH */
 #include "debug.h"		/* BUG */
@@ -25,6 +27,7 @@
 #include "maps.h"		/* get_map */
 #include "net.h"		/* fd_from_socketinfo */
 #include "sanitise.h"		/* writable pool */
+#include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscall-internal.h"	/* enforce_count_bound */
 #include "syscalls/syscalls.h"	/* syscall_prctl */
@@ -569,6 +572,108 @@ static void xattr_size(void)
 	}
 }
 
+/* sched_getaffinity's sanitiser run on @pid until it draws the canonical
+ * sizeof(cpu_set_t), so a final len can lie on either side of it. */
+static struct syscallrecord *affinity_rec(unsigned long pid)
+{
+	static struct syscallrecord rec;
+	unsigned int tries;
+
+	for (tries = 0; tries < 4096; tries++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = pid;
+		syscall_sched_getaffinity.sanitise(&rec);
+		if (rec.a2 == sizeof(cpu_set_t))
+			return &rec;
+		free((void *) rec.post_state);
+	}
+	BUG("sched_getaffinity's sanitiser never drew sizeof(cpu_set_t)");
+	return NULL;
+}
+
+/* The pid and len the kernel was handed, as __do_syscall() shadows them. */
+static void affinity_ran(struct syscallrecord *rec, unsigned long pid,
+			 unsigned long len)
+{
+	rec->a1 = pid;
+	rec->a2 = len;
+	rec->arg_snapshot_mask = syscall_sched_getaffinity.arg_snapshot_mask;
+	rec->arg_shadow[0] = pid;
+	rec->arg_shadow[1] = len;
+}
+
+/* min(len, cpumask_size()) bytes, at most the len the kernel was handed,
+ * which chain substitution or a RedQueen pin can rewrite after the
+ * sanitiser drew its own. */
+static void sched_getaffinity_len(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long len;
+		unsigned long retval;
+		unsigned int bumps;
+	} cases[] = {
+		{ "a larger rewritten len, a larger cpumask copied", 512, 512, 0 },
+		{ "a byte past a larger rewritten len", 512, 513, 1 },
+		{ "a smaller rewritten len, all of it copied", 8, 8, 0 },
+		{ "a byte past a smaller rewritten len", 8, 9, 1 },
+		{ "-1", 8, (unsigned long) -1L, 0 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		struct syscallrecord *rec = affinity_rec(0);
+		char what[128];
+
+		affinity_ran(rec, 0, cases[i].len);
+		rec->retval = cases[i].retval;
+		rec->errno_post = ((long) cases[i].retval == -1L) ? EINVAL : 0;
+		bumps = 0;
+		dispatch_post(&syscall_sched_getaffinity, rec);
+
+		snprintf(what, sizeof(what), "sched_getaffinity, %s", cases[i].what);
+		expect(what, bumps, cases[i].bumps);
+	}
+}
+
+/* Calls per case: the compare is sampled one in a hundred. */
+#define SAMPLED_CALLS	1500
+
+/* Calls the sanitiser built on pid @built, which the kernel ran on pid
+ * @ran, each answering an empty mask, which no task has; the anomalies
+ * the /proc/self/status compare reports. */
+static unsigned long affinity_anomalies(unsigned long built, unsigned long ran)
+{
+	unsigned long before = shm->stats.oracle.sched_getaffinity_oracle_anomalies;
+	unsigned int i;
+
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		struct syscallrecord *rec = affinity_rec(built);
+
+		memset((void *) rec->a3, 0, sizeof(cpu_set_t));
+		affinity_ran(rec, ran, sizeof(cpu_set_t));
+		rec->retval = sizeof(cpu_set_t);
+		syscall_sched_getaffinity.post(rec);
+	}
+	return shm->stats.oracle.sched_getaffinity_oracle_anomalies - before;
+}
+
+/* Only a call on the calling task is compared with its own status, and
+ * the task is the one the kernel was handed. */
+static void sched_getaffinity_pid(void)
+{
+	unsigned long other = (unsigned long) gettid() + 1;
+
+	if (affinity_anomalies(other, 0) == 0) {
+		fprintf(stderr, "sched_getaffinity: a call on this task built for another was not compared\n");
+		failed++;
+	}
+	if (affinity_anomalies(0, other) != 0) {
+		fprintf(stderr, "sched_getaffinity: a call on another task was compared with this one\n");
+		failed++;
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -610,6 +715,8 @@ void post_oracle_self_check(void)
 	recvmsg_count();
 	write_count();
 	xattr_size();
+	sched_getaffinity_len();
+	sched_getaffinity_pid();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif
