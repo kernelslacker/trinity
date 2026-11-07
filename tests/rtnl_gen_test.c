@@ -16,6 +16,7 @@
 #include <netinet/ip.h>
 #include <linux/fib_rules.h>
 #include <linux/if_addrlabel.h>
+#include <linux/if_bridge.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
@@ -568,6 +569,51 @@ static void expect_stats_header(const struct stats_header *get,
 			"rtnl: RTM_SETSTATS's header is not one rtnl_stats_set() takes seven times in eight");
 	expect_fraction(set->index_lo, set->msgs, 0.39, 0.50, "RTM_SETSTATS",
 			"rtnl: RTM_SETSTATS does not name lo about half the time");
+}
+
+/* ---------- The br_port_msg of RTM_*MDB and br_vlan_msg of RTM_*VLAN ----- */
+
+struct bridge_header {
+	unsigned int msgs;
+	unsigned int bridge;	/* AF_BRIDGE */
+	unsigned int index_all;	/* index 0 */
+};
+
+static void tally_bridge_header(struct bridge_header *t,
+				const struct nlmsghdr *nlh, bool mdb)
+{
+	const struct br_port_msg *bpm = NLMSG_DATA(nlh);
+	const struct br_vlan_msg *bvm = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(mdb ? sizeof(*bpm) : sizeof(*bvm)))
+		return;
+	t->msgs++;
+	t->bridge += (mdb ? bpm->family : bvm->family) == AF_BRIDGE;
+	t->index_all += (mdb ? bpm->ifindex : bvm->ifindex) == 0;
+}
+
+/*
+ * rtnetlink.c registers the MDB types for PF_BRIDGE alone, and br_vlan.c
+ * the VLAN ones, so rtnetlink_rcv_msg() answers any other family
+ * -EOPNOTSUPP.  The MDB dump refuses an index but 0 on a socket that asks
+ * for strict checking, and the VLAN dump one that names no device, where
+ * 0 dumps every device; an add or a delete needs a bridge, or a vxlan for
+ * the MDB, which 0 and lo never are.  The builder names AF_BRIDGE but one
+ * time in sixteen, and gives a GET index 0 half the time and an add or a
+ * delete a small index.
+ */
+static void expect_bridge_header(const struct bridge_header *get,
+				 const struct bridge_header *newdel)
+{
+	expect_fraction(get->bridge + newdel->bridge, get->msgs + newdel->msgs,
+			0.92, 0.97, "RTM_*MDB and RTM_*VLAN",
+			"rtnl: RTM_*MDB and RTM_*VLAN do not name AF_BRIDGE fifteen times in sixteen");
+	expect_fraction(get->index_all, get->msgs, 0.44, 0.57,
+			"RTM_GETMDB and RTM_GETVLAN",
+			"rtnl: RTM_GETMDB and RTM_GETVLAN do not ask for every device half the time");
+	expect_fraction(newdel->index_all, newdel->msgs, 0.0, 0.04,
+			"RTM_NEWMDB, RTM_DELMDB, RTM_NEWVLAN and RTM_DELVLAN",
+			"rtnl: a bridge add or delete names index 0, which its handler refuses, more than one time in 25");
 }
 
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
@@ -1460,6 +1506,7 @@ struct tallies {
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
+	struct bridge_header bridgeget, bridgenewdel;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1520,6 +1567,20 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_GETSTATS:
 			tally_stats_header(&t->getstats, nlh, false);
+			break;
+		case RTM_GETMDB:
+			tally_bridge_header(&t->bridgeget, nlh, true);
+			break;
+		case RTM_GETVLAN:
+			tally_bridge_header(&t->bridgeget, nlh, false);
+			break;
+		case RTM_NEWMDB:
+		case RTM_DELMDB:
+			tally_bridge_header(&t->bridgenewdel, nlh, true);
+			break;
+		case RTM_NEWVLAN:
+		case RTM_DELVLAN:
+			tally_bridge_header(&t->bridgenewdel, nlh, false);
 			break;
 		case RTM_SETSTATS:
 			tally_stats_header(&t->setstats, nlh, true);
@@ -1595,6 +1656,7 @@ void rtnl_gen_self_check(void)
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);
+	expect_bridge_header(&t.bridgeget, &t.bridgenewdel);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");

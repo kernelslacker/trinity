@@ -361,31 +361,45 @@ static size_t gen_rtnl_body_netconf(unsigned char *body, size_t buflen, unsigned
 	return sizeof(ncm);
 }
 
-/* RTM_*MDB: struct br_port_msg */
-static size_t gen_rtnl_body_mdb(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*MDB: struct br_port_msg.  rtnetlink.c registers the three types for
+ * PF_BRIDGE alone; an add or a delete needs the index of a device with MDB
+ * ops, a bridge or a vxlan, and the dump refuses an index but 0 on a
+ * socket that asks for strict checking.  So a request names AF_BRIDGE but
+ * one in sixteen, and a GET index 0 half the time.
+ */
+static size_t gen_rtnl_body_mdb(unsigned char *body, size_t buflen, bool get,
+				unsigned char *out_family)
 {
 	struct br_port_msg bpm;
 
 	if (sizeof(bpm) > buflen)
 		return 0;
-	bpm.family = rand_family();
-	bpm.ifindex = rnd_modulo_u32(64);
+	bpm.family = ONE_IN(16) ? rand_family() : AF_BRIDGE;
+	bpm.ifindex = get && RAND_BOOL() ? 0 : rnd_modulo_u32(64);
 	*out_family = bpm.family;
 	memcpy(body, &bpm, sizeof(bpm));
 	return sizeof(bpm);
 }
 
-/* RTM_*VLAN: struct br_vlan_msg */
-static size_t gen_rtnl_body_vlan(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*VLAN: struct br_vlan_msg.  br_vlan.c registers the three types for
+ * PF_BRIDGE alone; an add or a delete needs a bridge or a bridge port, and
+ * the dump answers an index that names no device -ENODEV and dumps every
+ * device for 0.  So a request names AF_BRIDGE but one in sixteen, and a
+ * GET index 0 half the time.
+ */
+static size_t gen_rtnl_body_vlan(unsigned char *body, size_t buflen, bool get,
+				 unsigned char *out_family)
 {
 	struct br_vlan_msg bvm;
 
 	if (sizeof(bvm) > buflen)
 		return 0;
-	bvm.family = rand_family();
+	bvm.family = ONE_IN(16) ? rand_family() : AF_BRIDGE;
 	bvm.reserved1 = 0;
 	bvm.reserved2 = 0;
-	bvm.ifindex = rnd_modulo_u32(64);
+	bvm.ifindex = get && RAND_BOOL() ? 0 : rnd_modulo_u32(64);
 	*out_family = bvm.family;
 	memcpy(body, &bvm, sizeof(bvm));
 	return sizeof(bvm);
@@ -555,9 +569,13 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 					       out_family);
 	case 15: return gen_rtnl_body_dcb(body, buflen, out_family);
 	case 16: return gen_rtnl_body_netconf(body, buflen, out_family);
-	case 17: return gen_rtnl_body_mdb(body, buflen, out_family);
+	case 17:
+		return gen_rtnl_body_mdb(body, buflen, nlmsg_type == RTM_GETMDB,
+					 out_family);
 	case 18: return gen_rtnl_body_gen(body, buflen, out_family);
-	case 24: return gen_rtnl_body_vlan(body, buflen, out_family);
+	case 24:
+		return gen_rtnl_body_vlan(body, buflen, nlmsg_type == RTM_GETVLAN,
+					  out_family);
 	case 19:
 		return gen_rtnl_body_stats(body, buflen, nlmsg_type == RTM_SETSTATS,
 					   out_family);
