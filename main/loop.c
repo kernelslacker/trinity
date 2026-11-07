@@ -13,7 +13,6 @@
 
 
 #include "child-api.h"
-#include "childops-util.h"
 #include "cmp_hints.h"
 #include "debug.h"
 #include "fd.h"

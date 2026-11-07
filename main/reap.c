@@ -12,7 +12,6 @@
 
 
 #include "child.h"
-#include "childops-util.h"
 #include "debug.h"
 #include "fd.h"
 #include "kcov.h"

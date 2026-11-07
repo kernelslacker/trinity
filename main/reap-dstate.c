@@ -8,7 +8,6 @@
 #include <unistd.h>
 
 #include "child.h"
-#include "childops-util.h"
 #include "fd.h"
 #include "stats_ring.h"
 #include "syscall.h"

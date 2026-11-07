@@ -20,11 +20,11 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "childops-util.h"
 #include "pids.h"
 #include "shm.h"
 #include "signals.h"
 #include "userns-bootstrap.h"
+#include "utils.h"
 
 /*
  * Grandchild exit codes.  Each setup failure gets a distinct value so
