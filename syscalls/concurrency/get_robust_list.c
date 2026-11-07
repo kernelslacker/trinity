@@ -4,9 +4,9 @@
 	size_t __user *, len_ptr)
  */
 #include <stddef.h>
-#include <sys/syscall.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include "kernel/unistd.h"
 #include "output-poison.h"
 #include "random.h"
 #include "sanitise.h"
@@ -14,26 +14,22 @@
 #include "trinity.h"
 #include "utils.h"
 
-#if defined(SYS_get_robust_list) || defined(__NR_get_robust_list)
-#ifndef SYS_get_robust_list
-#define SYS_get_robust_list __NR_get_robust_list
-#endif
+#ifdef SYS_get_robust_list
 #define HAVE_SYS_GET_ROBUST_LIST 1
 #endif
 
 #ifdef HAVE_SYS_GET_ROBUST_LIST
 /*
- * Snapshot of the three get_robust_list input args read by the post oracle,
+ * Snapshot of the two get_robust_list buffer args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget the pid self-filter or redirect the
- * oracle at a foreign head_ptr / len_ptr user buffer.
+ * handler running cannot redirect the oracle at a foreign head_ptr /
+ * len_ptr user buffer.
  */
 #define GET_ROBUST_LIST_POST_STATE_MAGIC	0x4752424CUL	/* "GRBL" */
 struct get_robust_list_post_state {
 	unsigned long magic;
-	unsigned long pid;
 	unsigned long head_ptr;
 	unsigned long len_ptr;
 	/*
@@ -75,12 +71,11 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_GET_ROBUST_LIST
 	/*
-	 * Snapshot all three input args for the post oracle.  Without this
+	 * Snapshot both buffer args for the post oracle.  Without this
 	 * the post handler reads rec->aN at post-time, when a sibling
 	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
 	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the memcpy would touch a foreign allocation,
-	 * and the pid self-filter would resolve against a scribbled value.
+	 * buffer pointers, so the memcpy would touch a foreign allocation.
 	 * post_state is private to the post handler.  Gated on
 	 * HAVE_SYS_GET_ROBUST_LIST to mirror the .post registration -- on
 	 * systems without SYS_get_robust_list the post handler is not
@@ -89,7 +84,6 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = GET_ROBUST_LIST_POST_STATE_MAGIC;
-	snap->pid      = rec->a1;
 	snap->head_ptr = rec->a2;
 	snap->len_ptr  = rec->a3;
 	snap->poison_seed[0] = 0;
@@ -140,16 +134,18 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
  * post-hook.
  *
  * Restrict to self (pid == 0 or pid == gettid()): cross-target sampling
- * races set_robust_list on the target task and tells us nothing.
+ * races set_robust_list on the target task and tells us nothing.  The pid
+ * is the one the kernel was handed, which chain substitution can rewrite
+ * after the sanitiser.
  *
- * TOCTOU defeat: the three input args (pid, head_ptr, len_ptr) are
- * snapshotted at sanitise time into a heap struct in rec->post_state, so
- * a sibling that scribbles rec->aN between syscall return and post entry
- * cannot retarget the pid self-filter or redirect the oracle at a foreign
- * head_ptr / len_ptr buffer.  The user buffer payloads are then snapshotted
- * into stack-locals before re-issuing, with a fresh private stack pair for
- * the re-call (NOT the snapshot's head_ptr / len_ptr -- a sibling could
- * mutate the user buffers themselves mid-syscall and forge a clean compare).
+ * TOCTOU defeat: the buffer args (head_ptr, len_ptr) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * the oracle at a foreign head_ptr / len_ptr buffer.  The user buffer
+ * payloads are then snapshotted into stack-locals before re-issuing, with
+ * a fresh private stack pair for the re-call (NOT the snapshot's head_ptr
+ * / len_ptr -- a sibling could mutate the user buffers themselves
+ * mid-syscall and forge a clean compare).
  *
  * If the re-call returns nonzero (the original syscall succeeded but the
  * re-call hit a transient failure), give up rather than report a false
@@ -172,6 +168,7 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	struct get_robust_list_post_state *snap;
 	struct robust_list_head *user_head, *kernel_head;
 	size_t user_len, kernel_len;
+	pid_t pid;
 	int rc;
 
 	/*
@@ -231,7 +228,8 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
+	pid = (pid_t) get_arg_snapshot(rec, 1);
+	if (pid != 0 && pid != gettid())
 		goto out_free;
 
 	rc = syscall(SYS_get_robust_list, 0, &kernel_head, &kernel_len);
@@ -260,6 +258,10 @@ struct syscallentry syscall_get_robust_list = {
 #ifdef HAVE_SYS_GET_ROBUST_LIST
 	.post = post_get_robust_list,
 #endif
+	/* pid (a1): the re-call compares only a call on this task, and the
+	 * task is the one the kernel read, which chain substitution may have
+	 * rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0),
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,

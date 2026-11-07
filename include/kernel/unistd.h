@@ -28,3 +28,6 @@
 #if !defined(SYS_sysfs) && defined(__NR_sysfs)
 #define SYS_sysfs	__NR_sysfs
 #endif
+#if !defined(SYS_get_robust_list) && defined(__NR_get_robust_list)
+#define SYS_get_robust_list	__NR_get_robust_list
+#endif

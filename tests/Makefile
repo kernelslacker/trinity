@@ -515,6 +515,7 @@ FAKE_SRCS	:= \
 	readlink_recall_test.c \
 	listmount_recall_test.c \
 	sockname_recall_test.c \
+	pid_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -650,6 +651,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
 # fd_from_socketinfo().
 PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 		   $(TOP)/syscalls/socket/getpeername.c
+
+# syscalls/concurrency/get_robust_list.c brings get_robust_list, whose
+# re-call on the calling task pid_recall_test.c runs.
+PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post

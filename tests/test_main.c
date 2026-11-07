@@ -81,6 +81,7 @@ void selector_recall_self_check(void);
 void readlink_recall_self_check(void);
 void listmount_recall_self_check(void);
 void sockname_recall_self_check(void);
+void pid_recall_self_check(void);
 void mount_pool_self_check(void);
 void bpf_gen_self_check(void);
 void objpool_reader_self_check(void);
@@ -451,6 +452,11 @@ int main(int argc, char **argv)
 	printf("  sockname_recall_self_check ... ");
 	fflush(stdout);
 	sockname_recall_self_check();
+	printf("OK\n");
+
+	printf("  pid_recall_self_check ... ");
+	fflush(stdout);
+	pid_recall_self_check();
 	printf("OK\n");
 
 	printf("  mount_pool_self_check ... ");
