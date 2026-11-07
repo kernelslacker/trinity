@@ -4,8 +4,8 @@
  * take arena, fallback and mixed pools and refuse storage in neither, and
  * clone_global_mmap_pool()'s dedup walk refreshes alloc_track only for a
  * fallback copy.  The heap probe answers for one buffer, so the arena
- * lies outside the heap as it does in a child.  The arena's allocator
- * vends nothing outside it.
+ * lies outside the heap as it does in a child.  The arena's cursor is
+ * the process's own, out of reach of a scribble over shared childdata.
  */
 
 #include <stdbool.h>
@@ -309,20 +309,21 @@ static void null_head_walks_empty(void)
 	}
 }
 
-/* A bump cursor past the arena, the shared childdata word scribbled, say,
- * reports the arena full instead of wrapping its end past the bounds
- * check and vending memory outside the arena. */
-static void scribbled_cursor_vends_nothing_outside(void)
+/* A scribble over a child's shared childdata leaves the next arena slot
+ * where the last one ended: 16-byte aligned, the arena's step. */
+static void scribble_leaves_arena_cursor(void)
 {
 	static struct childdata arena_child;
-	void *p;
+	const unsigned long step = (sizeof(struct object) + 15) & ~15UL;
+	char *a, *b;
 
 	fake_this_child = &arena_child;
-	arena_child.objpool_arena_cursor = ULONG_MAX - 8;
-	p = objpool_local_arena_alloc(sizeof(struct object));
+	a = objpool_local_arena_alloc(sizeof(struct object));
+	memset(&arena_child, 0xff, sizeof(arena_child));
+	b = objpool_local_arena_alloc(sizeof(struct object));
 	fake_this_child = NULL;
-	if (p != NULL && !objpool_local_arena_owns(p, sizeof(struct object)))
-		BUG("objpool reader: a scribbled cursor vended memory outside the arena");
+	if (a == NULL || b != a + step)
+		BUG("objpool reader: a scribble of the shared childdata moved the arena's cursor");
 }
 
 void objpool_reader_self_check(void);
@@ -339,9 +340,9 @@ void objpool_reader_self_check(void)
 	fallback_pool_is_read(arena_objs);
 	stray_storage_is_refused();
 	dedup_refreshes_only_fallback_copies();
+	scribble_leaves_arena_cursor();
 	arena_extent_is_checked(arena_objs[0]);
 	null_head_walks_empty();
-	scribbled_cursor_vends_nothing_outside();
 
 	fake_get_objhead = NULL;
 	fake_heap_size = 0;

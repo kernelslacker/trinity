@@ -12,7 +12,6 @@
 #include <string.h>
 #include <sys/mman.h>
 
-#include "child.h"
 #include "objects.h"
 #include "objects-internal.h"
 #include "trinity.h"		/* outputerr */
@@ -29,6 +28,10 @@
 
 static unsigned char *objpool_arena_base;
 static unsigned long objpool_arena_size;
+/* Its bump cursor: a static, so each child's first advance makes it its
+ * own (COW), beside its own copy of the arena, out of the childdata every
+ * process maps shared. */
+static unsigned long objpool_arena_cursor;
 
 void objpool_local_arena_init(void)
 {
@@ -44,8 +47,8 @@ void objpool_local_arena_init(void)
 
 	/*
 	 * Register once, at the parent's pre-fork virtual address.  The
-	 * shared_regions[] entry lives in alloc_shared()'d memory that every
-	 * child inherits via fork, so every child's range_overlaps_shared()
+	 * shared_regions[] entry is process memory every child inherits a
+	 * copy of at fork, so every child's range_overlaps_shared()
 	 * call sees the same tracked span at the same VA the child's COW
 	 * view of the arena occupies.  Origin tag names the offender in the
 	 * range_overlaps_shared_slow diagnostic under CONFIG_GUARD_SHARED;
@@ -107,18 +110,9 @@ bool objpool_local_arena_owns(const void *p, unsigned long size)
  * alloc_track either: they never reach free() (see release_obj()), and
  * obj_pool_slot_check() in mm/maps-pick.c validates a slot with
  * objpool_check(), not alloc_track_lookup().
- *
- * Owner-only writes to the cursor: the child's own bump cursor lives
- * in struct childdata (COW-inherited zero from the parent's zero-init
- * pre-fork), and parent-context callers get a static local so the
- * pre-fork parent path (rare -- OBJ_GLOBAL setup runs before the
- * per-child ring alloc) does not race the child cursors.
  */
 void *objpool_local_arena_alloc(unsigned long size)
 {
-	struct childdata *child;
-	static unsigned long parent_cursor;
-	unsigned long *cursor_p;
 	unsigned long cursor, aligned;
 
 	if (objpool_arena_base == NULL)
@@ -130,17 +124,14 @@ void *objpool_local_arena_alloc(unsigned long size)
 	if (aligned > objpool_arena_size)
 		return NULL;
 
-	child = this_child();
-	cursor_p = (child != NULL) ? &child->objpool_arena_cursor
-				   : &parent_cursor;
 	/* Judged without forming cursor + aligned, which a cursor past the
 	 * arena (a stray write) would wrap; such a cursor finds it full. */
-	cursor = *cursor_p;
+	cursor = objpool_arena_cursor;
 	if (cursor > objpool_arena_size ||
 	    aligned > objpool_arena_size - cursor)
 		return NULL;
 
-	*cursor_p = cursor + aligned;
+	objpool_arena_cursor = cursor + aligned;
 
 	/*
 	 * The MAP_PRIVATE|MAP_ANON region is zero-fill on first fault; a

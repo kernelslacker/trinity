@@ -310,11 +310,6 @@ void clean_childdata(struct childdata *child)
 	 * not measure a rate against the previous occupant. */
 	child->local_post_handler_corrupt_ptr = 0;
 	child->maps_local_refill_credit = 0;
-	/* Bump cursors restart at offset 0 in a recycled slot.  Inheriting
-	 * the objpool arena's high-water mark would exhaust it early and
-	 * force the zmalloc_tracked fallback path sooner. */
-	child->writable_pool_cursor = 0;
-	child->objpool_arena_cursor = 0;
 	child->mmap_pool_nonempty_mask = 0;
 	child->storm_check_last_time = child->tp;
 	child->storm_check_last_post_handler = 0;

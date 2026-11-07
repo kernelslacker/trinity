@@ -58,6 +58,10 @@
 #define WRITABLE_POOL_ALIGN   16UL          /* covers __alignof__(max_align_t) */
 
 static unsigned char *writable_pool;
+/* Its bump cursor: a static, so each child's first advance makes it its
+ * own (COW), beside its own copy of the pool, out of the childdata every
+ * process maps shared. */
+static unsigned long writable_pool_cursor;
 
 /*
  * The writable pool's twin for compat calls.  Their kernel reads each
@@ -120,17 +124,12 @@ static void *pool_bump(unsigned char *pool, unsigned long *cursor_p,
 static unsigned char *call_pool(unsigned long **cursor_p)
 {
 	struct childdata *child = this_child();
-	static unsigned long parent_cursor;
 
-	if (child == NULL) {
-		*cursor_p = &parent_cursor;
-		return writable_pool;
-	}
-	if (child->syscall.do32bit) {
+	if (child != NULL && child->syscall.do32bit) {
 		*cursor_p = &low_pool_cursor;
 		return low_pool;
 	}
-	*cursor_p = &child->writable_pool_cursor;
+	*cursor_p = &writable_pool_cursor;
 	return writable_pool;
 }
 
