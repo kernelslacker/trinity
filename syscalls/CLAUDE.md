@@ -87,9 +87,14 @@ literals `tables/` copies into shared memory.
    ABI too: a compat call numbered below `NR_COMPAT_TIME64_FIRST` (403,
    where the y2038 calls start) reads `struct old_timespec32`,
    `old_timeval32` and the itimer pairs of them, so the time generators
-   narrow their fill through `time_struct_for_abi()`, and a sanitiser
-   that rewrites the generated struct runs it again
-   (`timer/timer_settime.c`).
+   narrow their fill through `time_struct_for_abi()`, as does every
+   sanitiser that builds or rewrites one (`timer/timer_settime.c`,
+   `poll/select.c`); `struct timex` goes through `timex_for_abi()`
+   (`clock/adjtimex.c`), and a post oracle widens its snapshot back
+   with `time_struct_from_abi()` (`timer/timer_gettime.c`).  A buffer a
+   sanitiser points a slot at comes from the call's pool, never a
+   static or per-thread variable, whose address a compat call, reading
+   the slot's low 32 bits, cannot reach (`concurrency/futex.c`).
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it
