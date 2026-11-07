@@ -333,8 +333,9 @@ static const unsigned short linkprop_attrs[] = {
 
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
-unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
+unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh)
 {
+	unsigned short nlmsg_type = nlh->nlmsg_type;
 	unsigned int group;
 
 	if (nlmsg_type < RTM_BASE || nlmsg_type >= RTM_MAX)
@@ -398,7 +399,7 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 				    size_t buflen,
 				    unsigned short outer_type,
 				    int protocol,
-				    unsigned short nlmsg_type,
+				    const struct nlmsghdr *nlh,
 				    unsigned char body_family,
 				    int rtnl_group)
 {
@@ -427,7 +428,7 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 		size_t structured_len;
 		size_t ctotal;
 
-		ctype = pick_attr_hint(protocol, nlmsg_type);
+		ctype = pick_attr_hint(protocol, nlh);
 		if (ctype == 0)
 			ctype = rand16();
 

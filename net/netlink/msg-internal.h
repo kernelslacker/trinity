@@ -223,7 +223,7 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
 				    size_t buflen,
 				    unsigned short outer_type,
 				    int protocol,
-				    unsigned short nlmsg_type,
+				    const struct nlmsghdr *nlh,
 				    unsigned char body_family,
 				    int rtnl_group);
 
@@ -232,9 +232,11 @@ size_t append_nested_attr_container(unsigned char *buf, size_t offset,
  * msg-attr-random.c, called from pick_attr_hint in msg-core.c.  Draws from
  * the shared ifla_attrs / rta_attrs / ... tables in msg-tables.c plus
  * a handful of narrower per-group hint lists that live alongside
- * pick_rtnl_attr_type in msg-attr-random.c.
+ * pick_rtnl_attr_type in msg-attr-random.c.  build_one_nlmsg() has set
+ * the request's flags and written its header before the attributes, so a
+ * GET's draw can follow its dump bit.
  */
-unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type);
+unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh);
 
 /*
  * pick_attr_hint fans out from msg-core.c to per-family attribute-type
@@ -242,7 +244,7 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type);
  * msg-attr-random.c can call back into it when building child
  * attributes for a NLA_F_NESTED container.
  */
-unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type);
+unsigned short pick_attr_hint(int protocol, const struct nlmsghdr *nlh);
 
 /*
  * Spec-driven attribute path.  Defined in msg-attr-spec.c and

@@ -256,11 +256,11 @@ static unsigned short pick_nlmsg_type(int protocol)
  * here so both the flat append path and the nested container helper draw
  * from the same per-family tables.
  */
-unsigned short pick_attr_hint(int protocol, unsigned short nlmsg_type)
+unsigned short pick_attr_hint(int protocol, const struct nlmsghdr *nlh)
 {
 	switch (protocol) {
 	case NETLINK_ROUTE:
-		return pick_rtnl_attr_type(nlmsg_type);
+		return pick_rtnl_attr_type(nlh);
 	default:
 		/* XFRM, SOCK_DIAG, ctnetlink, nftables and the genl families
 		 * the registry knows, with the controller, have dedicated
@@ -288,7 +288,7 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 			      const struct nla_attr_spec *spec_table,
 			      size_t nr_specs, uint64_t *used,
 			      struct socket_triplet *triplet,
-			      unsigned short nlmsg_type,
+			      const struct nlmsghdr *nlh,
 			      unsigned char body_family,
 			      int rtnl_group)
 {
@@ -310,7 +310,7 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 	/* Legacy random-payload path for families without a spec table —
 	 * currently NETLINK_ROUTE (which has its own structured per-group
 	 * payload generators) and unknown families. */
-	attr_hint = pick_attr_hint(triplet->protocol, nlmsg_type);
+	attr_hint = pick_attr_hint(triplet->protocol, nlh);
 
 	if (ONE_IN(7)) {
 		unsigned short outer = attr_hint ? attr_hint : rand16();
@@ -318,7 +318,7 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 		new_off = append_nested_attr_container(msg, offset, buflen,
 						       outer,
 						       triplet->protocol,
-						       nlmsg_type, body_family,
+						       nlh, body_family,
 						       rtnl_group);
 		if (new_off > offset)
 			return new_off;
@@ -417,7 +417,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		size_t new_off = iter_nlmsg_attr(msg, offset, buflen,
 						 spec_table, nr_specs,
 						 &once_used,
-						 triplet, nlmsg_type,
+						 triplet, nlh,
 						 body_family, rtnl_group);
 		if (new_off == 0)
 			break;
