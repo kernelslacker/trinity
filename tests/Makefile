@@ -652,6 +652,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
 PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 		   $(TOP)/syscalls/socket/getpeername.c
 
+# syscalls/cred/setgroups.c brings setgroups, whose getgroups() and
+# /proc/self/status compares post_oracle_test.c runs.
+PARENT_SRCS	+= $(TOP)/syscalls/cred/setgroups.c
+
 # syscalls/concurrency/get_robust_list.c and syscalls/sched/sched_getattr.c
 # bring get_robust_list and sched_getattr, whose re-calls on the calling
 # task pid_recall_test.c runs.

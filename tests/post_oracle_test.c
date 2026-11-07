@@ -844,6 +844,59 @@ static void sched_getaffinity_pid(void)
 	}
 }
 
+/* setgroups calls the sanitiser built for @built gids, which the kernel
+ * ran with @ran, the @ran at @gids, and answered 0; the anomalies the
+ * sampled getgroups() and /proc/self/status compares report. */
+static unsigned long setgroups_anomalies(unsigned long built,
+					 unsigned long ran, const gid_t *gids)
+{
+	unsigned long before = shm->stats.oracle.cred_oracle_anomalies +
+			       shm->stats.oracle.setgroups_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = built;
+		rec.a2 = (unsigned long) get_writable_address(page_size);
+		syscall_setgroups.sanitise(&rec);
+
+		memcpy((void *) rec.a2, gids, ran * sizeof(*gids));
+		rec.a1 = ran;
+		rec.arg_snapshot_mask = syscall_setgroups.arg_snapshot_mask;
+		rec.arg_shadow[0] = rec.a1;
+		rec.arg_shadow[1] = rec.a2;
+		rec.retval = 0;
+		syscall_setgroups.post(&rec);
+	}
+	return shm->stats.oracle.cred_oracle_anomalies +
+	       shm->stats.oracle.setgroups_oracle_anomalies - before;
+}
+
+/* A setgroups() that worked is read back by its count and gids, the ones
+ * the kernel was handed, which chain substitution can rewrite after the
+ * sanitiser drew its own. */
+static void setgroups_count(void)
+{
+	static gid_t gids[65];
+	int held = getgroups(0, NULL);
+
+	if (held < 0 || held >= (int) ARRAY_SIZE(gids) ||
+	    getgroups(held, gids) != held)
+		BUG("setgroups: cannot read the groups this task holds");
+	/* One more gid than the task holds. */
+	gids[held] = 12345;
+
+	if (setgroups_anomalies(held + 1, held, gids) != 0) {
+		fprintf(stderr, "setgroups: a count rewritten to the groups the task holds was judged on the count built\n");
+		failed++;
+	}
+	if (setgroups_anomalies(held, held + 1, gids) == 0) {
+		fprintf(stderr, "setgroups: a count rewritten past the groups the task holds was not reported\n");
+		failed++;
+	}
+}
+
 /* The entries whose return enforce_count_bound() holds to a count the
  * kernel was handed, which chain substitution or a RedQueen pin can
  * rewrite after the sanitiser drew its own, and the count's slot. */
@@ -1196,6 +1249,7 @@ void post_oracle_self_check(void)
 	get_tsc();
 	get_thp_disable();
 	prctl_roundtrip();
+	setgroups_count();
 	futex_hash_ebusy();
 	sched_getscheduler_policy();
 	recv_count();

@@ -16,20 +16,17 @@
 #include "utils.h"
 
 /*
- * Snapshot of the two setgroups input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
+ * Snapshot of the setgroups grouplist read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign grouplist or hand the
- * oracle a different gidsetsize than the kernel actually consumed.  The
- * count field is a scalar but is kept in the snapshot for symmetry with
- * the rest of the snapshot family and to make the rec->aN read sites
- * uniformly route through the snapshot.
+ * handler running cannot redirect us at a foreign grouplist.  The
+ * gidsetsize is the one the kernel was handed, read from the
+ * dispatch-time shadow of its slot.
  */
 #define SETGROUPS_POST_STATE_MAGIC	0x53475250UL	/* "SGRP" */
 struct setgroups_post_state {
 	unsigned long magic;
-	unsigned long count;
 	unsigned long list;
 };
 
@@ -53,16 +50,15 @@ static void sanitise_setgroups(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->a1/a2 at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointer, so the memcpy / qsort would touch a foreign
-	 * allocation.  post_state is private to the post handler.
+	 * Snapshot the grouplist for the post oracle.  Without this the
+	 * post handler reads rec->a2 at post-time, when a sibling syscall
+	 * may have scribbled the slot: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user buffer
+	 * pointer, so the memcpy / qsort would touch a foreign allocation.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = SETGROUPS_POST_STATE_MAGIC;
-	snap->count = rec->a1;
 	snap->list = rec->a2;
 	/*
 	 * post_state_install pairs the rec->post_state assign with the
@@ -174,11 +170,11 @@ static int read_proc_groups(gid_t **out, int *n_out)
  * TOCTOU defeat: the gidsetsize (rec->a1) and grouplist pointer
  * (rec->a2) are both reachable from sibling trinity children and a
  * concurrent write can scribble either between the original return and
- * our oracle work.  Both args are snapshotted at sanitise time into a
+ * our oracle work.  The grouplist is snapshotted at sanitise time into a
  * heap struct in rec->post_state, so a sibling that scribbles rec->aN
- * between syscall return and post entry cannot redirect us at a
- * foreign grouplist or hand the oracle a different count than the
- * kernel actually consumed.
+ * between syscall return and post entry cannot redirect us at a foreign
+ * grouplist, and the count is the one the kernel consumed, shadowed at
+ * dispatch: chain substitution can rewrite it after the sanitiser.
  */
 static void post_setgroups(struct syscallrecord *rec)
 {
@@ -199,7 +195,7 @@ static void post_setgroups(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_free;
 
-	n_set = (int) snap->count;
+	n_set = (int) get_arg_snapshot(rec, 1);
 	if (n_set < 0 || n_set > 65536)
 		goto out_free;
 
@@ -317,6 +313,10 @@ struct syscallentry syscall_setgroups = {
 	.arg_params[0].range.hi = 65536,
 	.sanitise = sanitise_setgroups,
 	.post = post_setgroups,
+	/* gidsetsize (a1): the oracles read back as many gids as the kernel
+	 * stored, which chain substitution may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0),
 	.group = GROUP_CRED,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
