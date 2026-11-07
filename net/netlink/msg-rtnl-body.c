@@ -285,15 +285,22 @@ static size_t gen_rtnl_body_action(unsigned char *body, size_t buflen, unsigned 
 	return sizeof(tca);
 }
 
-/* RTM_*NEIGHTBL: struct ndtmsg */
+/*
+ * RTM_*NEIGHTBL: struct ndtmsg.  Only AF_INET and AF_INET6 have neighbour
+ * tables, and neightbl_set() and the dump skip a table whose family is not
+ * the header's unless it names none, so a SET under any other family finds
+ * none (-ENOENT) and a dump is empty.  So a request names AF_UNSPEC,
+ * AF_INET or AF_INET6 but one in eight.
+ */
 static size_t gen_rtnl_body_neightbl(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
+	static const unsigned char families[] = { AF_UNSPEC, AF_INET, AF_INET6 };
 	struct ndtmsg ndt;
 
 	if (sizeof(ndt) > buflen)
 		return 0;
 	memset(&ndt, 0, sizeof(ndt));
-	ndt.ndtm_family = rand_family();
+	ndt.ndtm_family = ONE_IN(8) ? rand_family() : RAND_ARRAY(families);
 	*out_family = ndt.ndtm_family;
 	memcpy(body, &ndt, sizeof(ndt));
 	return sizeof(ndt);

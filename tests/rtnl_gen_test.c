@@ -641,14 +641,22 @@ static void tally_family(struct family_header *t, const struct nlmsghdr *nlh,
  * rtnetlink_rcv_msg() answers a doit under any other family -EOPNOTSUPP. */
 static const unsigned char netconf_families[] = { AF_INET, AF_INET6, AF_MPLS };
 
+/* Only AF_INET and AF_INET6 have neighbour tables, and neightbl_set() and
+ * the dump skip one whose family is not the header's unless it names none. */
+static const unsigned char neightbl_families[] = { AF_UNSPEC, AF_INET, AF_INET6 };
+
 /*
  * The builder names a family with a handler but one time in eight, when
  * rand_family() still lands on one about half the time.
  */
-static void expect_family_headers(const struct family_header *netconf)
+static void expect_family_headers(const struct family_header *netconf,
+				  const struct family_header *neightbl)
 {
 	expect_fraction(netconf->taken, netconf->msgs, 0.90, 0.96, "RTM_GETNETCONF",
 			"rtnl: RTM_GETNETCONF does not name AF_INET, AF_INET6 or AF_MPLS seven times in eight");
+	expect_fraction(neightbl->taken, neightbl->msgs, 0.90, 0.96,
+			"RTM_GETNEIGHTBL and RTM_SETNEIGHTBL",
+			"rtnl: a neighbour table request does not name AF_UNSPEC, AF_INET or AF_INET6 seven times in eight");
 }
 
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
@@ -1542,7 +1550,7 @@ struct tallies {
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
 	struct bridge_header bridgeget, bridgenewdel;
-	struct family_header netconf;
+	struct family_header netconf, neightbl;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1661,6 +1669,8 @@ static void run_rounds(struct tallies *t)
 		case RTM_GETNEIGHTBL:
 		case RTM_SETNEIGHTBL:
 			tally_probe_interval(&t->probe_interval, nlh);
+			tally_family(&t->neightbl, nlh, neightbl_families,
+				     ARRAY_SIZE(neightbl_families));
 			break;
 		case RTM_NEWROUTE:
 		case RTM_DELROUTE:
@@ -1697,7 +1707,7 @@ void rtnl_gen_self_check(void)
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);
 	expect_bridge_header(&t.bridgeget, &t.bridgenewdel);
-	expect_family_headers(&t.netconf);
+	expect_family_headers(&t.netconf, &t.neightbl);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
