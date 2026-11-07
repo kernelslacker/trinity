@@ -16,6 +16,7 @@
 #include "shm.h"
 #include "syscalls/syscalls.h"
 #include "testfile.h"
+#include "uid.h"
 #include "utils.h"
 
 #define MAX_TESTFILES 4
@@ -161,6 +162,18 @@ static int open_testfile_fds(void)
 	for (i = 0; i < nr; i++)
 		mmap_fd(opened[i]->testfileobj.fd, opened[i]->testfileobj.filename,
 			page_size, PROT_READ|PROT_WRITE, OBJ_MMAP_TESTFILE);
+
+	/*
+	 * A root run's children drop to nobody, who can neither open a
+	 * root-owned 0644 testfile for writing nor set a user.* xattr on it
+	 * (xattr_permission() wants write permission): hand the files to
+	 * nobody, as a non-root run's children own theirs.
+	 */
+	if (orig_uid == 0) {
+		for (i = 0; i < nr; i++)
+			(void) fchown(opened[i]->testfileobj.fd, nobody_uid,
+				      nobody_gid);
+	}
 
 	return true;
 }

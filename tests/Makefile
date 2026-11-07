@@ -127,6 +127,11 @@ LDFLAGS		+= -Wl,--wrap=get_rand_bpf_map -Wl,--wrap=get_rand_bpf_fd \
 # which fake_objects.c wraps with one that aborts.
 LDFLAGS		+= -Wl,--wrap=set_object_fd
 
+# fchown() stand-in: testfile_pool_test.c wraps it to see whom a root
+# run's testfile init hands the files to, which the kernel would refuse a
+# non-root test.  The wrapper forwards to the real fchown() unless armed.
+LDFLAGS		+= -Wl,--wrap=fchown
+
 # get_objhead() stand-in: objects/registry.c is linked for the
 # for_each_obj snapshot, and its get_objhead() would resolve pools
 # through childdata no test builds.  fake_objects.c wraps it with the
