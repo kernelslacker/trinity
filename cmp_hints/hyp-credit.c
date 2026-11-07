@@ -15,10 +15,12 @@
 
 /*
  * The hypothesis E's value was derived from, at the slot the live inject
- * arm stashed.  Pools are append-only, so the slot still names it; a slot
- * past the pool, or one no longer holding the stashed kind, cmp_ip and
- * width, means a torn or scribbled pool or stash entry, and the credit is
- * dropped rather than landed on another hypothesis.
+ * arm stashed.  A slot past the pool is a torn or scribbled pool or stash
+ * entry, and one no longer holding the stashed kind, cmp_ip and width is
+ * that or a slot cmp_hyp_alloc() has reused; the credit is dropped rather
+ * than landed on another hypothesis.  A reuse that keeps all three
+ * replaced a RETIRED hypothesis, which the picker no longer served, so
+ * only a credit already in flight can land on its successor.
  */
 static struct cmp_hypothesis *
 cmp_hyp_injected_from(const struct cmp_hint_consumed_entry *e)

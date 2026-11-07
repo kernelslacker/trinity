@@ -7,14 +7,14 @@ struct kcov_cmp_hyp_lifecycle {
 unsigned long cmp_hyp_inserted_by_kind[CMP_HYP_KIND_NR];
 
 /* Per-kind flat census of typed CMP hypothesis insert rejections
- * caused by the per-kind sub-cap (CMP_HYP_PER_KIND).  Bumped in
- * lock-step with the scalar cmp_hyp_kind_full from cmp_hyp_alloc()'s
- * per-kind-exhausted branch, so the sum across kinds equals
- * cmp_hyp_kind_full modulo concurrent sampling.  Paired with
- * cmp_hyp_inserted_by_kind above this shows, per kind, the
- * accepted-vs-dropped split -- i.e. which kind is eating the cap
- * when cmp_hyp_kind_full dominates.  SHADOW telemetry only -- no
- * consumer reads it. */
+ * caused by the per-kind sub-cap (CMP_HYP_PER_KIND), where the kind
+ * has no slot to reuse.  Bumped in lock-step with the scalar
+ * cmp_hyp_kind_full from cmp_hyp_alloc()'s per-kind-exhausted branch,
+ * so the sum across kinds equals cmp_hyp_kind_full modulo concurrent
+ * sampling.  Paired with cmp_hyp_inserted_by_kind above this shows,
+ * per kind, the accepted-vs-dropped split -- i.e. which kind is
+ * eating the cap when cmp_hyp_kind_full dominates.  SHADOW telemetry
+ * only -- no consumer reads it. */
 unsigned long cmp_hyp_kind_full_by_kind[CMP_HYP_KIND_NR];
 
 /* Per-kind flat census of typed CMP hypothesis consumes.
@@ -125,9 +125,10 @@ unsigned long cmp_hyp_live_inject_gate_passed;
 unsigned long cmp_hyp_live_inject_reason[CMP_HYP_LIVE_INJECT_REASON_NR];
 
 /* Per-kind flat census of typed CMP hypothesis insert rejections
- * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL).  Bumped
- * in lock-step with the scalar cmp_hyp_pool_full from cmp_hyp_alloc()'s
- * per-syscall-exhausted branch -- the sole bumper of cmp_hyp_pool_full.
+ * caused by the per-syscall total cap (CMP_HYP_PER_SYSCALL), where the
+ * kind has no slot to reuse.  Bumped in lock-step with the scalar
+ * cmp_hyp_pool_full from cmp_hyp_alloc()'s per-syscall-exhausted
+ * branch -- the sole bumper of cmp_hyp_pool_full.
  * The cmp_hyp_observe() corruption bail bumps the sibling
  * cmp_hyp_pool_overflow counter, so the sum across kinds equals
  * cmp_hyp_pool_full modulo concurrent sampling.  Paired with

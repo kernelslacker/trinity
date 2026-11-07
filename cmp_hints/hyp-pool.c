@@ -100,30 +100,82 @@ void cmp_hyp_range_identity_infer(uint64_t lo, uint64_t hi,
 }
 
 /*
- * Allocate a fresh hypothesis slot honouring the per-kind sub-cap and
- * the per-syscall total cap.  Returns NULL when either is exhausted
- * and bumps the matching kcov_shm saturation counter so the rejection
- * is visible.  The slot is memset and pre-stamped with identity
- * fields the caller does not have to re-write.
+ * A slot of KIND for a new hypothesis once the kind or the pool is at its
+ * cap: a RETIRED hypothesis's, or else one at a site the durable pool RAW
+ * no longer holds, DEMOTED before OBSERVED before PROMOTED.  The live arm
+ * injects only at the site of a pick from RAW, so such a hypothesis is
+ * out of its reach until the site comes back.  NULL when every slot of
+ * KIND that is not RETIRED is at a site RAW holds.
+ */
+static struct cmp_hypothesis *cmp_hyp_reusable(struct cmp_hyp_pool *pool,
+					       enum cmp_hypothesis_kind kind,
+					       const struct cmp_hint_pool *raw)
+{
+	struct cmp_hypothesis *best = NULL;
+	unsigned int i, j, rank, best_rank = 0, n = raw->count;
+
+	if (n > CMP_HINTS_PER_SYSCALL)
+		return NULL;
+	for (i = 0; i < pool->count; i++) {
+		struct cmp_hypothesis *h = &pool->entries[i];
+		uint8_t state;
+
+		if (h->kind != kind)
+			continue;
+		state = __atomic_load_n(&h->state, __ATOMIC_RELAXED);
+		if (state == CMP_HYP_STATE_RETIRED)
+			return h;
+		for (j = 0; j < n; j++) {
+			if (raw->entries[j].cmp_ip == h->cmp_ip &&
+			    raw->entries[j].size == h->width)
+				break;
+		}
+		if (j < n)
+			continue;
+		rank = state == CMP_HYP_STATE_DEMOTED ? 0 :
+		       state == CMP_HYP_STATE_PROMOTED ? 2 : 1;
+		if (best == NULL || rank < best_rank) {
+			best = h;
+			best_rank = rank;
+		}
+	}
+	return best;
+}
+
+/*
+ * Allocate a hypothesis slot honouring the per-kind sub-cap and the
+ * per-syscall total cap: a fresh one while both have room, else one
+ * cmp_hyp_reusable() gives up.  Returns NULL when there is neither and
+ * bumps the matching kcov_shm saturation counter so the rejection is
+ * visible.  The slot is memset and pre-stamped with identity fields
+ * the caller does not have to re-write.  Readers walk the pool
+ * lock-free, so one can meet a reused slot half-written, as it can an
+ * appended one; the picker and the credit check already pass over a
+ * torn entry.
  */
 struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 				     enum cmp_hypothesis_kind kind,
 				     unsigned int nr, bool do32,
 				     unsigned long cmp_ip, uint8_t width)
 {
+	bool fresh = pool->count < CMP_HYP_PER_SYSCALL &&
+		     pool->per_kind_count[kind] < CMP_HYP_PER_KIND;
 	struct cmp_hypothesis *h;
 
-	if (pool->count >= CMP_HYP_PER_SYSCALL) {
-		if (kcov_shm != NULL) {
+	if (fresh)
+		h = &pool->entries[pool->count];
+	else
+		h = cmp_hyp_reusable(pool, kind,
+				     &cmp_hints_shm->pools[nr][do32 ? 1 : 0]);
+	if (h == NULL) {
+		if (kcov_shm == NULL)
+			return NULL;
+		if (pool->count >= CMP_HYP_PER_SYSCALL) {
 			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_pool_full, 1UL,
 					   __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_pool_full_by_kind[kind],
 					   1UL, __ATOMIC_RELAXED);
-		}
-		return NULL;
-	}
-	if (pool->per_kind_count[kind] >= CMP_HYP_PER_KIND) {
-		if (kcov_shm != NULL) {
+		} else {
 			__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_kind_full, 1UL,
 					   __ATOMIC_RELAXED);
 			__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_kind_full_by_kind[kind],
@@ -132,7 +184,6 @@ struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 		return NULL;
 	}
 
-	h = &pool->entries[pool->count];
 	memset(h, 0, sizeof(*h));
 	h->nr = nr;
 	h->do32 = do32;
@@ -140,8 +191,10 @@ struct cmp_hypothesis *cmp_hyp_alloc(struct cmp_hyp_pool *pool,
 	h->kind = (uint8_t)kind;
 	h->state = CMP_HYP_STATE_OBSERVED;
 	h->cmp_ip = (uint64_t)cmp_ip;
-	pool->per_kind_count[kind]++;
-	pool->count++;
+	if (fresh) {
+		pool->per_kind_count[kind]++;
+		pool->count++;
+	}
 	if (kcov_shm != NULL) {
 		__atomic_fetch_add(&kcov_shm->hyp_flat.cmp_hyp_inserted, 1UL,
 				   __ATOMIC_RELAXED);

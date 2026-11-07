@@ -203,9 +203,10 @@ struct cmp_hypothesis {
  * across every kind can populate at most CMP_HYP_KIND_NR *
  * CMP_HYP_PER_KIND entries, and no single kind can starve the others
  * out of its slots.  cmp_hyp_observe() honours the partition via
- * per_kind_count[]: an exhausted kind bumps cmp_hyp_kind_full and
- * leaves the other kinds free, while an exhausted total bumps
- * cmp_hyp_pool_full.
+ * per_kind_count[]: an exhausted kind gives a new hypothesis one of its
+ * own slots that the live arm can no longer reach (cmp_hyp_alloc()),
+ * and bumps cmp_hyp_kind_full when it has none, leaving the other kinds
+ * free; an exhausted total does the same with cmp_hyp_pool_full.
  *
  * CMP_HYP_PER_KIND was raised from 2 to 16 after first telemetry: at 2,
  * cmp_hyp_kind_full ran ~2x cmp_hyp_observations (the EXACT and
