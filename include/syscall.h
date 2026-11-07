@@ -825,9 +825,11 @@ struct syscallentry {
 	/*
 	 * Per-syscall opt-in bitmap of arg slots (1..6) whose value the
 	 * post handler reads to validate rec->retval.  Bit k (k=0..5) set
-	 * means slot (k+1) gets snapshotted into rec->arg_shadow[k] at the
-	 * tail of generate_syscall_args() and must be consumed via
-	 * get_arg_snapshot(rec, k+1) from the post handler.  Tripwire-armed:
+	 * means slot (k+1) gets snapshotted into rec->arg_shadow[k] in
+	 * __do_syscall(), from the value the kernel is handed, after chain
+	 * substitution, a RedQueen pin and validate_arg_coupling() have had
+	 * their say, and must be consumed via get_arg_snapshot(rec, k+1)
+	 * from the post handler.  Tripwire-armed:
 	 * a mismatch between shadow and live rec->aN at read time bumps
 	 * parent_stats.arg_shadow_stomp via the per-child stats_ring,
 	 * surfacing sibling stomps that the canary check misses because

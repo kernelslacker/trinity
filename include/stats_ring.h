@@ -139,7 +139,7 @@ enum stats_field {
 	STATS_FIELD_DEFERRED_FREE_CORRUPT_PTR,
 	/*
 	 * get_arg_snapshot() observed shadow != live for an opted-in slot
-	 * between the snapshot taken at the tail of generate_syscall_args()
+	 * between __do_syscall()'s snapshot of what the kernel is handed
 	 * and the post handler's read.  The handler still gets the stable
 	 * shadow value back; this counter surfaces "how often is a sibling
 	 * actually scribbling the slot" so we can tell whether the
