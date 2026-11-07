@@ -3718,17 +3718,19 @@ static void check_policy_specs(void)
 }
 
 /*
- * NetLabel's families have no policy mirrors above, so the one bound
- * this round adds there is checked directly: NLBL_MGMT_A_PROTOCOL is
- * the u32 oneof of the three protocol types netlbl_mgmt_add_common()
- * accepts, NETLBL_NLTYPE_CIPSOV4, UNLABELED and CALIPSO, 3, 5 and 7.
+ * NetLabel's families have no policy mirrors above, so NLBL_MGMT_A_PROTOCOL
+ * is checked directly: it is the u32 oneof of the three protocol types
+ * netlbl_mgmt_add_common() accepts, NETLBL_NLTYPE_CIPSOV4, UNLABELED and
+ * CALIPSO, 3, 5 and 7.
  */
 static const unsigned int netlbl_mgmt_protocols[] = { 3, 5, 7 };
 
 static void check_netlabel_oneof_declared(void)
 {
+	static const struct slot protocol =
+		S_U32_ONEOF(NLBL_MGMT_A_PROTOCOL, netlbl_mgmt_protocols);
 	const struct nla_attr_spec *spec = NULL;
-	unsigned int i, j;
+	unsigned int i;
 
 	for (i = 0; i < fam_nlbl_mgmt.n_attrs; i++) {
 		if (fam_nlbl_mgmt.attrs[i].type == NLBL_MGMT_A_PROTOCOL)
@@ -3736,17 +3738,8 @@ static void check_netlabel_oneof_declared(void)
 	}
 	if (spec == NULL)
 		BUG("genl ops: NLBL_MGMT_A_PROTOCOL has no spec");
-	if (spec->kind != NLA_KIND_U32_ONEOF ||
-	    spec->n_oneof != ARRAY_SIZE(netlbl_mgmt_protocols))
+	if (!spec_declares_bound(spec, &protocol))
 		BUG("genl ops: NLBL_MGMT_A_PROTOCOL is not the u32 oneof of its protocols");
-	for (i = 0; i < ARRAY_SIZE(netlbl_mgmt_protocols); i++) {
-		for (j = 0; j < spec->n_oneof; j++) {
-			if (spec->oneof[j] == netlbl_mgmt_protocols[i])
-				break;
-		}
-		if (j == spec->n_oneof)
-			BUG("genl ops: NLBL_MGMT_A_PROTOCOL omits a protocol its handler takes");
-	}
 }
 
 /* ---------- Checking the attributes a handler requires ------------------- */
