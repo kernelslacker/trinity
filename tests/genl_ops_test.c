@@ -2007,7 +2007,7 @@ static struct cmd_policy tipc_cmds[] = {
 #endif
 
 /*
- * net/devlink/netlink_gen.c: each op's policy.  The doits validate
+ * net/devlink/netlink_gen.c: each op's policy.  The GETs' doits validate
  * liberally and the dumpits of PORT_GET, SB_GET, PARAM_GET and REGION_GET
  * strictly; those of GET and INFO_GET have no policy, which the genl core
  * gives a reject-all one.  Every policy takes DEVLINK_ATTR_INDEX too, which
@@ -2045,6 +2045,25 @@ static struct slot devlink_region_get[] = {
 	S_U32(DEVLINK_ATTR_PORT_INDEX),
 	S_STR(DEVLINK_ATTR_REGION_NAME, 0, .required = true),
 };
+/* NOTIFY_FILTER_SET's doit validates strictly and needs none of its
+ * attributes, the filter it builds going on the socket. */
+static struct slot devlink_notify_filter_set[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0),
+	S_U32(DEVLINK_ATTR_PORT_INDEX),
+};
+/* REGION_READ has only a dumpit, which validates liberally and answers
+ * -EINVAL without the names or the region's. */
+static struct slot devlink_region_read[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_PORT_INDEX),
+	S_STR(DEVLINK_ATTR_REGION_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_REGION_SNAPSHOT_ID),
+	S_FLAG(DEVLINK_ATTR_REGION_DIRECT),
+	S_U64(DEVLINK_ATTR_REGION_CHUNK_ADDR),
+	S_U64(DEVLINK_ATTR_REGION_CHUNK_LEN),
+};
 static struct cmd_policy devlink_cmds[] = {
 	P_CMD(DEVLINK_CMD_GET, devlink_get),
 	P_DUMP_NONE(DEVLINK_CMD_GET),
@@ -2058,6 +2077,8 @@ static struct cmd_policy devlink_cmds[] = {
 	P_DUMP(DEVLINK_CMD_REGION_GET, devlink_dump),
 	P_CMD(DEVLINK_CMD_INFO_GET, devlink_get),
 	P_DUMP_NONE(DEVLINK_CMD_INFO_GET),
+	P_CMD(DEVLINK_CMD_NOTIFY_FILTER_SET, devlink_notify_filter_set),
+	P_CMD(DEVLINK_CMD_REGION_READ, devlink_region_read),
 };
 
 static struct policy_family policy_families[] = {

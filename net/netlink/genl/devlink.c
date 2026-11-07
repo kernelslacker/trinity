@@ -1,9 +1,10 @@
 /*
  * Genetlink family grammar: devlink (hardware switch, NIC and bus-device
  * configuration), targeting net/devlink/ and its per-op policies in
- * net/devlink/netlink_gen.c.  Only the unprivileged *_GET commands are
- * listed, keyed on the BUS_NAME / DEV_NAME pair; the NEW / SET / DEL
- * writers are GENL_ADMIN_PERM.
+ * net/devlink/netlink_gen.c.  The unprivileged *_GET commands and
+ * NOTIFY_FILTER_SET are listed, keyed on the BUS_NAME / DEV_NAME pair,
+ * with REGION_READ, a dump that is GENL_ADMIN_PERM like the NEW / SET /
+ * DEL writers.
  */
 
 #include <linux/devlink.h>
@@ -12,7 +13,7 @@
 #include "utils.h"
 
 /*
- * Each op takes the table of its own policy.  The doits validate
+ * Each op takes the table of its own policy.  The GETs' doits validate
  * liberally, but the dumpits of PORT_GET, SB_GET, PARAM_GET and REGION_GET
  * strictly, refusing an id their policy has no slot for, and those of GET
  * and INFO_GET have no policy, which the genl core makes a reject-all one.
@@ -58,6 +59,28 @@ static const struct nla_attr_spec devlink_region_get_attrs[] = {
 	{ DEVLINK_ATTR_REGION_NAME,	NLA_KIND_STRING, 32, 1, .required = true },
 };
 
+/* NOTIFY_FILTER_SET validates strictly and needs no instance: the filter
+ * it builds from whichever of these it gets replaces the socket's. */
+static const struct nla_attr_spec devlink_notify_filter_set_attrs[] = {
+	DEVLINK_NAME_SPECS(),
+	{ DEVLINK_ATTR_PORT_INDEX,	NLA_KIND_U32,    4 },
+};
+
+/* REGION_READ reads a snapshot, or the region itself under DIRECT, from
+ * CHUNK_ADDR for CHUNK_LEN bytes, resuming across dump calls.  It answers
+ * -EINVAL without the region's name, or with neither SNAPSHOT_ID nor
+ * DIRECT, which a mark cannot say. */
+static const struct nla_attr_spec devlink_region_read_attrs[] = {
+	DEVLINK_NAME_SPECS(.required = true),
+	{ DEVLINK_ATTR_PORT_INDEX,		NLA_KIND_U32,    4 },
+	{ DEVLINK_ATTR_REGION_NAME,		NLA_KIND_STRING, 32, 1,
+	  .required = true },
+	{ DEVLINK_ATTR_REGION_SNAPSHOT_ID,	NLA_KIND_U32,    4 },
+	{ DEVLINK_ATTR_REGION_DIRECT,		NLA_KIND_FLAG,   0 },
+	{ DEVLINK_ATTR_REGION_CHUNK_ADDR,	NLA_KIND_U64,    8 },
+	{ DEVLINK_ATTR_REGION_CHUNK_LEN,	NLA_KIND_U64,    8 },
+};
+
 static const struct genl_cmd_grammar devlink_cmds[] = {
 	{ DEVLINK_CMD_GET,        "DEVLINK_CMD_GET",
 	  devlink_get_attrs, ARRAY_SIZE(devlink_get_attrs), genl_no_attrs },
@@ -75,6 +98,11 @@ static const struct genl_cmd_grammar devlink_cmds[] = {
 	  devlink_dump_attrs, ARRAY_SIZE(devlink_dump_attrs) },
 	{ DEVLINK_CMD_INFO_GET,   "DEVLINK_CMD_INFO_GET",
 	  devlink_get_attrs, ARRAY_SIZE(devlink_get_attrs), genl_no_attrs },
+	{ DEVLINK_CMD_NOTIFY_FILTER_SET, "DEVLINK_CMD_NOTIFY_FILTER_SET",
+	  devlink_notify_filter_set_attrs,
+	  ARRAY_SIZE(devlink_notify_filter_set_attrs) },
+	{ DEVLINK_CMD_REGION_READ, "DEVLINK_CMD_REGION_READ",
+	  devlink_region_read_attrs, ARRAY_SIZE(devlink_region_read_attrs) },
 };
 
 struct genl_family_grammar fam_devlink = {
