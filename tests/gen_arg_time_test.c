@@ -1,11 +1,11 @@
 /*
- * Self-check for the time-argument generators (args/gen_arg_time.c): a
- * compat call numbered below the y2038 calls reads its time structs as
- * 32-bit fields (struct old_timespec32, old_timeval32 and the itimer
- * pairs of them), so the generators write that layout for one and the
- * native struct for any other call, as does timer_settime's sanitiser
- * when it rewrites the generated struct.  Each case draws until the
- * buffer shows a value only the right layout can hold.
+ * Self-check for the time structs trinity builds (args/gen_arg_time.c
+ * and the sanitisers that build their own): a compat call numbered below
+ * the y2038 calls reads them as 32-bit fields (struct old_timespec32,
+ * old_timeval32 and the itimer pairs of them), so each is written in
+ * that layout for one and as the native struct for any other call.
+ * Each case draws until the buffer shows a value only the right layout
+ * can hold.
  */
 
 #include <limits.h>
@@ -20,6 +20,7 @@
 #include "blob_mutator.h"	/* blob_mutator_mode */
 #include "debug.h"		/* BUG */
 #include "kernel/compat.h"	/* struct old_timespec32 */
+#include "kernel/stat.h"	/* UTIME_NOW */
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_timer_settime */
@@ -63,6 +64,7 @@ int32_t seed_timerid_if_empty(void)
 #define NR_TIMER_SETTIME_TIME32		260
 #define NR_SETTIMEOFDAY_TIME32		79
 #define NR_SETITIMER_TIME32		104
+#define NR_UTIMENSAT_TIME32		320
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -160,6 +162,29 @@ static bool timer_settime_compat_value(void)
 	return false;
 }
 
+/* utimensat's sanitiser sets both times to UTIME_NOW in some draws,
+ * which a time32 call must find where it reads the first tv_nsec. */
+static bool utimensat_compat_now(void)
+{
+	struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < DRAWS; i++) {
+		const struct old_timespec32 *ts;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.do32bit = true;
+		rec.nr = NR_UTIMENSAT_TIME32;
+		syscall_utimensat.sanitise(&rec);
+
+		ts = (const struct old_timespec32 *) rec.a3;
+		if (ts != NULL && ts[0].tv_sec == 0 &&
+		    ts[0].tv_nsec == UTIME_NOW)
+			return true;
+	}
+	return false;
+}
+
 void gen_arg_time_self_check(void);
 void gen_arg_time_self_check(void)
 {
@@ -201,4 +226,7 @@ void gen_arg_time_self_check(void)
 	rec.nr = NR_SETITIMER_TIME32;
 	if (!drawn(gen_arg_itimerval, &rec, compat_interval_last_usec))
 		BUG("gen_arg_time: a time32 itimerval never got the 999999 us bucket");
+
+	if (!utimensat_compat_now())
+		BUG("gen_arg_time: utimensat's UTIME_NOW never reached a time32 call");
 }

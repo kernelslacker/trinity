@@ -2,6 +2,15 @@
 
 #include <linux/stat.h>
 
+/* From linux/stat.h, which no uapi header ships: the tv_nsec values
+ * utimensat() takes for "now" and "leave alone". */
+#ifndef UTIME_NOW
+#define UTIME_NOW	((1l << 30) - 1l)
+#endif
+#ifndef UTIME_OMIT
+#define UTIME_OMIT	((1l << 30) - 2l)
+#endif
+
 #ifndef STATX_TYPE
 #define STATX_TYPE		0x00000001
 #define STATX_MODE		0x00000002

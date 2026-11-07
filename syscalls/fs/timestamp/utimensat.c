@@ -12,6 +12,7 @@
 #include "trinity.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/stat.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the fuzzer
@@ -19,14 +20,6 @@
  * concentrates on the same set of real inodes.
  */
 #define NR_TESTFILES 4
-
-/* From linux/stat.h - special nsec values for utimensat */
-#ifndef UTIME_NOW
-#define UTIME_NOW  ((1l << 30) - 1l)
-#endif
-#ifndef UTIME_OMIT
-#define UTIME_OMIT ((1l << 30) - 2l)
-#endif
 
 #define NEAR_NOW_SEC	1700000000L
 #define FAR_FUTURE_SEC	4000000000L
@@ -157,6 +150,7 @@ static void sanitise_utimensat(struct syscallrecord *rec)
 		fill_one_timespec(&ts[0], TS_RANDOM);
 		fill_one_timespec(&ts[1], TS_RANDOM);
 	}
+	time_struct_for_abi(rec, ts, 2);
 
 	rec->a3 = (unsigned long) ts;
 
