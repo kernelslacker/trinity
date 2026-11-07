@@ -164,6 +164,9 @@ struct prctl_post_state {
 	 */
 	unsigned long set_arg;
 	unsigned char set_name[16];
+	/* A PR_FUTEX_HASH draw of SET_SLOTS with zero slots, the one call
+	 * vet_final_prctl() lets reach the global hash. */
+	bool global_hash;
 };
 
 #ifdef USE_SECCOMP
@@ -735,6 +738,9 @@ static void sanitise_prctl(struct syscallrecord *rec)
 		snap->option = option;
 		snap->bpf = bpf;
 		snap->set_arg = rec->a2;
+		snap->global_hash = option == PR_FUTEX_HASH &&
+				    rec->a2 == PR_FUTEX_HASH_SET_SLOTS &&
+				    (unsigned int) rec->a3 == 0;
 		if (option == PR_SET_NAME && rec->a2 != 0) {
 			const unsigned char *src =
 				(const unsigned char *) rec->a2;
@@ -761,6 +767,43 @@ static void sanitise_prctl(struct syscallrecord *rec)
 	}
 
 	prctl_mark_reexec_ok(rec, option);
+}
+
+/*
+ * The sanitiser draws the option from prctl_opts, which leaves out
+ * PR_SET_MDWE, and draws a PR_FUTEX_HASH_SET_SLOTS of zero slots, which
+ * pins the mm to the global hash for good, one time in 256.  Chain
+ * substitution and a RedQueen pin write after it, so hold the final slots
+ * to an option it draws, and to a zero slot count only where its snapshot
+ * says it drew one.  The kernel reads the option as an int and the slot
+ * count as an unsigned int.
+ */
+static int vet_final_prctl(struct syscallrecord *rec,
+			   const struct syscallentry *entry)
+{
+	const struct prctl_post_state *snap =
+		(const struct prctl_post_state *) rec->post_state;
+	int option = (int) rec->a1;
+	unsigned int i;
+
+	for (i = 0; i < NR_PRCTL_OPTS; i++) {
+		if ((int) prctl_opts[i] == option)
+			break;
+	}
+	if (i == NR_PRCTL_OPTS)
+		goto refuse;
+
+	if (option != PR_FUTEX_HASH || rec->a2 != PR_FUTEX_HASH_SET_SLOTS ||
+	    rec->a4 != 0 || (unsigned int) rec->a3 != 0)
+		return 0;
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == PRCTL_POST_STATE_MAGIC && snap->global_hash)
+		return 0;
+
+refuse:
+	outputerr("arg-coupling: %s rejected: a rewrite reached a state the sanitiser keeps out\n",
+		  entry->name);
+	return -1;
 }
 
 static void post_set_seccomp(struct prctl_post_state *snap)
@@ -1336,6 +1379,7 @@ struct syscallentry syscall_prctl = {
 	 */
 	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_prctl,
+	.vet_final = vet_final_prctl,
 	.post = post_prctl,
 	/* option (a1) and arg2 (a2): the oracles judge the option the
 	 * kernel ran and the arg2 it stored or wrote through, either of

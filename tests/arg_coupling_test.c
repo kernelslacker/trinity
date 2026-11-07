@@ -11,7 +11,8 @@
  * too, a madvise or process_madvise never installs guard pages, a
  * process_madvise advises no pool page, an mseal seals only a mapping its
  * sanitiser made for it, and a move_pages count or a sendmmsg or
- * recvmmsg vlen stays inside the arrays its sanitiser built.
+ * recvmmsg vlen stays inside the arrays its sanitiser built, and a prctl
+ * reaches neither state its sanitiser keeps out.
  */
 
 #include <errno.h>
@@ -52,6 +53,7 @@
 #include "shm.h"			/* shm->stats */
 #include "syscall.h"			/* struct syscallrecord */
 #include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
+#include "kernel/prctl.h"		/* PR_SET_MDWE, PR_FUTEX_HASH */
 #include "utils-macros.h"		/* ARRAY_SIZE */
 #include "utils-mem.h"			/* log_mm_syscall_post_gate_heap_slip */
 #include "valresult.h"			/* valresult_alloc */
@@ -5847,6 +5849,83 @@ static void io_submit_iocbpp_follows_abi(bool compat)
 	fake_this_child = NULL;
 }
 
+/* prctl's sanitiser run until it draws @option, a PR_FUTEX_HASH as a
+ * SET_SLOTS whose slot count is zero or not as @zero_slots says. */
+static void prctl_drawn(struct syscallrecord *r, int option, bool zero_slots)
+{
+	unsigned int tries;
+
+	for (tries = 0; tries < (1u << 22); tries++) {
+		memset(r, 0, sizeof(*r));
+		r->entry = &syscall_prctl;
+		syscall_prctl.sanitise(r);
+		if (r->a1 == (unsigned long) option &&
+		    (option != PR_FUTEX_HASH ||
+		     (r->a2 == PR_FUTEX_HASH_SET_SLOTS &&
+		      ((unsigned int) r->a3 == 0) == zero_slots)))
+			return;
+		free((void *) r->post_state);
+	}
+	BUG("prctl: the sanitiser never drew the call");
+}
+
+/* prctl's sanitiser keeps out two states a fuzz child cannot come back
+ * from: PR_SET_MDWE, after which trinity's own re-protects fail, and a
+ * PR_FUTEX_HASH_SET_SLOTS of zero slots, which pins the mm to the global
+ * hash for good, drawn one time in 256.  A rewrite after it (chain
+ * substitution, a RedQueen pin) must reach neither, as the kernel reads
+ * the slots: the option as an int, the slot count as an unsigned int. */
+static void prctl_irreversible_states_held(void)
+{
+	static struct syscallrecord call;
+	unsigned int n;
+
+	for (n = 0; n < 2000; n++) {
+		memset(&call, 0, sizeof(call));
+		call.entry = &syscall_prctl;
+		syscall_prctl.sanitise(&call);
+		if (validate_arg_coupling(&call, call.entry) != 0)
+			BUG("prctl: a call the sanitiser drew was refused");
+		free((void *) call.post_state);
+	}
+
+	prctl_drawn(&call, PR_SET_PDEATHSIG, false);
+	call.a1 = PR_SET_MDWE;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: an option rewritten to PR_SET_MDWE was passed");
+	call.a1 = (1UL << 32) | PR_SET_MDWE;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: an option the kernel reads as PR_SET_MDWE was passed");
+	call.a1 = PR_GET_MDWE;
+	if (validate_arg_coupling(&call, call.entry) != 0)
+		BUG("prctl: an option rewritten to one the sanitiser draws was refused");
+	call.a1 = PR_FUTEX_HASH;
+	call.a2 = PR_FUTEX_HASH_SET_SLOTS;
+	call.a3 = 0;
+	call.a4 = 0;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: a rewrite to SET_SLOTS of zero slots was passed");
+	free((void *) call.post_state);
+
+	prctl_drawn(&call, PR_FUTEX_HASH, false);
+	call.a3 = 0;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: a slot count rewritten to zero was passed");
+	call.a3 = 1UL << 32;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: a slot count the kernel reads as zero was passed");
+	free((void *) call.post_state);
+
+	prctl_drawn(&call, PR_FUTEX_HASH, true);
+	if (validate_arg_coupling(&call, call.entry) != 0)
+		BUG("prctl: the zero slot count the sanitiser drew was refused");
+	post_state_disowned = (const void *) call.post_state;
+	if (validate_arg_coupling(&call, call.entry) == 0)
+		BUG("prctl: a zero slot count whose snapshot is not owned was passed");
+	post_state_disowned = NULL;
+	free((void *) call.post_state);
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -5908,6 +5987,7 @@ void arg_coupling_self_check(void)
 	ipc_semctl_semun_through_ptr();
 	semctl_arrays_from_pool();
 	msgctl_set_leaves_the_queue_room();
+	prctl_irreversible_states_held();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();
 	ipc_compat_layouts();
