@@ -44,6 +44,27 @@ void time_struct_for_abi(const struct syscallrecord *rec, void *buf,
 }
 
 /*
+ * The reverse, for a time struct the kernel wrote: widen the 32-bit
+ * pairs a compat time32 call writes at the start of @buf, a snapshot
+ * the size of the native struct, into that struct's 64-bit pairs.
+ */
+void time_struct_from_abi(const struct syscallrecord *rec, void *buf,
+			  unsigned int pairs)
+{
+	int32_t narrow[4];
+	int64_t wide[4];
+	unsigned int i;
+
+	if (!rec->do32bit || rec->nr >= NR_COMPAT_TIME64_FIRST)
+		return;
+
+	memcpy(narrow, buf, pairs * 2 * sizeof(narrow[0]));
+	for (i = 0; i < pairs * 2; i++)
+		wide[i] = narrow[i];
+	memcpy(buf, wide, pairs * 2 * sizeof(wide[0]));
+}
+
+/*
  * ARG_TIMESPEC: a writable pool buffer filled with a struct timespec.
  *
  * The kernel runs every timespec arrival through get_timespec64() ->

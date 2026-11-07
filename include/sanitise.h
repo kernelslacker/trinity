@@ -109,6 +109,9 @@ void iovec_set_entry_len(void *iov, unsigned long idx, unsigned long len,
  */
 void time_struct_for_abi(const struct syscallrecord *rec, void *buf,
 			 unsigned int pairs);
+/* The reverse, widening a snapshot of the struct the kernel wrote. */
+void time_struct_from_abi(const struct syscallrecord *rec, void *buf,
+			  unsigned int pairs);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
 /*

@@ -181,6 +181,8 @@ static void post_clock_getres(struct syscallrecord *rec)
 	    check_output_struct(&first, sizeof(first), snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
+	/* After the poison check, which wants the bytes as written. */
+	time_struct_from_abi(rec, &first, 1);
 
 	if (syscall(SYS_clock_getres, clockid, &recall) != 0)
 		goto out_free;

@@ -23,6 +23,7 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
+#include "kernel/compat.h"	/* struct old_timespec32 */
 #include "kernel/lsm.h"		/* LSM_ATTR_CURRENT, LSM_ATTR_EXEC */
 #include "kernel/unistd.h"	/* SYS_sysfs, SYS_lsm_get_self_attr */
 #include "sanitise.h"		/* get_writable_address */
@@ -53,6 +54,10 @@ static void check(const char *what, bool ok)
 #define DRAW_TRIES	100000
 
 static struct syscallrecord rec;
+
+/* The compat number a case runs its calls under, or 0 for a native
+ * call.  The sanitiser draws as for a native call either way. */
+static unsigned int compat_nr;
 
 /* The slots the kernel was handed, as __do_syscall() shadows them. */
 static void shadow_slots(const struct syscallentry *entry)
@@ -97,6 +102,10 @@ static unsigned long selector_anomalies(const struct selector_oracle *o,
 
 		memcpy((void *) rec.a2, answer, len);
 		rec.a1 = ran;
+		if (compat_nr != 0) {
+			rec.do32bit = true;
+			rec.nr = compat_nr;
+		}
 		shadow_slots(o->entry);
 		rec.retval = 0;
 		o->entry->post(&rec);
@@ -111,6 +120,7 @@ static void clock_getres_cases(void)
 		&syscall_clock_getres, &shm->stats.oracle.clock_getres_oracle_anomalies,
 	};
 	struct timespec fine, coarse;
+	struct old_timespec32 fine32;
 
 	if (clock_getres(CLOCK_MONOTONIC, &fine) != 0 ||
 	    clock_getres(CLOCK_MONOTONIC_COARSE, &coarse) != 0)
@@ -126,6 +136,16 @@ static void clock_getres_cases(void)
 	check("clock_getres: a rewritten call answering the first clock's resolution was not reported",
 	      selector_anomalies(&o, CLOCK_MONOTONIC, CLOCK_MONOTONIC_COARSE,
 				 &fine, sizeof(fine)) > 0);
+
+	/* clock_getres at 266 on i386 writes the resolution as a struct
+	 * old_timespec32, leaving the poison past it. */
+	fine32.tv_sec = (int32_t) fine.tv_sec;
+	fine32.tv_nsec = (int32_t) fine.tv_nsec;
+	compat_nr = 266;
+	check("clock_getres: a time32 call's resolution was read at native offsets",
+	      selector_anomalies(&o, CLOCK_MONOTONIC, CLOCK_MONOTONIC,
+				 &fine32, sizeof(fine32)) == 0);
+	compat_nr = 0;
 }
 
 #if defined(SYS_getrlimit) || defined(__NR_getrlimit)
