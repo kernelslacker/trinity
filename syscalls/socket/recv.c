@@ -969,12 +969,39 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 	post_state_register(snap);
 }
 
+/*
+ * The kernel walks vlen mmsghdr entries, receiving into each one's iovecs
+ * and writing its msg_len, msg_namelen and msg_flags back, so a vlen chain
+ * substitution or a RedQueen pin raised past the entries the sanitiser
+ * built would have it read msghdrs off the end of the array and write
+ * received data wherever they point.  A smaller vlen fills fewer.  Without
+ * the call's own snapshot there is nothing to hold it to.
+ */
+static int vet_final_recvmmsg(struct syscallrecord *rec,
+			      const struct syscallentry *entry)
+{
+	const struct recvmmsg_post_state *snap =
+		(const struct recvmmsg_post_state *) rec->post_state;
+	unsigned int vlen = (unsigned int) rec->a3;
+
+	if (is_corrupt_ptr_shape(snap) || !post_state_is_owned(snap) ||
+	    snap->magic != RECVMMSG_POST_STATE_MAGIC)
+		snap = NULL;
+
+	if (vlen != 0 && (snap == NULL || vlen > snap->vlen)) {
+		outputerr("arg-coupling: %s rejected: vlen runs past the entries sanitise built\n",
+			  entry->name);
+		return -1;
+	}
+	return 0;
+}
+
 static void post_recvmmsg(struct syscallrecord *rec)
 {
 	struct recvmmsg_post_state *snap =
 		(struct recvmmsg_post_state *) rec->post_state;
 	void *msgs;
-	unsigned int vlen;
+	unsigned int vlen, kernel_vlen;
 	unsigned int i;
 	unsigned long retval = rec->retval;
 
@@ -1062,14 +1089,16 @@ static void post_recvmmsg(struct syscallrecord *rec)
 	/*
 	 * Kernel ABI: __sys_recvmmsg() returns the count of successfully
 	 * received mmsghdr entries (1..vlen) on success or -1 on failure.
-	 * Compare against snap->vlen, the trusted sanitise-time value, so a
-	 * sibling scribble of rec->a3 cannot launder an oversized retval
-	 * past this bound.  Mirrors the ready-fd bound in epoll_wait and
-	 * epoll_pwait.
+	 * Compare against the vlen the kernel was handed, which
+	 * vet_final_recvmmsg() held to the entries the sanitiser built:
+	 * read from the dispatch-time shadow, a sibling scribble of rec->a3
+	 * after the call cannot launder an oversized retval past this
+	 * bound.  Mirrors the ready-fd bound in epoll_wait and epoll_pwait.
 	 */
-	if ((long) retval != -1L && retval > vlen) {
+	kernel_vlen = (unsigned int) get_arg_snapshot(rec, 3);
+	if ((long) retval != -1L && retval > kernel_vlen) {
 		outputerr("post_recvmmsg: rejecting retval %ld > vlen %u\n",
-			  (long) retval, vlen);
+			  (long) retval, kernel_vlen);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 
@@ -1107,6 +1136,11 @@ struct syscallentry syscall_recvmmsg = {
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_recvmmsg,
+	.vet_final = vet_final_recvmmsg,
 	.post = post_recvmmsg,
+	/* vlen (a3): the post handler holds the return to the vlen the
+	 * kernel was handed, which chain substitution or a RedQueen pin may
+	 * have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 2),
 	.rettype = RET_BORING,
 };

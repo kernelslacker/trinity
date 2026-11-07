@@ -10,8 +10,8 @@
  * its sanitiser picked, madvise's (addr, len) off trinity's tracked regions
  * too, a madvise or process_madvise never installs guard pages, a
  * process_madvise advises no pool page, an mseal seals only a mapping its
- * sanitiser made for it, and a move_pages count or a sendmmsg vlen stays
- * inside the arrays its sanitiser built.
+ * sanitiser made for it, and a move_pages count or a sendmmsg or
+ * recvmmsg vlen stays inside the arrays its sanitiser built.
  */
 
 #include <errno.h>
@@ -2910,45 +2910,50 @@ static void compat_mmsg_twins_build_low_arrays(void)
 	fake_this_child = NULL;
 }
 
-/* sendmmsg's kernel walks vlen mmsghdr entries, writing msg_len back
- * into each one it sends, so a vlen grown past the entries the sanitiser
- * built is refused, judged as the unsigned int the kernel reads, while
- * one inside them passes, native or compat; and with no snapshot of its
- * own a call has no entries to hold the vlen to. */
-static void sendmmsg_vlen_held_to_entries(void)
+/* sendmmsg's and recvmmsg's kernel walks vlen mmsghdr entries, writing
+ * msg_len back into each one it sends or fills, so a vlen grown past the
+ * entries the sanitiser built is refused, judged as the unsigned int the
+ * kernel reads, while one inside them passes, native or compat; and with
+ * no snapshot of its own a call has no entries to hold the vlen to. */
+static void mmsg_vlen_held_to_entries(void)
 {
-	unsigned int round;
+	struct syscallentry *const entries[] = {
+		&syscall_sendmmsg, &syscall_recvmmsg,
+	};
+	unsigned int e, round;
 
 	if (get_writable_struct(1) == NULL)
 		writable_pool_init();
 	fake_socket_fd_none = true;
-	for (round = 0; round < 32; round++) {
-		struct syscallrecord *mrec = mm_call(&syscall_sendmmsg);
-		unsigned int built;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		for (round = 0; round < 32; round++) {
+			struct syscallrecord *mrec = mm_call(entries[e]);
+			unsigned int built;
 
-		mrec->a1 = 0;
-		mrec->do32bit = (round & 1) != 0;
-		syscall_sendmmsg.sanitise(mrec);
-		built = (unsigned int) mrec->a3;
-		if (validate_arg_coupling(mrec, mrec->entry) != 0)
-			BUG("sendmmsg: a call the sanitiser built was refused");
-		mrec->a3 = built + 1;
-		if (validate_arg_coupling(mrec, mrec->entry) != -1)
-			BUG("sendmmsg: a vlen grown past the entries was kept");
-		mrec->a3 = (1UL << 32) | built;
-		if (validate_arg_coupling(mrec, mrec->entry) != 0)
-			BUG("sendmmsg: a vlen was judged on an upper half the kernel drops");
-		mrec->a3 = built - 1;
-		if (validate_arg_coupling(mrec, mrec->entry) != 0)
-			BUG("sendmmsg: a vlen inside the entries was refused");
-		if (round == 0) {
-			mrec->a3 = built;
-			snapshot_gate_held(mrec, "sendmmsg");
+			mrec->a1 = 0;
+			mrec->do32bit = (round & 1) != 0;
+			entries[e]->sanitise(mrec);
+			built = (unsigned int) mrec->a3;
+			if (validate_arg_coupling(mrec, mrec->entry) != 0)
+				BUG("mmsg: a call the sanitiser built was refused");
+			mrec->a3 = built + 1;
+			if (validate_arg_coupling(mrec, mrec->entry) != -1)
+				BUG("mmsg: a vlen grown past the entries was kept");
+			mrec->a3 = (1UL << 32) | built;
+			if (validate_arg_coupling(mrec, mrec->entry) != 0)
+				BUG("mmsg: a vlen was judged on an upper half the kernel drops");
+			mrec->a3 = built - 1;
+			if (validate_arg_coupling(mrec, mrec->entry) != 0)
+				BUG("mmsg: a vlen inside the entries was refused");
+			if (round == 0) {
+				mrec->a3 = built;
+				snapshot_gate_held(mrec, entries[e]->name);
+			}
+			mrec->retval = (unsigned long) -1L;
+			entries[e]->post(mrec);
+			while (mrec->owned_count > 0)
+				free(mrec->owned[--mrec->owned_count]);
 		}
-		mrec->retval = (unsigned long) -1L;
-		syscall_sendmmsg.post(mrec);
-		while (mrec->owned_count > 0)
-			free(mrec->owned[--mrec->owned_count]);
 	}
 	deferred_free_flush();
 	fake_socket_fd_none = false;
@@ -5725,7 +5730,7 @@ void arg_coupling_self_check(void)
 	compat_msghdr_fill_places_low_buffers();
 	compat_iovec_walkers_use_compat_stride();
 	compat_mmsg_twins_build_low_arrays();
-	sendmmsg_vlen_held_to_entries();
+	mmsg_vlen_held_to_entries();
 #endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
