@@ -161,6 +161,11 @@ LDFLAGS		+= -Wl,--wrap=munmap
 # forward to the real calls unless armed.
 LDFLAGS		+= -Wl,--wrap=getuid -Wl,--wrap=getgid
 
+# geteuid() stand-in: canary_path_test.c wraps it so a canary/ dir the
+# test made reads as another uid's.  The wrapper forwards to the real
+# call unless armed.
+LDFLAGS		+= -Wl,--wrap=geteuid
+
 # get_map() and get_map_with_prot() stand-ins: mm/maps-pick.c is linked
 # for get_map_handle(), and its wrappers would draw from pools most tests
 # never build.  post_oracle_test.c wraps both: get_map() hands out the

@@ -96,7 +96,7 @@ unsigned int canary_pool_size(void);
 
 /*
  * The pool's directory, held open since init and parked high, which pool
- * file i is "<i>" inside of; -1 when init could not open it.  A protected
- * fd: see fd_is_protected().
+ * file i is "<i>" inside of; -1 when there is no pool.  A protected fd:
+ * see fd_is_protected().
  */
 int canary_dir_fd(void);

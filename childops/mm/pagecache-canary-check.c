@@ -573,17 +573,13 @@ bool pagecache_canary_check(struct childdata *child)
 	 * a chdir() nor a chroot() this child fuzzed earlier, nor an ancestor
 	 * directory a nobody child cannot search, keeps it from its file.
 	 * The name comes from the index, not from the shared path string.
-	 * With no such fd, info->path is absolute, which a chdir() at least
-	 * cannot redirect.
 	 */
 	dirfd = canary_dir_fd();
 	snprintf(name, sizeof(name), "%u", idx);
-	fd = dirfd >= 0 ? openat(dirfd, name, open_flags) :
-			  open(info->path, open_flags);
+	fd = openat(dirfd, name, open_flags);
 	direct_calls++;
 	if (fd < 0 && (open_flags & O_DIRECT) && errno == EINVAL) {
-		fd = dirfd >= 0 ? openat(dirfd, name, O_RDONLY) :
-				  open(info->path, O_RDONLY);
+		fd = openat(dirfd, name, O_RDONLY);
 		direct_calls++;
 	}
 	if (fd < 0) {

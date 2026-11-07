@@ -66,8 +66,7 @@ static struct canary_pool *canary_pool;
  * from the file the way they would keep it from an absolute path.  Init,
  * in the parent, parks it above PROTECTED_FD_HIGH_BASE before any child
  * forks, and the protected-fd registry names it, so no fuzzed close or
- * dup2 takes it.  -1 when init could not open the directory, and the
- * verifier falls back to the absolute path.
+ * dup2 takes it.  -1 when there is no pool.
  */
 static int canary_dir = -1;
 
@@ -134,10 +133,13 @@ static bool canary_fill_file(int fd, unsigned int file_idx, size_t size)
  * the read-side reopen so the pool never holds a writable handle to
  * its own contents — a wild-write through a fuzzed dup3()/sendfd()
  * cannot turn a stray write-end into a content-mutation primitive.
+ * Both go through canary_dir, the dir init vetted, and the create is
+ * O_EXCL, so nothing already under the name is written through.
  */
 static bool canary_create_one(const char *dir, unsigned int idx)
 {
 	char path[CANARY_PATH_CAP];
+	char name[16];
 	struct object *obj;
 	char *shared_path;
 	int wfd, rfd;
@@ -148,9 +150,10 @@ static bool canary_create_one(const char *dir, unsigned int idx)
 			  dir, idx, sizeof(path) - 1);
 		return false;
 	}
+	snprintf(name, sizeof(name), "%u", idx);
 
-	(void)unlink(path);
-	wfd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	(void)unlinkat(canary_dir, name, 0);
+	wfd = openat(canary_dir, name, O_WRONLY | O_CREAT | O_EXCL, 0644);
 	if (wfd < 0) {
 		outputerr("canary: open(W) %s failed: %s\n",
 			  path, strerror(errno));
@@ -169,7 +172,7 @@ static bool canary_create_one(const char *dir, unsigned int idx)
 	}
 	close(wfd);
 
-	rfd = open(path, O_RDONLY);
+	rfd = openat(canary_dir, name, O_RDONLY | O_NOFOLLOW);
 	if (rfd < 0) {
 		outputerr("canary: open(R) %s failed: %s\n",
 			  path, strerror(errno));
@@ -212,6 +215,7 @@ static int init_canary_fds(void)
 	char cwd[CANARY_PATH_CAP];
 	char dir[CANARY_PATH_CAP];
 	struct objhead *head;
+	struct stat st;
 	unsigned int i;
 
 	/*
@@ -266,6 +270,22 @@ static int init_canary_fds(void)
 		return false;
 	}
 
+	/*
+	 * The cwd is tmp/ when there is one, which anyone can write to: a
+	 * canary/ already there may have been planted, and a root parent
+	 * would create and truncate pool files wherever it leads.  Take it
+	 * only as a dir we own, opened without following a symlink, and
+	 * make the files through it.
+	 */
+	if (canary_dir >= 0)
+		close(canary_dir);
+	canary_dir = open(dir, O_PATH | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (canary_dir < 0 || fstat(canary_dir, &st) != 0 ||
+	    st.st_uid != geteuid()) {
+		outputerr("canary: %s is not a directory we own\n", dir);
+		goto fail;
+	}
+
 	for (i = 0; i < NR_CANARY_FILES; i++) {
 		if (!canary_create_one(dir, i)) {
 			/* Partial pool is still useful — keep what we
@@ -279,21 +299,20 @@ static int init_canary_fds(void)
 
 	if (canary_pool->count == 0) {
 		outputerr("canary: pool init produced 0 files\n");
-		return false;
+		goto fail;
 	}
 
-	if (canary_dir >= 0)
-		close(canary_dir);
-	canary_dir = open(dir, O_PATH | O_DIRECTORY | O_CLOEXEC);
-	if (canary_dir >= 0)
-		canary_dir = fd_relocate_high(canary_dir);
-	else
-		outputerr("canary: cannot hold %s open: %s\n",
-			  dir, strerror(errno));
+	canary_dir = fd_relocate_high(canary_dir);
 
 	output(1, "canary: initialised %u/%u files in %s\n",
 		canary_pool->count, NR_CANARY_FILES, dir);
 	return true;
+
+fail:
+	if (canary_dir >= 0)
+		close(canary_dir);
+	canary_dir = -1;
+	return false;
 }
 
 const struct canary_file_info *canary_file_get(unsigned int idx)

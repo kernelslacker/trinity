@@ -3,8 +3,9 @@
  * (childops/mm/pagecache-canary-check.c): the pool sits in the directory init
  * ran in, held open and named by absolute paths, so a child whose cwd a fuzzed
  * chdir() moved still opens its own files and reads no same-named file of the
- * new directory, and one whose root moved still finds them.  Init runs
- * through the provider's hook, against fake object-pool hooks.
+ * new directory, and one whose root moved still finds them.  A canary/
+ * init did not make, a symlink or another uid's dir, gets no pool.  Init
+ * runs through the provider's hook, against fake object-pool hooks.
  */
 
 #include <fcntl.h>
@@ -40,6 +41,17 @@ extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 /* Nested directories that take the cwd past what getcwd() can name. */
 #define DEEP_NAME_LEN	100
 #define DEEP_LEVELS	(PATH_MAX / (DEEP_NAME_LEN + 1) + 2)
+
+/* geteuid() stand-in: the real call unless a case sets a uid other than
+ * ours, under which a canary/ we made is another uid's. */
+static uid_t fake_euid = (uid_t) -1;
+
+uid_t __real_geteuid(void);
+uid_t __wrap_geteuid(void);
+uid_t __wrap_geteuid(void)
+{
+	return fake_euid != (uid_t) -1 ? fake_euid : __real_geteuid();
+}
 
 static struct object objs[NR_CANARY_FILES];
 static unsigned int nr_objs;
@@ -266,6 +278,48 @@ static void check_unnameable_cwd(int (*init)(void))
 	release_pool();
 }
 
+/*
+ * A canary/ already in the run directory that init did not make, which a
+ * local user can leave in a world-writable tmp/: a symlink, or a dir of
+ * another uid's.  A root parent would create and truncate the pool files
+ * wherever it leads, so init must build no pool through it.
+ */
+static void check_planted_dir(int (*init)(void))
+{
+	struct stat st;
+	int ok, fd;
+
+	if (mkdir("planted", 0700) != 0 || chdir("planted") != 0 ||
+	    mkdir("victim", 0700) != 0)
+		BUG("canary path: cannot set up the planted directory");
+	fd = open("victim/0", O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (fd < 0 || write(fd, "x", 1) != 1 ||
+	    symlink("victim", "canary") != 0)
+		BUG("canary path: cannot plant a symlink as canary/");
+	close(fd);
+
+	ok = run_init(init);
+	expect(!ok, "init took a symlink planted as canary/", ok);
+	expect(stat("victim/0", &st) == 0 && st.st_size == 1,
+	       "a file rewritten through a symlink planted as canary/", 1);
+	expect(stat("victim/1", &st) != 0,
+	       "a file created through a symlink planted as canary/", 1);
+	release_pool();
+
+	if (unlink("canary") != 0 || rename("victim", "canary") != 0)
+		BUG("canary path: cannot plant a dir as canary/");
+	fake_euid = __real_geteuid() + 1;
+	ok = run_init(init);
+	fake_euid = (uid_t) -1;
+	expect(!ok, "init took a canary/ another uid owns", ok);
+	expect(stat("canary/0", &st) == 0 && st.st_size == 1,
+	       "a file rewritten in a canary/ another uid owns", 1);
+	release_pool();
+
+	if (chdir("..") != 0)
+		BUG("canary path: cannot leave the planted directory");
+}
+
 static int remove_entry(const char *path, const struct stat *sb, int type,
 			struct FTW *ftw)
 {
@@ -307,6 +361,9 @@ void canary_path_self_check(void)
 
 	case_name = "cwd past what getcwd() names";
 	check_unnameable_cwd(init);
+
+	case_name = "a canary/ init did not make";
+	check_planted_dir(init);
 
 	/* main() has moved into tmp/ by the time open_fds() runs. */
 	change_tmp_dir();
