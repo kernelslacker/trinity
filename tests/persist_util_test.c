@@ -2,7 +2,7 @@
  * Self-check for persist_mkdir_p() (utils/persist-util.c): it makes every
  * missing component of a path 0755 whatever the umask, restores the umask
  * and the path, takes a path that exists already, and refuses one through
- * a file.
+ * a file or ending at one.
  */
 
 #include <limits.h>
@@ -66,6 +66,8 @@ void persist_util_self_check(void)
 		BUG("persist util: persist_mkdir_p made a path through a file");
 
 	snprintf(sub, sizeof(sub), "%s/file", base);
+	if (persist_mkdir_p(sub) == 0)
+		BUG("persist util: persist_mkdir_p took a file for the directory");
 	unlink(sub);
 	rmdir(path);
 	snprintf(sub, sizeof(sub), "%s/a/b", base);

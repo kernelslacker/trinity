@@ -97,11 +97,14 @@ out:
  * The umask is 0 for the cascade so every component comes out 0755, as the
  * saved files are fchmod()ed to 0644 whatever it is.  EEXIST is fine at each
  * level: what counts is that the directory exists afterwards, not which
- * racing creator made it.
+ * racing creator made it.  Anything but a directory under a component's name
+ * fails the next component's mkdir(), but under the last one's only the
+ * stat() says so.
  */
 int persist_mkdir_p(char *dir)
 {
 	mode_t saved_umask = umask(0);
+	struct stat st;
 	int ret = 0;
 	char *p;
 
@@ -113,7 +116,8 @@ int persist_mkdir_p(char *dir)
 			ret = -1;
 		*p = '/';
 	}
-	if (ret == 0 && mkdir(dir, 0755) != 0 && errno != EEXIST)
+	if (ret == 0 && mkdir(dir, 0755) != 0 &&
+	    (errno != EEXIST || stat(dir, &st) != 0 || !S_ISDIR(st.st_mode)))
 		ret = -1;
 	(void) umask(saved_umask);
 	return ret;
