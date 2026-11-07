@@ -13,7 +13,9 @@
 #include <string.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/wait.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
@@ -21,6 +23,7 @@
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_clock_getres, ... */
+#include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_pid_draws;			/* dup_pool_test.c */
@@ -143,6 +146,37 @@ static void getrlimit_cases(void)
 }
 #endif
 
+/* RUSAGE_SELF against RUSAGE_CHILDREN, in a fresh child that has reaped
+ * none: a re-call on the other who sees its page faults go back to 0. */
+static void getrusage_cases(void)
+{
+	const struct selector_oracle o = {
+		&syscall_getrusage, &shm->stats.oracle.getrusage_oracle_anomalies,
+	};
+	struct rusage self;
+	int status;
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0)
+		BUG("selector recall: cannot fork for getrusage");
+	if (pid == 0) {
+		if (getrusage(RUSAGE_SELF, &self) != 0 || self.ru_minflt == 0)
+			BUG("selector recall: a fresh child with no usage to compare");
+		check("getrusage: a call rewritten onto another who was re-called on the first",
+		      selector_anomalies(&o, (unsigned long) RUSAGE_CHILDREN,
+					 RUSAGE_SELF, &self, sizeof(self)) == 0);
+		check("getrusage: a rewritten call answering the first who's usage was not reported",
+		      selector_anomalies(&o, RUSAGE_SELF,
+					 (unsigned long) RUSAGE_CHILDREN,
+					 &self, sizeof(self)) > 0);
+		_exit(failed != 0);
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid ||
+	    !WIFEXITED(status) || WEXITSTATUS(status) != 0)
+		failed++;
+}
+
 void selector_recall_self_check(void);
 void selector_recall_self_check(void)
 {
@@ -157,6 +191,7 @@ void selector_recall_self_check(void)
 #if defined(SYS_getrlimit) || defined(__NR_getrlimit)
 	getrlimit_cases();
 #endif
+	getrusage_cases();
 
 	if (failed != 0)
 		BUG("a selector re-call asked about the wrong selector");

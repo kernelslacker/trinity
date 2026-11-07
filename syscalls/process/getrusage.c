@@ -17,22 +17,22 @@ static unsigned long getrusage_who[] = {
 
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 /*
- * Snapshot of the two getrusage input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
+ * Snapshot of the getrusage ru buffer read by the post oracle, captured
+ * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot flip the who selector to a different accounting
- * domain (RUSAGE_SELF vs RUSAGE_THREAD vs RUSAGE_CHILDREN diverge wildly)
- * or redirect the source memcpy at a foreign user buffer.  The poison
- * seed travels with the pointer so a stomp cannot smear the seed
- * against a heap page that happens to still carry a residual pattern
- * from an earlier call, and the untouched-buffer check reads the
- * snapshotted ru pointer rather than rec->a2 directly.
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The who selector is read from the slot the kernel was handed
+ * instead, which chain substitution or a RedQueen pin may have rewritten
+ * after the sanitiser drew its own.  The poison seed travels with the
+ * pointer so a stomp cannot smear the seed against a heap page that
+ * happens to still carry a residual pattern from an earlier call, and the
+ * untouched-buffer check reads the snapshotted ru pointer rather than
+ * rec->a2 directly.
  */
 #define GETRUSAGE_POST_STATE_MAGIC	0x47525534UL	/* "GRU4" */
 struct getrusage_post_state {
 	unsigned long magic;
-	unsigned long who;
 	unsigned long ru;
 	uint64_t poison_seed;
 };
@@ -72,28 +72,25 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 		return;
 
 	/*
-	 * Snapshot the two input args + the output-buffer poison seed for
-	 * the post oracle.  Without the a1/a2 snap the post handler reads
-	 * rec->aN at post-time, when a sibling syscall may have scribbled
-	 * the slots: looks_like_corrupted_ptr() cannot tell a real-but-
-	 * wrong heap address from the original ru user-buffer pointer, so
-	 * the source memcpy would touch a foreign allocation, and a
-	 * stomped who slot retargets the re-issue at a different
-	 * accounting domain than the first call ran in.  The poison seed
-	 * travels with the pointer so a stomp cannot smear the seed
-	 * against a heap page that happens to still carry a residual
-	 * pattern from an earlier call.  post_state is private to the
-	 * post handler.  Gated on the syscall number macro to mirror the
-	 * .post registration -- on systems without SYS_getrusage the post
-	 * handler's re-issue would not work and a snapshot only the post
-	 * handler can free would leak.  Stamp the poison after
-	 * avoid_shared_buffer_out() so it lands on the final buffer the
-	 * kernel will see; the returned seed is fed back into
+	 * Snapshot the ru pointer + the output-buffer poison seed for the
+	 * post oracle.  Without the a2 snap the post handler reads
+	 * rec->a2 at post-time, when a sibling syscall may have scribbled
+	 * the slot: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original ru user-buffer
+	 * pointer, so the source memcpy would touch a foreign allocation.
+	 * The poison seed travels with the pointer so a stomp cannot
+	 * smear the seed against a heap page that happens to still carry
+	 * a residual pattern from an earlier call.  post_state is private
+	 * to the post handler.  Gated on the syscall number macro to
+	 * mirror the .post registration -- on systems without
+	 * SYS_getrusage the post handler's re-issue would not work and a
+	 * snapshot only the post handler can free would leak.  Stamp the
+	 * poison after avoid_shared_buffer_out() so it lands on the final
+	 * buffer the kernel will see; the returned seed is fed back into
 	 * check_output_struct() in the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = GETRUSAGE_POST_STATE_MAGIC;
-	snap->who         = rec->a1;
 	snap->ru          = rec->a2;
 	snap->poison_seed = poison_output_struct(buf, sizeof(struct rusage), 0);
 	post_state_install(rec, snap);
@@ -130,22 +127,19 @@ static void sanitise_getrusage(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     syscall return and our post-hook re-read.
  *
- * TOCTOU defeat (two arguments worth of it): the who selector sits in
- * rec->a1 and a sibling thread in the same trinity child can scribble
- * either rec->a1 or the rec->a2 user-buffer payload between the
- * original syscall return and our re-issue.  Re-calling with whatever
- * rec->a1 happens to hold by then resolves a different accounting
- * domain (RUSAGE_THREAD vs RUSAGE_CHILDREN are wildly different
- * numerically) and produces a false divergence; comparing against a
- * scribbled rec->a2 payload does the same.  The two input args are
- * snapshotted at sanitise time into a heap struct in rec->post_state, so
- * the post handler reads who and the ru pointer from the snapshot rather
- * than from rec->aN.  The user-buffer payload at *ru is then copied into
- * a stack-local before the re-call, with a private stack buffer for the
- * recall result so a sibling cannot mutate it mid-syscall and forge a
- * clean compare.  If the re-call fails (a sibling thread raced
- * credentials or otherwise broke the second call) give up rather than
- * report.
+ * TOCTOU defeat: re-calling with another who than the kernel answered for
+ * resolves a different accounting domain (RUSAGE_THREAD vs
+ * RUSAGE_CHILDREN are wildly different numerically) and produces a false
+ * divergence, so who is read from the slot the kernel was handed, which
+ * chain substitution or a RedQueen pin may have rewritten after the
+ * sanitiser drew its own.  The ru pointer is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling scribbling rec->a2
+ * cannot redirect the compare at a foreign buffer.  The user-buffer
+ * payload at *ru is then copied into a stack-local before the re-call,
+ * with a private stack buffer for the recall result so a sibling cannot
+ * mutate it mid-syscall and forge a clean compare.  If the re-call fails
+ * (a sibling thread raced credentials or otherwise broke the second call)
+ * give up rather than report.
  *
  * Snap gating: the snap is registered in the ownership table at install
  * time and the post handler gates entry through post_state_claim_owned(),
@@ -153,7 +147,7 @@ static void sanitise_getrusage(struct syscallrecord *rec)
  * inner-field deref -- a stale same-type snapshot still readable in the
  * deferred-free queue, or a sibling scribble of rec->post_state with a
  * heap-shaped pointer at a foreign allocation, is rejected before the
- * who or ru fields are touched.
+ * ru field is touched.
  *
  * Comparison rules:
  *   - ru_utime / ru_stime are timeval pairs that the kernel updates
@@ -227,7 +221,7 @@ static void post_getrusage(struct syscallrecord *rec)
 	if (snap->ru == 0)
 		goto out_free;
 
-	who = (int) snap->who;
+	who = (int) get_arg_snapshot(rec, 1);
 
 	if (!post_snapshot_or_skip(&first,
 				   (const void *)(unsigned long) snap->ru,
@@ -300,6 +294,8 @@ struct syscallentry syscall_getrusage = {
 	.argname = { [0] = "who", [1] = "ru" },
 	.arg_params[0].list = ARGLIST(getrusage_who),
 	.sanitise = sanitise_getrusage,
+	/* who (a1): post_getrusage re-calls on it. */
+	.arg_snapshot_mask = (1u << 0),
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
