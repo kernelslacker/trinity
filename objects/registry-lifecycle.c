@@ -17,7 +17,6 @@
 #include "rnd.h"
 #include "registry-internal.h"
 #include "shm.h"
-#include "stats_ring.h"
 #include "utils.h"
 
 /*
@@ -163,9 +162,9 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
  *
  * Stamp ordering inside the publish block is slot-array first,
  * then array_idx, then the monotonic slot_version tag, then the
- * publish-time fleet op tick, then the head->num_entries bump
- * last -- this is single-writer source-order sequencing, not a
- * cross-thread publish fence.  num_entries is a plain store with
+ * head->num_entries bump last -- this is single-writer
+ * source-order sequencing, not a cross-thread publish fence.
+ * num_entries is a plain store with
  * no release semantics; the objhead is safe to build up in-place
  * because it is process-private: OBJ_LOCAL heads live in per-child
  * memory, and OBJ_GLOBAL adds are refused post-fork by
@@ -237,20 +236,6 @@ static void add_object_publish(struct object *obj, enum obj_scope scope,
 	if (++head->next_slot_version == 0)
 		head->next_slot_version = 1;
 	obj->slot_version = head->next_slot_version;
-	/*
-	 * Stamp the publish-time fleet op tick from the child-readable
-	 * mirror page.  parent_stats.op_count is MAP_PRIVATE heap so
-	 * a child COW-copy goes stale immediately after fork; the
-	 * shm_published mirror is the republished, child-visible copy
-	 * of the same counter.  No current reader -- pre-stage field
-	 * for the upcoming diag-drain consumer.  RELAXED matches the
-	 * parent's __atomic_store_n in stats_publish_locked(); a plain
-	 * child read racing the parent's atomic write of the same shm
-	 * word is a C11 data race.
-	 */
-	obj->publish_call_nr = shm_published
-	      ? __atomic_load_n(&shm_published->fleet_op_count, __ATOMIC_RELAXED)
-	      : 0;
 	head->num_entries = n + 1;
 
 	/*
@@ -539,40 +524,11 @@ void destroy_objects(enum objecttype type, enum obj_scope scope)
 	deferred_free_enqueue(oldarray);
 }
 
-/*
- * Age threshold (in fleet op ticks) beyond which a pool entry is
- * considered stale for the purposes of eviction preference.  An obj
- * whose publish_call_nr is more than this many ticks behind the
- * current fleet_op_count has sat in its pool through a lot of
- * syscall activity without being consumed in an interesting way --
- * a good candidate to make room for something fresher.  32 is small
- * enough that the "stale" set fills quickly under normal churn and
- * large enough that a just-added obj isn't instantly re-evictable
- * on the very next prune tick.
- */
-#define PRUNE_STALE_THRESHOLD  32UL
-
-static bool obj_is_stale(const struct object *obj, unsigned long now)
-{
-	unsigned long ts = obj->publish_call_nr;
-
-	/*
-	 * ts == 0 is release_obj()'s memset sentinel and also the value
-	 * stamped by add_object_publish() when shm_published wasn't live
-	 * yet.  Either way we have no known age, so treat as stale --
-	 * it's safe to evict something we can't date.
-	 */
-	if (ts == 0)
-		return true;
-	return (now - ts) > PRUNE_STALE_THRESHOLD;
-}
-
 static void __prune_objects(struct childdata *child, enum objecttype type, enum obj_scope scope)
 {
 	struct objhead *head;
 	unsigned int n, expected_kills, i;
 	struct object **array;
-	unsigned long now;
 
 	head = &child->objects[type];
 
@@ -605,45 +561,12 @@ static void __prune_objects(struct childdata *child, enum objecttype type, enum 
 	if (expected_kills == 0)
 		expected_kills = 1U;
 
-	/*
-	 * Snapshot the fleet op tick once for the whole batch and use it
-	 * as the "now" reference against every obj->publish_call_nr below.
-	 * RELAXED matches the store side in add_object_publish() and the
-	 * parent's stats_publish_locked() writer.  now == 0 means either
-	 * shm_published isn't live yet (very-early init) OR the counter
-	 * genuinely hasn't ticked; in that case obj_is_stale()'s ts == 0
-	 * short-circuit still handles never-stamped entries, and the
-	 * (now - ts) branch below just uses zero as the reference tick.
-	 */
-	now = shm_published
-	      ? __atomic_load_n(&shm_published->fleet_op_count, __ATOMIC_RELAXED)
-	      : 0;
-
 	for (i = 0; i < expected_kills; i++) {
 		unsigned int idx = rnd_modulo_u32(n);
 		struct object *obj = array[idx];
 
 		if (obj == NULL)
 			continue;
-
-		/*
-		 * Age-aware bias via best-of-2 sampling: if the first pick
-		 * is a fresh publish (age <= PRUNE_STALE_THRESHOLD), draw
-		 * one more random victim and prefer it if it's stale.  Both
-		 * candidates were already eligible under the random policy;
-		 * the extra roll just re-weights which of two random victims
-		 * dies this round toward the older one, keeping recently-
-		 * published objs alive long enough to be actually consumed.
-		 * No walk of the pool -- one extra rnd_modulo_u32 per non-
-		 * stale first pick, bounded per iteration.
-		 */
-		if (!obj_is_stale(obj, now)) {
-			unsigned int idx2 = rnd_modulo_u32(n);
-			struct object *obj2 = array[idx2];
-
-			if (obj2 != NULL && obj_is_stale(obj2, now))
-				obj = obj2;
-		}
 
 		destroy_object(obj, scope, type);
 	}

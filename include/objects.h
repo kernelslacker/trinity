@@ -293,14 +293,6 @@ struct object {
 	 * the field, bump and helper; migrations are separate commits.
 	 */
 	unsigned int slot_version;
-	/*
-	 * Provenance clock: snapshot of shm_published->fleet_op_count
-	 * taken at the successful add_object() return path, i.e. the
-	 * coarse fleet-wide op tick at which this obj first became
-	 * visible in its pool.  Cold pre-stage field for an upcoming
-	 * diag-drain consumer; no current reader.
-	 */
-	unsigned long publish_call_nr;
 	union {
 		struct map map;
 

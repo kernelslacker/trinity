@@ -83,11 +83,11 @@ extern bool (*fake_syscall)(long number, const unsigned long a[6],
 
 #define POOL_MAX	64
 #define LOG_MAX		8	/* closes and range closes a case can log */
-#define STALE		0xdeadUL	/* in publish_call_nr: marks an object that predates the call */
 
 struct pool_entry {
 	bool used;
 	bool local;
+	bool stale;		/* the object predates the call */
 	int fd;
 	struct object obj;
 };
@@ -155,7 +155,7 @@ static void pool_add(bool local, int fd, enum objecttype type)
 		if (type == OBJ_FD_TESTFILE)
 			e->obj.testfileobj.fd = fd;
 		e->obj.slot_version = ++fake_versions;
-		e->obj.publish_call_nr = STALE;
+		e->stale = true;
 		return;
 	}
 	BUG("fd pool: the fake pool is full");
@@ -546,10 +546,10 @@ static void old_object_is_retired(void)
 		check("an eventfd copied over an eventfd is not one object",
 		      name, pool_count(NEW) == 1);
 		check("the replaced eventfd's object was kept", name,
-		      e != NULL && e->obj.publish_call_nr != STALE);
+		      e != NULL && !e->stale);
 		check("the source's own object was disturbed", name,
 		      pool_find(SRC, OBJ_FD_EVENTFD) != NULL &&
-		      pool_find(SRC, OBJ_FD_EVENTFD)->obj.publish_call_nr == STALE);
+		      pool_find(SRC, OBJ_FD_EVENTFD)->stale);
 
 		/* The source is not tracked: nothing joins a pool, but the
 		 * file the copy replaced is gone all the same. */
@@ -590,8 +590,7 @@ static void same_fd_is_a_no_op(void)
 	run(&syscall_dup2, "dup2(fd, fd)", SRC, SRC, SRC);
 	e = pool_find(SRC, OBJ_FD_PIPE);
 	check("dup2(fd, fd) replaced the fd's object", "dup2(fd, fd)",
-	      e != NULL && e->obj.publish_call_nr == STALE &&
-	      pool_count(SRC) == 1);
+	      e != NULL && e->stale && pool_count(SRC) == 1);
 	check("dup2(fd, fd) retired, published or reported a close",
 	      "dup2(fd, fd)", retires == 0 && published == 0 && closes == 0);
 }
@@ -2196,7 +2195,7 @@ static void open_retires_the_old_object(void)
 		check("a file opened over a pooled one is not one object",
 		      name, pool_count(fd) == 1);
 		check("the old object was kept", name,
-		      e != NULL && e->obj.publish_call_nr != STALE);
+		      e != NULL && !e->stale);
 		close(fd);
 	}
 }
