@@ -118,6 +118,20 @@ const struct struct_desc *struct_catalog_lookup(const char *name)
 	return NULL;
 }
 
+/* Nor is any syscall's struct argument: sched_getattr's sanitiser, which
+ * pid_recall_test.c runs, then sizes its buffer by its own fallback. */
+const struct struct_desc *struct_arg_lookup(unsigned int nr,
+					    unsigned int arg_idx,
+					    bool do32bit,
+					    struct syscallrecord *rec)
+{
+	(void) nr;
+	(void) arg_idx;
+	(void) do32bit;
+	(void) rec;
+	return NULL;
+}
+
 /*
  * FOR_EACH_SYSCALL_STRUCT_ARG walks this table until it hits an entry
  * with .entries == NULL.  A single NULL-sentinel row is the empty set.

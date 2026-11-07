@@ -2,9 +2,7 @@
  * SYSCALL_DEFINE3(sched_getattr, pid_t, pid, struct sched_attr __user *, uattr, unsigned int, size)
  */
 #include <stdint.h>
-#include <sys/syscall.h>
 #include <unistd.h>
-#include <asm/unistd.h>
 #include <linux/sched/types.h>
 #include <linux/types.h>
 #include <string.h>
@@ -22,6 +20,7 @@
 #include "utils-mem.h"
 
 #include "kernel/sched.h"
+#include "kernel/unistd.h"
 #define SCHED_ATTR_SIZE_VER0	48
 
 /*
@@ -49,10 +48,7 @@
 #define SCHED_GETATTR_FLAG_DL_DYNAMIC	0x01
 #endif
 
-#if defined(SYS_sched_getattr) || defined(__NR_sched_getattr)
-#ifndef SYS_sched_getattr
-#define SYS_sched_getattr __NR_sched_getattr
-#endif
+#ifdef SYS_sched_getattr
 #define HAVE_SYS_SCHED_GETATTR 1
 #endif
 
@@ -62,13 +58,12 @@ static unsigned long sched_getattr_flags[] = {
 
 #ifdef HAVE_SYS_SCHED_GETATTR
 /*
- * Snapshot of the three sched_getattr input args read by the post oracle,
+ * Snapshot of the sched_getattr buffer arg read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget the pid self-filter, redirect the
- * source memcpy at a foreign user buffer, or smear the size word that
- * bounds the comparison.
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer, or smear the size word that bounds the comparison.
  *
  * attr_alloc_size is the real allocation size of the buffer at .attr,
  * resolved at sanitise time (catalog struct_size, or the fallback when
@@ -82,7 +77,6 @@ static unsigned long sched_getattr_flags[] = {
 #define SCHED_GETATTR_POST_STATE_MAGIC	0x5343484741545452UL	/* "SCHGATTR" */
 struct sched_getattr_post_state {
 	unsigned long magic;
-	unsigned long pid;
 	unsigned long attr;
 	unsigned long size;
 	size_t attr_alloc_size;
@@ -154,14 +148,13 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) attr_alloc_size;
 
 	/*
-	 * Snapshot all four post-oracle inputs.  Without this the post
+	 * Snapshot the post oracle's buffer inputs.  Without this the post
 	 * handler reads rec->aN at post-time, when a sibling syscall may
 	 * have scribbled the slots: looks_like_corrupted_ptr() cannot tell
 	 * a real-but-wrong heap address from the original user attr
 	 * pointer, so the source memcpy would touch a foreign allocation;
-	 * a stomped pid retargets the gettid() self-filter; and a stomped
-	 * size word smears the SCHED_ATTR_SIZE_VER0 floor check and the
-	 * cpy_len bound used to seed the re-issue.  attr_alloc_size is
+	 * and a stomped size word smears the SCHED_ATTR_SIZE_VER0 floor
+	 * check and the cpy_len bound used to seed the re-issue.  attr_alloc_size is
 	 * resolvable only at sanitise time -- the buffer is on the
 	 * deferred-free queue and the catalog descriptor isn't otherwise
 	 * threaded through.  post_state is private to the post handler.
@@ -176,7 +169,6 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic           = SCHED_GETATTR_POST_STATE_MAGIC;
-	snap->pid             = rec->a1;
 	snap->attr            = rec->a2;
 	snap->size            = rec->a3;
 	snap->attr_alloc_size = attr_alloc_size;
@@ -238,20 +230,22 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
  * driven by other children, all of which legitimately mutate the result and
  * would surface as false divergence.  The caller's own sched_setattr between
  * the two reads is the only legitimate same-task mutator and is vanishingly
- * rare in trinity workload at the 1/100 sample rate.
+ * rare in trinity workload at the 1/100 sample rate.  The pid is the one the
+ * kernel was handed, which chain substitution can rewrite after the
+ * sanitiser.
  *
- * TOCTOU defeat: the three input args (pid, attr, size) are snapshotted at
- * sanitise time into a heap struct in rec->post_state, so a sibling that
- * scribbles rec->aN between syscall return and post entry cannot retarget
- * the pid self-filter, redirect the source memcpy at a foreign user buffer,
- * or smear the size word that bounds the comparison.  The user buffer at
- * snap->attr is still user memory a sibling can scribble between calls, so
- * snapshot up to min(snap->size, sizeof(user_snap)) bytes into a stack-local
- * buffer before re-issuing.  The re-call uses a fresh private stack buffer
- * (do NOT pass snap->attr -- a sibling could mutate it mid-syscall and
- * forge a clean compare).  Pass the FULL kernel_snap size so the kernel
- * writes whatever it would write at maximum size and reflects that back in
- * the leading size word.
+ * TOCTOU defeat: the buffer args (attr, size) are snapshotted at sanitise
+ * time into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->aN between syscall return and post entry cannot redirect the
+ * source memcpy at a foreign user buffer, or smear the size word that
+ * bounds the comparison.  The user buffer at snap->attr is still user
+ * memory a sibling can scribble between calls, so snapshot up to
+ * min(snap->size, sizeof(user_snap)) bytes into a stack-local buffer
+ * before re-issuing.  The re-call uses a fresh private stack buffer (do
+ * NOT pass snap->attr -- a sibling could mutate it mid-syscall and forge
+ * a clean compare).  Pass the FULL kernel_snap size so the kernel writes
+ * whatever it would write at maximum size and reflects that back in the
+ * leading size word.
  *
  * The audit row says 'stable equality' on a2; flags drives which fields
  * the kernel populates (DL_DYNAMIC etc), so a divergence on the canonical-
@@ -278,6 +272,7 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	__u32 kernel_size_returned;
 	size_t cpy_len, cmp_len;
 	int memcmp_result;
+	pid_t pid;
 	long rc;
 
 	/*
@@ -323,7 +318,8 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	if (snap->attr == 0)
 		goto out_free;
 
-	if ((pid_t) snap->pid != 0 && (pid_t) snap->pid != gettid())
+	pid = (pid_t) get_arg_snapshot(rec, 1);
+	if (pid != 0 && pid != gettid())
 		goto out_free;
 
 	if (snap->size < SCHED_ATTR_SIZE_VER0)
@@ -407,6 +403,10 @@ struct syscallentry syscall_sched_getattr = {
 	.arg_params[3].list = ARGLIST(sched_getattr_flags),
 	.sanitise = sanitise_sched_getattr,
 	.post = post_sched_getattr,
+	/* pid (a1): the re-call compares only a call on this task, and the
+	 * task is the one the kernel read, which chain substitution may have
+	 * rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

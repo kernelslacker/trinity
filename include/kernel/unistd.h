@@ -31,3 +31,6 @@
 #if !defined(SYS_get_robust_list) && defined(__NR_get_robust_list)
 #define SYS_get_robust_list	__NR_get_robust_list
 #endif
+#if !defined(SYS_sched_getattr) && defined(__NR_sched_getattr)
+#define SYS_sched_getattr	__NR_sched_getattr
+#endif

@@ -652,9 +652,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
 PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 		   $(TOP)/syscalls/socket/getpeername.c
 
-# syscalls/concurrency/get_robust_list.c brings get_robust_list, whose
-# re-call on the calling task pid_recall_test.c runs.
-PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c
+# syscalls/concurrency/get_robust_list.c and syscalls/sched/sched_getattr.c
+# bring get_robust_list and sched_getattr, whose re-calls on the calling
+# task pid_recall_test.c runs.
+PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c \
+		   $(TOP)/syscalls/sched/sched_getattr.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post

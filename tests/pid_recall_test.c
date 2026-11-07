@@ -13,12 +13,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
-#include "kernel/unistd.h"	/* SYS_get_robust_list */
+#include "kernel/unistd.h"	/* SYS_get_robust_list, SYS_sched_getattr */
 #include "sanitise.h"		/* get_writable_address */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_get_robust_list */
+#include "syscalls/syscalls.h"	/* syscall_get_robust_list, syscall_sched_getattr */
 #include "utils.h"		/* ARRAY_SIZE */
 
 void pid_recall_self_check(void);
@@ -96,6 +97,54 @@ static void robust_list_cases(void)
 }
 #endif
 
+#ifdef SYS_sched_getattr
+/* What sched_getattr() wrote into a buffer this long. */
+#define ATTR_BYTES	256
+
+/* sched_getattr calls the sanitiser built on pid @built, which the kernel
+ * ran on pid @ran, each answering the ATTR_BYTES at @answer; the anomalies
+ * the re-call reports. */
+static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
+					  const unsigned char *answer)
+{
+	unsigned long before = shm->stats.oracle.sched_getattr_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) built;
+		rec.a2 = (unsigned long) get_writable_address(page_size);
+		syscall_sched_getattr.sanitise(&rec);
+
+		memcpy((void *) rec.a2, answer, ATTR_BYTES);
+		ran_on(&rec, &syscall_sched_getattr, ran);
+		rec.retval = 0;
+		syscall_sched_getattr.post(&rec);
+	}
+	return shm->stats.oracle.sched_getattr_oracle_anomalies - before;
+}
+
+static void sched_attr_cases(void)
+{
+	static unsigned char own[ATTR_BYTES], others[ATTR_BYTES];
+	pid_t other = gettid() + 1;
+
+	if (syscall(SYS_sched_getattr, 0, own, ATTR_BYTES, 0) != 0)
+		BUG("pid recall: cannot read this task's scheduling attributes");
+	/* Another task's: a nice value one off, at offsetof(sched_nice). */
+	memcpy(others, own, ATTR_BYTES);
+	others[16] ^= 1;
+
+	check("sched_getattr: a call answering this task's attributes was reported",
+	      sched_attr_anomalies(0, 0, own) == 0);
+	check("sched_getattr: a call run on another task was compared with this one",
+	      sched_attr_anomalies(0, other, others) == 0);
+	check("sched_getattr: a call run on this task answering another's attributes was not reported",
+	      sched_attr_anomalies(other, 0, others) > 0);
+}
+#endif
+
 void pid_recall_self_check(void)
 {
 	/* The pool is made once per process: take it as an earlier suite
@@ -107,6 +156,11 @@ void pid_recall_self_check(void)
 	robust_list_cases();
 #else
 	printf("(no get_robust_list) ");
+#endif
+#ifdef SYS_sched_getattr
+	sched_attr_cases();
+#else
+	printf("(no sched_getattr) ");
 #endif
 
 	if (failed != 0)
