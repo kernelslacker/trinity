@@ -9,6 +9,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/fib_rules.h>
+#include <linux/in6.h>
 #include <linux/lwtunnel.h>
 #include <linux/nexthop.h>
 #include <linux/net_namespace.h>
@@ -179,6 +180,19 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 
 			memcpy(p, &val, 2);
 			return 2;
+		}
+		return 0;
+
+	case RTA_FLOWLABEL:
+		/* A big-endian word that a strict IPv6 GETROUTE refuses with
+		 * a bit set outside the label's 20, which one draw in eight
+		 * keeps. */
+		if (avail >= 4) {
+			__be32 val = htonl(ONE_IN(8) ? rand32() :
+					   rand32() & IPV6_FLOWINFO_FLOWLABEL);
+
+			memcpy(p, &val, 4);
+			return 4;
 		}
 		return 0;
 

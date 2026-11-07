@@ -23,12 +23,15 @@
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
 #include "kernel/if_link.h"	/* the IFLA_* limits and IFLA_PACING_OFFLOAD */
+#include "kernel/rtnetlink.h"	/* RTA_FLOWLABEL */
 #include "socketinfo.h"		/* struct socket_triplet */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
+size_t gen_rta_route_payload(unsigned char *p, size_t avail,
+			     unsigned short nla_type, unsigned char family);
 
 #define ROUNDS		800000
 
@@ -809,6 +812,76 @@ static void expect_route_header(const struct route_header *t)
 			"rtnl: an IPv6 route's flags mostly hold the RTM_F_CLONED fib6_config_validate() refuses");
 }
 
+/* ---------- RTA_FLOWLABEL ---------------------------------------------- */
+
+struct route_flowlabel {
+	unsigned int changes;	/* RTM_NEWROUTE and RTM_DELROUTE requests */
+	unsigned int labelled;	/* ... carrying an RTA_FLOWLABEL */
+};
+
+static void tally_route_flowlabel(struct route_flowlabel *t,
+				  const struct nlmsghdr *nlh)
+{
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct rtmsg)))
+		return;
+	t->changes++;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct rtmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct rtmsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == RTA_FLOWLABEL) {
+			t->labelled++;
+			return;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * rtm_to_fib6_config() refuses an IPv6 route add or delete that carries an
+ * RTA_FLOWLABEL at all, and rtm_to_fib_config() ignores one, so only a
+ * GETROUTE reads it.  The builder draws the type again when an add or a
+ * delete drew it, all but one time in eight, so about 0.02 of them carry
+ * one, where 0.12 did.
+ */
+static void expect_route_flowlabel(const struct route_flowlabel *t)
+{
+	expect_fraction(t->labelled, t->changes, 0.0, 0.05,
+			"route add or delete with RTA_FLOWLABEL",
+			"rtnl: a route add or delete carries the RTA_FLOWLABEL rtm_to_fib6_config() refuses");
+}
+
+/*
+ * A strict IPv6 GETROUTE refuses a flow label with a bit set outside
+ * IPV6_FLOWLABEL_MASK, the low 20 bits of the big-endian word, so about
+ * 0.88 of the labels are inside it, where one in 4096 was.
+ */
+static void draws_flowlabels_inside_the_mask(void)
+{
+	static unsigned char buf[16];
+	unsigned int i, inside = 0;
+
+	for (i = 0; i < ENTRIES; i++) {
+		uint32_t label;
+
+		if (gen_rta_route_payload(buf, sizeof(buf), RTA_FLOWLABEL,
+					  AF_INET6) != sizeof(label))
+			BUG("rtnl: an RTA_FLOWLABEL payload is not four bytes");
+		memcpy(&label, buf, sizeof(label));
+		inside += !(ntohl(label) & ~0x000fffffu);
+	}
+	expect_fraction(inside, ENTRIES, 0.82, 0.93, "RTA_FLOWLABEL",
+			"rtnl: a flow label is mostly outside IPV6_FLOWLABEL_MASK");
+}
+
 /* ---------- The RTA_ENCAP_TYPE of RTM_NEWROUTE, DELROUTE and GETROUTE --- */
 
 struct route_encap {
@@ -1083,6 +1156,7 @@ struct tallies {
 	struct probe_interval probe_interval;
 	struct route_header route_header;
 	struct route_encap route_encap;
+	struct route_flowlabel route_flowlabel;
 	struct action_attrs action;
 };
 
@@ -1146,6 +1220,7 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELROUTE:
 			tally_route_header(&t->route_header, nlh);
 			tally_route_encap(&t->route_encap, nlh);
+			tally_route_flowlabel(&t->route_flowlabel, nlh);
 			break;
 		case RTM_GETROUTE:
 			tally_route_encap(&t->route_encap, nlh);
@@ -1178,5 +1253,7 @@ void rtnl_gen_self_check(void)
 	expect_probe_interval(&t.probe_interval);
 	expect_route_header(&t.route_header);
 	expect_route_encap(&t.route_encap);
+	expect_route_flowlabel(&t.route_flowlabel);
+	draws_flowlabels_inside_the_mask();
 	expect_action_attrs(&t.action);
 }

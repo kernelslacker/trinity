@@ -18,6 +18,7 @@
 #include "utils.h"
 
 #include "kernel/if_addr.h"
+#include "kernel/rtnetlink.h"
 
 /* Forward declaration — defined in net/netlink/msg-rtnl-neigh.c.
  * Other gen_rta_* sibling declarations live in msg-internal.h;
@@ -343,7 +344,17 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	switch (group) {
 	case 0: return ifla_attrs[rnd_modulo_u32(ifla_attrs_n)];
 	case 1: return ifa_attrs[rnd_modulo_u32(ifa_attrs_n)];
-	case 2: return rta_attrs[rnd_modulo_u32(rta_attrs_n)];
+	case 2: {
+		unsigned short type = rta_attrs[rnd_modulo_u32(rta_attrs_n)];
+
+		/* rtm_to_fib6_config() refuses a route add or delete that
+		 * carries RTA_FLOWLABEL, and IPv4 ignores it there, so all but
+		 * one time in eight they draw again; a GETROUTE reads it. */
+		if (type == RTA_FLOWLABEL && nlmsg_type != RTM_GETROUTE &&
+		    !ONE_IN(8))
+			type = rta_attrs[rnd_modulo_u32(rta_attrs_n)];
+		return type;
+	}
 	case 3: return nda_attrs[rnd_modulo_u32(nda_attrs_n)];
 	case 4: return fra_attrs[rnd_modulo_u32(fra_attrs_n)];
 	case 5:
