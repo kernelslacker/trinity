@@ -180,7 +180,8 @@ unsigned long gen_arg_buf_sized(struct syscallentry *entry,
 	 * still holds.
 	 */
 	if (blob_mutator_mode != BLOB_MUTATOR_OFF || blob_ab_mode)
-		blob_fill((unsigned char *) buf, (size_t) size, rec->nr, false);
+		blob_fill((unsigned char *) buf, (size_t) size, rec->nr,
+			  rec->do32bit);
 	else
 		generate_rand_bytes((unsigned char *) buf, (unsigned int) size);
 
