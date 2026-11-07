@@ -33,21 +33,18 @@ static const char planted_xattr_name[] = "user.trinity_plant";
  * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign value buffer or hand
- * the re-call the wrong fd.  The xattr name is snapshotted by VALUE into
- * the embedded byte buffer below rather than by pointer -- a stale
- * heap-shaped name pointer that survived looks_like_corrupted_ptr's
- * shape-only gate would otherwise let the .post strncpy walk off the
- * end of an unrelated allocation, and a sibling rewrite of the bytes
- * between sanitise and post would hand the re-call the wrong name and
- * forge a clean-looking divergence.
+ * handler running cannot redirect us at a foreign value buffer.  The
+ * xattr name is snapshotted by VALUE into the embedded byte buffer
+ * below rather than by pointer -- a stale heap-shaped name pointer that
+ * survived looks_like_corrupted_ptr's shape-only gate would otherwise
+ * let the .post strncpy walk off the end of an unrelated allocation,
+ * and a sibling rewrite of the bytes between sanitise and post would
+ * hand the re-call the wrong name and forge a clean-looking divergence.
  */
 #define FGETXATTR_POST_STATE_MAGIC	0x46475852UL	/* "FGXR" */
 struct fgetxattr_post_state {
 	unsigned long magic;
-	unsigned long fd;
 	unsigned long value;
-	unsigned long size;
 	size_t buf_alloc_size;
 	char name[256];
 };
@@ -113,9 +110,7 @@ static void sanitise_fgetxattr_install_post_snapshot(struct syscallrecord *rec,
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FGETXATTR_POST_STATE_MAGIC;
-	snap->fd    = rec->a1;
 	snap->value = rec->a3;
-	snap->size  = rec->a4;
 	snap->buf_alloc_size = buf_alloc_size;
 	if (!post_snapshot_str(snap->name, sizeof(snap->name),
 			       (const char *)(unsigned long) rec->a2))
@@ -227,11 +222,13 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
  *     lookup a different file (or a recycled struct file) for the same
  *     fd number, where the xattr value differs between the two inodes.
  *
- * TOCTOU defeat: the three input args (fd, name, value) are
- * snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->aN between syscall return and post
- * entry cannot redirect us at a foreign value buffer or hand the
- * re-call the wrong (fd, name) tuple.  We still snapshot the name and
+ * TOCTOU defeat: the name and value args are snapshotted at sanitise
+ * time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot
+ * redirect us at a foreign value buffer or hand the re-call the wrong
+ * name.  The fd and size are read from the slots the kernel was handed,
+ * which chain substitution or a RedQueen pin may have rewritten after
+ * the sanitiser drew its own.  We still snapshot the name and
  * the first retval bytes of the receive buffer into stack-locals
  * before re-issuing, with a fresh private stack buffer for the re-call
  * (NOT the snapshot's value -- a sibling could mutate the user buffer
@@ -246,7 +243,7 @@ static void sanitise_fgetxattr(struct syscallrecord *rec)
  *
  * fd 0 is stdin -- a perfectly valid fd to query xattrs on -- so do
  * not gate it out the way path-based variants gate empty paths;
- * instead drop only on negative snapshotted fds.
+ * instead drop only on negative fds.
  *
  * On most fleets fgetxattr rarely succeeds (most files have no xattrs)
  * and the retval > 0 gate keeps this oracle dormant; it costs ~zero
@@ -256,7 +253,8 @@ static void post_fgetxattr(struct syscallrecord *rec)
 {
 	struct fgetxattr_post_state *snap;
 	unsigned long retval = rec->retval;
-	int snap_fd;
+	unsigned long size;
+	int fd;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -285,11 +283,12 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	 * throttles the equality oracle, so every offending retval is counted,
 	 * not one-in-a-hundred.
 	 */
+	size = get_arg_snapshot(rec, 4);
 	if ((long) retval < 0)
 		goto out_release;
-	if (snap->size != 0 && retval > snap->size) {
+	if (size != 0 && retval > size) {
 		outputerr("post_fgetxattr: rejecting retval %lu > size %lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_release;
 	}
@@ -301,7 +300,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 		goto out_release;
 
 	/* size=0 / NULL-buffer probe -- see post_getxattr for rationale. */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_release;
 
 	if (snap->value == 0)
@@ -310,8 +309,8 @@ static void post_fgetxattr(struct syscallrecord *rec)
 	if (snap->name[0] == '\0')
 		goto out_release;
 
-	snap_fd = (int) snap->fd;
-	if (snap_fd < 0)
+	fd = (int) get_arg_snapshot(rec, 1);
+	if (fd < 0)
 		goto out_release;
 
 	snap_len = (size_t) retval;
@@ -332,7 +331,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 				   snap_len))
 		goto out_release;
 
-	rc = syscall(SYS_fgetxattr, snap_fd, snap->name,
+	rc = syscall(SYS_fgetxattr, fd, snap->name,
 		     recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
@@ -361,7 +360,7 @@ static void post_fgetxattr(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:fgetxattr] fd=%d name=%s len=%zu first %s vs recheck %s\n",
-		       snap_fd, snap->name, snap_len,
+		       fd, snap->name, snap_len,
 		       first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.oracle.fgetxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
@@ -379,6 +378,9 @@ struct syscallentry syscall_fgetxattr = {
 	.argname = { [0] = "fd", [1] = "name", [2] = "value", [3] = "size" },
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 4,
+	/* fd (a1) and size (a4): post_fgetxattr re-calls on the one and
+	 * judges the return by the other. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 3),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_fgetxattr,

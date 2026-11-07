@@ -501,6 +501,7 @@ FAKE_SRCS	:= \
 	dup_pool_test.c \
 	ctime_rule_test.c \
 	stat_recall_test.c \
+	xattr_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -597,7 +598,8 @@ PARENT_SRCS	+= $(wildcard $(TOP)/syscalls/bpf*.c) \
 # syscalls/fs/read.c, syscalls/mq/mq_timedreceive.c, the getters and
 # listers under syscalls/xattr/ and the value-buffer pickers they share
 # bring the entries whose sanitisers arg_coupling_test.c runs under the
-# count rule.
+# count rule; post_oracle_test.c runs the xattr post handlers' bounds, and
+# xattr_recall_test.c their re-calls, on files of its own.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/syscalls/mq/mq_timedreceive.c \
 		   $(TOP)/syscalls/xattr/getxattr.c \

@@ -506,6 +506,7 @@ static void xattr_size(void)
 	} getters[] = {
 		{ &syscall_getxattr, 4 },
 		{ &syscall_lgetxattr, 4 },
+		{ &syscall_fgetxattr, 4 },
 	};
 	static const struct {
 		const char *what;
