@@ -73,8 +73,6 @@ void clone_global_objects_to_child(struct childdata *child)
 	child->fd_hash = NULL;
 
 	child->global_objects = zmalloc(sizeof(struct objhead) * MAX_OBJECT_TYPES);
-	if (child->global_objects == NULL)
-		return;
 
 	for (i = 0; i < MAX_OBJECT_TYPES; i++) {
 		struct objhead *src = &parent_global_objects[i];
@@ -104,18 +102,12 @@ void clone_global_objects_to_child(struct childdata *child)
 			continue;
 
 		dst->array = zmalloc(n * sizeof(struct object *));
-		if (dst->array == NULL) {
-			dst->array_capacity = 0;
-			dst->num_entries = 0;
-			continue;
-		}
 		memcpy(dst->array, src->array, n * sizeof(struct object *));
 	}
 
 	child->fd_hash = zmalloc(FD_HASH_SIZE * sizeof(struct fd_hash_entry));
-	if (child->fd_hash != NULL)
-		memcpy(child->fd_hash, parent_fd_hash,
-		       FD_HASH_SIZE * sizeof(struct fd_hash_entry));
+	memcpy(child->fd_hash, parent_fd_hash,
+	       FD_HASH_SIZE * sizeof(struct fd_hash_entry));
 }
 
 /* Destroy all global objects on exit. */

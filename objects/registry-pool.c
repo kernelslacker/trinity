@@ -23,28 +23,18 @@
 /*
  * Grow head->array if the next slot is past current capacity.  head
  * is resolved once in add_object() and threaded through; same for
- * the hoisted is_fd / fd pair used by the leak-close error paths.
+ * the hoisted is_fd / fd pair used by the leak-close error path.
  *
- * The alloc-track LRU slot for a libc-heap head->array container is
- * refreshed before the grow check so the upcoming
- * deferred_free_enqueue(oldarray) doesn't reject on an alloc_track
- * miss after thousands of intervening zmalloc_tracked calls in
- * cap>=1024 pools.  An alloc_track miss would leak the old chunk
- * rather than UAF it, but still silently bypasses the deferred-free
- * path.
- *
- * Both scopes use the same allocate-copy-defer-free shape: a fresh
- * zmalloc_tracked container (OBJ_LOCAL prefers an arena one), memcpy
+ * Both scopes grow the same way: allocate a fresh container, memcpy
  * the live slots over, publish head->array + array_capacity, then
- * deferred_free_enqueue(oldarray), except that an arena old container
- * is never freed and stays in place.  The deferred-free TTL (5-50
+ * deferred_free_enqueue(oldarray).  The deferred-free TTL (5-50
  * syscalls, effective 80-800 with DEFERRED_TICK_BATCH) keeps the old
  * chunk readable for a reader still holding the old head->array: a
  * for_each_obj walk keeps its own snapshot across its body, so a body
  * that grows the pool would otherwise go on indexing a freed
- * container.  Same hazard shape as the obj-struct
- * deferred-free path: a live container freed underneath a cached
- * reader is a use-after-free.
+ * container.  Same hazard shape as the obj-struct deferred-free path:
+ * a live container freed underneath a cached reader is a
+ * use-after-free.
  *
  * OBJ_GLOBAL needs the same deferral as OBJ_LOCAL even though the
  * writer is single (parent pre-fork only): the parent itself reads
@@ -52,9 +42,9 @@
  * does not imply single-reader.  This is single-process re-entrancy,
  * not cross-thread.
  *
- * Both branches cap-overflow-guard at UINT_MAX / 2.  On either the
- * overflow or the malloc-failure path: close any leaked fd,
- * release_obj() the inbound obj, and tell the caller to bail.
+ * The capacity is guarded at UINT_MAX / 2.  On overflow: close any
+ * leaked fd, release_obj() the inbound obj, and tell the caller to
+ * bail.
  *
  * Returns true if the grow failed (release_obj already called --
  * add_object() must return immediately); false if either no grow
@@ -64,10 +54,14 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			      enum objecttype type, struct objhead *head,
 			      bool is_fd, int fd)
 {
-	unsigned int n, cap;
+	struct object **newarray, **oldarray;
+	unsigned int n, cap, newcap;
+	unsigned long oldbytes, newbytes;
 
 	n = head->num_entries;
 	cap = head->array_capacity;
+	oldarray = head->array;
+	oldbytes = (unsigned long)cap * sizeof(struct object *);
 
 	/*
 	 * Refresh head->array's alloc_track LRU slot before the grow
@@ -85,120 +79,52 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 	 * release below judges it by.  The NULL guard skips the first
 	 * grow (empty pool).
 	 */
-	if (head->array != NULL &&
-	    !objpool_local_arena_owns(head->array,
-			(unsigned long)cap * sizeof(struct object *)))
-		alloc_track_refresh(head->array);
+	if (oldarray != NULL && !objpool_local_arena_owns(oldarray, oldbytes))
+		alloc_track_refresh(oldarray);
 
-	if (scope == OBJ_GLOBAL) {
-		if (n >= cap) {
-			/*
-			 * Grow on the parent's private heap.  Single-writer
-			 * (parent pre-fork only) but NOT single-reader: a
-			 * for_each_obj walk whose body grows the pool still
-			 * holds the old head->array, and an immediate free of
-			 * the old container would UAF it.  Use the same
-			 * allocate-copy-defer-free shape as the OBJ_LOCAL
-			 * branch below; the deferred-free TTL keeps the old
-			 * chunk readable across any reader's window.
-			 */
-			struct object **newarray;
-			struct object **oldarray;
-			unsigned int newcap = cap ? cap * 2 : 16;
+	if (n < cap)
+		return false;
 
-			if (cap > UINT_MAX / 2) {
-				outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-					  type, n, cap);
-				if (is_fd && fd >= 0)
-					close(fd);
-				release_obj(obj, scope, type);
-				return true;
-			}
-			newarray = zmalloc_tracked(newcap * sizeof(struct object *));
-			if (newarray == NULL) {
-				outputerr("add_object: malloc failed for type %u (cap %u)\n",
-					  type, newcap);
-				if (is_fd && fd >= 0)
-					close(fd);
-				release_obj(obj, scope, type);
-				return true;
-			}
-			oldarray = head->array;
-			if (oldarray != NULL && cap > 0)
-				memcpy(newarray, oldarray,
-				       cap * sizeof(struct object *));
-			head->array = newarray;
-			head->array_capacity = newcap;
-			if (oldarray != NULL)
-				deferred_free_enqueue(oldarray);
-		}
-	} else if (n >= cap) {
-		/*
-		 * OBJ_LOCAL grow on the owning child's private heap.  Use
-		 * the same allocate-copy-defer-free shape that closed the
-		 * UAF on the array container reachable through cached
-		 * head->array reads in the arg-gen path: the deferred-free
-		 * ring gives the old chunk a 5-50 syscall (effective
-		 * 80-800 with DEFERRED_TICK_BATCH) TTL, far longer than
-		 * any in-flight reader's window.  Same hazard shape as
-		 * the obj-struct deferred-free path: freeing a live
-		 * container underneath a cached reader is a use-after-free.
-		 *
-		 * The new array prefers objpool_local_arena_alloc() so
-		 * the container inherits the arena's
-		 * track_shared_region_tagged() protection against
-		 * fuzzed value-result writes.  Falls back to
-		 * zmalloc_tracked on arena exhaustion (bump-only
-		 * allocator; late-lifetime grows may miss the arena and
-		 * rely on the range_overlaps_libc_heap safety net
-		 * instead).  The old container's release routes back to
-		 * deferred_free_enqueue only when it was libc-heap: an
-		 * arena-allocated old container has no free()able chunk
-		 * header and no tracker entry to consume, so it stays
-		 * where the arena bump-cursor left it -- a bounded
-		 * per-child leak of past-grown array footprint that the
-		 * arena's ~13x headroom over steady-state OBJ_LOCAL
-		 * storage accounts for.
-		 */
-		struct object **newarray;
-		struct object **oldarray;
-		unsigned int newcap = cap ? cap * 2 : 16;
-		unsigned long newbytes;
-
-		if (cap > UINT_MAX / 2) {
-			outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
-				  type, n, cap);
-			if (is_fd && fd >= 0)
-				close(fd);
-			release_obj(obj, scope, type);
-			return true;
-		}
-		newbytes = (unsigned long)newcap * sizeof(struct object *);
-		newarray = objpool_local_arena_alloc(newbytes);
-		if (newarray == NULL)
-			newarray = zmalloc_tracked(newbytes);
-		if (newarray == NULL) {
-			outputerr("add_object: malloc failed for type %u (cap %u)\n",
-				  type, newcap);
-			if (is_fd && fd >= 0)
-				close(fd);
-			release_obj(obj, scope, type);
-			return true;
-		}
-		oldarray = head->array;
-		if (oldarray != NULL && cap > 0)
-			memcpy(newarray, oldarray, cap * sizeof(struct object *));
-		head->array = newarray;
-		head->array_capacity = newcap;
-		if (oldarray != NULL) {
-			unsigned long oldbytes =
-				(unsigned long)cap * sizeof(struct object *);
-
-			if (!objpool_local_arena_owns(oldarray, oldbytes))
-				deferred_free_enqueue(oldarray);
-			/* else: arena slot -- bump-only, leaks by design. */
-		}
+	if (cap > UINT_MAX / 2) {
+		outputerr("add_object: cap overflow type=%u num_entries=%u capacity=%u\n",
+			  type, n, cap);
+		if (is_fd && fd >= 0)
+			close(fd);
+		release_obj(obj, scope, type);
+		return true;
 	}
+
+	newcap = cap ? cap * 2 : 16;
+	newbytes = (unsigned long)newcap * sizeof(struct object *);
+
+	/*
+	 * A child's pool prefers objpool_local_arena_alloc() so the
+	 * container inherits the arena's track_shared_region_tagged()
+	 * protection against fuzzed value-result writes.  Falls back to
+	 * zmalloc_tracked on arena exhaustion (bump-only allocator;
+	 * late-lifetime grows may miss the arena and rely on the
+	 * range_overlaps_libc_heap safety net instead).
+	 */
+	newarray = NULL;
+	if (scope == OBJ_LOCAL)
+		newarray = objpool_local_arena_alloc(newbytes);
+	if (newarray == NULL)
+		newarray = zmalloc_tracked(newbytes);
+
+	if (oldarray != NULL)
+		memcpy(newarray, oldarray, oldbytes);
+	head->array = newarray;
+	head->array_capacity = newcap;
+
+	/*
+	 * An arena old container has no free()able chunk header and no
+	 * tracker entry to consume, so it stays where the arena
+	 * bump-cursor left it -- a bounded per-child leak of past-grown
+	 * array footprint that the arena's ~13x headroom over
+	 * steady-state OBJ_LOCAL storage accounts for.
+	 */
+	if (oldarray != NULL && !objpool_local_arena_owns(oldarray, oldbytes))
+		deferred_free_enqueue(oldarray);
 
 	return false;
 }
