@@ -616,6 +616,41 @@ static void expect_bridge_header(const struct bridge_header *get,
 			"rtnl: a bridge add or delete names index 0, which its handler refuses, more than one time in 25");
 }
 
+/* ---------- The headers that carry a family alone ----------------------- */
+
+struct family_header {
+	unsigned int msgs;
+	unsigned int taken;	/* a family with a handler for the request */
+};
+
+/* The family byte that opens the header, against the n a handler takes. */
+static void tally_family(struct family_header *t, const struct nlmsghdr *nlh,
+			 const unsigned char *families, size_t n)
+{
+	const unsigned char *family = NLMSG_DATA(nlh);
+	size_t i;
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(1))
+		return;
+	t->msgs++;
+	for (i = 0; i < n; i++)
+		t->taken += *family == families[i];
+}
+
+/* RTM_GETNETCONF's doit is registered for these alone, and
+ * rtnetlink_rcv_msg() answers a doit under any other family -EOPNOTSUPP. */
+static const unsigned char netconf_families[] = { AF_INET, AF_INET6, AF_MPLS };
+
+/*
+ * The builder names a family with a handler but one time in eight, when
+ * rand_family() still lands on one about half the time.
+ */
+static void expect_family_headers(const struct family_header *netconf)
+{
+	expect_fraction(netconf->taken, netconf->msgs, 0.90, 0.96, "RTM_GETNETCONF",
+			"rtnl: RTM_GETNETCONF does not name AF_INET, AF_INET6 or AF_MPLS seven times in eight");
+}
+
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
 
 struct tunnel_attrs {
@@ -1507,6 +1542,7 @@ struct tallies {
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
 	struct bridge_header bridgeget, bridgenewdel;
+	struct family_header netconf;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1567,6 +1603,10 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_GETSTATS:
 			tally_stats_header(&t->getstats, nlh, false);
+			break;
+		case RTM_GETNETCONF:
+			tally_family(&t->netconf, nlh, netconf_families,
+				     ARRAY_SIZE(netconf_families));
 			break;
 		case RTM_GETMDB:
 			tally_bridge_header(&t->bridgeget, nlh, true);
@@ -1657,6 +1697,7 @@ void rtnl_gen_self_check(void)
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);
 	expect_bridge_header(&t.bridgeget, &t.bridgenewdel);
+	expect_family_headers(&t.netconf);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");

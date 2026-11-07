@@ -348,14 +348,20 @@ static size_t gen_rtnl_body_dcb(unsigned char *body, size_t buflen, unsigned cha
 	return sizeof(dcb);
 }
 
-/* RTM_*NETCONF: struct netconfmsg */
+/*
+ * RTM_*NETCONF: struct netconfmsg.  RTM_GETNETCONF's doit is registered for
+ * PF_INET, PF_INET6 and PF_MPLS, and rtnetlink_rcv_msg() answers a doit
+ * under any other family -EOPNOTSUPP, where a dump falls back to
+ * rtnl_dump_all().  So a request names one of the three but one in eight.
+ */
 static size_t gen_rtnl_body_netconf(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
+	static const unsigned char families[] = { AF_INET, AF_INET6, AF_MPLS };
 	struct netconfmsg ncm;
 
 	if (sizeof(ncm) > buflen)
 		return 0;
-	ncm.ncm_family = rand_family();
+	ncm.ncm_family = ONE_IN(8) ? rand_family() : RAND_ARRAY(families);
 	*out_family = ncm.ncm_family;
 	memcpy(body, &ncm, sizeof(ncm));
 	return sizeof(ncm);
