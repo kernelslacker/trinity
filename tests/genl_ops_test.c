@@ -74,6 +74,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_FLOW	726
 #define ID_OVS_PACKET	727
 #define ID_DEVLINK	728
+#define ID_MPTCP_PM	729
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -2094,6 +2095,79 @@ static struct cmd_policy devlink_cmds[] = {
 	P_CMD(DEVLINK_CMD_PORT_DEL, devlink_port_get),
 };
 
+#if __has_include(<linux/mptcp_pm.h>)
+#include <linux/mptcp_pm.h>
+
+extern struct genl_family_grammar fam_mptcp_pm;
+
+/*
+ * net/mptcp/mptcp_pm_gen.c: each op's policy, all of them validated
+ * liberally, and mptcp_pm_address_nl_policy, which every address nest is
+ * checked against.  The handlers need the address of ADD_ADDR, DEL_ADDR,
+ * GET_ADDR's doit, SET_FLAGS and ANNOUNCE, the TOKEN of the userspace PM's
+ * ANNOUNCE, REMOVE and subflow ops, REMOVE's local id and both ends of a
+ * subflow.  mptcp_pm_parse_pm_addr_attr() refuses a nest without the
+ * family the op needs or without the address of the family it names, and
+ * a mark cannot pick which address that is, so both are marked.
+ * SET_LIMITS refuses a limit above MPTCP_PM_SUBFLOWS_MAX, 64.
+ */
+static struct slot mptcp_pm_addr[] = {
+	S_U16(MPTCP_PM_ADDR_ATTR_FAMILY, .required = true),
+	S_U8(MPTCP_PM_ADDR_ATTR_ID),
+	S_U32(MPTCP_PM_ADDR_ATTR_ADDR4, .required = true),
+	S_BLOB(MPTCP_PM_ADDR_ATTR_ADDR6, 16, 16, .required = true),
+	S_U16(MPTCP_PM_ADDR_ATTR_PORT),
+	S_U32(MPTCP_PM_ADDR_ATTR_FLAGS),
+	S_U32(MPTCP_PM_ADDR_ATTR_IF_IDX),
+};
+static struct slot mptcp_pm_endpoint[] = {
+	S_NEST(MPTCP_PM_ENDPOINT_ADDR, mptcp_pm_addr),
+};
+static struct slot mptcp_pm_get_addr[] = {
+	S_NEST(MPTCP_PM_ATTR_ADDR, mptcp_pm_addr, .required = true),
+	S_U32(MPTCP_PM_ATTR_TOKEN),
+};
+static struct slot mptcp_pm_set_limits[] = {
+	S_U32_RANGE(MPTCP_PM_ATTR_RCV_ADD_ADDRS, 0, 64),
+	S_U32_RANGE(MPTCP_PM_ATTR_SUBFLOWS, 0, 64),
+};
+static struct slot mptcp_pm_get_limits[] = {
+	S_U32(MPTCP_PM_ATTR_RCV_ADD_ADDRS),
+	S_U32(MPTCP_PM_ATTR_SUBFLOWS),
+};
+static struct slot mptcp_pm_set_flags[] = {
+	S_NEST(MPTCP_PM_ATTR_ADDR, mptcp_pm_addr, .required = true),
+	S_U32(MPTCP_PM_ATTR_TOKEN),
+	S_NEST(MPTCP_PM_ATTR_ADDR_REMOTE, mptcp_pm_addr),
+};
+static struct slot mptcp_pm_announce[] = {
+	S_NEST(MPTCP_PM_ATTR_ADDR, mptcp_pm_addr, .required = true),
+	S_U32(MPTCP_PM_ATTR_TOKEN, .required = true),
+};
+static struct slot mptcp_pm_remove[] = {
+	S_U32(MPTCP_PM_ATTR_TOKEN, .required = true),
+	S_U8(MPTCP_PM_ATTR_LOC_ID, .required = true),
+};
+static struct slot mptcp_pm_subflow[] = {
+	S_NEST(MPTCP_PM_ATTR_ADDR, mptcp_pm_addr, .required = true),
+	S_U32(MPTCP_PM_ATTR_TOKEN, .required = true),
+	S_NEST(MPTCP_PM_ATTR_ADDR_REMOTE, mptcp_pm_addr, .required = true),
+};
+static struct cmd_policy mptcp_pm_cmds[] = {
+	P_CMD(MPTCP_PM_CMD_ADD_ADDR, mptcp_pm_endpoint),
+	P_CMD(MPTCP_PM_CMD_DEL_ADDR, mptcp_pm_endpoint),
+	P_CMD(MPTCP_PM_CMD_GET_ADDR, mptcp_pm_get_addr),
+	P_CMD(MPTCP_PM_CMD_FLUSH_ADDRS, mptcp_pm_endpoint),
+	P_CMD(MPTCP_PM_CMD_SET_LIMITS, mptcp_pm_set_limits),
+	P_CMD(MPTCP_PM_CMD_GET_LIMITS, mptcp_pm_get_limits),
+	P_CMD(MPTCP_PM_CMD_SET_FLAGS, mptcp_pm_set_flags),
+	P_CMD(MPTCP_PM_CMD_ANNOUNCE, mptcp_pm_announce),
+	P_CMD(MPTCP_PM_CMD_REMOVE, mptcp_pm_remove),
+	P_CMD(MPTCP_PM_CMD_SUBFLOW_CREATE, mptcp_pm_subflow),
+	P_CMD(MPTCP_PM_CMD_SUBFLOW_DESTROY, mptcp_pm_subflow),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -2143,6 +2217,9 @@ static struct policy_family policy_families[] = {
 	{ &fam_tipc, ID_TIPC, tipc_cmds, ARRAY_SIZE(tipc_cmds) },
 #endif
 	{ &fam_devlink, ID_DEVLINK, devlink_cmds, ARRAY_SIZE(devlink_cmds) },
+#if __has_include(<linux/mptcp_pm.h>)
+	{ &fam_mptcp_pm, ID_MPTCP_PM, mptcp_pm_cmds, ARRAY_SIZE(mptcp_pm_cmds) },
+#endif
 };
 
 /* Every cmd of these families, each with the flags of a doit and a dumpit. */
