@@ -324,8 +324,8 @@ struct syscalltable syscalls_x86_64[] = {
 	{ .entry = &syscall_sched_setattr },
 	{ .entry = &syscall_sched_getattr },
 	{ .entry = &syscall_renameat2 },
-	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_seccomp },
+	{ .entry = &syscall_getrandom },
 	{ .entry = &syscall_memfd_create },
 	{ .entry = &syscall_kexec_file_load },
 #ifdef USE_BPF
