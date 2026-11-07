@@ -75,6 +75,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_OVS_PACKET	727
 #define ID_DEVLINK	728
 #define ID_MPTCP_PM	729
+#define ID_L2TP		730
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -420,6 +421,9 @@ struct slot {
 	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
 #define S_U8_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 1, 1, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_U8_ONEOF(id, vals, ...) \
+	{ id, SK_BYTES, 1, 1, .bound = SB_ONEOF, .oneof = vals, \
+	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
 /* An NLA_UINT takes 4 or 8 bytes, host order, and its bound is a u32's. */
 #define S_UINT_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 4, 8, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
@@ -2175,6 +2179,86 @@ static struct cmd_policy mptcp_pm_cmds[] = {
 };
 #endif
 
+#if __has_include(<linux/l2tp.h>)
+#include "kernel/l2tp.h"
+
+extern struct genl_family_grammar fam_l2tp;
+
+/*
+ * net/l2tp/l2tp_netlink.c: l2tp_nl_policy, the one policy, which every op
+ * validates liberally; a dump's attributes go unparsed.  Each op is held
+ * to what its handler reads.  TUNNEL_CREATE answers -EINVAL without the
+ * two conn ids, the version and an encap of UDP or IP, and wants an FD or
+ * an address pair besides; SESSION_CREATE without the tunnel's conn id,
+ * the two session ids and the pseudowire type, which ETH and PPP alone
+ * register, and an L2TPv3 session's L2SPEC_TYPE is NONE or DEFAULT.  The
+ * other ops find a tunnel by its conn id, a session by its IFNAME or else
+ * by the conn and session ids, which are marked.  The ids are 1 to 8, so
+ * that they name what a create made.  NOOP reads nothing.
+ */
+static const unsigned int l2tp_versions[] = { 2, 3 };
+static const unsigned int l2tp_pwtypes[] = { L2TP_PWTYPE_ETH, L2TP_PWTYPE_PPP };
+
+static struct slot l2tp_tunnel_create[] = {
+	S_U32_RANGE(L2TP_ATTR_CONN_ID, 1, 8, .required = true),
+	S_U32_RANGE(L2TP_ATTR_PEER_CONN_ID, 1, 8, .required = true),
+	S_U8_ONEOF(L2TP_ATTR_PROTO_VERSION, l2tp_versions, .required = true),
+	S_U16_RANGE(L2TP_ATTR_ENCAP_TYPE, 0, 1, .required = true),
+	S_U32(L2TP_ATTR_FD),
+	S_U32(L2TP_ATTR_IP_SADDR),
+	S_U32(L2TP_ATTR_IP_DADDR),
+	S_BLOB(L2TP_ATTR_IP6_SADDR, 0, 16),
+	S_BLOB(L2TP_ATTR_IP6_DADDR, 0, 16),
+	S_U16(L2TP_ATTR_UDP_SPORT),
+	S_U16(L2TP_ATTR_UDP_DPORT),
+	S_U8(L2TP_ATTR_UDP_CSUM),
+	S_FLAG(L2TP_ATTR_UDP_ZERO_CSUM6_TX),
+	S_FLAG(L2TP_ATTR_UDP_ZERO_CSUM6_RX),
+};
+static struct slot l2tp_tunnel[] = {
+	S_U32_RANGE(L2TP_ATTR_CONN_ID, 1, 8),
+};
+static struct slot l2tp_session_create[] = {
+	S_U32_RANGE(L2TP_ATTR_CONN_ID, 1, 8, .required = true),
+	S_U32_RANGE(L2TP_ATTR_SESSION_ID, 1, 8, .required = true),
+	S_U32_RANGE(L2TP_ATTR_PEER_SESSION_ID, 1, 8, .required = true),
+	S_U16_ONEOF(L2TP_ATTR_PW_TYPE, l2tp_pwtypes, .required = true),
+	S_U8_RANGE(L2TP_ATTR_L2SPEC_TYPE, 0, 1),
+	S_BLOB(L2TP_ATTR_COOKIE, 0, 8),
+	S_BLOB(L2TP_ATTR_PEER_COOKIE, 0, 8),
+	S_STR(L2TP_ATTR_IFNAME, 15),
+	S_U8(L2TP_ATTR_RECV_SEQ),
+	S_U8(L2TP_ATTR_SEND_SEQ),
+	S_U8(L2TP_ATTR_LNS_MODE),
+	S_U64(L2TP_ATTR_RECV_TIMEOUT),
+};
+static struct slot l2tp_session[] = {
+	S_U32_RANGE(L2TP_ATTR_CONN_ID, 1, 8, .required = true),
+	S_U32_RANGE(L2TP_ATTR_SESSION_ID, 1, 8, .required = true),
+	S_STR(L2TP_ATTR_IFNAME, 15),
+};
+static struct slot l2tp_session_modify[] = {
+	S_U32_RANGE(L2TP_ATTR_CONN_ID, 1, 8, .required = true),
+	S_U32_RANGE(L2TP_ATTR_SESSION_ID, 1, 8, .required = true),
+	S_STR(L2TP_ATTR_IFNAME, 15),
+	S_U8(L2TP_ATTR_RECV_SEQ),
+	S_U8(L2TP_ATTR_SEND_SEQ),
+	S_U8(L2TP_ATTR_LNS_MODE),
+	S_U64(L2TP_ATTR_RECV_TIMEOUT),
+};
+static struct cmd_policy l2tp_cmds[] = {
+	P_CMD_NONE(L2TP_CMD_NOOP),
+	P_CMD(L2TP_CMD_TUNNEL_CREATE, l2tp_tunnel_create),
+	P_CMD(L2TP_CMD_TUNNEL_DELETE, l2tp_tunnel),
+	P_CMD(L2TP_CMD_TUNNEL_MODIFY, l2tp_tunnel),
+	P_CMD(L2TP_CMD_TUNNEL_GET, l2tp_tunnel),
+	P_CMD(L2TP_CMD_SESSION_CREATE, l2tp_session_create),
+	P_CMD(L2TP_CMD_SESSION_DELETE, l2tp_session),
+	P_CMD(L2TP_CMD_SESSION_MODIFY, l2tp_session_modify),
+	P_CMD(L2TP_CMD_SESSION_GET, l2tp_session),
+};
+#endif
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -2226,6 +2310,9 @@ static struct policy_family policy_families[] = {
 	{ &fam_devlink, ID_DEVLINK, devlink_cmds, ARRAY_SIZE(devlink_cmds) },
 #if __has_include(<linux/mptcp_pm.h>)
 	{ &fam_mptcp_pm, ID_MPTCP_PM, mptcp_pm_cmds, ARRAY_SIZE(mptcp_pm_cmds) },
+#endif
+#if __has_include(<linux/l2tp.h>)
+	{ &fam_l2tp, ID_L2TP, l2tp_cmds, ARRAY_SIZE(l2tp_cmds) },
 #endif
 };
 
@@ -3601,13 +3688,14 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
  * host order; a byte's range, one of them pinned to one number; an
  * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof and
- * a u16 oneof of three values, in host order; an array of two elements at
- * most; and a nest of two children at most.
+ * a u16 oneof of three values, in host order, and a byte's; an array of
+ * two elements at most; and a nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
 	static const unsigned int oneof_values[] = { 2, 17, 300 };
 	static const unsigned int u16_oneof_values[] = { 2, 10, 40000 };
+	static const unsigned int u8_oneof_values[] = { 2, 3, 200 };
 	static const struct nla_attr_spec leaf[] = {
 		{ 1, NLA_KIND_U32, 4 },
 	};
@@ -3631,6 +3719,8 @@ static void check_bounded_tables(void)
 		  .n_oneof = ARRAY_SIZE(oneof_values) },
 		{ 17, NLA_KIND_U16_ONEOF, 0, 0, .oneof = u16_oneof_values,
 		  .n_oneof = ARRAY_SIZE(u16_oneof_values) },
+		{ 18, NLA_KIND_U8_ONEOF, 0, 0, .oneof = u8_oneof_values,
+		  .n_oneof = ARRAY_SIZE(u8_oneof_values) },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3651,6 +3741,7 @@ static void check_bounded_tables(void)
 		S_UINT_MASK(15, 0x3ffff),
 		S_U32_ONEOF(16, oneof_values),
 		S_U16_ONEOF(17, u16_oneof_values),
+		S_U8_ONEOF(18, u8_oneof_values),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3715,9 +3806,9 @@ static void check_sockaddr_kind(void)
 
 /*
  * Whether spec declares slot's bound: a mask or range kind at the slot's
- * width, with the bound's ends, a oneof kind at the slot's width, u16 or
- * u32, with the same values, or a nest or array capped where its handler
- * caps it.  A byte's range
+ * width, with the bound's ends, a oneof kind at the slot's width, a byte,
+ * u16 or u32, with the same values, or a nest or array capped where its
+ * handler caps it.  A byte's range
  * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
  * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
  * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
@@ -3734,7 +3825,8 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 	if (slot->bound == SB_NONE)
 		return false;
 	if (slot->bound == SB_ONEOF) {
-		unsigned short kind = slot->max == 2 ? NLA_KIND_U16_ONEOF :
+		unsigned short kind = slot->max == 1 ? NLA_KIND_U8_ONEOF :
+				      slot->max == 2 ? NLA_KIND_U16_ONEOF :
 						       NLA_KIND_U32_ONEOF;
 		unsigned int i, j;
 
@@ -3824,6 +3916,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 			  spec->kind == NLA_KIND_U32_RANGE ||
 			  spec->kind == NLA_KIND_U32_ONEOF ||
 			  spec->kind == NLA_KIND_U16_ONEOF ||
+			  spec->kind == NLA_KIND_U8_ONEOF ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||
