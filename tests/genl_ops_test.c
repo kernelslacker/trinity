@@ -379,6 +379,7 @@ struct slot {
 	const unsigned int *oneof;	/* SB_ONEOF: the values accepted */
 	unsigned int n_oneof;
 	unsigned int oneof_seen;	/* one bit per listed value drawn */
+	bool be;			/* SB_ONEOF: a big-endian u32 */
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	uint64_t or_all, and_all, min_v, max_v;
 	bool required;			/* its handler needs it */
@@ -414,6 +415,11 @@ struct slot {
 #define S_U32_ONEOF(id, vals, ...) \
 	{ id, SK_BYTES, 4, 4, .bound = SB_ONEOF, .oneof = vals, \
 	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
+/* An IPv4 address a handler reads with nla_get_in_addr(), whose policy
+ * types it a plain NLA_U32. */
+#define S_BE32_ONEOF(id, vals, ...) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_ONEOF, .oneof = vals, \
+	  .n_oneof = ARRAY_SIZE(vals), .be = true, ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 #define S_U16_ONEOF(id, vals, ...) \
@@ -2194,9 +2200,12 @@ extern struct genl_family_grammar fam_l2tp;
  * register, and an L2TPv3 session's L2SPEC_TYPE is NONE or DEFAULT.  The
  * other ops find a tunnel by its conn id, a session by its IFNAME or else
  * by the conn and session ids, which are marked.  The ids are 1 to 8, so
- * that they name what a create made.  NOOP reads nothing.
+ * that they name what a create made.  An unmanaged tunnel's socket binds
+ * to IP_SADDR, which has to be the host's or any, and connects to
+ * IP_DADDR.  NOOP reads nothing.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
+static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
 static const unsigned int l2tp_pwtypes[] = { L2TP_PWTYPE_ETH, L2TP_PWTYPE_PPP };
 
 static struct slot l2tp_tunnel_create[] = {
@@ -2205,8 +2214,8 @@ static struct slot l2tp_tunnel_create[] = {
 	S_U8_ONEOF(L2TP_ATTR_PROTO_VERSION, l2tp_versions, .required = true),
 	S_U16_RANGE(L2TP_ATTR_ENCAP_TYPE, 0, 1, .required = true),
 	S_U32(L2TP_ATTR_FD),
-	S_U32(L2TP_ATTR_IP_SADDR),
-	S_U32(L2TP_ATTR_IP_DADDR),
+	S_BE32_ONEOF(L2TP_ATTR_IP_SADDR, l2tp_inaddrs),
+	S_BE32_ONEOF(L2TP_ATTR_IP_DADDR, l2tp_inaddrs),
 	S_BLOB(L2TP_ATTR_IP6_SADDR, 0, 16),
 	S_BLOB(L2TP_ATTR_IP6_DADDR, 0, 16),
 	S_U16(L2TP_ATTR_UDP_SPORT),
@@ -2804,6 +2813,8 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 				 * a byte, a u16, a u32 or an NLA_UINT's 8. */
 				memcpy(&v, p + off + NLA_HDRLEN,
 				       plen < sizeof(v) ? plen : sizeof(v));
+				if (slot->be)
+					v = ntohl((uint32_t) v);
 				tally_bound(slot, v);
 			}
 			break;
@@ -3688,14 +3699,16 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
  * host order; a byte's range, one of them pinned to one number; an
  * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof and
- * a u16 oneof of three values, in host order, and a byte's; an array of
- * two elements at most; and a nest of two children at most.
+ * a u16 oneof of three values, in host order, a byte's, and a big-endian
+ * u32's; an array of two elements at most; and a nest of two children at
+ * most.
  */
 static void check_bounded_tables(void)
 {
 	static const unsigned int oneof_values[] = { 2, 17, 300 };
 	static const unsigned int u16_oneof_values[] = { 2, 10, 40000 };
 	static const unsigned int u8_oneof_values[] = { 2, 3, 200 };
+	static const unsigned int be32_oneof_values[] = { 0, 0x7f000001, 0xc0a80001 };
 	static const struct nla_attr_spec leaf[] = {
 		{ 1, NLA_KIND_U32, 4 },
 	};
@@ -3721,6 +3734,8 @@ static void check_bounded_tables(void)
 		  .n_oneof = ARRAY_SIZE(u16_oneof_values) },
 		{ 18, NLA_KIND_U8_ONEOF, 0, 0, .oneof = u8_oneof_values,
 		  .n_oneof = ARRAY_SIZE(u8_oneof_values) },
+		{ 19, NLA_KIND_BE32_ONEOF, 0, 0, .oneof = be32_oneof_values,
+		  .n_oneof = ARRAY_SIZE(be32_oneof_values) },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3742,6 +3757,7 @@ static void check_bounded_tables(void)
 		S_U32_ONEOF(16, oneof_values),
 		S_U16_ONEOF(17, u16_oneof_values),
 		S_U8_ONEOF(18, u8_oneof_values),
+		S_BE32_ONEOF(19, be32_oneof_values),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3806,9 +3822,9 @@ static void check_sockaddr_kind(void)
 
 /*
  * Whether spec declares slot's bound: a mask or range kind at the slot's
- * width, with the bound's ends, a oneof kind at the slot's width, a byte,
- * u16 or u32, with the same values, or a nest or array capped where its
- * handler caps it.  A byte's range
+ * width, with the bound's ends, a oneof kind at the slot's width and byte
+ * order, a byte, u16, u32 or big-endian u32, with the same values, or a
+ * nest or array capped where its handler caps it.  A byte's range
  * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
  * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
  * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
@@ -3825,7 +3841,8 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 	if (slot->bound == SB_NONE)
 		return false;
 	if (slot->bound == SB_ONEOF) {
-		unsigned short kind = slot->max == 1 ? NLA_KIND_U8_ONEOF :
+		unsigned short kind = slot->be ? NLA_KIND_BE32_ONEOF :
+				      slot->max == 1 ? NLA_KIND_U8_ONEOF :
 				      slot->max == 2 ? NLA_KIND_U16_ONEOF :
 						       NLA_KIND_U32_ONEOF;
 		unsigned int i, j;
@@ -3917,6 +3934,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 			  spec->kind == NLA_KIND_U32_ONEOF ||
 			  spec->kind == NLA_KIND_U16_ONEOF ||
 			  spec->kind == NLA_KIND_U8_ONEOF ||
+			  spec->kind == NLA_KIND_BE32_ONEOF ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||

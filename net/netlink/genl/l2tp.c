@@ -33,11 +33,15 @@
  * l2tp_nl_cmd_tunnel_create() answers -EINVAL without the two conn ids,
  * PROTO_VERSION and ENCAP_TYPE, which has to be UDP or IP, and then wants
  * FD, the socket of a managed tunnel, or an address pair, IPv6 before
- * IPv4, for the socket it makes itself, which a mark cannot say.  The
- * version is 2 or 3, and UDP_CSUM is read as a flag.  The IPv6 addresses
- * are NLA_BINARYs of up to 16 bytes, which the handler reads as 16.
+ * IPv4, for the socket it makes itself, which a mark cannot say.  That
+ * socket binds to the source address, which has to be the host's or any
+ * for the bind to succeed, so the IPv4 pair is any or loopback, read with
+ * nla_get_in_addr() in network order.  The version is 2 or 3, and
+ * UDP_CSUM is read as a flag.  The IPv6 addresses are NLA_BINARYs of up
+ * to 16 bytes, which the handler reads as 16.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
+static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
 
 static const struct nla_attr_spec l2tp_tunnel_create_attrs[] = {
 	{ L2TP_ATTR_CONN_ID,		NLA_KIND_U32_RANGE, L2TP_ID_MAX, 1,
@@ -50,8 +54,10 @@ static const struct nla_attr_spec l2tp_tunnel_create_attrs[] = {
 	{ L2TP_ATTR_ENCAP_TYPE,		NLA_KIND_U16_RANGE, L2TP_ENCAPTYPE_IP,
 	  L2TP_ENCAPTYPE_UDP, .required = true },
 	{ L2TP_ATTR_FD,			NLA_KIND_U32,    4 },
-	{ L2TP_ATTR_IP_SADDR,		NLA_KIND_U32,    4 },
-	{ L2TP_ATTR_IP_DADDR,		NLA_KIND_U32,    4 },
+	{ L2TP_ATTR_IP_SADDR,		NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = l2tp_inaddrs, .n_oneof = ARRAY_SIZE(l2tp_inaddrs) },
+	{ L2TP_ATTR_IP_DADDR,		NLA_KIND_BE32_ONEOF, 0, 0,
+	  .oneof = l2tp_inaddrs, .n_oneof = ARRAY_SIZE(l2tp_inaddrs) },
 	{ L2TP_ATTR_IP6_SADDR,		NLA_KIND_BINARY, 16 },
 	{ L2TP_ATTR_IP6_DADDR,		NLA_KIND_BINARY, 16 },
 	{ L2TP_ATTR_UDP_SPORT,		NLA_KIND_U16,    2 },
