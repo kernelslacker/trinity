@@ -106,6 +106,7 @@ void gen_arg_time_self_check(void);
 void futex_self_check(void);
 void rt_sigaction_self_check(void);
 void epoll_volatility_self_check(void);
+void userfaultfd_arm_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -593,6 +594,11 @@ int main(int argc, char **argv)
 	printf("  epoll_volatility_self_check ... ");
 	fflush(stdout);
 	epoll_volatility_self_check();
+	printf("OK\n");
+
+	printf("  userfaultfd_arm_self_check ... ");
+	fflush(stdout);
+	userfaultfd_arm_self_check();
 	printf("OK\n");
 
 	return 0;

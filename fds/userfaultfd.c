@@ -87,6 +87,17 @@ static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 	output(2, "userfault fd:%d flags:%x scope:%d\n", uo->fd, uo->flags, scope);
 }
 
+/* One UFFDIO_API handshake asking for @features. */
+static int uffd_handshake(int fd, __u64 features)
+{
+	struct uffdio_api api;
+
+	memset(&api, 0, sizeof(api));
+	api.api = UFFD_API;
+	api.features = features;
+	return ioctl(fd, UFFDIO_API, &api);
+}
+
 /*
  * Perform the UFFDIO_API handshake so the kernel accepts subsequent
  * userfaultfd ioctls (UFFDIO_REGISTER, UFFDIO_COPY, etc.) on this fd.
@@ -99,8 +110,9 @@ static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
  * it every such fault is answered VM_FAULT_SIGBUS; the fault
  * injectors' guard recovers a store, and a kernel copy gets EFAULT.
  * The kernel arms an fd once, with the first handshake that succeeds,
- * so one refused for a feature this kernel lacks retries with SIGBUS
- * alone, and an fd neither arms must not be pooled, where a fuzzed
+ * so one refused for the RWP bits, which kernels before 7.3 lack, goes
+ * again without them, one refused for another feature retries with
+ * SIGBUS alone, and an fd none arms must not be pooled, where a fuzzed
  * UFFDIO_API could arm it without SIGBUS.
  */
 static bool arm_userfaultfd(int fd)
@@ -129,23 +141,27 @@ static bool arm_userfaultfd(int fd)
 		UFFD_FEATURE_WP_ASYNC,
 		UFFD_FEATURE_MOVE,
 	};
-	struct uffdio_api api;
+	__u64 features = UFFD_FEATURE_SIGBUS, rwp = 0;
 	unsigned int i;
 
-	memset(&api, 0, sizeof(api));
-	api.api = UFFD_API;
-	api.features = UFFD_FEATURE_SIGBUS;
 	for (i = 0; i < ARRAY_SIZE(feature_flags); i++) {
 		if (rnd_u32() & 1)
-			api.features |= feature_flags[i];
+			features |= feature_flags[i];
 	}
-	if (ioctl(fd, UFFDIO_API, &api) == 0)
-		return true;
+	/* RWP lets UFFDIO_REGISTER take MODE_RWP, and RWP_ASYNC, which the
+	 * kernel refuses without it, lets UFFDIO_SET_MODE run.  A fault on
+	 * a read-write-protected range still meets SIGBUS. */
+	if (RAND_BOOL()) {
+		rwp = UFFD_FEATURE_RWP;
+		if (RAND_BOOL())
+			rwp |= UFFD_FEATURE_RWP_ASYNC;
+	}
 
-	memset(&api, 0, sizeof(api));
-	api.api = UFFD_API;
-	api.features = UFFD_FEATURE_SIGBUS;
-	return ioctl(fd, UFFDIO_API, &api) == 0;
+	if (uffd_handshake(fd, features | rwp) == 0)
+		return true;
+	if (rwp != 0 && errno == EINVAL && uffd_handshake(fd, features) == 0)
+		return true;
+	return uffd_handshake(fd, UFFD_FEATURE_SIGBUS) == 0;
 }
 
 /*

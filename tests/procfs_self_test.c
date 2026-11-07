@@ -627,6 +627,11 @@ static enum scan_answer pagemap_scan_answer(const struct pm_scan_arg *a)
 int __real_ioctl(int fd, unsigned long request, ...);
 int __wrap_ioctl(int fd, unsigned long request, ...);
 
+/* Another test's stand-in for the requests other than PAGEMAP_SCAN, which
+ * passes on to __real_ioctl() those it does not answer; NULL sends them
+ * all to the kernel. */
+int (*fake_ioctl_hook)(int fd, unsigned long request, void *arg);
+
 /*
  * A PAGEMAP_SCAN is answered by the model and never reaches the kernel.  The
  * only one the group sends is the probe for the categories the kernel has,
@@ -648,7 +653,9 @@ int __wrap_ioctl(int fd, unsigned long request, ...)
 	va_end(ap);
 
 	if (request != PAGEMAP_SCAN)
-		return __real_ioctl(fd, request, arg);
+		return fake_ioctl_hook != NULL ?
+		       fake_ioctl_hook(fd, request, arg) :
+		       __real_ioctl(fd, request, arg);
 
 	a = arg;
 	bits = a->category_inverted | a->category_mask |

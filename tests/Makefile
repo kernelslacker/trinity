@@ -1068,6 +1068,12 @@ PARENT_SRCS	+= $(TOP)/childops/misc/epoll-volatility.c \
 		   $(TOP)/rand/interesting-numbers.c
 FAKE_SRCS	+= epoll_volatility_test.c
 
+# fds/userfaultfd.c brings the userfaultfd provider, whose child-init
+# hook userfaultfd_arm_test.c runs, answering the handshake itself
+# through procfs_self_test.c's ioctl() stand-in.
+PARENT_SRCS	+= $(TOP)/fds/userfaultfd.c
+FAKE_SRCS	+= userfaultfd_arm_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
