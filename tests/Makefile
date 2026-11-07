@@ -108,6 +108,12 @@ LDFLAGS		+= -Wl,--wrap=get_num_fds
 # sanitiser_owned_mask_test.c wraps it with one that records the slot.
 LDFLAGS		+= -Wl,--wrap=fill_arg
 
+# get_rand_testfile_fd() stand-in: fds/testfiles.c is linked for the
+# testfile pool's init and defines the real picker, which reads a pool no
+# sanitiser test installs.  arg_coupling_test.c wraps it with one that finds
+# no testfile.
+LDFLAGS		+= -Wl,--wrap=get_rand_testfile_fd
+
 # get_objhead() stand-in: objects/registry.c is linked for the
 # for_each_obj snapshot, and its get_objhead() would resolve pools
 # through childdata no test builds.  fake_objects.c wraps it with the
@@ -549,6 +555,16 @@ FAKE_SRCS	+= stats_render_test.c \
 PARENT_SRCS	+= $(TOP)/fds/canary.c \
 		   $(TOP)/childops/mm/pagecache-canary-check.c
 FAKE_SRCS	+= canary_path_test.c
+
+# fds/testfiles.c brings the testfile pool's provider, which registers itself
+# at load time, and fds/files.c the fopen() opener it draws from.
+# testfile_pool_test.c runs the provider's init hook against the object-pool
+# hooks in fake_objects.c, with the mmap_fd() of the mm/maps-lifecycle.c
+# linked below mapping each fd.  Same section-per-function treatment as the
+# parent TUs above.
+PARENT_SRCS	+= $(TOP)/fds/testfiles.c \
+		   $(TOP)/fds/files.c
+FAKE_SRCS	+= testfile_pool_test.c
 
 # syscalls/fs/close.c, close_range.c and fcntl.c and
 # syscalls/pidfd/pidfd_getfd.c bring syscall_close, syscall_close_range,

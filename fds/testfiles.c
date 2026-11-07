@@ -44,9 +44,6 @@ static int open_testfile(struct object *obj, char *filename)
 
 	obj->testfileobj.filename = filename;
 
-	/* file might be around from an earlier run, nuke it. */
-	(void) unlink(filename);
-
 	if (RAND_BOOL()) {
 		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
 		int flags = 0;
@@ -77,13 +74,26 @@ static int open_testfile_fds(void)
 {
 	struct objhead *head;
 	struct object *obj = NULL;
-	unsigned int i = 1, nr = 0;
+	struct object *opened[MAX_TESTFILE_FDS];
+	char name[32];
+	unsigned int i, nr = 0;
 	unsigned int fails = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	head->destroy = &testfile_destructor;
 	head->dump = &testfile_dump;
 
+	/*
+	 * The files might be around from an earlier run, so nuke them, once:
+	 * an unlink per open would strand the earlier fds of a name on an
+	 * orphaned inode the path-side calls never reach.
+	 */
+	for (i = 1; i <= MAX_TESTFILES; i++) {
+		snprintf(name, sizeof(name), "trinity-testfile%u", i);
+		(void) unlink(name);
+	}
+
+	i = 1;
 	while (nr < MAX_TESTFILE_FDS) {
 		char *filename;
 		int fd;
@@ -120,14 +130,11 @@ static int open_testfile_fds(void)
 			i++;
 			if (i > MAX_TESTFILES)
 				i = 1;
-			nr++;
+			opened[nr++] = obj;
 
 			fails = 0;
 
 			obj = NULL;	// Make it alloc a new one.
-
-			mmap_fd(fd, filename, page_size, PROT_READ|PROT_WRITE, OBJ_MMAP_TESTFILE);
-
 		} else {
 			free_shared_str(filename);
 			obj->testfileobj.filename = NULL;
@@ -141,6 +148,19 @@ static int open_testfile_fds(void)
 
 	if (obj != NULL)
 		tracked_free_now(obj);
+
+	/*
+	 * Size the files only now every fd is open, as the fopen arm's "w+"
+	 * truncates, then map each fd: mmap_fd() keeps no mapping of an
+	 * empty file.
+	 */
+	for (i = 1; i <= MAX_TESTFILES; i++) {
+		snprintf(name, sizeof(name), "trinity-testfile%u", i);
+		(void) truncate(name, page_size);
+	}
+	for (i = 0; i < nr; i++)
+		mmap_fd(opened[i]->testfileobj.fd, opened[i]->testfileobj.filename,
+			page_size, PROT_READ|PROT_WRITE, OBJ_MMAP_TESTFILE);
 
 	return true;
 }

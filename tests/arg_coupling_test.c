@@ -51,7 +51,6 @@
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
 #include "shm.h"			/* shm->stats */
 #include "syscall.h"			/* struct syscallrecord */
-#include "testfile.h"			/* get_rand_testfile_fd */
 #include "syscalls/syscalls.h"		/* syscall_read, syscall_pread64 */
 #include "utils-macros.h"		/* ARRAY_SIZE */
 #include "utils-mem.h"			/* log_mm_syscall_post_gate_heap_slip */
@@ -99,7 +98,8 @@ char *get_testfile_path(void)
 	return fake_testfile_path != NULL ? strdup(fake_testfile_path) : NULL;
 }
 
-int get_rand_testfile_fd(void)
+int __wrap_get_rand_testfile_fd(void);
+int __wrap_get_rand_testfile_fd(void)
 {
 	return -1;
 }
