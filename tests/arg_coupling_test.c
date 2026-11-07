@@ -3835,12 +3835,51 @@ static void move_pages_needs_its_snapshot(struct syscallentry *entry)
 }
 
 /* move_pages's final count moves no more pages than its arrays hold. */
+/* The pages array is what the kernel reads the page addresses from, as
+ * compat_uptr_t entries for a compat call (mm/migrate.c), so each of its
+ * nr_pages entries, read at the call's width, names the mapping get_map()
+ * handed out, a low one, as get_map() picks for a compat call. */
+static void move_pages_array_follows_abi(struct syscallentry *entry,
+					 bool compat)
+{
+	struct syscallrecord *mrec = NULL;
+	unsigned long i;
+	unsigned int tries;
+
+	fake_map_drawn = &pool_obj.map;
+	for (tries = 0; tries < 100; tries++) {
+		mrec = mm_call(entry);
+		pool_obj.map.ptr = (void *) LOW_POOL_MAP;
+		mrec->do32bit = compat;
+		entry->sanitise(mrec);
+		if (mrec->a2 >= 2)
+			break;
+		end_move_pages(entry, mrec);
+	}
+	if (tries == 100)
+		BUG("move_pages: the sanitiser never drew two pages");
+
+	for (i = 0; i < mrec->a2; i++) {
+		unsigned long p = compat ? ((uint32_t *) mrec->a3)[i] :
+					   ((unsigned long *) mrec->a3)[i];
+
+		if (p != LOW_POOL_MAP)
+			BUG("move_pages: a pages entry read at the call's width names no page drawn");
+	}
+	end_move_pages(entry, mrec);
+	fake_map_drawn = NULL;
+}
+
 static void move_pages_held_to_arrays(void)
 {
 	struct syscallentry move_pages_entry = syscall_move_pages;
 
 	move_pages_count_held_to_arrays(&move_pages_entry);
 	move_pages_needs_its_snapshot(&move_pages_entry);
+	move_pages_array_follows_abi(&move_pages_entry, false);
+#ifdef ARCH_IS_BIARCH
+	move_pages_array_follows_abi(&move_pages_entry, true);
+#endif
 	fake_this_child = NULL;
 }
 

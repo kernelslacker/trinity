@@ -39,6 +39,9 @@ struct move_pages_post_state {
 
 static void sanitise_move_pages(struct syscallrecord *rec)
 {
+	/* The page addresses, compat_uptr_t entries for a compat call,
+	 * whose kernel reads them at that width (mm/migrate.c). */
+	size_t ptr_size = rec->do32bit ? sizeof(uint32_t) : sizeof(unsigned long);
 	struct move_pages_post_state *snap;
 	int *nodes, *status;
 	unsigned long *page_alloc;
@@ -59,12 +62,17 @@ static void sanitise_move_pages(struct syscallrecord *rec)
 
 	for (i = 0; i < count; i++) {
 		struct map *map;
+		unsigned long addr;
 
 		map = get_map();
-		page_alloc[i] = (unsigned long) (map ? map->ptr : NULL);
+		addr = (unsigned long) (map ? map->ptr : NULL);
+		if (rec->do32bit)
+			((uint32_t *) page_alloc)[i] = (uint32_t) addr;
+		else
+			page_alloc[i] = addr;
 	}
 	rec->a3 = (unsigned long) page_alloc;
-	avoid_shared_buffer_inout(&rec->a3, count * sizeof(unsigned long));
+	avoid_shared_buffer_inout(&rec->a3, count * ptr_size);
 
 	/* nodes = array of ints specifying desired location for each page */
 	nodes = zmalloc_tracked(count * sizeof(int));
