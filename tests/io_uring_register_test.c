@@ -3,7 +3,8 @@
  * (syscalls/io_uring/io_uring_register.c): its picker reaches every
  * opcode the descriptor lists, and, since the kernel masks the
  * registered-ring modifier off the opcode before it dispatches, a draw
- * carrying the modifier gets its base opcode's payload.
+ * carrying the modifier gets its base opcode's payload.  A payload's
+ * nr_args is the one the kernel checks for before the handler runs.
  */
 
 #include <stdbool.h>
@@ -16,6 +17,7 @@
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_io_uring_register */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 
@@ -39,6 +41,19 @@ static bool draw(struct syscallrecord *rec, unsigned long opcode)
 	fake_random_fd_empty = false;
 	return i < DRAWS;
 }
+
+/* The nr_args __io_uring_register() insists on for each, or io_query()
+ * and io_zcrx_ctrl() for the two it hands the count. */
+static const struct {
+	unsigned long opcode;
+	unsigned long nr_args;
+} counts[] = {
+	{ IORING_REGISTER_NAPI, 1 },
+	{ IORING_UNREGISTER_NAPI, 1 },
+	{ IORING_REGISTER_RESIZE_RINGS, 1 },
+	{ IORING_REGISTER_QUERY, 0 },
+	{ IORING_REGISTER_ZCRX_CTRL, 0 },
+};
 
 void io_uring_register_self_check(void);
 void io_uring_register_self_check(void)
@@ -68,5 +83,16 @@ void io_uring_register_self_check(void)
 			BUG("io_uring_register: the picker leaves out a listed opcode");
 		}
 		free((void *) rec.post_state);
+	}
+
+	for (i = 0; i < ARRAY_SIZE(counts); i++) {
+		if (!draw(&rec, counts[i].opcode))
+			BUG("io_uring_register: an opcode with a fixed count was never drawn");
+		free((void *) rec.post_state);
+		if (rec.a4 != counts[i].nr_args) {
+			fprintf(stderr, "opcode %#lx: nr_args %lu, the kernel takes %lu\n",
+				counts[i].opcode, rec.a4, counts[i].nr_args);
+			BUG("io_uring_register: a payload hands nr_args the kernel refuses");
+		}
 	}
 }

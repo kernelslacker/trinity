@@ -242,8 +242,9 @@ struct ioring_register_payload ioring_reg_iowq_payload(unsigned int opcode)
 
 /*
  * IORING_REGISTER_NAPI / IORING_UNREGISTER_NAPI:
- * arg = struct io_uring_napi, nr_args = 0.  Default opcode field
- * to IO_URING_NAPI_REGISTER_OP (0) so io_register_napi reaches
+ * arg = struct io_uring_napi, nr_args = 1, which __io_uring_register()
+ * insists on for both.  Default opcode field to
+ * IO_URING_NAPI_REGISTER_OP (0) so io_register_napi reaches
  * io_napi_register_napi() rather than rejecting at the opcode
  * switch.  Occasionally fuzz the opcode/tracking-strategy fields.
  */
@@ -262,7 +263,7 @@ struct ioring_register_payload ioring_reg_napi_payload(void)
 		n->op_param = rnd_u32();
 	}
 	p.arg = (unsigned long) n;
-	p.nr = 0;
+	p.nr = 1;
 	p.len = sizeof(*n);
 	return p;
 }
@@ -473,8 +474,9 @@ struct ioring_register_payload ioring_reg_zcrx_ifq_payload(void)
 
 /*
  * IORING_REGISTER_RESIZE_RINGS: arg = struct io_uring_params,
- * nr_args = 0.  Kernel-side this is gated on the source ring
- * having been created with IORING_SETUP_DEFER_TASKRUN; trinity
+ * nr_args = 1, which __io_uring_register() insists on.  Kernel-side
+ * this is gated on the source ring having been created with
+ * IORING_SETUP_DEFER_TASKRUN; trinity
  * does not control how its ARG_FD_IO_URING fd was set up, so most
  * invocations will be rejected at io_register_resize_rings's
  * IORING_SETUP_DEFER_TASKRUN check.  Still seed sq_entries /
@@ -494,7 +496,7 @@ struct ioring_register_payload ioring_reg_resize_rings_payload(void)
 		up->cq_entries = up->sq_entries * 2;
 	}
 	p.arg = (unsigned long) up;
-	p.nr = 0;
+	p.nr = 1;
 	p.len = sizeof(*up);
 	return p;
 }
@@ -618,7 +620,8 @@ struct ioring_register_payload ioring_reg_rsrc_update_payload(unsigned int opcod
 
 /*
  * IORING_REGISTER_QUERY: arg = chain of struct io_uring_query_hdr,
- * nr_args = chain length.  io_query walks a user-pointer linked list:
+ * nr_args = 0, as io_query() insists: the chain ends at the first zero
+ * next_entry, not at a count.  io_query walks a user-pointer linked list:
  * each hdr has next_entry (next user ptr or 0), query_data (per-op
  * union payload ptr), query_op (selector 0..2), size (payload bytes),
  * result (kernel write-back).  Allocate 1-3 hdrs contiguously and
@@ -659,13 +662,14 @@ struct ioring_register_payload ioring_reg_query_payload(void)
 		}
 	}
 	p.arg = (unsigned long) chain;
-	p.nr = nr;
+	p.nr = 0;
 	p.len = nr * sizeof(*chain);
 	return p;
 }
 
 /*
- * IORING_REGISTER_ZCRX_CTRL: arg = struct zcrx_ctrl, nr_args = 1.
+ * IORING_REGISTER_ZCRX_CTRL: arg = struct zcrx_ctrl, nr_args = 0, as
+ * io_zcrx_ctrl() insists.
  * op selects the union arm (FLUSH_RQ=0 / EXPORT=1 / ARM_EVENT=2 /
  * ADD_AREA=3); 75% pick a valid op, 25% garbage.  __resv must be
  * zero or the reservedness check fires.  zcrx_id picks a small
@@ -718,7 +722,7 @@ struct ioring_register_payload ioring_reg_zcrx_ctrl_payload(void)
 		}
 	}
 	p.arg = (unsigned long) z;
-	p.nr = 1;
+	p.nr = 0;
 	p.len = sizeof(*z);
 	return p;
 }
