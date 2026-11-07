@@ -270,7 +270,6 @@ $(OBJDIR)%.o : %.c | check-config $(VERSION_H)
 
 clean:
 	@rm -f $(OBJS)
-	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o stats/json/*.o stats/periodic/*.o tables/*.o utils/*.o
 	@rm -f core.*
 	@rm -f trinity $(FLAVOR_STAMP)
 	@rm -rf build-asan
