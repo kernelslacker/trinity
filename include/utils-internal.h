@@ -48,6 +48,18 @@ extern unsigned long shared_region_bitmap[SHARED_BITMAP_NWORDS];
 extern unsigned long tracked_size_bm;
 
 /*
+ * Walk every tracked region: shared_regions[], then the overflow tail.
+ * @i counts across both arrays and @r points at the entry, so a
+ * lookup cannot miss a region parked in the tail.
+ */
+#define for_each_shared_region(i, r)					\
+	for ((i) = 0;							\
+	     (i) < nr_shared_regions + nr_shared_regions_overflow &&	\
+	     ((r) = (i) < nr_shared_regions ? &shared_regions[(i)] :	\
+		    &shared_regions_overflow[(i) - nr_shared_regions], 1);	\
+	     (i)++)
+
+/*
  * Inverse-polarity heap-range check exposed for post_snapshot use.
  * Defined in utils/heap_bounds.c alongside heap_bounds_init() and
  * the extra_heap_regions[] snapshot; the post_snapshot cluster needs

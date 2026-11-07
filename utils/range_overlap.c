@@ -55,29 +55,12 @@ static bool shared_regions_exact_overlap(unsigned long addr,
 					 unsigned long len,
 					 unsigned long end)
 {
+	const struct shared_region_entry *r;
 	unsigned int i;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		unsigned long rstart = shared_regions[i].addr;
-		unsigned long rsize = shared_regions[i].size;
-		unsigned long rend;
-
-		if (rsize == 0)
-			continue;
-		rend = rstart + rsize;
-
-		if (len == 0) {
-			if (addr >= rstart && addr < rend)
-				return true;
-		} else {
-			if (addr < rend && rstart < end)
-				return true;
-		}
-	}
-
-	for (i = 0; i < nr_shared_regions_overflow; i++) {
-		unsigned long rstart = shared_regions_overflow[i].addr;
-		unsigned long rsize = shared_regions_overflow[i].size;
+	for_each_shared_region(i, r) {
+		unsigned long rstart = r->addr;
+		unsigned long rsize = r->size;
 		unsigned long rend;
 
 		if (rsize == 0)
