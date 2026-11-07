@@ -139,16 +139,17 @@ static void sanitise_capget(struct syscallrecord *rec)
 }
 
 /*
- * Oracle: capget(header, dataptr) writes the calling task's effective,
- * permitted, and inheritable capability masks out to the user buffer.
- * The masks for a given task are stable across consecutive calls — they
- * mutate only via capset(), the setresuid()-tracking ambient/keep flow,
- * or exec's cap-clear path.  Trinity children don't call capset on
- * themselves and don't exec, so per-task cap masks are effectively
- * immutable across the nanosecond window between the original syscall
- * return and our post-hook re-call.  Two reads from the same task
- * therefore must produce byte-identical mask sets.  A divergence is not
- * benign drift — it points at one of:
+ * Oracle: capget(header, dataptr) writes the effective, permitted and
+ * inheritable capability masks of the task the header names out to the
+ * user buffer.  A task's masks move only through its own calls (capset(),
+ * a setuid-family call's cap fixup, unshare(CLONE_NEWUSER), exec), and the
+ * caller makes none between the original syscall return and our
+ * post-hook re-call, so a header naming the caller (pid 0 or its own tid)
+ * must read back byte-identical masks.  Another task's can move in
+ * between -- a sibling's fuzzed capset() or unshare(), a just-forked
+ * sibling's capset(empty), the userns lane's unshare() -- so a header
+ * naming one is not re-called.  A divergence is not benign drift — it
+ * points at one of:
  *
  *   - copy_to_user mis-write that leaves torn cap masks in the user
  *     buffer.
@@ -233,6 +234,8 @@ static void post_capget(struct syscallrecord *rec)
 	if (!post_snapshot_or_skip(&hdr_first,
 				   (const void *)(unsigned long) snap->header,
 				   sizeof(hdr_first)))
+		goto out_free;
+	if (hdr_first.pid != 0 && hdr_first.pid != gettid())
 		goto out_free;
 	slots = (hdr_first.version == _LINUX_CAPABILITY_VERSION_1) ? 1 : 2;
 	if (!post_snapshot_or_skip(data_first,

@@ -8,12 +8,14 @@
  * the untouched buffers it reports, and the PR_FUTEX_HASH -EBUSY tally
  * by what it counts.  The handlers run as shipped; the post_state
  * table, post_snapshot_or_skip() and the bump itself are faked here,
- * and bpf's pool publishes are counted through landlock_test.c's
- * publish_resource() hook.
+ * bpf's pool publishes are counted through landlock_test.c's
+ * publish_resource() hook, and capget's re-call goes to a model through
+ * its syscall() hook.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/fanotify.h>
 #include <limits.h>
 #include <sched.h>
@@ -28,6 +30,7 @@
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -893,6 +896,69 @@ static void getcpu_spliced(void)
 	}
 }
 
+extern bool (*fake_syscall)(long number, const unsigned long a[6],
+			    long *ret);	/* landlock_test.c */
+extern bool fake_pid_draws;	/* dup_pool_test.c */
+
+/* capget answering with a set the call before it did not see, as a task's
+ * set reads once it has moved between the two. */
+static bool model_moved_caps(long number, const unsigned long a[6], long *ret)
+{
+	struct __user_cap_data_struct *data = (void *) a[1];
+
+	if (number != __NR_capget)
+		return false;
+	memset(data, 0, 2 * sizeof(*data));
+	data[0].permitted = 1;
+	*ret = 0;
+	return true;
+}
+
+/* capget calls built by its sanitiser with the header naming @pid, on
+ * which the kernel wrote an empty set and a re-call reads another; the
+ * anomalies the sampled re-call reports. */
+static unsigned long capget_anomalies(pid_t pid)
+{
+	unsigned long before = shm->stats.oracle.capget_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	fake_syscall = model_moved_caps;
+	fake_pid_draws = true;
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		struct __user_cap_header_struct *hdr;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a2 = (unsigned long) get_writable_address(2 * sizeof(struct __user_cap_data_struct));
+		syscall_capget.sanitise(&rec);
+		hdr = (void *) rec.a1;
+		hdr->version = _LINUX_CAPABILITY_VERSION_3;
+		hdr->pid = pid;
+		memset((void *) rec.a2, 0, 2 * sizeof(struct __user_cap_data_struct));
+		rec.retval = 0;
+		syscall_capget.post(&rec);
+	}
+	fake_pid_draws = false;
+	fake_syscall = NULL;
+	return shm->stats.oracle.capget_oracle_anomalies - before;
+}
+
+/* Only a call on the caller is re-called: another task's set moves with
+ * its own capset() or unshare() between the call and the re-call. */
+static void capget_target(void)
+{
+	pid_t self = gettid();
+
+	if (capget_anomalies(self + 1) != 0) {
+		fprintf(stderr, "capget: a call on another task was re-called\n");
+		failed++;
+	}
+	if (capget_anomalies(0) == 0 || capget_anomalies(self) == 0) {
+		fprintf(stderr, "capget: a call on the caller was not re-called\n");
+		failed++;
+	}
+}
+
 /* setgroups calls the sanitiser built for @built gids, which the kernel
  * ran with @ran, the @ran at @gids, and answered 0; the anomalies the
  * sampled getgroups() and /proc/self/status compares report. */
@@ -1640,6 +1706,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_len();
 	sched_getaffinity_pid();
 	getcpu_spliced();
+	capget_target();
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();

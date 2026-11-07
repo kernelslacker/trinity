@@ -325,10 +325,11 @@ void remove_object_by_fd(int fd)
 	global_removes++;
 }
 
-/* fcntl's sanitiser picks the owner pid for F_SETOWN, and pick_clockid()
- * the target of a process CPU clock.  These cases run only post handlers,
- * so a draw is a BUG unless a case that runs such a sanitiser sets
- * fake_pid_draws, which hands out the test's own pid. */
+/* fcntl's sanitiser picks the owner pid for F_SETOWN, pick_clockid() the
+ * target of a process CPU clock, and capget's sanitiser the task its
+ * header names.  These cases run only post handlers, so a draw is a BUG
+ * unless a case that runs such a sanitiser sets fake_pid_draws, which
+ * hands out the test's own pid. */
 bool fake_pid_draws;
 
 unsigned int get_pid(void)

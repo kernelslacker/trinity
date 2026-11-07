@@ -924,9 +924,11 @@ FAKE_SRCS	+= landlock_test.c
 PARENT_SRCS	+= $(TOP)/lib/numa.c
 FAKE_SRCS	+= numa_test.c
 
-# syscalls/sched/getcpu.c brings getcpu, whose post handler
-# post_oracle_test.c drives through its own sanitiser.
-PARENT_SRCS	+= $(TOP)/syscalls/sched/getcpu.c
+# syscalls/sched/getcpu.c and syscalls/cred/capget.c bring getcpu and
+# capget, whose post handlers post_oracle_test.c drives through their own
+# sanitisers, capget's re-call against a model through fake_syscall.
+PARENT_SRCS	+= $(TOP)/syscalls/sched/getcpu.c \
+		   $(TOP)/syscalls/cred/capget.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
