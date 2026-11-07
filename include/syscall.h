@@ -505,8 +505,9 @@ struct syscall_runtime {
 	 * Cost classification is authoritative from syscall_is_expensive()
 	 * (which reads the read-only EXPENSIVE bitmap built once at
 	 * select_syscall_tables() time), never inferred from array
-	 * contents or from a live-mutable shm counter -- see cost_pool_of()
-	 * in tables.c.  Mutated only under shm->syscalltable_lock.
+	 * contents or from a live-mutable shm counter -- see
+	 * tables/table-activate.c.  Mutated only under
+	 * shm->syscalltable_lock.
 	 */
 	unsigned int pool_number;
 	/*

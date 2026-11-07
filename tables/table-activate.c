@@ -18,10 +18,10 @@
 #include "utils.h"
 
 /*
- * Authoritative cost-pool classification for a table index.  Reads the
- * read-only EXPENSIVE bitmap that select_syscall_tables() built once at
- * init from the syscallentry->flags & EXPENSIVE flag; the bitmap is
- * never modified at runtime, so this is safe from concurrent scribbles
+ * The cost pool a table index belongs in is syscall_is_expensive()'s
+ * answer, read from the EXPENSIVE bitmap select_syscall_tables() built
+ * once at init from the syscallentry->flags & EXPENSIVE flag; the bitmap
+ * is never modified at runtime, so it is safe from concurrent scribbles
  * onto the shared syscallentry copy.
  *
  * NEVER infer the pool from a live-mutable counter or from the current
@@ -31,10 +31,6 @@
  * detected by the partition-completeness assertion, not silently
  * ratified by a self-consistency read.
  */
-static bool cost_pool_of(unsigned int calln, bool do32)
-{
-	return syscall_is_expensive(calln, do32);
-}
 
 /*
  * Partition-completeness assertion.  With the flat active_syscalls[]
@@ -105,7 +101,7 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		 * back-index (1 + slot) so deactivate can swap-with-last
 		 * in O(1) just like the flat side.
 		 */
-		if (cost_pool_of(calln, do32)) {
+		if (syscall_is_expensive(calln, do32)) {
 			pool = active_expensive;
 			nr_pool = nr_active_exp;
 		} else {
@@ -186,7 +182,7 @@ void deactivate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		 * *nr_pool below is defence-in-depth.
 		 */
 		if (syscall_rt(entry)->pool_number != 0) {
-			if (cost_pool_of(calln, do32)) {
+			if (syscall_is_expensive(calln, do32)) {
 				pool = active_expensive;
 				nr_pool = nr_active_exp;
 			} else {
