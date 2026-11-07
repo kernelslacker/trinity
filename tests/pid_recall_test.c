@@ -5,7 +5,8 @@
  * sampled re-call reports.  Only a call on this task is compared, and the
  * task is the one the kernel was handed, which chain substitution can
  * rewrite after the sanitiser drew its own, as it, or a RedQueen pin, can
- * sched_getattr's size and flags.
+ * sched_getattr's size and flags.  A time32 call answers in the 32-bit
+ * layout, which the oracle widens before it compares.
  */
 
 #include <stdbool.h>
@@ -13,10 +14,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/syscall.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
+#include "kernel/compat.h"	/* struct old_timespec32 */
 #include "kernel/unistd.h"	/* SYS_get_robust_list, SYS_sched_getattr */
 #include "sanitise.h"		/* get_writable_address */
 #include "shm.h"
@@ -177,6 +181,54 @@ static void sched_attr_cases(void)
 }
 #endif
 
+#ifdef SYS_sched_rr_get_interval
+/* sched_rr_get_interval calls on this task, under compat number @nr or
+ * natively for 0, each answering the @len bytes at @answer; the
+ * anomalies the re-call reports. */
+static unsigned long rr_interval_anomalies(unsigned int nr,
+					   const void *answer, size_t len)
+{
+	unsigned long before =
+		shm->stats.oracle.sched_rr_get_interval_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a2 = (unsigned long) get_writable_address(sizeof(struct timespec));
+		syscall_sched_rr_get_interval.sanitise(&rec);
+
+		memcpy((void *) rec.a2, answer, len);
+		if (nr != 0) {
+			rec.do32bit = true;
+			rec.nr = nr;
+		}
+		ran_on(&rec, &syscall_sched_rr_get_interval, 0);
+		rec.retval = 0;
+		syscall_sched_rr_get_interval.post(&rec);
+	}
+	return shm->stats.oracle.sched_rr_get_interval_oracle_anomalies - before;
+}
+
+static void rr_interval_cases(void)
+{
+	struct timespec own;
+	struct old_timespec32 own32;
+
+	if (syscall(SYS_sched_rr_get_interval, 0, &own) != 0)
+		BUG("pid recall: cannot read this task's round-robin interval");
+	own32.tv_sec = (int32_t) own.tv_sec;
+	own32.tv_nsec = (int32_t) own.tv_nsec;
+
+	check("sched_rr_get_interval: a call answering this task's interval was reported",
+	      rr_interval_anomalies(0, &own, sizeof(own)) == 0);
+	/* 161 on i386, which writes an old_timespec32 and leaves the
+	 * poison past it. */
+	check("sched_rr_get_interval: a time32 call's interval was read at native offsets",
+	      rr_interval_anomalies(161, &own32, sizeof(own32)) == 0);
+}
+#endif
+
 void pid_recall_self_check(void)
 {
 	/* The pool is made once per process: take it as an earlier suite
@@ -193,6 +245,11 @@ void pid_recall_self_check(void)
 	sched_attr_cases();
 #else
 	printf("(no sched_getattr) ");
+#endif
+#ifdef SYS_sched_rr_get_interval
+	rr_interval_cases();
+#else
+	printf("(no sched_rr_get_interval) ");
 #endif
 
 	if (failed != 0)

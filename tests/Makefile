@@ -759,11 +759,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/aio/io_submit.c
 # selector_recall_test.c runs against a fake of the syscall.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_get_self_attr.c
 
-# syscalls/concurrency/get_robust_list.c and syscalls/sched/sched_getattr.c
-# bring get_robust_list and sched_getattr, whose re-calls on the calling
-# task pid_recall_test.c runs.
+# syscalls/concurrency/get_robust_list.c, syscalls/sched/sched_getattr.c
+# and sched_rr_get_interval.c bring get_robust_list, sched_getattr and
+# sched_rr_get_interval, whose re-calls on the calling task
+# pid_recall_test.c runs.
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c \
-		   $(TOP)/syscalls/sched/sched_getattr.c
+		   $(TOP)/syscalls/sched/sched_getattr.c \
+		   $(TOP)/syscalls/sched/sched_rr_get_interval.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post

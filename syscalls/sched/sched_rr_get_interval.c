@@ -189,6 +189,7 @@ static void post_sched_rr_get_interval(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->tp,
 				   sizeof(user_ts)))
 		goto out_free;
+	time_struct_from_abi(rec, &user_ts, 1);
 
 	rc = syscall(SYS_sched_rr_get_interval, 0, &kernel_ts);
 	if (rc != 0)
