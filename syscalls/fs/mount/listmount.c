@@ -276,8 +276,10 @@ static void sanitise_listmount(struct syscallrecord *rec)
  * stack-locals before re-issuing, with a fresh private stack request and
  * a fresh private stack ids buffer (do NOT pass the snapshot's req /
  * mnt_ids -- a sibling could scribble the user buffers themselves
- * mid-syscall and forge a clean compare).  The flags arg is forced to
- * zero on the re-call since reverse-iteration would change the ordering.
+ * mid-syscall and forge a clean compare).  The re-call passes the flags
+ * the kernel was handed: LISTMOUNT_REVERSE lists from the last mount
+ * back, so the ids come in the other order, and a short nr_mnt_ids takes
+ * them from the other end.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  No early return on first divergence -- multi-field corruption
@@ -349,8 +351,8 @@ static void post_listmount(struct syscallrecord *rec)
 
 		buf_slots = ((unsigned long) snap->nr_mnt_ids < 64ul)
 			? (unsigned long) snap->nr_mnt_ids : 64ul;
-		rc = syscall(SYS_listmount, &recheck_req, recheck_ids,
-			     buf_slots, 0u);
+		rc = syscall(SYS_listmount, &recheck_req, recheck_ids, buf_slots,
+			     (unsigned int) get_arg_snapshot(rec, 4));
 	}
 
 	if (rc < 0)
@@ -406,5 +408,9 @@ struct syscallentry syscall_listmount = {
 	.sanitise = sanitise_listmount,
 	.post = post_listmount,
 	.bound_arg = 3,
+	/* flags (a4): the re-call lists in the order the kernel was asked
+	 * for, which chain substitution may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 3),
 	.rettype = RET_NUM_BYTES,
 };

@@ -513,6 +513,7 @@ FAKE_SRCS	:= \
 	xattr_recall_test.c \
 	selector_recall_test.c \
 	readlink_recall_test.c \
+	listmount_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -582,7 +583,8 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 # the mount / lies on, and whose pool of mount ids mount_pool_test.c holds
 # to ids a real statmount() answers for.  syscalls/fs/mount/listmount.c
 # brings syscall_listmount, whose pool the same test holds to ids a real
-# listmount() lists under.
+# listmount() lists under, and whose re-call listmount_recall_test.c runs
+# on a mount of the host's own.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/mount/statmount.c \
 		   $(TOP)/syscalls/fs/mount/listmount.c \
 		   $(TOP)/syscalls/fs/stat/statfs.c \
