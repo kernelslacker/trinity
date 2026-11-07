@@ -94,12 +94,14 @@ asan: trinity
 
 debug: trinity
 
-# Every compile includes config.h, which only ./configure creates.  The
-# compile rule lists this order-only: a phony prerequisite that counted
-# would make every object out of date on every make.
+# Every compile includes config.h, which only ./configure creates; one
+# older than configure answers an older set of probes, so it is refused
+# too.  The compile rule lists this order-only: a phony prerequisite
+# that counted would make every object out of date on every make.
 .PHONY: check-config
 check-config:
 	@if [ ! -f $(CONFIG_H) ]; then  echo "[1;31mRun ./configure first.[0m" >&2; exit 1; fi
+	@if [ configure -nt $(CONFIG_H) ]; then echo "[1;31mconfigure is newer than $(CONFIG_H); rerun ./configure.[0m" >&2; exit 1; fi
 
 # PURE-module test binary integration paths.
 #
