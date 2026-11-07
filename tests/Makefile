@@ -650,6 +650,10 @@ PARENT_SRCS	+= $(TOP)/fds/sockets-lane.c
 FAKE_SRCS	+= lane_socket_test.c \
 		   userns_lane_test.c
 
+# syscalls/process/seccomp.c brings seccomp, whose GET_ACTION_AVAIL word
+# scrub_inputs_test.c follows through the blanket scrub.
+PARENT_SRCS	+= $(TOP)/syscalls/process/seccomp.c
+
 # syscalls/hardware/getrandom.c brings getrandom, whose sanitiser and
 # .vet_final hook arg_coupling_test.c runs over a real mapping, as the
 # sanitiser stamps the buffer it hands the kernel.

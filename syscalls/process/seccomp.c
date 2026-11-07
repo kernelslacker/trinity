@@ -34,22 +34,21 @@ static const uint32_t seccomp_ret_actions[] = {
  * handler.  Lives in rec->post_state, a slot the syscall ABI does not
  * expose, so the post path is immune to a sibling syscall scribbling
  * rec->a1 (op) or rec->a3 (heap pointer) between the syscall returning
- * and the post handler running.  The post handler dispatches off the
- * op snapshotted into rec->post_state, so a sibling flip of rec->a1
- * from SECCOMP_GET_ACTION_AVAIL or SECCOMP_GET_NOTIF_SIZES into
- * SECCOMP_SET_MODE_FILTER can't coerce the smaller allocation into
- * being derefed as a sock_fprog (wild fprog->filter free), and a flip
- * away from SECCOMP_SET_MODE_FILTER can't leak the sock_fprog and its
- * filter.
+ * and the post handler running.  The post handler dispatches off the op
+ * snapshotted into rec->post_state, so a sibling flip of rec->a1 from
+ * SECCOMP_GET_NOTIF_SIZES into SECCOMP_SET_MODE_FILTER can't coerce the
+ * smaller allocation into being derefed as a sock_fprog (wild
+ * fprog->filter free), and a flip away from SECCOMP_SET_MODE_FILTER
+ * can't leak the sock_fprog and its filter.
  *
- * Per-op allocation matrix.  Of the four SECCOMP_* ops, three allocate
+ * Per-op allocation matrix.  Of the four SECCOMP_* ops, two allocate
  * a heap buffer that the post handler has to free:
  *
  *   SECCOMP_SET_MODE_FILTER  -> struct sock_fprog *
- *   SECCOMP_GET_ACTION_AVAIL -> uint32_t *
  *   SECCOMP_GET_NOTIF_SIZES  -> seccomp_notif_sizes-sized buffer
  *
- * SECCOMP_SET_MODE_STRICT does not allocate; sanitise leaves
+ * SECCOMP_GET_ACTION_AVAIL takes its word from the writable pool and
+ * SECCOMP_SET_MODE_STRICT allocates nothing; for both, sanitise leaves
  * post_state NULL and the post handler returns early on snap == NULL.
  *
  * Note: for SECCOMP_SET_MODE_FILTER the post handler also reads
@@ -140,14 +139,16 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 	if (rec->a1 == SECCOMP_GET_ACTION_AVAIL) {
 		/*
 		 * uargs must point to a uint32_t containing the action to probe.
-		 * Pick a random valid SECCOMP_RET_* action.
+		 * Pick a random valid SECCOMP_RET_* action.  The word comes
+		 * from the call's pool: the blanket scrub would move a heap
+		 * one there without its value.
 		 */
-		uint32_t *action = zmalloc_tracked(sizeof(*action));
+		uint32_t *action = get_writable_struct(sizeof(*action));
 
-		*action = seccomp_ret_actions[rnd_modulo_u32(ARRAY_SIZE(seccomp_ret_actions))];
+		if (action != NULL)
+			*action = seccomp_ret_actions[rnd_modulo_u32(ARRAY_SIZE(seccomp_ret_actions))];
 		rec->a2 = 0;
 		rec->a3 = (unsigned long) action;
-		heap = action;
 	}
 
 	if (rec->a1 == SECCOMP_GET_NOTIF_SIZES) {
@@ -309,7 +310,6 @@ static void post_seccomp(struct syscallrecord *rec)
 		break;
 	}
 #endif
-	case SECCOMP_GET_ACTION_AVAIL:
 	case SECCOMP_GET_NOTIF_SIZES:
 		deferred_free_enqueue(snap->heap);
 		break;

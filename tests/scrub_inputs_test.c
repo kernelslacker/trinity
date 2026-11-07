@@ -9,12 +9,15 @@
  */
 
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <linux/filter.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/seccomp.h"	/* SECCOMP_* ops */
 #include "sanitise.h"		/* blanket_address_scrub, writable_pool_init */
 #include "syscall.h"		/* compute_address_scrub_mask */
 #include "syscalls/syscalls.h"
@@ -105,6 +108,44 @@ static void write_buffer(void)
 	}
 }
 
+/*
+ * seccomp's sanitiser runs with no range counted as heap, so the buffers
+ * the other ops build stay where it put them and can be freed here:
+ * FILTER's program and GET_NOTIF_SIZES's buffer, both in a3.
+ */
+static void seccomp_action(void)
+{
+	unsigned int draws, seen = 0;
+
+	for (draws = 0; seen < DRAWS; draws++) {
+		if (draws == 100 * DRAWS)
+			BUG("scrub inputs: seccomp never drew GET_ACTION_AVAIL");
+		fake_overlaps_libc_heap = false;
+		sanitise(&syscall_seccomp, 0);
+		fake_overlaps_libc_heap = true;
+
+		switch (rec.a1) {
+		case SECCOMP_GET_ACTION_AVAIL:
+			survives_scrub(&syscall_seccomp, &rec.a3,
+				       sizeof(uint32_t), "seccomp's action word");
+			seen++;
+			break;
+		case SECCOMP_SET_MODE_FILTER: {
+			struct sock_fprog *prog = (struct sock_fprog *) rec.a3;
+
+			if (prog != NULL)
+				free(prog->filter);
+			free(prog);
+			break;
+		}
+		case SECCOMP_GET_NOTIF_SIZES:
+			free((void *) rec.a3);
+			break;
+		}
+		end_call();
+	}
+}
+
 void scrub_inputs_self_check(void);
 void scrub_inputs_self_check(void)
 {
@@ -116,5 +157,6 @@ void scrub_inputs_self_check(void)
 	fake_overlaps_libc_heap = true;
 	recv_headers();
 	write_buffer();
+	seccomp_action();
 	fake_overlaps_libc_heap = false;
 }
