@@ -17,10 +17,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "kernel/socket.h"
-#include "kernel/mount.h"
-#include "kernel/if_packet.h"
-
 /*
  * Aggregated per-childop outcome record (see struct childop_outcome in
  * include/child.h for the field contract).  Snapshots existing shm

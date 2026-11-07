@@ -18,10 +18,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "kernel/socket.h"
-#include "kernel/mount.h"
-#include "kernel/if_packet.h"
-
 /*
  * Post-invocation feedback for the per-childop budget multiplier.
  *

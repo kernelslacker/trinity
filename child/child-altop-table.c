@@ -16,10 +16,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "kernel/socket.h"
-#include "kernel/mount.h"
-#include "kernel/if_packet.h"
-
 /*
  * KCOV bracketing opt-in.  Read by the childop dispatcher.  The
  * per-op verdict lives in childop.def's fourth (uses_outer_bracket)
