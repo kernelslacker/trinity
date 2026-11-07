@@ -18,8 +18,8 @@
  * (--writer-pin-sweep) hands an address to this stage; Stage 2 names
  * the wild writer.
  *
- * Default-OFF: a zero writer_watch_addr leaves all three calls below
- * no-ops.  Heavyweight debug tool -- only enable for a targeted
+ * Default-OFF: a zero writer_watch_addr leaves every call below a
+ * no-op.  Heavyweight debug tool -- only enable for a targeted
  * corruption hunt: the perf fd has real cost and the SIGTRAP handler
  * _exit()s, so an accidental hit on a live host kills the child.
  */
@@ -40,3 +40,7 @@ void writer_watch_open_child(void);
  * the enable fails.  Called last in init_child, after the per-child
  * SIGTRAP disposition is in place; no-op when none is open. */
 void writer_watch_arm_child(void);
+
+/* The breakpoint's fd, or -1 when none is open: a close or dup2 over it
+ * ends the watch, so the protected-fd registry names it. */
+int writer_watch_child_fd(void);

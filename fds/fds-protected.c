@@ -12,6 +12,7 @@
 #include "signals.h"
 #include "syscall.h"
 #include "taint.h"
+#include "writer-watch.h"
 
 #include "kernel/fcntl.h"
 
@@ -24,7 +25,7 @@
  * to keep diagnostic and coverage fds out of the fuzz picker pool.
  * See the contract in include/fd.h.
  *
- * Five classes of fd live in this registry:
+ * These classes of fd live in this registry:
  *
  *   - the calling child's kcov PC fd and cmp fd, opened in
  *     kcov_init_child and re-located above PROTECTED_FD_HIGH_BASE so the
@@ -99,6 +100,11 @@
  *     over its number sends a later crash's log through the absolute
  *     path the handle exists to avoid, or into another directory.
  *
+ *   - the --writer-watch breakpoint (writer_watch_child_fd()), which
+ *     writer_watch_open_child() parks above PROTECTED_FD_HIGH_BASE: a
+ *     close or dup2 over its number releases the perf event, and the
+ *     watch ends with no word to the operator.
+ *
  * Parent context (this_child() == NULL): STDERR_FILENO still matches
  * the constant check, but the parent never opens a kcov_child, a
  * stderr memfd, a per-child tainted_fd, or a per-child fail_nth_fd,
@@ -140,6 +146,8 @@ bool fd_is_protected(int fd)
 		return true;
 	if (fd == canary_dir_fd())
 		return true;
+	if (fd == writer_watch_child_fd())
+		return true;
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();
 	if (child == NULL)
@@ -176,6 +184,7 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	int taintfd;
 	int rotfd;
 	int dirfd;
+	int wwfd;
 	int lowest = -1;
 
 	if (hi < lo)
@@ -214,6 +223,12 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi)
 	    (unsigned int) dirfd >= lo && (unsigned int) dirfd <= hi)
 		if (lowest < 0 || dirfd < lowest)
 			lowest = dirfd;
+
+	wwfd = writer_watch_child_fd();
+	if (wwfd >= 0 &&
+	    (unsigned int) wwfd >= lo && (unsigned int) wwfd <= hi)
+		if (lowest < 0 || wwfd < lowest)
+			lowest = wwfd;
 
 	/* Not reached from fork grandchildren; this_child() returns the child's own slot. */
 	child = this_child();

@@ -243,6 +243,9 @@ int get_typed_fd(enum argtype type);
  *     signals.h): opened and parked high by each child in
  *     init_stderr_memfd(); the fault handler opens the per-pid bug log
  *     through it with openat().
+ *   - the --writer-watch breakpoint (writer_watch_child_fd(), see
+ *     writer-watch.h): opened and parked high by each child; a close or
+ *     dup2 over it ends the watch with no word to the operator.
  *
  * Parent-context callers (this_child() == NULL) still get STDERR_FILENO
  * and the rotation sink protected -- both are process-wide -- but
@@ -293,13 +296,13 @@ void reroll_protected_fd_arg(unsigned long *slot);
 
 /*
  * Where a child parks the fds trinity depends on (kcov PC/cmp, taint,
- * fail-nth, rotation sink, bug-log directory).  Opened or inherited before the fuzz loop,
- * they sit on the lowest free numbers (3, 4, ...): inside the working
- * set of the pickers (live-fd rings, typed-fd rerolls) and among the
- * small numbers mutated fd args reach, paths the registry alone does
- * not cover.  Moving them up drops the incidental hit rate; the
- * registry stays the safety net, so a failed move just keeps the low
- * number.
+ * fail-nth, rotation sink, bug-log directory, writer-watch breakpoint).
+ * Opened or inherited before the fuzz loop, they sit on the lowest free
+ * numbers (3, 4, ...): inside the working set of the pickers (live-fd
+ * rings, typed-fd rerolls) and among the small numbers mutated fd args
+ * reach, paths the registry alone does not cover.  Moving them up drops
+ * the incidental hit rate; the registry stays the safety net, so a
+ * failed move just keeps the low number.
  *
  * 60000 sits inside the RLIMIT_NOFILE=65536 that scripts/run-trinity.sh
  * lifts, with ~5500 fds of headroom above it, and clear of the numbers

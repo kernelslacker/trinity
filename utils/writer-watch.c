@@ -15,6 +15,7 @@
 #include <linux/hw_breakpoint.h>
 #include <string.h>
 
+#include "fd.h"			/* fd_relocate_high */
 #include "params.h"
 #include "syscall-gate.h"	/* trinity_raw_syscall */
 #include "trinity.h"		/* outputerr */
@@ -27,7 +28,8 @@
  * until writer_watch_arm_child() enables it; the child then holds it for
  * its lifetime and the kernel cleans it up at exit.  Each child opens its
  * own after fork because perf events do NOT propagate across fork to
- * track the child.
+ * track the child.  Parked above PROTECTED_FD_HIGH_BASE, out of the
+ * numbers the fd pickers and mutated fd args reach.
  */
 static int writer_watch_fd = -1;
 
@@ -135,7 +137,7 @@ void writer_watch_open_child(void)
 			  writer_watch_addr, strerror(errno));
 		return;
 	}
-	writer_watch_fd = (int)fd;
+	writer_watch_fd = fd_relocate_high((int)fd);
 }
 
 void writer_watch_arm_child(void)
@@ -155,4 +157,9 @@ void writer_watch_arm_child(void)
 		  " (HW write breakpoint, synchronous SIGTRAP on hit"
 		  " via perf_event_attr.sigtrap)\n",
 		  writer_watch_addr, writer_watch_fd, getpid());
+}
+
+int writer_watch_child_fd(void)
+{
+	return writer_watch_fd;
 }
