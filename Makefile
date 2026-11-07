@@ -121,7 +121,7 @@ check-config:
 #                       time, so a failure is instantly reproducible.
 # `make test-ndebug` -- rebuild under -DNDEBUG + run.  Exercises the
 #                       release-build code paths (assert() compiled
-#                       out); all twelve fixtures must pass green.
+#                       out); every suite must pass green.
 #
 # All three targets shell out to tests/Makefile, which keys its object
 # directory and output binary by flavor (build/+test-bin for normal,

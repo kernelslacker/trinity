@@ -258,9 +258,10 @@ LDFLAGS		+= -Wl,--wrap=accept_unblocker_fire
 # into a subsequent non-ASAN link (and vice versa).
 #
 # NDEBUG target: `make -C tests NDEBUG=1` compiles with -DNDEBUG,
-# disabling assert() guards in persist/deferred-free-regions.c.  All twelve
-# fixtures pass green in NDEBUG builds; fixture 7 uses the bool return
-# value of deferred_free_seal_all() in place of debug_assert_sealed().
+# disabling assert() guards in persist/deferred-free-regions.c.  The
+# deferred-free fixtures pass green in NDEBUG builds too; fixture 7 uses
+# the bool return value of deferred_free_seal_all() in place of
+# debug_assert_sealed().
 # The NDEBUG binary lands in build-ndebug/ so it never contaminates
 # a subsequent debug or ASAN build.
 ifeq ($(ASAN),1)
