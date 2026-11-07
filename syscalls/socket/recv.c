@@ -1129,7 +1129,7 @@ out_free:
 struct syscallentry syscall_recvmmsg = {
 	.name = "recvmmsg",
 	.num_args = 5,
-	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST, [4] = ARG_ADDRESS },
+	.argtype = { [0] = ARG_SOCKETINFO, [1] = ARG_ADDRESS, [2] = ARG_RANGE, [3] = ARG_LIST, [4] = ARG_TIMESPEC },
 	.argname = { [0] = "fd", [1] = "mmsg", [2] = "vlen", [3] = "flags", [4] = "timeout" },
 	.arg_params[3].list = ARGLIST(recvmsg_flags),
 	.arg_params[2].range.low = 1, .arg_params[2].range.hi = 1024,
