@@ -1144,6 +1144,12 @@ FAKE_SRCS	+= unblocker_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/x86/modify_ldt.c
 FAKE_SRCS	+= modify_ldt_test.c
 
+# fds/seccomp_notif.c brings the seccomp-notif provider, whose filter
+# seccomp_notif_test.c catches through landlock_test.c's syscall() seam
+# and runs; it compiles to nothing without USE_SECCOMP, as the test does.
+PARENT_SRCS	+= $(TOP)/fds/seccomp_notif.c
+FAKE_SRCS	+= seccomp_notif_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

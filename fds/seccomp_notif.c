@@ -10,6 +10,7 @@
 #include <linux/filter.h>
 #include <linux/seccomp.h>
 
+#include "arch.h"
 #include "fd.h"
 #include "syscall-gate.h"
 #include "objects.h"
@@ -19,6 +20,7 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/audit.h"
 #include "kernel/seccomp.h"
 
 /*
@@ -35,6 +37,11 @@
  * sys_ni_syscall, trinity's table entry for it is syscall_ni_syscall,
  * and validate_specific_syscall_silent() skips NI_SYSCALL entries at
  * activation time so the random picker never reaches it.
+ *
+ * The number names that call in the native table alone.  A biarch
+ * kernel's compat table puts another call under it (on x86-64, i386's
+ * 178 is rt_sigqueueinfo), so the filter lets a call made under any
+ * other arch through before it looks at the number.
  */
 #ifdef __NR_query_module
 #define SECCOMP_NOTIF_TARGET_NR	__NR_query_module
@@ -50,6 +57,11 @@
 static int create_seccomp_notif_fd(void)
 {
 	struct sock_filter filter[] = {
+		/* A = arch */
+		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+			 offsetof(struct seccomp_data, arch)),
+		/* if (A != the native arch) goto allow */
+		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, NATIVE_AUDIT_ARCH, 0, 3),
 		/* A = syscall number */
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
 			 offsetof(struct seccomp_data, nr)),

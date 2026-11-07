@@ -116,6 +116,7 @@ void struct_fill_fd_self_check(void);
 void budgeted_self_check(void);
 void unblocker_self_check(void);
 void modify_ldt_self_check(void);
+void seccomp_notif_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -653,6 +654,11 @@ int main(int argc, char **argv)
 	printf("  modify_ldt_self_check ... ");
 	fflush(stdout);
 	modify_ldt_self_check();
+	printf("OK\n");
+
+	printf("  seccomp_notif_self_check ... ");
+	fflush(stdout);
+	seccomp_notif_self_check();
 	printf("OK\n");
 
 	return 0;
