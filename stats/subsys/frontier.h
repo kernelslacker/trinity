@@ -143,7 +143,7 @@ struct frontier_per_syscall_stats {
 	 * per-syscall distribution separates them. */
 	unsigned long picks_per_syscall[MAX_NR_SYSCALL];
 
-	/* SHADOW-ONLY per-syscall silent-streak counter.  Bumped at the
+	/* Per-syscall silent-streak counter.  Bumped at the
 	 * silent-regime accept site in set_syscall_nr_coverage_frontier()
 	 * (alongside the existing frontier_silent_picks bump), reset to zero
 	 * by frontier_record_new_edge() on the per-syscall new-edge
@@ -151,21 +151,22 @@ struct frontier_per_syscall_stats {
 	 * CONSECUTIVE silent-regime picks since the last productive-edge
 	 * event for that syscall.
 	 *
-	 * Read by no production-path code -- observability only; the picker
-	 * accept/retry math at the bump site does not consume this value, so
-	 * any drift in it cannot perturb selection.  Crossing the
-	 * FRONTIER_SHADOW_DECAY_STREAK threshold edge-triggers a one-time
-	 * bump of the global frontier_shadow_decay_candidates above, which
-	 * is the headline number for downstream consumers; the per-syscall
-	 * array is kept for top-N attribution of which syscalls are the
-	 * shadow-decay candidates.
+	 * Not shadow state: the arm-B live reject at the bump site
+	 * (frontier_silent_decay_reject()) reads it, with the baselines
+	 * below, to demote a stuck syscall, so a stray write here steers
+	 * selection.  Crossing the FRONTIER_SHADOW_DECAY_STREAK threshold
+	 * edge-triggers a one-time bump of the global
+	 * frontier_shadow_decay_candidates above, which is the headline
+	 * number for downstream consumers; the per-syscall array is kept
+	 * for top-N attribution of which syscalls are the shadow-decay
+	 * candidates.
 	 *
 	 * Sized and bounds-guarded the same way the sibling
 	 * frontier_picks_per_syscall[] above is.  Surfaced only via the
 	 * periodic stats dump alongside that array. */
 	unsigned long silent_streak_per_syscall[MAX_NR_SYSCALL];
 
-	/* SHADOW-ONLY no-novelty baselines paired with the silent-streak
+	/* No-novelty baselines paired with the silent-streak
 	 * counter above.  Snapshotted at every streak reset (in
 	 * frontier_record_new_edge() and frontier_record_transition_edge(),
 	 * the two existing per-syscall productive-event hooks) from the
@@ -189,10 +190,9 @@ struct frontier_per_syscall_stats {
 	 *      is mirrored (not the full 8-bucket histogram) so the snapshot
 	 *      is one ulong per syscall, same shape as the streak counter.
 	 *
-	 * Read by no production-path code -- the silent-regime accept site
-	 * is the sole consumer.  The picker's accept/retry math does not
-	 * consume either baseline, so drift in them cannot perturb live
-	 * selection.  Sized and bounds-guarded the same way the sibling
+	 * The silent-regime accept site is the sole reader, and its arm-B
+	 * reject consumes both, so drift in either steers live selection.
+	 * Sized and bounds-guarded the same way the sibling
 	 * frontier_silent_streak_per_syscall[] above is. */
 	unsigned long silent_cmp_baseline[MAX_NR_SYSCALL];
 	unsigned long silent_errno_success_baseline[MAX_NR_SYSCALL];
@@ -262,7 +262,7 @@ struct frontier_per_syscall_stats {
 	unsigned long live_misses_per_syscall[MAX_NR_SYSCALL];
 	unsigned long last_productive_window_per_syscall[MAX_NR_SYSCALL];
 
-	/* SHADOW-ONLY per-syscall LIVE-regime miss-streak counter.  Bumped
+	/* Per-syscall LIVE-regime miss-streak counter.  Bumped
 	 * at the post-call frontier yield attribution path in
 	 * random_syscall_step (alongside the existing
 	 * frontier_live_misses_per_syscall[] bump) whenever a LIVE-regime
@@ -273,14 +273,15 @@ struct frontier_per_syscall_stats {
 	 * CONSECUTIVE zero-edge LIVE-regime picks since the syscall last
 	 * earned coverage.
 	 *
-	 * Read by no production-path code -- observability only; the picker
-	 * accept/retry math at the bump site does not consume this value, so
-	 * any drift in it cannot perturb selection.  Crossing the
-	 * FRONTIER_LIVE_MISS_COOLDOWN threshold edge-triggers a one-time
-	 * bump of the global frontier_live_cooldown_candidates counter; every
-	 * pick past the threshold bumps frontier_live_would_skip
-	 * cumulatively.  The per-syscall array is kept for top-N attribution
-	 * of which syscalls are the cooldown candidates.
+	 * Not shadow state: frontier_window_advance() halves the frontier
+	 * ring and weight of a syscall whose streak is at or past
+	 * FRONTIER_LIVE_MISS_COOLDOWN, so a stray write here steers
+	 * selection.  Crossing the FRONTIER_LIVE_MISS_COOLDOWN threshold
+	 * edge-triggers a one-time bump of the global
+	 * frontier_live_cooldown_candidates counter; every pick past the
+	 * threshold bumps frontier_live_would_skip cumulatively.  The
+	 * per-syscall array is kept for top-N attribution of which
+	 * syscalls are the cooldown candidates.
 	 *
 	 * Sized and bounds-guarded the same way the sibling
 	 * frontier_silent_streak_per_syscall[] above is.  Surfaced only via

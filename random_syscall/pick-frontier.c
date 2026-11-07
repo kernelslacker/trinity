@@ -84,7 +84,7 @@ static bool frontier_live_accept(unsigned int syscallnr,
 	 * counter sits next to frontier_live_picks in the stats
 	 * dump for the projected reclaim fraction.
 	 *
-	 * Isolated from the F3 SHADOW cooldown signal
+	 * Isolated from the F3 cooldown signal
 	 * (frontier_live_miss_streak_per_syscall[] +
 	 * frontier_live_cooldown_candidates / _would_skip): this
 	 * gate is unconditional, the cooldown signal is per-syscall.

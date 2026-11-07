@@ -182,7 +182,7 @@ void account_per_syscall_new_edges(struct childdata *child,
 				&shm->stats.frontier.per_syscall.live_misses_per_syscall[rec->nr],
 				1UL, __ATOMIC_RELAXED);
 
-			/* SHADOW-ONLY per-syscall LIVE-regime miss-streak
+			/* Per-syscall LIVE-regime miss-streak
 			 * accounting.  Mirrors the silent-streak shadow
 			 * decay block at the silent-regime accept site: the
 			 * per-syscall counter advances strictly AFTER the
@@ -207,11 +207,12 @@ void account_per_syscall_new_edges(struct childdata *child,
 			 *      count a live cooldown variant of the picker
 			 *      would produce.
 			 *
-			 * Selection-byte-identical contract: the picker
-			 * accept/retry math at the LIVE accept site is
-			 * untouched; these bumps run strictly after the per-
-			 * call attribution decision and write only NEW
-			 * counters that no live-path code reads.  Same
+			 * The picker accept/retry math at the LIVE accept
+			 * site is untouched, and the bumps run strictly
+			 * after the per-call attribution decision, but the
+			 * streak is live state: frontier_window_advance()
+			 * halves the frontier ring and weight of a syscall
+			 * whose streak is at or past the threshold.  Same
 			 * MAX_NR_SYSCALL bound the surrounding per-syscall
 			 * arrays use. */
 			streak = __atomic_add_fetch(

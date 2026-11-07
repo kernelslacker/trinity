@@ -198,32 +198,29 @@ void frontier_record_new_edge(unsigned int nr)
 	 * existing per-syscall productive-edge collection site -- no new
 	 * collection path is added.
 	 *
-	 * The counter and the global frontier_shadow_decay_candidates it
-	 * edge-triggers in random_syscall/pick-frontier.c's silent-regime accept site
-	 * are observability-only: no live selection or scoring code reads
-	 * them, so the reset cannot perturb the picker distribution. */
+	 * The counter feeds the arm-B live reject at
+	 * random_syscall/pick-frontier.c's silent-regime accept site, so
+	 * the reset also releases a syscall that reject was demoting. */
 	__atomic_store_n(
 		&shm->stats.frontier.per_syscall.silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
-	/* SHADOW-ONLY LIVE-regime miss-streak reset, paired with the
+	/* LIVE-regime miss-streak reset, paired with the
 	 * silent-streak reset above.  Same productive-event semantics: this
 	 * function is the canonical per-syscall new-edge productive-event
 	 * hook, so a fresh bucket bit on this syscall releases the LIVE-
 	 * regime cooldown streak just as it releases the silent-streak
 	 * decay.  Without this reset the per-syscall LIVE-miss streak would
-	 * latch high after a single productive run of zero-edge LIVE picks
-	 * and the frontier_live_cooldown_candidates / frontier_live_would_
-	 * skip projections would be permanently inflated.
-	 *
-	 * Same observability-only contract as the silent-streak reset
-	 * above; no live-path code reads either counter or its companion
-	 * scalars. */
+	 * latch high after a single productive run of zero-edge LIVE picks,
+	 * the frontier_live_cooldown_candidates / frontier_live_would_
+	 * skip projections would be permanently inflated, and
+	 * frontier_window_advance() would keep halving the syscall's
+	 * frontier weight. */
 	__atomic_store_n(
 		&shm->stats.frontier.per_syscall.live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
-	/* SHADOW-ONLY no-novelty baseline snapshot, paired with the streak
+	/* No-novelty baseline snapshot, paired with the streak
 	 * reset above.  Snapshots the current value of the two non-PC-edge
 	 * novelty signals (per-syscall CMP-pool inserts and per-syscall
 	 * SUCCESS-bucket errno count) so the silent-regime accept site can
@@ -234,9 +231,8 @@ void frontier_record_new_edge(unsigned int nr)
 	 * reset event and the no-novelty UNLESS clause is being re-armed
 	 * for the next streak.
 	 *
-	 * Same observability-only contract as the streak counter above --
-	 * no selection or scoring code reads these baselines, only the
-	 * shadow decay predicate at the silent-regime accept site does.
+	 * Only the decay predicate at the silent-regime accept site reads
+	 * these baselines, and its arm-B reject steers selection by them.
 	 * kcov_shm NULL-checked because frontier_record_new_edge is
 	 * unreachable without a coverage trace under collection, but the
 	 * guard matches the pattern other kcov_shm consumers follow. */
@@ -332,24 +328,25 @@ void frontier_record_transition_edge(unsigned int nr)
 		&shm->stats.frontier.per_syscall.silent_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
-	/* SHADOW-ONLY LIVE-regime miss-streak reset.  Sibling of the reset
+	/* LIVE-regime miss-streak reset.  Sibling of the reset
 	 * in frontier_record_new_edge(): a transition-edge discovery is a
 	 * productive event the LIVE-regime cooldown streak must release on,
 	 * same as the silent-streak decay above and for the same reason.
 	 * Leaving this out would let the LIVE-miss streak latch high on
 	 * syscalls that are earning post-plateau transition coverage but no
-	 * fresh PC bucket bits, inflating the cooldown projections on
-	 * exactly the syscalls a live variant should NOT cool down. */
+	 * fresh PC bucket bits, inflating the cooldown projections on, and
+	 * halving the frontier weight of, exactly the syscalls that should
+	 * NOT cool down. */
 	__atomic_store_n(
 		&shm->stats.frontier.per_syscall.live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
 
-	/* SHADOW-ONLY no-novelty baseline snapshot.  Mirror of the snapshot
+	/* No-novelty baseline snapshot.  Mirror of the snapshot
 	 * pair in frontier_record_new_edge(): a transition-edge discovery
 	 * is also a productive event for the streak's purposes, so the
-	 * decay predicate's UNLESS-clause baselines re-arm here too.  Same
-	 * observability-only contract; see the matching block in
-	 * frontier_record_new_edge() for full rationale. */
+	 * decay predicate's UNLESS-clause baselines re-arm here too.  See
+	 * the matching block in frontier_record_new_edge() for full
+	 * rationale. */
 	if (kcov_shm != NULL) {
 		unsigned long cmp_snap, errno_snap = 0;
 		unsigned int cix;
