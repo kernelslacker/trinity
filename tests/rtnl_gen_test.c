@@ -537,6 +537,56 @@ static void expect_nexthop_flags(const struct nexthop_flags *t)
 			"rtnl: NHA_BLACKHOLE, NHA_FDB and NHA_GROUPS mostly carry the payload an NLA_FLAG refuses");
 }
 
+/* ---------- NHA_GATEWAY ------------------------------------------------- */
+
+struct nexthop_gateway {
+	unsigned int gateways;	/* in AF_INET and AF_INET6 adds */
+	unsigned int sized;	/* ... flat and the family's address width */
+};
+
+static void tally_nexthop_gateway(struct nexthop_gateway *t,
+				  const struct nlmsghdr *nlh)
+{
+	const struct nhmsg *nhm = NLMSG_DATA(nlh);
+	const unsigned char *p;
+	const struct nlattr *nla;
+	unsigned int width;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(*nhm)) ||
+	    (nhm->nh_family != AF_INET && nhm->nh_family != AF_INET6))
+		return;
+	width = nhm->nh_family == AF_INET6 ? 16 : 4;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(*nhm));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(*nhm));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == NHA_GATEWAY) {
+			t->gateways++;
+			t->sized += nla->nla_len == NLA_HDRLEN + width &&
+				    !(nla->nla_type & NLA_F_NESTED);
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * rtm_to_nh_config() refuses an NHA_GATEWAY that is not the nhmsg family's
+ * address, 4 bytes for AF_INET and 16 for AF_INET6.  The builder sizes it
+ * to the family where the attribute path does not make it a nested
+ * container's outer attribute, about 0.84 of them; random bytes were the
+ * right width about one time in a hundred.
+ */
+static void expect_nexthop_gateway(const struct nexthop_gateway *t)
+{
+	expect_fraction(t->sized, t->gateways, 0.78, 0.90, "NHA_GATEWAY",
+			"rtnl: a nexthop's NHA_GATEWAY is mostly not its family's address width");
+}
+
 /* ---------- The attribute types of the nexthop ops ---------------------- */
 
 enum { NH_NEW, NH_DEL, NH_GET, NH_DUMP, NH_GET_BUCKET, NH_DUMP_BUCKET, NH_OPS };
@@ -1780,6 +1830,7 @@ struct tallies {
 	struct nexthop_header newnexthop, nexthop;
 	struct nexthop_flags nexthop_flags;
 	struct nexthop_attrs nexthop_attrs[NH_OPS];
+	struct nexthop_gateway nexthop_gateway;
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
@@ -1880,6 +1931,7 @@ static void run_rounds(struct tallies *t)
 			tally_nexthop_header(&t->newnexthop, nlh, true);
 			tally_nexthop_flags(&t->nexthop_flags, nlh);
 			tally_nexthop_attrs(t->nexthop_attrs, nlh);
+			tally_nexthop_gateway(&t->nexthop_gateway, nlh);
 			break;
 		case RTM_DELNEXTHOP:
 		case RTM_GETNEXTHOP:
@@ -1945,6 +1997,7 @@ void rtnl_gen_self_check(void)
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_nexthop_flags(&t.nexthop_flags);
 	expect_nexthop_attrs(t.nexthop_attrs);
+	expect_nexthop_gateway(&t.nexthop_gateway);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);

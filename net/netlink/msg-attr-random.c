@@ -106,7 +106,7 @@ static size_t gen_rta_payload(unsigned char *buf, size_t offset, size_t buflen,
 	case 23: return gen_rta_linkprop_payload(p, avail, nla_type);
 	case 24: return gen_rta_vlandb_payload(p, avail, nla_type);
 	case 22:
-	case 25: return gen_rta_nexthop_payload(p, avail, nla_type);
+	case 25: return gen_rta_nexthop_payload(p, avail, nla_type, family);
 	case 26: return gen_rta_tunnel_payload(p, avail, nla_type);
 
 	/*

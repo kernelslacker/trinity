@@ -315,13 +315,10 @@ size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
  * validated against NHA_OP_FLAG_DUMP_{STATS,HW_STATS}.  Sizing each
  * attr to its policy gets the message past nla_parse into those per-
  * attr validators and onward into nh_check_attr_* / nexthop_create.
+ * NHA_GATEWAY is the nhmsg family's address, which rtm_to_nh_config()
+ * wants exactly 4 bytes for AF_INET and 16 for AF_INET6.
  *
  * Skipped on purpose:
- *   NHA_GATEWAY     — kernel demands nla_len == 4 (AF_INET) or 16
- *                     (AF_INET6); the dispatch signature doesn't carry
- *                     nhmsg.nh_family, so the random fallback (which
- *                     occasionally lands exactly on 4 or 16) is
- *                     strictly better than guessing the wrong size.
  *   NHA_ENCAP       — opaque per-encap-type payload (mpls labels, ila
  *                     identifier, seg6 srh, …); only useful in lock-
  *                     step with NHA_ENCAP_TYPE, deferred.
@@ -333,9 +330,12 @@ size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
  *                     usefully, deferred.
  */
 size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
-			       unsigned short nla_type)
+			       unsigned short nla_type, unsigned char family)
 {
 	switch (nla_type) {
+	case NHA_GATEWAY:
+		return gen_route_addr(p, avail, family);
+
 	case NHA_ID:
 	case NHA_OIF:
 	case NHA_MASTER:

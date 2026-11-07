@@ -155,7 +155,7 @@ size_t gen_rta_dcb_payload(unsigned char *p, size_t avail,
 size_t gen_rta_tc_payload(unsigned char *p, size_t avail,
 			  unsigned short nla_type);
 size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
-			       unsigned short nla_type);
+			       unsigned short nla_type, unsigned char family);
 size_t gen_rta_netconf_payload(unsigned char *p, size_t avail,
 			       unsigned short nla_type);
 size_t gen_rta_mdba_payload(unsigned char *p, size_t avail,
