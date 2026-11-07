@@ -8,6 +8,7 @@
  * the bytes the sanitiser left there.
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -16,7 +17,10 @@
 #include <sys/socket.h>
 #include <linux/filter.h>
 #include <linux/futex.h>
+#include <linux/net.h>
 
+#include "arch.h"		/* ARCH_IS_BIARCH */
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "kernel/seccomp.h"	/* SECCOMP_* ops */
 #include "sanitise.h"		/* blanket_address_scrub, writable_pool_init */
@@ -24,7 +28,9 @@
 #include "syscalls/syscalls.h"
 
 extern bool fake_overlaps_libc_heap;	/* fake_shm.c */
+extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern bool fake_socket_fd_none;	/* post_oracle_test.c */
+extern bool fake_no_random_socket;	/* dup_pool_test.c */
 
 /* Enough draws to take each sanitiser down its branches. */
 #define DRAWS	64
@@ -34,8 +40,11 @@ static struct syscallrecord rec;
 /* @a1 is what the generator left in the first slot. */
 static void sanitise(struct syscallentry *entry, unsigned long a1)
 {
+	bool do32bit = rec.do32bit;
+
 	memset(&rec, 0, sizeof(rec));
 	rec.entry = entry;
+	rec.do32bit = do32bit;
 	rec.a1 = a1;
 	entry->sanitise(&rec);
 }
@@ -166,6 +175,49 @@ static void robust_list_head(void)
 	}
 }
 
+/*
+ * socketcall's six words, at the width its kernel reads them: unsigned
+ * longs for a native call, u32s below 4 GiB for a compat one, holding the
+ * values post_socketcall() reads from its snapshot.
+ */
+static void socketcall_words(bool compat)
+{
+	unsigned int i, w;
+
+	fake_no_random_socket = true;
+	for (i = 0; i < DRAWS; i++) {
+		const unsigned long *vals;
+
+		rec.do32bit = compat;
+		sanitise(&syscall_socketcall, 0);
+		vals = (const unsigned long *) rec.post_state;
+		if (!compat) {
+			survives_scrub(&syscall_socketcall, &rec.a2,
+				       6 * sizeof(unsigned long),
+				       "socketcall's args");
+			if (memcmp((void *) rec.a2, vals,
+				   6 * sizeof(unsigned long)) != 0)
+				BUG("scrub inputs: socketcall's words are not its snapshot's");
+		} else {
+			const uint32_t *words = (const uint32_t *) rec.a2;
+
+			if (rec.a2 > UINT_MAX - 6 * sizeof(uint32_t))
+				BUG("scrub inputs: a compat socketcall's words are past 4 GiB");
+			survives_scrub(&syscall_socketcall, &rec.a2,
+				       6 * sizeof(uint32_t),
+				       "a compat socketcall's args");
+			for (w = 0; w < 6; w++)
+				if (words[w] != (uint32_t) vals[w])
+					BUG("scrub inputs: a compat socketcall's words are not its snapshot's");
+			if (rec.a1 == SYS_SOCKETPAIR && vals[3] > UINT_MAX)
+				BUG("scrub inputs: a compat socketpair's fds are past 4 GiB");
+		}
+		end_call();
+	}
+	rec.do32bit = false;
+	fake_no_random_socket = false;
+}
+
 void scrub_inputs_self_check(void);
 void scrub_inputs_self_check(void)
 {
@@ -179,5 +231,18 @@ void scrub_inputs_self_check(void)
 	write_buffer();
 	seccomp_action();
 	robust_list_head();
+	socketcall_words(false);
+#ifdef ARCH_IS_BIARCH
+	{
+		static struct childdata compat;
+
+		/* The pool a compat call's buffers come from goes by the
+		 * record this_child() has. */
+		compat.syscall.do32bit = true;
+		fake_this_child = &compat;
+		socketcall_words(true);
+		fake_this_child = NULL;
+	}
+#endif
 	fake_overlaps_libc_heap = false;
 }

@@ -1,6 +1,8 @@
 /*
  * SYSCALL_DEFINE2(socketcall, int, call, unsigned long __user *, args)
  */
+#include <stdint.h>
+#include <string.h>
 #include <unistd.h>
 #include <linux/net.h>
 #include <sys/socket.h>
@@ -102,13 +104,41 @@ static const struct socketcall_desc socketcalls[] = {
 	{ SYS_SENDMMSG,		EXTRA_NONE,	NULL },
 };
 
+#define SOCKETCALL_NARGS	6
+
+/*
+ * The array the kernel reads, from the call's pool, where the blanket
+ * scrub leaves it.  A compat call's kernel reads u32 words (net/compat.c),
+ * a native one unsigned longs, which are u32s on the 32-bit arches that
+ * have socketcall natively.
+ */
+static void *socketcall_words(const unsigned long *args, bool do32bit)
+{
+	unsigned int i;
+
+	if (do32bit) {
+		uint32_t *words = get_writable_struct(SOCKETCALL_NARGS * sizeof(*words));
+
+		if (words != NULL)
+			for (i = 0; i < SOCKETCALL_NARGS; i++)
+				words[i] = (uint32_t) args[i];
+		return words;
+	} else {
+		unsigned long *words = get_writable_struct(SOCKETCALL_NARGS * sizeof(*words));
+
+		if (words != NULL)
+			memcpy(words, args, SOCKETCALL_NARGS * sizeof(*words));
+		return words;
+	}
+}
+
 static void sanitise_socketcall(struct syscallrecord *rec)
 {
 	const struct socketcall_desc *desc;
 	unsigned long *args;
 	unsigned int r;
 
-	args = zmalloc_tracked(6 * sizeof(unsigned long));
+	args = zmalloc_tracked(SOCKETCALL_NARGS * sizeof(unsigned long));
 
 	r = rnd_modulo_u32(ARRAY_SIZE(socketcalls));
 	desc = &socketcalls[r];
@@ -133,9 +163,9 @@ static void sanitise_socketcall(struct syscallrecord *rec)
 		}
 	}
 
-	rec->a2 = (unsigned long) args;
-	/* Snapshot for the post handler -- a2 may be scribbled by a sibling
-	 * syscall before post_socketcall() runs. */
+	rec->a2 = (unsigned long) socketcall_words(args, rec->do32bit);
+	/* The values the kernel gets, for the post handler -- a2 may be
+	 * scribbled by a sibling syscall before post_socketcall() runs. */
 	rec->post_state = (unsigned long) args;
 }
 

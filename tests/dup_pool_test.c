@@ -334,7 +334,8 @@ unsigned int get_pid(void)
 }
 
 /* The accept and socketcall sanitisers reach these two; the cases run the
- * post handlers. */
+ * post handlers.  scrub_inputs_test.c runs socketcall's sanitiser, setting
+ * fake_no_random_socket to have the pool come up empty. */
 void accept_unblocker_fire(int fd, const struct socketinfo *si)
 {
 	(void) fd;
@@ -342,9 +343,12 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	BUG("fd pool: a handler fired the accept unblocker");
 }
 
+bool fake_no_random_socket;
+
 struct socketinfo *get_rand_socketinfo(void)
 {
-	BUG("fd pool: a handler asked for a random socket");
+	if (!fake_no_random_socket)
+		BUG("fd pool: a handler asked for a random socket");
 	return NULL;
 }
 
