@@ -60,6 +60,7 @@ void io_uring_register_self_check(void);
 void io_uring_register_self_check(void)
 {
 	const struct arglist *ops = &syscall_io_uring_register.arg_params[1].list;
+	const struct io_uring_rsrc_update *up;
 	struct syscallrecord rec;
 	unsigned int i;
 
@@ -84,6 +85,20 @@ void io_uring_register_self_check(void)
 	free((void *) rec.post_state);
 	if (rec.a3 != 0 || rec.a4 == 0 || rec.a4 > USHRT_MAX)
 		BUG("io_uring_register: UNREGISTER_PERSONALITY names an id the kernel never hands out");
+
+	/* FILES_UPDATE's arg is a struct io_uring_rsrc_update whose data
+	 * holds the nr_args fds __io_sqe_files_update() swaps in, and whose
+	 * resv it reads as the update's flags, which must be 0. */
+	if (!draw(&rec, IORING_REGISTER_FILES_UPDATE))
+		BUG("io_uring_register: FILES_UPDATE was never drawn");
+	free((void *) rec.post_state);
+	up = (const struct io_uring_rsrc_update *) rec.a3;
+	if (up == NULL || up->resv != 0 || up->data == 0 || rec.a4 == 0)
+		BUG("io_uring_register: FILES_UPDATE got no update of an fd array");
+	for (i = 0; i < rec.a4; i++) {
+		if (((const int *)(unsigned long) up->data)[i] < -1)
+			BUG("io_uring_register: FILES_UPDATE's fd array holds a stray value");
+	}
 
 	/* The picker, not only a chain substitution onto the opcode slot,
 	 * reaches each opcode the slot lists. */

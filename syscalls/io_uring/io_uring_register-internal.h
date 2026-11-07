@@ -34,6 +34,7 @@ struct ioring_register_payload {
 
 struct ioring_register_payload ioring_reg_buffers_payload(unsigned int opcode);
 struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode);
+struct ioring_register_payload ioring_reg_files_update_payload(void);
 struct ioring_register_payload ioring_reg_eventfd_payload(unsigned int opcode);
 struct ioring_register_payload ioring_reg_probe_payload(void);
 struct ioring_register_payload ioring_reg_personality_payload(unsigned int opcode);

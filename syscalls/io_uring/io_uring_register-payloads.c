@@ -48,28 +48,21 @@ struct ioring_register_payload ioring_reg_buffers_payload(unsigned int opcode)
 }
 
 /*
- * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
- * Fill ~75% of slots with a real fd from the shared pool so
- * io_sqe_files_register reaches io_fixed_file_set() and the file
- * refcount path rather than short-circuiting on an all-sparse table;
- * leave the remaining ~25% as -1 holes so the sparse-slot code path
- * stays covered.  Reroll get_random_fd() up to FAILED_FD_REROLL_LIMIT
- * times per real slot to skip -1 returns and protected fds -- a
- * protected fd installed into a ring can outlive the reroll_-
- * protected_fd_arg gate on later dup/close paths.  On reroll
- * exhaustion fall back to -1 for that slot.
- * IORING_UNREGISTER_FILES takes no arg.
+ * The int[] of @nr fds a file table is filled from.  Fill ~75% of slots
+ * with a real fd from the shared pool so io_sqe_files_register reaches
+ * io_fixed_file_set() and the file refcount path rather than
+ * short-circuiting on an all-sparse table; leave the remaining ~25% as
+ * -1 holes so the sparse-slot code path stays covered.  Reroll
+ * get_random_fd() up to FAILED_FD_REROLL_LIMIT times per real slot to
+ * skip -1 returns and protected fds -- a protected fd installed into a
+ * ring can outlive the reroll_protected_fd_arg gate on later dup/close
+ * paths.  On reroll exhaustion fall back to -1 for that slot.
  */
-struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode)
+static int *files_fd_array(unsigned int nr)
 {
-	struct ioring_register_payload p = { 0, 0, 0 };
-	unsigned int nr, i;
+	unsigned int i;
 	int *buf;
 
-	if (opcode == IORING_UNREGISTER_FILES)
-		return p;
-
-	nr = 1 + (rnd_modulo_u32(16));
 	buf = (int *) get_writable_struct(nr * sizeof(int));
 	if (buf) {
 		for (i = 0; i < nr; i++) {
@@ -91,9 +84,50 @@ struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode)
 			buf[i] = fd;
 		}
 	}
-	p.arg = (unsigned long) buf;
+	return buf;
+}
+
+/*
+ * IORING_REGISTER_FILES: arg = int[] of fds, nr_args = count.
+ * IORING_UNREGISTER_FILES takes no arg.
+ */
+struct ioring_register_payload ioring_reg_files_payload(unsigned int opcode)
+{
+	struct ioring_register_payload p = { 0, 0, 0 };
+	unsigned int nr;
+
+	if (opcode == IORING_UNREGISTER_FILES)
+		return p;
+
+	nr = 1 + (rnd_modulo_u32(16));
+	p.arg = (unsigned long) files_fd_array(nr);
 	p.nr = nr;
 	p.len = nr * sizeof(int);
+	return p;
+}
+
+/*
+ * IORING_REGISTER_FILES_UPDATE: arg = struct io_uring_rsrc_update,
+ * whose data is such an fd array, nr_args = its length.
+ * __io_sqe_files_update() swaps the fds into the installed table from
+ * offset on and refuses a run past the table's end, so keep both small;
+ * resv must be 0, as the kernel reads it as the update's flags.
+ */
+struct ioring_register_payload ioring_reg_files_update_payload(void)
+{
+	struct ioring_register_payload p;
+	struct io_uring_rsrc_update *u;
+	unsigned int nr = 1 + rnd_modulo_u32(8);
+
+	u = (struct io_uring_rsrc_update *) get_writable_struct(sizeof(*u));
+	if (u) {
+		memset(u, 0, sizeof(*u));
+		u->offset = rnd_modulo_u32(8);
+		u->data = (__u64)(unsigned long) files_fd_array(nr);
+	}
+	p.arg = (unsigned long) u;
+	p.nr = nr;
+	p.len = sizeof(*u);
 	return p;
 }
 

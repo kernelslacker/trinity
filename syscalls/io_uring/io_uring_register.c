@@ -260,6 +260,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		p = ioring_reg_files_payload(opcode);
 		break;
 
+	case IORING_REGISTER_FILES_UPDATE:
+		p = ioring_reg_files_update_payload();
+		break;
+
 	case IORING_REGISTER_EVENTFD:
 	case IORING_REGISTER_EVENTFD_ASYNC:
 	case IORING_UNREGISTER_EVENTFD:
