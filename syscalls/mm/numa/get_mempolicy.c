@@ -223,7 +223,6 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	int policy_recall;
 	unsigned long nmask_first[MAX_NMASK_LONGS];
 	unsigned long nmask_recall[MAX_NMASK_LONGS];
-	size_t nmask_words;
 	size_t nmask_bytes;
 	unsigned long maxnode, addr, flags;
 	long rc;
@@ -239,6 +238,8 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	maxnode = get_arg_snapshot(rec, 3);
+
 	/*
 	 * Untouched-buffer arms: get_mempolicy returned 0 but the user
 	 * buffer still byte-for-byte matches the fixed poison stamped at
@@ -246,13 +247,15 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	 * arm.  poison_seed == 0 signals sanitise refused to stamp
 	 * (writable-pool draw no longer provably mapped, or the nmask arm
 	 * was gated out by flags != 0); skip so "we could not poison" is
-	 * not confused with "kernel did not write".  Runs on every call
-	 * -- not sampled -- so the signal is not diluted by the
-	 * ONE_IN(100) gate that throttles the equality re-issue below.
-	 * Bounded by MAX_NMASK_LONGS on the nmask arm to match the
-	 * on-stack cap the equality arm uses; anything larger would also
-	 * exceed CHECK_OUTPUT_STRUCT_SNAP_MAX and be dropped by the
-	 * helper regardless.
+	 * not confused with "kernel did not write".  The kernel writes
+	 * maxnode - 1 bits of the mask, so a maxnode of 1, which a
+	 * single-node box takes, leaves it alone.  Runs on every call --
+	 * not sampled -- so the signal is not diluted by the ONE_IN(100)
+	 * gate that throttles the equality re-issue below.  Bounded by
+	 * MAX_NMASK_LONGS on the nmask arm to match the on-stack cap the
+	 * equality arm uses; anything larger would also exceed
+	 * CHECK_OUTPUT_STRUCT_SNAP_MAX and be dropped by the helper
+	 * regardless.
 	 */
 	if ((long) rec->retval == 0) {
 		if (snap->poison_seed_policy != 0 &&
@@ -262,7 +265,7 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 			__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 					   1, __ATOMIC_RELAXED);
 
-		if (snap->poison_seed_nmask != 0) {
+		if (snap->poison_seed_nmask != 0 && maxnode > 1) {
 			size_t words = (snap->maxnode + 63) / 64;
 
 			if (words == 0)
@@ -285,7 +288,6 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (snap->policy == 0 || snap->nmask == 0)
 		goto out_free;
 
-	maxnode = get_arg_snapshot(rec, 3);
 	addr = get_arg_snapshot(rec, 4);
 	flags = get_arg_snapshot(rec, 5);
 	if (flags & MPOL_F_ADDR)
@@ -293,10 +295,8 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 
 	if (maxnode > MAX_NMASK_BITS)
 		goto out_free;
-	nmask_words = (maxnode + 63) / 64;
-	if (nmask_words == 0)
-		nmask_words = 1;
-	nmask_bytes = nmask_words * sizeof(unsigned long);
+	/* copy_nodes_to_user() writes ALIGN(maxnode - 1, 64) / 8 bytes. */
+	nmask_bytes = (maxnode + 62) / 64 * sizeof(unsigned long);
 
 	if (!post_snapshot_or_skip(&policy_first,
 				   (const void *)(unsigned long) snap->policy,

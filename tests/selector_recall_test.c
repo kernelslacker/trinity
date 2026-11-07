@@ -441,11 +441,14 @@ static unsigned long mempolicy_anomalies(const struct mempolicy_call *built,
 }
 
 /* The task's own nodes and the ones it may use, and a mask one word
- * shorter, which leaves the sanitiser's poison in the word after it. */
+ * shorter, which leaves the sanitiser's poison in the word after it, as
+ * does a maxnode one past a multiple of 64: the kernel writes maxnode - 1
+ * bits. */
 static void mempolicy_cases(void)
 {
 	static const struct mempolicy_call bound = { 64, 0 };
 	static const struct mempolicy_call bound_wide = { 128, 0 };
+	static const struct mempolicy_call bound_odd = { 65, 0 };
 	static const struct mempolicy_call allowed = { 64, MPOL_F_MEMS_ALLOWED };
 
 	fake_syscall = fake_get_mempolicy;
@@ -455,6 +458,8 @@ static void mempolicy_cases(void)
 	      mempolicy_anomalies(&allowed, &bound, &allowed) > 0);
 	check("get_mempolicy: a call rewritten onto a shorter mask was compared over the longer",
 	      mempolicy_anomalies(&bound_wide, &bound, &bound) == 0);
+	check("get_mempolicy: a maxnode one past a multiple of 64 was compared over a word the kernel does not write",
+	      mempolicy_anomalies(&bound_odd, &bound_odd, &bound_odd) == 0);
 	fake_syscall = NULL;
 }
 #endif

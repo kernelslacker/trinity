@@ -1115,6 +1115,50 @@ static void sysv_ctl_untouched(void)
 	}
 }
 
+/* get_mempolicy() writes maxnode - 1 bits of the node mask
+ * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
+ * single-node box takes, writes the policy and none of the mask.  The
+ * kernel's copies are stood in for by the words the call writes. */
+static void get_mempolicy_untouched(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long maxnode;
+		bool mask_written;
+		unsigned int untouched;
+	} cases[] = {
+		{ "get_mempolicy, a maxnode of 1 and no mask to write", 1, false, 0 },
+		{ "get_mempolicy, a maxnode of 64 and the mask left unwritten", 64, false, 1 },
+		{ "get_mempolicy, a maxnode of 64 and the mask written", 64, true, 0 },
+	};
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		unsigned long before;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) get_writable_address(sizeof(int));
+		rec.a2 = (unsigned long) get_writable_address(page_size);
+		rec.a3 = cases[i].maxnode;
+		syscall_get_mempolicy.sanitise(&rec);
+
+		*(int *) rec.a1 = 0;
+		if (cases[i].mask_written)
+			*(unsigned long *) rec.a2 = 1;
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec.arg_shadow[k] = *slots[k];
+		rec.arg_snapshot_mask = syscall_get_mempolicy.arg_snapshot_mask;
+		rec.retval = 0;
+		before = shm->stats.post_handler_untouched_out_buf;
+		syscall_get_mempolicy.post(&rec);
+		expect(cases[i].what,
+		       shm->stats.post_handler_untouched_out_buf - before,
+		       cases[i].untouched);
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -1260,6 +1304,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_pid();
 	getgroups_untouched();
 	sysv_ctl_untouched();
+	get_mempolicy_untouched();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH
