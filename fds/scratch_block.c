@@ -412,7 +412,6 @@ static void scratch_publish_object(struct scratch_block_entry *e)
 static int init_scratch_block(void)
 {
 	struct objhead *head;
-	unsigned int next = 0;
 
 	/* Box-safety gate: without the parent's private mount namespace,
 	 * any mount() we issue lands in the host mount tree and any
@@ -437,16 +436,14 @@ static int init_scratch_block(void)
 	if (loopctl_fd < 0) {
 		output(0, "scratch_block: open(/dev/loop-control) failed: %s -- loop slot skipped\n",
 		       strerror(errno));
-	} else if (next < SCRATCH_BLOCK_MAX) {
-		struct scratch_block_entry *e =
-			&shm->isolation.scratch_block[next];
+	} else {
+		struct scratch_block_entry *e = &shm->isolation.scratch_block[0];
 
-		if (scratch_make_loop(next, &scratch_owned[next])) {
-			*e = scratch_owned[next];
-			scratch_owned_count = next + 1;
+		if (scratch_make_loop(0, &scratch_owned[0])) {
+			*e = scratch_owned[0];
+			scratch_owned_count = 1;
 			scratch_publish_object(e);
-			next++;
-			shm->isolation.scratch_block_count = next;
+			shm->isolation.scratch_block_count = 1;
 		}
 	}
 
