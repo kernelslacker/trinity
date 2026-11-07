@@ -292,26 +292,17 @@ out:
 bool kcov_registration_still_present(unsigned long addr, unsigned long size,
 				     const char *origin)
 {
+	const struct shared_region_entry *r;
 	unsigned int i;
 
 	if (origin == NULL)
 		return false;
-	for (i = 0; i < nr_shared_regions; i++) {
-		if (shared_regions[i].addr != addr ||
-		    shared_regions[i].size != size)
+	for_each_shared_region(i, r) {
+		if (r->addr != addr || r->size != size)
 			continue;
-		if (shared_regions[i].origin == NULL)
+		if (r->origin == NULL)
 			continue;
-		if (strcmp(shared_regions[i].origin, origin) == 0)
-			return true;
-	}
-	for (i = 0; i < nr_shared_regions_overflow; i++) {
-		if (shared_regions_overflow[i].addr != addr ||
-		    shared_regions_overflow[i].size != size)
-			continue;
-		if (shared_regions_overflow[i].origin == NULL)
-			continue;
-		if (strcmp(shared_regions_overflow[i].origin, origin) == 0)
+		if (strcmp(r->origin, origin) == 0)
 			return true;
 	}
 	return false;
