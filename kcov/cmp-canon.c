@@ -1,5 +1,5 @@
 /*
- * kcov/transition-hash.c — KASLR canonicalisation for kernel comparison
+ * kcov/cmp-canon.c — KASLR canonicalisation for kernel comparison
  * instruction addresses.
  *
  * kcov_canon_cmp_ip() is the single ingress CMP-hint consumers use to strip
