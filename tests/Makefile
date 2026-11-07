@@ -978,8 +978,10 @@ FAKE_SRCS	+= io_uring_register_test.c
 
 # args/gen_arg_time.c brings the time generators, in place of
 # fake_arg_gens.c's stand-ins, which gen_arg_time_test.c holds to the
-# layout each call's ABI reads.
-PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c
+# layout each call's ABI reads, and syscalls/timer/timer_settime.c the
+# sanitiser that rewrites ARG_ITIMERSPEC's struct.
+PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
+		   $(TOP)/syscalls/timer/timer_settime.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

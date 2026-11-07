@@ -128,6 +128,7 @@ static void sanitise_timer_settime(struct syscallrecord *rec)
 			its->it_interval.tv_sec = 0;
 			its->it_interval.tv_nsec = 0;
 		}
+		time_struct_for_abi(rec, its, 2);
 	}
 
 	avoid_shared_buffer_out(&rec->a4, sizeof(struct itimerspec));

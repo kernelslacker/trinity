@@ -399,7 +399,7 @@ unsigned long gen_arg_itimerval(struct syscallentry *entry __unused__,
  * so the blanket address scrub is a no-op.  No .cleanup needed.
  */
 unsigned long gen_arg_itimerspec(struct syscallentry *entry __unused__,
-					struct syscallrecord *rec __unused__,
+					struct syscallrecord *rec,
 					unsigned int argnum __unused__)
 {
 	struct itimerspec *its;
@@ -436,6 +436,7 @@ unsigned long gen_arg_itimerspec(struct syscallentry *entry __unused__,
 		its->it_value.tv_nsec = (long) rnd_modulo_u32(1000000000u);
 	}
 
+	time_struct_for_abi(rec, its, 2);
 	return (unsigned long) its;
 }
 

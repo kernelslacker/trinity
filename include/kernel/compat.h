@@ -44,6 +44,11 @@ struct old_timespec32 {
 	__s32 tv_nsec;
 };
 
+struct old_itimerspec32 {
+	struct old_timespec32 it_interval;
+	struct old_timespec32 it_value;
+};
+
 _Static_assert(sizeof(struct compat_iovec) == 8,
 	       "compat_iovec must be two 32-bit words");
 _Static_assert(sizeof(struct compat_msghdr) == 28,
@@ -52,3 +57,5 @@ _Static_assert(sizeof(struct compat_mmsghdr) == 32,
 	       "compat_mmsghdr must be a compat msghdr plus one 32-bit word");
 _Static_assert(sizeof(struct old_timespec32) == 8,
 	       "old_timespec32 must be two 32-bit words");
+_Static_assert(sizeof(struct old_itimerspec32) == 16,
+	       "old_itimerspec32 must be two old_timespec32s");
