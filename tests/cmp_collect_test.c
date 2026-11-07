@@ -1,11 +1,14 @@
 /*
  * Self-check for cmp_hints_collect(): every KCOV_CMP_CONST record it
- * keeps must reach the hint pool, in trace order.
+ * keeps must reach the hint pool, in trace order, and the RedQueen field
+ * scan pins a timespec field only for a call that reads the native
+ * layout.
  */
 
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "child.h"
 #include "cmp_hints.h"
@@ -155,10 +158,71 @@ static void check_flushed(void)
 	}
 }
 
+/* clock_nanosleep on i386 and x86_64. */
+#define FIELD_NR_TIME32		267U
+#define FIELD_NR_NATIVE		230U
+/* KCOV_CMP_CONST with an 8-byte operand, so only the exact scalar pass
+ * runs before the field scan. */
+#define FIELD_CMP_TYPE		((3UL << 1) | 1UL)
+
+static struct syscallentry field_entry = {
+	.name = "field",
+	.num_args = 1,
+	.argtype = { [0] = ARG_TIMESPEC },
+};
+
+static struct timespec field_ts = { .tv_sec = 0, .tv_nsec = 999999999 };
+
+/* The field pins one cmp_hints_collect() call stages for a call whose
+ * slot 1 holds field_ts, over one record comparing its tv_nsec with
+ * NSEC_PER_SEC. */
+static unsigned int field_pins(bool do32bit, unsigned int nr)
+{
+	struct childdata *child;
+	unsigned int pins;
+
+	kcov_shm = calloc(1, sizeof(*kcov_shm));
+	cmp_hints_shm = calloc(1, sizeof(*cmp_hints_shm));
+	child = calloc(1, sizeof(*child));
+	if (kcov_shm == NULL || cmp_hints_shm == NULL || child == NULL)
+		BUG("cmp collect: calloc failed");
+
+	child->redqueen_enabled = true;
+	child->syscall.entry = &field_entry;
+	child->syscall.do32bit = do32bit;
+	child->syscall.nr = nr;
+	child->syscall.dispatch_args[0] = (unsigned long) &field_ts;
+	child->syscall.dispatch_args_valid = true;
+
+	trace_buf[0] = 1;
+	trace_buf[1] = FIELD_CMP_TYPE;
+	trace_buf[2] = 1000000000UL;
+	trace_buf[3] = (unsigned long) field_ts.tv_nsec;
+	trace_buf[4] = collect_ip(0);
+
+	nr_flushed = 0;
+	fake_this_child = child;
+
+	cmp_hints_collect(trace_buf, nr, do32bit);
+
+	fake_this_child = NULL;
+	pins = child->reexec_pending_count;
+	free(child);
+	free_shm();
+	return pins;
+}
+
 void cmp_collect_self_check(void);
 void cmp_collect_self_check(void)
 {
 	run_collect();
 	check_flushed();
 	free_shm();
+
+	if (field_pins(false, FIELD_NR_NATIVE) != 1)
+		BUG("cmp collect: a native call's tv_nsec compare staged no field pin");
+	/* A time32 call reads the buffer as 32-bit fields, which the scan's
+	 * native read and the pin's native write would both misplace. */
+	if (field_pins(true, FIELD_NR_TIME32) != 0)
+		BUG("cmp collect: a time32 call's timespec took a native field pin");
 }

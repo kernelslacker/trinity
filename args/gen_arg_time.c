@@ -1,6 +1,7 @@
 #include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
@@ -11,6 +12,36 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
+
+/*
+ * A compat call numbered below NR_COMPAT_TIME64_FIRST reads its time
+ * structs at 32-bit width: struct old_timespec32 and old_timeval32, and
+ * the itimer pairs of them.  The native structs are runs of 64-bit
+ * (seconds, sub-second) pairs.  The seconds saturate, so the LONG_MAX
+ * bucket stays the largest count the field takes.
+ */
+void time_struct_for_abi(const struct syscallrecord *rec, void *buf,
+			 unsigned int pairs)
+{
+	int64_t wide[4];
+	int32_t narrow[4];
+	unsigned int i;
+
+	if (!rec->do32bit || rec->nr >= NR_COMPAT_TIME64_FIRST)
+		return;
+
+	memcpy(wide, buf, pairs * 2 * sizeof(wide[0]));
+	for (i = 0; i < pairs * 2; i += 2) {
+		if (wide[i] > INT32_MAX)
+			narrow[i] = INT32_MAX;
+		else if (wide[i] < INT32_MIN)
+			narrow[i] = INT32_MIN;
+		else
+			narrow[i] = (int32_t) wide[i];
+		narrow[i + 1] = (int32_t) wide[i + 1];
+	}
+	memcpy(buf, narrow, pairs * 2 * sizeof(narrow[0]));
+}
 
 /*
  * ARG_TIMESPEC: a writable pool buffer filled with a struct timespec.
@@ -34,10 +65,12 @@
  * and the kernel's struct __kernel_timespec share an identical layout
  * on 64-bit so the bespoke sanitisers being folded into this generator
  * (clock_nanosleep, clock_settime, semtimedop, ...) already type their
- * locals as struct timespec.  Match that convention.
+ * locals as struct timespec.  Match that convention, and leave
+ * time_struct_for_abi() to narrow a bucketed fill for a compat time32
+ * call; raw bytes are raw in either layout.
  */
 unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
-				      struct syscallrecord *rec __unused__,
+				      struct syscallrecord *rec,
 				      unsigned int argnum __unused__)
 {
 	struct timespec *ts;
@@ -94,6 +127,7 @@ unsigned long gen_arg_timespec(struct syscallentry *entry __unused__,
 		break;
 	}
 
+	time_struct_for_abi(rec, ts, 1);
 	return (unsigned long) ts;
 }
 

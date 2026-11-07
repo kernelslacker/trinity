@@ -100,6 +100,7 @@ void numa_self_check(void);
 void bpf_pick_self_check(void);
 void pathname_pool_self_check(void);
 void io_uring_register_self_check(void);
+void gen_arg_time_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -557,6 +558,11 @@ int main(int argc, char **argv)
 	printf("  io_uring_register_self_check ... ");
 	fflush(stdout);
 	io_uring_register_self_check();
+	printf("OK\n");
+
+	printf("  gen_arg_time_self_check ... ");
+	fflush(stdout);
+	gen_arg_time_self_check();
 	printf("OK\n");
 
 	return 0;

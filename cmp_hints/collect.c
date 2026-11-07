@@ -18,6 +18,7 @@
 #include "cmp_hints-internal.h"
 #include "debug.h"
 #include "kcov.h"
+#include "kernel/compat.h"
 #include "params.h"
 #include "random.h"
 #include "rnd.h"
@@ -191,6 +192,8 @@ static void cmp_attribution_prestage(struct childdata *child,
 		    rec->dispatch_args_valid) {
 			unsigned int n = entry->num_args;
 			unsigned int k;
+			bool native_time = !rec->do32bit ||
+					   rec->nr >= NR_COMPAT_TIME64_FIRST;
 
 			if (n > 6)
 				n = 6;
@@ -205,10 +208,15 @@ static void cmp_attribution_prestage(struct childdata *child,
 			 * scan can tell which slots carry a pointer to a
 			 * field-eligible struct without re-reading entry;
 			 * flag the cheap gate so non-timespec syscalls
-			 * skip the scan entirely. */
+			 * skip the scan entirely.  So does a compat call
+			 * numbered below NR_COMPAT_TIME64_FIRST: it reads
+			 * its timespec as 32-bit fields, which the scan's
+			 * native read and the pin's native write would
+			 * both misplace. */
 			for (k = 0; k < n; k++) {
 				rec_argtype[k] = entry->argtype[k];
-				if (entry->argtype[k] == ARG_TIMESPEC)
+				if (entry->argtype[k] == ARG_TIMESPEC &&
+				    native_time)
 					*field_scan_enabled = true;
 			}
 			*attribute_enabled = true;

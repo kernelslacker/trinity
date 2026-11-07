@@ -101,6 +101,14 @@ void iovec_set_entry(void *iov, unsigned long idx, unsigned long base,
 		     unsigned long len, bool do32bit);
 void iovec_set_entry_len(void *iov, unsigned long idx, unsigned long len,
 			 bool do32bit);
+
+/*
+ * Rewrite the native time struct at @buf, @pairs (seconds, sub-second)
+ * pairs, in the 32-bit layout a compat call numbered below
+ * NR_COMPAT_TIME64_FIRST reads, when @rec's call is one.
+ */
+void time_struct_for_abi(const struct syscallrecord *rec, void *buf,
+			 unsigned int pairs);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
 /*
