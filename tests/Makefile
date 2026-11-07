@@ -392,11 +392,13 @@ PARENT_SRCS	:= \
 	$(TOP)/args/argtype_table.c
 LDFLAGS		+= -Wl,--gc-sections
 
-# The CMP-hint collect path, linked for cmp_hints_collect().  Same
+# The CMP-hint collect path, linked for cmp_hints_collect(), and the
+# typed-hypothesis credit the consume stash feeds.  Same
 # section-per-function treatment as the parent TUs; cmp_collect_test.c
 # fakes the rest of the cmp_hints core it reaches.
 CMP_SRCS	:= \
-	$(TOP)/cmp_hints/collect.c
+	$(TOP)/cmp_hints/collect.c \
+	$(TOP)/cmp_hints/hyp-credit.c
 
 # The minicorpus save, replay and warm-start file paths, linked for
 # minicorpus_save_with_reason(), minicorpus_replay(),
@@ -483,6 +485,7 @@ FAKE_SRCS	:= \
 	dispatch_extrafork_test.c \
 	tables_extrafork_test.c \
 	cmp_collect_test.c \
+	cmp_hyp_credit_test.c \
 	sanitiser_owned_mask_test.c \
 	minicorpus_abi_test.c \
 	chain_corpus_test.c \

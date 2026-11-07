@@ -162,9 +162,9 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 
 /*
  * SHADOW typed-hypothesis consume credit.  Called from
- * cmp_hints_stash_consumed() (collect.c) on every push so the typed
- * denominator tracks the per-pool denominator.  Definition in
- * cmp_hints/hyp-credit.c.
+ * cmp_hints_stash_consumed() (collect.c) for each pull the live inject
+ * arm produced, so the typed denominator counts the pulls the typed
+ * outcome credit scores.  Definition in cmp_hints/hyp-credit.c.
  */
 void cmp_hyp_credit_consume(unsigned int nr, bool do32,
 			    unsigned long cmp_ip, unsigned long value,

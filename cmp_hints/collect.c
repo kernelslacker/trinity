@@ -1140,19 +1140,13 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 				1UL, __ATOMIC_RELAXED);
 	}
 
-	/* SHADOW hypothesis-layer consume credit.  Resolves the would-have-
-	 * been-chosen hypothesis from the same (cmp_ip, value, size) tuple
-	 * the per-entry pool credit drain will use later; bumps the typed
-	 * consumed_count + flat cmp_hyp_consumed so the typed denominator
-	 * tracks the per-pool denominator already established above.  No-op
-	 * when no hypothesis explains the value -- the credit lands only
-	 * where the parallel inference layer has standing.  Gated off for
-	 * shared-served entries: the cmp_ip carried on the stash comes
-	 * from another syscall's observation, so any hypothesis hit at
-	 * (this nr, that cross-syscall cmp_ip) would be a coincidence
-	 * indistinguishable from noise and would inflate the typed
-	 * consume denominator with cross-nr chatter the shared-tier
-	 * bootstrap is not authorised to spend against native credit. */
-	if (!served_from_shared)
+	/* SHADOW hypothesis-layer consume credit: bumps the typed
+	 * consumed_count + flat cmp_hyp_consumed, the denominator the
+	 * typed outcome credit's wins and misses are read against.  Gated
+	 * on hyp_injected like those drains (credit.c), so a raw pull whose
+	 * value a stored hypothesis happens to explain does not count.  A
+	 * shared-served pull never runs the inject arm, so its cross-nr
+	 * cmp_ip stays out too. */
+	if (hyp_injected)
 		cmp_hyp_credit_consume(nr, do32, cmp_ip, value, size);
 }
