@@ -351,18 +351,35 @@ static size_t gen_rtnl_body_stats(unsigned char *body, size_t buflen, unsigned c
 	return sizeof(smsg);
 }
 
-/* RTM_*NEXTHOP / RTM_*NEXTHOPBUCKET: struct nhmsg */
-static size_t gen_rtnl_body_nexthop(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*NEXTHOP / RTM_*NEXTHOPBUCKET: struct nhmsg.  rtm_to_nh_config()
+ * refuses a nexthop add whose scope is nonzero, whose flags hold any but
+ * RTNH_F_ONLINK or whose family is not AF_INET or AF_INET6, or AF_UNSPEC
+ * for a group, and nh_valid_get_del_req() and the dumps refuse a delete or
+ * a GET whose protocol, scope or flags are nonzero, on every socket.  So
+ * the header keeps to that seven times in eight.
+ */
+static size_t gen_rtnl_body_nexthop(unsigned char *body, size_t buflen, bool add,
+				    unsigned char *out_family)
 {
+	static const unsigned char families[] = { AF_INET, AF_INET6, AF_UNSPEC };
 	struct nhmsg nh;
 
 	if (sizeof(nh) > buflen)
 		return 0;
 	memset(&nh, 0, sizeof(nh));
-	nh.nh_family = rand_family();
-	nh.nh_scope = rand32() & 0xff;
-	nh.nh_protocol = rand32() & 0xff;
-	nh.nh_flags = rand32();
+	if (ONE_IN(8)) {
+		nh.nh_family = rand_family();
+		nh.nh_scope = rand32() & 0xff;
+		nh.nh_protocol = rand32() & 0xff;
+		nh.nh_flags = rand32();
+	} else if (add) {
+		nh.nh_family = RAND_ARRAY(families);
+		nh.nh_protocol = rand32() & 0xff;
+		nh.nh_flags = RAND_BOOL() ? RTNH_F_ONLINK : 0;
+	} else {
+		nh.nh_family = rand_family();
+	}
 	*out_family = nh.nh_family;
 	memcpy(body, &nh, sizeof(nh));
 	return sizeof(nh);
@@ -466,7 +483,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 19: return gen_rtnl_body_stats(body, buflen, out_family);
 	case 22: /* RTM_*NEXTHOP */
 	case 25: /* RTM_*NEXTHOPBUCKET */
-		return gen_rtnl_body_nexthop(body, buflen, out_family);
+		return gen_rtnl_body_nexthop(body, buflen,
+					     nlmsg_type == RTM_NEWNEXTHOP,
+					     out_family);
 	case 26: return gen_rtnl_body_tunnel(body, buflen, out_family);
 	case 5:  /* RTM_*QDISC */
 	case 6:  /* RTM_*TCLASS */

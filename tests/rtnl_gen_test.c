@@ -16,6 +16,7 @@
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
+#include <linux/nexthop.h>
 #include <linux/pkt_cls.h>
 #include <linux/rtnetlink.h>
 #include <linux/tc_act/tc_gact.h>
@@ -330,6 +331,55 @@ static void expect_neigh_header(const struct neigh_header *get,
 	expect_fraction(newdel->taken, newdel->msgs, 0.0, 0.001,
 			"RTM_NEWNEIGH and RTM_DELNEIGH",
 			"rtnl: RTM_NEWNEIGH and RTM_DELNEIGH lose their random state, flags and type");
+}
+
+/* ---------- The nhmsg of RTM_*NEXTHOP and RTM_GETNEXTHOPBUCKET ---------- */
+
+struct nexthop_header {
+	unsigned int msgs;
+	unsigned int taken;	/* a header the request's handler takes */
+	unsigned int onlink;	/* flags RTNH_F_ONLINK */
+};
+
+static void tally_nexthop_header(struct nexthop_header *t,
+				 const struct nlmsghdr *nlh, bool add)
+{
+	const struct nhmsg *nhm = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*nhm)))
+		return;
+	t->msgs++;
+	t->onlink += nhm->nh_flags == RTNH_F_ONLINK;
+	if (nhm->resvd || nhm->nh_scope)
+		return;
+	if (add)
+		t->taken += !(nhm->nh_flags & ~RTNH_F_ONLINK) &&
+			    (nhm->nh_family == AF_INET ||
+			     nhm->nh_family == AF_INET6 ||
+			     nhm->nh_family == AF_UNSPEC);
+	else
+		t->taken += !nhm->nh_protocol && !nhm->nh_flags;
+}
+
+/*
+ * rtm_to_nh_config() refuses a nexthop add whose scope or reserved byte is
+ * nonzero, whose flags hold any but RTNH_F_ONLINK or whose family is not
+ * AF_INET, AF_INET6 or, for a group, AF_UNSPEC, and nh_valid_get_del_req()
+ * and the dumps refuse a delete or a GET whose protocol, scope, reserved
+ * byte or flags are nonzero, on every socket.  The builder keeps both to
+ * that seven times in eight, and an add carries RTNH_F_ONLINK half of
+ * those.
+ */
+static void expect_nexthop_header(const struct nexthop_header *add,
+				  const struct nexthop_header *other)
+{
+	expect_fraction(add->taken, add->msgs, 0.84, 0.91, "RTM_NEWNEXTHOP",
+			"rtnl: RTM_NEWNEXTHOP's header is not one rtm_to_nh_config() takes seven times in eight");
+	expect_fraction(add->onlink, add->msgs, 0.38, 0.50, "RTM_NEWNEXTHOP",
+			"rtnl: RTM_NEWNEXTHOP does not carry RTNH_F_ONLINK about half the time");
+	expect_fraction(other->taken, other->msgs, 0.84, 0.91,
+			"RTM_DELNEXTHOP, RTM_GETNEXTHOP and RTM_GETNEXTHOPBUCKET",
+			"rtnl: a nexthop delete or GET does not have a zero protocol, scope and flags seven times in eight");
 }
 
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
@@ -1211,6 +1261,7 @@ struct tallies {
 	struct dump_bits dumps, dcb;
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
+	struct nexthop_header newnexthop, nexthop;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1263,6 +1314,14 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELNEIGH:
 			tally_neigh_header(&t->newdelneigh, nlh);
 			break;
+		case RTM_NEWNEXTHOP:
+			tally_nexthop_header(&t->newnexthop, nlh, true);
+			break;
+		case RTM_DELNEXTHOP:
+		case RTM_GETNEXTHOP:
+		case RTM_GETNEXTHOPBUCKET:
+			tally_nexthop_header(&t->nexthop, nlh, false);
+			break;
 		case RTM_NEWTUNNEL:
 		case RTM_DELTUNNEL:
 		case RTM_GETTUNNEL:
@@ -1314,6 +1373,7 @@ void rtnl_gen_self_check(void)
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
+	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
