@@ -43,17 +43,15 @@ static void sanitise_fstat64(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
-	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
-	 * returns NULL when the writable pool cannot satisfy the requested
-	 * mapping_sizes[] draw (~7/9 of picks, since mapping_sizes runs up
-	 * to GB(1) but the pool is 1 MiB).  Skip the poison + snap install
-	 * on those calls -- writing a poison pattern to a NULL user pointer
-	 * would SIGSEGV inside the sanitiser and mask the syscall path we
-	 * are trying to fuzz.  range_readable_user() also filters raw fuzz
-	 * addresses that fell outside the tracked shared / libc-heap
-	 * snapshots (the pool is track_shared_region()'d, so pool-vended
-	 * addresses always pass); those addresses may not be writable and
-	 * the poison stamp would fault the same way.  On skip, rec->post_state
+	 * Skip the poison + snap install on a pointer that is not
+	 * provably writable -- writing a poison pattern to a NULL user
+	 * pointer would SIGSEGV inside the sanitiser and mask the
+	 * syscall path we are trying to fuzz.  range_readable_user()
+	 * filters raw fuzz addresses that fell outside the tracked
+	 * shared / libc-heap snapshots (the pool is
+	 * track_shared_region()'d, so pool-vended addresses always
+	 * pass); those addresses may not be writable and the poison
+	 * stamp would fault the same way.  On skip, rec->post_state
 	 * stays 0 -- post_state_claim_owned() returns NULL and the post
 	 * handler no-ops without ever touching the pointer.
 	 */
@@ -209,12 +207,10 @@ static void sanitise_fstatat64(struct syscallrecord *rec)
 
 	/*
 	 * See sanitise_fstat64 for why we gate the poison stamp on
-	 * range_readable_user(): ARG_NON_NULL_ADDRESS can hand us NULL when
-	 * the writable pool cannot back the requested mapping size, and
-	 * writing poison into NULL / an unmapped fuzz address would SIGSEGV
-	 * the sanitiser.  Skip snap install on the not-provably-writable
-	 * path; the post handler no-ops via post_state_claim_owned() ==
-	 * NULL.
+	 * range_readable_user(): writing poison into NULL / an unmapped
+	 * fuzz address would SIGSEGV the sanitiser.  Skip snap install
+	 * on the not-provably-writable path; the post handler no-ops
+	 * via post_state_claim_owned() == NULL.
 	 */
 	buf = (void *)(unsigned long) rec->a3;
 	if (!range_readable_user(buf, sizeof(struct stat64)))

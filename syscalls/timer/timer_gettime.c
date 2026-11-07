@@ -66,15 +66,13 @@ static void sanitise_timer_gettime(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct itimerspec));
 
 	/*
-	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
-	 * returns NULL when the writable pool cannot back the requested
-	 * mapping_sizes[] pick.  Skip the poison + snap install on those
-	 * calls -- writing a poison pattern to a NULL or otherwise not-
-	 * provably-writable user pointer would SIGSEGV inside the
-	 * sanitiser and mask the syscall path we are trying to fuzz.  On
-	 * skip, rec->post_state stays 0 -- post_state_claim_owned()
-	 * returns NULL and the post handler no-ops without ever touching
-	 * the pointer.
+	 * Skip the poison + snap install on a pointer that is not
+	 * provably writable -- writing a poison pattern to a NULL or
+	 * otherwise not-provably-writable user pointer would SIGSEGV
+	 * inside the sanitiser and mask the syscall path we are trying
+	 * to fuzz.  On skip, rec->post_state stays 0 --
+	 * post_state_claim_owned() returns NULL and the post handler
+	 * no-ops without ever touching the pointer.
 	 */
 	buf = (void *)(unsigned long) rec->a2;
 	if (!range_readable_user(buf, sizeof(struct itimerspec)))

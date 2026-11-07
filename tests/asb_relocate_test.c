@@ -6,19 +6,22 @@
  * get_writable_address() refuses such a size, a wrapping round-up included.
  * A pointer that starts in the low pool, a compat call's, stays too.
  * The iovec scrub leaves the entries asb_relocate() would leave, where it
- * zeroes any other flagged one.
+ * zeroes any other flagged one.  get_non_null_address() draws a buffer of
+ * its own every time.
  */
 
 #include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "arch.h"		/* page_size */
 #include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
+#include "maps.h"		/* mapping_sizes */
 #include "sanitise.h"		/* writable and low pools, avoid_shared_buffer_out,
 				   the iovec scrubs, struct compat_iovec */
-#include "utils-macros.h"	/* ARRAY_SIZE */
+#include "utils-macros.h"	/* ARRAY_SIZE, MB, GB */
 
 extern bool fake_overlaps_shared;	/* fake_shm.c */
 extern struct childdata *fake_this_child;	/* fake_shm.c */
@@ -228,6 +231,33 @@ static void oversize_refused(void)
 	}
 }
 
+/*
+ * Two buffers one call draws, with mapping_sizes[] as a run sets it up:
+ * the 1 GiB slot is a page in 99 runs of 100.
+ */
+static void non_null_address_draws(void)
+{
+	unsigned long saved[NR_MAPPING_SIZES];
+	const unsigned long sizes[NR_MAPPING_SIZES] = {
+		page_size, 64UL * 1024, 256UL * 1024, MB(1), MB(2),
+		MB(4), MB(16), MB(64), page_size,
+	};
+	unsigned int i;
+
+	memcpy(saved, mapping_sizes, sizeof(saved));
+	memcpy(mapping_sizes, sizes, sizeof(sizes));
+	for (i = 0; i < 1000; i++) {
+		void *a = get_non_null_address();
+		void *b = get_non_null_address();
+
+		if (a == NULL || b == NULL)
+			BUG("get_non_null_address: drew NULL");
+		if (a == b)
+			BUG("get_non_null_address: two draws share a buffer");
+	}
+	memcpy(mapping_sizes, saved, sizeof(saved));
+}
+
 void asb_relocate_self_check(void);
 void asb_relocate_self_check(void)
 {
@@ -259,4 +289,5 @@ void asb_relocate_self_check(void)
 	fake_overlaps_shared = false;
 
 	oversize_refused();
+	non_null_address_draws();
 }

@@ -140,10 +140,9 @@ static void sanitise_listxattrat_plant_pathname(struct syscallrecord *rec)
  *     the replacement came from get_writable_address(rec->a5) and
  *     is at least max(rec->a5, page_size) bytes.
  *   - Otherwise rec->a4 is the original ARG_ADDRESS pool slot from
- *     get_address() -> get_writable_address(RAND_ARRAY(
- *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
- *     is provably at least page_size bytes, the conservative bound
- *     we can prove without re-resolving the slot.
+ *     get_address(), which reserves a page or more of the pool for
+ *     it, so page_size is the conservative bound we can prove
+ *     without re-resolving the slot.
  */
 static size_t sanitise_listxattrat_size_buffer(struct syscallrecord *rec)
 {

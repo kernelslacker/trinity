@@ -56,18 +56,16 @@ static void sanitise_getrusage(struct syscallrecord *rec)
 
 #if defined(SYS_getrusage) || defined(__NR_getrusage)
 	/*
-	 * ARG_NON_NULL_ADDRESS draws from get_writable_address(), which
-	 * returns NULL when the writable pool cannot back the requested
-	 * mapping_sizes[] pick.  Skip the poison + snap install on those
-	 * calls -- writing a poison pattern to a NULL or otherwise not-
-	 * provably-writable user pointer would SIGSEGV inside the
-	 * sanitiser and mask the syscall path we are trying to fuzz.
-	 * range_readable_user() also filters raw fuzz addresses that fell
-	 * outside the tracked shared / libc-heap snapshots; those
-	 * addresses may not be writable and the poison stamp would fault
-	 * the same way.  On skip, rec->post_state stays 0 --
-	 * post_state_claim_owned() returns NULL and the post handler
-	 * no-ops without ever touching the pointer.
+	 * Skip the poison + snap install on a pointer that is not
+	 * provably writable -- writing a poison pattern to a NULL or
+	 * otherwise not-provably-writable user pointer would SIGSEGV
+	 * inside the sanitiser and mask the syscall path we are trying
+	 * to fuzz.  range_readable_user() filters raw fuzz addresses
+	 * that fell outside the tracked shared / libc-heap snapshots;
+	 * those addresses may not be writable and the poison stamp
+	 * would fault the same way.  On skip, rec->post_state stays
+	 * 0 -- post_state_claim_owned() returns NULL and the post
+	 * handler no-ops without ever touching the pointer.
 	 */
 	buf = (void *)(unsigned long) rec->a2;
 	if (!range_readable_user(buf, sizeof(struct rusage)))

@@ -90,12 +90,11 @@ static void sanitise_stat(struct syscallrecord *rec)
 	sanitise_statbuf_a2(rec);
 
 	/*
-	 * ARG_NON_NULL_ADDRESS still hands out NULL when the writable pool
-	 * cannot back the requested mapping size; keep the readability gate
-	 * so poison_output_struct's byte-walk does not SIGSEGV the sanitiser
-	 * on NULL or on a raw fuzz address outside the tracked writable
-	 * regions.  On skip, rec->post_state stays 0 and the post handler
-	 * no-ops via post_state_claim_owned() == NULL.
+	 * Keep the readability gate so poison_output_struct's byte-walk
+	 * does not SIGSEGV the sanitiser on NULL or on a raw fuzz
+	 * address outside the tracked writable regions.  On skip,
+	 * rec->post_state stays 0 and the post handler no-ops via
+	 * post_state_claim_owned() == NULL.
 	 */
 	buf = (void *)(unsigned long) rec->a2;
 	if (!range_readable_user(buf, sizeof(struct stat)))

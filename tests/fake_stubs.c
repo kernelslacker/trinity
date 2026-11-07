@@ -180,8 +180,7 @@ void * __zmalloc_tracked(size_t size, const char *func)
 	return p;
 }
 
-/* Storage for the table get_non_null_address() indexes.  rand/random-address.c
- * is linked for the writable pool, and the real get_address() that comes with
- * it reaches the table through struct_fill.c's FT_ADDRESS fill, which no test
- * runs, so it stays zeroed. */
+/* Storage for the mmap pools' size table, which mm/maps-initial.c defines in
+ * a run.  mmap's sanitiser draws a length from it; the tests that need the
+ * run's sizes fill it in, and restore it. */
 unsigned long mapping_sizes[NR_MAPPING_SIZES];

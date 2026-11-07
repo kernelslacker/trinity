@@ -78,10 +78,9 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 	 *     the replacement came from get_writable_address(rec->a3) and
 	 *     is at least max(rec->a3, page_size) bytes.
 	 *   - Otherwise rec->a2 is the original ARG_ADDRESS pool slot from
-	 *     get_address() -> get_writable_address(RAND_ARRAY(
-	 *     mapping_sizes)); mapping_sizes[0] == page_size so the slot
-	 *     is provably at least page_size bytes, the conservative bound
-	 *     we can prove without re-resolving the slot.
+	 *     get_address(), which reserves a page or more of the pool for
+	 *     it, so page_size is the conservative bound we can prove
+	 *     without re-resolving the slot.
 	 */
 	if (rec->a2 != pre_a2)
 		buf_alloc_size = rec->a3 > (unsigned long) page_size

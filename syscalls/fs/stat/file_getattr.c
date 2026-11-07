@@ -253,10 +253,8 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
 	 *     length, and every backing pool slot is at least page_size).
 	 *   - Otherwise rec->a3 is still the pool pointer the generator
 	 *     handed us via gen_arg_non_null_address() / get_address(),
-	 *     which routes through get_writable_address(RAND_ARRAY(
-	 *     mapping_sizes)).  mapping_sizes[0] == page_size, so the
-	 *     slot is provably at least page_size bytes; we cannot prove
-	 *     more than that without re-resolving the slot, so use
+	 *     which reserve a page or more of the pool for it; we cannot
+	 *     prove more than that without re-resolving the slot, so use
 	 *     page_size as the conservative bound.
 	 *
 	 * Mirrors the resolution pattern from sched_getattr's clamp but for

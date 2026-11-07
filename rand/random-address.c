@@ -196,11 +196,16 @@ void * get_writable_page_aligned(unsigned long size)
 	return pool + aligned_offset;
 }
 
+/*
+ * Not mapping_sizes[], the mmap pools' table: pool_bump() refuses most of
+ * it, being past WRITABLE_POOL_BYTES, and a 1 MiB draw takes the whole
+ * pool, so the call's next buffer lands on it.  0 asks for a page.
+ */
 void * get_non_null_address(void)
 {
-	unsigned long size = RAND_ARRAY(mapping_sizes);
+	static const unsigned long sizes[] = { 0, 64UL * 1024, 256UL * 1024 };
 
-	return get_writable_address(size);
+	return get_writable_address(RAND_ARRAY(sizes));
 }
 
 void * get_writable_struct(size_t size)
