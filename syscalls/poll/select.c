@@ -153,6 +153,7 @@ static void sanitise_select(struct syscallrecord *rec)
 	} else {
 		tv->tv_sec = 0;
 		tv->tv_usec = 10;
+		time_struct_for_abi(rec, tv, 1);
 		rec->a5 = (unsigned long) tv;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct timeval));
 	}

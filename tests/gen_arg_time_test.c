@@ -89,8 +89,8 @@ static struct object *no_object(int fd)
 }
 
 /* clock_nanosleep on i386, and its y2038 twin; timer_settime,
- * settimeofday, setitimer, utimensat and timerfd_settime on i386;
- * pselect6 on i386, and its twin. */
+ * settimeofday, setitimer, utimensat, timerfd_settime and _newselect
+ * on i386; pselect6 on i386, and its twin. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
@@ -98,6 +98,7 @@ static struct object *no_object(int fd)
 #define NR_SETITIMER_TIME32		104
 #define NR_UTIMENSAT_TIME32		320
 #define NR_TIMERFD_SETTIME_TIME32	325
+#define NR_NEWSELECT_TIME32		142
 #define NR_PSELECT6_TIME32		308
 #define NR_PSELECT6_TIME64		413
 
@@ -226,6 +227,13 @@ static bool compat_short_wait(const void *buf)
 	       ts->tv_nsec < 1000000000;
 }
 
+static bool compat_short_usec_wait(const void *buf)
+{
+	const struct old_timeval32 *tv = buf;
+
+	return tv->tv_sec == 0 && tv->tv_usec > 0 && tv->tv_usec < 1000000;
+}
+
 /* A mask, and the 8 bytes set_compat_user_sigmask() wants for one. */
 static bool compat_argpack_sized(const void *buf)
 {
@@ -289,6 +297,9 @@ void gen_arg_time_self_check(void)
 	fake_get_objhead = NULL;
 
 	fake_find_object_by_fd = no_object;
+	if (!sanitised(&syscall_select, NR_NEWSELECT_TIME32, 5,
+		       compat_short_usec_wait))
+		BUG("gen_arg_time: select's timeout never reached a time32 call");
 	if (!sanitised(&syscall_pselect6, NR_PSELECT6_TIME32, 5,
 		       compat_short_wait))
 		BUG("gen_arg_time: pselect6's timeout never reached a time32 call");
