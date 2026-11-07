@@ -139,7 +139,8 @@ static void sanitise_getsockname(struct syscallrecord *rec)
  *   - 32-bit-on-64-bit compat sign-extension on the socklen_t value-result
  *     word landing in addrlen.
  *   - struct layout mismatch between userspace and kernel headers for
- *     sockaddr_un / sockaddr_in (inserted field, padding drift).
+ *     sockaddr_un / sockaddr_in / sockaddr_in6 (inserted field, padding
+ *     drift).
  *   - sibling-thread scribble of the user addr buffer at rec->a2 or the
  *     addrlen word at rec->a3 between the original syscall return and our
  *     re-issue, via alloc_shared in another trinity child task.
@@ -162,9 +163,13 @@ static void sanitise_getsockname(struct syscallrecord *rec)
  *     autobind can legitimately surface a different port across the two
  *     re-reads in rare corner cases, and we'd rather miss those than
  *     drown the channel in autobind FPs.
- *   - All other families (AF_INET6, AF_PACKET, AF_NETLINK, ...) are
- *     silently skipped: each has its own volatility profile and is left
- *     for a follow-up pass.
+ *   - AF_INET6: sin6_family + sin6_addr are stable: inet6_getname() reports
+ *     the bound address, or the source address a connect() picked, which
+ *     only another bind() or connect() moves.  sin6_port is excluded as
+ *     for AF_INET, and sin6_flowinfo and sin6_scope_id with it.
+ *   - All other families (AF_PACKET, AF_NETLINK, ...) are silently
+ *     skipped: each has its own volatility profile and is left for a
+ *     follow-up pass.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  rc != 0 on the re-call (fd closed by sibling between return
@@ -242,8 +247,8 @@ static bool getsockname_validate_snap(struct syscallrecord *rec,
  * Phase 3 (divergence report): hex-dump the first 8 bytes of each
  * sockaddr and emit the [oracle:getsockname] line, then bump the
  * anomaly counter.  Family is derived from first_addr->ss_family --
- * the recheck phase only invokes this on the AF_UNIX / AF_INET paths
- * whose family field is byte-equal across re-reads.
+ * the recheck phase only invokes this on the AF_UNIX / AF_INET /
+ * AF_INET6 paths whose family field is byte-equal across re-reads.
  */
 static void getsockname_report_divergence(socklen_t first_len,
 					  const struct sockaddr_storage *first_addr,
@@ -388,6 +393,15 @@ static void getsockname_recheck(struct syscallrecord *rec,
 
 		if (fa->sin_family != ra->sin_family ||
 		    fa->sin_addr.s_addr != ra->sin_addr.s_addr)
+			diverged = true;
+		break;
+	}
+	case AF_INET6: {
+		const struct sockaddr_in6 *fa = (const struct sockaddr_in6 *) &first_addr;
+		const struct sockaddr_in6 *ra = (const struct sockaddr_in6 *) &recheck_addr;
+
+		if (fa->sin6_family != ra->sin6_family ||
+		    memcmp(&fa->sin6_addr, &ra->sin6_addr, sizeof(fa->sin6_addr)) != 0)
 			diverged = true;
 		break;
 	}

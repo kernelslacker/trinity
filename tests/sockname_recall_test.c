@@ -4,9 +4,10 @@
  * handed the address the fuzzed call answered, and counts the anomalies its
  * sampled re-call reports.  A RedQueen pin can hand the kernel another fd
  * than the sanitiser drew, and the re-call has to ask the socket the kernel
- * answered for.
+ * answered for.  An IPv6 socket's address is compared, its port not.
  */
 
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -46,8 +47,7 @@ static void check(const char *what, bool ok)
 static unsigned long sockname_anomalies(struct syscallentry *entry,
 					const unsigned long *counter,
 					int built, int ran,
-					const struct sockaddr_un *answer,
-					socklen_t len)
+					const void *answer, socklen_t len)
 {
 	unsigned long before = *counter;
 	static struct syscallrecord rec;
@@ -96,6 +96,27 @@ static int bound_socket(const char *name, struct sockaddr_un *addr,
 	return fd;
 }
 
+/* A datagram socket bound to the IPv6 loopback, its name as getsockname()
+ * gives it in @addr and @addrlen, or -1 on a host without IPv6. */
+static int bound_inet6_socket(struct sockaddr_in6 *addr, socklen_t *addrlen)
+{
+	int fd = socket(AF_INET6, SOCK_DGRAM, 0);
+
+	if (fd < 0)
+		return -1;
+	memset(addr, 0, sizeof(*addr));
+	addr->sin6_family = AF_INET6;
+	addr->sin6_addr = in6addr_loopback;
+	if (bind(fd, (struct sockaddr *) addr, sizeof(*addr)) != 0) {
+		close(fd);
+		return -1;
+	}
+	*addrlen = sizeof(*addr);
+	if (getsockname(fd, (struct sockaddr *) addr, addrlen) != 0)
+		BUG("sockname recall: cannot read an IPv6 socket's name back");
+	return fd;
+}
+
 /* A datagram socket connected to the one bound at @addr. */
 static int connected_socket(const struct sockaddr_un *addr, socklen_t addrlen)
 {
@@ -109,10 +130,11 @@ static int connected_socket(const struct sockaddr_un *addr, socklen_t addrlen)
 void sockname_recall_self_check(void);
 void sockname_recall_self_check(void)
 {
+	struct sockaddr_in6 addr6, other6;
 	struct sockaddr_un addr_a, addr_b;
-	socklen_t len_a, len_b;
+	socklen_t len_a, len_b, len6;
 	char name[32];
-	int a, b, to_a, to_b;
+	int a, b, to_a, to_b, v6;
 
 	/* The pool is made once per process: take it as an earlier suite
 	 * left it. */
@@ -126,6 +148,7 @@ void sockname_recall_self_check(void)
 	b = bound_socket(name, &addr_b, &len_b);
 	to_a = connected_socket(&addr_a, len_a);
 	to_b = connected_socket(&addr_b, len_b);
+	v6 = bound_inet6_socket(&addr6, &len6);
 
 	fake_socketinfo_fds = true;
 	check("getsockname: a call pinned onto another socket was judged on the first",
@@ -144,6 +167,21 @@ void sockname_recall_self_check(void)
 	      sockname_anomalies(&syscall_getpeername,
 				 &shm->stats.oracle.getpeername_oracle_anomalies,
 				 to_a, to_b, &addr_a, len_a) > 0);
+	/* The local name of an IPv6 socket holds still between two calls
+	 * too; its address, not its port, is what the oracle compares. */
+	if (v6 >= 0) {
+		other6 = addr6;
+		other6.sin6_addr.s6_addr[15] ^= 0x02;
+		check("getsockname: an IPv6 socket answering its own name was reported",
+		      sockname_anomalies(&syscall_getsockname,
+					 &shm->stats.oracle.getsockname_oracle_anomalies,
+					 v6, v6, &addr6, len6) == 0);
+		check("getsockname: an IPv6 socket answering another address was not reported",
+		      sockname_anomalies(&syscall_getsockname,
+					 &shm->stats.oracle.getsockname_oracle_anomalies,
+					 v6, v6, &other6, len6) > 0);
+		close(v6);
+	}
 	fake_socketinfo_fds = false;
 
 	close(to_a);
@@ -152,5 +190,5 @@ void sockname_recall_self_check(void)
 	close(b);
 
 	if (failed != 0)
-		BUG("a socket name re-call asked the wrong socket");
+		BUG("a socket name re-call misjudged a call");
 }
