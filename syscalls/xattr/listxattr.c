@@ -13,26 +13,24 @@
 #include "utils.h"
 #include "xattr.h"
 /*
- * Snapshot of the two listxattr-family input args read by the post oracle,
+ * Snapshot of the listxattr-family input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect us at a foreign list buffer or hand
- * the re-call the wrong fd / pathname.  The arg1 field is interpreted as
- * an int fd by post_flistxattr and as a const char * pathname by
- * post_listxattr / post_llistxattr.
+ * the re-call the wrong pathname.  The arg1 field is the const char *
+ * pathname post_listxattr / post_llistxattr re-walk; flistxattr leaves
+ * it 0.
  *
- * The size field captures the advertised size after the sanitise-time
- * bucket-and-clamp pass; the post oracle uses it (rather than rec->aN
- * at post time) to gate out the size=0 probe case, where retval is the
- * required namebuffer size and the user buffer was not populated.
+ * The size, and flistxattr's fd, are read from the slots the kernel was
+ * handed instead (get_arg_snapshot()), which chain substitution or a
+ * RedQueen pin may have rewritten after the sanitiser drew its own.
  */
 #define LISTXATTR_POST_STATE_MAGIC	0x4C53545841545452UL	/* "LSTXATTR" */
 struct listxattr_post_state {
 	unsigned long magic;
 	unsigned long arg1;
 	unsigned long list;
-	unsigned long size;
 	size_t buf_alloc_size;
 };
 
@@ -93,19 +91,16 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
 		rec->a3 = (unsigned long) buf_alloc_size;
 
 	/*
-	 * Snapshot the fd and list buffer pointer for the post oracle.
-	 * Without this the post handler reads rec->a1/a2 at post-time, when
-	 * a sibling syscall may have scribbled the slots:
-	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
-	 * address from the original user buffer pointer, so the memcpy /
-	 * re-call would touch a foreign allocation.  post_state is private
-	 * to the post handler.
+	 * Snapshot the list buffer pointer for the post oracle.  Without
+	 * this the post handler reads rec->a2 at post-time, when a sibling
+	 * syscall may have scribbled the slot: looks_like_corrupted_ptr()
+	 * cannot tell a real-but-wrong heap address from the original user
+	 * buffer pointer, so the memcpy would touch a foreign allocation.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = LISTXATTR_POST_STATE_MAGIC;
-	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
-	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	post_state_install(rec, snap);
 }
@@ -133,26 +128,28 @@ static void sanitise_flistxattr(struct syscallrecord *rec)
  *     lookup a different file (or a recycled struct file) for the same
  *     fd number, where the xattr name set differs between the two inodes.
  *
- * TOCTOU defeat: the fd (rec->a1) and list buffer (rec->a2) are both
- * snapshotted at sanitise time into a heap struct in rec->post_state, so
- * a sibling that scribbles rec->aN between syscall return and post entry
- * cannot redirect us at a foreign list buffer or hand the re-call the
- * wrong fd.  We still snapshot the first retval bytes of the receive
- * buffer to a stack-local BEFORE re-issuing the syscall, with a fresh
- * private stack buffer for the re-call (NOT the snapshot's list -- a
- * sibling could mutate the user buffer itself mid-syscall and forge a
- * clean compare).  Drop the sample if the re-call returns <= 0 (fd was
- * closed by a sibling -- benign EBADF; or all xattrs removed -- benign
- * 0) or if it returns a different length (sibling
- * fsetxattr/fremovexattr changed the name set -- benign size-class
- * drift).  Compare exactly snap_len bytes with memcmp; do not
- * early-return on first divergence so a multi-byte tear surfaces in a
- * single sample, but bump the anomaly counter only once.  Sample one
- * in a hundred to stay in line with the rest of the oracle family.
+ * TOCTOU defeat: the list buffer (rec->a2) is snapshotted at sanitise
+ * time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot
+ * redirect us at a foreign list buffer.  The fd and size are read from
+ * the slots the kernel was handed, which chain substitution or a
+ * RedQueen pin may have rewritten after the sanitiser drew its own.  We
+ * still snapshot the first retval bytes of the receive buffer to a
+ * stack-local BEFORE re-issuing the syscall, with a fresh private stack
+ * buffer for the re-call (NOT the snapshot's list -- a sibling could
+ * mutate the user buffer itself mid-syscall and forge a clean compare).
+ * Drop the sample if the re-call returns <= 0 (fd was closed by a
+ * sibling -- benign EBADF; or all xattrs removed -- benign 0) or if it
+ * returns a different length (sibling fsetxattr/fremovexattr changed
+ * the name set -- benign size-class drift).  Compare exactly snap_len
+ * bytes with memcmp; do not early-return on first divergence so a
+ * multi-byte tear surfaces in a single sample, but bump the anomaly
+ * counter only once.  Sample one in a hundred to stay in line with the
+ * rest of the oracle family.
  *
  * fd 0 is stdin -- a perfectly valid fd to query xattrs on -- so do
  * not gate it out the way path-based variants gate empty paths;
- * instead drop only on negative snapshotted fds.
+ * instead drop only on negative fds.
  *
  * On most fleets flistxattr rarely returns a non-empty list (most
  * files have no xattrs) and the retval > 0 gate keeps this oracle
@@ -163,7 +160,8 @@ static void post_flistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
-	int snap_fd;
+	unsigned long size;
+	int fd;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -174,11 +172,12 @@ static void post_flistxattr(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	size = get_arg_snapshot(rec, 3);
 	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && retval > snap->size) {
+	if (size != 0 && retval > size) {
 		outputerr("post_flistxattr: rejecting retval %lu > size %lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -195,14 +194,14 @@ static void post_flistxattr(struct syscallrecord *rec)
 	 * would compare stale pool bytes against a real namebuffer and
 	 * fire on every draw.
 	 */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_free;
 
 	if (snap->list == 0)
 		goto out_free;
 
-	snap_fd = (int) snap->arg1;
-	if (snap_fd < 0)
+	fd = (int) get_arg_snapshot(rec, 1);
+	if (fd < 0)
 		goto out_free;
 
 	snap_len = (size_t) retval;
@@ -223,7 +222,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 				   snap_len))
 		goto out_free;
 
-	rc = syscall(SYS_flistxattr, snap_fd, recheck_buf, sizeof(recheck_buf));
+	rc = syscall(SYS_flistxattr, fd, recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
 		goto out_free;
@@ -251,7 +250,7 @@ static void post_flistxattr(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:flistxattr] fd=%d len=%zu first %s vs recheck %s\n",
-		       snap_fd, snap_len, first_hex, recheck_hex);
+		       fd, snap_len, first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.oracle.flistxattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -268,6 +267,9 @@ struct syscallentry syscall_flistxattr = {
 	.argname = { [0] = "fd", [1] = "list", [2] = "size" },
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 3,
+	/* fd (a1) and size (a3): post_flistxattr re-calls on the one and
+	 * judges the return by the other. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 2),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 #if defined(SYS_flistxattr) || defined(__NR_flistxattr)
@@ -324,7 +326,6 @@ static void sanitise_listxattr(struct syscallrecord *rec)
 	snap->magic = LISTXATTR_POST_STATE_MAGIC;
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
-	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	post_state_install(rec, snap);
 }
@@ -382,6 +383,7 @@ static void post_listxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
+	unsigned long size;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -393,11 +395,12 @@ static void post_listxattr(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	size = get_arg_snapshot(rec, 3);
 	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && retval > snap->size) {
+	if (size != 0 && retval > size) {
 		outputerr("post_listxattr: rejecting retval %lu > size %lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -414,7 +417,7 @@ static void post_listxattr(struct syscallrecord *rec)
 	 * oracle so it does not compare stale pool bytes against a real
 	 * namebuffer.
 	 */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_free;
 
 	if (snap->arg1 == 0 || snap->list == 0)
@@ -486,6 +489,8 @@ struct syscallentry syscall_listxattr = {
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 3,
+	/* size (a3): post_listxattr judges the return by it. */
+	.arg_snapshot_mask = (1u << 2),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 #if defined(SYS_listxattr) || defined(__NR_listxattr)
@@ -624,7 +629,6 @@ static void sanitise_llistxattr(struct syscallrecord *rec)
 	snap->magic = LISTXATTR_POST_STATE_MAGIC;
 	snap->arg1 = rec->a1;
 	snap->list = rec->a2;
-	snap->size = rec->a3;
 	snap->buf_alloc_size = buf_alloc_size;
 	post_state_install(rec, snap);
 }
@@ -680,6 +684,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 {
 	struct listxattr_post_state *snap;
 	unsigned long retval = rec->retval;
+	unsigned long size;
 	char snap_path[4096];
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
@@ -691,11 +696,12 @@ static void post_llistxattr(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
+	size = get_arg_snapshot(rec, 3);
 	if ((long) retval < 0)
 		goto out_free;
-	if (snap->size != 0 && retval > snap->size) {
+	if (size != 0 && retval > size) {
 		outputerr("post_llistxattr: rejecting retval %lu > size %lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -707,7 +713,7 @@ static void post_llistxattr(struct syscallrecord *rec)
 		goto out_free;
 
 	/* size=0 / NULL-buffer probe -- see post_listxattr for full rationale. */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_free;
 
 	if (snap->arg1 == 0 || snap->list == 0)
@@ -779,6 +785,8 @@ struct syscallentry syscall_llistxattr = {
 	.argname = { [0] = "pathname", [1] = "list", [2] = "size" },
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 3,
+	/* size (a3): post_llistxattr judges the return by it. */
+	.arg_snapshot_mask = (1u << 2),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 #if defined(SYS_llistxattr) || defined(__NR_llistxattr)

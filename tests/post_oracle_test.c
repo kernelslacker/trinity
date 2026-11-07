@@ -495,9 +495,10 @@ static void write_count(void)
  * half the time. */
 #define XATTR_DRAWN	64
 
-/* The value's bytes, at most the size the kernel was handed, which chain
- * substitution or a RedQueen pin can rewrite after the sanitiser drew its
- * own; a size of 0 asks for the value's length, which nothing bounds. */
+/* The bytes of the value or name list, at most the size the kernel was
+ * handed, which chain substitution or a RedQueen pin can rewrite after the
+ * sanitiser drew its own; a size of 0 asks for their length, which nothing
+ * bounds. */
 static void xattr_size(void)
 {
 	static const struct {
@@ -507,6 +508,9 @@ static void xattr_size(void)
 		{ &syscall_getxattr, 4 },
 		{ &syscall_lgetxattr, 4 },
 		{ &syscall_fgetxattr, 4 },
+		{ &syscall_listxattr, 3 },
+		{ &syscall_llistxattr, 3 },
+		{ &syscall_flistxattr, 3 },
 	};
 	static const struct {
 		const char *what;
@@ -514,7 +518,7 @@ static void xattr_size(void)
 		unsigned long retval;
 		unsigned int bumps;
 	} cases[] = {
-		{ "a rewritten size of 0, the value's length",
+		{ "a rewritten size of 0, the length asked for",
 		  0, XATTR_DRAWN + 1, 0 },
 		{ "a rewritten size of 0, -1", 0, (unsigned long) -1L, 0 },
 		{ "a larger rewritten size, filled past the drawn one",
