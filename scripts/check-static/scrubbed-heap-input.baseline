@@ -1,0 +1,3 @@
+# file:entry:aN -- a scrubbed slot the scrubbed-heap-input heuristic
+# flags on a path the entry never takes.
+syscalls/process/execve.c:syscall_execve:a2	# block_self_exec() puts its heap path in a2 only for execveat, whose a2 is ARG_PATHNAME

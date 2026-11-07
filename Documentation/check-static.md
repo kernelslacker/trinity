@@ -316,6 +316,19 @@ update this section to match `ls scripts/check-static/*.sh`.)
   digest are updated.  Self-tests both directions on synthetic tables, with
   a near-miss per match kind that a looser matcher would accept.  Regenerate
   with `--regen` and review the baseline diff.
+- `scrubbed-heap-input`: a syscall arg slot `blanket_address_scrub()`
+  walks (an argtype with `default_address_scrub` in
+  `args/argtype_table.c`) must not get a `zmalloc*()` buffer the
+  sanitiser leaves on the heap.  The scrub swaps a heap pointer for a
+  writable pool slot without copying, so the kernel reads stale pool
+  bytes instead of the built input.  For each `struct syscallentry` in
+  `syscalls/` the gate follows `.sanitise` and the same-file functions
+  it calls, and flags a `rec->aN = X;` where X is a `zmalloc*()` call or
+  a local assigned one, unless those functions run
+  `avoid_shared_buffer_inout()` or `avoid_shared_buffer_out()` on
+  `&rec->aN`.  It judges per slot, not per path.  An assignment on a
+  path the entry never takes is listed in `scrubbed-heap-input.baseline`
+  as `file:entry:aN` with the reason.
 - `shared-region-budget`: tripwire that warns when the number of
   shared-region producer call sites approaches `MAX_SHARED_ALLOCS`.
   Silent under-protection is the bug class, not loud over-protection.
