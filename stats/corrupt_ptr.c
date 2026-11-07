@@ -5,41 +5,19 @@
  * post_handler_corrupt_ptr, and the per-callsite deferred-free reject dump.
  */
 
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <sys/utsname.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "arch.h"
-#include "arg-len-semantics.h"
-#include "breadcrumb_ring.h"
 #include "child.h"
-#include "cmp_hints.h"
-#include "cred_throttle.h"
-#include "fd.h"
-#include "kcov.h"
-#include "minicorpus.h"
-#include "params.h"
 #include "pc_format.h"
 #include "pids.h"
-#include "reach-band.h"
-#include "sequence.h"
 #include "shm.h"
 #include "stats.h"
 #include "stats-internal.h"
 #include "stats_ring.h"
 #include "syscall.h"
 #include "tables.h"
-#include "taint.h"
 #include "trinity.h"
-#include "utils.h"
-#include "version.h"
 
 /*
  * Walk the per-syscall range_overlaps_shared() reject buckets and emit the
