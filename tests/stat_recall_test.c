@@ -457,10 +457,14 @@ static void statfs_recall_cases(void)
 }
 #endif
 
+/* Tries for a sanitiser to draw the call a case builds on. */
+#define DRAW_TRIES	100000
+
 /*
  * @entry's calls the sanitiser built on the slots @built, which the kernel
  * ran on @ran, each answering the @len bytes at @answer in the buffer in
- * slot @buf_slot; *@counter counts their anomalies.
+ * slot @buf_slot; *@counter counts their anomalies.  A sanitiser that draws
+ * slots of its own runs until it draws @built.
  */
 static unsigned long rewritten_anomalies(struct syscallentry *entry,
 					 const unsigned long *counter,
@@ -473,16 +477,26 @@ static unsigned long rewritten_anomalies(struct syscallentry *entry,
 	static struct syscallrecord rec;
 	static struct statx buf;
 	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
-	unsigned int i, k;
+	unsigned int i, k, tries;
 
 	if (len > sizeof(buf))
 		BUG("stat recall: an answer larger than the buffer");
 	for (i = 0; i < RECALL_CALLS; i++) {
-		memset(&rec, 0, sizeof(rec));
-		for (k = 0; k < ARRAY_SIZE(slots); k++)
-			*slots[k] = built[k];
-		*slots[buf_slot - 1] = (unsigned long) &buf;
-		entry->sanitise(&rec);
+		for (tries = 0; tries < DRAW_TRIES; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			for (k = 0; k < ARRAY_SIZE(slots); k++)
+				*slots[k] = built[k];
+			*slots[buf_slot - 1] = (unsigned long) &buf;
+			entry->sanitise(&rec);
+			for (k = 0; k < ARRAY_SIZE(slots); k++)
+				if (k != buf_slot - 1 && *slots[k] != built[k])
+					break;
+			if (k == ARRAY_SIZE(slots))
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == DRAW_TRIES)
+			BUG("stat recall: a sanitiser never drew the call a case builds on");
 		memcpy((void *) *slots[buf_slot - 1], answer, len);
 		/* The shadow __do_syscall() takes of what the kernel was
 		 * handed. */
@@ -535,6 +549,7 @@ static void remove_scratch_dir(unsigned int n, int dfd)
 static void rewritten_cases(void)
 {
 	static char file_name[] = "file", link_name[] = "link";
+	struct statx file_b_stx, link_a_stx;
 	struct stat file_b, link_a;
 	int a, b, fd_a, fd_b;
 
@@ -543,10 +558,15 @@ static void rewritten_cases(void)
 	fd_a = openat(a, "file", O_RDONLY);
 	fd_b = openat(b, "file", O_RDONLY);
 	if (fd_a < 0 || fd_b < 0 || fstat(fd_b, &file_b) != 0 ||
-	    fstatat(a, "link", &link_a, AT_SYMLINK_NOFOLLOW) != 0)
+	    fstatat(a, "link", &link_a, AT_SYMLINK_NOFOLLOW) != 0 ||
+	    syscall(SYS_statx, b, "file", 0, STATX_ALL, &file_b_stx) != 0 ||
+	    syscall(SYS_statx, a, "link", AT_SYMLINK_NOFOLLOW, STATX_ALL,
+		    &link_a_stx) != 0)
 		BUG("stat recall: cannot stat the scratch directories");
 	file_b.st_mode ^= S_IXUSR;
 	link_a.st_mode ^= S_IXUSR;
+	file_b_stx.stx_mode ^= S_IXUSR;
+	link_a_stx.stx_mode ^= S_IXUSR;
 	fake_ctime_rule = FAKE_CTIME_HOLDS;
 
 	{
@@ -578,6 +598,32 @@ static void rewritten_cases(void)
 		      rewritten_anomalies(&syscall_newfstatat,
 					  &shm->stats.oracle.newfstatat_oracle_anomalies,
 					  built, ran, 3, &link_a, sizeof(link_a)) > 0);
+	}
+	{
+		const unsigned long built[6] = { a, (unsigned long) file_name, 0,
+						 STATX_ALL };
+		const unsigned long ran[6] = { b, (unsigned long) file_name, 0,
+					       STATX_ALL };
+
+		check("a torn copy from a call substituted onto another dfd was not reported",
+		      "statx",
+		      rewritten_anomalies(&syscall_statx,
+					  &shm->stats.oracle.statx_oracle_anomalies,
+					  built, ran, 5, &file_b_stx,
+					  sizeof(file_b_stx)) > 0);
+	}
+	{
+		const unsigned long built[6] = { a, (unsigned long) link_name, 0,
+						 STATX_ALL };
+		const unsigned long ran[6] = { a, (unsigned long) link_name,
+					       AT_SYMLINK_NOFOLLOW, STATX_ALL };
+
+		check("a torn copy from a call whose flags were rewritten to not follow the link was not reported",
+		      "statx",
+		      rewritten_anomalies(&syscall_statx,
+					  &shm->stats.oracle.statx_oracle_anomalies,
+					  built, ran, 5, &link_a_stx,
+					  sizeof(link_a_stx)) > 0);
 	}
 
 	fake_ctime_rule = FAKE_CTIME_REAL;

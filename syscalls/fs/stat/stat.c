@@ -346,23 +346,20 @@ static unsigned int generate_statx_flags(void)
 }
 
 /*
- * Snapshot of the five statx input args read by the post oracle,
+ * Snapshot of the statx pathname and statxbuf read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign pathname or statxbuf,
- * cannot flip the dfd, and cannot smear the lookup flags or the field-
- * select mask used to seed the re-issue.  before is the coarse clock read
- * ahead of the call, which statx_recall_diverged() judges the answer's
- * ctime by.
+ * handler running cannot redirect us at a foreign pathname or statxbuf.
+ * The dfd, the lookup flags and the field-select mask the re-issue takes
+ * are read from the slots the kernel was handed instead.  before is the
+ * coarse clock read ahead of the call, which statx_recall_diverged()
+ * judges the answer's ctime by.
  */
 #define STATX_POST_STATE_MAGIC	0x53545458UL	/* "STTX" */
 struct statx_post_state {
 	unsigned long magic;
-	unsigned long dfd;
 	unsigned long pathname;
-	unsigned long flags;
-	unsigned long mask;
 	unsigned long statxbuf;
 	struct timespec before;
 	/*
@@ -393,8 +390,6 @@ static void sanitise_statx(struct syscallrecord *rec)
 	 * .sanitise runs; replacing them here keeps the syscallentry
 	 * arg metadata correct for printout / replay while steering the
 	 * actual kernel call through the curated combo and bias paths.
-	 * Order matters: the post_state snapshot below must capture the
-	 * values the kernel actually sees, not the framework's draws.
 	 */
 	rec->a3 = generate_statx_flags();
 	rec->a4 = generate_statx_mask();
@@ -428,22 +423,17 @@ static void sanitise_statx(struct syscallrecord *rec)
 	}
 
 	/*
-	 * Snapshot the five input args for the post oracle.  Without this
-	 * the post handler reads rec->a1..a5 at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * pathname or statxbuf pointers, so the strncpy / memcpy / re-issue
-	 * would touch a foreign allocation, and a stomped flags or mask
-	 * word would change the lookup semantics or the bits the kernel
-	 * sets in stx_mask and break the intersection logic on the
-	 * re-issue.  post_state is private to the post handler.
+	 * Snapshot the pathname and statxbuf for the post oracle.  Without
+	 * this the post handler reads rec->a2 / rec->a5 at post-time, when
+	 * a sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original user pathname or statxbuf pointers, so
+	 * the strncpy / memcpy / re-issue would touch a foreign allocation.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = STATX_POST_STATE_MAGIC;
-	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;
-	snap->flags    = rec->a3;
-	snap->mask     = rec->a4;
 	snap->statxbuf = rec->a5;
 	snap->poison_seed = 0;
 	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
@@ -482,8 +472,9 @@ static void sanitise_statx(struct syscallrecord *rec)
  * asked for in mask AND that the underlying filesystem actually supports.
  * The reply's stx_mask reports which fields are valid; everything else
  * in the buffer is undefined.  All five args steer either name resolution
- * or which fields the kernel writes, so all five must be snapshotted
- * before the re-issue.
+ * or which fields the kernel writes, so the re-issue takes the dfd, flags
+ * and mask the kernel was handed, and the pathname the sanitiser
+ * snapshotted.
  *
  * Mask intersection wrinkle: comparing a field that the original call
  * filled but the recheck did not (or vice versa) would false-positive
@@ -531,24 +522,20 @@ static void sanitise_statx(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     original syscall return and our post-hook re-read.
  *
- * TOCTOU defeat (five buffers worth of it): pathname, flags, mask, and
- * statxbuf are all reachable from sibling-scribbleable user memory or
- * shared bookkeeping.  The five input args (dfd, pathname, flags, mask,
- * statxbuf) are snapshotted at sanitise time into a heap struct in
- * rec->post_state, so a sibling that scribbles rec->aN between syscall
- * return and post entry cannot retarget the dfd, redirect the strncpy
- * at a foreign pathname, smear the flags or mask used to seed the
- * re-issue, or steer the memcpy at a foreign statxbuf.  We still copy
- * the path into a PATH_MAX stack buffer and the original statx result
- * into a stack-local before re-issuing, so a sibling that scribbles the
- * user buffers themselves between the two reads cannot smear the
- * comparison.  Switching flags between calls would change lookup
- * semantics (NOFOLLOW vs follow, sync mode) and produce a benign
- * "different inode" or "different field" divergence that is purely an
- * artifact of our own race window — preserving the snapshotted flags
- * eliminates that source.  The mask preservation matters too:
- * requesting different fields the second time would shift which bits
- * the kernel sets in stx_mask and break the intersection logic.
+ * TOCTOU defeat: pathname and statxbuf are reachable from
+ * sibling-scribbleable user memory.  Their pointers are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot
+ * redirect the strncpy at a foreign pathname or steer the memcpy at a
+ * foreign statxbuf.  We still copy the path into a PATH_MAX stack buffer
+ * and the original statx result into a stack-local before re-issuing, so
+ * a sibling that scribbles the user buffers themselves between the two
+ * reads cannot smear the comparison.  Switching flags between calls
+ * would change lookup semantics (NOFOLLOW vs follow) and land the
+ * re-call on another inode, where a torn copy goes unjudged, and asking
+ * for other fields the second time would shift which bits the kernel
+ * sets in stx_mask and narrow the intersection, so the re-issue takes
+ * the flags and mask the kernel was handed.
  *
  * If the recheck syscall itself fails, a sibling has closed the dfd,
  * unlinked the path, or scribbled the statxbuf into an unmapped region;
@@ -595,6 +582,11 @@ static void post_statx(struct syscallrecord *rec)
 	 */
 	retval = rec->retval;
 
+	/* The lookup the kernel made and the fields it was asked for. */
+	dfd = (int) get_arg_snapshot(rec, 1);
+	flags = (unsigned int) get_arg_snapshot(rec, 3);
+	mask = (unsigned int) get_arg_snapshot(rec, 4);
+
 	/*
 	 * Cheap stx_mask oracle: runs on every successful statx, not
 	 * gated by the ONE_IN(100) sample of the field-divergence
@@ -610,20 +602,18 @@ static void post_statx(struct syscallrecord *rec)
 	 */
 	if ((long) retval == 0 && snap->statxbuf != 0) {
 		void *buf = (void *)(unsigned long) snap->statxbuf;
-		unsigned int req_mask = (unsigned int) snap->mask;
 		unsigned int got_mask;
 
 		if (post_snapshot_or_skip(&got_mask,
 					  (char *)buf + offsetof(struct statx, stx_mask),
 					  sizeof(got_mask))) {
-			if ((req_mask & STATX_TYPE) && !(got_mask & STATX_TYPE)) {
+			if ((mask & STATX_TYPE) && !(got_mask & STATX_TYPE)) {
 				output(0,
 				       "statx oracle: STATX_TYPE requested "
 				       "(mask=0x%x) but kernel returned "
 				       "stx_mask=0x%x on success "
-				       "(dfd=%ld flags=0x%lx)\n",
-				       req_mask, got_mask,
-				       (long) snap->dfd, snap->flags);
+				       "(dfd=%d flags=0x%x)\n",
+				       mask, got_mask, dfd, flags);
 				__atomic_add_fetch(&shm->stats.oracle.statx_oracle_anomalies,
 						   1, __ATOMIC_RELAXED);
 			}
@@ -661,13 +651,9 @@ static void post_statx(struct syscallrecord *rec)
 	if (snap->pathname == 0 || snap->statxbuf == 0)
 		goto out_release;
 
-	dfd = (int) snap->dfd;
-
 	if (!post_snapshot_str(local_path, sizeof(local_path),
 			       (const char *)(unsigned long) snap->pathname))
 		goto out_release;
-	flags = (unsigned int) snap->flags;
-	mask = (unsigned int) snap->mask;
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->statxbuf,
 				   sizeof(first)))
@@ -724,6 +710,11 @@ struct syscallentry syscall_statx = {
 	.arg_params[3].list = ARGLIST(statx_mask),
 	.sanitise = sanitise_statx,
 	.post = post_statx,
+	/* dfd (a1), flags (a3) and mask (a4): the re-call makes the lookup
+	 * the kernel made and asks for the fields it was asked for, which
+	 * chain substitution or a RedQueen pin may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 2) | (1u << 3),
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
