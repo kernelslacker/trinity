@@ -190,67 +190,12 @@ static struct object *pick_bpf_object(enum objecttype type)
 
 bool get_rand_bpf_map(struct bpfobj *map)
 {
-	struct objhead *local;
+	struct object *obj = pick_bpf_object(OBJ_FD_BPF_MAP);
 
-	/*
-	 * Coin-flip preference for the per-child local pool first.  Map
-	 * fds get added to OBJ_LOCAL by post_bpf (BPF_MAP_CREATE); reading
-	 * only OBJ_GLOBAL would leave every consumer on the static
-	 * provider templates.  Probabilistic preference keeps both pools
-	 * feeding the syscall sanitiser so freshly-created fds with
-	 * partially-mutated map state can race the static templates.
-	 * Falls through to global on miss so children with empty local
-	 * pools still see the templates.
-	 *
-	 * get_objhead(OBJ_LOCAL, ...) returns NULL outside child context;
-	 * guard the lookup so non-child callers (init, regeneration in
-	 * the parent) safely fall through to the global pool.
-	 *
-	 * OBJ_LOCAL is per-child and not subject to the lockless-reader
-	 * UAF window that the version-validated object-slot read guards
-	 * against (cf. get_rand_socketinfo in fds/sockets.c), so the
-	 * local pick stays unguarded; only the OBJ_GLOBAL fallback below
-	 * gets the slot-version validation wireup.
-	 */
-	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_MAP);
-	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
-		struct object *obj = get_random_object(OBJ_FD_BPF_MAP,
-						       OBJ_LOCAL);
-		if (objpool_check(obj, OBJ_FD_BPF_MAP)) {
-			*map = obj->bpfobj;
-			return true;
-		}
-	}
-
-	if (objects_empty(OBJ_FD_BPF_MAP) == true)
+	if (obj == NULL)
 		return false;
-
-	/*
-	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfobj deref.  A version-validated object-slot read
-	 * guards the lockless reader against a recycled object
-	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
-	 * lockless-reader UAF window: between the lockless slot pick and the
-	 * consumer's read of the bpf map fd handed to BPF_MAP_LOOKUP_ELEM
-	 * etc., the parent can destroy the obj; release_obj() zeroes the
-	 * chunk and routes it through deferred-free, so the stale slot
-	 * pointer can read a zeroed or recycled chunk.
-	 */
-	for (int i = 0; i < 1000; i++) {
-		struct object *obj;
-
-		obj = get_random_object(OBJ_FD_BPF_MAP, OBJ_GLOBAL);
-		if (!objpool_check(obj, OBJ_FD_BPF_MAP))
-			continue;
-
-		*map = obj->bpfobj;
-		if (map->map_fd < 0)
-			continue;
-
-		return true;
-	}
-
-	return false;
+	*map = obj->bpfobj;
+	return true;
 }
 
 int get_rand_bpf_fd(void)
@@ -444,7 +389,7 @@ bool get_rand_bpf_prog(struct bpfprogobj *prog)
 {
 	struct objhead *local;
 
-	/* See get_rand_bpf_map() for why we coin-flip OBJ_LOCAL first.
+	/* See pick_bpf_object() for why we coin-flip OBJ_LOCAL first.
 	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
 	 * UAF window that the version-validated object-slot read guards
 	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
