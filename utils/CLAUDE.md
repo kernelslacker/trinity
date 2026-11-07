@@ -11,6 +11,7 @@ cmp_hints/.
 | File | Role |
 |---|---|
 | range_overlap.c | `range_overlaps_shared()`/`range_in_tracked_shared()` — mm-syscall sanitiser oracle: bitmap prefilter + exact linear-scan confirm; `CONFIG_GUARD_SHARED` audit path (`range_overlaps_shared_audited`) cross-checks fast vs. slow verdicts |
+| mprotect_log.c | `log_mprotect_failure()` — one-line mprotect() failure diagnostic: the prot bits by name, the caller's PC and the errno name |
 | heap_bounds.c | glibc brk-arena bounds tracking from `/proc/self/maps`; `is_in_glibc_heap()`, `range_overlaps_libc_heap()` guard mm-syscalls against clobbering the malloc arena |
 | corrupt_ptr.c | `looks_like_corrupted_ptr()` heuristic (NULL-ish/pid-shaped/kernel-VA/misaligned bands) plus per-child attribution rings (by syscall, by callsite PC, by rejection site) for the cluster-1/2/3 SIGSEGV triage |
 | locks.c | `lock_t` primitive: `trylock`/`lock`/`unlock`, dead-owner reaping via (pid, start_time) fingerprint, `check_all_locks()` periodic sweep across shm/children/cmp_hints/minicorpus/chain_corpus lock families, reserved-bit scribble recovery |
