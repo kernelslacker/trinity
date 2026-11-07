@@ -88,8 +88,10 @@ static bool writeable_pagecache_create_one(unsigned int idx)
 
 	/* Plain O_RDWR: the buffered page-cache write path is the point, so no
 	 * O_DIRECT / O_DSYNC / O_SYNC; the testfile pool already varies
-	 * through those modes. */
-	fd = open(filename, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+	 * through those modes.  The cwd is tmp/ when there is one, which
+	 * anyone can write to: O_EXCL, so a name something took since the
+	 * unlink fails the slot rather than have init write through it. */
+	fd = open(filename, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
 	if (fd < 0) {
 		free_shared_str(filename);
 		return false;

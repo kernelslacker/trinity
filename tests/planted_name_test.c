@@ -143,4 +143,5 @@ void planted_name_self_check(void);
 void planted_name_self_check(void)
 {
 	check_planted("sparse-file", "trinity-sparsefile0");
+	check_planted("writeable-pagecache", "trinity-writepc-0");
 }

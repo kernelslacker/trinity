@@ -82,8 +82,9 @@ int get_rand_pagecache_fd(void)
 }
 
 /* The writeable page-cache fd pool pwritev's sanitiser draws from is
- * not in this binary either; an empty one leaves the fd alone. */
-int get_rand_writeable_pagecache_fd(void)
+ * one no case here builds; an empty one leaves the fd alone. */
+int __wrap_get_rand_writeable_pagecache_fd(void);
+int __wrap_get_rand_writeable_pagecache_fd(void)
 {
 	return -1;
 }
