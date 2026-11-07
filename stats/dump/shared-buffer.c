@@ -52,9 +52,6 @@ void dump_stats_shared_buffer_misc(void)
 	if (parent_stats.heap_pointer_outside_cache)
 		stat_row("shared_buffer", "heap_pointer_outside_cache",
 			 parent_stats.heap_pointer_outside_cache);
-	if (parent_stats.heap_brk_stale_window_hit)
-		stat_row("shared_buffer", "heap_brk_stale_window_hit",
-			 parent_stats.heap_brk_stale_window_hit);
 	if (parent_stats.range_overlaps_shared_rejects) {
 		stat_row("shared_buffer", "range_overlaps_shared_rejects",
 			 parent_stats.range_overlaps_shared_rejects);

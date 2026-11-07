@@ -398,25 +398,14 @@ __must_check
 bool post_snapshot_or_skip(void *dst, const void *src, size_t len);
 
 /*
- * Coarse-grained refresh hook for the cached sbrk(0) snapshot consumed
- * by is_in_glibc_heap() / range_overlaps_libc_heap().  Called from
- * alloc_object() so the cache moves forward roughly in step with the
- * allocations that could grow brk, without paying a syscall on every
- * heap-overlap check.  Only one sbrk(0) every BRK_REFRESH_INTERVAL
- * calls; cheap enough to drop in on the alloc path unconditionally.
- */
-void heap_brk_maybe_refresh(void);
-
-/*
  * Diagnostic hook for the mm-syscall arg sanitisers.  Called at the
  * tail of each mm-syscall sanitiser (madvise / mmap / mprotect /
  * mremap / remap_file_pages) AFTER range_overlaps_libc_heap()
  * has returned "not heap" for [addr, addr+len) and any per-syscall
- * addr rewrites have settled.  Pays one fresh sbrk(0) and -- if the
+ * addr rewrites have settled.  Reads the break again and -- if the
  * address now proves to lie inside the live brk arena -- bumps a
  * counter and (rate-limited) logs the slipping syscall so the next
- * live run pins exactly which call passed the gate with a stale
- * cached_brk_end snapshot.
+ * live run pins exactly which call got past the gate.
  *
  * Pure observability: does NOT rewrite the slipping addr.  The
  * @detail arg carries the per-syscall context (madvise advice /

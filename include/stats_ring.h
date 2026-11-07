@@ -58,13 +58,6 @@ enum stats_field {
 	 * specific slot -- the canonical staleness shape of a post-init
 	 * secondary mmap landing between captured arenas. */
 	STATS_FIELD_HEAP_POINTER_OUTSIDE_CACHE,
-	/* range_overlaps_libc_heap() observed an address that fell in the
-	 * brk-cache staleness window: addr >= heap_start, addr >= the
-	 * last-sampled cached_brk_end, but addr < the live sbrk(0).  The
-	 * cached snapshot would judge the address not-heap and let it
-	 * through, even though brk has since grown to cover it.  Diagnostic
-	 * counter only -- the predicate's return value is unchanged. */
-	STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
 	STATS_FIELD_RANGE_OVERLAPS_SHARED_REJECTS,
 	STATS_FIELD_CHILDREN_RECYCLED_ON_STORM,
 	STATS_FIELD_WATCHDOG_FD_EVICT,	/* in-child 1s SIGALRM watchdog evicted
@@ -335,7 +328,6 @@ struct stats_aggregate {
 	unsigned long asb_relocate_readable_skip;
 	unsigned long asb_relocate_copy_fault;
 	unsigned long heap_pointer_outside_cache;
-	unsigned long heap_brk_stale_window_hit;
 	unsigned long range_overlaps_shared_rejects;
 	unsigned long children_recycled_on_storm;
 	unsigned long watchdog_fd_evict;

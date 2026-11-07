@@ -26,7 +26,7 @@ cmp_hints/.
 | self_cgroup_paths.c | Size-arg parsing/validation (`parse_size_arg`, `validate_cgroup_size_arg`, `mem_total_bytes`) and cgroup path/file IO (`read_self_cg_path`, `write_cg_file`) |
 | self_cgroup_delegation.c | Delegation/capability probing: `already_capped`, `compute_parent_high`, `enable_memory_subtree`, `scope_can_delegate` |
 | self_cgroup_fork.c | `self_cgroup_fork_into_workload()` — clone-into-cgroup of the children sub-cgroup |
-| zmalloc.c | `__zmalloc()`/`__zmalloc_tracked()`: zeroing malloc wrapper with mlockall-retry-on-ENOMEM and brk-cache refresh tick |
+| zmalloc.c | `__zmalloc()`/`__zmalloc_tracked()`: zeroing malloc wrapper with mlockall-retry-on-ENOMEM |
 
 ## Key design decisions
 

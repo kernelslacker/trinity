@@ -45,8 +45,6 @@ struct object * alloc_object(void)
 {
 	struct object *p;
 
-	heap_brk_maybe_refresh();
-
 	if (this_child() != NULL) {
 		p = objpool_local_arena_alloc(sizeof(struct object));
 		if (p != NULL)

@@ -979,8 +979,7 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c \
 # mm/maps-lifecycle.c brings clone_global_mmap_pool(), whose dedup walk
 # the same test runs over a local pool that already holds every global
 # map, so it never reaches the alloc_object() and add_object() of a
-# fresh clone; fake_shm.c answers the heap_brk_maybe_refresh() that
-# alloc_object() names.
+# fresh clone.
 PARENT_SRCS	+= $(TOP)/objects/registry-pick.c \
 		   $(TOP)/objects/registry.c \
 		   $(TOP)/objects/objpool-arena.c \

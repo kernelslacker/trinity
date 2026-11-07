@@ -73,8 +73,6 @@ static const struct {
 	  offsetof(struct stats_aggregate, asb_relocate_copy_fault), true },
 	{ "heap_pointer_outside_cache",
 	  offsetof(struct stats_aggregate, heap_pointer_outside_cache), true },
-	{ "heap_brk_stale_window_hit",
-	  offsetof(struct stats_aggregate, heap_brk_stale_window_hit), true },
 	{ "mm_gate_post_slip",
 	  offsetof(struct stats_aggregate, mm_gate_post_slip), true },
 	{ "post_handler_corrupt_ptr",

@@ -22,7 +22,9 @@
  * move), but heap_end is only a snapshot -- a child that extends brk
  * post-fork (millions of iterations of getline in /proc parsers,
  * libasan shadow growth, heavy zmalloc traffic) sails past it, so
- * consumers also consult sbrk(0) for the current break.  Zero start
+ * consumers also consult sbrk(0) for the current break.  glibc's
+ * sbrk(0) answers from its own cached break (__curbrk) without a
+ * syscall once that is set, so every check asks afresh.  Zero start
  * means we never found a [heap] line; in that case is_in_glibc_heap()
  * falls back to "always true" so we don't reject legitimate frees on
  * platforms or builds where glibc has chosen an mmap-only allocation
@@ -30,73 +32,6 @@
  */
 static unsigned long heap_start;
 static unsigned long heap_end;
-
-/*
- * Per-child cached snapshot of sbrk(0), refreshed at heap_bounds_init()
- * time and then on every BRK_REFRESH_INTERVAL alloc_object() call via
- * heap_brk_maybe_refresh().  Used by is_in_glibc_heap() and
- * range_overlaps_libc_heap() instead of a per-call sbrk(0) -- those
- * gates fire on every deferred-free check and every random-address
- * generation, and the syscall-per-call was showing up in profiles.
- *
- * Staleness is bounded by the refresh cadence: in the worst case a
- * brk grow that happens between refreshes is invisible until the next
- * refresh fires, so a fuzzed pointer that lands in the extension is
- * not detected as heap-internal during that window.  brk grows in
- * page-or-larger chunks at a much lower rate than alloc_object() is
- * called (most allocations are served from the existing arena), so
- * the window is small in absolute address space.  Refresh tied to
- * alloc_object() means a brk grow caused by an allocation gets caught
- * by the next refresh that fires, and refresh-on-zero ensures
- * pre-init callers see "unknown extent" rather than a stale value.
- */
-#define BRK_REFRESH_INTERVAL 64
-static unsigned long cached_brk_end;
-static unsigned int brk_refresh_counter;
-
-/*
- * Upper VA at which the self-correcting brk re-test in
- * is_in_glibc_heap() and range_overlaps_libc_heap() stops paying
- * one sbrk(0) to resample the live break.  Any addr that sits at or
- * above the cached upper bound AND below this ceiling is plausibly
- * inside a brk extension that the cache hasn't caught up with;
- * addr >= ceiling is unambiguously not-heap (kernel VA, non-canonical)
- * and skips the syscall.
- *
- * Prior revisions capped the re-test with a fixed 256 MiB slack above
- * cached_brk_end.  That ceiling was tight enough that non-alloc_object()
- * traffic -- cmp-hint / RedQueen pool inflation, sequence record growth
- * -- could extend live brk past cached_brk_end + 256 MiB between
- * BRK_REFRESH_INTERVAL ticks, opening a window where a fuzzed
- * mmap(MAP_FIXED, PROT_READ) landing in the live-brk extension sailed
- * past the guard and stamped a read-only page on brk arena bookkeeping,
- * and the next store to it took SEGV_ACCERR.
- *
- * The new ceiling is the user/kernel split (0x800000000000UL on
- * x86_64): below it, an address is canonical userspace and the
- * resample is cheap insurance against the staleness window; at or
- * above it, the address is kernel-VA or non-canonical and no sbrk(0)
- * will ever vouch for it.  The resampled live_brk back-fills
- * cached_brk_end so a workload that keeps hammering similar addresses
- * benefits from the freshly-refreshed cache on subsequent calls.
- */
-#define HEAP_BRK_RETEST_CEILING		0x800000000000UL
-
-static void heap_brk_refresh(void)
-{
-	unsigned long cur = (unsigned long) sbrk(0);
-
-	if (cur != (unsigned long) -1)
-		cached_brk_end = cur;
-}
-
-void heap_brk_maybe_refresh(void)
-{
-	if (++brk_refresh_counter < BRK_REFRESH_INTERVAL)
-		return;
-	brk_refresh_counter = 0;
-	heap_brk_refresh();
-}
 
 /*
  * Cached extents of non-brk allocator arenas, captured alongside the
@@ -349,17 +284,11 @@ void heap_bounds_init(void)
 		extra_heap_regions_bbox_start = 0;
 		extra_heap_regions_bbox_end = 0;
 	}
-
-	/*
-	 * Prime the brk cache so the first is_in_glibc_heap() /
-	 * range_overlaps_libc_heap() doesn't see 0.
-	 */
-	heap_brk_refresh();
 }
 
 /*
  * Bounds check: is @p inside any captured glibc-managed allocator
- * region?  Accepts the cached brk arena AND the labeled non-brk
+ * region?  Accepts the brk arena AND the labeled non-brk
  * allocator regions stashed by heap_bounds_init() (glibc mmap arenas,
  * libasan primary/secondary/shadow, scudo / jemalloc / tcmalloc
  * tagged regions -- see extra_heap_regions[]).  Returns true if no
@@ -367,14 +296,12 @@ void heap_bounds_init(void)
  * nor any [anon:NAME] regions) so the caller treats the validator as
  * permissive in that case.
  *
- * Earlier revisions only checked the brk arena, which silently
- * rejected legitimate frees of two important pointer classes:
+ * Checking the brk arena alone would reject legitimate frees of two
+ * important pointer classes:
  *   - allocations above MMAP_THRESHOLD (default 128 KiB), which glibc
  *     services from mmap'd arenas rather than brk, and
  *   - every allocation under ASAN, whose libasan-runtime allocator
  *     hands back chunks from its shadow-mapped pools outside brk.
- * The high deferred_free_reject rate seen in ASAN runs was this gate
- * dropping valid zmalloc() results.
  *
  * Backstop for the bad-free class where a sibling stomp scribbles a
  * snapshot/arg slot with a value that defeats both the pointer-shape
@@ -397,61 +324,18 @@ bool is_in_glibc_heap(const void *p)
 	if (heap_start != 0) {
 		/*
 		 * heap_end is a pre-fork snapshot.  A long-running child
-		 * can extend brk past it, so the cached_brk_end snapshot
-		 * (refreshed periodically off alloc_object() via
-		 * heap_brk_maybe_refresh()) is the live upper bound; brk
-		 * only grows in the steady state, so the larger of the two
-		 * is the safe outer edge.  cached_brk_end is 0 before its
-		 * first refresh and after a sbrk(0) failure -- the max()
-		 * falls back to the pre-fork heap_end in that case.
+		 * can extend brk past it, so sbrk(0) is the live upper
+		 * bound; brk only grows in the steady state, so the larger
+		 * of the two is the safe outer edge.  A failed sbrk(0)
+		 * falls back to the pre-fork heap_end.
 		 */
 		end = heap_end;
-		cur = cached_brk_end;
-		if (cur > end)
+		cur = (unsigned long) sbrk(0);
+		if (cur != (unsigned long) -1 && cur > end)
 			end = cur;
 
 		if (v >= heap_start && v < end)
 			return true;
-
-		/*
-		 * Mirror of the self-correcting brk re-test in
-		 * range_overlaps_libc_heap().  The cached snapshot just
-		 * judged this pointer not-heap, but brk may have grown past
-		 * cached_brk_end since the last heap_brk_maybe_refresh()
-		 * tick (heavy non-alloc_object() allocator traffic outruns
-		 * the alloc-driven refresh cadence).  Without the re-test, a
-		 * deferred-free backstop that lands in [cached_brk_end,
-		 * live_brk) marks a real heap chunk as not-heap and silently
-		 * drops the free.  Pay one sbrk(0) when the pointer sits at
-		 * or above the cached bound but below the user/kernel split
-		 * (HEAP_BRK_RETEST_CEILING -- wild-high / kernel-VA / non-
-		 * canonical pointers skip the syscall), refresh the cache,
-		 * and re-check; return true if it now falls in the live
-		 * arena.  The fixed 256 MiB slack the prior revision used
-		 * was tight enough that cmp-hint / RedQueen traffic could
-		 * outrun it between refreshes -- see HEAP_BRK_RETEST_CEILING.
-		 */
-		if (v >= end && v < HEAP_BRK_RETEST_CEILING) {
-			unsigned long live_brk = (unsigned long) sbrk(0);
-
-			if (live_brk != (unsigned long) -1) {
-				if (live_brk > cached_brk_end)
-					cached_brk_end = live_brk;
-				if (live_brk > end)
-					end = live_brk;
-				if (v >= heap_start && v < end) {
-					struct childdata *c = this_child();
-
-					if (c != NULL && c->stats_ring != NULL)
-						stats_ring_enqueue(c->stats_ring,
-								   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
-								   0, 1);
-					else
-						parent_stats.heap_brk_stale_window_hit++;
-					return true;
-				}
-			}
-		}
 	}
 
 	for (i = 0; i < nr_extra_heap_regions; i++) {
@@ -466,18 +350,17 @@ bool is_in_glibc_heap(const void *p)
 /*
  * Range-overlap variant of is_in_glibc_heap() with the opposite
  * unknown-bounds polarity: returns true when [addr, addr+len)
- * intersects the cached brk arena or any captured non-brk allocator
+ * intersects the brk arena or any captured non-brk allocator
  * region (glibc mmap arenas, libasan primary / secondary / shadow,
  * scudo / jemalloc / tcmalloc tagged regions -- see
  * extra_heap_regions[] above).  Used by avoid_shared_buffer() to
  * redirect output-buffer syscall args away from any allocator-managed
  * memory: a fuzzed pointer pointing there lets the kernel scribble
  * chunk metadata, and the next malloc anywhere in trinity finds the
- * corruption and aborts (the cluster from the overnight asan-self-
- * kill triage).  Mirrors range_overlaps_shared() semantics: a single
- * byte of overlap is enough to redirect, and a fully unknown layout
- * (no [heap] line and no captured allocator regions) is treated as
- * no-overlap so we don't redirect every legitimate write.
+ * corruption and aborts.  Mirrors range_overlaps_shared() semantics:
+ * a single byte of overlap is enough to redirect, and a fully unknown
+ * layout (no [heap] line and no captured allocator regions) is treated
+ * as no-overlap so we don't redirect every legitimate write.
  */
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
@@ -495,73 +378,21 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 	if (heap_start != 0) {
 		/*
 		 * Same brk-grew-past-snapshot story as
-		 * is_in_glibc_heap(), with the same cached_brk_end
-		 * snapshot for the live upper bound.  Missing the
-		 * redirect here is the safety-critical failure mode: a
-		 * fuzzed pointer landing in the brk extension above the
-		 * cached heap_end gets through avoid_shared_buffer(), the
-		 * kernel scribbles glibc chunk metadata in the extension,
-		 * and the next malloc in the child aborts.  The cache
-		 * staleness window (one BRK_REFRESH_INTERVAL of
-		 * alloc_object() calls) is bounded by the refresh cadence
-		 * driven off the alloc path -- a brk grow caused by an
-		 * allocation gets picked up within INTERVAL allocations.
+		 * is_in_glibc_heap(), with the same sbrk(0) for the live
+		 * upper bound.  Missing the redirect here is the
+		 * safety-critical failure mode: a fuzzed pointer landing
+		 * in the brk extension above the cached heap_end gets
+		 * through avoid_shared_buffer(), the kernel scribbles
+		 * glibc chunk metadata in the extension, and the next
+		 * malloc in the child aborts.
 		 */
 		hend = heap_end;
-		cur = cached_brk_end;
-		if (cur > hend)
+		cur = (unsigned long) sbrk(0);
+		if (cur != (unsigned long) -1 && cur > hend)
 			hend = cur;
 
 		if (addr < hend && end > heap_start)
 			return true;
-
-		/*
-		 * Self-correcting brk re-test.  The cached snapshot just
-		 * judged this address not-heap, but brk may have grown past
-		 * cached_brk_end since the last heap_brk_maybe_refresh()
-		 * tick.  Heavy non-alloc_object() allocator traffic
-		 * (cmp-hint / RedQueen tables, sequence record growth)
-		 * extends the real brk without ticking the alloc-driven
-		 * refresh, opening a window where glibc's top chunk -- or a
-		 * brk-arena bookkeeping page -- sits in [cached_brk_end,
-		 * live_brk) and a fuzzed output / MAP_FIXED address in that
-		 * band gets handed to the kernel instead of being
-		 * relocated.  Symptoms: the kernel scribbles top->size and
-		 * the next malloc anywhere in the child aborts with
-		 * "malloc(): corrupted top size"; or a fuzzed
-		 * mmap(MAP_FIXED, PROT_READ) lands on brk arena and the
-		 * next store to it SEGV_ACCERRs.  Pay one sbrk(0) when
-		 * the address sits at or above the cached bound but below the
-		 * user/kernel split (HEAP_BRK_RETEST_CEILING -- wild-high /
-		 * kernel-VA / non-canonical addresses skip the syscall),
-		 * refresh the cache, and re-test the brk arm; if the
-		 * address now falls in the live arena, redirect it (return
-		 * true).  Prior revision capped this at a fixed 256 MiB
-		 * slack above hend, which the cmp-hint / RedQueen traffic
-		 * outran between refreshes -- see HEAP_BRK_RETEST_CEILING.
-		 * The counter, kept in place, signals the fix firing.
-		 */
-		if (addr >= hend && addr < HEAP_BRK_RETEST_CEILING) {
-			unsigned long live_brk = (unsigned long) sbrk(0);
-
-			if (live_brk != (unsigned long) -1) {
-				if (live_brk > cached_brk_end)
-					cached_brk_end = live_brk;
-				if (live_brk > hend)
-					hend = live_brk;
-				if (addr < hend && end > heap_start) {
-					struct childdata *c = this_child();
-
-					if (c != NULL && c->stats_ring != NULL)
-						stats_ring_enqueue(c->stats_ring,
-								   STATS_FIELD_HEAP_BRK_STALE_WINDOW_HIT,
-								   0, 1);
-					else
-						parent_stats.heap_brk_stale_window_hit++;
-					return true;
-				}
-			}
-		}
 	}
 
 	/*
@@ -628,14 +459,14 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 					return true;
 			}
 			/* Re-check the brk arena too: heap_bounds_init()
-			 * refreshes the brk cache as well, so a query that
-			 * tripped because cached_brk_end was stale now
-			 * resolves cleanly. */
+			 * re-read the [heap] line, which a snapshot taken
+			 * before brk first grew did not have. */
 			if (heap_start != 0) {
 				unsigned long hend2 = heap_end;
 
-				if (cached_brk_end > hend2)
-					hend2 = cached_brk_end;
+				cur = (unsigned long) sbrk(0);
+				if (cur != (unsigned long) -1 && cur > hend2)
+					hend2 = cur;
 				if (addr < hend2 && end > heap_start)
 					return true;
 			}
@@ -647,7 +478,7 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 
 /*
  * Fast-path inverse-polarity check: is [addr, addr+len) fully inside
- * the cached brk arena, or fully inside any single captured non-brk
+ * the brk arena, or fully inside any single captured non-brk
  * allocator region?  Mirrors range_in_tracked_shared() for the heap
  * snapshot maintained by heap_bounds_init().  Used only by
  * range_readable_user() below -- not a sanitiser gate, so unknown
@@ -666,8 +497,8 @@ bool range_inside_libc_heap(unsigned long addr, unsigned long len)
 
 	if (heap_start != 0) {
 		hend = heap_end;
-		cur = cached_brk_end;
-		if (cur > hend)
+		cur = (unsigned long) sbrk(0);
+		if (cur != (unsigned long) -1 && cur > hend)
 			hend = cur;
 
 		if (addr >= heap_start && end <= hend)
@@ -689,20 +520,12 @@ bool range_inside_libc_heap(unsigned long addr, unsigned long len)
  * remap_file_pages) AFTER the brk-overlap gate
  * (range_overlaps_libc_heap) has returned "not heap" for [addr, addr+len)
  * and the per-syscall sanitiser has finished any further addr rewrites.
- * Pays one fresh sbrk(0) and, if the address now proves to lie inside
+ * Reads the break again and, if the address now proves to lie inside
  * the live brk arena, bumps a counter and (rate-limited) logs the
- * slipping syscall so the next live run pins exactly which call passed
- * the gate with a stale snapshot.
- *
- * Two prior rounds widened the gate without pinning the slipping
- * syscall directly: the first capped the re-test at HEAP_BRK_STALE_
- * SLACK_BYTES (256 MiB) of slack above cached_brk_end, then the
- * widening to HEAP_BRK_RETEST_CEILING raised the ceiling to the
- * user/kernel split.  The live fleet kept faulting on RO-page writes
- * and glibc check_uid SIGABRTs anyway, which means a path either still
- * skips the re-test or there is a sanitise->syscall race the gate
- * never sees.  This helper makes the next round of triage data-driven
- * rather than another speculative widening.
+ * slipping syscall so the next live run pins exactly which call got
+ * past the gate.  The gate reads the live break too, so a slip means
+ * the address entered the arena after the gate judged it: a path that
+ * skips the gate, a rewrite after it, or a brk grow in between.
  *
  * Pure observability -- does NOT rewrite the slipping addr (that would
  * pre-judge which gate is at fault; the log lets a real audit make
@@ -735,10 +558,6 @@ void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
 	if (heap_start == 0)
 		return;
 
-	/* Wild-high / kernel-VA / non-canonical addrs cannot be heap. */
-	if (addr >= HEAP_BRK_RETEST_CEILING)
-		return;
-
 	/* Wrap guard: a wrapped range is its own bug, not a brk slip. */
 	if (addr > ULONG_MAX - len)
 		return;
@@ -754,17 +573,11 @@ void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
 	end = fresh_brk;
 	if (heap_end > end)
 		end = heap_end;
-	if (cached_brk_end > end)
-		end = cached_brk_end;
 
 	/* Fresh resample agrees with the gate: addr is above the live
 	 * brk, so the gate was right to pass it through. */
 	if (addr >= end)
 		return;
-
-	/* Back-fill the cache: we paid the syscall, no reason not to. */
-	if (fresh_brk > cached_brk_end)
-		cached_brk_end = fresh_brk;
 
 	c = this_child();
 	if (c != NULL && c->stats_ring != NULL)
@@ -779,7 +592,7 @@ void log_mm_syscall_post_gate_heap_slip(const char *syscall_name,
 	     MM_GATE_SLIP_LOG_PERIOD) == 0)
 		outputerr("MM-GATE-POST-SLIP: %s addr=0x%lx len=0x%lx "
 			  "detail=0x%lx heap_start=0x%lx heap_end=0x%lx "
-			  "cached_brk_end=0x%lx fresh_sbrk=0x%lx\n",
+			  "fresh_sbrk=0x%lx\n",
 			  syscall_name, addr, len, detail, heap_start,
-			  heap_end, cached_brk_end, fresh_brk);
+			  heap_end, fresh_brk);
 }

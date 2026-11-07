@@ -14,19 +14,6 @@ void * __zmalloc(size_t size, const char *func)
 {
 	void *p;
 
-	/*
-	 * Tick the brk-cache refresh on the malloc path as well as the
-	 * alloc_object() path.  Heavy __zmalloc users (cmp-hints /
-	 * RedQueen pool inflation, per-syscall sequence records) can
-	 * drive billions of malloc()s in a session without ever calling
-	 * alloc_object(), and a malloc that triggers a brk grow leaves
-	 * cached_brk_end behind by exactly that grow until the next
-	 * alloc_object() refresh fires -- which on those workloads can
-	 * be never.  Refreshing here closes the diagnostic-window race
-	 * the heap_brk_stale_window_hit counter exists to measure.
-	 */
-	heap_brk_maybe_refresh();
-
 	p = malloc(size);
 	if (p == NULL) {
 		/* Maybe we mlockall'd everything. Try and undo that, and retry. */
