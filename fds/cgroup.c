@@ -8,6 +8,7 @@
 
 #include <dirent.h>
 #include <errno.h>
+#include <sys/epoll.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -23,6 +24,7 @@
 #include "random.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "uid.h"
 #include "utils.h"
 
 #include "kernel/fcntl.h"
@@ -41,6 +43,18 @@ static const char * const cgroup_ctl_files[] = {
 	"memory.max",
 	"cpu.max",
 	"io.max",
+};
+
+/*
+ * The sacrificial leaf's PSI files: cgroup.pressure, which shows and
+ * hides the rest, then the per-resource files cgroup_child_ops() sets a
+ * trigger on.
+ */
+static const char * const cgroup_psi_files[] = {
+	"cgroup.pressure",
+	"cpu.pressure",
+	"memory.pressure",
+	"io.pressure",
 };
 
 /*
@@ -220,6 +234,24 @@ static void init_cgroup_ctl_fds(void)
 		atexit(sacrificial_cg_cleanup);
 	}
 
+	/*
+	 * A root run's children drop to nobody, who cannot write the leaf's
+	 * root-owned PSI files: hand them to nobody, as a non-root run's
+	 * children own theirs.  The kernel creates them all or none, so the
+	 * first one missing means PSI is off.
+	 */
+	if (orig_uid == 0) {
+		for (i = 0; i < ARRAY_SIZE(cgroup_psi_files); i++) {
+			char path[PATH_MAX];
+
+			if ((size_t)snprintf(path, sizeof(path), "%s/%s",
+					     sacrificial_cg_path,
+					     cgroup_psi_files[i]) >= sizeof(path) ||
+			    chown(path, nobody_uid, nobody_gid) != 0)
+				break;
+		}
+	}
+
 	for (i = 0; i < ARRAY_SIZE(cgroup_ctl_files); i++) {
 		char path[PATH_MAX];
 		int fd;
@@ -341,12 +373,81 @@ int get_rand_cgroup_fd(void)
 	return -1;
 }
 
+/*
+ * Set a PSI trigger on a pressure file of the sacrificial leaf, then
+ * write "0" to its cgroup.pressure, which hides the pressure files and
+ * drains every open one, this child's and any a sibling is setting a
+ * trigger on.  A lane child's trigger is privileged (psi_trigger_create()
+ * reads CAP_SYS_RESOURCE from f_cred, namespace-blind), and the group's
+ * first privileged trigger drops cgroup_mutex to fork its rtpoll worker.
+ */
+static void cgroup_child_ops(void)
+{
+	struct epoll_event ev = { .events = EPOLLPRI };
+	char path[PATH_MAX], trig[32];
+	const char *res;
+	unsigned int window;
+	int ctl, fd, epfd = -1;
+
+	/* Each toggle takes the hierarchy-wide kernfs_rwsem, and turning PSI
+	 * back on takes every CPU's runqueue lock. */
+	if (sacrificial_cg_path[0] == '\0' || !ONE_IN(8))
+		return;
+
+	if ((size_t)snprintf(path, sizeof(path), "%s/%s", sacrificial_cg_path,
+			     cgroup_psi_files[0]) >= sizeof(path))
+		return;
+	ctl = open(path, O_WRONLY | O_CLOEXEC);
+	if (ctl < 0)
+		return;
+	/* The last op here left PSI off and the pressure files hidden. */
+	if (write(ctl, "1", 1) != 1)
+		goto out_ctl;
+
+	res = cgroup_psi_files[RAND_RANGE(1U, ARRAY_SIZE(cgroup_psi_files) - 1)];
+	if ((size_t)snprintf(path, sizeof(path), "%s/%s", sacrificial_cg_path,
+			     res) >= sizeof(path))
+		goto out_ctl;
+	fd = open(path, O_RDWR | O_CLOEXEC);
+	if (fd < 0)
+		goto out_ctl;
+
+	/* An unprivileged trigger's window is a whole number of 2s. */
+	window = 2000000 * RAND_RANGE(1U, 5U);
+	snprintf(trig, sizeof(trig), "%s %u %u", RAND_BOOL() ? "some" : "full",
+		 RAND_RANGE(1U, window), window);
+	if (write(fd, trig, strlen(trig) + 1) < 0)
+		goto out_fd;
+
+	epfd = epoll_create1(EPOLL_CLOEXEC);
+	if (epfd < 0)
+		goto out_fd;
+	(void)epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &ev);
+
+	/* The drained file reports EPOLLERR to the waiter left on it. */
+	if (write(ctl, "0", 1) == 1)
+		(void)epoll_wait(epfd, &ev, 1, 0);
+
+	/* Either close order takes the waiter off the drained file. */
+	if (RAND_BOOL()) {
+		close(epfd);
+		epfd = -1;
+	}
+out_fd:
+	close(fd);
+	if (epfd >= 0)
+		close(epfd);
+out_ctl:
+	close(ctl);
+}
+
 static const struct fd_provider cgroup_fd_provider = {
 	.name = "cgroup",
 	.objtype = OBJ_FD_CGROUP,
 	.enabled = true,
 	.init = &init_cgroup_fds,
 	.get = &get_rand_cgroup_fd,
+	.child_ops = &cgroup_child_ops,
 };
 
 REG_FD_PROV(cgroup_fd_provider);
