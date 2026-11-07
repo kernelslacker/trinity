@@ -132,7 +132,6 @@ long long random_branch_sample_type(void)
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_NO_TX;
 
-
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_COND;
 	if (RAND_BOOL())
@@ -153,7 +152,6 @@ long long random_branch_sample_type(void)
 		branch_sample |= PERF_SAMPLE_BRANCH_PRIV_SAVE;
 	if (RAND_BOOL())
 		branch_sample |= PERF_SAMPLE_BRANCH_COUNTERS;
-
 
 	return branch_sample;
 }

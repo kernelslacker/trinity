@@ -80,11 +80,6 @@ void __cold dump_stats_childop_runs_network(void)
 
 	dump_stats_render_pipe_waker();
 
-
-
-
-
-
 	stat_category_emit_text(&blob_mutator_category);
 
 	stat_category_emit_text(&blob_ab_mode_category);
@@ -93,12 +88,7 @@ void __cold dump_stats_childop_runs_network(void)
 
 	stat_category_emit_text(&setsockopt_pairing_category);
 
-
 	dump_stats_render_vsock_transport_churn();
 
-
 	stat_category_emit_text(&rxrpc_key_install_category);
-
-
-
 }

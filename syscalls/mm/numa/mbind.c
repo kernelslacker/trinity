@@ -94,9 +94,7 @@ struct syscallentry syscall_mbind = {
 	.argtype = { [0] = ARG_MMAP, [1] = ARG_LEN, [2] = ARG_OP, [3] = ARG_ADDRESS, [4] = ARG_RANGE, [5] = ARG_LIST },
 	.argname = { [0] = "start", [1] = "len", [2] = "mode", [3] = "nmask", [4] = "maxnode", [5] = "flags" },
 
-
 	.arg_params[2].list = ARGLIST(mbind_modes),
-
 
 	.arg_params[4].range.low = 0,
 	.arg_params[4].range.hi = 32,

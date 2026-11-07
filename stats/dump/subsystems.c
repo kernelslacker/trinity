@@ -210,13 +210,7 @@ void dump_stats_fuzzer_subsystems(void)
 {
 	dump_stats_render_vfs_writes();
 
-
-
-
-
 	stat_category_emit_text(&userns_bootstrap_category);
-
-
 
 	dump_stats_render_genl_family_calls();
 
@@ -230,19 +224,11 @@ void dump_stats_fuzzer_subsystems(void)
 
 	dump_stats_render_ebpf_gen();
 
-
-
 	stat_category_emit_text(&aio_category);
 
 	stat_category_emit_text(&errno_gradient_category);
 
 	stat_category_emit_text(&cold_overflow_category);
-
-
-
-
-
-
 
 	stat_category_emit_text(&fd_runtime_skipped_category);
 

@@ -412,7 +412,6 @@ int check_stat_file(const struct stat *sb)
 	if (sb->st_mode & S_IWOTH)
 		set_write = true;
 
-
 	if (set_read == 0 && set_write == 0)
 		return -1;
 

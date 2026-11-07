@@ -61,8 +61,6 @@ void dump_pids_page_state(void);
 int pid_is_valid(pid_t);
 void pids_init(void);
 
-
-
 /*
  * exit() from a child is wrong twice over: it runs atexit handlers
  * registered by the parent's constructors, and it flushes stdio

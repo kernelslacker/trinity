@@ -12,8 +12,6 @@
 #include "utils.h"
 #include "utils-internal.h"
 
-
-
 /*
  * Ownership table for syscall handlers that snapshot state into a
  * zmalloc'd struct hung off rec->post_state.  The API is shape-agnostic:

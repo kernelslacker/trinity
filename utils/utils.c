@@ -34,8 +34,6 @@
 #include "utils.h"
 #include "utils-internal.h"
 
-
-
 void sizeunit(unsigned long size, char *buf, size_t buflen)
 {
 	/* non kilobyte aligned size? */
@@ -123,8 +121,6 @@ void kill_pid(pid_t pid)
 	if (ret != 0)
 		debugf("couldn't kill pid %d [%s]\n", pid, strerror(errno));
 }
-
-
 
 void sanitize_inherited_fds(void)
 {

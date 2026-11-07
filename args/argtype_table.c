@@ -17,8 +17,6 @@ enum argtype get_argtype(struct syscallentry *entry, unsigned int argnum)
 	return entry->argtype[argnum - 1];
 }
 
-
-
 /*
  * Shared cleanup helper for any argtype whose generator hands back a
  * heap allocation that must be released after the syscall returns

@@ -55,11 +55,6 @@ static inline bool kcov_local_stats_plausible(const struct kcov_child_local_stat
 	return p >= 0x10000UL && p < 0x800000000000UL;
 }
 
-
-
-
-
-
 /*
  * AFL-style hit-count classification.  Returns the bucket index 0..7 for
  * a count >= 1.  Counts of 1, 2, 3 each get their own bucket (loops with

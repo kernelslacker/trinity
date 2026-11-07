@@ -7,27 +7,9 @@
 
 void dump_stats_childop_runs_local(void)
 {
-
-
-
-
-
-
-
-
-
-
 	stat_category_emit_text(&xattr_thrash_category);
 
 	stat_category_emit_text(&epoll_volatility_category);
-
-
-
-
-
-
-
-
 }
 
 /*

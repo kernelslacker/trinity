@@ -117,9 +117,6 @@ void dump_stats_render_kcov_kcov_probe_costs(void)
 		}
 }
 
-
-
-
 /* Render the shadow-measurement counter blocks that sit at the tail
  * of dump_stats_render_kcov_base_stats().  Each block surfaces the
  * would_fire / would_win pair for one shadow-only lane and, where

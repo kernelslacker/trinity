@@ -269,12 +269,6 @@ struct stats_s {
 	/* procfs_writer accounting.  See stats/subsys/procfs_writer.h. */
 	struct procfs_writer_stats procfs_writer __attribute__((aligned(64)));
 
-
-
-
-
-
-
 	/* netlink message generator: NLA_F_NESTED containers emitted/accepted.
 	 * netlink_nested_attrs_emitted is bumped for every nested-attr
 	 * container written into the message buffer, regardless of whether
@@ -390,15 +384,9 @@ struct stats_s {
 	/* aio submission counter.  See stats/subsys/aio.h. */
 	struct aio_stats aio __attribute__((aligned(64)));
 
-
-
-
-
 	/* prctl PR_FUTEX_HASH sanitiser counters.
 	 * See stats/subsys/prctl_futex_hash.h. */
 	struct prctl_futex_hash_stats prctl_futex_hash __attribute__((aligned(64)));
-
-
 
 	/* xattr_thrash childop counters.  See stats/subsys/xattr_thrash.h. */
 	struct xattr_thrash_stats xattr_thrash __attribute__((aligned(64)));
@@ -410,21 +398,11 @@ struct stats_s {
 	 * stats/subsys/watchdog_signal.h. */
 	struct watchdog_signal_stats watchdog_signal;
 
-
-
 	/* Auto-skipped socket families.  See stats/subsys/no_domains.h. */
 	struct no_domains_stats no_domains __attribute__((aligned(64)));
 
-
-
-
-
-
 	/* vsock_transport_churn accounting.  See stats/subsys/vsock_transport_churn.h. */
 	struct vsock_transport_churn_stats vsock_transport_churn __attribute__((aligned(64)));
-
-
-
 
 	/* ---- Group D: diagnostic / parent-side / one-shot ---- */
 
@@ -490,7 +468,6 @@ struct stats_s {
 	 * See stats/subsys/remote_adaptive.h. */
 	struct remote_adaptive_stats remote_adaptive;
 
-
 	/* Coverage-plateau detector counters (transitions, bucket-canary
 	 * integrity, mut-attrib inversion catches, forced_windows).
 	 * See stats/subsys/plateau.h. */
@@ -518,23 +495,11 @@ struct stats_s {
 	unsigned long ioctl_group_random;
 	unsigned long ioctl_group_first;
 
-
 	/* rxrpc_key_install accounting.  See stats/subsys/rxrpc_key_install.h. */
 	struct rxrpc_key_install_stats rxrpc_key_install __attribute__((aligned(64)));
 
-
-
-
-
-
-
-
-
-
 	/* minicorpus snapshot/ring accounting.  See stats/subsys/minicorpus.h. */
 	struct minicorpus_stats minicorpus;
-
-
 
 	/* accept-unblocker accounting.  See stats/subsys/accept_unblocker.h. */
 	struct accept_unblocker_stats accept_unblocker;

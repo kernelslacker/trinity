@@ -21,9 +21,6 @@
  */
 #define STRUCT_PTR_IN_FALLBACK_SIZE	256U
 
-
-
-
 /*
  * ARG_STRUCT_PTR_IN: hand the kernel a heap-allocated buffer sized for
  * the cataloged struct at this (syscall, arg), then per-field

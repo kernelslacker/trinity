@@ -834,7 +834,6 @@ long long random_sysfs_config(__u32 *type,
 			}
 			break;
 
-
 		/* Random by generic event */
 		case 1:
 			if (pmus[i].num_generic_events==0) goto out;

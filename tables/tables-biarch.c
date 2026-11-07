@@ -137,7 +137,6 @@ void toggle_syscall_biarch(const char *arg, bool state)
 	specific_syscall32 = search_syscall_table(syscalls_32bit, max_nr_32bit_syscalls, arg_name);
 	toggle_syscall_biarch_n(specific_syscall32, syscalls_32bit, only_32bit, do_32_arch, state, &activate_syscall32, 0, arg_name);
 
-
 	if ((!only_32bit) && (!only_64bit)) {
 		outputerr("No idea what architecture for syscall (%s) is.\n", arg);
 		exit(EXIT_FAILURE);

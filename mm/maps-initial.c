@@ -180,7 +180,6 @@ static void setup_mapping_sizes(void)
 		goto disable_1gb_mappings;
 	}
 
-
 	// Because of increased mem usage, don't do nr_cpus * 4
 	if (max_children > 4) {
 		output(0, "Limiting children from %u to %u\n",
