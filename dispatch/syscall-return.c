@@ -210,8 +210,7 @@ static void syscall_ret_validate_phase(struct syscallrecord *rec,
  * per-errno classification; success branch routes through
  * handle_success() + syscall_rt(entry)->successes. */
 static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
-				       struct syscallentry *entry,
-				       unsigned int call)
+				       struct syscallentry *entry)
 {
 	if (rec->retval == -1UL) {
 		int err = rec->errno_post;
@@ -224,9 +223,9 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 			/* dry-run synthesizes ENOSYS for every un-executed
 			 * syscall; skip deactivation so the table isn't drained. */
 			if (err == ENOSYS && !dry_run)
-				deactivate_enosys(rec, entry, call);
+				deactivate_enosys(entry);
 
-			handle_failure(rec);
+			handle_failure(rec, entry);
 			__atomic_add_fetch(&syscall_rt(entry)->failures, 1, __ATOMIC_RELAXED);
 			if (err >= 0 && err <= NR_ERRNOS) {
 				__atomic_add_fetch(&syscall_rt(entry)->errnos[err], 1, __ATOMIC_RELAXED);
@@ -271,7 +270,7 @@ static void syscall_ret_dispatch_phase(struct syscallrecord *rec,
 		 * scoreboard a stale fd/len, and syscall_rt(entry)->successes /
 		 * the successes aggregate would tally a syscall that
 		 * never actually returned. */
-		handle_success(rec);	// Believe me folks, you'll never get bored with winning
+		handle_success(rec, entry);	// Believe me folks, you'll never get bored with winning
 		__atomic_add_fetch(&syscall_rt(entry)->successes, 1, __ATOMIC_RELAXED);
 	}
 }
@@ -599,11 +598,13 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 
 void handle_syscall_ret(struct syscallrecord *rec, struct syscallentry *entry)
 {
-	unsigned int call = rec->nr;
+	/* The dispatcher's entry, not the shared record's nr, names the
+	 * call the per-syscall tallies below are kept for. */
+	unsigned int call = entry->number;
 	bool retfd_rejected;
 	bool rzs_rejected = false;
 
 	syscall_ret_validate_phase(rec, entry, &retfd_rejected, &rzs_rejected);
-	syscall_ret_dispatch_phase(rec, entry, call);
+	syscall_ret_dispatch_phase(rec, entry);
 	syscall_ret_post_phase(rec, entry, call, retfd_rejected, rzs_rejected);
 }

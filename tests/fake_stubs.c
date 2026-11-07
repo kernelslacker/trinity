@@ -186,6 +186,12 @@ int get_random_fd(void)
  * trinity_raw_syscall() consults before it issues a syscall stays open. */
 bool do_exclude_syscall;
 
+/* Owned by main/params/state.c.  No -c, -r or -g either, so
+ * deactivate_enosys() has no targeted set to report emptied. */
+bool do_specific_syscall;
+bool random_selection;
+unsigned char desired_group;
+
 /* Owned by main/trinity-warmstart.c, which counts the CPUs at start-up.
  * The io_uring_register payloads take the 0 left here for one CPU. */
 unsigned int num_online_cpus;

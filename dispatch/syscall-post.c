@@ -9,6 +9,7 @@
 #include <stdint.h>
 #include <unistd.h>
 
+#include "arch.h"		/* biarch */
 #include "params.h"
 #include "shm.h"
 #include "syscall.h"
@@ -150,9 +151,15 @@ void validate_ret_bound(const struct syscallentry *entry,
  * If the syscall doesn't exist don't bother calling it next time.
  * Some syscalls return ENOSYS depending on their arguments, we mark
  * those as IGNORE_ENOSYS and keep calling them.
+ *
+ * The number and table come from the dispatcher's entry, not from the
+ * shared record, where a stray write could name another syscall: an
+ * entry is the 32-bit one when the 32-bit table holds it at its number.
  */
-void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, unsigned int call)
+void deactivate_enosys(struct syscallentry *entry)
 {
+	unsigned int call = entry->number;
+	bool do32 = biarch && get_syscall_entry(call, true) == entry;
 	bool did_deactivate = false;
 
 	/* some syscalls return ENOSYS instead of EINVAL etc (futex for eg) */
@@ -163,7 +170,7 @@ void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, un
 
 	/* check another thread didn't already do this. */
 	if (syscall_rt(entry)->active_number != 0) {
-		deactivate_syscall_nolock(call, rec->do32bit);
+		deactivate_syscall_nolock(call, do32);
 		did_deactivate = true;
 	}
 
@@ -173,7 +180,7 @@ void deactivate_enosys(struct syscallrecord *rec, struct syscallentry *entry, un
 		output(0, "%s (%d%s) returned ENOSYS, marking as inactive.\n",
 			entry->name,
 			call + SYSCALL_OFFSET,
-			rec->do32bit == true ? ":[32BIT]" : "");
+			do32 ? ":[32BIT]" : "");
 		if ((do_specific_syscall || random_selection ||
 		     desired_group != GROUP_NONE) &&
 		    no_syscalls_enabled() == true)

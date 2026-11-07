@@ -32,7 +32,6 @@
 #include "fd-event.h"		/* fd_event_enqueue */
 #include "kcov.h"
 #include "params.h"		/* dry_run, frontier_noise_sample */
-#include "sanitise.h"		/* get_argval */
 #include "signals.h"		/* parent_ignores_sigio_as */
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_fchdir, syscall_fchroot */
@@ -66,24 +65,6 @@ void kcov_note_extrafork(struct kcov_child *kc, unsigned int nr)
 }
 
 void validator_rejected_bump(void) { }
-
-/*
- * What validate_arg_coupling() reaches.  Nothing is tracked unless a test
- * registers a region with fake_track_region(), so no base has an extent to
- * clamp a length to here.
- */
-unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
-{
-	switch (argnum) {
-	case 1: return rec->a1;
-	case 2: return rec->a2;
-	case 3: return rec->a3;
-	case 4: return rec->a4;
-	case 5: return rec->a5;
-	case 6: return rec->a6;
-	}
-	return 0;
-}
 
 void nested_address_scrub(struct syscallentry *entry, struct syscallrecord *rec)
 {

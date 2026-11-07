@@ -80,6 +80,7 @@ void xattr_recall_self_check(void);
 void selector_recall_self_check(void);
 void readlink_recall_self_check(void);
 void name_to_handle_at_self_check(void);
+void results_self_check(void);
 void listmount_recall_self_check(void);
 void sockname_recall_self_check(void);
 void pid_recall_self_check(void);
@@ -448,6 +449,11 @@ int main(int argc, char **argv)
 	printf("  name_to_handle_at_self_check ... ");
 	fflush(stdout);
 	name_to_handle_at_self_check();
+	printf("OK\n");
+
+	printf("  results_self_check ... ");
+	fflush(stdout);
+	results_self_check();
 	printf("OK\n");
 
 	printf("  listmount_recall_self_check ... ");

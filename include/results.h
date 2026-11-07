@@ -3,8 +3,8 @@
 #include <stdint.h>
 #include "syscall.h"
 
-void handle_success(struct syscallrecord *rec);
-void handle_failure(struct syscallrecord *rec);
+void handle_success(struct syscallrecord *rec, struct syscallentry *entry);
+void handle_failure(struct syscallrecord *rec, struct syscallentry *entry);
 int pick_successful_fd(struct results *results);
 bool fd_recently_failed(struct results *results, int fd);
 

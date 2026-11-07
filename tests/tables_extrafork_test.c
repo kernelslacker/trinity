@@ -3,7 +3,8 @@
  * do_extrafork() is compiled out (ASAN) a live run never issues an
  * EXTRA_FORK call, so those entries have to leave the active table.
  * --dry-run issues no call anywhere and takes them in the child like the
- * rest, and every other build leaves the table alone.
+ * rest, and every other build leaves the table alone.  An ENOSYS return
+ * (deactivate_enosys()) takes out the entry that returned it.
  */
 
 #include <stdbool.h>
@@ -13,6 +14,7 @@
 #include "debug.h"		/* BUG */
 #include "params.h"		/* dry_run */
 #include "syscall.h"
+#include "syscall-internal.h"	/* deactivate_enosys */
 #include "tables.h"
 #include "utils.h"		/* ARRAY_SIZE */
 
@@ -188,9 +190,54 @@ static void selftest_biarch(void)
 	max_nr_64bit_syscalls = 0;
 }
 
+/*
+ * ENOSYS takes the entry that returned it out of its own table, at its own
+ * number, read off the entry rather than the shared record.
+ */
+static void enosys_deactivates_the_dispatched_entry(void)
+{
+	struct probes p32, p64;
+	unsigned int i;
+
+	probes_init(&p32);
+	probes_init(&p64);
+	for (i = 0; i < NR_PROBES; i++) {
+		p32.entry[i].number = i;
+		p64.entry[i].number = i;
+	}
+	biarch = true;
+	syscalls_32bit = p32.table;
+	syscalls_64bit = p64.table;
+	max_nr_32bit_syscalls = NR_PROBES;
+	max_nr_64bit_syscalls = NR_PROBES;
+
+	nr_deactivated = 0;
+	fake_output_log[0] = '\0';
+	deactivate_enosys(&p32.entry[ALARM]);
+	if (nr_deactivated != 1 || !was_deactivated(ALARM, true))
+		BUG("tables_extrafork: ENOSYS deactivated another entry than the 32-bit one that returned it");
+	if (strstr(fake_output_log, ":[32BIT]") == NULL)
+		BUG("tables_extrafork: the ENOSYS deactivation logged the wrong ABI");
+
+	nr_deactivated = 0;
+	fake_output_log[0] = '\0';
+	deactivate_enosys(&p64.entry[FORKS]);
+	if (nr_deactivated != 1 || !was_deactivated(FORKS, false))
+		BUG("tables_extrafork: ENOSYS deactivated another entry than the 64-bit one that returned it");
+	if (strstr(fake_output_log, ":[32BIT]") != NULL)
+		BUG("tables_extrafork: the ENOSYS deactivation logged the wrong ABI");
+
+	biarch = false;
+	syscalls_32bit = NULL;
+	syscalls_64bit = NULL;
+	max_nr_32bit_syscalls = 0;
+	max_nr_64bit_syscalls = 0;
+}
+
 void tables_extrafork_self_check(void);
 void tables_extrafork_self_check(void)
 {
 	selftest_uniarch();
 	selftest_biarch();
+	enosys_deactivates_the_dispatched_entry();
 }

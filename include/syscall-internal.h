@@ -55,8 +55,7 @@ void enforce_count_bound(const struct syscallentry *entry,
 			 struct syscallrecord *rec);
 void validate_ret_bound(const struct syscallentry *entry,
 			struct syscallrecord *rec);
-void deactivate_enosys(struct syscallrecord *rec,
-		       struct syscallentry *entry, unsigned int call);
+void deactivate_enosys(struct syscallentry *entry);
 
 struct childdata;
 

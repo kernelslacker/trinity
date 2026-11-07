@@ -4,14 +4,12 @@
 
 #include <errno.h>
 #include <sys/resource.h>
-#include "debug.h"
 #include "locks.h"
 #include "results.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "syscall.h"
-#include "tables.h"
 #include "trinity.h"
 
 unsigned long get_argval(struct syscallrecord *rec, unsigned int argnum)
@@ -214,15 +212,13 @@ int pick_successful_fd(struct results *results)
 	return -1;
 }
 
-void handle_success(struct syscallrecord *rec)
+/*
+ * @entry is the one the dispatcher ran.  The record lives in shared
+ * childdata, so a lookup by its nr could name another syscall, or none.
+ */
+void handle_success(struct syscallrecord *rec, struct syscallentry *entry)
 {
-	struct syscallentry *entry;
-	unsigned int call;
 	uint8_t mask;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
-	BUG_ON(entry == NULL);
 
 	/* Walk only the slots that feed a scoreboard.  fd_arg_mask is the
 	 * is_fdarg() projection and len_arg_mask is the ARG_LEN projection;
@@ -260,15 +256,9 @@ void handle_success(struct syscallrecord *rec)
 	}
 }
 
-void handle_failure(struct syscallrecord *rec)
+void handle_failure(struct syscallrecord *rec, struct syscallentry *entry)
 {
-	struct syscallentry *entry;
-	unsigned int call;
 	uint8_t mask;
-
-	call = rec->nr;
-	entry = get_syscall_entry(call, rec->do32bit);
-	BUG_ON(entry == NULL);
 
 	/* Only fd args feed the failed-fd scoreboard.  Skip the walk
 	 * entirely when no slot is an fd.  Same snapshot gate as
