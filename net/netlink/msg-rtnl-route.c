@@ -9,6 +9,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/fib_rules.h>
+#include <linux/lwtunnel.h>
 #include <linux/nexthop.h>
 #include <linux/net_namespace.h>
 #include <linux/pkt_sched.h>
@@ -141,9 +142,20 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 
 	case RTA_SPORT:
 	case RTA_DPORT:
-	case RTA_ENCAP_TYPE:
 		if (avail >= 2) {
 			unsigned short val = rand16();
+			memcpy(p, &val, 2);
+			return 2;
+		}
+		return 0;
+
+	case RTA_ENCAP_TYPE:
+		/* u16; lwtunnel_valid_encap_type() refuses the route for
+		 * anything but an LWTUNNEL_ENCAP_* kind, so draw them as
+		 * NHA_ENCAP_TYPE does below, NONE included. */
+		if (avail >= 2) {
+			unsigned short val = rnd_modulo_u32(LWTUNNEL_ENCAP_MAX + 1);
+
 			memcpy(p, &val, 2);
 			return 2;
 		}

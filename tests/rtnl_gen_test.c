@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/pkt_cls.h>
@@ -727,6 +728,57 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 			"rtnl: RTM_GETDCB, which has only a doit, is sent a dump bit");
 }
 
+/* ---------- The RTA_ENCAP_TYPE of RTM_NEWROUTE, DELROUTE and GETROUTE --- */
+
+struct route_encap {
+	unsigned int types;	/* RTA_ENCAP_TYPEs of two bytes */
+	unsigned int kinds;	/* ... naming LWTUNNEL_ENCAP_MPLS to _MAX */
+};
+
+static void tally_route_encap(struct route_encap *t, const struct nlmsghdr *nlh)
+{
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct rtmsg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct rtmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct rtmsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == RTA_ENCAP_TYPE &&
+		    nla->nla_len == NLA_HDRLEN + sizeof(uint16_t)) {
+			uint16_t type;
+
+			memcpy(&type, p + NLA_HDRLEN, sizeof(type));
+			t->types++;
+			t->kinds += type > LWTUNNEL_ENCAP_NONE &&
+				    type <= LWTUNNEL_ENCAP_MAX;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * rtm_to_fib_config() and rtm_to_fib6_config() hand RTA_ENCAP_TYPE to
+ * lwtunnel_valid_encap_type(), which refuses LWTUNNEL_ENCAP_NONE and
+ * anything past LWTUNNEL_ENCAP_MAX, and the request with it.  The builder
+ * draws the type from NONE to MAX, as it does NHA_ENCAP_TYPE, so all but
+ * the one draw in LWTUNNEL_ENCAP_MAX + 1 that is NONE name an encap kind;
+ * a random 16-bit type named one ten times in 65536.  Over the thousands
+ * of types the bounds are many standard deviations out.
+ */
+static void expect_route_encap(const struct route_encap *t)
+{
+	expect_fraction(t->kinds, t->types, 0.80, 0.97, "RTA_ENCAP_TYPE",
+			"rtnl: a route's RTA_ENCAP_TYPE names no encap kind lwtunnel_valid_encap_type() takes");
+}
+
 /* ---------- The attributes of RTM_NEWACTION, DELACTION and GETACTION ---- */
 
 struct action_attrs {
@@ -910,6 +962,7 @@ struct tallies {
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
+	struct route_encap route_encap;
 	struct action_attrs action;
 };
 
@@ -969,6 +1022,11 @@ static void run_rounds(struct tallies *t)
 		case RTM_SETNEIGHTBL:
 			tally_probe_interval(&t->probe_interval, nlh);
 			break;
+		case RTM_NEWROUTE:
+		case RTM_DELROUTE:
+		case RTM_GETROUTE:
+			tally_route_encap(&t->route_encap, nlh);
+			break;
 		case RTM_NEWACTION:
 		case RTM_DELACTION:
 		case RTM_GETACTION:
@@ -995,5 +1053,6 @@ void rtnl_gen_self_check(void)
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);
 	expect_probe_interval(&t.probe_interval);
+	expect_route_encap(&t.route_encap);
 	expect_action_attrs(&t.action);
 }
