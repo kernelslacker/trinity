@@ -362,8 +362,8 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 		/* Credential-class oracle (always on, no flag gate): mirror the
 		 * just-classified bucket into the per-class success / EPERM /
 		 * EINVAL / calls counters when the entry resolves to a known
-		 * credential syscall.  No-op (single name-compare strcmp loop
-		 * plus an early return) on the ~99% non-credential majority.
+		 * credential syscall.  No-op (a byte load plus an early
+		 * return) on the ~99% non-credential majority.
 		 * Kept here so the bucket variable is already computed and the
 		 * AFTER gate above already filtered out grandchild-killed and
 		 * pre-validation paths -- the oracle should reflect only calls

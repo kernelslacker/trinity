@@ -12,6 +12,7 @@
 #include <string.h>
 #include "arch.h"
 #include "arch-syscalls.h"
+#include "cred_throttle.h"
 #include "results.h"
 #include "stats.h"
 #include "syscall.h"
@@ -130,6 +131,7 @@ static struct syscalltable * copy_syscall_table(struct syscalltable *from, unsig
 		copy[m].number = n;
 		copy[m].rt = &runtime[m];
 		copy[m].syscall_category = stats_syscall_category(copy[m].name);
+		copy[m].cred_class = cred_class_for_entry(&copy[m]);
 		copy[m].is_close_syscall = (strcmp(copy[m].name, "close") == 0);
 		/*
 		 * Per-discriminator flags consumed by the shared .sanitise /

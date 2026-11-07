@@ -25,10 +25,10 @@
  *
  * Credential class set (default 9 syscalls -- the full setre+ seteg+
  * setres+ family plus setgroups, sourced from the 787,942-attempts /
- * 0-successes setregid finding) is intentionally narrow so the throttle
- * only acts on the family the analysis identified.  Expanding the set
- * (e.g. to capset / unshare) requires explicit additions to
- * cred_class_name[] in cred_throttle.c.
+ * 0-successes setregid finding, each joined by its *16 twin on a 32-bit
+ * table) is intentionally narrow so the throttle only acts on the family
+ * the analysis identified.  Expanding the set (e.g. to capset / unshare)
+ * requires explicit additions to cred_class_name[] in cred_throttle.c.
  */
 enum cred_class {
 	CRED_CLASS_SETREGID = 0,
@@ -68,13 +68,13 @@ extern const char *const cred_class_name[CRED_CLASS_NR];
 struct syscallentry;
 
 /* Returns CRED_CLASS_NR if entry is not in the credential class set.
- * Otherwise returns the matching enum cred_class value. */
+ * Otherwise returns the matching enum cred_class value; a *16 entry has
+ * its namesake's.  copy_syscall_table() stamps the answer into each
+ * entry's cred_class. */
 int cred_class_for_entry(const struct syscallentry *entry);
 
-/* Cached (nr, do32bit) -> cred_class resolver.  First call per slot
- * walks cred_class_for_entry(); subsequent calls hit a single
- * RELAXED-atomic byte load.  Returns CRED_CLASS_NR for slots that have
- * been resolved as non-credential. */
+/* The cred_class stamped into the (nr, do32bit) entry, or CRED_CLASS_NR
+ * when there is no such entry. */
 int cred_class_for_nr(unsigned int nr, bool do32);
 
 /* Always-on oracle bump.  Called from handle_syscall_ret() once per

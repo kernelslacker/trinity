@@ -5,7 +5,6 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include <stdint.h>
 #include <string.h>
 
 #include "cred_throttle.h"
@@ -29,6 +28,12 @@ const char *const cred_class_name[CRED_CLASS_NR] = {
 	[CRED_CLASS_SETGROUPS] = "setgroups",
 };
 
+/*
+ * A name with a "16" suffix is the 16-bit-id twin a 32-bit table carries
+ * (setuid16, setgroups16, ...).  It reaches the same kernel core as its
+ * namesake (kernel/uid16.c), so it fails and succeeds with it and belongs
+ * to its class.
+ */
 int cred_class_for_entry(const struct syscallentry *entry)
 {
 	int i;
@@ -37,55 +42,33 @@ int cred_class_for_entry(const struct syscallentry *entry)
 		return CRED_CLASS_NR;
 
 	for (i = 0; i < CRED_CLASS_NR; i++) {
-		if (strcmp(entry->name, cred_class_name[i]) == 0)
+		size_t len = strlen(cred_class_name[i]);
+
+		if (strncmp(entry->name, cred_class_name[i], len) == 0 &&
+		    (entry->name[len] == '\0' ||
+		     strcmp(entry->name + len, "16") == 0))
 			return i;
 	}
 	return CRED_CLASS_NR;
 }
 
-/*
- * Per-(nr, do32) cache.  Sentinel -1 == not yet resolved; 0..CRED_CLASS_NR-1
- * == the resolved cred class; CRED_CLASS_NR == resolved as not-a-credential.
- * Writes are RELAXED and idempotent (entry->name is fixed at table-init
- * time, and cred_class_for_entry() is a pure function of that name), so
- * concurrent racing initialisers from different children always store the
- * same value into the same slot -- a torn read sees either the sentinel or
- * the final value, never a foreign half.
- *
- * The two-arch dimension matches biarch: the same syscall nr can resolve
- * to a different entry on the 32-bit and 64-bit tables (e.g. setreuid vs
- * setreuid32), so caching per (nr, do32) preserves the picker's per-arch
- * decision.
- */
-static int8_t cred_class_by_nr[MAX_NR_SYSCALL][2] = {
-	[0 ... MAX_NR_SYSCALL - 1] = { -1, -1 },
-};
-
 int cred_class_for_nr(unsigned int nr, bool do32)
 {
-	int8_t cached;
 	struct syscallentry *entry;
-	int cls;
-	unsigned int arch = do32 ? 1U : 0U;
 
 	if (nr >= MAX_NR_SYSCALL)
 		return CRED_CLASS_NR;
 
-	cached = __atomic_load_n(&cred_class_by_nr[nr][arch], __ATOMIC_RELAXED);
-	if (cached >= 0)
-		return (int)cached;
-
 	entry = get_syscall_entry(nr, do32);
-	cls = cred_class_for_entry(entry);
-	__atomic_store_n(&cred_class_by_nr[nr][arch], (int8_t)cls,
-			 __ATOMIC_RELAXED);
-	return cls;
+	if (entry == NULL)
+		return CRED_CLASS_NR;
+	return entry->cred_class;
 }
 
 void cred_oracle_record(const struct syscallentry *entry,
 			unsigned int errno_bucket)
 {
-	int cls = cred_class_for_entry(entry);
+	int cls = entry->cred_class;
 
 	if (cls >= CRED_CLASS_NR)
 		return;

@@ -698,6 +698,14 @@ struct syscallentry {
 	unsigned char syscall_category;
 
 	/*
+	 * Cached enum cred_class, CRED_CLASS_NR outside the credential set.
+	 * Resolved once from .name at table-init time in copy_syscall_table()
+	 * so the oracle on every completed call and the picker's throttle
+	 * read a byte instead of comparing names.
+	 */
+	unsigned char cred_class;
+
+	/*
 	 * Cached "is this the close(2) syscall?" flag.  Resolved once from
 	 * .name at table-init time in copy_syscall_table() so the dispatch
 	 * fd-leak accounting in random_syscall/fd-group.c can branch on a

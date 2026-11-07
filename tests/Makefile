@@ -1150,6 +1150,11 @@ FAKE_SRCS	+= modify_ldt_test.c
 PARENT_SRCS	+= $(TOP)/fds/seccomp_notif.c
 FAKE_SRCS	+= seccomp_notif_test.c
 
+# child/cred_throttle.c brings cred_class_for_entry(), the credential
+# classification cred_class_test.c checks.
+PARENT_SRCS	+= $(TOP)/child/cred_throttle.c
+FAKE_SRCS	+= cred_class_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
