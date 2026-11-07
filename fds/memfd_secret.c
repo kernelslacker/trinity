@@ -50,12 +50,6 @@ static int memfd_secret(unsigned int flags)
 #endif
 }
 
-/*
- * Cross-process safe: only reads obj->memfd_secretobj scalar fields
- * and the scope scalar.  These survive fork/COW and no process-local
- * pointers are dereferenced — head->dump runs from dump_childdata() in
- * the parent on a child-triggered crash.
- */
 static void memfd_secret_dump(struct object *obj, enum obj_scope scope)
 {
 	struct memfd_secretobj *mso = &obj->memfd_secretobj;

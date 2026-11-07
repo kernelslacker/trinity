@@ -228,20 +228,14 @@ static int init_io_uring_fds(void)
 	head->dump = &io_uring_dump;
 	/*
 	 * The io_uringobj struct lives in the OBJ_GLOBAL pool, populated
-	 * pre-fork and inherited by children via fork/COW, so the
-	 * cross-process dump path (head->dump from dump_childdata in the
-	 * parent crash diagnostics) can read its scalar fields (fd,
-	 * off_*, sq_entries, sq_ring_sz, sqes_sz) regardless of which
-	 * process triggered the crash.
-	 *
-	 * Scope: the obj struct ONLY.  The mmap'd pointers (sq_ring,
-	 * sqes) are kernel-backed mappings obtained via mmap(MAP_SHARED)
-	 * on the io_uring fd, not heap allocations.  Pre-fork mappings
-	 * inherited via fork() are visible at the same VA in every child,
-	 * which is what sanitise_io_uring_enter (reading sq_off_mask via
-	 * ring->sq_ring) requires.  Pool is populated once pre-fork and
-	 * not regenerated post-fork; if a ring's fd is destroyed, the
-	 * pool shrinks until the session ends.
+	 * pre-fork and inherited by children via fork/COW.  Its mmap'd
+	 * pointers (sq_ring, sqes) are kernel-backed mappings obtained via
+	 * mmap(MAP_SHARED) on the io_uring fd, not heap allocations.
+	 * Pre-fork mappings inherited via fork() are visible at the same VA
+	 * in every child, which is what sanitise_io_uring_enter (reading
+	 * sq_off_mask via ring->sq_ring) requires.  Pool is populated once
+	 * pre-fork and not regenerated post-fork; if a ring's fd is
+	 * destroyed, the pool shrinks until the session ends.
 	 */
 
 	for (i = 0; i < ARRAY_SIZE(ring_configs); i++)

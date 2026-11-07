@@ -126,15 +126,6 @@ void arm_epoll_if_needed(struct epollobj *eo)
 			   __ATOMIC_RELAXED);
 }
 
-/*
- * Cross-process safe: only reads obj->epollobj scalar fields and the
- * scope scalar.  These survive fork/COW and no process-local pointers
- * are dereferenced, so it is correct to call this from a different
- * process than the one that allocated the obj — which
- * matters because head->dump runs from dump_childdata() in the
- * parent's crash diagnostics path even when a child triggered the
- * crash.
- */
 static void epoll_dump(struct object *obj, enum obj_scope scope)
 {
 	struct epollobj *eo = &obj->epollobj;

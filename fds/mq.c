@@ -33,15 +33,6 @@ static void mq_destructor(struct object *obj)
 	mq_unlink(obj->mqobj.name);
 }
 
-/*
- * Cross-process safe: only reads obj->mqobj fields and the scope
- * scalar.  The scalars and the inline name[] array survive fork/COW
- * and no process-local pointers are dereferenced, so it is correct to
- * call this from a different process than the one that allocated the
- * obj — which matters because head->dump runs from dump_childdata() in
- * the parent's crash diagnostics path even when a child triggered the
- * crash.
- */
 static void mq_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "mq fd:%d name:%s scope:%d\n",

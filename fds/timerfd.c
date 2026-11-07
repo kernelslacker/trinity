@@ -17,14 +17,7 @@
 
 #include "kernel/timerfd.h"
 #include "kernel/time.h"
-/*
- * Cross-process safe: only reads obj->timerfdobj scalar fields and the
- * scope scalar.  These survive fork/COW and no process-local pointers
- * are dereferenced, so it is correct to call this from a different
- * process than the one that allocated the obj — which matters because
- * head->dump runs from dump_childdata() in the parent's crash
- * diagnostics path even when a child triggered the crash.
- */
+
 static void timerfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct timerfdobj *to = &obj->timerfdobj;

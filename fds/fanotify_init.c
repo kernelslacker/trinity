@@ -25,12 +25,6 @@ static int fanotify_init(__unused__ unsigned int flags, __unused__ unsigned int 
 #endif
 }
 
-/*
- * Cross-process safe: only reads obj->fanotifyobj scalar fields and the
- * scope scalar.  These survive fork/COW and no process-local pointers
- * are dereferenced, so it is correct to call this from a different
- * process than the one that allocated the obj.
- */
 static void fanotifyfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct fanotifyobj *fo = &obj->fanotifyobj;

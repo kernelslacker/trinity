@@ -76,10 +76,6 @@ int create_userfaultfd(unsigned int flags)
 	return fd;
 }
 
-/*
- * Only reads obj->userfaultobj scalar fields and the scope scalar;
- * no process-local pointers are dereferenced.
- */
 static void userfaultfd_dump(struct object *obj, enum obj_scope scope)
 {
 	struct userfaultobj *uo = &obj->userfaultobj;

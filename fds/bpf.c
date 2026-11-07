@@ -76,12 +76,6 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, BPF_F_MMAPABLE, "arena" },
 };
 
-/*
- * Cross-process safe: reads obj->bpfobj scalar fields and looks up the
- * map type name from the static bpf_fds[] table.  The scalars survive
- * fork/COW and no process-local pointers are dereferenced, so it is
- * correct to call this from a different process than the allocator.
- */
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
 {
 	u32 type = obj->bpfobj.map_type;
@@ -310,13 +304,6 @@ static const char *bpf_prog_template_name(u32 prog_type,
 	return "unknown";
 }
 
-/*
- * Cross-process safe: reads obj->bpfprogobj scalar fields and looks up
- * the prog type name from the static bpf_prog_templates[] table.  The
- * scalars survive fork/COW and no process-local pointers are
- * dereferenced, so it is correct to call this from a different process
- * than the allocator.
- */
 static void bpf_prog_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf prog fd:%d type:%s scope:%d\n",
@@ -420,11 +407,7 @@ REG_FD_PROV(bpf_prog_fd_provider);
  * the per-child pool entries the existing map / prog providers
  * rely on.  .open is left NULL for the same reason.
  */
-/*
- * Cross-process safe: reads obj->bpflinkobj scalar fields and the scope
- * scalar.  These survive fork/COW and no process-local pointers are
- * dereferenced.
- */
+
 static void bpf_link_dump(struct object *obj, enum obj_scope scope)
 {
 	output(2, "bpf link fd:%d attach_type:%u scope:%d\n",
