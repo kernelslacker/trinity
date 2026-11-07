@@ -26,6 +26,7 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 {
 	/* val: write a known value to uaddr so the comparison can succeed */
 	static __thread struct timespec timeout_clamp;
+	struct timespec *timeout;
 	unsigned long flags;
 	unsigned int size;
 	__u32 *futex_word;
@@ -78,13 +79,18 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	 * tv_nsec >= 1e9, or (b) arming an hrtimer for a far-future
 	 * absolute deadline drawn from a residual valid pool timespec and
 	 * parking the child past the NEED_ALARM dodge until the parent's
-	 * 30s SIGKILL.  The static __thread storage is immune to the
-	 * blanket scrub (SKIP_BLANKET_SCRUB is set anyway) and never fails
-	 * to allocate.
+	 * 30s SIGKILL.  It comes from the call's pool, which a compat call,
+	 * reading the slot as its low 32 bits, can reach; the per-thread
+	 * scratch only when the pool has none to give, so the call never
+	 * goes out without the clamp.
 	 */
-	timeout_clamp.tv_sec = 0;
-	timeout_clamp.tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
-	rec->a5 = (unsigned long) &timeout_clamp;
+	timeout = get_writable_struct(sizeof(*timeout));
+	if (timeout == NULL)
+		timeout = &timeout_clamp;
+	timeout->tv_sec = 0;
+	timeout->tv_nsec = rnd_modulo_u32(1000000);	/* up to 1ms */
+	time_struct_for_abi(rec, timeout, 1);
+	rec->a5 = (unsigned long) timeout;
 }
 
 struct syscallentry syscall_futex_wait = {

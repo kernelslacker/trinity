@@ -1092,6 +1092,11 @@ FAKE_SRCS	+= cmsg_build_test.c
 PARENT_SRCS	+= $(TOP)/childops/net/rxrpc-key-install.c
 FAKE_SRCS	+= rxrpc_key_install_test.c
 
+# syscalls/concurrency/futex_wait.c brings futex_wait's sanitiser, whose
+# futex word and timeout futex_wait_test.c checks on a compat call.
+PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex_wait.c
+FAKE_SRCS	+= futex_wait_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
