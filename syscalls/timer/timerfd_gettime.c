@@ -128,6 +128,7 @@ static void post_timerfd_gettime(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->otmr,
 				   sizeof(first)))
 		goto out_free;
+	time_struct_from_abi(rec, &first, 2);
 
 	if (first.it_value.tv_nsec < 0 ||
 	    first.it_value.tv_nsec > 999999999L ||

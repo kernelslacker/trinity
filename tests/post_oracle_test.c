@@ -1455,6 +1455,21 @@ static void timer_gettime_compat(void)
 	       time_oracle_anomalies(&o, 261, &left32, sizeof(left32)), 0);
 }
 
+/* timerfd_gettime() writes a struct old_itimerspec32 for a time32 call,
+ * 326 on i386, which the range check must read as such: here a timer
+ * 1.5 s from expiry, with no interval. */
+static void timerfd_gettime_compat(void)
+{
+	const struct time_oracle o = { &syscall_timerfd_gettime, NULL, 2 };
+	const struct itimerspec left = { .it_value = { 1, 500000000 } };
+	const struct old_itimerspec32 left32 = { .it_value = { 1, 500000000 } };
+
+	expect("timerfd_gettime, a native call's setting",
+	       time_oracle_anomalies(&o, 0, &left, sizeof(left)), 0);
+	expect("timerfd_gettime, a time32 call's setting",
+	       time_oracle_anomalies(&o, 326, &left32, sizeof(left32)), 0);
+}
+
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
  * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
  * single-node box takes, writes the policy and none of the mask.  The
@@ -1870,6 +1885,7 @@ void post_oracle_self_check(void)
 	gettimeofday_compat();
 	clock_gettime_compat();
 	timer_gettime_compat();
+	timerfd_gettime_compat();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
