@@ -247,9 +247,7 @@ static volatile sig_atomic_t write_walk_armed;
 /* Trinity's canonical SIGBUS/SIGSEGV dispositions, captured once before the
  * first handler install so the not-ours arm can chain directly to
  * child_fault_handler and preserve the shm fault-beacon stamp. */
-static struct sigaction write_walk_trinity_sa_segv;
-static struct sigaction write_walk_trinity_sa_bus;
-static bool write_walk_trinity_sa_saved;
+static struct saved_fault_handlers write_walk_trinity_sa;
 
 static __attribute__((no_sanitize("address")))
 void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
@@ -262,18 +260,7 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		/* Not in the guarded section — chain to trinity's canonical
 		 * handler (child_fault_handler) directly to preserve the
 		 * shm fault-beacon stamp. */
-		{
-			const struct sigaction *saved =
-				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
-					       : &write_walk_trinity_sa_segv;
-			if (write_walk_trinity_sa_saved &&
-			    (saved->sa_flags & SA_SIGINFO))
-				saved->sa_sigaction(sig, info, ctx);
-			else {
-				sigaction(sig, saved, NULL);
-				raise(sig);
-			}
-		}
+		chain_saved_fault_handler(sig, info, ctx, &write_walk_trinity_sa);
 		return;
 	}
 	if (!fault_signal_is_real(sig, info, mypid())) {
@@ -285,18 +272,7 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		 * handler (child_fault_handler) directly to preserve the
 		 * shm fault-beacon stamp.  siglongjmp here would skip
 		 * in-flight cleanup. */
-		{
-			const struct sigaction *saved =
-				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
-					       : &write_walk_trinity_sa_segv;
-			if (write_walk_trinity_sa_saved &&
-			    (saved->sa_flags & SA_SIGINFO))
-				saved->sa_sigaction(sig, info, ctx);
-			else {
-				sigaction(sig, saved, NULL);
-				raise(sig);
-			}
-		}
+		chain_saved_fault_handler(sig, info, ctx, &write_walk_trinity_sa);
 		return;
 	}
 
@@ -307,18 +283,7 @@ void write_walk_signal_handler(int sig, siginfo_t *info, void *ctx)
 		 * Chain to trinity's canonical handler directly so
 		 * child_fault_handler stamps the beacon and the bug log
 		 * path is preserved. */
-		{
-			const struct sigaction *saved =
-				(sig == SIGBUS) ? &write_walk_trinity_sa_bus
-					       : &write_walk_trinity_sa_segv;
-			if (write_walk_trinity_sa_saved &&
-			    (saved->sa_flags & SA_SIGINFO))
-				saved->sa_sigaction(sig, info, ctx);
-			else {
-				sigaction(sig, saved, NULL);
-				raise(sig);
-			}
-		}
+		chain_saved_fault_handler(sig, info, ctx, &write_walk_trinity_sa);
 		return;
 	}
 	siglongjmp(write_walk_jmp, 1);
@@ -342,10 +307,10 @@ void random_map_writefn(struct map *map)
 	/* Capture trinity's canonical dispositions once before the first
 	 * install so the not-ours arm in the handler can chain directly
 	 * to child_fault_handler. */
-	if (!write_walk_trinity_sa_saved) {
-		sigaction(SIGBUS,  NULL, &write_walk_trinity_sa_bus);
-		sigaction(SIGSEGV, NULL, &write_walk_trinity_sa_segv);
-		write_walk_trinity_sa_saved = true;
+	if (!write_walk_trinity_sa.saved) {
+		sigaction(SIGBUS,  NULL, &write_walk_trinity_sa.bus);
+		sigaction(SIGSEGV, NULL, &write_walk_trinity_sa.segv);
+		write_walk_trinity_sa.saved = true;
 	}
 	if (sigaction(SIGBUS,  &sa, &old_bus) != 0)
 		return;
