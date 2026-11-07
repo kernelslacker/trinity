@@ -77,10 +77,16 @@ endif
 # include/arch-x86-64.h clobbers %rbp; ASAN still produces good
 # backtraces from the DWARF info -ggdb3 emits.  The trailing -Og
 # overrides the earlier -O2; _FORTIFY_SOURCE is undefined because it
-# requires optimization.
+# requires optimization.  Its objects go to build-asan/, as nothing in an
+# object's name says how it was built: in one directory, `make asan`
+# after `make` would link the plain objects it found up to date.
 ifneq ($(filter asan debug,$(MAKECMDGOALS)),)
 CFLAGS += -U_FORTIFY_SOURCE -fsanitize=address -Og -ggdb3
 LDFLAGS += -fsanitize=address
+OBJDIR := build-asan/
+FLAVOR := asan
+else
+FLAVOR := plain
 endif
 
 V	= @
@@ -243,7 +249,16 @@ DEPDIR= .deps
 $(VERSION_H): scripts/gen-versionh.sh Makefile $(wildcard .git)
 	@scripts/gen-versionh.sh
 
-trinity: $(OBJS)
+# The flavor trinity was last linked as, rewritten only when it changes,
+# so a switch between `make` and `make asan` relinks trinity from the
+# other flavor's objects even when they are older than the binary.
+FLAVOR_STAMP := .trinity-flavor
+
+.PHONY: FORCE
+$(FLAVOR_STAMP): FORCE
+	@echo $(FLAVOR) | cmp -s - $@ || echo $(FLAVOR) > $@
+
+trinity: $(OBJS) $(FLAVOR_STAMP)
 	$(QUIET_CC)$(CC) $(CFLAGS) $(LDFLAGS) -o trinity $(OBJS) $(LDLIBS)
 	@mkdir -p tmp
 
@@ -257,7 +272,8 @@ clean:
 	@rm -f $(OBJS)
 	@rm -f *.o args/*.o lib/*.o main/*.o main/params/*.o net/*.o objects/*.o stats/*.o stats/json/*.o stats/periodic/*.o tables/*.o utils/*.o
 	@rm -f core.*
-	@rm -f trinity
+	@rm -f trinity $(FLAVOR_STAMP)
+	@rm -rf build-asan
 	@$(MAKE) --no-print-directory -C tests clean
 	@rm -f tags tags.json
 	@rm -rf $(DEPDIR)/*

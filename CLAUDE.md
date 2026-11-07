@@ -110,9 +110,10 @@ every translation unit lives under one of the directories below.
   and is gitignored, so it never lands in a commit. Always commit with an
   explicit pathspec (`git commit <file> …`), never `-a` or `git add -A`, so
   stray local files stay out of the commit.
-- `make asan` wires `-fsanitize=address -Og -ggdb3`; some allocations and fork
-  patterns are gated on `#ifdef __SANITIZE_ADDRESS__` to avoid colliding with
-  ASAN's shadow and allocator.
+- `make asan` wires `-fsanitize=address -Og -ggdb3`, with its objects in
+  `build-asan/`; some allocations and fork patterns are gated on
+  `#ifdef __SANITIZE_ADDRESS__` to avoid colliding with ASAN's shadow and
+  allocator.
 - `make tags` builds a ~0.4s ctags db; regenerate after large changes if
   you'll be grepping.
 - Default child count (no `-C`) is pre-tuned for sustained throughput — pass

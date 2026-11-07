@@ -1,3 +1,4 @@
+build-asan/
 build-uapi/
 .agents/
 .claude
@@ -20,6 +21,7 @@ stats-timeseries-*.jsonl
 .*.swp
 tags
 tags.json
+.trinity-flavor
 tests/test-bin-*
 tmp
 TODO.md
