@@ -247,33 +247,8 @@ void * __alloc_shared(size_t size, bool is_pool)
 		outputerr("mmap %zu failure\n", size);
 		trinity_exit(EXIT_FAILURE);
 	}
-	/* poison with independently-random bytes to expose uninitialized reads. */
-	{
-		unsigned char *p = ret;
-		size_t i;
-
-		for (i = 0; i + sizeof(unsigned int) <= size; i += sizeof(unsigned int)) {
-			unsigned int r = rnd_u32();
-			memcpy(p + i, &r, sizeof(r));
-		}
-		for (; i < size; i++)
-			p[i] = (unsigned char)rnd_u32();
-	}
-
-	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
-		shared_regions[nr_shared_regions].addr = (unsigned long) ret;
-		shared_regions[nr_shared_regions].size = size;
-		shared_regions[nr_shared_regions].guarded = guarded ? 1 : 0;
-		shared_regions[nr_shared_regions].origin = NULL;
-		shared_bitmap_mark((unsigned long) ret, size);
-		tracked_size_mark(size);
-		nr_shared_regions++;
-	} else {
-		register_shared_overflow("alloc_shared", (unsigned long) ret,
-					 size, guarded, NULL,
-					 __builtin_return_address(0));
-	}
-
+	fill_and_register(ret, size, guarded, "alloc_shared",
+			  __builtin_return_address(0));
 	return ret;
 }
 
