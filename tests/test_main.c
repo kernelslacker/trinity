@@ -104,6 +104,7 @@ void pathname_pool_self_check(void);
 void io_uring_register_self_check(void);
 void gen_arg_time_self_check(void);
 void futex_self_check(void);
+void rt_sigaction_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -581,6 +582,11 @@ int main(int argc, char **argv)
 	printf("  futex_self_check ... ");
 	fflush(stdout);
 	futex_self_check();
+	printf("OK\n");
+
+	printf("  rt_sigaction_self_check ... ");
+	fflush(stdout);
+	rt_sigaction_self_check();
 	printf("OK\n");
 
 	return 0;

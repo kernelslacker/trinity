@@ -1046,6 +1046,11 @@ FAKE_SRCS	+= gen_arg_time_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex.c
 FAKE_SRCS	+= futex_test.c
 
+# syscalls/signal/sigaction.c brings rt_sigaction's sanitiser, whose act
+# rt_sigaction_test.c reads at the kernel's offsets for each ABI.
+PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaction.c
+FAKE_SRCS	+= rt_sigaction_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

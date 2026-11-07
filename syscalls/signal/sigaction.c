@@ -5,7 +5,9 @@
 	size_t, sigsetsize)
  */
 #include <signal.h>
-#include <string.h>
+#include <stdint.h>
+#include <sys/syscall.h>
+#include <unistd.h>
 #include "output-poison.h"
 #include "random.h"
 #include "rnd.h"
@@ -19,6 +21,35 @@
 
 /* Kernel sigset_t is a fixed 64-bit mask; sizeof matches on every arch. */
 #define KERNEL_SIGSET_SIZE	8
+
+/*
+ * rt_sigaction copies in the kernel's struct sigaction
+ * (include/linux/signal_types.h), not glibc's, which puts a 1024-bit
+ * sa_mask straight after the handler.  sa_restorer sits before the mask
+ * where the arch has SA_RESTORER; a compat call reads 32-bit fields.
+ */
+#if defined(__x86_64__) || defined(__i386__) || defined(__arm__) || defined(__aarch64__)
+#define KERNEL_SA_HAS_RESTORER
+#ifndef SA_RESTORER
+#define SA_RESTORER	0x04000000	/* the uapi value; glibc keeps it to itself */
+#endif
+#endif
+
+struct kernel_sigaction {
+	unsigned long handler;
+	unsigned long flags;
+#ifdef KERNEL_SA_HAS_RESTORER
+	unsigned long restorer;
+#endif
+	unsigned long mask[KERNEL_SIGSET_SIZE / sizeof(unsigned long)];
+};
+
+struct compat_kernel_sigaction {
+	uint32_t handler;
+	uint32_t flags;
+	uint32_t restorer;
+	uint32_t mask[2];
+};
 
 /*
  * Snapshot of the rt_sigaction args the post oracle reads, captured at
@@ -44,6 +75,9 @@ struct rt_sigaction_post_state {
 	 * treats as "skip the arm".
 	 */
 	uint64_t poison_seed;
+	/* Length of the oact struct for the call's ABI: what the poison
+	 * covers and the check walks. */
+	unsigned long size;
 };
 
 /*
@@ -149,68 +183,113 @@ static unsigned int build_sa_flags(void)
 	return flags;
 }
 
-static void build_sa_mask(sigset_t *mask)
+static uint64_t build_sa_mask(void)
 {
 	unsigned int draw = rnd_modulo_u32(10);
 
-	if (draw < 7) {
+	if (draw < 7)
 		/* sigfillset minus the forbidden ones -- legal "block all
 		 * I can block" mask, what real userspace tends to use. */
-		sigfillset(mask);
-		sigdelset(mask, SIGKILL);
-		sigdelset(mask, SIGSTOP);
-	} else if (draw < 9) {
-		sigemptyset(mask);
-	} else {
-		unsigned int i;
-		sigemptyset(mask);
-		for (i = 0; i < sizeof(*mask); i++)
-			((unsigned char *) mask)[i] = (unsigned char) rand32();
-	}
+		return ~((1ULL << (SIGKILL - 1)) | (1ULL << (SIGSTOP - 1)));
+	if (draw < 9)
+		return 0;
+	return rnd_u64();
 }
 
-static struct sigaction *alloc_sigaction(void)
+#ifdef __x86_64__
+/*
+ * x86-64 sets up a signal frame only through the restorer the action
+ * names (arch/x86/kernel/signal_64.c refuses one without SA_RESTORER),
+ * and a raw rt_sigaction gets none from glibc.  Borrow glibc's from the
+ * child's SIGALRM flag-setter, which glibc's sigaction() installed: a
+ * child reads it here, building its first act, before any install of
+ * its own can have replaced that handler.
+ */
+static unsigned long glibc_restorer(void)
 {
-	struct sigaction *sa;
+	static unsigned long restorer;
+	struct kernel_sigaction cur;
+
+	if (restorer == 0 &&
+	    syscall(__NR_rt_sigaction, SIGALRM, NULL, &cur,
+		    KERNEL_SIGSET_SIZE) == 0 &&
+	    (cur.flags & SA_RESTORER))
+		restorer = cur.restorer;
+	return restorer;
+}
+#endif
+
+/*
+ * Build an act in the call's ABI layout in the writable pool, or return
+ * 0 when the pool has none to give.
+ */
+static unsigned long alloc_sigaction(const struct syscallrecord *rec)
+{
+	unsigned long handler, flags;
+	uint64_t mask;
 	unsigned int draw;
+	void *act;
 
-	sa = (struct sigaction *) get_writable_address(sizeof(*sa));
-	if (sa == NULL)
-		return NULL;
+	act = get_writable_address(rec->do32bit ?
+				   sizeof(struct compat_kernel_sigaction) :
+				   sizeof(struct kernel_sigaction));
+	if (act == NULL)
+		return 0;
 
-	/* Zero the struct before setting a subset of fields -- the
-	 * writable-address pool returns uninitialised bytes, and
-	 * sa_restorer (plus any reserved padding around the union) is
-	 * neither picked below nor overwritten by the kernel on input,
-	 * so without this the kernel copies uninitialised bytes on
-	 * every rt_sigaction/sigaction install. */
-	memset(sa, 0, sizeof(*sa));
-
-	build_sa_mask(&sa->sa_mask);
-	sa->sa_flags = build_sa_flags();
+	mask = build_sa_mask();
+	flags = build_sa_flags();
 
 	/* Handler bucket distribution: roughly 25/25/30/10/10. */
 	draw = rnd_modulo_u32(100);
 	if (draw < 25) {
-		sa->sa_handler = SIG_DFL;
-		sa->sa_flags &= ~SA_SIGINFO;
+		handler = (unsigned long) SIG_DFL;
+		flags &= ~SA_SIGINFO;
 	} else if (draw < 50) {
-		sa->sa_handler = SIG_IGN;
-		sa->sa_flags &= ~SA_SIGINFO;
+		handler = (unsigned long) SIG_IGN;
+		flags &= ~SA_SIGINFO;
 	} else if (draw < 80) {
-		sa->sa_handler = sigaction_dummy_handler;
-		sa->sa_flags &= ~SA_SIGINFO;
+		handler = (unsigned long) sigaction_dummy_handler;
+		flags &= ~SA_SIGINFO;
 	} else if (draw < 90) {
-		sa->sa_sigaction = sigaction_dummy_sigaction;
-		sa->sa_flags |= SA_SIGINFO;
+		handler = (unsigned long) sigaction_dummy_sigaction;
+		flags |= SA_SIGINFO;
 	} else {
 		/* Intentionally invalid pointer -- the kernel does not deref
 		 * sa_handler on install, but copy_from_user on the struct is
 		 * still exercised, and the install of a wild handler keeps
 		 * the eventual-delivery validation path realistic. */
-		sa->sa_handler = (void (*)(int)) (unsigned long) rand32();
+		handler = rand32();
 	}
-	return sa;
+
+	/* Every field is written: the writable-address pool returns
+	 * uninitialised bytes, and the kernel copies the whole struct
+	 * in on every install. */
+	if (rec->do32bit) {
+		struct compat_kernel_sigaction *csa = act;
+
+		csa->handler = (uint32_t) handler;
+		csa->flags = (uint32_t) flags;
+		csa->restorer = 0;	/* glibc's is 64-bit code */
+		csa->mask[0] = (uint32_t) mask;
+		csa->mask[1] = (uint32_t) (mask >> 32);
+	} else {
+		struct kernel_sigaction *sa = act;
+		unsigned int i;
+
+		sa->handler = handler;
+#ifdef __x86_64__
+		sa->restorer = glibc_restorer();
+		if (sa->restorer != 0)
+			flags |= SA_RESTORER;
+#elif defined(KERNEL_SA_HAS_RESTORER)
+		sa->restorer = 0;
+#endif
+		sa->flags = flags;
+		for (i = 0; i < ARRAY_SIZE(sa->mask); i++)
+			sa->mask[i] = (unsigned long)
+				(mask >> (i * 8 * sizeof(unsigned long)));
+	}
+	return (unsigned long) act;
 }
 
 static unsigned long pick_signal_target(void)
@@ -240,6 +319,9 @@ static unsigned long pick_signal_target(void)
 static void sanitise_rt_sigaction(struct syscallrecord *rec)
 {
 	struct rt_sigaction_post_state *snap;
+	unsigned long size = rec->do32bit ?
+			     sizeof(struct compat_kernel_sigaction) :
+			     sizeof(struct kernel_sigaction);
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -249,12 +331,12 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	rec->a1 = pick_signal_target();
-	rec->a2 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
-	avoid_shared_buffer_inout(&rec->a2, sizeof(struct sigaction));
-	rec->a3 = RAND_BOOL() ? 0 : (unsigned long) alloc_sigaction();
+	rec->a2 = RAND_BOOL() ? 0 : alloc_sigaction(rec);
+	avoid_shared_buffer_inout(&rec->a2, size);
+	rec->a3 = RAND_BOOL() ? 0 : alloc_sigaction(rec);
 	rec->a4 = KERNEL_SIGSET_SIZE;
 
-	avoid_shared_buffer_out(&rec->a3, sizeof(struct sigaction));
+	avoid_shared_buffer_out(&rec->a3, size);
 
 	/*
 	 * Snapshot oact for the post oracle.  Without this the post handler
@@ -273,6 +355,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	snap->magic       = RT_SIGACTION_POST_STATE_MAGIC;
 	snap->oact        = rec->a3;
 	snap->poison_seed = 0;
+	snap->size        = size;
 
 	/*
 	 * Stamp a per-call poison pattern into the oact struct the kernel
@@ -296,11 +379,10 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 	 * memory).
 	 */
 	if (rec->a3 != 0 &&
-	    range_readable_user((void *)(unsigned long) rec->a3,
-				sizeof(struct sigaction)))
+	    range_readable_user((void *)(unsigned long) rec->a3, size))
 		snap->poison_seed =
 			poison_output_struct((void *)(unsigned long) rec->a3,
-					     sizeof(struct sigaction), 0);
+					     size, 0);
 
 	post_state_install(rec, snap);
 }
@@ -333,7 +415,7 @@ static void sanitise_rt_sigaction(struct syscallrecord *rec)
 static void post_rt_sigaction(struct syscallrecord *rec)
 {
 	struct rt_sigaction_post_state *snap;
-	const struct sigaction *oact;
+	const struct kernel_sigaction *oact;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -353,23 +435,25 @@ static void post_rt_sigaction(struct syscallrecord *rec)
 
 	if (snap->poison_seed != 0 &&
 	    check_output_struct_user_or_skip((void *)(unsigned long) snap->oact,
-					     sizeof(struct sigaction),
-					     snap->poison_seed))
+					     snap->size, snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 
-	if (!ONE_IN(64))
+	/* A compat oact's handler is 32 bits, which the check below
+	 * cannot fault. */
+	if (!ONE_IN(64) || snap->size != sizeof(struct kernel_sigaction))
 		goto out_release;
 
-	oact = (const struct sigaction *)(unsigned long) snap->oact;
+	oact = (const struct kernel_sigaction *)(unsigned long) snap->oact;
 	/* SIG_DFL is (void *)0; SIG_IGN is (void *)1.  Anything else
 	 * must look like a code pointer.  We cannot probe mapping
 	 * legitimacy from here, but we can flag obvious garbage like
 	 * a stack-shaped address sitting in kernel-range bits. */
-	if (oact->sa_handler == SIG_DFL || oact->sa_handler == SIG_IGN)
+	if (oact->handler == (unsigned long) SIG_DFL ||
+	    oact->handler == (unsigned long) SIG_IGN)
 		goto out_release;
 	{
-		unsigned long h = (unsigned long) oact->sa_handler;
+		unsigned long h = oact->handler;
 		/* On 64-bit user pointers, bits 48..63 should all be 0
 		 * for canonical userspace addresses.  If the top bits
 		 * are set we may be looking at a kernel pointer leak or
