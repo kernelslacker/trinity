@@ -239,6 +239,11 @@ LDFLAGS		+= -Wl,--wrap=pick_cmsg_kind -Wl,--wrap=cmsg_build
 # The wrapper forwards to the real call unless armed.
 LDFLAGS		+= -Wl,--wrap=get_writable_address
 
+# ebpf_gen_program() spy: bpf_gen_test.c wraps it to tell the eBPF program
+# a BPF_PROG_LOAD was handed from a classic one.  The wrapper always
+# forwards to the real call.
+LDFLAGS		+= -Wl,--wrap=ebpf_gen_program
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing

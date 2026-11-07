@@ -22,6 +22,7 @@
 #include "exec-paths.h"
 #include "kallsyms-symbols.h"
 #include "debug.h"		/* BUG */
+#include "deferred-free.h"	/* deferred_alloc_track, alloc_track_lookup */
 #include "objects.h"		/* struct bpfobj */
 #include "rnd.h"
 #include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
@@ -366,6 +367,79 @@ static void prog_load_draws_flags_the_kernel_takes(void)
 	      none * 100 <= ROUNDS * 85);
 	check("a flag the kernel takes was never drawn", "prog flags",
 	      (seen & takes) == takes);
+}
+
+/* The program ebpf_gen_program() last made: a load whose attr names
+ * another carries a classic one. */
+static struct bpf_insn *last_ebpf_program;
+
+struct bpf_insn *__real_ebpf_gen_program(int *insn_count,
+					 unsigned int prog_type);
+struct bpf_insn *__wrap_ebpf_gen_program(int *insn_count,
+					 unsigned int prog_type);
+struct bpf_insn *__wrap_ebpf_gen_program(int *insn_count,
+					 unsigned int prog_type)
+{
+	last_ebpf_program = __real_ebpf_gen_program(insn_count, prog_type);
+	return last_ebpf_program;
+}
+
+/*
+ * A load whose retval the dispatcher refuses never reaches .post, and
+ * cleanup_bpf ends it: it gives back the attr and the program, a classic
+ * one's sock_fprog and filter or an eBPF one's insns, as post_bpf's tail
+ * does, rather than leave the program on the alloc-track until LRU
+ * eviction.  This binary's zmalloc_tracked() registers nothing, so the
+ * case registers them as production's does.  A buffer handed to deferred
+ * free stays on the alloc-track until the ring frees it, so each round
+ * drains the ring before it looks.
+ */
+static void prog_load_cleanup_gives_back_the_program(void)
+{
+	enum { ROUNDS = 2000 };
+	static struct syscallrecord rec;
+	unsigned int classic = 0, ebpf = 0, round, i, n;
+
+	for (round = 0; round < ROUNDS; round++) {
+		const union bpf_attr *attr;
+		void *held[3];
+
+		last_ebpf_program = NULL;
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = BPF_PROG_LOAD;
+		syscall_bpf.sanitise(&rec);
+		attr = (const union bpf_attr *) rec.a2;
+
+		held[0] = (void *) attr;
+		deferred_alloc_track(held[0], sizeof(*attr));
+		held[1] = (void *)(unsigned long) attr->insns;
+		if (held[1] == last_ebpf_program) {
+			deferred_alloc_track(held[1], TIER3_MAX_INSNS *
+						      sizeof(struct bpf_insn));
+			n = 2;
+			ebpf++;
+		} else {
+			const struct sock_fprog *prog = held[1];
+
+			held[2] = prog->filter;
+			deferred_alloc_track(held[1], sizeof(*prog));
+			deferred_alloc_track(held[2],
+					     prog->len * sizeof(*prog->filter));
+			n = 3;
+			classic++;
+		}
+
+		syscall_bpf.cleanup(&rec);
+		deferred_free_flush();
+		for (i = 0; i < n; i++)
+			check("a load ended without .post keeps what it holds",
+			      "prog load cleanup", !alloc_track_lookup(held[i]));
+	}
+
+	check("no load carried a classic program", "prog load cleanup",
+	      classic > 0);
+	check("no load carried an eBPF program", "prog load cleanup",
+	      ebpf > 0);
 }
 
 /*
@@ -1913,6 +1987,7 @@ void bpf_gen_self_check(void)
 	a_program_keeps_to_its_frame();
 	valid_programs_draw_both_frames();
 	prog_load_draws_flags_the_kernel_takes();
+	prog_load_cleanup_gives_back_the_program();
 	common_attr_follows_the_kernels_rules();
 	map_elem_draws_reach_the_maps_code();
 	link_create_takes_its_arm_and_the_head_its_taker_wants();

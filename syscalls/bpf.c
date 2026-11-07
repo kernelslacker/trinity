@@ -487,6 +487,21 @@ static void post_bpf_close_orphan_fd(int fd, unsigned int cmd, bool tracked)
 	}
 }
 
+/*
+ * What a snap holds besides itself: a PROG_LOAD's program, the fd the
+ * sanitiser opened and the attr.  post_bpf's tail and cleanup_bpf both
+ * give them back here, so a call that ends without .post keeps none.
+ */
+static void bpf_release_held(struct bpf_post_state *snap, bool attr_readable)
+{
+	if (snap->cmd == BPF_PROG_LOAD)
+		bpf_prog_load_release_insns(attr_readable, snap->attr_original,
+					    snap->classic_bpf_insns);
+	if (snap->owned_fd >= 0)
+		close(snap->owned_fd);
+	deferred_free_enqueue(snap->attr_original);
+}
+
 static void post_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap = (struct bpf_post_state *) rec->post_state;
@@ -611,37 +626,31 @@ static void post_bpf(struct syscallrecord *rec)
 		post_bpf_close_orphan_fd(fd, cmd, true);
 
 release:
-	if (cmd == BPF_PROG_LOAD)
-		bpf_prog_load_release_insns(attr_readable, attr,
-					    snap->classic_bpf_insns);
-	if (snap->owned_fd >= 0)
-		close(snap->owned_fd);
-
-	deferred_free_enqueue(attr);
+	bpf_release_held(snap, attr_readable);
 	post_state_release(rec, snap);
 }
 
 /*
  * post_bpf consumes the snap on every path, so one still installed here
  * belongs to a call whose .post never ran: a retval the dispatcher
- * refused, or a record that never reached AFTER.  Close the fd its
- * sanitiser opened and free the attr and the snap, as post_bpf's tail
- * would have.  A snap whose attr pointer was scribbled may carry a
- * scribbled fd as well, so both are left alone then, as post_bpf does.
+ * refused, or a record that never reached AFTER.  Give back what the snap
+ * holds and the snap itself, as post_bpf's tail would have.  A snap whose
+ * attr pointer was scribbled may carry a scribbled fd as well, so what it
+ * holds is left alone then, as post_bpf does.
  */
 static void cleanup_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap;
+	union bpf_attr *attr;
 
 	snap = post_state_claim_owned(rec, BPF_POST_STATE_MAGIC, __func__);
 	if (snap == NULL)
 		return;
 
-	if (!looks_like_corrupted_ptr(rec, snap->attr_original)) {
-		if (snap->owned_fd >= 0)
-			close(snap->owned_fd);
-		deferred_free_enqueue(snap->attr_original);
-	}
+	attr = snap->attr_original;
+	if (!looks_like_corrupted_ptr(rec, attr))
+		bpf_release_held(snap, alloc_track_lookup(attr) ||
+				 range_readable_user(attr, sizeof(*attr)));
 	post_state_release(rec, snap);
 }
 
