@@ -5607,6 +5607,33 @@ static void msgctl_set_leaves_the_queue_room(void)
 	fake_this_child = NULL;
 }
 
+/* do_msgsnd() reads only IPC_NOWAIT from msgflg, so the list draws no
+ * other flag, and the sanitiser clears that one on some calls: a send to
+ * a full queue sleeps only without it, the case NEED_ALARM is there for.
+ * The draws are the list's own values, which a one-flag list hands the
+ * sanitiser every time. */
+static void msgsnd_draws_only_ipc_nowait(void)
+{
+	const struct arglist *flags = &syscall_msgsnd.arg_params[3].list;
+	unsigned int i, nowait = 0;
+
+	for (i = 0; i < SANITISER_DRAWS; i++) {
+		struct syscallrecord *r = child_call(&syscall_msgsnd, false);
+
+		r->a4 = flags->values[i % flags->num];
+		syscall_msgsnd.sanitise(r);
+		if (r->a4 & ~(unsigned long) IPC_NOWAIT)
+			BUG("msgsnd: a send draws a flag do_msgsnd() ignores");
+		if (r->a4 & IPC_NOWAIT)
+			nowait++;
+		while (r->owned_count > 0)
+			free(r->owned[--r->owned_count]);
+	}
+	if (nowait == 0 || nowait == SANITISER_DRAWS)
+		BUG("msgsnd: every send is blocking, or none is");
+	fake_this_child = NULL;
+}
+
 /* ksys_ipc() and compat_ksys_ipc() read SEMCTL's union semun through ptr,
  * an unsigned long or a compat call's u32, so every SEMCTL the sanitiser
  * builds has ptr name a slot the call reaches.  For a command that takes
@@ -6049,6 +6076,7 @@ void arg_coupling_self_check(void)
 	ipc_semctl_semun_through_ptr();
 	semctl_arrays_from_pool();
 	msgctl_set_leaves_the_queue_room();
+	msgsnd_draws_only_ipc_nowait();
 	prctl_irreversible_states_held();
 #ifdef ARCH_IS_BIARCH
 	ipc_compat_buffers_reachable();

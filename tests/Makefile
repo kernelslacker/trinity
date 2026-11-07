@@ -858,11 +858,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/write.c \
 # semctl, whose array-building sanitiser it runs too, msgctl.c msgctl,
 # whose IPC_SET buffer it checks, and ipc-common.c the post-state helpers
 # their post handlers reach.  shmctl.c brings shmctl, whose untouched-
-# buffer check post_oracle_test.c runs with semctl's and msgctl's.
+# buffer check post_oracle_test.c runs with semctl's and msgctl's, and
+# msgsnd.c msgsnd, whose flag draw arg_coupling_test.c checks.
 PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
 		   $(TOP)/syscalls/ipc/sysv/ipc.c \
 		   $(TOP)/syscalls/ipc/sysv/semctl.c \
 		   $(TOP)/syscalls/ipc/sysv/msgctl.c \
+		   $(TOP)/syscalls/ipc/sysv/msgsnd.c \
 		   $(TOP)/syscalls/ipc/sysv/shmctl.c \
 		   $(TOP)/syscalls/ipc/sysv/ipc-common.c
 
