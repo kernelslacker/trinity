@@ -178,6 +178,11 @@ LDFLAGS		+= -Wl,--wrap=geteuid
 # The wrappers forward to the real calls unless armed.
 LDFLAGS		+= -Wl,--wrap=getresuid -Wl,--wrap=getresgid
 
+# epoll_ctl() stand-in: epoll_volatility_test.c wraps it to count the
+# masks the childop's MOD arm sends.  The wrapper always forwards to
+# the real call.
+LDFLAGS		+= -Wl,--wrap=epoll_ctl
+
 # unlink() stand-in: fake_fds.c wraps it so a provider test can plant a
 # symlink under a name between the provider's unlink and its create.
 # The wrapper forwards to the real call unless armed.
@@ -1055,6 +1060,13 @@ FAKE_SRCS	+= futex_test.c
 # rt_sigaction_test.c reads at the kernel's offsets for each ABI.
 PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaction.c
 FAKE_SRCS	+= rt_sigaction_test.c
+
+# childops/misc/epoll-volatility.c brings the epoll_volatility childop,
+# whose epoll_ctl() calls epoll_volatility_test.c counts on real epfds;
+# rand/interesting-numbers.c is the edge values its ADD masks draw.
+PARENT_SRCS	+= $(TOP)/childops/misc/epoll-volatility.c \
+		   $(TOP)/rand/interesting-numbers.c
+FAKE_SRCS	+= epoll_volatility_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

@@ -64,7 +64,8 @@ static const uint32_t event_bits[] = {
  * EPOLLIN/EPOLLOUT so ep_insert has something concrete to hash on; the
  * other bits are toggled independently.  EPOLLEXCLUSIVE is mutually
  * exclusive with EPOLLONESHOT in the kernel — if both happen to land
- * the kernel will return -EINVAL, which we count as benign failure. */
+ * the kernel will return -EINVAL, which we count as benign failure.
+ * A MOD may not carry EPOLLEXCLUSIVE at all, so the MOD arm clears it. */
 static uint32_t random_events(void)
 {
 	uint32_t ev = 0;
@@ -220,6 +221,11 @@ static unsigned long epoll_volatility_iter_drive(struct epoll_volatility_iter_ct
 			fd_idx = pick_fd_idx(ctx->registered, epfd_idx, ctx->n_target_fds, true);
 			memset(&ev, 0, sizeof(ev));
 			ev.events  = random_events();
+			/* do_epoll_ctl() refuses EPOLLEXCLUSIVE on a MOD
+			 * before ep_modify() runs; keep it one time in 16
+			 * for that reject. */
+			if (!ONE_IN(16))
+				ev.events &= ~EPOLLEXCLUSIVE;
 			ev.data.fd = ctx->target_fds[fd_idx];
 			rc = epoll_ctl(ctx->epfds[epfd_idx], EPOLL_CTL_MOD,
 				       ctx->target_fds[fd_idx], &ev);
