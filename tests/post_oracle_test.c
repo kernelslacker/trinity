@@ -1349,55 +1349,94 @@ static void io_uring_register_rewritten(void)
 	}
 }
 
+/* A post oracle over a time struct the kernel writes: its entry, its
+ * anomaly counter and the slot of the buffer the kernel answers into. */
+struct time_oracle {
+	struct syscallentry *entry;
+	unsigned long *anomalies;
+	unsigned int slot;
+};
+
+/* @o's calls under compat number @nr, or native ones for 0, each
+ * answering the @len bytes at @answer; the anomalies its sampled checks
+ * report. */
+static unsigned int time_oracle_anomalies(const struct time_oracle *o,
+					  unsigned int nr,
+					  const void *answer, size_t len)
+{
+	unsigned long before = *o->anomalies;
+	unsigned int i;
+
+	/* A whole-pool draw starts the bump cursor over, so no draw below
+	 * sits within a page of the pool's end, where gettimeofday's
+	 * past-the-end tv would stamp the guard page. */
+	(void) get_writable_address(WRITABLE_POOL_BYTES);
+	/* A clock the sanitiser picks may be a task's CPU clock. */
+	fake_pid_draws = true;
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		static struct syscallrecord rec;
+		unsigned long *slots[] = { &rec.a1, &rec.a2 };
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) get_writable_address(sizeof(struct itimerspec));
+		rec.a2 = (unsigned long) get_writable_address(sizeof(struct itimerspec));
+		o->entry->sanitise(&rec);
+
+		memcpy((void *) *slots[o->slot - 1], answer, len);
+		if (nr != 0) {
+			rec.do32bit = true;
+			rec.nr = nr;
+		}
+		rec.retval = 0;
+		o->entry->post(&rec);
+	}
+	fake_pid_draws = false;
+	return *o->anomalies - before;
+}
+
 /* gettimeofday() writes tv as a struct old_timeval32 for a compat call,
  * 78 on i386, and as a struct timeval for a native one; either holds the
  * time now, which the sampled wall-clock compare must take as such. */
 static void gettimeofday_compat(void)
 {
-	static const struct {
-		const char *what;
-		unsigned int nr;
-	} cases[] = {
-		{ "gettimeofday, a native call's time", 0 },
-		{ "gettimeofday, a compat call's time", 78 },
+	const struct time_oracle o = {
+		&syscall_gettimeofday,
+		&shm->stats.oracle.gettimeofday_oracle_anomalies, 1,
 	};
 	struct timeval now;
 	struct old_timeval32 now32;
-	unsigned int c, i;
 
 	if (gettimeofday(&now, NULL) != 0)
 		BUG("gettimeofday: no time to answer with");
 	now32.tv_sec = (int32_t) now.tv_sec;
 	now32.tv_usec = (int32_t) now.tv_usec;
 
-	for (c = 0; c < ARRAY_SIZE(cases); c++) {
-		unsigned long before = shm->stats.oracle.gettimeofday_oracle_anomalies;
+	expect("gettimeofday, a native call's time",
+	       time_oracle_anomalies(&o, 0, &now, sizeof(now)), 0);
+	expect("gettimeofday, a compat call's time",
+	       time_oracle_anomalies(&o, 78, &now32, sizeof(now32)), 0);
+}
 
-		/* A whole-pool draw starts the bump cursor over, so no draw
-		 * below sits within a page of the pool's end, where the
-		 * sanitiser's past-the-end tv would stamp the guard page. */
-		(void) get_writable_address(WRITABLE_POOL_BYTES);
-		for (i = 0; i < SAMPLED_CALLS; i++) {
-			static struct syscallrecord rec;
+/* clock_gettime() writes a struct old_timespec32 for a time32 call, 265
+ * on i386, which the sampled range check must read as such. */
+static void clock_gettime_compat(void)
+{
+	const struct time_oracle o = {
+		&syscall_clock_gettime,
+		&shm->stats.oracle.clock_gettime_oracle_anomalies, 2,
+	};
+	struct timespec now;
+	struct old_timespec32 now32;
 
-			memset(&rec, 0, sizeof(rec));
-			rec.a1 = (unsigned long) get_writable_address(sizeof(struct timeval));
-			rec.a2 = (unsigned long) get_writable_address(sizeof(struct timezone));
-			syscall_gettimeofday.sanitise(&rec);
+	if (clock_gettime(CLOCK_MONOTONIC, &now) != 0)
+		BUG("clock_gettime: no time to answer with");
+	now32.tv_sec = (int32_t) now.tv_sec;
+	now32.tv_nsec = (int32_t) now.tv_nsec;
 
-			if (cases[c].nr != 0) {
-				memcpy((void *) rec.a1, &now32, sizeof(now32));
-				rec.do32bit = true;
-				rec.nr = cases[c].nr;
-			} else {
-				memcpy((void *) rec.a1, &now, sizeof(now));
-			}
-			rec.retval = 0;
-			syscall_gettimeofday.post(&rec);
-		}
-		expect(cases[c].what,
-		       shm->stats.oracle.gettimeofday_oracle_anomalies - before, 0);
-	}
+	expect("clock_gettime, a native call's time",
+	       time_oracle_anomalies(&o, 0, &now, sizeof(now)), 0);
+	expect("clock_gettime, a time32 call's time",
+	       time_oracle_anomalies(&o, 265, &now32, sizeof(now32)), 0);
 }
 
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
@@ -1813,6 +1852,7 @@ void post_oracle_self_check(void)
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
 	gettimeofday_compat();
+	clock_gettime_compat();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();

@@ -204,6 +204,7 @@ static void post_clock_gettime(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->tp,
 				   sizeof(ts_user)))
 		goto out_free;
+	time_struct_from_abi(rec, &ts_user, 1);
 
 	if (ts_user.tv_nsec < 0 || ts_user.tv_nsec >= 1000000000) {
 		output(0, "clock_gettime oracle: tv_nsec=%ld out of [0..999999999]\n",

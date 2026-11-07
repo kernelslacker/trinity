@@ -726,9 +726,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 # /proc/self/status compares post_oracle_test.c runs.
 PARENT_SRCS	+= $(TOP)/syscalls/cred/setgroups.c
 
-# syscalls/clock/gettimeofday.c brings gettimeofday, whose wall-clock
-# compare post_oracle_test.c runs on native and compat answers.
-PARENT_SRCS	+= $(TOP)/syscalls/clock/gettimeofday.c
+# syscalls/clock/gettimeofday.c and clock_gettime.c bring gettimeofday and
+# clock_gettime, whose wall-clock compare and range check
+# post_oracle_test.c runs on native and compat answers.
+PARENT_SRCS	+= $(TOP)/syscalls/clock/gettimeofday.c \
+		   $(TOP)/syscalls/clock/clock_gettime.c
 
 # syscalls/io_uring/io_uring_register.c brings io_uring_register, whose
 # per-opcode retval shapes post_oracle_test.c runs, and the payload
