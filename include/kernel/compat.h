@@ -2,11 +2,12 @@
 
 /*
  * 32-bit compat layouts the kernel reads for compat readv/writev, compat
- * recvmsg/sendmsg/recvmmsg/sendmmsg and the time32 calls, from
- * include/net/compat.h, include/linux/compat.h and include/vdso/time32.h,
- * which no uapi header ships.  All fields are 32-bit: a compat call reads
- * the array header and every entry at 32-bit width, so handing it the
- * native 64-bit layouts misreads every second field.
+ * recvmsg/sendmsg/recvmmsg/sendmmsg, compat pselect6 and the time32
+ * calls, from include/net/compat.h, include/linux/compat.h, fs/select.c
+ * and include/vdso/time32.h, which no uapi header ships.  All fields are
+ * 32-bit: a compat call reads the array header and every entry at 32-bit
+ * width, so handing it the native 64-bit layouts misreads every second
+ * field.
  */
 #include <linux/types.h>
 
@@ -30,6 +31,13 @@ struct compat_msghdr {
 struct compat_mmsghdr {
 	struct compat_msghdr msg_hdr;
 	__u32 msg_len;
+};
+
+/* From fs/select.c: pselect6's sixth argument, the sigmask pointer and
+ * the mask's length. */
+struct compat_sigset_argpack {
+	__u32 p;
+	__u32 size;
 };
 
 /*
@@ -66,6 +74,8 @@ _Static_assert(sizeof(struct compat_msghdr) == 28,
 	       "compat_msghdr must be seven 32-bit words");
 _Static_assert(sizeof(struct compat_mmsghdr) == 32,
 	       "compat_mmsghdr must be a compat msghdr plus one 32-bit word");
+_Static_assert(sizeof(struct compat_sigset_argpack) == 8,
+	       "compat_sigset_argpack must be two 32-bit words");
 _Static_assert(sizeof(struct old_timespec32) == 8,
 	       "old_timespec32 must be two 32-bit words");
 _Static_assert(sizeof(struct old_itimerspec32) == 16,

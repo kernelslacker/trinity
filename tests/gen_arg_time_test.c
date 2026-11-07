@@ -4,8 +4,9 @@
  * the y2038 calls reads them as 32-bit fields (struct old_timespec32,
  * old_timeval32 and the itimer pairs of them), so each is written in
  * that layout for one and as the native struct for any other call.
- * Each case draws until the buffer shows a value only the right layout
- * can hold.
+ * pselect6's sigset argpack, which every compat call reads as 32-bit
+ * words, is held to its layout too.  Each case draws until the buffer
+ * shows a value only the right layout can hold.
  */
 
 #include <limits.h>
@@ -88,8 +89,8 @@ static struct object *no_object(int fd)
 }
 
 /* clock_nanosleep on i386, and its y2038 twin; timer_settime,
- * settimeofday, setitimer, utimensat, timerfd_settime and pselect6 on
- * i386. */
+ * settimeofday, setitimer, utimensat and timerfd_settime on i386;
+ * pselect6 on i386, and its twin. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
@@ -98,6 +99,7 @@ static struct object *no_object(int fd)
 #define NR_UTIMENSAT_TIME32		320
 #define NR_TIMERFD_SETTIME_TIME32	325
 #define NR_PSELECT6_TIME32		308
+#define NR_PSELECT6_TIME64		413
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -224,6 +226,14 @@ static bool compat_short_wait(const void *buf)
 	       ts->tv_nsec < 1000000000;
 }
 
+/* A mask, and the 8 bytes set_compat_user_sigmask() wants for one. */
+static bool compat_argpack_sized(const void *buf)
+{
+	const struct compat_sigset_argpack *pack = buf;
+
+	return pack->p != 0 && pack->size == 8;
+}
+
 void gen_arg_time_self_check(void);
 void gen_arg_time_self_check(void)
 {
@@ -282,5 +292,9 @@ void gen_arg_time_self_check(void)
 	if (!sanitised(&syscall_pselect6, NR_PSELECT6_TIME32, 5,
 		       compat_short_wait))
 		BUG("gen_arg_time: pselect6's timeout never reached a time32 call");
+	/* A time64 call, as the argpack is 32-bit on either. */
+	if (!sanitised(&syscall_pselect6, NR_PSELECT6_TIME64, 6,
+		       compat_argpack_sized))
+		BUG("gen_arg_time: pselect6's sigset argpack never reached a compat call");
 	fake_find_object_by_fd = NULL;
 }

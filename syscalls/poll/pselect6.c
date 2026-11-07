@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "fd.h"
+#include "kernel/compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -168,17 +169,28 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	 * distinguishes pselect6 from pselect.  Build the argpack in the
 	 * writable pool with a zeroed 8-byte mask; a 10% minority uses a
 	 * deliberately-wrong ss_len to keep the EINVAL early-reject warm.
+	 * A compat call, time32 or not, reads the two words at 32 bits each
+	 * (struct compat_sigset_argpack) and wants the same 8-byte mask.
 	 */
 	argpack = get_writable_address(sizeof(unsigned long) * 2);
 	sigmask = get_writable_address(KERNEL_SIGSET_SIZE);
 	if (argpack == NULL || sigmask == NULL) {
 		rec->a6 = 0;
 	} else {
-		memset(sigmask, 0, KERNEL_SIGSET_SIZE);
-		argpack[0] = (unsigned long) sigmask;
-		argpack[1] = (rnd_modulo_u32(10) == 0)
+		unsigned long ss_len = (rnd_modulo_u32(10) == 0)
 			? 0
 			: KERNEL_SIGSET_SIZE;
+
+		memset(sigmask, 0, KERNEL_SIGSET_SIZE);
+		if (rec->do32bit) {
+			struct compat_sigset_argpack *pack = (void *) argpack;
+
+			pack->p = (unsigned long) sigmask;
+			pack->size = ss_len;
+		} else {
+			argpack[0] = (unsigned long) sigmask;
+			argpack[1] = ss_len;
+		}
 		rec->a6 = (unsigned long) argpack;
 		avoid_shared_buffer_inout(&rec->a6, sizeof(unsigned long) * 2);
 	}
