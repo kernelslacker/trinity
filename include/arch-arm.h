@@ -15,3 +15,4 @@
 #define PTE_FILE_MAX_BITS	29
 
 #define SYSCALLS syscalls_arm
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_ARM

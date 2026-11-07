@@ -1,5 +1,4 @@
 #include <linux/unistd.h>
-#include <linux/audit.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
 #include <sys/socket.h>
@@ -19,6 +18,7 @@
 #include "rnd.h"
 #include "utils.h"
 
+#include "kernel/audit.h"
 #include "kernel/seccomp.h"
 #ifdef USE_BPF
 /**
@@ -90,11 +90,6 @@ static const uint32_t bpf_saner_vars[] = {
 	BPF_LD_B, BPF_LD_H, BPF_LD_W, BPF_RET, BPF_ST, BPF_STX,
 };
 
-/* Fallback for headers without AUDIT_ARCH_RISCV64; EM_RISCV is absent there too. */
-#ifndef AUDIT_ARCH_RISCV64
-#define AUDIT_ARCH_RISCV64	(243 | 0x80000000 | 0x40000000)
-#endif
-
 static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 	AUDIT_ARCH_ALPHA, AUDIT_ARCH_ARM, AUDIT_ARCH_ARMEB,
 	AUDIT_ARCH_I386,
@@ -106,29 +101,6 @@ static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
 	AUDIT_ARCH_X86_64, AUDIT_ARCH_AARCH64, AUDIT_ARCH_RISCV64,
 	AUDIT_ARCH_LOONGARCH64,
 };
-
-#if defined(__i386__)
-# define TRUE_REG_SYSCALL	REG_EAX
-# define TRUE_ARCH		AUDIT_ARCH_I386
-#elif defined(__x86_64__)
-# define TRUE_REG_SYSCALL	REG_RAX
-# define TRUE_ARCH		AUDIT_ARCH_X86_64
-#elif defined(__aarch64__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_AARCH64
-#elif defined(__arm__)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_ARM
-#elif defined(__riscv) && __riscv_xlen == 64
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_RISCV64
-#elif defined(__loongarch64)
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		AUDIT_ARCH_LOONGARCH64
-#else
-# define TRUE_REG_SYSCALL	syscall_nr
-# define TRUE_ARCH		(rnd_u32())
-#endif
 
 #ifndef _LINUX_SECCOMP_H
 struct seccomp_data {
@@ -267,7 +239,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 		if (ONE_IN(3))
 			curr[0].k = bpf_rand(seccomp_jmp_arch);
 		else
-			curr[0].k = TRUE_ARCH;
+			curr[0].k = NATIVE_AUDIT_ARCH;
 		break;
 	case STATE_GEN_EXAMINE_SYSCALL:
 		used = 1;

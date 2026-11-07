@@ -16,6 +16,7 @@
 #define ARCH_IS_BIARCH 1
 #define SYSCALLS32 syscalls_i386
 #define SYSCALLS64 syscalls_x86_64
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_X86_64
 
 /*
  * a6 takes a register: GCC addresses a memory operand off %rsp, and the

@@ -2,6 +2,11 @@
 
 #include "types.h"
 
+/*
+ * Each arch header names NATIVE_AUDIT_ARCH, the AUDIT_ARCH_* value that
+ * seccomp_data.arch carries for a call through the native syscall table.
+ * It expands to <linux/audit.h> names, so a user includes "kernel/audit.h".
+ */
 #ifdef __x86_64__
 #include "arch-x86-64.h"
 #endif

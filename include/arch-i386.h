@@ -19,3 +19,4 @@
 #define PTE_FILE_MAX_BITS 31
 
 #define SYSCALLS syscalls_i386
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_I386

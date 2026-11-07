@@ -14,3 +14,4 @@
 #define PTRACE_SETFPREGS	15
 
 #define SYSCALLS syscalls_loongarch
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_LOONGARCH64

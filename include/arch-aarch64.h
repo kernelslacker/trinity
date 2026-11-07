@@ -15,3 +15,4 @@
 #define PTRACE_SETFPREGS	15
 
 #define SYSCALLS syscalls_aarch64
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_AARCH64

@@ -9,6 +9,7 @@
 #define PAGE_SHIFT		12
 
 #define SYSCALLS syscalls_riscv64
+#define NATIVE_AUDIT_ARCH AUDIT_ARCH_RISCV64
 
 #define PTRACE_GETREGS		12
 #define PTRACE_SETREGS		13
