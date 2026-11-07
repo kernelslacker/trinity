@@ -239,7 +239,7 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 			rec->a3 = 0;
 			return;
 		}
-		if (iov == NULL)
+		if (iov == NULL || vlen == 0)
 			return;
 		if (vlen > UIO_MAXIOV)
 			vlen = UIO_MAXIOV;
@@ -249,7 +249,7 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 		p = mmap(NULL, PROCESS_MADVISE_SCRATCH_PAGES * page_size,
 			 PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
 			 -1, 0);
-		if (vlen == 0 || p == MAP_FAILED)
+		if (p == MAP_FAILED)
 			return;
 		first = rnd_modulo_u32(PROCESS_MADVISE_SCRATCH_PAGES);
 		pages = 1 + rnd_modulo_u32(PROCESS_MADVISE_SCRATCH_PAGES - first);
