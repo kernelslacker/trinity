@@ -18,9 +18,10 @@
 
 /*
  * Cross-cluster shared state for the shared_regions[] registry.
- * Definitions live in utils/shared_mem.c; utils/range_overlap.c reads
- * the arrays and counters below.  Kept behind a stable struct name so
- * both TUs agree on the layout without duplicating the definition.
+ * Definitions live in utils/shared_mem.c; utils/range_overlap.c and
+ * utils/shared_mem_audit.c read the arrays and counters below.  Kept
+ * behind a stable struct name so the TUs agree on the layout without
+ * duplicating the definition.
  */
 #define SHARED_REGIONS_OVERFLOW_TAIL	256
 
