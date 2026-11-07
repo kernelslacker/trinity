@@ -306,6 +306,7 @@ bool range_overlaps_shared(unsigned long addr, unsigned long len)
  */
 bool range_in_tracked_shared(unsigned long addr, unsigned long len)
 {
+	const struct shared_region_entry *r;
 	unsigned long end;
 	unsigned int i;
 
@@ -314,20 +315,13 @@ bool range_in_tracked_shared(unsigned long addr, unsigned long len)
 
 	end = addr + len;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		unsigned long rstart = shared_regions[i].addr;
-		unsigned long rend = rstart + shared_regions[i].size;
-
-		if (addr >= rstart && end <= rend)
-			return true;
-	}
-	/* Same byte-precise walk over the overflow tail: a region parked
-	 * there is no less tracked from the caller's perspective, and a
-	 * false negative would let get_writable_address() hand back a
-	 * pool slot that no longer resolves to a tracked mapping. */
-	for (i = 0; i < nr_shared_regions_overflow; i++) {
-		unsigned long rstart = shared_regions_overflow[i].addr;
-		unsigned long rend = rstart + shared_regions_overflow[i].size;
+	/* The overflow tail counts too: a region parked there is no less
+	 * tracked from the caller's perspective, and a false negative
+	 * would let get_writable_address() hand back a pool slot that no
+	 * longer resolves to a tracked mapping. */
+	for_each_shared_region(i, r) {
+		unsigned long rstart = r->addr;
+		unsigned long rend = rstart + r->size;
 
 		if (addr >= rstart && end <= rend)
 			return true;
