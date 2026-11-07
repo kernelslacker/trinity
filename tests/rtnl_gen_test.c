@@ -522,6 +522,54 @@ static void expect_addrlabel_header(const struct addrlabel_header *get,
 			"rtnl: RTM_NEWADDRLABEL and RTM_DELADDRLABEL lose their random flags and seq");
 }
 
+/* ---------- The if_stats_msg of RTM_GETSTATS and RTM_SETSTATS ------------ */
+
+struct stats_header {
+	unsigned int msgs;
+	unsigned int taken;	/* a header the request's handler takes */
+	unsigned int index_lo;
+};
+
+static void tally_stats_header(struct stats_header *t,
+			       const struct nlmsghdr *nlh, bool set)
+{
+	const struct if_stats_msg *ifsm = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ifsm)))
+		return;
+	t->msgs++;
+	t->index_lo += ifsm->ifindex == LOOPBACK_IFINDEX;
+	if (ifsm->pad1 || ifsm->pad2 || ifsm->ifindex >= 64)
+		return;
+	if (set)
+		t->taken += ifsm->family == AF_UNSPEC && ifsm->ifindex &&
+			    !ifsm->filter_mask;
+	else
+		t->taken += ifsm->filter_mask &&
+			    ifsm->filter_mask < IFLA_STATS_FILTER_BIT(IFLA_STATS_MAX + 1);
+}
+
+/*
+ * rtnl_stats_get() and rtnl_stats_set() answer an index that names no
+ * device -ENODEV, or -EINVAL for 0; the GET and the dump refuse a filter
+ * mask of 0, and on a socket that asks for strict checking one past the
+ * IFLA_STATS_* bits; the SET refuses any filter mask and a family but
+ * AF_UNSPEC.  The builder keeps both to that seven times in eight, a GET
+ * naming lo a quarter of the time, as RTM_GETADDR does, and a SET half.
+ */
+static void expect_stats_header(const struct stats_header *get,
+				const struct stats_header *set)
+{
+	expect_fraction(get->taken, get->msgs, 0.84, 0.91, "RTM_GETSTATS",
+			"rtnl: RTM_GETSTATS's filter mask is not a few IFLA_STATS_* bits seven times in eight");
+	expect_fraction(get->index_lo, get->msgs, 0.17, 0.28, "RTM_GETSTATS",
+			"rtnl: RTM_GETSTATS does not name lo about a quarter of the time");
+	expect_fraction(set->taken, set->msgs, 0.83, 0.91, "RTM_SETSTATS",
+			"rtnl: RTM_SETSTATS's header is not one rtnl_stats_set() takes seven times in eight");
+	expect_fraction(set->index_lo, set->msgs, 0.39, 0.50, "RTM_SETSTATS",
+			"rtnl: RTM_SETSTATS does not name lo about half the time");
+}
+
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
 
 struct tunnel_attrs {
@@ -1411,6 +1459,7 @@ struct tallies {
 	struct nexthop_header newnexthop, nexthop;
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
+	struct stats_header getstats, setstats;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1468,6 +1517,12 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_GETADDRLABEL:
 			tally_addrlabel_header(&t->getaddrlabel, nlh);
+			break;
+		case RTM_GETSTATS:
+			tally_stats_header(&t->getstats, nlh, false);
+			break;
+		case RTM_SETSTATS:
+			tally_stats_header(&t->setstats, nlh, true);
 			break;
 		case RTM_NEWADDRLABEL:
 		case RTM_DELADDRLABEL:
@@ -1539,6 +1594,7 @@ void rtnl_gen_self_check(void)
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
+	expect_stats_header(&t.getstats, &t.setstats);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");

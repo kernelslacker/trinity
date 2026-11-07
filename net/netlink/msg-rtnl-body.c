@@ -392,7 +392,8 @@ static size_t gen_rtnl_body_vlan(unsigned char *body, size_t buflen, unsigned ch
 }
 
 /* RTM_*STATS: struct if_stats_msg */
-static size_t gen_rtnl_body_stats(unsigned char *body, size_t buflen, unsigned char *out_family)
+static size_t gen_rtnl_body_stats(unsigned char *body, size_t buflen, bool set,
+				  unsigned char *out_family)
 {
 	struct if_stats_msg smsg;
 
@@ -402,6 +403,22 @@ static size_t gen_rtnl_body_stats(unsigned char *body, size_t buflen, unsigned c
 	smsg.family = rand_family();
 	smsg.ifindex = rnd_modulo_u32(64);
 	smsg.filter_mask = rand32();
+	/* rtnl_stats_get() and rtnl_stats_set() answer an index that names no
+	 * device -ENODEV, or -EINVAL for 0.  The GET and the dump refuse a
+	 * filter mask of 0, and on a socket that asks for strict checking one
+	 * past the IFLA_STATS_* bits, the dump then an index but 0 too; the
+	 * SET refuses any filter mask and a family but AF_UNSPEC.  The header
+	 * stays random one time in eight. */
+	if (!ONE_IN(8)) {
+		if (set) {
+			smsg.family = AF_UNSPEC;
+			smsg.ifindex = RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+			smsg.filter_mask = 0;
+		} else {
+			smsg.ifindex = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+			smsg.filter_mask = RAND_RANGE(1, IFLA_STATS_FILTER_BIT(IFLA_STATS_MAX + 1) - 1);
+		}
+	}
 	*out_family = smsg.family;
 	memcpy(body, &smsg, sizeof(smsg));
 	return sizeof(smsg);
@@ -541,7 +558,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 17: return gen_rtnl_body_mdb(body, buflen, out_family);
 	case 18: return gen_rtnl_body_gen(body, buflen, out_family);
 	case 24: return gen_rtnl_body_vlan(body, buflen, out_family);
-	case 19: return gen_rtnl_body_stats(body, buflen, out_family);
+	case 19:
+		return gen_rtnl_body_stats(body, buflen, nlmsg_type == RTM_SETSTATS,
+					   out_family);
 	case 22: /* RTM_*NEXTHOP */
 	case 25: /* RTM_*NEXTHOPBUCKET */
 		return gen_rtnl_body_nexthop(body, buflen,
