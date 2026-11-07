@@ -735,25 +735,29 @@ static void arm_sample(void)
 
 /*
  * One statmount() call on the mount whose unique id is @mnt_id, through
- * the sanitiser and the post handler, its re-call sampled, as a call that
- * answered @answer.  The sanitiser draws the flags and the buffer size,
- * so it runs until it draws a call by id with room for the struct, and
- * the request is then rewritten to name the mount.  Returns the anomalies
- * the call counted.
+ * the sanitiser and the post handler, its re-call sampled, as a call the
+ * sanitiser built with flags @built_flags and the kernel ran by id with a
+ * bufsize of @ran_bufsize, copying as much of @answer as that holds.  The
+ * sanitiser draws the flags and the buffer size, so it runs until it draws
+ * @built_flags with room for the struct, and the request is then
+ * rewritten to name the mount.  Returns the anomalies the call counted.
  */
 static unsigned long statmount_anomalies(unsigned long long mnt_id,
+					 unsigned long built_flags,
+					 size_t ran_bufsize,
 					 const struct statmount *answer)
 {
 	unsigned long before = shm->stats.oracle.statmount_oracle_anomalies;
 	static struct syscallrecord rec;
-	unsigned int tries;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int tries, k;
 
 	for (tries = 0; tries < 1000; tries++) {
 		struct mnt_id_req *req;
 
 		memset(&rec, 0, sizeof(rec));
 		syscall_statmount.sanitise(&rec);
-		if (rec.a4 != 0 || rec.a3 < sizeof(struct statmount)) {
+		if (rec.a4 != built_flags || rec.a3 < sizeof(struct statmount)) {
 			rec.retval = (unsigned long) -1L;
 			syscall_statmount.post(&rec);
 			continue;
@@ -763,13 +767,22 @@ static unsigned long statmount_anomalies(unsigned long long mnt_id,
 		req->size = MNT_ID_REQ_SIZE_VER0;
 		req->mnt_id = mnt_id;
 		req->param = STATMOUNT_SB_BASIC | STATMOUNT_MNT_BASIC;
-		memcpy((void *) rec.a2, answer, sizeof(*answer));
+		memset((void *) rec.a2, 0, sizeof(*answer));
+		memcpy((void *) rec.a2, answer,
+		       ran_bufsize < sizeof(*answer) ? ran_bufsize : sizeof(*answer));
+		/* The shadow __do_syscall() takes of what the kernel was
+		 * handed. */
+		rec.a3 = ran_bufsize;
+		rec.a4 = 0;
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec.arg_shadow[k] = *slots[k];
+		rec.arg_snapshot_mask = syscall_statmount.arg_snapshot_mask;
 		rec.retval = 0;
 		arm_sample();
 		syscall_statmount.post(&rec);
 		return shm->stats.oracle.statmount_oracle_anomalies - before;
 	}
-	BUG("stat recall: statmount's sanitiser never drew a call by id");
+	BUG("stat recall: statmount's sanitiser never drew the call a case builds on");
 	return 0;
 }
 
@@ -778,14 +791,17 @@ static unsigned long statmount_anomalies(unsigned long long mnt_id,
  * mount operation moves: a mount id that moved is reported, while the
  * superblock flags, the mount attributes, the propagation fields and the
  * parent ids, which a remount, mount_setattr(), a propagation change or
- * move_mount() moves, are not.  It runs in a child of its own, which
- * reports through its exit status: each sanitised call leaves its 64 KiB
- * buffer with deferred free, which this binary's allocator never tracked,
- * so the child takes them with it, and a kernel without statmount() or
- * unique mount ids skips the case (77).  The sanitiser draws a by-fd call
- * one time in four, whose fd comes from an empty pool here, since whether
- * the draws before a call by id hold one depends on every RNG draw earlier
- * in the binary.
+ * move_mount() moves, are not.  And a call is judged by the flags and the
+ * bufsize the kernel was handed: one rewritten off the invalid flag the
+ * sanitiser drew is re-called by id, and one whose bufsize is short of
+ * the struct, of which the kernel copies only that much, is not compared.
+ * It runs in a child of its own, which reports through its exit status:
+ * each sanitised call leaves its 64 KiB buffer with deferred free, which
+ * this binary's allocator never tracked, so the child takes them with it,
+ * and a kernel without statmount() or unique mount ids skips the case
+ * (77).  The sanitiser draws a by-fd call one time in four, whose fd
+ * comes from an empty pool here, since whether the draws before a call by
+ * id hold one depends on every RNG draw earlier in the binary.
  */
 static void statmount_recall_cases(void)
 {
@@ -812,8 +828,12 @@ static void statmount_recall_cases(void)
 
 		moved = real;
 		moved.mnt_id_old ^= 1;
-		if (statmount_anomalies(req.mnt_id, &moved) != 1)
+		if (statmount_anomalies(req.mnt_id, 0, sizeof(moved), &moved) != 1)
 			_exit(1);
+		if (statmount_anomalies(req.mnt_id, 2, sizeof(moved), &moved) != 1)
+			_exit(3);
+		if (statmount_anomalies(req.mnt_id, 0, 0, &real) != 0)
+			_exit(4);
 
 		moved = real;
 		moved.sb_flags ^= 1;
@@ -824,7 +844,7 @@ static void statmount_recall_cases(void)
 		moved.propagate_from += 1;
 		moved.mnt_parent_id += 1;
 		moved.mnt_parent_id_old += 1;
-		_exit(statmount_anomalies(req.mnt_id, &moved) == 0 ? 0 : 2);
+		_exit(statmount_anomalies(req.mnt_id, 0, sizeof(moved), &moved) == 0 ? 0 : 2);
 	}
 	if (pid < 0 || waitpid_eintr(pid, &status, 0) != pid ||
 	    !WIFEXITED(status))
@@ -833,6 +853,10 @@ static void statmount_recall_cases(void)
 		fprintf(stderr, "stat recall: statmount: no statmount() here, the case was skipped\n");
 	check("a mount id that moved was not reported", "statmount",
 	      WEXITSTATUS(status) != 1);
+	check("a call rewritten off the flag the sanitiser drew was re-called with it",
+	      "statmount", WEXITSTATUS(status) != 3);
+	check("a call handed a bufsize short of the struct was compared over it",
+	      "statmount", WEXITSTATUS(status) != 4);
 	check("a field a mount operation moves was reported", "statmount",
 	      WEXITSTATUS(status) != 2);
 	rnd_state = saved;

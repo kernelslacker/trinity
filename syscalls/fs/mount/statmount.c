@@ -46,14 +46,11 @@ static unsigned long statmount_params[] = {
 
 #ifdef HAVE_SYS_STATMOUNT
 /*
- * Snapshot of the three statmount input args read by the post oracle,
+ * Snapshot of the two statmount buffer args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign req / buf and cannot
- * smear the bufsize bound used to seed the re-issue.  bufsize is a
- * scalar but kept in the snap struct for symmetry with the two
- * pointer fields.
+ * handler running cannot redirect us at a foreign req / buf.
  *
  * magic guards against a sibling scribble of rec->post_state with any
  * heap-shaped pointer that survives looks_like_corrupted_ptr() but
@@ -71,8 +68,6 @@ struct statmount_post_state {
 	unsigned long magic;
 	unsigned long req;
 	unsigned long buffer;
-	unsigned long bufsize;
-	unsigned long flags;	/* original rec->a4 (STATMOUNT_BY_FD etc.) */
 	void *original_buf;
 };
 #endif
@@ -269,7 +264,7 @@ static void sanitise_statmount(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_STATMOUNT
 	/*
-	 * Snapshot the three input args for the post oracle, and stash the
+	 * Snapshot the two buffer args for the post oracle, and stash the
 	 * original zmalloc()'d buf BEFORE avoid_shared_buffer_out() relocates
 	 * rec->a2 into the writable-address pool.  Without this snapshot the
 	 * post handler reads rec->aN at post-time, when a sibling syscall may
@@ -287,8 +282,6 @@ static void sanitise_statmount(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic        = STATMOUNT_POST_STATE_MAGIC;
 	snap->original_buf = buf;
-	snap->bufsize      = rec->a3;
-	snap->flags        = rec->a4;
 #endif
 
 	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
@@ -350,18 +343,21 @@ static void sanitise_statmount(struct syscallrecord *rec)
  *     rec->a1/rec->a2 between the original syscall return and our
  *     re-issue via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: the three input args (req, buffer, bufsize) are
- * snapshotted at sanitise time into a heap struct in rec->post_state, so
- * a sibling that scribbles rec->aN between syscall return and post entry
- * cannot redirect us at a foreign req / buf and cannot smear the bufsize
- * bound used to seed the re-issue.  We still snapshot both the request
- * struct and the buf payload into stack-locals before re-issuing, with a
- * fresh private stack request and a fresh private stack buf (do NOT pass
- * the snapshot's req / buffer -- a sibling could mutate the user buffers
+ * TOCTOU defeat: the buffer args (req, buffer) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * us at a foreign req / buf.  The bufsize gate and the re-call's flags
+ * read the slots the kernel was handed, shadowed at dispatch: chain
+ * substitution or a RedQueen pin can rewrite either after the sanitiser,
+ * and of a bufsize short of the struct the kernel copies only that much
+ * (copy_statmount_to_user()).  We still snapshot both the request struct
+ * and the buf payload into stack-locals before re-issuing, with a fresh
+ * private stack request and a fresh private stack buf (do NOT pass the
+ * snapshot's req / buffer -- a sibling could mutate the user buffers
  * themselves mid-syscall and forge a clean compare).  The flags arg is
- * carried from snap->flags on the re-call.  For STATMOUNT_BY_FD the fd
- * in first_req is validated via fstat(2) before and after to guard
- * against fd recycling between the original call and the re-issue.
+ * carried on the re-call.  For STATMOUNT_BY_FD the fd in first_req is
+ * validated via fstat(2) before and after to guard against fd recycling
+ * between the original call and the re-issue.
  *
  * Per-audit note: only the FIXED prefix (sizeof(struct statmount)) is
  * read.  The variable-length string area beyond the fixed struct moves
@@ -378,6 +374,7 @@ static void post_statmount(struct syscallrecord *rec)
 	struct mnt_id_req first_req;
 	struct statmount first_buf;
 	struct statmount recheck_buf;
+	unsigned long flags;
 	long rc;
 
 	/*
@@ -400,7 +397,7 @@ static void post_statmount(struct syscallrecord *rec)
 	if (snap->req == 0 || snap->buffer == 0)
 		goto out_release;
 
-	if (snap->bufsize < sizeof(struct statmount))
+	if (get_arg_snapshot(rec, 3) < sizeof(struct statmount))
 		goto out_release;
 
 	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
@@ -418,7 +415,8 @@ static void post_statmount(struct syscallrecord *rec)
 	 * already gone, or shifts identity during the syscall, skip and
 	 * count rather than risk a false-positive anomaly report.
 	 */
-	if (snap->flags & STATMOUNT_BY_FD) {
+	flags = get_arg_snapshot(rec, 4);
+	if (flags & STATMOUNT_BY_FD) {
 		struct stat st_pre, st_post;
 #ifdef HAVE_MNT_ID_REQ_MNT_NS_FD
 		int byfd = (int) first_req.mnt_ns_fd;
@@ -436,8 +434,7 @@ static void post_statmount(struct syscallrecord *rec)
 			struct mnt_id_req recheck_req = first_req;
 
 			rc = syscall(SYS_statmount, &recheck_req, &recheck_buf,
-				     sizeof(recheck_buf),
-				     (unsigned int) snap->flags);
+				     sizeof(recheck_buf), (unsigned int) flags);
 		}
 
 		if (fstat(byfd, &st_post) < 0 ||
@@ -453,7 +450,7 @@ static void post_statmount(struct syscallrecord *rec)
 		struct mnt_id_req recheck_req = first_req;
 
 		rc = syscall(SYS_statmount, &recheck_req, &recheck_buf,
-			     sizeof(recheck_buf), (unsigned int) snap->flags);
+			     sizeof(recheck_buf), (unsigned int) flags);
 	}
 
 	if (rc < 0)
@@ -527,4 +524,9 @@ struct syscallentry syscall_statmount = {
 	.sanitise = sanitise_statmount,
 	.post = post_statmount,
 	.bound_arg = 3,
+	/* bufsize (a3) and flags (a4): the kernel copies only bufsize bytes
+	 * of the struct, and the re-call replays the flags it ran with,
+	 * either of which chain substitution or a RedQueen pin may have
+	 * rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 2) | (1u << 3),
 };
