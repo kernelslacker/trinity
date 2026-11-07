@@ -17,6 +17,10 @@ one fixture that does is the opt-in `make check-runtime` (see below).
 
     make check-static
 
+The checks need GNU awk: several use its extensions, and under another
+awk they would pass having checked nothing, so the orchestrator refuses
+to run unless `awk --version` reports GNU Awk.
+
 Each check prints one of:
 
     PASS: <check-name>                       (exit 0, counted)

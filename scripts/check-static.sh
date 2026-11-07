@@ -53,6 +53,14 @@ if [ ! -d "$CHECK_DIR" ] || [ -z "$(ls -A "$CHECK_DIR" 2>/dev/null)" ]; then
 	exit 1
 fi
 
+# Gates lean on GNU awk (three-argument match(), \s, BEGINFILE) and do
+# not check awk's exit status, so under mawk or busybox awk they print
+# a syntax error and pass having checked nothing.
+if ! awk --version 2>/dev/null | head -n 1 | grep -q '^GNU Awk'; then
+	echo "check-static: the checks need GNU awk, and awk here is not it"
+	exit 1
+fi
+
 for check in "$CHECK_DIR"/*.sh; do
 	[ -f "$check" ] || continue
 	name="$(basename "$check" .sh)"
