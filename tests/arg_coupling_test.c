@@ -74,9 +74,10 @@ extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 /* sanity_check_tables() over one entry, in tests/sanitiser_owned_mask_test.c. */
 int entry_check_status(struct syscallentry *entry);
 
-/* The page-cache fd pool pread64's sanitiser draws from is not in this
- * binary, and an empty one leaves the fd alone. */
-int get_rand_pagecache_fd(void)
+/* The page-cache fd pool pread64's sanitiser draws from is one no case
+ * here builds, and an empty one leaves the fd alone. */
+int __wrap_get_rand_pagecache_fd(void);
+int __wrap_get_rand_pagecache_fd(void)
 {
 	return -1;
 }

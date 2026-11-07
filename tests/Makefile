@@ -114,11 +114,12 @@ LDFLAGS		+= -Wl,--wrap=fill_arg
 # no testfile.
 LDFLAGS		+= -Wl,--wrap=get_rand_testfile_fd
 
-# get_rand_writeable_pagecache_fd() stand-in: fds/writeable-pagecache.c is
-# linked for its pool's init and defines the real picker, which reads a
-# pool no sanitiser test installs.  arg_coupling_test.c wraps it with one
-# that finds no fd.
-LDFLAGS		+= -Wl,--wrap=get_rand_writeable_pagecache_fd
+# The page-cache pickers' stand-ins: fds/pagecache.c and
+# writeable-pagecache.c are linked for their pools' init and define the
+# real pickers, which read pools no sanitiser test installs.
+# arg_coupling_test.c wraps both with ones that find no fd.
+LDFLAGS		+= -Wl,--wrap=get_rand_pagecache_fd \
+		   -Wl,--wrap=get_rand_writeable_pagecache_fd
 
 # The bpf pickers' stand-ins: fds/bpf.c is linked for bpf_pick_test.c,
 # which runs the pickers through __real_, and every other caller gets
@@ -618,14 +619,15 @@ FAKE_SRCS	+= writer_watch_test.c
 PARENT_SRCS	+= $(TOP)/childops/fs/inode-spewer.c
 FAKE_SRCS	+= inode_spewer_test.c
 
-# fds/sparse-files.c and writeable-pagecache.c bring the sparse-file and
-# writeable page-cache pools' providers, which register themselves at
-# load time.  planted_name_test.c runs their init hooks against the
-# object-pool hooks in fake_objects.c, with a symlink planted under one of
-# their names.  Same section-per-function treatment as the parent TUs
-# above.
+# fds/sparse-files.c, writeable-pagecache.c and pagecache.c bring the
+# sparse-file, writeable page-cache and page-cache pools' providers, which
+# register themselves at load time.  planted_name_test.c runs their init
+# hooks against the object-pool hooks in fake_objects.c, with a symlink
+# planted under one of their names.  Same section-per-function treatment
+# as the parent TUs above.
 PARENT_SRCS	+= $(TOP)/fds/sparse-files.c \
-		   $(TOP)/fds/writeable-pagecache.c
+		   $(TOP)/fds/writeable-pagecache.c \
+		   $(TOP)/fds/pagecache.c
 FAKE_SRCS	+= planted_name_test.c
 
 # child/child-sentinel.c brings the divergence sentinel's tick.

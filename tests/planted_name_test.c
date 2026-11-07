@@ -23,6 +23,7 @@
 #include "fds/fds-internal.h"	/* fd_providers */
 #include "list.h"
 #include "objects.h"
+#include "pathnames.h"		/* fileindex, files_in_index */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
@@ -142,6 +143,18 @@ static void check_planted(const char *provider, const char *name)
 void planted_name_self_check(void);
 void planted_name_self_check(void)
 {
+	/* The page-cache pool makes files of its own only when the
+	 * fileindex holds no regular file to open: one directory. */
+	static const char *no_regular_file[] = { "/" };
+	const char **saved_index = fileindex;
+	unsigned int saved_nr = files_in_index;
+
 	check_planted("sparse-file", "trinity-sparsefile0");
 	check_planted("writeable-pagecache", "trinity-writepc-0");
+
+	fileindex = no_regular_file;
+	files_in_index = 1;
+	check_planted("pagecache", "trinity-pcro-0");
+	fileindex = saved_index;
+	files_in_index = saved_nr;
 }

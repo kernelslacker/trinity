@@ -130,7 +130,11 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 	snprintf(filename, 64, "trinity-pcro-%u", idx);
 	(void)unlink(filename);
 
-	fd = open(filename, O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+	/* The cwd is tmp/ when there is one, which anyone can write to:
+	 * O_EXCL, so a name something took since the unlink fails the slot
+	 * rather than have init write through it, and the reopen is
+	 * O_NOFOLLOW. */
+	fd = open(filename, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0644);
 	if (fd < 0) {
 		free_shared_str(filename);
 		return false;
@@ -145,7 +149,7 @@ static bool pagecache_selfseed_create_one(unsigned int idx)
 	}
 	close(fd);
 
-	fd = open(filename, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+	fd = open(filename, O_RDONLY | O_NONBLOCK | O_NOFOLLOW | O_CLOEXEC);
 	if (fd < 0) {
 		(void)unlink(filename);
 		free_shared_str(filename);
