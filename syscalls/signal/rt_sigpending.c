@@ -18,21 +18,19 @@
 #define KERNEL_SIGSET_SIZE	8
 
 /*
- * Snapshot of the two rt_sigpending input args plus the output-buffer
- * poison seed read by the post oracle, captured at sanitise time and
- * consumed by the post handler.  Lives in rec->post_state, a slot the
- * syscall ABI does not expose, so a sibling syscall scribbling rec->aN
- * between the syscall returning and the post handler running cannot
- * redirect the oracle at a foreign set user buffer or alias the
- * sigsetsize length check.  The poison seed travels with the pointer so
- * a stomp cannot smear the seed against a heap page that happens to
- * still carry a residual pattern from an earlier call.
+ * Snapshot of the rt_sigpending set buffer plus the output-buffer poison
+ * seed read by the post oracle, captured at sanitise time and consumed by
+ * the post handler.  Lives in rec->post_state, a slot the syscall ABI
+ * does not expose, so a sibling syscall scribbling rec->a1 between the
+ * syscall returning and the post handler running cannot redirect the
+ * oracle at a foreign set user buffer.  The poison seed travels with the
+ * pointer so a stomp cannot smear the seed against a heap page that
+ * happens to still carry a residual pattern from an earlier call.
  */
 #define RT_SIGPENDING_POST_STATE_MAGIC	0x52545350UL	/* "RTSP" */
 struct rt_sigpending_post_state {
 	unsigned long magic;
 	unsigned long set;
-	unsigned long sigsetsize;
 	uint64_t poison_seed;
 };
 
@@ -51,10 +49,11 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	/*
 	 * Bias sigsetsize to the kernel-ABI value (8 bytes = _NSIG/8);
 	 * keep a small wrong-size arm to hit the EINVAL branch.  glibc's
-	 * sizeof(sigset_t) is 128, and the kernel unconditionally rejects
-	 * any sigsetsize != 8 before touching the buffer -- so leaving a2
-	 * to ARG_LEN wastes nearly every call on an EINVAL that never
-	 * reaches the copy_to_user() the oracle is meant to police.
+	 * sizeof(sigset_t) is 128, and the kernel rejects any sigsetsize
+	 * past 8 before touching the buffer and copies only sigsetsize
+	 * bytes of a smaller one -- so leaving a2 to ARG_LEN wastes nearly
+	 * every call on an EINVAL that never reaches the copy_to_user()
+	 * the oracle is meant to police.
 	 */
 	if (!ONE_IN(8))
 		rec->a2 = KERNEL_SIGSET_SIZE;
@@ -62,20 +61,17 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a1, rec->a2);
 
 	/*
-	 * Snapshot the two input args plus the output-buffer poison seed
-	 * for the post oracle.  Without the set/sigsetsize snap the post
-	 * handler reads rec->a1/a2 at post-time, when a sibling syscall
-	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from the original set user
-	 * buffer pointer, so the source memcpy would touch a foreign
-	 * allocation that the guard never inspected, and the sigsetsize
-	 * gate would resolve against a scribbled value.  post_state is
-	 * private to the post handler.
+	 * Snapshot the set buffer plus the output-buffer poison seed for
+	 * the post oracle.  Without the set snap the post handler reads
+	 * rec->a1 at post-time, when a sibling syscall may have scribbled
+	 * the slot: looks_like_corrupted_ptr() cannot tell a real-but-wrong
+	 * heap address from the original set user buffer pointer, so the
+	 * source memcpy would touch a foreign allocation that the guard
+	 * never inspected.  post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = RT_SIGPENDING_POST_STATE_MAGIC;
 	snap->set         = rec->a1;
-	snap->sigsetsize  = rec->a2;
 	snap->poison_seed = 0;
 
 	/*
@@ -85,9 +81,11 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
 	 * write when sigsetsize == KERNEL_SIGSET_SIZE (8 bytes) -- a short
 	 * request copies only sigsetsize bytes and would leave the tail of
 	 * any larger poison window legitimately intact (a guaranteed false
-	 * positive); a mismatched request returns -EINVAL before any copy
-	 * so the buffer stays byte-for-byte poison and would also false-
-	 * positive if we armed the check.  range_readable_user() filters
+	 * positive); a longer request returns -EINVAL before any copy so
+	 * the buffer stays byte-for-byte poison and would also false-
+	 * positive if we armed the check.  The post handler holds the call
+	 * to the sigsetsize the kernel was handed, which chain substitution
+	 * or a RedQueen pin can take off 8 after this stamp.  range_readable_user() filters
 	 * raw fuzz addresses outside the tracked shared / libc-heap
 	 * snapshots that a poison byte-walk would SIGSEGV on.  On skip,
 	 * poison_seed stays 0 and the post handler no-ops the poison
@@ -130,7 +128,7 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
  *      sigsetsize == KERNEL_SIGSET_SIZE because a short user request
  *      only guarantees the kernel copies sigsetsize bytes and the
  *      tail of the poison window would legitimately still carry
- *      poison; a mismatched request returns -EINVAL and never reaches
+ *      poison; a longer request returns -EINVAL and never reaches
  *      the retval==0 arm.
  *
  *   2. Procfs field-divergence oracle.  The procfs view of the same
@@ -148,13 +146,13 @@ static void sanitise_rt_sigpending(struct syscallrecord *rec)
  *      wrote past/before the live mask.  Mirror of the getppid procfs
  *      oracle pattern.  Sample one in a hundred.
  *
- * TOCTOU defeat: the two input args and the poison seed are
- * snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->a1/a2 between syscall return and
- * post entry cannot redirect the source memcpy at a foreign user
- * buffer, alias the sigsetsize gate, or smear the poison check
- * against an unrelated heap page that happens to still carry a
- * residual pattern.  The user-buffer payload at set is then
+ * TOCTOU defeat: the set pointer and the poison seed are snapshotted
+ * at sanitise time into a heap struct in rec->post_state, so a sibling
+ * that scribbles rec->a1 between syscall return and post entry cannot
+ * redirect the source memcpy at a foreign user buffer or smear the
+ * poison check against an unrelated heap page that happens to still
+ * carry a residual pattern.  The sigsetsize gate reads the slot the
+ * kernel was handed, shadowed at dispatch.  The user-buffer payload at set is then
  * snapshotted into a stack-local via post_snapshot_or_skip before
  * both the poison check and the procfs compare, so a sibling munmap
  * of the writable-pool page between syscall return and our reads
@@ -180,7 +178,7 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 		goto out_free;
 	if (snap->set == 0)
 		goto out_free;
-	if (snap->sigsetsize != KERNEL_SIGSET_SIZE)
+	if (get_arg_snapshot(rec, 2) != KERNEL_SIGSET_SIZE)
 		goto out_free;
 
 	/* The kernel writes its own KERNEL_SIGSET_SIZE-byte set, not
@@ -243,6 +241,10 @@ struct syscallentry syscall_rt_sigpending = {
 	.argname = { [0] = "set", [1] = "sigsetsize" },
 	.sanitise = sanitise_rt_sigpending,
 	.post = post_rt_sigpending,
+	/* sigsetsize (a2): the kernel copies only that many bytes of the
+	 * set, and chain substitution or a RedQueen pin may have rewritten
+	 * it after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 1),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

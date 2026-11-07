@@ -1448,7 +1448,10 @@ static void sigpending_reports(unsigned long ran, bool written,
 /* rt_sigpending() writes the kernel's 8-byte set, not glibc's 128-byte
  * sigset_t: a call that wrote it is no untouched one and agrees with
  * /proc/self/status, and one that left the sanitiser's poison is reported
- * by both checks. */
+ * by both checks.  It takes any sigsetsize up to 8 and copies that many
+ * bytes (kernel/signal.c), so a call chain substitution rewrote to a
+ * smaller one leaves the tail of the poison in place, and one rewritten
+ * to 0 all of it. */
 static void sigpending_cases(void)
 {
 	static const struct {
@@ -1459,6 +1462,8 @@ static void sigpending_cases(void)
 	} cases[] = {
 		{ "rt_sigpending, the whole mask", 8, true, false, false },
 		{ "rt_sigpending, the mask left unwritten", 8, false, true, true },
+		{ "rt_sigpending, a sigsetsize rewritten to 4", 4, true, false, false },
+		{ "rt_sigpending, a sigsetsize rewritten to 0", 0, true, false, false },
 	};
 	unsigned long untouched, anomalies;
 	unsigned int i;
