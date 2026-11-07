@@ -31,15 +31,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-unsigned int load_scratch_block_count(void)
-{
-	unsigned int count = shm->isolation.scratch_block_count;
-
-	if (count > SCRATCH_BLOCK_MAX)
-		count = SCRATCH_BLOCK_MAX;
-	return count;
-}
-
 #if __has_include(<linux/loop.h>)
 
 #include <linux/loop.h>
@@ -65,11 +56,14 @@ unsigned int load_scratch_block_count(void)
  * teardown into an attacker-chosen path (mirror
  * utils/self_cgroup_setup.c's cg_workload, cg_workload_fd handling).
  * The published view children read lives in
- * shm->isolation.scratch_block[].
+ * shm->isolation.scratch_block[]; teardown reads only scratch_owned[],
+ * the parent's record of the scratch_owned_count entries it published.
  */
 static char scratch_root_abs[PATH_MAX];
 static int loopctl_fd = -1;
 static bool scratch_block_atexit_armed;
+static struct scratch_block_entry scratch_owned[SCRATCH_BLOCK_MAX];
+static unsigned int scratch_owned_count;
 
 /*
  * fork()/execlp() mkfs.ext4 -F -q against @dev_path.  Returns true on
@@ -158,37 +152,36 @@ static bool scratch_format_path(char *out, size_t len,
 }
 
 /*
- * Best-effort tear-down of one published entry.  Used both by the
- * atexit chain and by the init-time partial-failure path.  The
- * caller's view of the entry stays addressable; this routine just
- * stamps the published fields back to "empty" so a subsequent reader
- * observes the slot as unused.
+ * Best-effort tear-down of one entry, from the parent's own record of
+ * it.  The published copy is stamped back to "empty" to match, so a
+ * subsequent reader observes the slot as unused.
  */
 static void scratch_entry_release(unsigned int idx)
 {
-	struct scratch_block_entry *e = &shm->isolation.scratch_block[idx];
+	struct scratch_block_entry *own = &scratch_owned[idx];
 
-	if (e->mount_path[0] != '\0') {
+	if (own->mount_path[0] != '\0') {
 		/* MNT_DETACH so a still-busy mount unmounts asynchronously
 		 * instead of failing the teardown chain. */
-		(void)umount2(e->mount_path, MNT_DETACH);
-		(void)rmdir(e->mount_path);
-		e->mount_path[0] = '\0';
+		(void)umount2(own->mount_path, MNT_DETACH);
+		(void)rmdir(own->mount_path);
+		own->mount_path[0] = '\0';
 	}
-	if (e->loop_fd >= 0) {
-		(void)ioctl(e->loop_fd, LOOP_CLR_FD);
-		close(e->loop_fd);
-		e->loop_fd = -1;
+	if (own->loop_fd >= 0) {
+		(void)ioctl(own->loop_fd, LOOP_CLR_FD);
+		close(own->loop_fd);
+		own->loop_fd = -1;
 	}
-	if (e->loop_num >= 0) {
+	if (own->loop_num >= 0) {
 		char img_path[PATH_MAX];
 
 		if (scratch_format_path(img_path, sizeof(img_path),
 					"img%u", idx))
 			(void)unlink(img_path);
-		e->loop_num = -1;
+		own->loop_num = -1;
 	}
-	e->dev_path[0] = '\0';
+	own->dev_path[0] = '\0';
+	shm->isolation.scratch_block[idx] = *own;
 }
 
 /*
@@ -217,7 +210,7 @@ static void scratch_block_atexit_cleanup(void)
 	if (!scratch_block_atexit_armed)
 		return;
 
-	for (i = 0; i < load_scratch_block_count(); i++)
+	for (i = 0; i < scratch_owned_count; i++)
 		scratch_entry_release(i);
 
 	if (loopctl_fd >= 0) {
@@ -448,7 +441,9 @@ static int init_scratch_block(void)
 		struct scratch_block_entry *e =
 			&shm->isolation.scratch_block[next];
 
-		if (scratch_make_loop(next, e)) {
+		if (scratch_make_loop(next, &scratch_owned[next])) {
+			*e = scratch_owned[next];
+			scratch_owned_count = next + 1;
 			scratch_publish_object(e);
 			next++;
 			shm->isolation.scratch_block_count = next;
