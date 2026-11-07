@@ -182,6 +182,8 @@ static void getrusage_cases(void)
 		&syscall_getrusage, &shm->stats.oracle.getrusage_oracle_anomalies,
 	};
 	struct rusage self;
+	int32_t self32[18];
+	unsigned int i;
 	int status;
 	pid_t pid;
 
@@ -198,6 +200,21 @@ static void getrusage_cases(void)
 		      selector_anomalies(&o, RUSAGE_SELF,
 					 (unsigned long) RUSAGE_CHILDREN,
 					 &self, sizeof(self)) > 0);
+
+		/* getrusage at 77 on i386 writes a struct compat_rusage:
+		 * the two timevals as old_timeval32s, then the fourteen
+		 * counters, ru_maxrss on, as 32-bit longs. */
+		self32[0] = (int32_t) self.ru_utime.tv_sec;
+		self32[1] = (int32_t) self.ru_utime.tv_usec;
+		self32[2] = (int32_t) self.ru_stime.tv_sec;
+		self32[3] = (int32_t) self.ru_stime.tv_usec;
+		for (i = 0; i < 14; i++)
+			self32[4 + i] = (int32_t) (&self.ru_maxrss)[i];
+		compat_nr = 77;
+		check("getrusage: a compat call's usage was read as a native struct rusage",
+		      selector_anomalies(&o, RUSAGE_SELF, RUSAGE_SELF,
+					 self32, sizeof(self32)) == 0);
+		compat_nr = 0;
 		_exit(failed != 0);
 	}
 	if (waitpid_eintr(pid, &status, 0) != pid ||

@@ -221,6 +221,11 @@ static void post_getrusage(struct syscallrecord *rec)
 	if (snap->ru == 0)
 		goto out_free;
 
+	/* A compat call writes a struct compat_rusage, timevals and
+	 * counters alike at 32 bits, which the native compare cannot read. */
+	if (rec->do32bit)
+		goto out_free;
+
 	who = (int) get_arg_snapshot(rec, 1);
 
 	if (!post_snapshot_or_skip(&first,
