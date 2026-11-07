@@ -165,13 +165,17 @@ unsigned int rand32(void)
  *
  * get_random_fd:       only reachable via FT_FD, unless a test that runs a
  *                      sanitiser drawing from the fd pool sets
- *                      fake_random_fd_empty, when the pool hands out -1.
+ *                      fake_random_fd_empty, when the pool hands out -1,
+ *                      or fake_random_fd, when it hands out that fd.
  * __zmalloc_tracked:  only reachable via pointer-tag passes (Pass 2/3).
  */
 bool fake_random_fd_empty;
+int fake_random_fd = -1;
 
 int get_random_fd(void)
 {
+	if (fake_random_fd >= 0)
+		return fake_random_fd;
 	if (fake_random_fd_empty)
 		return -1;
 	fprintf(stderr, "fake get_random_fd called unexpectedly\n");

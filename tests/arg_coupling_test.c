@@ -26,6 +26,7 @@
 #include <sys/shm.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <linux/aio_abi.h>
 #include <linux/mempolicy.h>
 #include <linux/posix_types.h>
 
@@ -37,6 +38,7 @@
 #include "deferred-free.h"		/* deferred_alloc_track, deferred_free_flush */
 #include "ipc-common.h"			/* SEMGET_NSEMS_CAP */
 #include "files.h"			/* get_rand_pagecache_fd */
+#include "fake_objects.h"		/* fake_alloc_object, fake_add_object */
 #include "hugepages.h"			/* pick_random_huge_size_encoding */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
 #include "kernel/syslog.h"		/* SYSLOG_ACTION_READ */
@@ -5707,6 +5709,81 @@ static void ipc_compat_buffers_reachable(void)
 }
 #endif
 
+/* get_random_fd()'s stand-in hands out this fd when one is set. */
+extern int fake_random_fd;	/* fake_stubs.c */
+
+/* No aio context is set up here, so io_submit's sanitiser leaves ctx_id
+ * alone. */
+unsigned long seed_aio_ctx_if_empty(void)
+{
+	return 0;
+}
+
+static unsigned int iocbs_pooled;
+static struct object iocb_obj;
+
+static struct object *iocb_object(void)
+{
+	memset(&iocb_obj, 0, sizeof(iocb_obj));
+	return &iocb_obj;
+}
+
+static void count_iocb(struct object *obj, enum obj_scope scope,
+		       enum objecttype type)
+{
+	(void) obj;
+	(void) scope;
+	if (type == OBJ_AIO_IOCB)
+		iocbs_pooled++;
+}
+
+/* io_submit's iocbpp is the array the kernel reads the iocb pointers
+ * from, as compat_uptr_t entries for a compat call (fs/aio.c), so each of
+ * its nr entries, read at the call's width, names one of the call's
+ * iocbs, and the post handler walks it at that width to pool every iocb
+ * the kernel took. */
+static void io_submit_iocbpp_follows_abi(bool compat)
+{
+	struct syscallrecord *r = NULL;
+	unsigned int i, tries;
+	int fd = open("/dev/null", O_RDWR);
+
+	if (fd < 0)
+		BUG("io_submit: no fd to build iocbs on");
+	fake_random_fd = fd;
+	for (tries = 0; tries < 1000; tries++) {
+		r = child_call(&syscall_io_submit, compat);
+		syscall_io_submit.sanitise(r);
+		if (r->a2 >= 2)
+			break;
+	}
+	fake_random_fd = -1;
+	if (tries == 1000)
+		BUG("io_submit: the sanitiser never built a batch");
+
+	for (i = 0; i < r->a2; i++) {
+		unsigned long p = compat ? ((uint32_t *) r->a3)[i] :
+					   ((unsigned long *) r->a3)[i];
+
+		if (p == 0 || ((struct iocb *) p)->aio_fildes != (__u32) fd)
+			BUG("io_submit: an iocbpp entry read at the call's width names no iocb");
+	}
+
+	r->arg_shadow[1] = r->a2;
+	r->arg_snapshot_mask = syscall_io_submit.arg_snapshot_mask;
+	r->retval = r->a2;
+	iocbs_pooled = 0;
+	fake_alloc_object = iocb_object;
+	fake_add_object = count_iocb;
+	syscall_io_submit.post(r);
+	fake_alloc_object = NULL;
+	fake_add_object = NULL;
+	if (iocbs_pooled != r->a2)
+		BUG("io_submit: the post handler did not pool every iocb the kernel took");
+	close(fd);
+	fake_this_child = NULL;
+}
+
 void arg_coupling_self_check(void);
 void arg_coupling_self_check(void)
 {
@@ -5719,7 +5796,9 @@ void arg_coupling_self_check(void)
 	madvise_held();
 	process_madvise_guard_install_held();
 	process_madvise_advises_no_pool_page();
+	io_submit_iocbpp_follows_abi(false);
 #ifdef ARCH_IS_BIARCH
+	io_submit_iocbpp_follows_abi(true);
 	compat_iovec_pool_held_low();
 	compat_msghdr_scrub_walks_compat_entries();
 	compat_msghdr_fill_places_low_buffers();

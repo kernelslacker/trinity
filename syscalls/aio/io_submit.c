@@ -93,7 +93,10 @@ static int pick_iocb_opcode_for_fd(int fd)
 
 static void sanitise_io_submit(struct syscallrecord *rec)
 {
-	struct iocb **iocbpp;
+	/* The iocb pointers, compat_uptr_t entries for a compat call, whose
+	 * kernel reads them at that width (fs/aio.c). */
+	size_t ptr_size = rec->do32bit ? sizeof(uint32_t) : sizeof(struct iocb *);
+	void *iocbpp;
 	struct iocb *iocbs;
 	char *buf;
 	unsigned long ctx;
@@ -117,7 +120,7 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 	if (iocbs == NULL)
 		return;
 	memset(iocbs, 0, nr * sizeof(*iocbs));
-	iocbpp = (struct iocb **) get_writable_address(nr * sizeof(*iocbpp));
+	iocbpp = get_writable_address(nr * ptr_size);
 
 	buf = (char *) get_writable_address(4096);
 	if (iocbpp == NULL || buf == NULL) {
@@ -244,13 +247,16 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 					iocbs[i].aio_resfd = eventfd_fd;
 				}
 			}
-			iocbpp[i] = &iocbs[i];
+			if (rec->do32bit)
+				((uint32_t *) iocbpp)[i] = (uint32_t) (unsigned long) &iocbs[i];
+			else
+				((struct iocb **) iocbpp)[i] = &iocbs[i];
 		}
 	}
 
 	rec->a2 = nr;
 	rec->a3 = (unsigned long) iocbpp;
-	avoid_shared_buffer_inout(&rec->a3, nr * sizeof(struct iocb *));
+	avoid_shared_buffer_inout(&rec->a3, nr * ptr_size);
 
 	/*
 	 * Snapshot the post-relocation iocbpp address so the post handler
@@ -263,7 +269,7 @@ static void sanitise_io_submit(struct syscallrecord *rec)
 
 static void post_io_submit(struct syscallrecord *rec)
 {
-	struct iocb **iocbpp;
+	void *iocbpp;
 	long ret = (long) rec->retval;
 	long i;
 
@@ -279,7 +285,7 @@ static void post_io_submit(struct syscallrecord *rec)
 	__atomic_add_fetch(&shm->stats.aio.submitted, (unsigned long) ret,
 			   __ATOMIC_RELAXED);
 
-	iocbpp = (struct iocb **) rec->post_state;
+	iocbpp = (void *) rec->post_state;
 	if (iocbpp == NULL)
 		return;
 	if (looks_like_corrupted_ptr(rec, iocbpp)) {
@@ -296,7 +302,9 @@ static void post_io_submit(struct syscallrecord *rec)
 	 * those beyond it never reached io_submit_one().
 	 */
 	for (i = 0; i < ret; i++) {
-		struct iocb *iocb = iocbpp[i];
+		struct iocb *iocb = rec->do32bit ?
+			(struct iocb *) (unsigned long) ((uint32_t *) iocbpp)[i] :
+			((struct iocb **) iocbpp)[i];
 		struct object *obj;
 		__u64 aio_data;
 

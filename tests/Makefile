@@ -680,6 +680,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/fallocate.c \
 # runs.
 PARENT_SRCS	+= $(TOP)/syscalls/signal/rt_sigpending.c
 
+# syscalls/aio/io_submit.c brings io_submit, whose iocb pointer array
+# arg_coupling_test.c reads at the call's width, with no aio context set
+# up and the post handler's pool publishes hooked.
+PARENT_SRCS	+= $(TOP)/syscalls/aio/io_submit.c
+
 # syscalls/lsm/lsm_get_self_attr.c brings lsm_get_self_attr, whose re-call
 # selector_recall_test.c runs against a fake of the syscall.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_get_self_attr.c
