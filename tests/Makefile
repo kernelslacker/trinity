@@ -234,6 +234,11 @@ LDFLAGS		+= -Wl,--wrap=publish_resource
 # control message.
 LDFLAGS		+= -Wl,--wrap=pick_cmsg_kind -Wl,--wrap=cmsg_build
 
+# get_writable_address() refusal: listmount_test.c wraps it so a test can
+# fail a sanitiser's buffer draw, which the pools never refuse once made.
+# The wrapper forwards to the real call unless armed.
+LDFLAGS		+= -Wl,--wrap=get_writable_address
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -1104,6 +1109,10 @@ FAKE_SRCS	+= futex_wait_test.c
 # whose buffers lsm_list_modules_test.c checks on a compat call.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_list_modules.c
 FAKE_SRCS	+= lsm_list_modules_test.c
+
+# listmount_test.c runs syscall_listmount's sanitiser, linked above for
+# the recall test, with its id-buffer draw refused.
+FAKE_SRCS	+= listmount_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

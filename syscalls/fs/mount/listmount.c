@@ -203,6 +203,15 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	if (req == NULL)
 		return;
 
+	/*
+	 * The csfu allocation (`req`) is a tracked libc-heap pointer: hand
+	 * it to the rec_own carrier before a failed draw below can return
+	 * without it, or it dangles until LRU eviction.  The carrier frees
+	 * it after .post runs, which still reads via snap->req in the same
+	 * iteration.
+	 */
+	rec_own(rec, req);
+
 	req->mnt_id = pick_listmount_parent_id();
 	req->param = pick_listmount_order();
 
@@ -238,15 +247,6 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	snap->mnt_ids    = rec->a2;
 	post_state_install(rec, snap);
 #endif
-
-	/*
-	 * The csfu allocation (`req`) is a tracked libc-heap pointer rather
-	 * than the get_writable_address() pool slot it replaced; without an
-	 * explicit handoff here it would dangle until LRU eviction.  The
-	 * rec_own carrier frees it after .post runs, which still reads
-	 * via snap->req in the same iteration.
-	 */
-	rec_own(rec, req);
 }
 
 /*

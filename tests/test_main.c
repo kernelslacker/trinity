@@ -111,6 +111,7 @@ void cmsg_build_self_check(void);
 void rxrpc_key_install_self_check(void);
 void futex_wait_self_check(void);
 void lsm_list_modules_self_check(void);
+void listmount_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -623,6 +624,11 @@ int main(int argc, char **argv)
 	printf("  lsm_list_modules_self_check ... ");
 	fflush(stdout);
 	lsm_list_modules_self_check();
+	printf("OK\n");
+
+	printf("  listmount_self_check ... ");
+	fflush(stdout);
+	listmount_self_check();
 	printf("OK\n");
 
 	return 0;
