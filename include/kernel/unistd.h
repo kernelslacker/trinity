@@ -34,3 +34,6 @@
 #if !defined(SYS_sched_getattr) && defined(__NR_sched_getattr)
 #define SYS_sched_getattr	__NR_sched_getattr
 #endif
+#if !defined(SYS_lsm_get_self_attr) && defined(__NR_lsm_get_self_attr)
+#define SYS_lsm_get_self_attr	__NR_lsm_get_self_attr
+#endif

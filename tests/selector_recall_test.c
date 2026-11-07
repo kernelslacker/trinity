@@ -10,6 +10,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +22,8 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
-#include "kernel/unistd.h"	/* SYS_sysfs */
+#include "kernel/lsm.h"		/* LSM_ATTR_CURRENT, LSM_ATTR_EXEC */
+#include "kernel/unistd.h"	/* SYS_sysfs, SYS_lsm_get_self_attr */
 #include "sanitise.h"		/* get_writable_address */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
@@ -312,6 +314,64 @@ static void sysfs_cases(void)
 }
 #endif
 
+#ifdef SYS_lsm_get_self_attr
+/* A fake lsm_get_self_attr() answering each attribute with its own number:
+ * what the calling task holds depends on the LSMs a kernel runs.  A single
+ * LSM's answer it refuses, as the kernel does for the zeroed lsm_ctx id
+ * the re-call hands it. */
+static bool fake_lsm_get_self_attr(long number, const unsigned long a[6],
+				   long *ret)
+{
+	if (number != SYS_lsm_get_self_attr)
+		return false;
+	*ret = -EINVAL;
+	if (a[3] == 0) {
+		memcpy((void *) a[1], &a[0], sizeof(a[0]));
+		*(uint32_t *) a[2] = sizeof(a[0]);
+		*ret = 0;
+	}
+	return true;
+}
+
+/* lsm_get_self_attr calls the sanitiser built on attribute @built, which
+ * the kernel ran on @ran, each answering as the fake does for @answer;
+ * the anomalies the re-call reports. */
+static unsigned long lsm_anomalies(unsigned long built, unsigned long ran,
+				   unsigned long answer)
+{
+	unsigned long before = shm->stats.oracle.lsm_get_self_attr_oracle_anomalies;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = built;
+		syscall_lsm_get_self_attr.sanitise(&rec);
+
+		/* The sanitiser's arms without a buffer or a size are ones
+		 * the post handler passes over. */
+		if (rec.a2 != 0 && rec.a3 != 0) {
+			memcpy((void *) rec.a2, &answer, sizeof(answer));
+			*(uint32_t *) rec.a3 = sizeof(answer);
+		}
+		rec.a1 = ran;
+		shadow_slots(&syscall_lsm_get_self_attr);
+		rec.retval = 0;
+		syscall_lsm_get_self_attr.post(&rec);
+	}
+	return shm->stats.oracle.lsm_get_self_attr_oracle_anomalies - before;
+}
+
+static void lsm_cases(void)
+{
+	fake_syscall = fake_lsm_get_self_attr;
+	check("lsm_get_self_attr: a call rewritten onto another attribute was re-called on the first",
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_EXEC, LSM_ATTR_EXEC) == 0);
+	check("lsm_get_self_attr: a call answering another attribute's context was not reported",
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_CURRENT, LSM_ATTR_EXEC) > 0);
+	fake_syscall = NULL;
+}
+#endif
+
 void selector_recall_self_check(void);
 void selector_recall_self_check(void)
 {
@@ -332,6 +392,9 @@ void selector_recall_self_check(void)
 #endif
 #ifdef SYS_sysfs
 	sysfs_cases();
+#endif
+#ifdef SYS_lsm_get_self_attr
+	lsm_cases();
 #endif
 
 	if (failed != 0)
