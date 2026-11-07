@@ -1,11 +1,13 @@
 /*
  * Self-check for io_uring_register's sanitiser
- * (syscalls/io_uring/io_uring_register.c): the kernel masks the
- * registered-ring modifier off the opcode before it dispatches, so a draw
+ * (syscalls/io_uring/io_uring_register.c): its picker reaches every
+ * opcode the descriptor lists, and, since the kernel masks the
+ * registered-ring modifier off the opcode before it dispatches, a draw
  * carrying the modifier gets its base opcode's payload.
  */
 
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,7 +19,7 @@
 
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 
-/* Draws, all of which miss a 1-in-120 opcode one time in about 10^15. */
+/* Draws, all of which miss a 1-in-160 opcode one time in about 10^11. */
 #define DRAWS	4096
 
 /* Run the sanitiser until it draws @opcode.  The payloads of the opcodes
@@ -41,7 +43,9 @@ static bool draw(struct syscallrecord *rec, unsigned long opcode)
 void io_uring_register_self_check(void);
 void io_uring_register_self_check(void)
 {
+	const struct arglist *ops = &syscall_io_uring_register.arg_params[1].list;
 	struct syscallrecord rec;
+	unsigned int i;
 
 	/* The pool is made once per process: take it as an earlier suite
 	 * left it. */
@@ -55,4 +59,14 @@ void io_uring_register_self_check(void)
 	free((void *) rec.post_state);
 	if (rec.a3 != 0 || rec.a4 != 0)
 		BUG("io_uring_register: a modifier draw of PERSONALITY got another opcode's payload");
+
+	/* The picker, not only a chain substitution onto the opcode slot,
+	 * reaches each opcode the slot lists. */
+	for (i = 0; i < ops->num; i++) {
+		if (!draw(&rec, ops->values[i])) {
+			fprintf(stderr, "opcode %#lx never drawn\n", ops->values[i]);
+			BUG("io_uring_register: the picker leaves out a listed opcode");
+		}
+		free((void *) rec.post_state);
+	}
 }

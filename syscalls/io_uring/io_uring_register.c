@@ -70,10 +70,10 @@ static unsigned long io_uring_register_opcodes[] = {
  * opcodes (BUFFERS/FILES/EVENTFD/PROBE/PERSONALITY/IOWQ_MAX_WORKERS)
  * with newer narrowly-targeted ones (zcrx, mem_region, query,
  * bpf_filter, clock, resize_rings, ...).  Bias the picker so the rare
- * paths get hit ~50% of the time, and ~10% of the time OR the
- * IORING_REGISTER_USE_REGISTERED_RING modifier bit onto a re-rolled
- * base opcode to exercise the masking path that decodes fd as a
- * registered-ring index rather than a real fd.
+ * paths get hit ~45% of the time and the rest of the table ~10%, and
+ * ~10% of the time OR the IORING_REGISTER_USE_REGISTERED_RING modifier
+ * bit onto a re-rolled base opcode to exercise the masking path that
+ * decodes fd as a registered-ring index rather than a real fd.
  */
 static const unsigned long io_uring_register_opcodes_common[] = {
 	IORING_REGISTER_BUFFERS,
@@ -103,15 +103,42 @@ static const unsigned long io_uring_register_opcodes_rare[] = {
 	IORING_REGISTER_PBUF_STATUS,
 };
 
+/*
+ * The update, *2 and async forms of the opcodes above, IOWQ_AFF and
+ * FILE_ALLOC_RANGE, and the UNREGISTER_* teardowns, which reopen
+ * BUFFERS, FILES and EVENTFD: the kernel refuses those with -EBUSY
+ * while a table or eventfd is installed.
+ */
+static const unsigned long io_uring_register_opcodes_rest[] = {
+	IORING_UNREGISTER_BUFFERS,
+	IORING_UNREGISTER_FILES,
+	IORING_REGISTER_FILES_UPDATE,
+	IORING_REGISTER_EVENTFD_ASYNC,
+	IORING_UNREGISTER_EVENTFD,
+	IORING_UNREGISTER_PERSONALITY,
+	IORING_REGISTER_FILES2,
+	IORING_REGISTER_FILES_UPDATE2,
+	IORING_REGISTER_BUFFERS2,
+	IORING_REGISTER_BUFFERS_UPDATE,
+	IORING_REGISTER_IOWQ_AFF,
+	IORING_UNREGISTER_IOWQ_AFF,
+	IORING_UNREGISTER_RING_FDS,
+	IORING_UNREGISTER_PBUF_RING,
+	IORING_REGISTER_FILE_ALLOC_RANGE,
+	IORING_UNREGISTER_NAPI,
+};
+
 static unsigned long pick_io_uring_register_opcode(void)
 {
 	unsigned int r = rnd_modulo_u32(100);
 	unsigned long base;
 
-	if (r < 40)
+	if (r < 35)
 		return io_uring_register_opcodes_common[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_common))];
-	if (r < 90)
+	if (r < 80)
 		return io_uring_register_opcodes_rare[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_rare))];
+	if (r < 90)
+		return io_uring_register_opcodes_rest[rnd_modulo_u32(ARRAY_SIZE(io_uring_register_opcodes_rest))];
 
 	/*
 	 * 10%: re-roll a base opcode (50/50 common vs rare) and OR in the
@@ -392,14 +419,12 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * a no-arg scalar shape: the switch produced arg_len == 0 (so the
 	 * avoid_shared_buffer_inout relocation above was skipped and no
 	 * pointer landed in rec->a3) AND rec->a4 == 0 (no nr_args count
-	 * either).  The two arms that reach this shape today are
-	 * IORING_REGISTER_PERSONALITY (helper returns {0, 0, 0}) and
-	 * IORING_REGISTER_ENABLE_RINGS (inline {0, 0, 0}); the picker
-	 * only draws from opcodes_common / opcodes_rare, neither of
-	 * which lists UNREGISTER_*, so those UNREGISTER helpers' {0, 0, 0}
-	 * returns are unreachable from here.  Every kernel entry gets a
-	 * plain (fd, opcode) pair with no pointer slot -- exactly the
-	 * fixed-size scalar contract REEXEC_OK documents in
+	 * either).  The arms that reach this shape are
+	 * IORING_REGISTER_PERSONALITY (helper returns {0, 0, 0}),
+	 * IORING_REGISTER_ENABLE_RINGS (inline {0, 0, 0}) and the
+	 * UNREGISTER_* opcodes whose helpers return {0, 0, 0}.  Every
+	 * kernel entry gets a plain (fd, opcode) pair with no pointer slot
+	 * -- exactly the fixed-size scalar contract REEXEC_OK documents in
 	 * include/syscall.h.
 	 *
 	 * Outcome-gate (arg_len / a4) rather than an opcode allowlist so
@@ -413,10 +438,10 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * (magic, arg_len, nr_update) -- no per-arm resource
 	 * ownership, no deferred free of a3.  The oracle in
 	 * post_io_uring_register is retval-shape only (PERSONALITY
-	 * validates [1, INT_MAX]; ENABLE_RINGS falls into the default
-	 * "must be 0 or -1UL" arm), with no state that a re-exec would
-	 * corrupt.  The parent's post handler has already run
-	 * (handle_syscall_ret fires .post before dispatch_step's
+	 * validates [1, INT_MAX]; ENABLE_RINGS and the UNREGISTER_* ones
+	 * fall into the default "must be 0 or -1UL" arm), with no state
+	 * that a re-exec would corrupt.  The parent's post handler has
+	 * already run (handle_syscall_ret fires .post before dispatch_step's
 	 * redqueen_reexec_step tail), so the child re-exec starts with a
 	 * clean rec->post_state slot, sanitise re-runs to install a fresh
 	 * snap, the child's post handler releases it, and the
