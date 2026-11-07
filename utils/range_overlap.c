@@ -348,6 +348,18 @@ unsigned long shared_region_size_for(unsigned long addr)
 	const struct shared_region_entry *r;
 	unsigned int i;
 
+	/* range_overlaps_shared()'s bitmap negative, for one byte: a clear
+	 * bit for addr's 2 MiB chunk proves no tracked region holds addr,
+	 * so a miss (a mapping-pool base, a sentinel) costs one load, not a
+	 * walk of every region.  Above the span the walk answers alone. */
+	if (addr < SHARED_BITMAP_VA_SPAN) {
+		unsigned long bit = addr >> SHARED_BITMAP_GRANULARITY_LOG2;
+
+		if (!(shared_region_bitmap[bit / SHARED_BITMAP_BITS_PER_WORD] &
+		      (1UL << (bit % SHARED_BITMAP_BITS_PER_WORD))))
+			return 0;
+	}
+
 	for_each_shared_region(i, r) {
 		unsigned long rstart = r->addr;
 		unsigned long rsize = r->size;
