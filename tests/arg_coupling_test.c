@@ -2529,6 +2529,22 @@ static void call_buffers_follow_abi(void)
 	fake_this_child = NULL;
 }
 
+/* A bump cursor past the pool, the shared childdata word scribbled, say,
+ * starts the pool over instead of wrapping its end past the bounds check
+ * and vending a buffer outside the pool. */
+static void bump_cursor_held_inside_pool(void)
+{
+	unsigned long a;
+
+	memset(&mm_child.syscall, 0, sizeof(mm_child.syscall));
+	fake_this_child = &mm_child;
+	mm_child.writable_pool_cursor = ULONG_MAX - 8;
+	a = (unsigned long) get_writable_struct(24);
+	fake_this_child = NULL;
+	if (!range_in_writable_pool(a, 24))
+		BUG("arg coupling: a scribbled cursor vended a buffer outside the writable pool");
+}
+
 static int process_madvise_verdict(const struct iovec *vec, unsigned long vlen,
 				   unsigned long advice, bool compat)
 {
@@ -5847,6 +5863,7 @@ void arg_coupling_self_check(void)
 #endif
 	pools_end_at_a_guard_page();
 	call_buffers_follow_abi();
+	bump_cursor_held_inside_pool();
 	count_slot_checked_at_table_init();
 	count_held_inside_buffer();
 	vet_final_asked_first();

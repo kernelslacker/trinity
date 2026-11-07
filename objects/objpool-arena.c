@@ -119,7 +119,7 @@ void *objpool_local_arena_alloc(unsigned long size)
 	struct childdata *child;
 	static unsigned long parent_cursor;
 	unsigned long *cursor_p;
-	unsigned long cursor, aligned, end;
+	unsigned long cursor, aligned;
 
 	if (objpool_arena_base == NULL)
 		return NULL;
@@ -133,12 +133,14 @@ void *objpool_local_arena_alloc(unsigned long size)
 	child = this_child();
 	cursor_p = (child != NULL) ? &child->objpool_arena_cursor
 				   : &parent_cursor;
+	/* Judged without forming cursor + aligned, which a cursor past the
+	 * arena (a stray write) would wrap; such a cursor finds it full. */
 	cursor = *cursor_p;
-	end = cursor + aligned;
-	if (end > objpool_arena_size)
+	if (cursor > objpool_arena_size ||
+	    aligned > objpool_arena_size - cursor)
 		return NULL;
 
-	*cursor_p = end;
+	*cursor_p = cursor + aligned;
 
 	/*
 	 * The MAP_PRIVATE|MAP_ANON region is zero-fill on first fault; a

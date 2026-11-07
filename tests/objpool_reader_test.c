@@ -4,12 +4,14 @@
  * take arena, fallback and mixed pools and refuse storage in neither, and
  * clone_global_mmap_pool()'s dedup walk refreshes alloc_track only for a
  * fallback copy.  The heap probe answers for one buffer, so the arena
- * lies outside the heap as it does in a child.
+ * lies outside the heap as it does in a child.  The arena's allocator
+ * vends nothing outside it.
  */
 
 #include <stdbool.h>
 #include <string.h>
 
+#include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "mm/maps-internal.h"	/* clone_global_mmap_pool */
 #include "objects.h"
@@ -19,6 +21,7 @@
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 extern unsigned long fake_heap_start, fake_heap_size;		/* fake_shm.c */
+extern struct childdata *fake_this_child;			/* fake_shm.c */
 
 #define POOL_TYPE	OBJ_KEY_SERIAL
 #define POOL_SIZE	4
@@ -306,6 +309,22 @@ static void null_head_walks_empty(void)
 	}
 }
 
+/* A bump cursor past the arena, the shared childdata word scribbled, say,
+ * reports the arena full instead of wrapping its end past the bounds
+ * check and vending memory outside the arena. */
+static void scribbled_cursor_vends_nothing_outside(void)
+{
+	static struct childdata arena_child;
+	void *p;
+
+	fake_this_child = &arena_child;
+	arena_child.objpool_arena_cursor = ULONG_MAX - 8;
+	p = objpool_local_arena_alloc(sizeof(struct object));
+	fake_this_child = NULL;
+	if (p != NULL && !objpool_local_arena_owns(p, sizeof(struct object)))
+		BUG("objpool reader: a scribbled cursor vended memory outside the arena");
+}
+
 void objpool_reader_self_check(void);
 void objpool_reader_self_check(void)
 {
@@ -322,6 +341,7 @@ void objpool_reader_self_check(void)
 	dedup_refreshes_only_fallback_copies();
 	arena_extent_is_checked(arena_objs[0]);
 	null_head_walks_empty();
+	scribbled_cursor_vends_nothing_outside();
 
 	fake_get_objhead = NULL;
 	fake_heap_size = 0;

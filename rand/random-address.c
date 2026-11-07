@@ -97,12 +97,15 @@ static void *pool_bump(unsigned char *pool, unsigned long *cursor_p,
 
 	aligned = (size + (WRITABLE_POOL_ALIGN - 1)) & ~(WRITABLE_POOL_ALIGN - 1);
 
+	/*
+	 * Judged without forming cursor + aligned, which a cursor past the
+	 * pool (a stray write) would wrap; such a cursor starts it over too.
+	 */
 	cursor = *cursor_p;
-	end = cursor + aligned;
-	if (end > WRITABLE_POOL_BYTES) {
+	if (cursor > WRITABLE_POOL_BYTES ||
+	    aligned > WRITABLE_POOL_BYTES - cursor)
 		cursor = 0;
-		end = aligned;
-	}
+	end = cursor + aligned;
 	*cursor_p = end;
 	return pool + cursor;
 }
