@@ -10,13 +10,12 @@
 
 #include "internal.h"
 
-const char paramstr[] = "a:b:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:";
+const char paramstr[] = "a:c:C:dDE:g:hILN:P:qr:s:ST:V:vx:";
 
 const struct option longopts[] = {
 	{ "alt-op-children", required_argument, NULL, 0 },
 	{ "arch", required_argument, NULL, 'a' },
 	{ "arg-len-semantics", required_argument, NULL, 0 },
-	{ "bdev", required_argument, NULL, 'b' },
 	{ "canary-seed", required_argument, NULL, 0 },
 	{ "canary-slots", required_argument, NULL, 0 },
 	{ "canary-window", required_argument, NULL, 0 },

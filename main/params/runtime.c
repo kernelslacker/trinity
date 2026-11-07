@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #include "arg-len-semantics.h"
-#include "bdevs.h"
 #include "child.h"
 #include "blob_mutator.h"
 #include "cmp-frontier.h"

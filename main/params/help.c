@@ -10,7 +10,6 @@
 #include <string.h>
 
 #include "arg-len-semantics.h"
-#include "bdevs.h"
 #include "child.h"
 #include "blob_mutator.h"
 #include "cmp-frontier.h"
@@ -48,7 +47,6 @@ static const struct option_help option_descs[] = {
 	{ "blob-mutator",	 0,  "content-authoring for ARG_BUF_SIZED args: off/fill/havoc/cmpdict (default off)" },
 	{ "blob-ab-mode",	 0,  "within-run A/B alternating HAVOC vs CMPDICT per fill (default off)" },
 	{ "arg-len-semantics",	 0,  "object-size-relative ARG_LEN draw mode: off/on (default off)" },
-	{ "bdev",		'b', "Add /dev node to list of block devices to use for destructive tests." },
 	{ "canary-seed",	 0,  "override the canary picker's first-pass order (comma-separated childop names)" },
 	{ "canary-slots",	 0,  "reserve N front slots from --alt-op-children for the dormant-op canary queue" },
 	{ "canary-window",	 0,  "invocations of active canary op per window (default 10000, range 1k..1M)" },

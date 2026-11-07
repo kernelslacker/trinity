@@ -41,7 +41,7 @@ every translation unit lives under one of the directories below.
 | [syscalls/](syscalls/CLAUDE.md) | One `struct syscallentry` descriptor per syscall — the declarative catalog |
 | [tables/](tables/CLAUDE.md) | Loads the per-syscall descriptors into shared memory and stamps derived fields |
 | [args/](args/CLAUDE.md) | Argument generation layer driven by `argtype[]` |
-| [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/blockdevs/fstype |
+| [args/pools/](args/pools/CLAUDE.md) | Argument-content pools feeding the ARG_* generators — pathnames/xattr/blob/devices/fstype |
 | [struct_catalog/](struct_catalog/CLAUDE.md) | Static field-level layout catalog for kernel structs |
 | [rand/](rand/CLAUDE.md) | Randomness core and scalar value generation |
 | [net/](net/CLAUDE.md) | sockaddr / setsockopt / netlink / BPF generation per address family |

@@ -13,7 +13,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "bdevs.h"
 #include "blob_mutator.h"
 #include "fd.h"
 #include "kcov.h"
@@ -185,14 +184,9 @@ bool parse_diagnostic_options(int opt, const char *name, char *arg)
 bool parse_info_options(int opt, const char *name, char *arg)
 {
 	(void)name;
+	(void)arg;
 
 	switch (opt) {
-	case 'b':
-		init_bdev_list();
-		process_bdev_param(arg);
-		dump_bdev_list();
-		outputstd("--bdev doesn't do anything useful yet.\n");
-		exit(EXIT_SUCCESS);
 	case 'h':
 		usage();
 		exit(EXIT_SUCCESS);
