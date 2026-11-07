@@ -409,7 +409,10 @@ update this section to match `ls scripts/check-static/*.sh`.)
 - `syscall-table-numbers`: every entry of a syscall table sits at its
   syscall's number, the index `do_syscall()` issues, by the build host's
   uapi `<asm/unistd_*.h>`.  An entry may sit at its name's 32-bit-uid or
-  y2038 twin; a name the header does not define is skipped.
+  y2038 twin; a name the header does not define is skipped.  The slots
+  that hold a descriptor by another name on purpose are listed in
+  `scripts/check-static/syscall-table-numbers.baseline`, which only
+  shrinks.
 - `track-shared-region-pairing`: every `track_shared_region()` must
   have a matching `untrack_shared_region()` on every cleanup-goto exit
   path that can free or recycle the backing mapping.

@@ -7,30 +7,36 @@
 # <asm/unistd_*.h>: a table whose header the host cannot preprocess is
 # skipped, as is an entry whose name the header does not define.  An
 # entry may also sit at its name's 32-bit-uid or y2038 twin
-# (__NR_<name>32, __NR_<name>64, __NR_<name>_time64).
+# (__NR_<name>32, __NR_<name>64, __NR_<name>_time64), and
+# syscall-table-numbers.baseline lists the slots that hold a descriptor
+# by another name on purpose.
 
 set -u
 
 NAME="syscall-table-numbers"
 ROOT="${REPO_ROOT:-$(pwd)}"
+BASELINE="$ROOT/scripts/check-static/syscall-table-numbers.baseline"
 
 command -v gcc >/dev/null 2>&1 || { echo "ERROR: $NAME: gcc unavailable"; exit 1; }
+[ -r "$BASELINE" ] || { echo "ERROR: $NAME: $BASELINE unreadable"; exit 1; }
 
 # <table header under include/>:<uapi header holding its numbers>
-TABLES="syscalls-x86_64.h:asm/unistd_64.h"
+TABLES="syscalls-x86_64.h:asm/unistd_64.h syscalls-i386.h:asm/unistd_32.h"
 
+baseline=$(grep -v -e '^#' -e '^$' "$BASELINE")
 problems=""
-checked=0
+used=""
+checked=""
 for pair in $TABLES; do
-	table="$ROOT/include/${pair%%:*}"
+	file="include/${pair%%:*}"
 	nrs=$(echo "#include <${pair#*:}>" | gcc -dM -E - 2>/dev/null |
 		awk '$1 == "#define" && $2 ~ /^__NR_/ && $3 ~ /^[0-9]+$/ {
 			print substr($2, 6), $3
 		}')
 	[ -n "$nrs" ] || continue
-	checked=$((checked + 1))
+	checked="$checked $file"
 	# The #else arm of a config switch is the same slot's other value.
-	found=$(printf '%s\n' "$nrs" | awk -v file="${table#"$ROOT"/}" '
+	found=$(printf '%s\n' "$nrs" | awk -v file="$file" '
 		FNR == NR { nr[$1] = $2; next }
 		/^#else/ { skip = 1; next }
 		/^#endif/ { skip = 0; next }
@@ -53,16 +59,33 @@ for pair in $TABLES; do
 				at = at " __NR_" cand[c] "=" nr[cand[c]]
 			}
 			if (at != "")
-				printf "%s: slot %d holds syscall_%s, but%s\n", file, idx, name, at
+				printf "%s:%d:%s\t%s: slot %d holds syscall_%s, but%s\n",
+					file, idx, name, file, idx, name, at
 		}
-	' - "$table")
-	[ -n "$found" ] && problems="$problems$found"$'\n'
+	' - "$ROOT/$file")
+	while IFS=$'\t' read -r key detail; do
+		[ -n "$key" ] || continue
+		if printf '%s\n' "$baseline" | grep -Fxq "$key"; then
+			used="$used$key"$'\n'
+		else
+			problems="$problems$detail"$'\n'
+		fi
+	done <<< "$found"
 done
 
-if [ "$checked" -eq 0 ]; then
+if [ -z "$checked" ]; then
 	echo "WARN: $NAME: no table's uapi header on this host"
 	exit 0
 fi
+
+for key in $baseline; do
+	case " $checked " in
+		*" ${key%%:*} "*) ;;
+		*) continue ;;
+	esac
+	printf '%s' "$used" | grep -Fxq "$key" ||
+		problems="$problems$key: baselined, but the slot holds its own syscall"$'\n'
+done
 
 if [ -n "$problems" ]; then
 	echo "FAIL: $NAME: syscall table entries off their syscall numbers"
@@ -70,5 +93,5 @@ if [ -n "$problems" ]; then
 	exit 1
 fi
 
-echo "PASS: $NAME (tables checked: $checked)"
+echo "PASS: $NAME (tables checked:$checked)"
 exit 0

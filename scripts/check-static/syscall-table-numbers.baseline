@@ -1,0 +1,19 @@
+# syscall-table-numbers.baseline
+#
+# Slots whose descriptor goes by another name than the kernel's call at
+# that number: an old-ABI call given the descriptor of the newer one that
+# takes the same arguments (oldstat, oldfstat, oldlstat, oldolduname,
+# olduname), or a call trinity names after the one it superseded
+# (umount2, _newselect, ugetrlimit).  <table>:<slot>:<descriptor>.
+#
+# This list only shrinks.  A line fails once its slot holds its own
+# syscall.
+
+include/syscalls-i386.h:18:statfs
+include/syscalls-i386.h:28:fstatfs
+include/syscalls-i386.h:52:umount
+include/syscalls-i386.h:59:olduname
+include/syscalls-i386.h:84:lstat
+include/syscalls-i386.h:109:uname
+include/syscalls-i386.h:142:select
+include/syscalls-i386.h:191:getrlimit
