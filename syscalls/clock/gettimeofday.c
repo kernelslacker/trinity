@@ -231,6 +231,7 @@ static void post_gettimeofday(struct syscallrecord *rec)
 				   (const void *)(unsigned long) snap->tv,
 				   sizeof(local_tv)))
 		goto out_free;
+	time_struct_from_abi(rec, &local_tv, 1);
 
 	if (clock_gettime(CLOCK_REALTIME, &ts) != 0)
 		goto out_free;

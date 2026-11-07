@@ -31,6 +31,7 @@
 #include <sys/shm.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/time.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -38,6 +39,7 @@
 #include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
 #include "fake_parent.h"	/* fake_output_log */
+#include "kernel/compat.h"	/* struct old_timeval32 */
 #include "kernel/io_uring.h"	/* IORING_REGISTER_* */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
@@ -1347,6 +1349,57 @@ static void io_uring_register_rewritten(void)
 	}
 }
 
+/* gettimeofday() writes tv as a struct old_timeval32 for a compat call,
+ * 78 on i386, and as a struct timeval for a native one; either holds the
+ * time now, which the sampled wall-clock compare must take as such. */
+static void gettimeofday_compat(void)
+{
+	static const struct {
+		const char *what;
+		unsigned int nr;
+	} cases[] = {
+		{ "gettimeofday, a native call's time", 0 },
+		{ "gettimeofday, a compat call's time", 78 },
+	};
+	struct timeval now;
+	struct old_timeval32 now32;
+	unsigned int c, i;
+
+	if (gettimeofday(&now, NULL) != 0)
+		BUG("gettimeofday: no time to answer with");
+	now32.tv_sec = (int32_t) now.tv_sec;
+	now32.tv_usec = (int32_t) now.tv_usec;
+
+	for (c = 0; c < ARRAY_SIZE(cases); c++) {
+		unsigned long before = shm->stats.oracle.gettimeofday_oracle_anomalies;
+
+		/* A whole-pool draw starts the bump cursor over, so no draw
+		 * below sits within a page of the pool's end, where the
+		 * sanitiser's past-the-end tv would stamp the guard page. */
+		(void) get_writable_address(WRITABLE_POOL_BYTES);
+		for (i = 0; i < SAMPLED_CALLS; i++) {
+			static struct syscallrecord rec;
+
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = (unsigned long) get_writable_address(sizeof(struct timeval));
+			rec.a2 = (unsigned long) get_writable_address(sizeof(struct timezone));
+			syscall_gettimeofday.sanitise(&rec);
+
+			if (cases[c].nr != 0) {
+				memcpy((void *) rec.a1, &now32, sizeof(now32));
+				rec.do32bit = true;
+				rec.nr = cases[c].nr;
+			} else {
+				memcpy((void *) rec.a1, &now, sizeof(now));
+			}
+			rec.retval = 0;
+			syscall_gettimeofday.post(&rec);
+		}
+		expect(cases[c].what,
+		       shm->stats.oracle.gettimeofday_oracle_anomalies - before, 0);
+	}
+}
+
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
  * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
  * single-node box takes, writes the policy and none of the mask.  The
@@ -1759,6 +1812,7 @@ void post_oracle_self_check(void)
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
+	gettimeofday_compat();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
