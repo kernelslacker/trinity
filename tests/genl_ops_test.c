@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
+#include <linux/devlink.h>
 #include <linux/genetlink.h>
 #include <linux/netlink.h>
 
@@ -40,6 +41,7 @@ extern struct genl_family_grammar fam_nlbl_calipso;
 extern struct genl_family_grammar fam_nlbl_cipsov4;
 extern struct genl_family_grammar fam_nlbl_mgmt;
 extern struct genl_family_grammar fam_nlbl_unlabel;
+extern struct genl_family_grammar fam_ieee802154;
 extern struct genl_family_grammar fam_devlink;
 extern struct genl_family_grammar fam_binder;
 
@@ -71,6 +73,7 @@ extern struct genl_family_grammar fam_binder;
 #define ID_TIPC		725
 #define ID_OVS_FLOW	726
 #define ID_OVS_PACKET	727
+#define ID_DEVLINK	728
 #define ID_UNREGISTERED	900
 
 /* Each family whose flags are tallied wants some 3000 messages, and every
@@ -2003,6 +2006,60 @@ static struct cmd_policy tipc_cmds[] = {
 };
 #endif
 
+/*
+ * net/devlink/netlink_gen.c: each op's policy.  The doits validate
+ * liberally and the dumpits of PORT_GET, SB_GET, PARAM_GET and REGION_GET
+ * strictly; those of GET and INFO_GET have no policy, which the genl core
+ * gives a reject-all one.  Every policy takes DEVLINK_ATTR_INDEX too, which
+ * the uapi headers here lack and nothing sends.  A doit's pre_doit answers
+ * -EINVAL without both names, PORT_GET's without the port's index, and the
+ * handlers of SB_GET, PARAM_GET and REGION_GET without the SB index, the
+ * param's name and the region's.
+ */
+static struct slot devlink_get[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+};
+static struct slot devlink_dump[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0),
+};
+static struct slot devlink_port_get[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_PORT_INDEX, .required = true),
+};
+static struct slot devlink_sb_get[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_SB_INDEX, .required = true),
+};
+static struct slot devlink_param_get[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_PARAM_NAME, 0, .required = true),
+};
+static struct slot devlink_region_get[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_PORT_INDEX),
+	S_STR(DEVLINK_ATTR_REGION_NAME, 0, .required = true),
+};
+static struct cmd_policy devlink_cmds[] = {
+	P_CMD(DEVLINK_CMD_GET, devlink_get),
+	P_DUMP_NONE(DEVLINK_CMD_GET),
+	P_CMD(DEVLINK_CMD_PORT_GET, devlink_port_get),
+	P_DUMP(DEVLINK_CMD_PORT_GET, devlink_dump),
+	P_CMD(DEVLINK_CMD_SB_GET, devlink_sb_get),
+	P_DUMP(DEVLINK_CMD_SB_GET, devlink_dump),
+	P_CMD(DEVLINK_CMD_PARAM_GET, devlink_param_get),
+	P_DUMP(DEVLINK_CMD_PARAM_GET, devlink_dump),
+	P_CMD(DEVLINK_CMD_REGION_GET, devlink_region_get),
+	P_DUMP(DEVLINK_CMD_REGION_GET, devlink_dump),
+	P_CMD(DEVLINK_CMD_INFO_GET, devlink_get),
+	P_DUMP_NONE(DEVLINK_CMD_INFO_GET),
+};
+
 static struct policy_family policy_families[] = {
 #if __has_include(<linux/handshake.h>)
 	{ &fam_handshake, ID_HANDSHAKE, handshake_cmds, ARRAY_SIZE(handshake_cmds) },
@@ -2051,6 +2108,7 @@ static struct policy_family policy_families[] = {
 #if __has_include(<linux/tipc_netlink.h>)
 	{ &fam_tipc, ID_TIPC, tipc_cmds, ARRAY_SIZE(tipc_cmds) },
 #endif
+	{ &fam_devlink, ID_DEVLINK, devlink_cmds, ARRAY_SIZE(devlink_cmds) },
 };
 
 /* Every cmd of these families, each with the flags of a doit and a dumpit. */
@@ -2098,7 +2156,7 @@ static void build_reply(struct reply *r)
 	put_msg(r, &body);
 
 	put_edge_family(r, &fam_nlbl_unlabel, ID_EDGE);
-	put_truncated_family(r, &fam_devlink, ID_TRUNCATED);
+	put_truncated_family(r, &fam_ieee802154, ID_TRUNCATED);
 	put_ops_first_family(r, &fam_binder, ID_OPS_FIRST);
 	put_policy_families(r);
 
@@ -2161,7 +2219,7 @@ static void check_reply_parsed(void)
 	expect_caps(&fam_nlbl_unlabel, ID_EDGE, want, "edge ops");
 
 	memset(want, 0, sizeof(want));
-	expect_caps(&fam_devlink, ID_TRUNCATED, want, "op list past the message");
+	expect_caps(&fam_ieee802154, ID_TRUNCATED, want, "op list past the message");
 
 	want[5] = GENL_CMD_CAP_DUMP;
 	want[6] = GENL_CMD_CAP_DO;
