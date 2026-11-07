@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(setreuid, uid_t, ruid, uid_t, euid)
  */
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include "random.h"
@@ -9,7 +10,8 @@
 #include "trinity.h"
 
 /*
- * Oracle: setreuid(r, e) — verify both ids stuck via getresuid().
+ * Oracle: setreuid(r, e) — verify both ids stuck, and the saved id
+ * where the kernel moves it, via getresuid().
  * Generation keeps each arg to 0..65535, but a RedQueen pin can write the
  * (uid_t)-1 "leave unchanged" id the kernel compares each against, so an
  * id passed as -1 is not checked.
@@ -19,6 +21,7 @@ static void post_setreuid(struct syscallrecord *rec)
 	uid_t r_in = (uid_t) rec->a1;
 	uid_t e_in = (uid_t) rec->a2;
 	uid_t want_r, want_e, r, e, s;
+	bool moved_s;
 
 	if ((long) rec->retval != 0)
 		return;
@@ -30,8 +33,14 @@ static void post_setreuid(struct syscallrecord *rec)
 
 	want_r = r_in;
 	want_e = e_in;
+	/* __sys_setreuid() moves the saved id to the new effective one when
+	 * the real id is given, or the effective one is and differs from the
+	 * old real id, which with the real id left alone is r. */
+	moved_s = want_r != (uid_t) -1 ||
+		  (want_e != (uid_t) -1 && want_e != r);
 	if ((want_r != (uid_t) -1 && r != want_r) ||
-	    (want_e != (uid_t) -1 && e != want_e)) {
+	    (want_e != (uid_t) -1 && e != want_e) ||
+	    (moved_s && s != e)) {
 		output(0, "cred oracle: setreuid(%u, %u) succeeded but "
 		       "getresuid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, r, e, s);

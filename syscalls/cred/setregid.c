@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE2(setregid, gid_t, rgid, gid_t, egid)
  */
+#include <stdbool.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include "random.h"
@@ -14,6 +15,7 @@ static void post_setregid(struct syscallrecord *rec)
 	gid_t r_in = (gid_t) rec->a1;
 	gid_t e_in = (gid_t) rec->a2;
 	gid_t want_r, want_e, r, e, s;
+	bool moved_s;
 
 	if ((long) rec->retval != 0)
 		return;
@@ -25,8 +27,11 @@ static void post_setregid(struct syscallrecord *rec)
 
 	want_r = r_in;
 	want_e = e_in;
+	moved_s = want_r != (gid_t) -1 ||
+		  (want_e != (gid_t) -1 && want_e != r);
 	if ((want_r != (gid_t) -1 && r != want_r) ||
-	    (want_e != (gid_t) -1 && e != want_e)) {
+	    (want_e != (gid_t) -1 && e != want_e) ||
+	    (moved_s && s != e)) {
 		output(0, "cred oracle: setregid(%u, %u) succeeded but "
 		       "getresgid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, r, e, s);

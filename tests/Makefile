@@ -173,6 +173,11 @@ LDFLAGS		+= -Wl,--wrap=getuid -Wl,--wrap=getgid
 # call unless armed.
 LDFLAGS		+= -Wl,--wrap=geteuid
 
+# getresuid() and getresgid() stand-ins: post_oracle_test.c wraps both so
+# the set*id oracles can read back ids the test process does not hold.
+# The wrappers forward to the real calls unless armed.
+LDFLAGS		+= -Wl,--wrap=getresuid -Wl,--wrap=getresgid
+
 # unlink() stand-in: fake_fds.c wraps it so a provider test can plant a
 # symlink under a name between the provider's unlink and its create.
 # The wrapper forwards to the real call unless armed.

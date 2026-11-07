@@ -1009,6 +1009,60 @@ static void setid_unchanged(void)
 	setid_case(&syscall_setresgid, rg, eg, sg + 1, true);
 }
 
+/* getres[ug]id() stand-ins: the real calls unless a case sets the real,
+ * effective and saved ids they read back, ids the test process cannot
+ * hold itself. */
+static const unsigned int *fake_resid;
+
+int __real_getresuid(uid_t *r, uid_t *e, uid_t *s);
+int __wrap_getresuid(uid_t *r, uid_t *e, uid_t *s);
+int __wrap_getresuid(uid_t *r, uid_t *e, uid_t *s)
+{
+	if (fake_resid == NULL)
+		return __real_getresuid(r, e, s);
+	*r = fake_resid[0];
+	*e = fake_resid[1];
+	*s = fake_resid[2];
+	return 0;
+}
+
+int __real_getresgid(gid_t *r, gid_t *e, gid_t *s);
+int __wrap_getresgid(gid_t *r, gid_t *e, gid_t *s);
+int __wrap_getresgid(gid_t *r, gid_t *e, gid_t *s)
+{
+	if (fake_resid == NULL)
+		return __real_getresgid(r, e, s);
+	*r = fake_resid[0];
+	*e = fake_resid[1];
+	*s = fake_resid[2];
+	return 0;
+}
+
+/* setre[ug]id() moves the saved id to the new effective one when it is
+ * given the real id, or an effective one other than the real id it
+ * leaves alone: a saved id that did not follow is reported, one the call
+ * had no reason to move is not. */
+static void setid_saved(void)
+{
+	static const unsigned int moved[] = { 1000, 1001, 7 };	/* r, e, s */
+	static const unsigned int followed[] = { 1000, 1001, 1001 };
+	static const unsigned int own[] = { 1000, 1000, 7 };
+	const unsigned long keep = (uid_t) -1;
+
+	fake_resid = moved;
+	setid_case(&syscall_setreuid, 1000, 1001, 0, true);
+	setid_case(&syscall_setreuid, keep, 1001, 0, true);
+	setid_case(&syscall_setregid, 1000, 1001, 0, true);
+	setid_case(&syscall_setregid, keep, 1001, 0, true);
+	fake_resid = followed;
+	setid_case(&syscall_setreuid, 1000, 1001, 0, false);
+	setid_case(&syscall_setregid, 1000, 1001, 0, false);
+	fake_resid = own;
+	setid_case(&syscall_setreuid, keep, 1000, 0, false);
+	setid_case(&syscall_setregid, keep, 1000, 0, false);
+	fake_resid = NULL;
+}
+
 /* setgroups calls the sanitiser built for @built gids, which the kernel
  * ran with @ran, the @ran at @gids, and answered 0; the anomalies the
  * sampled getgroups() and /proc/self/status compares report. */
@@ -1901,6 +1955,7 @@ void post_oracle_self_check(void)
 	getcpu_spliced();
 	capget_target();
 	setid_unchanged();
+	setid_saved();
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
