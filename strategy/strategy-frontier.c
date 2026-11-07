@@ -461,12 +461,13 @@ bool frontier_errno_plateau_should_decay(unsigned int nr, bool do32)
 
 /*
  * SHADOW-ONLY Path-A "regular_suppressed" classifier + shadow bump.
- * Sibling of frontier_satcool_spare / frontier_live_cool_spare above;
- * lives in the same translation unit so it can consume the file-static
- * frontier_spare_lane_decide() predicate body (windowed-edges plateau
- * spare, distinct-CMP / first-success-TRANSITION arggen spare,
- * ret_objtype producer-observer spare) without duplicating the lane
- * logic or growing a private exception list.
+ * Sibling of frontier_satcool_spare / frontier_live_cool_spare in
+ * strategy-frontier-cool.c; consumes the same
+ * frontier_spare_lane_decide() predicate body from
+ * strategy-frontier-spare.c (windowed-edges plateau spare,
+ * distinct-CMP / first-success-TRANSITION arggen spare, ret_objtype
+ * producer-observer spare) without duplicating the lane logic or
+ * growing a private exception list.
  *
  * The observed axis is orthogonal to cost: cost partitions on the
  * static EXPENSIVE bit (the sibling cost_pool_selector_shadow_note

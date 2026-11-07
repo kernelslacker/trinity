@@ -64,7 +64,7 @@
  * shared spare-lane decide function with FRONTIER_SPARE_WINDOWED_EDGES,
  * which this wrapper treats as a "no bump" outcome.  The arggen-wins-
  * over-objproducer precedence in the bump cascade comes from the
- * lane-order in frontier_spare_lane_decide above.
+ * lane-order in frontier_spare_lane_decide (strategy-frontier-spare.c).
  */
 void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 {

@@ -14,14 +14,15 @@
 
 /*
  * Spare-lane decision shared by the silent-regime satcool helper
- * (frontier_satcool_spare below) and the LIVE-regime cooldown helper
- * (frontier_live_cool_spare further below).  Returns the FIRST matching
- * spare reason, or FRONTIER_SPARE_NONE when no lane fires -- the caller
- * applies its own outer mode gate, magnitude floor, and counter-bump
- * cascade, so this routine is the bare predicate body the two siblings
- * share.  Extracting it keeps the lane logic from drifting between the
- * silent and LIVE call sites (one predicate body, two callers, zero
- * duplication).
+ * (frontier_satcool_spare) and the LIVE-regime cooldown helper
+ * (frontier_live_cool_spare), both in strategy-frontier-cool.c, the
+ * regular_suppressed shadow in strategy-frontier.c and the noisy-window
+ * top-N dump.  Returns the FIRST matching spare reason, or
+ * FRONTIER_SPARE_NONE when no lane fires -- each caller applies its own
+ * outer mode gate, magnitude floor, and counter-bump cascade, so this
+ * routine is the bare predicate body they share.  Extracting it keeps
+ * the lane logic from drifting between the call sites (one predicate
+ * body, zero duplication).
  *
  * Lane order encodes precedence -- the bpf-backstop windowed-edges
  * spare wins over arggen, and arggen wins over the ret_objtype
@@ -45,9 +46,9 @@
  * miss) pays one lookup per call, no get_syscall_entry indirection.
  */
 /* enum frontier_spare_reason lives in include/strategy.h so the shadow
- * attribution-confidence dump in stats/dump.c can bucket per-syscall
- * clean/noisy readings by the same spare-cascade classification the
- * silent- and LIVE-regime cooldown helpers here consume. */
+ * attribution-confidence dump in stats/kcov/dump-topn.c can bucket
+ * per-syscall clean/noisy readings by the same spare-cascade
+ * classification the cooldown helpers consume. */
 
 enum frontier_spare_reason
 frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
