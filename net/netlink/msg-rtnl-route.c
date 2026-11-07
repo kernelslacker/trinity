@@ -133,9 +133,30 @@ size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 
 	case RTA_PREF:
 	case RTA_TTL_PROPAGATE:
-	case RTA_IP_PROTO:
 		if (avail >= 1) {
 			*p = rnd_modulo_u32(256);
+			return 1;
+		}
+		return 0;
+
+	case RTA_IP_PROTO:
+		/* rtm_getroute_parse_ip_proto() refuses a GETROUTE for
+		 * anything but TCP, UDP and the family's ICMP; a random byte
+		 * one time in eight keeps the refusal. */
+		if (avail >= 1) {
+			switch (rnd_modulo_u32(8)) {
+			case 0:
+				*p = rnd_modulo_u32(256);
+				break;
+			case 1:
+			case 2:
+				*p = family == AF_INET6 ? IPPROTO_ICMPV6 :
+							  IPPROTO_ICMP;
+				break;
+			default:
+				*p = RAND_BOOL() ? IPPROTO_TCP : IPPROTO_UDP;
+				break;
+			}
 			return 1;
 		}
 		return 0;

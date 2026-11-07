@@ -733,16 +733,36 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 struct route_encap {
 	unsigned int types;	/* RTA_ENCAP_TYPEs of two bytes */
 	unsigned int kinds;	/* ... naming LWTUNNEL_ENCAP_MPLS to _MAX */
+	unsigned int protos;	/* an IPv4 or IPv6 route's one-byte RTA_IP_PROTOs */
+	unsigned int protos_taken;	/* ... rtm_getroute_parse_ip_proto() takes */
 };
+
+/* rtm_getroute_parse_ip_proto(): TCP, UDP and the family's ICMP. */
+static bool getroute_takes_proto(uint8_t proto, uint8_t family)
+{
+	switch (proto) {
+	case IPPROTO_TCP:
+	case IPPROTO_UDP:
+		return true;
+	case IPPROTO_ICMP:
+		return family == AF_INET;
+	case IPPROTO_ICMPV6:
+		return family == AF_INET6;
+	}
+	return false;
+}
 
 static void tally_route_encap(struct route_encap *t, const struct nlmsghdr *nlh)
 {
+	const struct rtmsg *rtm = NLMSG_DATA(nlh);
 	const unsigned char *p;
 	const struct nlattr *nla;
+	bool inet;
 	size_t len;
 
 	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct rtmsg)))
 		return;
+	inet = rtm->rtm_family == AF_INET || rtm->rtm_family == AF_INET6;
 	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct rtmsg));
 	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct rtmsg));
 	while ((nla = fit_attr(p, len)) != NULL) {
@@ -756,6 +776,14 @@ static void tally_route_encap(struct route_encap *t, const struct nlmsghdr *nlh)
 			t->types++;
 			t->kinds += type > LWTUNNEL_ENCAP_NONE &&
 				    type <= LWTUNNEL_ENCAP_MAX;
+		}
+		if (inet && (nla->nla_type & NLA_TYPE_MASK) == RTA_IP_PROTO &&
+		    nla->nla_len == NLA_HDRLEN + sizeof(uint8_t)) {
+			uint8_t proto = p[NLA_HDRLEN];
+
+			t->protos++;
+			t->protos_taken += getroute_takes_proto(proto,
+								rtm->rtm_family);
 		}
 		if (total >= len)
 			break;
@@ -772,11 +800,21 @@ static void tally_route_encap(struct route_encap *t, const struct nlmsghdr *nlh)
  * the one draw in LWTUNNEL_ENCAP_MAX + 1 that is NONE name an encap kind;
  * a random 16-bit type named one ten times in 65536.  Over the thousands
  * of types the bounds are many standard deviations out.
+ *
+ * inet_rtm_getroute() and inet6_rtm_getroute() refuse the request for an
+ * RTA_IP_PROTO but TCP, UDP and the family's ICMP.  The builder draws TCP or
+ * UDP five times in eight and the family's ICMP two, and a random byte the
+ * eighth, so about 0.88 of an IPv4 or IPv6 route's protocols are ones a
+ * GETROUTE would have taken (the other two types ignore the attribute, and
+ * share the draw so the rounds see enough of them); a random byte was
+ * three times in 256.
  */
 static void expect_route_encap(const struct route_encap *t)
 {
 	expect_fraction(t->kinds, t->types, 0.80, 0.97, "RTA_ENCAP_TYPE",
 			"rtnl: a route's RTA_ENCAP_TYPE names no encap kind lwtunnel_valid_encap_type() takes");
+	expect_fraction(t->protos_taken, t->protos, 0.80, 0.95, "RTA_IP_PROTO",
+			"rtnl: a route's RTA_IP_PROTO is mostly one rtm_getroute_parse_ip_proto() refuses");
 }
 
 /* ---------- The attributes of RTM_NEWACTION, DELACTION and GETACTION ---- */
