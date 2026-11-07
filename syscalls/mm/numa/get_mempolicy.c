@@ -43,20 +43,18 @@ static unsigned long get_mempolicy_flags[] = {
 
 #ifdef HAVE_SYS_GET_MEMPOLICY
 /*
- * Snapshot of all five get_mempolicy args, captured at sanitise time and
- * consumed by the post oracle.  Lives in rec->post_state, a slot the
- * syscall ABI does not expose, so a sibling syscall scribbling rec->aN
- * between the syscall returning and the post handler running cannot
- * smear the policy/nmask comparison or hand the re-call the wrong
- * (maxnode, addr, flags) tuple.
+ * Snapshot of the two get_mempolicy buffer args, and of the maxnode the
+ * nmask poison was sized by, captured at sanitise time and consumed by
+ * the post oracle.  Lives in rec->post_state, a slot the syscall ABI does
+ * not expose, so a sibling syscall scribbling rec->aN between the syscall
+ * returning and the post handler running cannot smear the policy/nmask
+ * comparison.
  */
 struct get_mempolicy_post_state {
 	unsigned long magic;
 	unsigned long policy;
 	unsigned long nmask;
 	unsigned long maxnode;
-	unsigned long addr;
-	unsigned long flags;
 	uint64_t poison_seed_policy;
 	uint64_t poison_seed_nmask;
 };
@@ -101,25 +99,24 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_GET_MEMPOLICY
 	/*
-	 * Snapshot all five args for the post oracle.  Without this the
-	 * post handler reads rec->aN at post-time, when a sibling syscall
-	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
-	 * tell a real-but-wrong heap address from the original user buffer
-	 * pointers, so the memcpy / re-call would touch a foreign
+	 * Snapshot both buffer args, and the maxnode the nmask poison
+	 * below is sized by, for the post oracle.  Without this the post
+	 * handler reads rec->aN at post-time, when a sibling syscall may
+	 * have scribbled the slots: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original user
+	 * buffer pointers, so the memcpy would touch a foreign
 	 * allocation.  post_state is private to the post handler.
 	 * post_state_install pairs the rec->post_state assign with the
-	 * ownership-table register so the observable window between the two
-	 * is closed; post_get_mempolicy() will then gate the snap through
-	 * post_state_claim_owned() and prove ownership before dereferencing
-	 * any field.
+	 * ownership-table register so the observable window between the
+	 * two is closed; post_get_mempolicy() will then gate the snap
+	 * through post_state_claim_owned() and prove ownership before
+	 * dereferencing any field.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = GET_MEMPOLICY_POST_STATE_MAGIC;
 	snap->policy  = rec->a1;
 	snap->nmask   = rec->a2;
 	snap->maxnode = rec->a3;
-	snap->addr    = rec->a4;
-	snap->flags   = rec->a5;
 	snap->poison_seed_policy = 0;
 	snap->poison_seed_nmask  = 0;
 
@@ -197,12 +194,14 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
  * the second writes the allowed-mems bitmap into nmask -- both are stable
  * for a same-task read at this sample rate.
  *
- * TOCTOU defeat: all five args are snapshotted at sanitise time into a
+ * TOCTOU defeat: the buffer args are snapshotted at sanitise time into a
  * heap struct in rec->post_state, so a sibling that scribbles rec->aN
- * between syscall return and post entry cannot smear the comparison nor
- * misdirect the re-call.  The re-call uses fresh stack buffers for the
- * policy/nmask payloads (NOT the original user buffers -- a sibling could
- * mutate them mid-syscall and forge a clean compare).
+ * between syscall return and post entry cannot smear the comparison, and
+ * the re-call replays the (maxnode, addr, flags) the kernel was handed,
+ * shadowed at dispatch: chain substitution or a RedQueen pin can rewrite
+ * any of them after the sanitiser.  The re-call uses fresh stack buffers
+ * for the policy/nmask payloads (NOT the original user buffers -- a
+ * sibling could mutate them mid-syscall and forge a clean compare).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
@@ -212,9 +211,9 @@ static void sanitise_get_mempolicy(struct syscallrecord *rec)
  *   - MPOL_F_ADDR: gated out (see above).
  *   - Sibling set_mempolicy(2) between the two reads: rc != 0 path or a
  *     legitimate divergence -- swallowed by the rc != 0 give-up.
- *   - Sanitiser drift on the maxnode bound: defensive cap above keeps
- *     the on-stack buffers bounded if a future sanitiser change widens
- *     the maxnode range past MAX_NMASK_BITS.
+ *   - A maxnode past MAX_NMASK_BITS, which a rewritten slot can carry:
+ *     the cap above keeps the on-stack buffers bounded and leaves the
+ *     call unjudged.
  */
 #ifdef HAVE_SYS_GET_MEMPOLICY
 static void post_get_mempolicy(struct syscallrecord *rec)
@@ -226,6 +225,7 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	unsigned long nmask_recall[MAX_NMASK_LONGS];
 	size_t nmask_words;
 	size_t nmask_bytes;
+	unsigned long maxnode, addr, flags;
 	long rc;
 
 	/*
@@ -285,14 +285,17 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (snap->policy == 0 || snap->nmask == 0)
 		goto out_free;
 
-	if (snap->flags & MPOL_F_ADDR)
+	maxnode = get_arg_snapshot(rec, 3);
+	addr = get_arg_snapshot(rec, 4);
+	flags = get_arg_snapshot(rec, 5);
+	if (flags & MPOL_F_ADDR)
 		goto out_free;
 
-	nmask_words = (snap->maxnode + 63) / 64;
+	if (maxnode > MAX_NMASK_BITS)
+		goto out_free;
+	nmask_words = (maxnode + 63) / 64;
 	if (nmask_words == 0)
 		nmask_words = 1;
-	if (nmask_words > MAX_NMASK_LONGS)
-		goto out_free;
 	nmask_bytes = nmask_words * sizeof(unsigned long);
 
 	if (!post_snapshot_or_skip(&policy_first,
@@ -307,14 +310,14 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	memset(&policy_recall, 0, sizeof(policy_recall));
 	memset(nmask_recall, 0, nmask_bytes);
 	rc = syscall(SYS_get_mempolicy, &policy_recall, nmask_recall,
-		     snap->maxnode, snap->addr, snap->flags);
+		     maxnode, addr, flags);
 	if (rc != 0)
 		goto out_free;
 
 	if (policy_first != policy_recall) {
 		output(0,
 		       "[oracle:get_mempolicy] policy %d vs %d (maxnode=%lu flags=0x%lx)\n",
-		       policy_first, policy_recall, snap->maxnode, snap->flags);
+		       policy_first, policy_recall, maxnode, flags);
 		__atomic_add_fetch(&shm->stats.oracle.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -322,7 +325,7 @@ static void post_get_mempolicy(struct syscallrecord *rec)
 	if (memcmp(nmask_first, nmask_recall, nmask_bytes) != 0) {
 		output(0,
 		       "[oracle:get_mempolicy] nmask diverged over %zu bytes (maxnode=%lu flags=0x%lx)\n",
-		       nmask_bytes, snap->maxnode, snap->flags);
+		       nmask_bytes, maxnode, flags);
 		__atomic_add_fetch(&shm->stats.oracle.get_mempolicy_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
 	}
@@ -347,4 +350,8 @@ struct syscallentry syscall_get_mempolicy = {
 #ifdef HAVE_SYS_GET_MEMPOLICY
 	.post = post_get_mempolicy,
 #endif
+	/* maxnode (a3), addr (a4) and flags (a5): the re-call replays the
+	 * call the kernel answered, which chain substitution or a RedQueen
+	 * pin may have rewritten after the sanitiser built its own. */
+	.arg_snapshot_mask = (1u << 2) | (1u << 3) | (1u << 4),
 };

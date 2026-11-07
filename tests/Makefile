@@ -695,10 +695,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/ipc/sysv/shmat.c \
 		   $(TOP)/syscalls/ipc/sysv/ipc-common.c
 
 # syscalls/mm/numa/get_mempolicy.c brings get_mempolicy, whose sanitiser
-# arg_coupling_test.c runs over the fake pool mapping the mm tests use,
-# and syscalls/socket/send.c send and sendto, whose shared sanitiser it
-# runs the same way, with the sendmsg builders an ASAN build keeps linked
-# faked there.
+# arg_coupling_test.c runs over the fake pool mapping the mm tests use
+# and whose re-call selector_recall_test.c runs against a fake, and
+# syscalls/socket/send.c send and sendto, whose shared sanitiser
+# arg_coupling_test.c runs the same way, with the sendmsg builders an
+# ASAN build keeps linked faked there.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 		   $(TOP)/syscalls/socket/send.c
 

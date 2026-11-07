@@ -4,11 +4,12 @@
  * handler as shipped, handed the answer the kernel gave for the selector
  * it was handed, and counts the anomalies its sampled re-call reports.
  * Chain substitution or a RedQueen pin can change the selector after the
- * sanitiser drew it, and the re-call has to ask about the one the kernel
- * answered.
+ * sanitiser drew it, or the length of the answer, and the re-call has to
+ * ask about the one the kernel answered.
  */
 
 #include <errno.h>
+#include <linux/mempolicy.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -372,6 +373,92 @@ static void lsm_cases(void)
 }
 #endif
 
+#ifdef __NR_get_mempolicy
+/* A fake get_mempolicy() for a task bound to node 1 of a two-node box,
+ * writing as much of the mask as copy_nodes_to_user() does: a task's
+ * policy depends on the NUMA setup a kernel runs on.  An address, and a
+ * flag other than MPOL_F_MEMS_ALLOWED, it refuses. */
+#define FAKE_BOUND_NODES	0x2UL
+#define FAKE_ALLOWED_NODES	0x3UL
+
+static bool fake_get_mempolicy(long number, const unsigned long a[6], long *ret)
+{
+	unsigned long nodes = FAKE_BOUND_NODES;
+	int mode = MPOL_BIND;
+
+	if (number != __NR_get_mempolicy)
+		return false;
+	*ret = -EINVAL;
+	if (a[2] < 2 || a[3] != 0 || (a[4] & ~(unsigned long) MPOL_F_MEMS_ALLOWED))
+		return true;
+	if (a[4] == MPOL_F_MEMS_ALLOWED) {
+		mode = MPOL_DEFAULT;
+		nodes = FAKE_ALLOWED_NODES;
+	}
+	*(int *) a[0] = mode;
+	/* ALIGN(maxnode - 1, 64) / 8 bytes, the nodes past the box's two
+	 * cleared. */
+	memset((void *) a[1], 0, (a[2] + 62) / 64 * sizeof(unsigned long));
+	memcpy((void *) a[1], &nodes, sizeof(nodes));
+	*ret = 0;
+	return true;
+}
+
+/* The slots of a get_mempolicy() call the cases vary. */
+struct mempolicy_call {
+	unsigned long maxnode;
+	unsigned long flags;
+};
+
+/* get_mempolicy calls the sanitiser built as @built, which the kernel ran
+ * as @ran, each answering as the fake does for @answer; the anomalies the
+ * re-call reports. */
+static unsigned long mempolicy_anomalies(const struct mempolicy_call *built,
+					 const struct mempolicy_call *ran,
+					 const struct mempolicy_call *answer)
+{
+	unsigned long before = shm->stats.oracle.get_mempolicy_oracle_anomalies;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) get_writable_address(sizeof(int));
+		rec.a2 = (unsigned long) get_writable_address(page_size);
+		rec.a3 = built->maxnode;
+		rec.a5 = built->flags;
+		syscall_get_mempolicy.sanitise(&rec);
+
+		if (syscall(__NR_get_mempolicy, rec.a1, rec.a2, answer->maxnode,
+			    0UL, answer->flags) != 0)
+			BUG("selector recall: get_mempolicy's fake refused an answer");
+		rec.a3 = ran->maxnode;
+		rec.a5 = ran->flags;
+		shadow_slots(&syscall_get_mempolicy);
+		rec.retval = 0;
+		syscall_get_mempolicy.post(&rec);
+	}
+	return shm->stats.oracle.get_mempolicy_oracle_anomalies - before;
+}
+
+/* The task's own nodes and the ones it may use, and a mask one word
+ * shorter, which leaves the sanitiser's poison in the word after it. */
+static void mempolicy_cases(void)
+{
+	static const struct mempolicy_call bound = { 64, 0 };
+	static const struct mempolicy_call bound_wide = { 128, 0 };
+	static const struct mempolicy_call allowed = { 64, MPOL_F_MEMS_ALLOWED };
+
+	fake_syscall = fake_get_mempolicy;
+	check("get_mempolicy: a call rewritten onto another flag was re-called on the first",
+	      mempolicy_anomalies(&bound, &allowed, &allowed) == 0);
+	check("get_mempolicy: a rewritten call answering the first flag's nodes was not reported",
+	      mempolicy_anomalies(&allowed, &bound, &allowed) > 0);
+	check("get_mempolicy: a call rewritten onto a shorter mask was compared over the longer",
+	      mempolicy_anomalies(&bound_wide, &bound, &bound) == 0);
+	fake_syscall = NULL;
+}
+#endif
+
 void selector_recall_self_check(void);
 void selector_recall_self_check(void)
 {
@@ -395,6 +482,9 @@ void selector_recall_self_check(void)
 #endif
 #ifdef SYS_lsm_get_self_attr
 	lsm_cases();
+#endif
+#ifdef __NR_get_mempolicy
+	mempolicy_cases();
 #endif
 
 	if (failed != 0)
