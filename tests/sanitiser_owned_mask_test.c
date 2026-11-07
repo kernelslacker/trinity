@@ -211,10 +211,16 @@ static struct syscallentry *const owner_entry[] = {
 	&syscall_futex_wake, &syscall_quotactl, &syscall_nice,
 	&syscall_personality, &syscall_mseal, &syscall_sched_getaffinity,
 	&syscall_sysfs,
+#ifdef X86
+	&syscall_modify_ldt,
+#endif
 };
 static const uint8_t owner_slots[] = {
 	1u << 0, 1u << 0, 0x07, 0x0f, 0x0a, 1u << 0, 1u << 0, 1u << 0, 0x07,
 	1u << 2, 1u << 2,
+#ifdef X86
+	1u << 1,
+#endif
 };
 
 #define OWNER_RUNS	2048
@@ -265,6 +271,10 @@ static void real_entries_own_what_they_write(void)
 			if (entry->cleanup != NULL)
 				entry->cleanup(&rec);
 			free((void *) rec.post_state);
+			/* This binary's alloc-track holds nothing, so the
+			 * drain would leave what a sanitiser handed it. */
+			while (rec.owned_count > 0)
+				free(rec.owned[--rec.owned_count]);
 		}
 	}
 

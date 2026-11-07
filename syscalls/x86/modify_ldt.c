@@ -94,6 +94,9 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 
 		rec->a2 = (unsigned long) desc;
 		rec->a3 = sizeof(*desc);
+		/* Into the pool with its fields: the blanket scrub of ptr
+		 * moves a heap pointer there without them. */
+		avoid_shared_buffer_inout(&rec->a2, sizeof(*desc));
 		/* The record's drain frees it after the call, as it does
 		 * the read func's buffer. */
 		rec_own(rec, desc);
@@ -162,10 +165,13 @@ static unsigned long modify_ldt_funcs[] = {
 struct syscallentry syscall_modify_ldt = {
 	.name = "modify_ldt",
 	.num_args = 3,
-	.argtype = { [0] = ARG_OP },
+	.argtype = { [0] = ARG_OP, [1] = ARG_ADDRESS },
 	.argname = { [0] = "func", [1] = "ptr", [2] = "bytecount" },
 	.arg_params[0].list = ARGLIST(modify_ldt_funcs),
 	.sanitise = sanitise_modify_ldt,
+	/* sanitise_modify_ldt() points ptr at the func's buffer, or NULL,
+	 * on every path. */
+	.sanitiser_owned_mask = (1u << 1),
 	.post = post_modify_ldt,
 	.rettype = RET_BORING,
 	.group = GROUP_PROCESS,

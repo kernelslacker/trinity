@@ -14,6 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 
+#include "arch.h"			/* X86 */
 #include "cmp_hints/redqueen.h"
 #include "debug.h"			/* BUG */
 #include "fd.h"				/* fd_is_protected */
@@ -424,28 +425,40 @@ static void substitution_withdraws_rettype(void)
 		BUG("rettype: substitution never rewrote, or always rewrote, a call");
 }
 
-/* sched_getaffinity's mask and sysfs's buf are buffers their sanitisers
- * build in a3, a slot the kernel writes through: chain substitution may
- * not put the previous call's return there, a small integer the kernel
- * faults on or a fresh mapping it would write into.  The mask
- * copy_syscall_table() stamps is computed here, on the entry itself. */
+/* sched_getaffinity's mask and sysfs's buf, in a3, and modify_ldt's ptr,
+ * in a2, are buffers their sanitisers build in a slot the kernel writes
+ * through: chain substitution may not put the previous call's return
+ * there, a small integer the kernel faults on or a fresh mapping it would
+ * write into.  The mask copy_syscall_table() stamps is computed here, on
+ * the entry itself. */
 static void sanitiser_buffers_take_no_substitute(void)
 {
-	struct syscallentry *const owners[] = {
-		&syscall_sched_getaffinity, &syscall_sysfs,
+	static const struct {
+		struct syscallentry *entry;
+		unsigned int slot;		/* rec->a<slot> */
+	} owners[] = {
+		{ &syscall_sched_getaffinity, 3 },
+		{ &syscall_sysfs, 3 },
+#ifdef X86
+		{ &syscall_modify_ldt, 2 },
+#endif
+	};
+	unsigned long *const slot[6] = {
+		&rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6,
 	};
 	unsigned int e, i;
 
 	for (e = 0; e < ARRAY_SIZE(owners); e++) {
-		struct syscallentry *entry = owners[e];
+		struct syscallentry *entry = owners[e].entry;
+		unsigned long *buf = slot[owners[e].slot - 1];
 		uint8_t saved = entry->numeric_substitute_mask;
 
 		entry->numeric_substitute_mask = compute_numeric_substitute_mask(entry);
 		for (i = 0; i < 4000; i++) {
 			memset(&rec, 0, sizeof(rec));
-			rec.a3 = 0x1111;
+			*buf = 0x1111;
 			apply_chain_substitution(&rec, entry, true, INNOCENT_FD);
-			if (rec.a3 != 0x1111) {
+			if (*buf != 0x1111) {
 				fprintf(stderr, "substitution: %s\n", entry->name);
 				BUG("substitution: a number was written over a buffer a sanitiser builds");
 			}
