@@ -368,14 +368,14 @@ skip_si:
 				/*
 				 * Migrate the iov to the writable-pool; see
 				 * recv.c::sanitise_recvmsg for the structural
-				 * rationale.  Only slot 0 is populated -- the
-				 * trailing pool bytes are zero-filled by
-				 * get_writable_address() so an iovlen scribble
-				 * walks NULL / 0 pairs the kernel iov_iter
-				 * advances over as no-ops.  Fall back to the
-				 * alloc_iovec arm when the pool is exhausted.
+				 * rationale.  The one entry msg_iovlen names
+				 * is all that is drawn: the pool never clears
+				 * a slot, so bytes past it hold an earlier
+				 * call's leftovers, not NULL / 0 pairs.  Fall
+				 * back to the alloc_iovec arm when the pool is
+				 * exhausted.
 				 */
-				iov = get_writable_address(UIO_MAXIOV * sizeof(struct iovec));
+				iov = get_writable_address(sizeof(struct iovec));
 				if (iov == NULL)
 					goto skip_gen_msg;
 				iov->iov_base = kbuf;
