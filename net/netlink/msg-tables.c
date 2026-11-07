@@ -222,10 +222,6 @@ const unsigned short ifa_attrs[] = {
 };
 const size_t ifa_attrs_n = ARRAY_SIZE(ifa_attrs);
 
-/* Newer RTA_* attrs may be missing from older system headers. */
-#ifndef RTA_FLOWLABEL
-#define RTA_FLOWLABEL			31
-#endif
 /*
  * RTA_DEL_REASON (7.3) carries a u32 RT_DEL_REASON_* saying why the
  * kernel deleted a route.  Kernel-to-userspace on the notification

@@ -591,10 +591,10 @@ fi
 
 #############################################################################################
 # Enum members the include/kernel/ shim headers fall back on, each defined
-# there under #ifndef HAVE_<SYMBOL>.  RTA_DEL_REASON and NHA_DST_PORT were
-# added in 7.3.
+# there under #ifndef HAVE_<SYMBOL>.  RTA_FLOWLABEL was added in 6.14, and
+# RTA_DEL_REASON and NHA_DST_PORT in 7.3.
 #
-check_enum_member linux/rtnetlink.h RTA_DEL_REASON
+check_enum_member linux/rtnetlink.h RTA_FLOWLABEL RTA_DEL_REASON
 check_enum_member linux/nexthop.h NHA_DST_PORT
 
 # The address attribute that names a dump's target netns, which the address,

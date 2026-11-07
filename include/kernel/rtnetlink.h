@@ -11,6 +11,10 @@
  */
 #include <linux/rtnetlink.h>
 
+#ifndef HAVE_RTA_FLOWLABEL
+#define RTA_FLOWLABEL			31
+#endif
+
 #ifndef HAVE_RTA_DEL_REASON
 #define RTA_DEL_REASON			32
 #endif
