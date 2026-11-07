@@ -28,6 +28,7 @@
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
 #include "kernel/if_link.h"	/* the IFLA_* limits and IFLA_PACING_OFFLOAD */
+#include "kernel/nexthop.h"	/* NHA_DST_PORT */
 #include "kernel/rtnetlink.h"	/* RTA_FLOWLABEL */
 #include "socketinfo.h"		/* struct socket_triplet */
 #include "utils-macros.h"	/* ARRAY_SIZE */
@@ -534,6 +535,110 @@ static void expect_nexthop_flags(const struct nexthop_flags *t)
 {
 	expect_fraction(t->empty, t->flags, 0.66, 0.80, "nexthop flags",
 			"rtnl: NHA_BLACKHOLE, NHA_FDB and NHA_GROUPS mostly carry the payload an NLA_FLAG refuses");
+}
+
+/* ---------- The attribute types of the nexthop ops ---------------------- */
+
+enum { NH_NEW, NH_DEL, NH_GET, NH_DUMP, NH_GET_BUCKET, NH_DUMP_BUCKET, NH_OPS };
+
+/* The NHA_* types of each op's policy in net/ipv4/nexthop.c. */
+static const unsigned short nh_new_policy[] = {
+	NHA_ID, NHA_GROUP, NHA_GROUP_TYPE, NHA_BLACKHOLE, NHA_OIF,
+	NHA_GATEWAY, NHA_ENCAP_TYPE, NHA_ENCAP, NHA_FDB, NHA_DST_PORT,
+	NHA_RES_GROUP, NHA_HW_STATS_ENABLE,
+};
+static const unsigned short nh_del_policy[] = { NHA_ID };
+static const unsigned short nh_get_policy[] = { NHA_ID, NHA_OP_FLAGS };
+static const unsigned short nh_dump_policy[] = {
+	NHA_OIF, NHA_GROUPS, NHA_MASTER, NHA_FDB, NHA_OP_FLAGS,
+};
+static const unsigned short nh_get_bucket_policy[] = { NHA_ID, NHA_RES_BUCKET };
+static const unsigned short nh_dump_bucket_policy[] = {
+	NHA_ID, NHA_OIF, NHA_MASTER, NHA_RES_BUCKET,
+};
+
+static const struct {
+	const unsigned short *types;
+	size_t n;
+	bool needs_id;		/* -EINVAL without NHA_ID */
+	const char *name;
+} nh_policies[NH_OPS] = {
+	[NH_NEW]	= { nh_new_policy, ARRAY_SIZE(nh_new_policy), false,
+			    "RTM_NEWNEXTHOP" },
+	[NH_DEL]	= { nh_del_policy, ARRAY_SIZE(nh_del_policy), true,
+			    "RTM_DELNEXTHOP" },
+	[NH_GET]	= { nh_get_policy, ARRAY_SIZE(nh_get_policy), true,
+			    "RTM_GETNEXTHOP doits" },
+	[NH_DUMP]	= { nh_dump_policy, ARRAY_SIZE(nh_dump_policy), false,
+			    "RTM_GETNEXTHOP dumps" },
+	[NH_GET_BUCKET]	= { nh_get_bucket_policy, ARRAY_SIZE(nh_get_bucket_policy),
+			    true, "RTM_GETNEXTHOPBUCKET doits" },
+	[NH_DUMP_BUCKET] = { nh_dump_bucket_policy,
+			     ARRAY_SIZE(nh_dump_bucket_policy), false,
+			     "RTM_GETNEXTHOPBUCKET dumps" },
+};
+
+struct nexthop_attrs {
+	unsigned int msgs;
+	unsigned int taken;	/* types all the op's, with an NHA_ID it needs */
+};
+
+static void tally_nexthop_attrs(struct nexthop_attrs *t, const struct nlmsghdr *nlh)
+{
+	bool dump = nlh->nlmsg_flags & NLM_F_DUMP;
+	unsigned int attrs = 0, in = 0, ids = 0;
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len, i;
+	int op;
+
+	switch (nlh->nlmsg_type) {
+	case RTM_NEWNEXTHOP:	op = NH_NEW; break;
+	case RTM_DELNEXTHOP:	op = NH_DEL; break;
+	case RTM_GETNEXTHOP:	op = dump ? NH_DUMP : NH_GET; break;
+	default:		op = dump ? NH_DUMP_BUCKET : NH_GET_BUCKET; break;
+	}
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct nhmsg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct nhmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nhmsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		attrs++;
+		for (i = 0; i < nh_policies[op].n; i++)
+			in += type == nh_policies[op].types[i];
+		ids += type == NHA_ID;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	t[op].msgs++;
+	t[op].taken += in == attrs && (!nh_policies[op].needs_id || ids);
+}
+
+/*
+ * Every nexthop op parses strictly against a policy of its own, and an
+ * attribute outside it refuses the request; a delete, a GET doit and a
+ * bucket GET doit answer -EINVAL without NHA_ID too.  The builder draws
+ * each op's types from its policy seven times in eight, and the attribute
+ * path still makes one in eight of them random, so about 0.62 of the adds,
+ * 0.38 of the deletes, 0.30 of the doits and 0.53 of the dumps carry only
+ * types their op takes; drawing from one table without NHA_ID left 0.29,
+ * none, none and 0.17 or less.
+ */
+static void expect_nexthop_attrs(const struct nexthop_attrs *t)
+{
+	static const double lo[NH_OPS] = { 0.55, 0.30, 0.24, 0.46, 0.24, 0.46 };
+	static const double hi[NH_OPS] = { 0.68, 0.45, 0.37, 0.61, 0.37, 0.61 };
+	int op;
+
+	for (op = 0; op < NH_OPS; op++)
+		expect_fraction(t[op].taken, t[op].msgs, lo[op], hi[op],
+				nh_policies[op].name,
+				"rtnl: a nexthop op's attributes are mostly not the types its policy holds");
 }
 
 /* ---------- The fib_rule_hdr of RTM_NEWRULE, RTM_DELRULE and RTM_GETRULE - */
@@ -1674,6 +1779,7 @@ struct tallies {
 	struct getneigh_attrs getneigh_attrs;
 	struct nexthop_header newnexthop, nexthop;
 	struct nexthop_flags nexthop_flags;
+	struct nexthop_attrs nexthop_attrs[NH_OPS];
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
@@ -1773,12 +1879,14 @@ static void run_rounds(struct tallies *t)
 		case RTM_NEWNEXTHOP:
 			tally_nexthop_header(&t->newnexthop, nlh, true);
 			tally_nexthop_flags(&t->nexthop_flags, nlh);
+			tally_nexthop_attrs(t->nexthop_attrs, nlh);
 			break;
 		case RTM_DELNEXTHOP:
 		case RTM_GETNEXTHOP:
 		case RTM_GETNEXTHOPBUCKET:
 			tally_nexthop_header(&t->nexthop, nlh, false);
 			tally_nexthop_flags(&t->nexthop_flags, nlh);
+			tally_nexthop_attrs(t->nexthop_attrs, nlh);
 			break;
 		case RTM_NEWTUNNEL:
 		case RTM_DELTUNNEL:
@@ -1836,6 +1944,7 @@ void rtnl_gen_self_check(void)
 	expect_getneigh_attrs(&t.getneigh_attrs);
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_nexthop_flags(&t.nexthop_flags);
+	expect_nexthop_attrs(t.nexthop_attrs);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);

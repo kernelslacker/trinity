@@ -351,6 +351,23 @@ static const unsigned short nda_fdb_get_attrs[] = {
 };
 static const unsigned short nda_dump_attrs[] = { NDA_IFINDEX, NDA_MASTER };
 
+/* The NHA_* types of each nexthop op's policy in net/ipv4/nexthop.c.  Every
+ * op parses strictly, so an attribute outside its policy refuses the
+ * request, and a delete takes NHA_ID alone. */
+static const unsigned short nha_new_attrs[] = {
+	NHA_ID, NHA_GROUP, NHA_GROUP_TYPE, NHA_BLACKHOLE, NHA_OIF,
+	NHA_GATEWAY, NHA_ENCAP_TYPE, NHA_ENCAP, NHA_FDB, NHA_DST_PORT,
+	NHA_RES_GROUP, NHA_HW_STATS_ENABLE,
+};
+static const unsigned short nha_get_attrs[] = { NHA_ID, NHA_OP_FLAGS };
+static const unsigned short nha_dump_attrs[] = {
+	NHA_OIF, NHA_GROUPS, NHA_MASTER, NHA_FDB, NHA_OP_FLAGS,
+};
+static const unsigned short nha_bucket_get_attrs[] = { NHA_ID, NHA_RES_BUCKET };
+static const unsigned short nha_bucket_dump_attrs[] = {
+	NHA_ID, NHA_OIF, NHA_MASTER, NHA_RES_BUCKET,
+};
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh)
@@ -404,7 +421,26 @@ unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh)
 	case 23: return RAND_ARRAY(linkprop_attrs);
 	case 24: return bridge_vlandb_attrs[rnd_modulo_u32(bridge_vlandb_attrs_n)];
 	case 22:
-	case 25: return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
+	case 25:
+		/* A nexthop op draws from its own policy all but one time in
+		 * eight, a GET by its dump bit. */
+		if (ONE_IN(8))
+			return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
+		switch (nlmsg_type) {
+		case RTM_NEWNEXTHOP:
+			return RAND_ARRAY(nha_new_attrs);
+		case RTM_DELNEXTHOP:
+			return NHA_ID;
+		case RTM_GETNEXTHOP:
+			return nlh->nlmsg_flags & NLM_F_DUMP ?
+			       RAND_ARRAY(nha_dump_attrs) : RAND_ARRAY(nha_get_attrs);
+		case RTM_GETNEXTHOPBUCKET:
+			return nlh->nlmsg_flags & NLM_F_DUMP ?
+			       RAND_ARRAY(nha_bucket_dump_attrs) :
+			       RAND_ARRAY(nha_bucket_get_attrs);
+		default:
+			return nha_attrs[rnd_modulo_u32(nha_attrs_n)];
+		}
 	case 26: return VXLAN_VNIFILTER_ENTRY;
 	default: return 0;
 	}
