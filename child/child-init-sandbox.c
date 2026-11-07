@@ -197,8 +197,8 @@ static void maybe_enter_userns_admin_lane(int childno)
 					  childno);
 		} else {
 			outputerr("child %d: userns-admin lane: "
-				  "unshare(CLONE_NEWUSER|CLONE_NEWNET) "
-				  "failed (errno=%d); skipping\n",
+				  "unshare(CLONE_NEWUSER|CLONE_NEWNET|"
+				  "CLONE_NEWNS) failed (errno=%d); skipping\n",
 				  childno, errno);
 		}
 		return;
@@ -526,21 +526,21 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	pidns_note_fork_target();
 
 	/*
-	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt,
-	 * net} as the cap-drop oracle's "init ns" anchors.  Done here, co-
+	 * Stamp the per-child (st_dev, st_ino) of /proc/self/ns/{user,mnt}
+	 * as the cap-drop oracle's "init ns" anchors.  Done here, co-
 	 * located with the capset()-to-empty drop, so the anchors capture
 	 * the namespace identity the child was sandboxed in -- after the
 	 * per-child unshare() dance above and before the userns-admin lane
 	 * below or any alt-op that may legitimately unshare again.  The
-	 * oracle's capget/mount/net_admin probes consult these anchors to
-	 * skip ticks during which the child has transitioned into a
-	 * bootstrapped userns/mntns/netns (the lane, statmount-idmap-
-	 * overflow's in-place unshare, the transient-fork capdrop helper)
-	 * and would otherwise false-fire; capget(self), for one, reads the
-	 * full set a new userns grants.
-	 * The bpf(KPROBE) probe stays unconditional -- its cap check pins to
-	 * the init userns and so remains correct across legitimate ns
-	 * transitions.
+	 * oracle's capget/mount probes consult these anchors to skip ticks
+	 * during which the child has transitioned into a bootstrapped
+	 * userns/mntns (the lane, statmount-idmap-overflow's in-place
+	 * unshare, the transient-fork capdrop helper) and would otherwise
+	 * false-fire; capget(self), for one, reads the full set a new
+	 * userns grants.
+	 * The bpf(KPROBE) and net_admin probes stay unconditional -- their
+	 * cap checks pin to the init userns and so remain correct across
+	 * legitimate ns transitions.
 	 */
 	capdrop_oracle_capture_init_ns_anchors();
 
