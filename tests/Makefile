@@ -1119,6 +1119,10 @@ FAKE_SRCS	+= lsm_list_modules_test.c
 # the recall test, with its id-buffer draw refused.
 FAKE_SRCS	+= listmount_test.c
 
+# struct_fill_fd_test.c runs struct_fill_passes() on an FT_FD field fed
+# by fake_stubs.c's fd pool, against the real protected-fd registry.
+FAKE_SRCS	+= struct_fill_fd_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

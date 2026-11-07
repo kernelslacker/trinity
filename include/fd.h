@@ -284,8 +284,8 @@ int lowest_protected_fd_in_range(unsigned int lo, unsigned int hi);
 /*
  * Belt-and-suspenders gate consulted by the size-changing fd-arg
  * sanitisers (ftruncate / ftruncate64, fallocate, lseek / llseek,
- * write / writev / pwrite64 / pwritev / pwritev2): if *slot names a
- * protected fd, reroll via get_random_fd() up to FAILED_FD_REROLL_LIMIT
+ * write / writev / pwrite64 / pwritev / pwritev2) and by struct_fill's
+ * FT_FD fields: if *slot names a protected fd, reroll via get_random_fd() up to FAILED_FD_REROLL_LIMIT
  * times, then stamp the slot with (unsigned long)-1 on exhaustion so
  * the kernel returns EBADF.  Defends the stderr capture memfd against
  * a fuzz-induced grow to multi-GB sparse size, which the SIGABRT-

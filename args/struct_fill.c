@@ -8,7 +8,7 @@
 #include "bpf.h"
 #endif
 #include "deferred-free.h"		// zmalloc_tracked
-#include "fd.h"				// get_random_fd
+#include "fd.h"				// get_random_fd, reroll_protected_fd_arg
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -269,15 +269,17 @@ static void fill_scalar_pass(unsigned char *buf, unsigned int size,
 			 * a generic fd value and the kernel does its own
 			 * subtype check.  Sub-int-width FT_FD falls through
 			 * to the raw splat since an fd in <4 bytes cannot
-			 * round-trip the kernel-side -1 sentinel.
+			 * round-trip the kernel-side -1 sentinel.  A protected
+			 * fd is drawn again, as the scalar fd slots do.
 			 */
-			int fd;
+			unsigned long fd;
 
 			if (f->size != sizeof(int)) {
 				fill_field_raw(buf, f);
 				break;
 			}
-			fd = get_random_fd();
+			fd = (unsigned long) get_random_fd();
+			reroll_protected_fd_arg(&fd);
 			write_field_uint(buf, f, (uint64_t)(uint32_t) fd);
 			break;
 		}
