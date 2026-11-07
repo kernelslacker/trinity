@@ -85,7 +85,7 @@ void activate_syscall_in_table(unsigned int calln, unsigned int *nr_active,
 		//Sanity check
 		if ((*nr_active + 1) > MAX_NR_SYSCALL) {
 			output(0, "[tables] MAX_NR_SYSCALL needs to be increased. More syscalls than active table can fit.\n");
-			exit(EXIT_FAILURE);
+			trinity_exit(EXIT_FAILURE);
 		}
 
 		//save the call no
