@@ -515,6 +515,7 @@ FAKE_SRCS	:= \
 	readlink_recall_test.c \
 	name_to_handle_at_test.c \
 	results_test.c \
+	frontier_window_test.c \
 	listmount_recall_test.c \
 	sockname_recall_test.c \
 	pid_recall_test.c \
@@ -654,6 +655,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/path/name_to_handle_at.c
 # dispatch/results.c brings the fd and length scoreboards results_test.c
 # has handle_success() and handle_failure() score.
 PARENT_SRCS	+= $(TOP)/dispatch/results.c
+
+# strategy/strategy-frontier-window.c brings frontier_window_advance(),
+# whose rotations frontier_window_test.c runs over one syscall's ring.
+PARENT_SRCS	+= $(TOP)/strategy/strategy-frontier-window.c
 
 # syscalls/socket/getsockname.c and getpeername.c bring getsockname and
 # getpeername, whose re-calls sockname_recall_test.c runs on sockets of

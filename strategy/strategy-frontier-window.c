@@ -131,11 +131,41 @@ void frontier_window_advance(void)
 			uint32_t old_slot;
 			uint32_t old_cached;
 			uint32_t new_sum;
-			bool decayed_this_ctx = false;
+			uint64_t halved = 0;
+			uint64_t take;
 
 			old_slot = __atomic_exchange_n(
 				&shm->frontier_history[nr][ctx][next],
 				0U, __ATOMIC_RELAXED);
+
+			/* F4(X) halves the ring itself, not just the cached
+			 * sum: the sum is the ring's, and a sum halved alone
+			 * has later rotations subtract slots it no longer
+			 * holds, clamping it to zero and wiping fresh edges.
+			 * Each live slot gives up half of what it held when
+			 * read, and the sum takes the same total off below.
+			 * A producer's add to the current slot meanwhile
+			 * stays on both. */
+			if (cool_this_nr) {
+				unsigned int s;
+
+				for (s = 0; s < FRONTIER_DECAY_WINDOWS; s++) {
+					uint32_t v;
+
+					if (s == next)
+						continue;
+					v = __atomic_load_n(
+						&shm->frontier_history[nr][ctx][s],
+						__ATOMIC_RELAXED);
+					if (v == 0)
+						continue;
+					__atomic_fetch_sub(
+						&shm->frontier_history[nr][ctx][s],
+						v - v / 2, __ATOMIC_RELAXED);
+					halved += v - v / 2;
+				}
+			}
+			take = old_slot + halved;
 
 			/* CAS loop so a concurrent producer's fetch_add
 			 * against the cached counter cannot be lost and
@@ -143,51 +173,24 @@ void frontier_window_advance(void)
 			 * be racing this nr at this point (frontier_slot
 			 * still names the previous slot) but the loop costs
 			 * at most a handful of retries and removes the
-			 * underflow case unconditionally.
-			 *
-			 * F4(X) halving is folded into the SAME CAS retry so
-			 * a racing producer cannot land an add between our
-			 * subtract and our decay store.  The halving is a
-			 * right-shift on a uint32_t that is by construction
-			 * <= old_cached (clamped above), so it never wraps --
-			 * no extra underflow guard required, and the existing
-			 * if (old_cached < old_slot) clamp metric stays
-			 * scoped to the trailing-window subtract case it has
-			 * always counted.  decayed_this_ctx fires only when
-			 * the halving actually reduced a non-zero sum, so a
-			 * cool-marked nr whose window already aged to zero
-			 * through the trailing-K subtraction does NOT inflate
-			 * the did-decay observability counter. */
+			 * underflow case unconditionally. */
 			old_cached = __atomic_load_n(
 				&shm->frontier_recent_count_cached[nr][ctx],
 				__ATOMIC_RELAXED);
-			for (;;) {
-				uint32_t after_decay;
-
-				if (old_cached >= old_slot)
-					new_sum = old_cached - old_slot;
+			do {
+				if (old_cached >= take)
+					new_sum = old_cached - (uint32_t) take;
 				else
 					new_sum = 0;
-				if (cool_this_nr && new_sum > 0) {
-					after_decay = new_sum >> 1;
-					decayed_this_ctx = true;
-				} else {
-					after_decay = new_sum;
-					decayed_this_ctx = false;
-				}
-				if (__atomic_compare_exchange_n(
-					    &shm->frontier_recent_count_cached[nr][ctx],
-					    &old_cached, after_decay, false,
-					    __ATOMIC_RELAXED, __ATOMIC_RELAXED)) {
-					new_sum = after_decay;
-					break;
-				}
-			}
-			if (old_cached < old_slot)
+			} while (!__atomic_compare_exchange_n(
+					 &shm->frontier_recent_count_cached[nr][ctx],
+					 &old_cached, new_sum, false,
+					 __ATOMIC_RELAXED, __ATOMIC_RELAXED));
+			if (old_cached < take)
 				__atomic_add_fetch(
 					&shm->stats.frontier.core.underflow_prevented,
 					1UL, __ATOMIC_RELAXED);
-			if (decayed_this_ctx)
+			if (halved != 0)
 				__atomic_add_fetch(
 					&shm->stats.frontier.cooldown.live_cooldown_decays,
 					1UL, __ATOMIC_RELAXED);
