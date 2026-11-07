@@ -387,54 +387,12 @@ static int init_bpf_prog_fds(void)
 
 bool get_rand_bpf_prog(struct bpfprogobj *prog)
 {
-	struct objhead *local;
+	struct object *obj = pick_bpf_object(OBJ_FD_BPF_PROG);
 
-	/* See pick_bpf_object() for why we coin-flip OBJ_LOCAL first.
-	 * OBJ_LOCAL is per-child and unaffected by the lockless-reader
-	 * UAF window that the version-validated object-slot read guards
-	 * against (cf. get_rand_socketinfo in fds/sockets.c), so only the
-	 * OBJ_GLOBAL fallback below gets the slot-version validation
-	 * wireup. */
-	local = get_objhead(OBJ_LOCAL, OBJ_FD_BPF_PROG);
-	if (local != NULL && local->num_entries > 0 && RAND_BOOL()) {
-		struct object *obj = get_random_object(OBJ_FD_BPF_PROG,
-						       OBJ_LOCAL);
-		if (objpool_check(obj, OBJ_FD_BPF_PROG)) {
-			*prog = obj->bpfprogobj;
-			return true;
-		}
-	}
-
-	if (objects_empty(OBJ_FD_BPF_PROG) == true)
+	if (obj == NULL)
 		return false;
-
-	/*
-	 * Versioned slot pick + objpool_check() before the
-	 * obj->bpfprogobj deref.  A version-validated object-slot read
-	 * guards the lockless reader against a recycled object
-	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
-	 * lockless-reader UAF window: between the lockless slot pick and the
-	 * consumer's read of the bpf prog fd handed to BPF_PROG_RUN /
-	 * BPF_PROG_TEST_RUN / BPF_LINK_CREATE, the parent can destroy the
-	 * obj; release_obj() zeroes the chunk and routes it through
-	 * deferred-free, so the stale slot pointer can read a zeroed or
-	 * recycled chunk.
-	 */
-	for (int i = 0; i < 1000; i++) {
-		struct object *obj;
-
-		obj = get_random_object(OBJ_FD_BPF_PROG, OBJ_GLOBAL);
-		if (!objpool_check(obj, OBJ_FD_BPF_PROG))
-			continue;
-
-		*prog = obj->bpfprogobj;
-		if (prog->fd < 0)
-			continue;
-
-		return true;
-	}
-
-	return false;
+	*prog = obj->bpfprogobj;
+	return true;
 }
 
 int get_rand_bpf_prog_fd(void)
