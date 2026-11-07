@@ -354,11 +354,11 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 	 * asb_copy_active first and longjmp's back here when the fault
 	 * fires inside the copy window.
 	 *
-	 * The no-copy fall-through is safe: get_writable_address()
-	 * already filled @replacement with fuzz data, and the *addr
-	 * rewrite below still redirects the kernel away from the
-	 * protected region.  Kernel reading pool scratch bytes is
-	 * strictly better than the kernel chasing an unreadable source.
+	 * The no-copy fall-through is safe: @replacement holds whatever
+	 * an earlier call left in that pool slot, and the *addr rewrite
+	 * below still redirects the kernel away from the protected
+	 * region.  Kernel reading pool scratch bytes is strictly better
+	 * than the kernel chasing an unreadable source.
 	 */
 	if (copy_original && len != 0) {
 		if (range_readable_user(original, len)) {

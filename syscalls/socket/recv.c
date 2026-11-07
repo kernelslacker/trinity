@@ -505,14 +505,14 @@ skip_si:
 		struct iovec *iov;
 
 		/*
-		 * alloc_iovec() now returns a UIO_MAXIOV-sized writable-pool
-		 * slot directly (see rand/random-address.c).  Pool slots are
-		 * never freed by trinity, so a sibling scribble of
-		 * msg_iovlen above num_entries walks zeroed pool bytes the
-		 * kernel iov_iter advances over as no-ops, and the kernel's
-		 * OOB iov walk's overflow target stays out of the libc
-		 * arena.  Drop msg_iov / msg_iovlen to NULL / 0 on pool
-		 * exhaustion -- mirrors the msg_control branch below.
+		 * alloc_iovec() returns a UIO_MAXIOV-entry slice of its
+		 * dedicated iovec pool (see rand/random-address.c).  The
+		 * slices are reused round robin and never cleared, so a
+		 * sibling scribble of msg_iovlen above num_entries walks
+		 * pairs an earlier call left there, not NULL / 0 ones, but
+		 * the kernel's OOB iov walk's overflow target stays out of
+		 * the libc arena.  Drop msg_iov / msg_iovlen to NULL / 0 on
+		 * pool exhaustion -- mirrors the msg_control branch below.
 		 */
 		iov = alloc_iovec(num_entries, IOV_KERNEL_WRITE);
 		if (iov != NULL) {
