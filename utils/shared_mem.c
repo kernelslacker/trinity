@@ -245,6 +245,7 @@ void * alloc_shared_pool(size_t size)
  */
 void free_shared(void *p, size_t size)
 {
+	const struct shared_region_entry *r;
 	void *base = p;
 	size_t span = size;
 	bool guarded = false;
@@ -253,21 +254,11 @@ void free_shared(void *p, size_t size)
 	if (p == NULL)
 		return;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		if (shared_regions[i].addr != (unsigned long)p ||
-		    shared_regions[i].size != size)
+	for_each_shared_region(i, r) {
+		if (r->addr != (unsigned long)p || r->size != size)
 			continue;
-		guarded = shared_regions[i].guarded != 0;
+		guarded = r->guarded != 0;
 		break;
-	}
-	if (i == nr_shared_regions) {
-		for (i = 0; i < nr_shared_regions_overflow; i++) {
-			if (shared_regions_overflow[i].addr != (unsigned long)p ||
-			    shared_regions_overflow[i].size != size)
-				continue;
-			guarded = shared_regions_overflow[i].guarded != 0;
-			break;
-		}
 	}
 
 	untrack_shared_region((unsigned long)p, size);
