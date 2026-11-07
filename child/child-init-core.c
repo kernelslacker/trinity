@@ -95,8 +95,7 @@ void init_child(struct childdata *child, int childno)
 	 * fuzz loop will actually see; sequenced before
 	 * init_child_runtime_config() so the RLIMIT_AS 4 GiB pin does
 	 * not clip legitimate per-provider mmaps at bring-up time.
-	 * No-op today for every existing provider (child_init == NULL);
-	 * providers opt in explicitly.
+	 * A provider opts in by setting .child_init.
 	 */
 	run_fd_provider_child_init(child);
 
