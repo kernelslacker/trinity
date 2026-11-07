@@ -21,6 +21,9 @@ void validate_specific_syscall(const struct syscalltable *table, int call);
 
 /* tables/table-meta.c -- id-to-name for GROUP_*.  Never returns NULL. */
 const char *group_name(unsigned int group);
+/* tables/table-meta.c -- whether an active entry asks for the userns-admin
+ * lane. */
+bool userns_lane_requested(void);
 /*
  * Cost-pool aware activate / deactivate: routes the entry into the flat
  * active_syscall[] array (unchanged, still authoritative for the live

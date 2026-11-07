@@ -504,6 +504,34 @@ bool syscall_nr_is_excluded(int nr)
 	return (entry->flags & EXPLICITLY_EXCLUDED) != 0;
 }
 
+static bool table_requests_userns_lane(const struct syscalltable *table,
+				       unsigned int nr)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr; i++) {
+		struct syscallentry *entry = table[i].entry;
+
+		if (entry != NULL && entry->userns_admin_lane &&
+		    syscall_rt(entry)->active_number != 0)
+			return true;
+	}
+	return false;
+}
+
+/*
+ * Whether an active entry asks for the userns-admin lane.  Reads each
+ * entry's active_number, not the active arrays: a biarch run fills only
+ * the 32- and 64-bit pair, and a slot holds the table index plus one.
+ */
+bool userns_lane_requested(void)
+{
+	if (biarch == true)
+		return table_requests_userns_lane(syscalls_64bit, max_nr_64bit_syscalls) ||
+		       table_requests_userns_lane(syscalls_32bit, max_nr_32bit_syscalls);
+	return table_requests_userns_lane(syscalls, max_nr_syscalls);
+}
+
 /*
  * return a ptr to a syscall table entry, allowing calling code to be
  * ignorant about things like biarch.

@@ -52,31 +52,6 @@
 #include "kernel/sched.h"
 
 /*
- * Check whether any active syscall entry requests the userns-admin lane.
- * Returns the first matching entry, or NULL if none does.  Used at child
- * setup time to decide whether to unshare into a private user, net and
- * mount namespace after the capset(empty) drop.
- *
- * Only the shm-level active_syscalls array is consulted because
- * child->active_syscalls is not yet assigned when init_child_setup_sandbox
- * runs (that assignment happens in init_child_setup_runtime, which is called
- * after the sandbox phase).
- */
-static struct syscallentry *find_userns_lane_entry(void)
-{
-	unsigned int i;
-
-	for (i = 0; i < shm->nr_active_syscalls; i++) {
-		struct syscallentry *e =
-			get_syscall_entry((unsigned int)shm->active_syscalls[i],
-					  false);
-		if (e != NULL && e->userns_admin_lane)
-			return e;
-	}
-	return NULL;
-}
-
-/*
  * Write a short line to a proc file.  Returns 0 on success, -errno on
  * failure.  Used by maybe_enter_userns_admin_lane() to install the identity
  * uid/gid maps after unshare(CLONE_NEWUSER).
@@ -586,7 +561,7 @@ void init_child_setup_sandbox(struct childdata *child, int childno)
 	 * engages the lane for every child; a run without it (for
 	 * example -c on another call) is unchanged.
 	 */
-	if (find_userns_lane_entry() != NULL)
+	if (userns_lane_requested())
 		maybe_enter_userns_admin_lane(childno);
 
 	munge_process();
