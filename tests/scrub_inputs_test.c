@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <linux/filter.h>
+#include <linux/futex.h>
 
 #include "debug.h"		/* BUG */
 #include "kernel/seccomp.h"	/* SECCOMP_* ops */
@@ -146,6 +147,25 @@ static void seccomp_action(void)
 	}
 }
 
+/* The head links to itself, as a copy of it made elsewhere would not. */
+static void robust_list_head(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < DRAWS; i++) {
+		struct robust_list_head *head;
+
+		sanitise(&syscall_set_robust_list, 0);
+		survives_scrub(&syscall_set_robust_list, &rec.a1,
+			       sizeof(struct robust_list_head),
+			       "set_robust_list's head");
+		head = (struct robust_list_head *) rec.a1;
+		if (head->list.next != &head->list)
+			BUG("scrub inputs: set_robust_list's head does not link to itself");
+		end_call();
+	}
+}
+
 void scrub_inputs_self_check(void);
 void scrub_inputs_self_check(void)
 {
@@ -158,5 +178,6 @@ void scrub_inputs_self_check(void)
 	recv_headers();
 	write_buffer();
 	seccomp_action();
+	robust_list_head();
 	fake_overlaps_libc_heap = false;
 }

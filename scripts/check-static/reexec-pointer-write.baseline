@@ -21,6 +21,7 @@ syscalls/concurrency/futex_requeue.c:syscall_futex_requeue
 syscalls/concurrency/futex_wait.c:syscall_futex_wait
 syscalls/concurrency/futex_waitv.c:syscall_futex_waitv
 syscalls/concurrency/rseq.c:syscall_rseq
+syscalls/concurrency/set_robust_list.c:syscall_set_robust_list
 syscalls/cred/capget.c:syscall_capget
 syscalls/cred/capset.c:syscall_capset
 syscalls/cred/setgroups.c:syscall_setgroups
