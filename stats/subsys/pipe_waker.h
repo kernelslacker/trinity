@@ -15,9 +15,9 @@
  * pipe_waker_stats as its "pipe_waker" member.
  */
 struct pipe_waker_stats {
-	unsigned long bytes_written;	/* successful 1-byte write() to a writer-end pipe fd */
+	unsigned long bytes_written;	/* successful 1-byte pwritev2() to a writer-end pipe fd */
 	unsigned long no_target;	/* fired but the pool walk returned no writer-end fd */
-	unsigned long write_failed;	/* write() returned <0 (EAGAIN on full pipe, EBADF on closed fd, etc.) */
+	unsigned long write_failed;	/* pwritev2() returned <0 (EAGAIN on full pipe, EBADF on closed fd, etc.) */
 };
 
 #endif	/* _TRINITY_STATS_SUBSYS_PIPE_WAKER_H */

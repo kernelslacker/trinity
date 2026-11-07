@@ -9,8 +9,8 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <sys/un.h>
-#include <fcntl.h>
 #include <string.h>
 
 #include "net.h"
@@ -19,6 +19,7 @@
 #include "socketinfo.h"
 #include "unblocker.h"
 
+#include "kernel/fs.h"
 #include "kernel/socket.h"
 /*
  * Loopback predicate.  Returns true for any addr the connector is
@@ -257,8 +258,8 @@ void pipe_waker_poke_one(void)
 		struct object *obj;
 		int fd;
 		ssize_t w;
-		const char one = 0;
-		int flags, restored;
+		char one = 0;
+		struct iovec iov = { .iov_base = &one, .iov_len = 1 };
 
 		obj = get_random_object(OBJ_FD_PIPE, OBJ_GLOBAL);
 		if (!objpool_check(obj, OBJ_FD_PIPE))
@@ -274,25 +275,15 @@ void pipe_waker_poke_one(void)
 			continue;
 
 		/*
-		 * Ensure non-blocking write so a full pipe (any
-		 * concurrent reader stalled / draining slowly) returns
-		 * EAGAIN instead of parking the waker.  Restore the
-		 * original flags before returning — other consumers of
-		 * this fd in the pool may depend on the pipe's blocking
-		 * mode.
+		 * RWF_NOWAIT makes this one write non-blocking, so a full
+		 * pipe (any concurrent reader stalled / draining slowly)
+		 * returns EAGAIN instead of parking the waker.  Setting
+		 * O_NONBLOCK would change the open file every holder of a
+		 * pooled pipe shares, for as long as it stayed set.
+		 * Anonymous pipes take the flag: create_pipe_files() sets
+		 * FMODE_NOWAIT on both ends.
 		 */
-		flags = fcntl(fd, F_GETFL, 0);
-		if (flags == -1)
-			continue;
-		if (!(flags & O_NONBLOCK)) {
-			if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1)
-				continue;
-			restored = flags;
-		} else {
-			restored = -1;
-		}
-
-		w = write(fd, &one, 1);
+		w = pwritev2(fd, &iov, 1, -1, RWF_NOWAIT);
 		if (w == 1)
 			__atomic_add_fetch(&shm->stats.pipe_waker.bytes_written,
 					   1, __ATOMIC_RELAXED);
@@ -300,8 +291,6 @@ void pipe_waker_poke_one(void)
 			__atomic_add_fetch(&shm->stats.pipe_waker.write_failed,
 					   1, __ATOMIC_RELAXED);
 
-		if (restored != -1)
-			(void) fcntl(fd, F_SETFL, restored);
 		return;
 	}
 
