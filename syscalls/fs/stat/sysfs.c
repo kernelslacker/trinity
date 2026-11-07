@@ -45,6 +45,7 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 	rec->post_state = 0;
 #endif
 
+	rec->a3 = 0;
 	switch (rec->a1) {
 	case 1:
 		/* option 1: arg1 = pointer to fs type name string */
@@ -200,10 +201,13 @@ out_release:
 struct syscallentry syscall_sysfs = {
 	.name = "sysfs",
 	.num_args = 3,
-	.argtype = { [0] = ARG_OP },
+	.argtype = { [0] = ARG_OP, [2] = ARG_ADDRESS },
 	.argname = { [0] = "option", [1] = "arg1", [2] = "arg2" },
 	.arg_params[0].list = ARGLIST(sysfs_options),
 	.sanitise = sanitise_sysfs,
+	/* sanitise_sysfs() writes arg2 on every path: option 2's buffer,
+	 * 0 for the options that take none. */
+	.sanitiser_owned_mask = (1u << 2),
 	.group = GROUP_PROCESS,
 #if defined(SYS_sysfs) || defined(__NR_sysfs)
 	.post = post_sysfs,

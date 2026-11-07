@@ -41,8 +41,10 @@ static void sanitise_sched_getaffinity(struct syscallrecord *rec)
 	rec->post_state = 0;
 
 	mask = (cpu_set_t *) get_writable_address(sizeof(*mask));
-	if (mask == NULL)
+	if (mask == NULL) {
+		rec->a3 = 0;
 		return;
+	}
 
 	/*
 	 * Length bucket biased toward kernel-acceptable sizes.  70% land
@@ -222,9 +224,12 @@ struct syscallentry syscall_sched_getaffinity = {
 	.name = "sched_getaffinity",
 	.group = GROUP_SCHED,
 	.num_args = 3,
-	.argtype = { [0] = ARG_PID, [1] = ARG_LEN },
+	.argtype = { [0] = ARG_PID, [1] = ARG_LEN, [2] = ARG_ADDRESS },
 	.argname = { [0] = "pid", [1] = "len", [2] = "user_mask_ptr" },
 	.sanitise = sanitise_sched_getaffinity,
+	/* sanitise_sched_getaffinity() points the mask at a pool buffer, or
+	 * NULL, on every path. */
+	.sanitiser_owned_mask = (1u << 2),
 	.post = post_sched_getaffinity,
 	.bound_arg = 2,
 	/* pid (a1) and len (a2): the oracle compares only a call on this

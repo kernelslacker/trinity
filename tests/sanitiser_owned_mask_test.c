@@ -209,10 +209,12 @@ static void bad_mask_refused(void)
 static struct syscallentry *const owner_entry[] = {
 	&syscall_prctl, &syscall_keyctl, &syscall_socket, &syscall_socketpair,
 	&syscall_futex_wake, &syscall_quotactl, &syscall_nice,
-	&syscall_personality, &syscall_mseal,
+	&syscall_personality, &syscall_mseal, &syscall_sched_getaffinity,
+	&syscall_sysfs,
 };
 static const uint8_t owner_slots[] = {
 	1u << 0, 1u << 0, 0x07, 0x0f, 0x0a, 1u << 0, 1u << 0, 1u << 0, 0x07,
+	1u << 2, 1u << 2,
 };
 
 #define OWNER_RUNS	2048

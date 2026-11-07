@@ -8,6 +8,7 @@
 
 #include <limits.h>
 #include <stdbool.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -20,6 +21,7 @@
 #include "random-syscall-internal.h"	/* redqueen_pin_field */
 #include "sanitise.h"			/* writable pool */
 #include "syscall.h"			/* struct syscallrecord */
+#include "syscalls/syscalls.h"		/* syscall_sched_getaffinity, syscall_sysfs */
 #include "type-graph.h"			/* type_graph_observe_consume */
 #include "utils.h"			/* ARRAY_SIZE, is_corrupt_ptr_shape */
 
@@ -422,6 +424,36 @@ static void substitution_withdraws_rettype(void)
 		BUG("rettype: substitution never rewrote, or always rewrote, a call");
 }
 
+/* sched_getaffinity's mask and sysfs's buf are buffers their sanitisers
+ * build in a3, a slot the kernel writes through: chain substitution may
+ * not put the previous call's return there, a small integer the kernel
+ * faults on or a fresh mapping it would write into.  The mask
+ * copy_syscall_table() stamps is computed here, on the entry itself. */
+static void sanitiser_buffers_take_no_substitute(void)
+{
+	struct syscallentry *const owners[] = {
+		&syscall_sched_getaffinity, &syscall_sysfs,
+	};
+	unsigned int e, i;
+
+	for (e = 0; e < ARRAY_SIZE(owners); e++) {
+		struct syscallentry *entry = owners[e];
+		uint8_t saved = entry->numeric_substitute_mask;
+
+		entry->numeric_substitute_mask = compute_numeric_substitute_mask(entry);
+		for (i = 0; i < 4000; i++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.a3 = 0x1111;
+			apply_chain_substitution(&rec, entry, true, INNOCENT_FD);
+			if (rec.a3 != 0x1111) {
+				fprintf(stderr, "substitution: %s\n", entry->name);
+				BUG("substitution: a number was written over a buffer a sanitiser builds");
+			}
+		}
+		entry->numeric_substitute_mask = saved;
+	}
+}
+
 void redqueen_pin_self_check(void);
 void redqueen_pin_self_check(void)
 {
@@ -447,4 +479,5 @@ void redqueen_pin_self_check(void)
 	substitution_value_mask();
 	pin_withdraws_rettype();
 	substitution_withdraws_rettype();
+	sanitiser_buffers_take_no_substitute();
 }
