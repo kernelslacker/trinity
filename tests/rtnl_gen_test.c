@@ -728,6 +728,47 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 			"rtnl: RTM_GETDCB, which has only a doit, is sent a dump bit");
 }
 
+/* ---------- The rtmsg of RTM_NEWROUTE and RTM_DELROUTE ------------------ */
+
+struct route_header {
+	unsigned int v4, v4_tos, v4_len;	/* AF_INET; ECN bits clear; prefix <= 32 */
+	unsigned int v6, v6_tos;		/* AF_INET6; tos 0 */
+};
+
+static void tally_route_header(struct route_header *t, const struct nlmsghdr *nlh)
+{
+	const struct rtmsg *rtm = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*rtm)))
+		return;
+	if (rtm->rtm_family == AF_INET) {
+		t->v4++;
+		t->v4_tos += !(rtm->rtm_tos & 0x03);
+		t->v4_len += rtm->rtm_dst_len <= 32;
+	} else if (rtm->rtm_family == AF_INET6) {
+		t->v6++;
+		t->v6_tos += rtm->rtm_tos == 0;
+	}
+}
+
+/*
+ * rtm_to_fib_config() refuses an IPv4 route whose tos has an ECN bit set or
+ * whose prefix is longer than 32 bits, and rtm_to_fib6_config() an IPv6 one
+ * with any tos, before either reads an attribute.  The builder keeps a
+ * random rtmsg one time in eight and holds the rest to that, so about 0.91
+ * of the IPv4 routes clear each check and 0.88 of the IPv6 ones the tos;
+ * random fields cleared them a quarter of the time and one time in 256.
+ */
+static void expect_route_header(const struct route_header *t)
+{
+	expect_fraction(t->v4_tos, t->v4, 0.82, 0.97, "IPv4 route tos",
+			"rtnl: an IPv4 route's tos mostly carries the ECN bits rtm_to_fib_config() refuses");
+	expect_fraction(t->v4_len, t->v4, 0.82, 0.97, "IPv4 route prefix",
+			"rtnl: an IPv4 route's prefix is mostly longer than 32 bits");
+	expect_fraction(t->v6_tos, t->v6, 0.80, 0.95, "IPv6 route tos",
+			"rtnl: an IPv6 route mostly carries the tos rtm_to_fib6_config() refuses");
+}
+
 /* ---------- The RTA_ENCAP_TYPE of RTM_NEWROUTE, DELROUTE and GETROUTE --- */
 
 struct route_encap {
@@ -1000,6 +1041,7 @@ struct tallies {
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
+	struct route_header route_header;
 	struct route_encap route_encap;
 	struct action_attrs action;
 };
@@ -1062,6 +1104,9 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_NEWROUTE:
 		case RTM_DELROUTE:
+			tally_route_header(&t->route_header, nlh);
+			tally_route_encap(&t->route_encap, nlh);
+			break;
 		case RTM_GETROUTE:
 			tally_route_encap(&t->route_encap, nlh);
 			break;
@@ -1091,6 +1136,7 @@ void rtnl_gen_self_check(void)
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);
 	expect_probe_interval(&t.probe_interval);
+	expect_route_header(&t.route_header);
 	expect_route_encap(&t.route_encap);
 	expect_action_attrs(&t.action);
 }

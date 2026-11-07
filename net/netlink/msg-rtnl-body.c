@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <stddef.h>
 #include <string.h>
+#include <netinet/ip.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_addr.h>
@@ -137,6 +138,18 @@ static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned c
 	rtm.rtm_scope = rnd_modulo_u32(256);
 	rtm.rtm_type = RAND_BOOL() ? rnd_modulo_u32(RTN_MAX + 1) : rnd_modulo_u32(256);
 	rtm.rtm_flags = rand32();
+	/* rtm_to_fib_config() refuses an IPv4 route with an ECN bit in its
+	 * tos or a prefix past 32 bits, and rtm_to_fib6_config() an IPv6 one
+	 * with any tos, before reading an attribute; the rtmsg stays random
+	 * one time in eight. */
+	if (!ONE_IN(8)) {
+		if (rtm.rtm_family == AF_INET) {
+			rtm.rtm_tos &= ~IPTOS_ECN_MASK;
+			rtm.rtm_dst_len = rnd_modulo_u32(33);
+		} else if (rtm.rtm_family == AF_INET6) {
+			rtm.rtm_tos = 0;
+		}
+	}
 	*out_family = rtm.rtm_family;
 	memcpy(body, &rtm, sizeof(rtm));
 	return sizeof(rtm);
