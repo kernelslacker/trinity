@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include <unistd.h>
 #include <linux/filter.h>
+#include "fd.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"
@@ -267,7 +268,7 @@ static void post_seccomp(struct syscallrecord *rec)
 		if (get_arg_snapshot(rec, 2) & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
 			int fd = (int)rec->retval;
 
-			if (fd >= 0 && fd < (1 << 20)) {
+			if (fd >= 0 && fd < FD_NR_MAX) {
 				close(fd);
 			} else if (fd >= 0) {
 				outputerr("post_seccomp: rejecting out-of-bound NEW_LISTENER fd=%d\n", fd);

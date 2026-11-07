@@ -27,7 +27,7 @@ static void post_dup(struct syscallrecord *rec)
 	unsigned long retval = rec->retval;
 	struct stat st_old, st_new;
 
-	if ((long) retval < 0 || (long) retval >= (1 << 20))
+	if ((long) retval < 0 || (long) retval >= FD_NR_MAX)
 		return;
 
 	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
@@ -153,7 +153,7 @@ static void post_dup2(struct syscallrecord *rec)
 	struct childdata *child;
 	struct stat st_old, st_new;
 
-	if ((long) retval < 0 || (long) retval >= (1 << 20))
+	if ((long) retval < 0 || (long) retval >= FD_NR_MAX)
 		return;
 
 	/*

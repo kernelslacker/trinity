@@ -550,7 +550,7 @@ static unsigned long fcntl_flags[] = {
 
 static void post_fcntl_dupfd(unsigned long a1, unsigned long retval)
 {
-	if ((long) retval < 0 || (long) retval >= (1 << 20))
+	if ((long) retval < 0 || (long) retval >= FD_NR_MAX)
 		return;
 	__atomic_add_fetch(&shm->stats.fd.duped, 1, __ATOMIC_RELAXED);
 

@@ -3,6 +3,7 @@
  */
 #include <signal.h>
 #include <unistd.h>
+#include "fd.h"
 #include "publish_resource.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -70,7 +71,7 @@ static void post_signalfd(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd < 0 || fd >= (1 << 20))
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
 	if (publish_resource(OBJ_FD_SIGNALFD, fd, NULL) == NULL)

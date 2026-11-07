@@ -328,7 +328,7 @@ static void post_fsconfig_record_fsctx_ready(struct syscallrecord *rec)
 	    cmd != FSCONFIG_CMD_RECONFIGURE)
 		return;
 
-	if (fd <= 2 || fd >= (1 << 20))
+	if (fd <= 2 || fd >= FD_NR_MAX)
 		return;
 
 	if (find_local_object_by_fd(OBJ_FD_FS_CTX, fd) != NULL)

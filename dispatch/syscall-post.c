@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch */
+#include "fd.h"
 #include "params.h"
 #include "shm.h"
 #include "syscall.h"
@@ -21,7 +22,7 @@
 void generic_post_close_fd(struct syscallrecord *rec)
 {
 	long ret = (long)rec->retval;
-	if (ret >= 0 && ret < (1 << 20))
+	if (ret >= 0 && ret < FD_NR_MAX)
 		close((int)ret);
 }
 

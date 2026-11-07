@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE1(pipe, int __user *, fildes)
  */
 #include <fcntl.h>
+#include "fd.h"
 #include "objects.h"
 #include "output-poison.h"
 #include "sanitise.h"
@@ -17,7 +18,7 @@ static void register_pipe_fd(int fd, bool reader)
 {
 	struct object *new;
 
-	if (fd <= 2 || fd >= (1 << 20))
+	if (fd <= 2 || fd >= FD_NR_MAX)
 		return;
 	if (find_local_object_by_fd(OBJ_FD_PIPE, fd) != NULL)
 		return;

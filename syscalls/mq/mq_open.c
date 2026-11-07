@@ -5,6 +5,7 @@
 #include <fcntl.h>
 #include <string.h>
 #include "deferred-free.h"
+#include "fd.h"
 #include "name-pool.h"
 #include "random.h"
 #include "rnd.h"
@@ -196,7 +197,7 @@ static void post_mq_open(struct syscallrecord *rec)
 		return;
 	}
 
-	if (retval >= (1UL << 20)) {
+	if (retval >= FD_NR_MAX) {
 		outputerr("post_mq_open: rejecting out-of-bound fd=%ld\n", ret);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		post_state_release(rec, snap);

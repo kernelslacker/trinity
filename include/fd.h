@@ -13,6 +13,16 @@ struct epollobj;
 struct object;
 struct stat;
 
+/*
+ * Exclusive ceiling on an fd number trinity takes for a real one.
+ * fs.nr_open defaults to 1 << 20 (sysctl_nr_open, fs/file.c), past which
+ * do_prlimit() refuses to raise RLIMIT_NOFILE, and init_rlimits() caps
+ * RLIMIT_NOFILE at 262144 at startup, so a real fd sits well below it;
+ * a retval at or past it is an upper-bit corruption (sign-extended or
+ * stomped) whose low bits happened to look like an fd.
+ */
+#define FD_NR_MAX	(1 << 20)
+
 bool open_fds(void);
 
 void process_fds_param(char *optarg, bool enable);

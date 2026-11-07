@@ -26,7 +26,7 @@ static void post_pidfd_getfd(struct syscallrecord *rec)
 {
 	long fd = (long) rec->retval;
 
-	if (fd >= 0 && fd < (1 << 20) && pool_foreign_fd((int) fd))
+	if (fd >= 0 && fd < FD_NR_MAX && pool_foreign_fd((int) fd))
 		return;
 	generic_post_close_fd(rec);
 }

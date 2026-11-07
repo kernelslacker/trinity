@@ -195,7 +195,7 @@ static void post_ioctl(struct syscallrecord *rec)
 	int fd = rec->retval;
 
 	if ((!pidfd_ns_getter(rec->a2) && !nsfs_getter(rec->a2)) ||
-	    (long) rec->retval < 0 || (long) rec->retval >= (1 << 20))
+	    (long) rec->retval < 0 || (long) rec->retval >= FD_NR_MAX)
 		return;
 
 	if (fd <= 2 || fd_is_protected(fd) || !fd_is_nsfs(fd))

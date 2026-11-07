@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE4(socketpair, int, family, int, type, int, protocol, int __user *, usockvec)
  */
 #include <sys/socket.h>
+#include "fd.h"
 #include "net.h"
 #include "objects.h"
 #include "output-poison.h"
@@ -38,7 +39,7 @@ static void register_socketpair_fd(int fd, struct syscallrecord *rec)
 {
 	struct object *obj;
 
-	if (fd <= 2 || fd >= (1 << 20))
+	if (fd <= 2 || fd >= FD_NR_MAX)
 		return;
 	if (find_local_object_by_fd(OBJ_FD_SOCKET, fd) != NULL)
 		return;
@@ -218,7 +219,7 @@ static void post_socketpair_record_fds(struct syscallrecord *rec)
 	 * Untouched-buffer poison check: retval == 0 but the sv fd-pair
 	 * buffer still byte-for-byte matches the poison pattern we stamped
 	 * at sanitise time -- the kernel returned success without writing
-	 * the fd pair.  Two valid fds (0..1<<20) fully overwrite the 8-byte
+	 * the fd pair.  Two valid fds (below FD_NR_MAX) fully overwrite the 8-byte
 	 * seed word, so a coincidental match cannot happen on a real write.
 	 * Guarded on poison_seed so the pool-exhaustion "we couldn't poison"
 	 * path is not confused with "kernel didn't write".  register_*_fd()

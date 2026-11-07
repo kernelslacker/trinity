@@ -7,6 +7,7 @@
 #include "compiler.h"
 #include "debug.h"
 #include "deferred-free.h"
+#include "fd.h"
 #include "maps.h"
 #include "objects.h"
 #include "objects-internal.h"
@@ -63,7 +64,7 @@ static bool is_fd_type(enum objecttype type)
  *   - the verbose-mode caller trace (gated on -vv, used when
  *     attributing churn back to a specific .post handler),
  *   - the fd-bound rejection check for fd-typed objects (any
- *     value from 1<<20 up is upper-bit corruption that the loose
+ *     value from FD_NR_MAX up is upper-bit corruption that the loose
  *     "(long)retval >= 0" gate in register_returned_fd / the
  *     per-syscall .post handlers let through),
  *   - the OBJ_GLOBAL post-fork guard (OBJ_GLOBAL is pre-fork-only
@@ -106,16 +107,13 @@ static bool add_object_validate(struct object *obj, enum obj_scope scope,
 
 	/*
 	 * Reject obviously-corrupted fd values before they enter any pool.
-	 * 1<<20 = 1048576 is fs.nr_open's default (sysctl_nr_open,
-	 * fs/file.c), past which do_prlimit() refuses to raise
-	 * RLIMIT_NOFILE, and init_rlimits() caps RLIMIT_NOFILE at 262144 at
-	 * startup -- so any retval decoding to a value past this is a
+	 * Any retval decoding to a value at or past FD_NR_MAX is a
 	 * smoking-gun upper-bit corruption (sign-extended or wholesale-
 	 * stomped rec->retval) that the existing "(long)retval >= 0" gate
 	 * in register_returned_fd / the per-syscall .post handlers let
 	 * through because the lower bits happened to be positive.
 	 */
-	if (is_fd && (fd < 0 || fd >= (1 << 20))) {
+	if (is_fd && (fd < 0 || fd >= FD_NR_MAX)) {
 		outputerr("add_object: rejecting out-of-bound fd=%d "
 			  "type=%u caller=%s\n", fd, type,
 			  pc_to_string(caller_pc,

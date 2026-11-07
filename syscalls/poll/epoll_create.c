@@ -20,7 +20,7 @@ static void post_epoll_create(struct syscallrecord *rec)
 	struct object *obj;
 	long fd = (long) rec->retval;
 
-	if (fd < 0 || fd >= (1 << 20))
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
 	obj = pool_typed_fd(OBJ_FD_EPOLL, (int) fd);

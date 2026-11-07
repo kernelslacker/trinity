@@ -315,7 +315,7 @@ void post_open_fd(struct syscallrecord *rec)
 	int fd = rec->retval;
 	struct stat st;
 
-	if (fd < 0 || fd >= (1 << 20))
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
 	/*
@@ -448,7 +448,7 @@ static void post_openat(struct syscallrecord *rec)
 	/* Claimed first so every exit releases it, a failed call's too. */
 	snap = post_state_claim_owned(rec, OPENAT_POST_STATE_MAGIC, __func__);
 
-	if (fd < 0 || fd >= (1 << 20))
+	if (fd < 0 || fd >= FD_NR_MAX)
 		goto out;
 
 	if (fstat(fd, &st_fd) != 0) {
@@ -688,8 +688,9 @@ static void post_openat2(struct syscallrecord *rec)
 		return;
 	}
 
-	if (fd < 0 || fd >= (1 << 20)) {
-		output(0, "post_openat2: rejected fd %d out of [0, 1<<20) before close\n", fd);
+	if (fd < 0 || fd >= FD_NR_MAX) {
+		output(0, "post_openat2: rejected fd %d out of [0, %d) before close\n",
+		       fd, FD_NR_MAX);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		rec->a3 = 0;
 		return;

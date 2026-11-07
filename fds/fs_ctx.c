@@ -117,7 +117,7 @@ void post_fs_ctx_fd(struct syscallrecord *rec)
 {
 	long fd = (long) rec->retval;
 
-	if (fd < 0 || fd >= (1 << 20))
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
 	if (pool_typed_fd(OBJ_FD_FS_CTX, (int) fd) == NULL)

@@ -14,6 +14,7 @@
 #include "child-api.h"
 #include "csfu.h"
 #include "fd-event.h"
+#include "fd.h"
 #include "maps.h"
 #include "objects.h"
 #include "perf.h"
@@ -214,7 +215,7 @@ static void post_perf_event_open(struct syscallrecord *rec)
 {
 	int fd = rec->retval;
 
-	if (fd >= 0 && fd < (1 << 20)) {
+	if (fd >= 0 && fd < FD_NR_MAX) {
 		unsigned long flags = get_arg_snapshot(rec, 5);
 		bool needs_immediate_teardown =
 			(flags & (PERF_FLAG_PID_CGROUP | PERF_FLAG_FD_OUTPUT)) != 0;

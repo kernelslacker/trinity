@@ -443,7 +443,7 @@ static void run(const struct syscallentry *entry, const char *case_name,
 {
 	static struct syscallrecord rec;
 	unsigned long duped = shm->stats.fd.duped;
-	bool worked = (long) retval >= 0 && retval < (1UL << 20);
+	bool worked = (long) retval >= 0 && retval < FD_NR_MAX;
 
 	memset(&rec, 0, sizeof(rec));
 	rec.a1 = a1;
@@ -601,7 +601,7 @@ static void same_fd_is_a_no_op(void)
 static void failed_call_pools_nothing(void)
 {
 	static const unsigned long returns[] = {
-		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+		(unsigned long) -1L, FD_NR_MAX, (unsigned long) -4096L,
 	};
 	const struct syscallentry *entries[] = {
 		&syscall_dup, &syscall_dup2, &syscall_dup3,
@@ -698,7 +698,7 @@ static void run_fcntl(unsigned long cmd, unsigned long a1,
 	static struct syscallrecord rec;
 	unsigned long duped = shm->stats.fd.duped;
 	bool dups = cmd == F_DUPFD || cmd == F_DUPFD_CLOEXEC;
-	bool worked = (long) retval >= 0 && retval < (1UL << 20);
+	bool worked = (long) retval >= 0 && retval < FD_NR_MAX;
 
 	memset(&rec, 0, sizeof(rec));
 	rec.a1 = a1;
@@ -725,7 +725,7 @@ static void fcntl_dupfd_pools_the_copy(void)
 		{ "fcntl(F_DUPFD)", F_DUPFD },
 		{ "fcntl(F_DUPFD_CLOEXEC)", F_DUPFD_CLOEXEC },
 	};
-	static const unsigned long no_fd[] = { (unsigned long) -1L, 1UL << 20 };
+	static const unsigned long no_fd[] = { (unsigned long) -1L, FD_NR_MAX };
 	unsigned int i, j;
 
 	for (i = 0; i < 2; i++) {
@@ -996,7 +996,7 @@ static void getfd_retires_the_old_object(void)
 static void getfd_pools_nothing_it_should_not(void)
 {
 	static const unsigned long returns[] = {
-		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+		(unsigned long) -1L, FD_NR_MAX, (unsigned long) -4096L,
 	};
 	int pp[2], saved, i;
 
@@ -1872,7 +1872,7 @@ static void socket_publishes_a_local_socket(void)
 static void socketpair_publishes_each_end(void)
 {
 	int sv[2] = { NEW, NEW + 1 };
-	int stdio[2] = { 1, 1 << 20 };
+	int stdio[2] = { 1, FD_NR_MAX };
 
 	reset();
 	run_socketpair(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0, sv, 0);
@@ -2139,7 +2139,7 @@ static void open_closes_what_is_neither_a_file_nor_a_directory(void)
 static void open_that_failed_pools_nothing(void)
 {
 	static const unsigned long returns[] = {
-		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+		(unsigned long) -1L, FD_NR_MAX, (unsigned long) -4096L,
 	};
 	unsigned int i, j;
 
@@ -3553,7 +3553,7 @@ static void ioctl_that_returned_no_fd_owns_nothing(void)
 {
 	unsigned long cmds[NS_GETTERS_MAX];
 	static const unsigned long bad[] = {
-		(unsigned long) -1L, 1UL << 20, (unsigned long) -4096L,
+		(unsigned long) -1L, FD_NR_MAX, (unsigned long) -4096L,
 	};
 	unsigned int i;
 	int peer, fd;
