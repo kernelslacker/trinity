@@ -33,14 +33,22 @@ void *__zmalloc(size_t size, const char *func)
 }
 
 /*
- * Owned by utils/debug.c in production, where it checks the links around
- * an insertion.  The lists the tests build come from the registry itself.
+ * Owned by utils/debug.c in production, where they check the links around
+ * an insertion and a removal.  The lists the tests build come from the
+ * registry and the pathname pool themselves.
  */
 void __list_add_valid_or_die(struct list_head *new, struct list_head *prev,
 			     struct list_head *next, const char *file,
 			     const char *func, unsigned int line)
 {
 	(void)new; (void)prev; (void)next;
+	(void)file; (void)func; (void)line;
+}
+
+void __list_del_entry_valid_or_die(struct list_head *entry, const char *file,
+				   const char *func, unsigned int line)
+{
+	(void)entry;
 	(void)file; (void)func; (void)line;
 }
 

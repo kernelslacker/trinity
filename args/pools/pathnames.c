@@ -66,7 +66,8 @@
 unsigned int files_in_index = 0;
 const char **fileindex;
 
-#define MAX_PATHNAME_POOLS 4
+/* One pool per -V directory, or one each for /dev, /proc and /sys. */
+#define MAX_PATHNAME_POOLS MAX_VICTIM_PATHS
 
 struct pathname_pool {
 	unsigned int start;	/* index into fileindex[] */

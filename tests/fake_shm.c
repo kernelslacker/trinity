@@ -134,6 +134,13 @@ unsigned long shared_region_size_for(unsigned long addr)
 	return 0;
 }
 
+/* Owned by utils/shared_mem.c in production; the pathname pool sizes its
+ * index with it. */
+bool shared_size_mul(size_t a, size_t b, size_t *out)
+{
+	return !__builtin_mul_overflow(a, b, out);
+}
+
 bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 {
 	(void)addr; (void)len;

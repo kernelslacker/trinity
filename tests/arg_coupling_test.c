@@ -93,7 +93,8 @@ int get_rand_writeable_pagecache_fd(void)
  * each pin hands out. */
 const char *fake_testfile_path;
 
-char *get_testfile_path(void)
+char *__wrap_get_testfile_path(void);
+char *__wrap_get_testfile_path(void)
 {
 	return fake_testfile_path != NULL ? strdup(fake_testfile_path) : NULL;
 }

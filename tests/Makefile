@@ -132,6 +132,11 @@ LDFLAGS		+= -Wl,--wrap=set_object_fd
 # non-root test.  The wrapper forwards to the real fchown() unless armed.
 LDFLAGS		+= -Wl,--wrap=fchown
 
+# get_testfile_path() stand-in: args/pools/pathnames.c is linked for the
+# pathname pool, and the sanitiser tests name the path a testfile pin
+# takes through arg_coupling_test.c's wrapper.
+LDFLAGS		+= -Wl,--wrap=get_testfile_path
+
 # get_objhead() stand-in: objects/registry.c is linked for the
 # for_each_obj snapshot, and its get_objhead() would resolve pools
 # through childdata no test builds.  fake_objects.c wraps it with the
@@ -961,6 +966,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/cred/setreuid.c \
 PARENT_SRCS	+= $(TOP)/fds/bpf.c \
 		   $(TOP)/objects/dispatch.c
 FAKE_SRCS	+= bpf_pick_test.c
+
+# args/pools/pathnames.c brings the pathname pool, which
+# pathname_pool_test.c builds from -V directories of its own.
+PARENT_SRCS	+= $(TOP)/args/pools/pathnames.c
+FAKE_SRCS	+= pathname_pool_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
