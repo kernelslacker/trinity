@@ -2875,10 +2875,12 @@ static unsigned int min_policy_streams(void)
 #define ATTR_ROUNDS	150000
 #define MIN_MSGS	30
 
-/* Every family in the reply takes a share of the rounds, so the streams of a
- * nest deep in one family's cmd thin out as families are added: the rounds
- * go on, to this many, until each required slot has its REQUIRED_STREAMS. */
-#define ATTR_ROUNDS_MAX	3000000
+/* Every family in the reply takes a share of the rounds and every cmd a share
+ * of its family's, so the streams of a cmd of the family with the most cmds
+ * thin out as families and cmds are added: the rounds go on, to this many for
+ * each family checked and each cmd of the largest, until each required slot
+ * has its REQUIRED_STREAMS. */
+#define ATTR_ROUNDS_PER_CMD	5000
 
 /*
  * Whether the len bytes at msg are a batch whose first message claims
@@ -2921,7 +2923,7 @@ static void check_attrs_in_policy(void)
 		.type = SOCK_RAW,
 		.protocol = NETLINK_GENERIC,
 	};
-	unsigned int round, i, j;
+	unsigned int round, rounds_max, most_cmds = 0, i, j;
 
 	for (i = 0; i < ARRAY_SIZE(policy_families); i++) {
 		struct policy_family *pf = &policy_families[i];
@@ -2933,10 +2935,13 @@ static void check_attrs_in_policy(void)
 				BUG("genl ops: a cmd of a checked family is not mirrored");
 			}
 		}
+		if (pf->fam->n_cmds > most_cmds)
+			most_cmds = pf->fam->n_cmds;
 	}
+	rounds_max = ATTR_ROUNDS_PER_CMD * ARRAY_SIZE(policy_families) * most_cmds;
 
 	for (round = 0; round < ATTR_ROUNDS ||
-	     (round < ATTR_ROUNDS_MAX && min_policy_streams() < REQUIRED_STREAMS);
+	     (round < rounds_max && min_policy_streams() < REQUIRED_STREAMS);
 	     round++) {
 		const struct genlmsghdr *genl;
 		const struct nlmsghdr *nlh;
