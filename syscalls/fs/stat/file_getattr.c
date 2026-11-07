@@ -22,6 +22,7 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/fs.h"
+#include "kernel/unistd.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the path-pinned
@@ -31,10 +32,7 @@
  */
 #define NR_TESTFILES 4
 
-#if defined(SYS_file_getattr) || defined(__NR_file_getattr)
-#ifndef SYS_file_getattr
-#define SYS_file_getattr __NR_file_getattr
-#endif
+#ifdef SYS_file_getattr
 #define HAVE_SYS_FILE_GETATTR 1
 #endif
 
@@ -44,28 +42,26 @@ static unsigned long file_getattr_at_flags[] = {
 
 #ifdef HAVE_SYS_FILE_GETATTR
 /*
- * Snapshot of the five file_getattr input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign ufattr, cannot flip
- * the dfd, and cannot smear the usize bound or the at_flags lookup mode
- * used to seed the re-issue.  The pathname is snapshotted by VALUE into
- * the embedded byte buffer below rather than by pointer -- a stale
- * heap-shaped pathname pointer that survived looks_like_corrupted_ptr's
- * shape-only gate would otherwise let the .post strncpy walk off the
- * end of an unrelated allocation, and a sibling rewrite of the bytes
- * between sanitise and post would steer the re-call at a different
- * inode than the one the original syscall actually resolved.
+ * Snapshot of the file_getattr ufattr and pathname read by the post
+ * oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning and
+ * the post handler running cannot redirect us at a foreign ufattr.  The
+ * dfd, the usize bound and the at_flags lookup mode the re-issue takes
+ * are read from the slots the kernel was handed instead.  The pathname is
+ * snapshotted by VALUE into the embedded byte buffer below rather than by
+ * pointer -- a stale heap-shaped pathname pointer that survived
+ * looks_like_corrupted_ptr's shape-only gate would otherwise let the
+ * .post strncpy walk off the end of an unrelated allocation, and a
+ * sibling rewrite of the bytes between sanitise and post would steer the
+ * re-call at a different inode than the one the original syscall actually
+ * resolved.
  */
 #define FILE_GETATTR_POST_STATE_MAGIC	0x46474154UL	/* "FGAT" */
 #define FILE_GETATTR_POISON_SEED	0x4641545452505354ULL	/* "FATTRPST" */
 struct file_getattr_post_state {
 	unsigned long magic;
-	unsigned long dfd;
 	unsigned long ufattr;
-	unsigned long usize;
-	unsigned long at_flags;
 	size_t buf_alloc_size;
 	uint64_t poison_seed;
 	char pathname[PATH_MAX];
@@ -96,22 +92,19 @@ static void mask_file_getattr_at_flags(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_FILE_GETATTR
 /*
- * Snapshot input state for the post oracle.  Without this the
- * post handler reads rec->a1..a5 at post-time, when a sibling
- * syscall may have scribbled the slots: looks_like_corrupted_ptr()
- * cannot tell a real-but-wrong heap address from the original
- * user ufattr pointer, so the memcpy / re-issue would touch a
- * foreign allocation, a stomped usize or at_flags word would
- * smear the comparison bound or change the lookup mode, and a
- * stale rec->a2 / sibling-rewritten pathname bytes would let the
- * re-issue resolve a different inode.  Snapshot the pathname
- * BYTES via post_snapshot_str so the post handler never re-derefs
- * the user pointer; skip the post sample when the snapshot source
- * is not provably readable.  post_state is private to the post
- * handler.  Gated on HAVE_SYS_FILE_GETATTR to mirror the .post
- * body -- on systems without SYS_file_getattr the post handler is
- * a no-op stub and a snapshot only the post handler can free
- * would leak.
+ * Snapshot input state for the post oracle.  Without this the post
+ * handler reads rec->a2/a3 at post-time, when a sibling syscall may have
+ * scribbled the slots: looks_like_corrupted_ptr() cannot tell a
+ * real-but-wrong heap address from the original user ufattr pointer, so
+ * the memcpy / re-issue would touch a foreign allocation, and a stale
+ * rec->a2 / sibling-rewritten pathname bytes would let the re-issue
+ * resolve a different inode.  Snapshot the pathname BYTES via
+ * post_snapshot_str so the post handler never re-derefs the user pointer;
+ * skip the post sample when the snapshot source is not provably readable.
+ * post_state is private to the post handler.  Gated on
+ * HAVE_SYS_FILE_GETATTR to mirror the .post body -- on systems without
+ * SYS_file_getattr the post handler is a no-op stub and a snapshot only
+ * the post handler can free would leak.
  */
 static void snapshot_file_getattr_state(struct syscallrecord *rec,
 					size_t buf_alloc_size)
@@ -120,10 +113,7 @@ static void snapshot_file_getattr_state(struct syscallrecord *rec,
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = FILE_GETATTR_POST_STATE_MAGIC;
-	snap->dfd      = rec->a1;
 	snap->ufattr   = rec->a3;
-	snap->usize    = rec->a4;
-	snap->at_flags = rec->a5;
 	snap->buf_alloc_size = buf_alloc_size;
 	snap->poison_seed = 0;
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
@@ -308,24 +298,22 @@ static void sanitise_file_getattr(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between syscall
  *     return and our post-hook re-read.
  *
- * TOCTOU defeat (five buffers worth of it): the dfd, pathname, ufattr,
- * usize, and at_flags args are snapshotted at sanitise time into a heap
- * struct in rec->post_state, so a sibling that scribbles rec->aN between
- * syscall return and post entry cannot retarget the dfd, redirect the
- * strncpy at a foreign pathname, steer the memcpy at a foreign ufattr,
- * smear the usize comparison bound, or flip at_flags between the
- * original lookup mode and the re-issue.  The pathname is the dominant
- * attack surface -- alloc_shared can hand it to another child which
- * then scribbles it; the snap captures the pointer the kernel actually
- * resolved on the original call.  We still copy the path into a
+ * TOCTOU defeat: the pathname and ufattr args are snapshotted at sanitise
+ * time into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->aN between syscall return and post entry cannot redirect the
+ * strncpy at a foreign pathname or steer the memcpy at a foreign ufattr,
+ * and the re-issue takes the dfd, usize and at_flags the kernel was
+ * handed, so it repeats the lookup the kernel made.  The pathname is the
+ * dominant attack surface -- alloc_shared can hand it to another child
+ * which then scribbles it; the snap captures the pointer the kernel
+ * actually resolved on the original call.  We still copy the path into a
  * PATH_MAX stack buffer and the first usize bytes of the original
  * file_attr into a stack-local before re-calling, so a sibling that
  * scribbles the user buffers themselves between the two reads cannot
- * smear the comparison.  Re-issue with FRESH private buffers (do NOT
- * pass the snap's ufattr -- a sibling could mutate the user buffer
- * mid-syscall and forge a clean compare).  If the re-call fails, give
- * up rather than report (file may have been unlinked by sibling between
- * calls).
+ * smear the comparison.  Re-issue with FRESH private buffers (do NOT pass
+ * the snap's ufattr -- a sibling could mutate the user buffer mid-syscall
+ * and forge a clean compare).  If the re-call fails, give up rather than
+ * report (file may have been unlinked by sibling between calls).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  A real chattr-race divergence is itself an interesting TOCTOU
@@ -387,27 +375,28 @@ static void post_file_getattr(struct syscallrecord *rec)
 	if (snap->pathname[0] == '\0')
 		goto out_release;
 
-	usize = (size_t) snap->usize;
+	/* The size the kernel was handed, which bounds what it wrote. */
+	usize = (size_t) get_arg_snapshot(rec, 4);
 	if (usize < sizeof(struct file_attr))
 		goto out_release;
 	if (usize > sizeof(struct file_attr))
 		usize = sizeof(struct file_attr);
 	/*
-	 * Belt-and-braces: the sanitise-time clamp guarantees snap->usize
-	 * <= snap->buf_alloc_size, but a sibling that scribbled snap->usize
-	 * could push it past the actual allocation backing snap->ufattr.
-	 * The memcpy below reads `usize` bytes from snap->ufattr; bound it
-	 * by the snapshotted allocation size so a stomped snap->usize
-	 * cannot turn the oracle's source memcpy into a read-OOB on the
-	 * pool slot.
+	 * Belt-and-braces: the sanitise-time clamp held the usize it drew to
+	 * snap->buf_alloc_size, but the one the kernel was handed may have
+	 * been rewritten past the allocation backing snap->ufattr.  The
+	 * memcpy below reads `usize` bytes from snap->ufattr; bound it by
+	 * the snapshotted allocation size so a larger usize cannot turn the
+	 * oracle's source memcpy into a read-OOB on the pool slot.
 	 */
 	if (snap->buf_alloc_size != 0 && usize > snap->buf_alloc_size)
 		usize = snap->buf_alloc_size;
 	if (usize < sizeof(struct file_attr))
 		goto out_release;
 
-	dfd = (int) snap->dfd;
-	at_flags = (unsigned int) snap->at_flags;
+	/* The lookup the kernel made. */
+	dfd = (int) get_arg_snapshot(rec, 1);
+	at_flags = (unsigned int) get_arg_snapshot(rec, 5);
 
 	if (!post_snapshot_or_skip(&first_attr,
 				   (const void *) snap->ufattr, usize))
@@ -461,6 +450,11 @@ struct syscallentry syscall_file_getattr = {
 	.arg_params[4].list = ARGLIST(file_getattr_at_flags),
 	.sanitise = sanitise_file_getattr,
 	.post = post_file_getattr,
+	/* dfd (a1), usize (a4) and at_flags (a5): the re-call repeats the
+	 * lookup the kernel made and compares as much as it wrote, which
+	 * chain substitution or a RedQueen pin may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 3) | (1u << 4),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_STAT,

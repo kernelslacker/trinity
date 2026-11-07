@@ -9,6 +9,7 @@
  * the kernel moves.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -22,9 +23,10 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/fs.h"		/* struct file_attr */
 #include "kernel/mount.h"	/* struct statmount, STATMOUNT_* */
 #include "kernel/stat.h"	/* struct statx, STATX_* */
-#include "kernel/unistd.h"	/* SYS_statmount */
+#include "kernel/unistd.h"	/* SYS_statmount, SYS_file_getattr */
 #include "rnd.h"		/* rnd_state, rnd_modulo_u32 */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
@@ -514,6 +516,33 @@ static unsigned long rewritten_anomalies(struct syscallentry *entry,
 
 static char dirs[2][sizeof("/tmp/trinity-stat-recall-test.XXXXXX")];
 
+#ifdef SYS_file_getattr
+extern bool (*fake_syscall)(long number, const unsigned long a[6],
+			    long *ret);		/* landlock_test.c */
+
+/* The attributes a fake file_getattr() answers for a lookup from each
+ * dfd in fake_attr_dfd[]: the syscall is newer than many a test host. */
+static int fake_attr_dfd[2];
+static struct file_attr fake_attr[2];
+
+static bool fake_file_getattr(long number, const unsigned long a[6], long *ret)
+{
+	unsigned int n;
+
+	if (number != SYS_file_getattr)
+		return false;
+	*ret = -EBADF;
+	for (n = 0; n < ARRAY_SIZE(fake_attr); n++) {
+		if ((int) a[0] != fake_attr_dfd[n])
+			continue;
+		memcpy((void *) a[2], &fake_attr[n],
+		       min((size_t) a[3], sizeof(fake_attr[n])));
+		*ret = 0;
+	}
+	return true;
+}
+#endif
+
 /* A scratch directory holding a "file" and a "link" to it, open. */
 static int scratch_dir(unsigned int n)
 {
@@ -633,6 +662,35 @@ static void rewritten_cases(void)
 					  sizeof(link_a_stx)) > 0);
 	}
 
+#ifdef SYS_file_getattr
+	{
+		const unsigned long built[6] = { a, (unsigned long) file_name, 0,
+						 FILE_ATTR_SIZE_VER0 };
+		const unsigned long ran[6] = { b, (unsigned long) file_name, 0,
+					       FILE_ATTR_SIZE_VER0 };
+		struct file_attr torn;
+
+		fake_attr_dfd[0] = a;
+		fake_attr_dfd[1] = b;
+		memset(fake_attr, 0, sizeof(fake_attr));
+		fake_attr[1].fa_xflags = FS_XFLAG_NODUMP;
+		torn = fake_attr[1];
+		torn.fa_projid = 1;
+		fake_syscall = fake_file_getattr;
+		check("a call substituted onto another dfd was judged on the first",
+		      "file_getattr",
+		      rewritten_anomalies(&syscall_file_getattr,
+					  &shm->stats.oracle.file_getattr_oracle_anomalies,
+					  built, ran, 3, &fake_attr[1],
+					  sizeof(fake_attr[1])) == 0);
+		check("a torn copy from a call substituted onto another dfd was not reported",
+		      "file_getattr",
+		      rewritten_anomalies(&syscall_file_getattr,
+					  &shm->stats.oracle.file_getattr_oracle_anomalies,
+					  built, ran, 3, &torn, sizeof(torn)) > 0);
+		fake_syscall = NULL;
+	}
+#endif
 	{
 		const unsigned long built[6] = { fd_a }, ran[6] = { proc };
 

@@ -22,3 +22,6 @@
 #if !defined(SYS_listxattrat) && defined(__NR_listxattrat)
 #define SYS_listxattrat	__NR_listxattrat
 #endif
+#if !defined(SYS_file_getattr) && defined(__NR_file_getattr)
+#define SYS_file_getattr	__NR_file_getattr
+#endif
