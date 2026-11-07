@@ -143,12 +143,11 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	 * roll the dice here and consult the picker once, deferring channel
 	 * attribution until we know whether C qualifies.
 	 *
-	 * Dice are rolled even when an earlier channel has already fired so
-	 * the random stream stays callsite-deterministic across plateau
-	 * transitions -- without this, flipping the plateau on / off would
-	 * shift every downstream rnd_*() consumer's value.  Cost is two
-	 * rnd_modulo_u32 calls in the rejected case, both off the hot raw
-	 * cmp-hint path.
+	 * B's and C's dice are rolled even when an earlier channel has
+	 * already fired; A's only while the plateau is on, so flipping the
+	 * plateau shifts every later rnd_*() draw by one.  Cost is a
+	 * rnd_modulo_u32 call per die rolled, off the hot raw cmp-hint
+	 * path.
 	 */
 	plateau_on = (__atomic_load_n(&shm->plateau_current_hypothesis,
 				      __ATOMIC_RELAXED) ==

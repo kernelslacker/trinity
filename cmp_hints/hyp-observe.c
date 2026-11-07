@@ -21,11 +21,10 @@
  * insert, still under that pool's lock -- so writes into
  * hyp_pools[nr][do32 ? 1 : 0] are serialised per-(nr, do32) without a
  * second lock of our own.  Every observation drives one or more typed
- * lanes (EXACT / BITMASK / ENUM_FAMILY / RANGE), subject to the
- * per-kind + per-syscall caps the skeleton reserved.  The resulting
- * hypotheses stay in CMP_HYP_STATE_OBSERVED: no consumer reads them
- * and no injection path substitutes a hypothesis-derived value -- the
- * candidate-API + feedback wiring lands in the follow-up units.
+ * lanes (EXACT / BITMASK / ENUM_FAMILY / RANGE / BOUNDARY), subject to
+ * the per-kind + per-syscall caps the skeleton reserved.  The resulting
+ * hypotheses land in CMP_HYP_STATE_OBSERVED, where the picker and the
+ * live inject arm (hyp-pick.c, hyp-live.c) find them.
  */
 void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 		     unsigned long value, unsigned int size)
@@ -70,7 +69,7 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	/*
 	 * EXACT lane: per-value identity.  A repeat observation refreshes
 	 * seen_count + last_used_generation; a fresh value tries to take a
-	 * slot (subject to the per-kind cap of 2).
+	 * slot (subject to the per-kind cap, CMP_HYP_PER_KIND).
 	 */
 	h = cmp_hyp_find_exact(pool, cmp_ip, width, val);
 	if (h != NULL) {

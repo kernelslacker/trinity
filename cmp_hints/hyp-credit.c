@@ -189,13 +189,11 @@ void cmp_hyp_credit_outcome(const struct cmp_hint_consumed_entry *e,
 	}
 
 	/*
-	 * SHADOW scoring pass.  Recompute h->score_bucket from the per-hyp
+	 * Scoring pass.  Recompute h->score_bucket from the per-hyp
 	 * evidence counters just bumped above, and evaluate the would-
-	 * promote / would-demote predicate the live state machine will
-	 * eventually own.  Pure observation: h->state is NOT mutated and
-	 * remains CMP_HYP_STATE_OBSERVED for every entry.  The bucket
-	 * write is u8 and never read by the pick/inject path; the kcov_shm
-	 * arrays are SHADOW telemetry.
+	 * promote / would-demote predicates the state transition below
+	 * acts on.  The bucket write is u8 and never read by the
+	 * pick/inject path; the kcov_shm arrays are SHADOW telemetry.
 	 *
 	 * Counters are loaded RELAXED -- they race with concurrent
 	 * credit_outcome() calls on the same hyp from sibling children.
@@ -275,10 +273,10 @@ void cmp_hyp_credit_outcome(const struct cmp_hint_consumed_entry *e,
 		}
 
 		/*
-		 * Live h->state mutation.  The would_promote / would_demote
-		 * predicates above were stranded telemetry until now; here
-		 * we drive the real state-machine transition off them so
-		 * the picker (next commit) can route on h->state.
+		 * Live h->state mutation, driven off the would_promote /
+		 * would_demote predicates above; the picker
+		 * (cmp_hyp_would_pick_locked()) and the inject arm's
+		 * PROMOTED-bypass channel route on h->state.
 		 *
 		 *   OBSERVED + would_promote  -> PROMOTED  (first win)
 		 *   DEMOTED  + would_promote  -> OBSERVED  (revive --

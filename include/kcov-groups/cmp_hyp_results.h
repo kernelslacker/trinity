@@ -32,9 +32,9 @@ unsigned long cmp_hyp_pool_overflow;
  * bumps nothing.  Only the five ladder kinds (EXACT, ENUM_FAMILY,
  * BITMASK, RANGE, BOUNDARY) ever populate, mirroring the existing
  * _by_kind shadow arrays; the other CMP_HYP_KIND_NR slots stay
- * zero by construction.  SHADOW telemetry only -- the h->state
- * field is NOT mutated; no consumer reads either the array or the
- * state.
+ * zero by construction.  SHADOW telemetry: nothing but the renderer
+ * reads the arrays, while cmp_hyp_credit_outcome() moves h->state on
+ * the same predicates.
  */
 unsigned long cmp_hyp_would_promote_by_kind[CMP_HYP_KIND_NR];
 unsigned long cmp_hyp_would_demote_by_kind[CMP_HYP_KIND_NR];

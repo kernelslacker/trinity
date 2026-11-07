@@ -154,14 +154,11 @@ enum cmp_range_relation {
 /*
  * Common shape across every hypothesis kind.  Fields not relevant to a
  * given kind are zero (e.g. mask is unused by CMP_HYP_EXACT, lo/hi by
- * CMP_HYP_BITMASK).  Counters are saturating uint64_t for shadow-phase
- * accumulation -- the active inference + feedback layers will land in
- * the follow-up units and bound the lifetime + decay policy.
+ * CMP_HYP_BITMASK).  Counters are saturating uint64_t, and nothing
+ * decays them.
  *
- * cmp_ip is current-kernel-only and optional: cross-kernel persistence
- * drops it on load (the kallsyms fingerprint on the on-disk file
- * already invalidates IP keys across rebuilds), so consumers must
- * tolerate a zero ip on a warm-started entry.
+ * cmp_ip is current-kernel-only: hyp_pools are never persisted, so
+ * every entry was observed in this run.
  *
  * range_direction / range_signedness / range_relation are populated
  * only for CMP_HYP_RANGE entries and participate in their dedup key;
@@ -247,10 +244,10 @@ struct cmp_hyp_pool {
  * typed inject was derived from.  CMP_NOVELTY is deliberately a peer of
  * PC_WIN rather than a variant: harvested-but-flat novelty must never
  * be folded into PC-edge conversion accounting ([11-feedback-loop]
- * discipline).  CORPUS_SAVE / DESTRUCTIVE_SKIP / CONTEXT_SKIP are part
- * of the published menu so the struct is laid out for the consumer +
- * skip-site wiring that lands in follow-up units; until then those
- * channels never fire and the per-hypothesis counters stay zero.
+ * discipline).  DESTRUCTIVE_SKIP and CONTEXT_SKIP are part of the
+ * published menu so the struct is laid out for skip-site wiring that
+ * has not landed: nothing credits them yet, so their per-hypothesis
+ * counters stay zero.
  */
 enum cmp_hyp_outcome {
 	CMP_HYP_OUTCOME_PC_WIN,

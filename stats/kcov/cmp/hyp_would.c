@@ -1,8 +1,8 @@
 /*
  * Typed hypothesis SHADOW would-* render lane: would-pick from the
  * cmp_hints_try_get_ex() ladder, and would-promote / would-demote from
- * cmp_hyp_credit_outcome().  They bump on the shadow path only (h->state is
- * unchanged), so a delta reads as "would the live state machine have fired".
+ * cmp_hyp_credit_outcome(), counting the predicates its h->state transitions
+ * act on.
  */
 
 #include <errno.h>
