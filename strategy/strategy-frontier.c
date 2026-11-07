@@ -138,16 +138,18 @@ void topo_pair_record_shadow(unsigned int nr, unsigned int reason)
 			   __ATOMIC_RELAXED);
 }
 
-void frontier_record_new_edge(unsigned int nr)
+/*
+ * The bookkeeping every productive event does on @nr's frontier state,
+ * a new PC edge (frontier_record_new_edge()) or a transition flip
+ * (frontier_record_transition_edge()): bump the ring and its cached
+ * sum, release the silent and LIVE-miss streaks, re-arm the no-novelty
+ * baselines and ratchet the cached max.
+ */
+static void frontier_record_productive(unsigned int nr, unsigned int ctx)
 {
-	struct childdata *cc = this_child();
-	unsigned int ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
 	uint32_t slot;
 	unsigned long w;
 	unsigned int cached;
-
-	if (nr >= MAX_NR_SYSCALL)
-		return;
 
 	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
 	       (FRONTIER_DECAY_WINDOWS - 1);
@@ -159,44 +161,17 @@ void frontier_record_new_edge(unsigned int nr)
 	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr][ctx], 1U,
 			   __ATOMIC_RELAXED);
 
-	/* RedQueen-source PC-edge attribution.  When the call that produced
-	 * this new edge was a replay of a corpus entry whose args were
-	 * originally captured under in_reexec (i.e. the RedQueen re-exec
-	 * path harvested those args), credit the win to the dedicated
-	 * rq_sourced_pcedge_wins_per_syscall[] counter so the periodic
-	 * dump can report PC-edge conversion of RedQueen-sourced saves
-	 * separately from the bulk per-strategy attribution.  Observability
-	 * only -- no selection / reward code reads this counter.  RELAXED
-	 * add-fetch matches the surrounding accounting.  Reuses the
-	 * function-scope `cc` above so the this_child() lookup fires once. */
-	{
-		if (cc != NULL && cc->replay_rq_sourced)
-			__atomic_fetch_add(
-				&shm->stats.pc_edge_source.rq_pcedge_wins[nr],
-				1UL, __ATOMIC_RELAXED);
-
-		/* errno-gradient-save conversion counter.  Sibling of the
-		 * rq_sourced bump above for the errno-source provenance lane.
-		 * Bumped only when the call that produced this PC win was a
-		 * replay of a corpus entry whose errno_sourced flag was set --
-		 * i.e. a downstream PC-edge win from an errno-gradient save.
-		 * Observability only; cumulative-diagnostic semantics matches
-		 * the rest of the strategy.c accounting. */
-		if (cc != NULL && cc->replay_errno_sourced)
-			__atomic_fetch_add(
-				&shm->stats.pc_edge_source.errno_pcedge_wins[nr],
-				1UL, __ATOMIC_RELAXED);
-	}
-
-	/* SHADOW-ONLY silent-streak reset.  This function is the canonical
-	 * per-syscall new-edge productive-event hook -- already called from
-	 * kcov_collect()'s found_new branch when a syscall's call has
-	 * produced at least one fresh bucket bit, which is also the path
-	 * that contributes the positive local_distinct_pcs delta the
-	 * coverage-frontier picker treats as the "productive" signal.
-	 * Resetting the silent-streak counter here therefore reuses the
-	 * existing per-syscall productive-edge collection site -- no new
-	 * collection path is added.
+	/* SHADOW-ONLY silent-streak reset.  frontier_record_new_edge() is
+	 * the canonical per-syscall new-edge productive-event hook --
+	 * already called from kcov_collect()'s found_new branch when a
+	 * syscall's call has produced at least one fresh bucket bit, which
+	 * is also the path that contributes the positive local_distinct_pcs
+	 * delta the coverage-frontier picker treats as the "productive"
+	 * signal.  Resetting the silent-streak counter here therefore reuses
+	 * the existing per-syscall productive-edge collection site -- no new
+	 * collection path is added.  A transition discovery resets it too:
+	 * the streak counts consecutive cold windows, agnostic to PC vs
+	 * transition.
 	 *
 	 * The counter feeds the arm-B live reject at
 	 * random_syscall/pick-frontier.c's silent-regime accept site, so
@@ -206,16 +181,17 @@ void frontier_record_new_edge(unsigned int nr)
 		0UL, __ATOMIC_RELAXED);
 
 	/* LIVE-regime miss-streak reset, paired with the
-	 * silent-streak reset above.  Same productive-event semantics: this
-	 * function is the canonical per-syscall new-edge productive-event
-	 * hook, so a fresh bucket bit on this syscall releases the LIVE-
-	 * regime cooldown streak just as it releases the silent-streak
+	 * silent-streak reset above.  Same productive-event semantics: a
+	 * fresh bucket bit or a transition flip on this syscall releases the
+	 * LIVE-regime cooldown streak just as it releases the silent-streak
 	 * decay.  Without this reset the per-syscall LIVE-miss streak would
 	 * latch high after a single productive run of zero-edge LIVE picks,
 	 * the frontier_live_cooldown_candidates / frontier_live_would_
 	 * skip projections would be permanently inflated, and
 	 * frontier_window_advance() would keep halving the syscall's
-	 * frontier weight. */
+	 * frontier weight -- for a transition discovery, on exactly the
+	 * syscalls earning post-plateau transition coverage but no fresh PC
+	 * bucket bits, which should NOT cool down. */
 	__atomic_store_n(
 		&shm->stats.frontier.per_syscall.live_miss_streak_per_syscall[nr],
 		0UL, __ATOMIC_RELAXED);
@@ -227,15 +203,14 @@ void frontier_record_new_edge(unsigned int nr)
 	 * detect whether either fired during the next silent streak via a
 	 * cheap current-vs-baseline equality test.  A streak reset here is
 	 * the right moment to refresh the baselines: by construction this
-	 * call also bumped per_syscall_edges, so PC-edge novelty IS the
-	 * reset event and the no-novelty UNLESS clause is being re-armed
-	 * for the next streak.
+	 * productive event IS the reset event, and the no-novelty UNLESS
+	 * clause is being re-armed for the next streak.
 	 *
 	 * Only the decay predicate at the silent-regime accept site reads
 	 * these baselines, and its arm-B reject steers selection by them.
-	 * kcov_shm NULL-checked because frontier_record_new_edge is
-	 * unreachable without a coverage trace under collection, but the
-	 * guard matches the pattern other kcov_shm consumers follow. */
+	 * kcov_shm NULL-checked because neither hook is reachable without a
+	 * coverage trace under collection, but the guard matches the
+	 * pattern other kcov_shm consumers follow. */
 	if (kcov_shm != NULL) {
 		unsigned long cmp_snap, errno_snap = 0;
 		unsigned int cix;
@@ -271,6 +246,44 @@ void frontier_record_new_edge(unsigned int nr)
 	if ((unsigned int)w > cached)
 		__atomic_store_n(&shm->frontier_max_weight_cached,
 				 (unsigned int)w, __ATOMIC_RELAXED);
+}
+
+void frontier_record_new_edge(unsigned int nr)
+{
+	struct childdata *cc = this_child();
+
+	if (nr >= MAX_NR_SYSCALL)
+		return;
+
+	frontier_record_productive(nr, cc != NULL ? cc->context_id :
+						    PICKER_CTX_INIT);
+
+	/* RedQueen-source PC-edge attribution.  When the call that produced
+	 * this new edge was a replay of a corpus entry whose args were
+	 * originally captured under in_reexec (i.e. the RedQueen re-exec
+	 * path harvested those args), credit the win to the dedicated
+	 * rq_sourced_pcedge_wins_per_syscall[] counter so the periodic
+	 * dump can report PC-edge conversion of RedQueen-sourced saves
+	 * separately from the bulk per-strategy attribution.  Observability
+	 * only -- no selection / reward code reads this counter.  RELAXED
+	 * add-fetch matches the surrounding accounting.  Reuses the
+	 * function-scope `cc` above so the this_child() lookup fires once. */
+	if (cc != NULL && cc->replay_rq_sourced)
+		__atomic_fetch_add(
+			&shm->stats.pc_edge_source.rq_pcedge_wins[nr],
+			1UL, __ATOMIC_RELAXED);
+
+	/* errno-gradient-save conversion counter.  Sibling of the
+	 * rq_sourced bump above for the errno-source provenance lane.
+	 * Bumped only when the call that produced this PC win was a
+	 * replay of a corpus entry whose errno_sourced flag was set --
+	 * i.e. a downstream PC-edge win from an errno-gradient save.
+	 * Observability only; cumulative-diagnostic semantics matches
+	 * the rest of the strategy.c accounting. */
+	if (cc != NULL && cc->replay_errno_sourced)
+		__atomic_fetch_add(
+			&shm->stats.pc_edge_source.errno_pcedge_wins[nr],
+			1UL, __ATOMIC_RELAXED);
 
 	/* SHADOW-ONLY topology-pair sample.  See topo_pair_record_shadow()
 	 * for the full design contract.  Sits at the tail of the function
@@ -309,71 +322,12 @@ void frontier_record_new_edge(unsigned int nr)
 void frontier_record_transition_edge(unsigned int nr)
 {
 	struct childdata *cc = this_child();
-	unsigned int ctx = cc != NULL ? cc->context_id : PICKER_CTX_INIT;
-	uint32_t slot;
-	unsigned long w;
-	unsigned int cached;
 
 	if (nr >= MAX_NR_SYSCALL)
 		return;
 
-	slot = __atomic_load_n(&shm->frontier_slot, __ATOMIC_RELAXED) &
-	       (FRONTIER_DECAY_WINDOWS - 1);
-	__atomic_fetch_add(&shm->frontier_history[nr][ctx][slot], 1U,
-			   __ATOMIC_RELAXED);
-	__atomic_fetch_add(&shm->frontier_recent_count_cached[nr][ctx], 1U,
-			   __ATOMIC_RELAXED);
-
-	__atomic_store_n(
-		&shm->stats.frontier.per_syscall.silent_streak_per_syscall[nr],
-		0UL, __ATOMIC_RELAXED);
-
-	/* LIVE-regime miss-streak reset.  Sibling of the reset
-	 * in frontier_record_new_edge(): a transition-edge discovery is a
-	 * productive event the LIVE-regime cooldown streak must release on,
-	 * same as the silent-streak decay above and for the same reason.
-	 * Leaving this out would let the LIVE-miss streak latch high on
-	 * syscalls that are earning post-plateau transition coverage but no
-	 * fresh PC bucket bits, inflating the cooldown projections on, and
-	 * halving the frontier weight of, exactly the syscalls that should
-	 * NOT cool down. */
-	__atomic_store_n(
-		&shm->stats.frontier.per_syscall.live_miss_streak_per_syscall[nr],
-		0UL, __ATOMIC_RELAXED);
-
-	/* No-novelty baseline snapshot.  Mirror of the snapshot
-	 * pair in frontier_record_new_edge(): a transition-edge discovery
-	 * is also a productive event for the streak's purposes, so the
-	 * decay predicate's UNLESS-clause baselines re-arm here too.  See
-	 * the matching block in frontier_record_new_edge() for full
-	 * rationale. */
-	if (kcov_shm != NULL) {
-		unsigned long cmp_snap, errno_snap = 0;
-		unsigned int cix;
-
-		cmp_snap = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_cmp_inserts[nr],
-			__ATOMIC_RELAXED);
-		for (cix = 0; cix < PICKER_NCTX; cix++)
-			errno_snap += __atomic_load_n(
-				&kcov_shm->errno_state.per_syscall_errno[nr][cix][ERRNO_BUCKET_SUCCESS],
-				__ATOMIC_RELAXED);
-		__atomic_store_n(
-			&shm->stats.frontier.per_syscall.silent_cmp_baseline[nr],
-			cmp_snap, __ATOMIC_RELAXED);
-		__atomic_store_n(
-			&shm->stats.frontier.per_syscall.silent_errno_success_baseline[nr],
-			errno_snap, __ATOMIC_RELAXED);
-	}
-
-	w = frontier_recent_count(nr);
-	if (w > UINT_MAX)
-		w = UINT_MAX;
-	cached = __atomic_load_n(&shm->frontier_max_weight_cached,
-				 __ATOMIC_RELAXED);
-	if ((unsigned int)w > cached)
-		__atomic_store_n(&shm->frontier_max_weight_cached,
-				 (unsigned int)w, __ATOMIC_RELAXED);
+	frontier_record_productive(nr, cc != NULL ? cc->context_id :
+						    PICKER_CTX_INIT);
 }
 
 unsigned long frontier_recent_count(unsigned int nr)
