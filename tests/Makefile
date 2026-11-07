@@ -513,6 +513,7 @@ FAKE_SRCS	:= \
 	xattr_recall_test.c \
 	selector_recall_test.c \
 	readlink_recall_test.c \
+	name_to_handle_at_test.c \
 	listmount_recall_test.c \
 	sockname_recall_test.c \
 	pid_recall_test.c \
@@ -644,6 +645,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 # post_oracle_test.c drives, and readlinkat, whose re-call
 # readlink_recall_test.c runs on symlinks of its own.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
+
+# syscalls/fs/path/name_to_handle_at.c brings name_to_handle_at, whose
+# pathname and flags name_to_handle_at_test.c runs its sanitiser on.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/path/name_to_handle_at.c
 
 # syscalls/socket/getsockname.c and getpeername.c bring getsockname and
 # getpeername, whose re-calls sockname_recall_test.c runs on sockets of

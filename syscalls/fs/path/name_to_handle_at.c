@@ -45,7 +45,6 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	struct file_handle *fh;
 	struct name_to_handle_at_post_state *snap;
 	int *mnt_id;
-	void *pathname;
 
 	/*
 	 * Clear post_state up front so an early return below leaves the
@@ -53,6 +52,19 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	 * pointer carried over from an earlier syscall on this record.
 	 */
 	rec->post_state = 0;
+
+	/*
+	 * name (a2) is the generator's pathname.  One call in eight empties
+	 * it in place and asks for AT_EMPTY_PATH, for a handle of the dfd's
+	 * own file; the kernel refuses AT_HANDLE_CONNECTABLE beside
+	 * AT_EMPTY_PATH.  The buffer is the generator's allocation, which
+	 * the ARG_PATHNAME cleanup frees, so it is written, never replaced.
+	 */
+	if (rec->a2 != 0 && ONE_IN(8)) {
+		((char *) rec->a2)[0] = '\0';
+		rec->a5 = (rec->a5 | AT_EMPTY_PATH) &
+			  ~(unsigned long) AT_HANDLE_CONNECTABLE;
+	}
 
 	/* Allocate enough for the handle struct plus max handle data. */
 	fh = (struct file_handle *) get_writable_address(sizeof(*fh) + MAX_HANDLE_SZ);
@@ -69,11 +81,6 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	if (mnt_id == NULL)
 		return;
 
-	pathname = get_writable_address(256);
-	if (pathname == NULL)
-		return;
-
-	rec->a2 = (unsigned long) pathname;
 	rec->a3 = (unsigned long) fh;
 	rec->a4 = (unsigned long) mnt_id;
 
@@ -154,10 +161,9 @@ static void post_name_to_handle_at_record(struct syscallrecord *rec)
  * name_to_handle_at contracts to write both *handle and *mnt_id on a
  * zero return, so a survived poison on the mnt_id side alone is enough
  * to flag the miss.  Bumps the shared post_handler_untouched_out_buf
- * counter.  Expected low hit-rate: success needs a resolvable path so
- * most calls -ENOENT before ever reaching the copy-out; the oracle is
- * still valid because a survived poison after a zero return is
- * unambiguous.
+ * counter.  Success needs a path that resolves on a filesystem that can
+ * encode a handle, so not every call reaches the copy-out; a survived
+ * poison after a zero return is unambiguous either way.
  *
  * This runs alongside post_name_to_handle_at_record (wired via
  * .ret_objtype_via_post) -- both slots fire independently; the record
@@ -207,7 +213,7 @@ out_release:
 struct syscallentry syscall_name_to_handle_at = {
 	.name = "name_to_handle_at",
 	.num_args = 5,
-	.argtype = { [0] = ARG_FD, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_LIST },
+	.argtype = { [0] = ARG_FD, [1] = ARG_PATHNAME, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_LIST },
 	.argname = { [0] = "fd", [1] = "name", [2] = "handle", [3] = "mnt_id", [4] = "flag" },
 	.arg_params[4].list = ARGLIST(name_to_handle_at_flags),
 	.rettype = RET_ZERO_SUCCESS,
