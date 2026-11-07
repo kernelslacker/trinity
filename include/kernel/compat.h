@@ -3,11 +3,11 @@
 /*
  * 32-bit compat layouts the kernel reads for compat readv/writev, compat
  * recvmsg/sendmsg/recvmmsg/sendmmsg, compat pselect6 and the time32
- * calls, from include/net/compat.h, include/linux/compat.h, fs/select.c
- * and include/vdso/time32.h, which no uapi header ships.  All fields are
- * 32-bit: a compat call reads the array header and every entry at 32-bit
- * width, so handing it the native 64-bit layouts misreads every second
- * field.
+ * calls, from include/net/compat.h, include/linux/compat.h, fs/select.c,
+ * include/vdso/time32.h and include/linux/time32.h, which no uapi header
+ * ships.  All fields are 32-bit: a compat call reads the array header and
+ * every entry at 32-bit width, so handing it the native 64-bit layouts
+ * misreads every second field.
  */
 #include <linux/types.h>
 
@@ -68,6 +68,32 @@ struct old_itimerval32 {
 	struct old_timeval32 it_value;
 };
 
+/* struct timex as a time32 call reads it: with every field 32-bit, each
+ * sits at its own offset, not only a narrower one. */
+struct old_timex32 {
+	__u32 modes;
+	__s32 offset;
+	__s32 freq;
+	__s32 maxerror;
+	__s32 esterror;
+	__s32 status;
+	__s32 constant;
+	__s32 precision;
+	__s32 tolerance;
+	struct old_timeval32 time;
+	__s32 tick;
+	__s32 ppsfreq;
+	__s32 jitter;
+	__s32 shift;
+	__s32 stabil;
+	__s32 jitcnt;
+	__s32 calcnt;
+	__s32 errcnt;
+	__s32 stbcnt;
+	__s32 tai;
+	__s32 reserved[11];
+};
+
 _Static_assert(sizeof(struct compat_iovec) == 8,
 	       "compat_iovec must be two 32-bit words");
 _Static_assert(sizeof(struct compat_msghdr) == 28,
@@ -84,3 +110,5 @@ _Static_assert(sizeof(struct old_timeval32) == 8,
 	       "old_timeval32 must be two 32-bit words");
 _Static_assert(sizeof(struct old_itimerval32) == 16,
 	       "old_itimerval32 must be two old_timeval32s");
+_Static_assert(sizeof(struct old_timex32) == 128,
+	       "old_timex32 must be 32 32-bit words");

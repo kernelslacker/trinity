@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <sys/time.h>
+#include <sys/timex.h>
 #include <time.h>
 
 #include "args-internal.h"
@@ -62,6 +63,42 @@ void time_struct_from_abi(const struct syscallrecord *rec, void *buf,
 	for (i = 0; i < pairs * 2; i++)
 		wide[i] = narrow[i];
 	memcpy(buf, wide, pairs * 2 * sizeof(wide[0]));
+}
+
+/*
+ * struct timex for such a call: struct old_timex32 moves every field, so
+ * it is copied field by field into the start of the native struct.
+ */
+void timex_for_abi(const struct syscallrecord *rec, struct timex *tx)
+{
+	struct old_timex32 tx32;
+
+	if (!rec->do32bit || rec->nr >= NR_COMPAT_TIME64_FIRST)
+		return;
+
+	memset(&tx32, 0, sizeof(tx32));
+	tx32.modes = tx->modes;
+	tx32.offset = tx->offset;
+	tx32.freq = tx->freq;
+	tx32.maxerror = tx->maxerror;
+	tx32.esterror = tx->esterror;
+	tx32.status = tx->status;
+	tx32.constant = tx->constant;
+	tx32.precision = tx->precision;
+	tx32.tolerance = tx->tolerance;
+	tx32.time.tv_sec = tx->time.tv_sec;
+	tx32.time.tv_usec = tx->time.tv_usec;
+	tx32.tick = tx->tick;
+	tx32.ppsfreq = tx->ppsfreq;
+	tx32.jitter = tx->jitter;
+	tx32.shift = tx->shift;
+	tx32.stabil = tx->stabil;
+	tx32.jitcnt = tx->jitcnt;
+	tx32.calcnt = tx->calcnt;
+	tx32.errcnt = tx->errcnt;
+	tx32.stbcnt = tx->stbcnt;
+	tx32.tai = tx->tai;
+	memcpy(tx, &tx32, sizeof(tx32));
 }
 
 /*

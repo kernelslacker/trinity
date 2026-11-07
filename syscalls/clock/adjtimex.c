@@ -94,6 +94,7 @@ static void sanitise_adjtimex(struct syscallrecord *rec)
 		tx->constant = rnd_modulo_u32(11);	/* 0-10 */
 	}
 
+	timex_for_abi(rec, tx);
 	rec->a1 = (unsigned long) tx;
 	avoid_shared_buffer_inout(&rec->a1, sizeof(struct timex));
 }

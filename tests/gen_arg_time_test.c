@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/timex.h>
 #include <time.h>
 
 #include "args-internal.h"	/* gen_arg_timespec */
@@ -88,9 +89,8 @@ static struct object *no_object(int fd)
 	return NULL;
 }
 
-/* clock_nanosleep on i386, and its y2038 twin; timer_settime,
- * settimeofday, setitimer, utimensat, timerfd_settime and _newselect
- * on i386; pselect6 on i386, and its twin. */
+/* The calls' numbers on i386: their time32 entries, and two y2038
+ * twins. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
@@ -101,6 +101,7 @@ static struct object *no_object(int fd)
 #define NR_NEWSELECT_TIME32		142
 #define NR_PSELECT6_TIME32		308
 #define NR_PSELECT6_TIME64		413
+#define NR_ADJTIMEX_TIME32		124
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -234,6 +235,15 @@ static bool compat_short_usec_wait(const void *buf)
 	return tv->tv_sec == 0 && tv->tv_usec > 0 && tv->tv_usec < 1000000;
 }
 
+/* An ADJ_TICK of 9000 to 11000 us, where a time32 call reads the tick;
+ * the native layout leaves 0 there. */
+static bool compat_tick_set(const void *buf)
+{
+	const struct old_timex32 *tx = buf;
+
+	return tx->modes == ADJ_TICK && tx->tick >= 9000 && tx->tick <= 11000;
+}
+
 /* A mask, and the 8 bytes set_compat_user_sigmask() wants for one. */
 static bool compat_argpack_sized(const void *buf)
 {
@@ -308,4 +318,8 @@ void gen_arg_time_self_check(void)
 		       compat_argpack_sized))
 		BUG("gen_arg_time: pselect6's sigset argpack never reached a compat call");
 	fake_find_object_by_fd = NULL;
+
+	if (!sanitised(&syscall_adjtimex, NR_ADJTIMEX_TIME32, 1,
+		       compat_tick_set))
+		BUG("gen_arg_time: adjtimex's tick never reached a time32 call");
 }

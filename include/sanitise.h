@@ -112,6 +112,10 @@ void time_struct_for_abi(const struct syscallrecord *rec, void *buf,
 /* The reverse, widening a snapshot of the struct the kernel wrote. */
 void time_struct_from_abi(const struct syscallrecord *rec, void *buf,
 			  unsigned int pairs);
+/* The same rewrite for struct timex, which such a call reads as struct
+ * old_timex32. */
+struct timex;
+void timex_for_abi(const struct syscallrecord *rec, struct timex *tx);
 unsigned long find_previous_arg_address(struct syscallentry *entry, struct syscallrecord *rec, unsigned int argnum);
 
 /*
