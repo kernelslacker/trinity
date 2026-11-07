@@ -15,7 +15,9 @@
 #   p = <allocator>(...); ... rec->aN = [(cast)] p
 # where <allocator> is get_writable_*, get_address,
 # get_non_null_address, zmalloc, malloc, calloc, alloc_shared* or mmap.  The sanitiser is found
-# by name in the entry's own file; one defined elsewhere is not read.
+# by name in the entry's own file or, when that file does not define it, in
+# the one other syscalls/ file that does (a sanitiser two entries share); a
+# name two other files define is not followed.
 #
 # The baseline lists <file>:<entry> pairs and must only shrink: a line
 # fails once its entry stops matching (cleaned up, or no longer flagged).
@@ -34,9 +36,10 @@ source "$(dirname "$0")/lib.sh"
 # Far below the real count of flagged entries so churn never trips it.
 MIN_FLAGGED=200
 
-# scan_stream: stdin is comment-stripped source.  Print "F <entry>" per
-# REEXEC_SANITISE_OK entry and "P <entry>" for each of those whose
-# sanitiser writes a pointer into rec->aN.
+# scan_stream: stdin is comment-stripped source, each file's led by an
+# "@@FILE <file>" line.  Print "F <file>:<entry>" per REEXEC_SANITISE_OK
+# entry and "P <file>:<entry>" for each of those whose sanitiser writes a
+# pointer into rec->aN.
 scan_stream() {
 	# shellcheck disable=SC2016
 	awk '
@@ -71,6 +74,10 @@ scan_stream() {
 		}
 		return 0
 	}
+	/^@@FILE / {
+		cur = $2; in_entry = 0; in_fn = 0
+		next
+	}
 	/^struct syscallentry [A-Za-z0-9_]+[[:space:]]*=/ {
 		ename = $3; sub(/=.*/, "", ename)
 		in_entry = 1; flag = 0; san = ""
@@ -86,7 +93,7 @@ scan_stream() {
 		}
 		if ($0 ~ /^};/) {
 			in_entry = 0
-			if (flag) { ne++; ent[ne] = ename; esan[ne] = san }
+			if (flag) { ne++; ent[ne] = cur ":" ename; esan[ne] = san; efile[ne] = cur }
 		}
 		next
 	}
@@ -94,38 +101,43 @@ scan_stream() {
 		fname = $0
 		sub(/[[:space:]]*\(.*$/, "", fname)
 		sub(/^.*[^A-Za-z0-9_]/, "", fname)
-		in_fn = 1; body[fname] = ""
+		fkey = cur SUBSEP fname
+		if (!(fkey in body)) { ndef[fname]++; deffile[fname] = cur }
+		in_fn = 1; body[fkey] = ""
 		next
 	}
 	in_fn {
 		if ($0 ~ /^}/) in_fn = 0
-		else body[fname] = body[fname] $0 "\n"
+		else body[fkey] = body[fkey] $0 "\n"
 		next
 	}
 	END {
 		for (i = 1; i <= ne; i++) {
 			print "F", ent[i]
-			if (esan[i] != "" && (esan[i] in body) && writes_pointer(body[esan[i]]))
+			key = efile[i] SUBSEP esan[i]
+			if (!(key in body) && ndef[esan[i]] == 1)
+				key = deffile[esan[i]] SUBSEP esan[i]
+			if (esan[i] != "" && (key in body) && writes_pointer(body[key]))
 				print "P", ent[i]
 		}
 	}
 	'
 }
 
-# scan_tree ROOT: print "F|P <file>:<entry>" for every .c under ROOT/syscalls.
+# scan_tree ROOT: print "F|P <file>:<entry>" for every .c under ROOT/syscalls,
+# read as one stream so a sanitiser defined in another file is found.
 scan_tree() {
-	local root="$1" f out kind entry
+	local root="$1" f
 	while IFS= read -r f; do
-		out="$(strip_c_comments "$root/$f" | scan_stream)"
-		[ -n "$out" ] || continue
-		while read -r kind entry; do
-			echo "$kind $f:$entry"
-		done <<< "$out"
-	done < <(cd "$root" && find syscalls -name '*.c' -print | LC_ALL=C sort)
+		echo "@@FILE $f"
+		strip_c_comments "$root/$f"
+	done < <(cd "$root" && find syscalls -name '*.c' -print | LC_ALL=C sort) | scan_stream
 }
 
-# Self-test on a planted tree: each pattern must be found, and the near
-# misses (scalar store, comment, unflagged entry, no sanitiser) must not.
+# Self-test on a planted tree: each pattern must be found, a sanitiser one
+# other file defines must be followed, and the near misses (scalar store,
+# comment, unflagged entry, no sanitiser, a sanitiser two other files
+# define) must not.
 selftest_dir="$(mktemp -d)" || { echo "FAIL: $NAME: mktemp failed"; exit 1; }
 trap 'rm -rf "$selftest_dir"' EXIT
 mkdir -p "$selftest_dir/syscalls"
@@ -157,6 +169,14 @@ static void san_comment(struct syscallrecord *rec)
 {
 	rec->a1 = 0;
 }
+void san_shared(struct syscallrecord *rec)
+{
+	rec->a2 = (unsigned long) zmalloc(8);
+}
+void san_twice(struct syscallrecord *rec)
+{
+	rec->a2 = (unsigned long) zmalloc(8);
+}
 struct syscallentry syscall_direct = {
 	.flags = REEXEC_SANITISE_OK,
 	.sanitise = san_direct,
@@ -184,6 +204,22 @@ struct syscallentry syscall_nosan = {
 	.flags = REEXEC_SANITISE_OK,
 };
 EOT
+cat > "$selftest_dir/syscalls/d.c" <<'EOT'
+struct syscallentry syscall_shared = {
+	.flags = REEXEC_SANITISE_OK,
+	.sanitise = san_shared,
+};
+struct syscallentry syscall_ambiguous = {
+	.flags = REEXEC_SANITISE_OK,
+	.sanitise = san_twice,
+};
+EOT
+cat > "$selftest_dir/syscalls/e.c" <<'EOT'
+void san_twice(struct syscallrecord *rec)
+{
+	rec->a2 = (unsigned long) zmalloc(8);
+}
+EOT
 expect="F syscalls/c.c:syscall_direct
 P syscalls/c.c:syscall_direct
 F syscalls/c.c:syscall_var
@@ -192,7 +228,10 @@ F syscalls/c.c:syscall_addr
 P syscalls/c.c:syscall_addr
 F syscalls/c.c:syscall_scalar
 F syscalls/c.c:syscall_comment
-F syscalls/c.c:syscall_nosan"
+F syscalls/c.c:syscall_nosan
+F syscalls/d.c:syscall_shared
+P syscalls/d.c:syscall_shared
+F syscalls/d.c:syscall_ambiguous"
 got="$(scan_tree "$selftest_dir")"
 if [ "$got" != "$expect" ]; then
 	{

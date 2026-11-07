@@ -119,7 +119,8 @@ update this section to match `ls scripts/check-static/*.sh`.)
   `REEXEC_OK`.
 
 - `reexec-pointer-write`: a `REEXEC_SANITISE_OK` entry whose sanitiser
-  (found by name in the entry's own file) stores a pointer into `rec->aN`
+  (found by name in the entry's own file, or else in the one other
+  `syscalls/` file defining that name) stores a pointer into `rec->aN`
   -- an allocator result (`get_writable_*`, `get_address`, `zmalloc`...)
   or an address-of -- must be listed in
   `scripts/check-static/reexec-pointer-write.baseline`.  The baseline
