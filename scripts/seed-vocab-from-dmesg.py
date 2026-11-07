@@ -60,7 +60,6 @@ import re
 import sys
 import tempfile
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -108,8 +107,8 @@ class Recipe:
     reject_patterns: tuple[str, ...]
     key_header: str
     key_regex: str
-    value_regex: Optional[str]
-    value_macro_regex: Optional[str]
+    value_regex: str | None
+    value_macro_regex: str | None
     value_only_macros: tuple[str, ...]
 
 
@@ -174,7 +173,7 @@ class MinedRecipe:
     reject_count: int = 0
 
 
-def count_rejects(dmesg_path: Optional[str], patterns: tuple[str, ...]) -> int:
+def count_rejects(dmesg_path: str | None, patterns: tuple[str, ...]) -> int:
     """Count lines in dmesg_path matching ANY of the given regexes.
 
     Missing file is not an error: runs without a dmesg.log must still
@@ -194,8 +193,8 @@ def count_rejects(dmesg_path: Optional[str], patterns: tuple[str, ...]) -> int:
 
 
 def mine_header(kernel_root: str, header_rel: str,
-                key_regex: str, value_regex: Optional[str],
-                value_macro_regex: Optional[str],
+                key_regex: str, value_regex: str | None,
+                value_macro_regex: str | None,
                 value_only_macros: tuple[str, ...]
                 ) -> tuple[list[str], list[str]]:
     """Extract (keys, values) from a kernel source header.
@@ -269,7 +268,7 @@ def mine_header(kernel_root: str, header_rel: str,
     return keys, values
 
 
-def mine_recipe(recipe: Recipe, dmesg_path: Optional[str],
+def mine_recipe(recipe: Recipe, dmesg_path: str | None,
                 kernel_root: str) -> MinedRecipe:
     """Run one recipe end-to-end."""
     keys, values = mine_header(kernel_root, recipe.key_header,
@@ -302,7 +301,7 @@ def c_string_literal(s: str) -> str:
     return ''.join(out)
 
 
-def render_header(mined: list[MinedRecipe], dmesg_path: Optional[str]) -> str:
+def render_header(mined: list[MinedRecipe], dmesg_path: str | None) -> str:
     """Compose the generated C header from the mined recipes."""
     lines: list[str] = []
     lines.append("/*")

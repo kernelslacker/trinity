@@ -30,7 +30,6 @@ import struct
 import sys
 import zlib
 from dataclasses import dataclass, field
-from typing import Optional
 
 KCOV_MAGIC = 0x4B434256
 CORPUS_MAGIC = 0x54524E43
@@ -98,7 +97,7 @@ def cstr(b: bytes) -> str:
 
 def strip_persist_envelope(
     raw: bytes, path: str, expected_component: int, kind: str
-) -> Optional[bytes]:
+) -> bytes | None:
     """Skip trinity's shared persistence envelope, returning the inner payload.
 
     Since the 2026-07 envelope adoption every carrier prepends a fixed 96-byte
@@ -185,7 +184,7 @@ def load_syscall_names(arch: str) -> dict[int, str]:
     return names
 
 
-def arch_from_dirname(name: str) -> Optional[str]:
+def arch_from_dirname(name: str) -> str | None:
     """Cache subdir names look like 'x86_64-7.1.0-rc7-config+'; arch is the
     leading component up to the first '-' (or the whole name if no dash).
     """
@@ -206,23 +205,23 @@ class KcovData:
     kallsyms_sha256: bytes
     bitmap_popcount: int
     bitmap_nonzero: int
-    kaslr_base: Optional[int]
-    boot_id: Optional[str]
+    kaslr_base: int | None
+    boot_id: str | None
     per_syscall_edges: list[int]
     per_syscall_calls: list[int]
     diag_present: bool
     diag_bucket_bits_real: list[int] = field(default_factory=list)
     diag_distinct_pcs: list[int] = field(default_factory=list)
-    diag_crc32: Optional[int] = None
+    diag_crc32: int | None = None
     strat_present: bool = False
-    strat_crc32: Optional[int] = None
+    strat_crc32: int | None = None
     strat_calls_by_strategy: list[int] = field(default_factory=list)
     strat_count_by_strategy: list[int] = field(default_factory=list)
     crc_ok: bool = True
     notes: list[str] = field(default_factory=list)
 
 
-def load_kcov(path: str) -> Optional[KcovData]:
+def load_kcov(path: str) -> KcovData | None:
     try:
         with open(path, "rb") as fh:
             raw = fh.read()
@@ -267,10 +266,10 @@ def load_kcov(path: str) -> Optional[KcovData]:
         warn(f"kcov: {path}: unexpected num_buckets {num_buckets}")
         return None
 
-    boot_id: Optional[str] = None
-    kaslr_base: Optional[int] = None
-    diag_crc32: Optional[int] = None
-    strat_crc32: Optional[int] = None
+    boot_id: str | None = None
+    kaslr_base: int | None = None
+    diag_crc32: int | None = None
+    strat_crc32: int | None = None
 
     if version == 4:
         # v4 trails the common prefix with a 40-byte boot-id block instead of
@@ -436,7 +435,7 @@ class CorpusData:
     notes: list[str] = field(default_factory=list)
 
 
-def load_corpus(path: str) -> Optional[CorpusData]:
+def load_corpus(path: str) -> CorpusData | None:
     try:
         with open(path, "rb") as fh:
             raw = fh.read()
@@ -538,7 +537,7 @@ class CmpHintsData:
     notes: list[str] = field(default_factory=list)
 
 
-def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
+def load_cmp_hints(path: str) -> CmpHintsData | None:
     try:
         with open(path, "rb") as fh:
             raw = fh.read()
@@ -643,12 +642,12 @@ def load_cmp_hints(path: str) -> Optional[CmpHintsData]:
 class CacheBundle:
     cache_dir: str
     kernel_label: str
-    arch: Optional[str]
+    arch: str | None
     syscall_names: dict[int, str]
     compat_syscall_names: dict[int, str]
-    kcov: Optional[KcovData]
-    corpus: Optional[CorpusData]
-    cmp_hints: Optional[CmpHintsData]
+    kcov: KcovData | None
+    corpus: CorpusData | None
+    cmp_hints: CmpHintsData | None
 
 
 def syscall_label(names: dict[int, str], nr: int) -> str:
@@ -669,8 +668,8 @@ def corpus_label(
 
 
 def find_artifact(
-    root: str, top: str, kernel: Optional[str] = None
-) -> tuple[Optional[str], Optional[str]]:
+    root: str, top: str, kernel: str | None = None
+) -> tuple[str | None, str | None]:
     """Resolve an artifact path under the cache root.
 
     Layouts handled:
@@ -700,7 +699,7 @@ def find_artifact(
     return None, None
 
 
-def load_bundle(cache_dir: str, kernel: Optional[str] = None) -> CacheBundle:
+def load_bundle(cache_dir: str, kernel: str | None = None) -> CacheBundle:
     cache_dir = os.path.abspath(cache_dir)
     base = os.path.basename(cache_dir.rstrip("/"))
 
@@ -954,8 +953,8 @@ def available_kernels(cache_dir: str) -> list[str]:
 
 
 def resolve_kernel(
-    cache_dir: str, requested: Optional[str], announce: bool = True
-) -> Optional[str]:
+    cache_dir: str, requested: str | None, announce: bool = True
+) -> str | None:
     """Map a --kernel substring to a concrete cache filename.
 
     Returns the chosen filename (used as the artifact filter), or None for
