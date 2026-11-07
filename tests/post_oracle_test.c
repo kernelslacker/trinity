@@ -17,6 +17,7 @@
 #include <fcntl.h>
 #include <linux/capability.h>
 #include <linux/fanotify.h>
+#include <linux/mempolicy.h>	/* MPOL_F_NODE */
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -1547,20 +1548,25 @@ static void getitimer_compat(void)
 }
 
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
- * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
- * single-node box takes, writes the policy and none of the mask.  The
- * kernel's copies are stood in for by the words the call writes. */
+ * (copy_nodes_to_user()) whatever the flags, so a call handed a maxnode
+ * of 1, which a single-node box takes, writes the policy and none of
+ * the mask.  The kernel's copies are stood in for by the words the call
+ * writes. */
 static void get_mempolicy_untouched(void)
 {
 	static const struct {
 		const char *what;
 		unsigned long maxnode;
+		unsigned long flags;
 		bool mask_written;
 		unsigned int untouched;
 	} cases[] = {
-		{ "get_mempolicy, a maxnode of 1 and no mask to write", 1, false, 0 },
-		{ "get_mempolicy, a maxnode of 64 and the mask left unwritten", 64, false, 1 },
-		{ "get_mempolicy, a maxnode of 64 and the mask written", 64, true, 0 },
+		{ "get_mempolicy, a maxnode of 1 and no mask to write", 1, 0, false, 0 },
+		{ "get_mempolicy, a maxnode of 64 and the mask left unwritten", 64, 0, false, 1 },
+		{ "get_mempolicy, a maxnode of 64 and the mask written", 64, 0, true, 0 },
+		{ "get_mempolicy(MPOL_F_NODE), a maxnode of 1 and no mask to write", 1, MPOL_F_NODE, false, 0 },
+		{ "get_mempolicy(MPOL_F_NODE), a maxnode of 64 and the mask left unwritten", 64, MPOL_F_NODE, false, 1 },
+		{ "get_mempolicy(MPOL_F_NODE), a maxnode of 64 and the mask written", 64, MPOL_F_NODE, true, 0 },
 	};
 	static struct syscallrecord rec;
 	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
@@ -1573,6 +1579,7 @@ static void get_mempolicy_untouched(void)
 		rec.a1 = (unsigned long) get_writable_address(sizeof(int));
 		rec.a2 = (unsigned long) get_writable_address(page_size);
 		rec.a3 = cases[i].maxnode;
+		rec.a5 = cases[i].flags;
 		syscall_get_mempolicy.sanitise(&rec);
 
 		*(int *) rec.a1 = 0;
