@@ -25,6 +25,7 @@
 
 #include "child.h"
 #include "childop-outcome.h"
+#include "childops-util.h"
 #include "jitter.h"
 #include "random.h"
 #include "rnd.h"
@@ -62,7 +63,7 @@ static void mark_ns_unsupported_vsock_transport_churn(void)
 #define VS_OUTER_BASE			4U
 #define VS_OUTER_CAP			16U
 #define VS_OUTER_FLOOR			8U
-#define VS_WALL_CAP_NS			(200ULL * 1000ULL * 1000ULL)
+#define VS_WALL_CAP_NS			(200L * 1000L * 1000L)
 #define VS_RCV_TIMEO_MS			100
 #define VS_SND_TIMEO_MS			100
 #define VS_INNER_SENDS			6U
@@ -77,21 +78,6 @@ static void mark_ns_unsupported_vsock_transport_churn(void)
 #define VS_SEQ_EOM_BURST_RANGE		5U	/* 4..8 inclusive */
 #define VS_RECONNECT_TRIES		4U	/* inner re-connect iterations per arm invocation */
 #define VS_RECONNECT_GATE		4U	/* ONE_IN gate: ~25 % of outer iterations */
-
-/*
- * Monotonic-clock delta in nanoseconds since *t0.  long long because
- * long is 32 bits on some targets and wraps at ~2.1 s of nanoseconds.
- * Returns 0 if clock_gettime() fails.
- */
-static long long ns_since(const struct timespec *t0)
-{
-	struct timespec now;
-
-	if (clock_gettime(CLOCK_MONOTONIC, &now) < 0)
-		return 0;
-	return (long long)(now.tv_sec - t0->tv_sec) * 1000000000LL +
-	       (long long)(now.tv_nsec - t0->tv_nsec);
-}
 
 static void apply_timeouts(int s, unsigned long *direct_calls)
 {
@@ -253,7 +239,7 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
 	for (i = 0; i < VS_INNER_SENDS; i++) {
 		ssize_t r;
 
-		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+		if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 			break;
 
 		(*direct_calls)++;
@@ -374,7 +360,7 @@ static void iter_one(struct childdata *child, const struct timespec *t_outer,
 	int cli = -1;
 	int srv = -1;
 
-	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+	if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 		return;
 
 	if (vsock_transport_iter_setup(child, &listener, &cli, &srv,
@@ -383,7 +369,7 @@ static void iter_one(struct childdata *child, const struct timespec *t_outer,
 
 	vsock_transport_iter_send_burst(cli, srv, t_outer, direct_calls);
 
-	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+	if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 		goto out;
 
 	vsock_transport_iter_race(cli, direct_calls);
@@ -494,7 +480,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer,
 
 	__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_runs, 1, __ATOMIC_RELAXED);
 
-	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS) {
+	if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS)) {
 		__atomic_add_fetch(&shm->stats.vsock_transport_churn.seq_eom_skipped, 1,
 				   __ATOMIC_RELAXED);
 		return;
@@ -557,7 +543,7 @@ static void iter_seq_eom_burst(const struct timespec *t_outer,
 		struct msghdr mh;
 		ssize_t r;
 
-		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+		if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 			break;
 
 		iov.iov_base = NULL;
@@ -623,7 +609,7 @@ static void iter_reconnect_while_closing(const struct timespec *t_outer,
 	socklen_t slen = sizeof(addr);
 	unsigned int i;
 
-	if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+	if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 		return;
 
 	/* Open listener bound to VMADDR_CID_LOCAL. */
@@ -683,7 +669,7 @@ static void iter_reconnect_while_closing(const struct timespec *t_outer,
 		int so_err = 0;
 		socklen_t elen = sizeof(so_err);
 
-		if ((unsigned long long)ns_since(t_outer) >= VS_WALL_CAP_NS)
+		if (budget_elapsed_ns(t_outer, VS_WALL_CAP_NS))
 			break;
 
 		/* Check whether the RST arrived while we were in the race window.
@@ -789,8 +775,7 @@ bool vsock_transport_churn(struct childdata *child)
 				   1, __ATOMIC_RELAXED);
 
 	for (i = 0; i < outer_iters; i++) {
-		if ((unsigned long long)ns_since(&t_outer) >=
-		    VS_WALL_CAP_NS)
+		if (budget_elapsed_ns(&t_outer, VS_WALL_CAP_NS))
 			break;
 
 		if (rnd_modulo_u32(100U) < VS_UNSHARE_VARIANT_PCT)
