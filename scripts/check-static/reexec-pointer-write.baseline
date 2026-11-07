@@ -78,3 +78,4 @@ syscalls/socket/recv.c:syscall_recvfrom
 syscalls/socket/socketpair.c:syscall_socketpair
 syscalls/timer/timer_create.c:syscall_timer_create
 syscalls/timer/timerfd_settime.c:syscall_timerfd_settime
+syscalls/x86/modify_ldt.c:syscall_modify_ldt

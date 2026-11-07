@@ -15,6 +15,10 @@
 
 #define ALLOCSIZE LDT_ENTRIES * LDT_ENTRY_SIZE
 
+/* The most read_default_ldt() clears at ptr: 128 bytes on x86-64, five
+ * descriptors on i386 (arch/x86/kernel/ldt.c). */
+#define DEFAULT_LDT_MAX	128
+
 /*
  * Snapshot of modify_ldt input args read by the post oracle, captured at
  * sanitise time and consumed by post_modify_ldt.  Only populated for the
@@ -71,8 +75,9 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		break;
 
 	case 1:
+	case 0x11:
 	{
-		/* modify one ldt entry.
+		/* modify one ldt entry: write_ldt(), in its old mode for 0x11.
 		 * ptr points to a user_desc structure
 		 * bytecount must equal the size of this structure. */
 		struct user_desc *desc = zmalloc_tracked(sizeof(*desc));
@@ -94,6 +99,13 @@ static void sanitise_modify_ldt(struct syscallrecord *rec)
 		rec_own(rec, desc);
 		break;
 	}
+	case 2:
+		/* read_default_ldt() clears the smaller of bytecount and
+		 * DEFAULT_LDT_MAX bytes at ptr; draw bytecount on both sides
+		 * of that cap. */
+		rec->a2 = (unsigned long) get_writable_address(DEFAULT_LDT_MAX);
+		rec->a3 = rnd_modulo_u32(2 * DEFAULT_LDT_MAX + 1);
+		break;
 	default:
 		rec->a2 = 0L;
 		break;
@@ -126,10 +138,11 @@ static void post_modify_ldt(struct syscallrecord *rec)
 	 * return is structural ABI corruption -- a sign-extension tear in the
 	 * syscall return path, a kernel-side write that spilled past the
 	 * user-supplied bound, or -errno leaking through the success slot.
-	 * Write funcs (a1 == 1/2) return 0/-1 only and are covered by the
-	 * dispatcher-level RZS blanket validator; nothing to do here.  Fall
-	 * through to the snap free below; the ldt buffer itself is owned by
-	 * the rec carrier and released by the drain after .post.
+	 * The write funcs (a1 == 1 or 0x11) return 0/-1, and func 2 the count
+	 * read_default_ldt() cleared; none of them takes a snapshot, so the
+	 * claim above has already returned for them.  Fall through to the
+	 * snap free below; the ldt buffer itself is owned by the rec carrier
+	 * and released by the drain after .post.
 	 */
 	if (snap->func == 0 &&
 	    ret != -1L &&
