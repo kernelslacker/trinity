@@ -750,6 +750,50 @@ static void count_rewritten(void)
 	}
 }
 
+/* sendmmsg returns how many entries it sent, at most the vlen the kernel
+ * was handed: a vlen rewritten below the entries the sanitiser built
+ * holds the return to it. */
+static void sendmmsg_count(void)
+{
+	static const struct {
+		const char *what;
+		bool past;
+		unsigned int bumps;
+	} cases[] = {
+		{ "sendmmsg, all of a smaller rewritten vlen sent", false, 0 },
+		{ "sendmmsg, one past a smaller rewritten vlen", true, 1 },
+	};
+	static struct syscallrecord rec;
+	unsigned int i, tries;
+
+	fake_socket_fd_none = true;
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			syscall_sendmmsg.sanitise(&rec);
+			if (rec.a3 >= 2)
+				break;
+			rec.retval = (unsigned long) -1L;
+			syscall_sendmmsg.post(&rec);
+			while (rec.owned_count > 0)
+				free(rec.owned[--rec.owned_count]);
+		}
+		if (tries == 4096)
+			BUG("sendmmsg's sanitiser never built two entries");
+
+		rec.a3--;
+		rec.arg_shadow[2] = rec.a3;
+		rec.arg_snapshot_mask = syscall_sendmmsg.arg_snapshot_mask;
+		rec.retval = rec.a3 + (cases[i].past ? 1 : 0);
+		bumps = 0;
+		syscall_sendmmsg.post(&rec);
+		while (rec.owned_count > 0)
+			free(rec.owned[--rec.owned_count]);
+		expect(cases[i].what, bumps, cases[i].bumps);
+	}
+	fake_socket_fd_none = false;
+}
+
 /* A grouplist still holding the poison getgroups' sanitiser stamped over
  * the 4 gids it drew, after a return of gids copied, is a buffer the
  * kernel never wrote; but a gidsetsize rewritten to 0 asks for the count
@@ -836,6 +880,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_pid();
 	getgroups_untouched();
 	count_rewritten();
+	sendmmsg_count();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif
