@@ -1,6 +1,9 @@
 #include <errno.h>
+#include <fcntl.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <sys/prctl.h>
 #include <sys/types.h>
 
 #include "fd.h"
@@ -52,4 +55,22 @@ ssize_t read_all(int fd, void *buf, size_t len)
 		left -= n;
 	}
 	return (ssize_t)(len - left);
+}
+
+/* A task that is not dumpable owns its /proc files as root
+ * (task_dump_owner()), so one that cleared the flag, as
+ * disable_coredumps() does, cannot open an S_IRUSR file of its own such
+ * as pagemap: set the flag for the open and put it back, as 0 if it was
+ * 2, which prctl() cannot set. */
+int open_owner_only(const char *path)
+{
+	bool toggled = prctl(PR_GET_DUMPABLE) != 1;
+	int fd;
+
+	if (toggled)
+		prctl(PR_SET_DUMPABLE, 1);
+	fd = open(path, O_RDONLY | O_CLOEXEC);
+	if (toggled)
+		prctl(PR_SET_DUMPABLE, 0);
+	return fd;
 }

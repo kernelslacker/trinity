@@ -20,12 +20,12 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/prctl.h>
 #include <unistd.h>
 
 #include "arch.h"
 #include "child.h"
 #include "childop-outcome.h"
+#include "fd.h"
 #include "kernel/fs.h"
 #include "kernel/userfaultfd.h"
 #include "shm.h"
@@ -33,26 +33,6 @@
 
 #define SCAN_PAGES	8
 #define SCAN_VEC_LEN	16
-
-/*
- * Open the child's own pagemap.  pagemap is S_IRUSR and a task that
- * is not dumpable owns its /proc files as root, so a child that
- * cleared the flag cannot open it: set the flag for the open and put
- * it back, as 0 if it was 2, which prctl() cannot set.  Mirrors
- * open_own() in ioctls/procfs-self.c.
- */
-static int open_own_pagemap(void)
-{
-	bool toggled = prctl(PR_GET_DUMPABLE) != 1;
-	int fd;
-
-	if (toggled)
-		prctl(PR_SET_DUMPABLE, 1);
-	fd = open("/proc/self/pagemap", O_RDONLY | O_CLOEXEC);
-	if (toggled)
-		prctl(PR_SET_DUMPABLE, 0);
-	return fd;
-}
 
 bool pagemap_wp_scan(struct childdata *child)
 {
@@ -106,7 +86,7 @@ bool pagemap_wp_scan(struct childdata *child)
 		registered = true;
 	}
 
-	pmfd = open_own_pagemap();
+	pmfd = open_owner_only("/proc/self/pagemap");
 	direct_calls++;
 	if (pmfd < 0)
 		goto out;

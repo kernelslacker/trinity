@@ -415,3 +415,7 @@ void arm_epoll_if_needed(struct epollobj *eo);
  */
 ssize_t write_all(int fd, const void *buf, size_t len);
 ssize_t read_all(int fd, void *buf, size_t len);
+
+/* Open read-only one of this process's own /proc files that is S_IRUSR,
+ * with the dumpable flag set for the open (lib/fd.c). */
+int open_owner_only(const char *path);

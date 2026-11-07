@@ -11,7 +11,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
-#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -66,22 +65,14 @@ static int procfs_self_fd_test(int fd __attribute__((unused)),
 static struct owned_fd_ring own_fds;
 
 /*
- * pagemap is S_IRUSR, and a task that is not dumpable owns its /proc files as
- * root (task_dump_owner()), so a child that cleared the flag, as
- * disable_coredumps() does, cannot open its own: @owner_only sets the flag for
- * the open and puts it back, as 0 if it was 2, which prctl() cannot set.
+ * pagemap is S_IRUSR, which a child that cleared its dumpable flag, as
+ * disable_coredumps() does, opens through open_owner_only() (@owner_only).
  * maps is S_IRUGO and needs none of this.
  */
 static int open_own(const char *path, bool owner_only)
 {
-	bool toggled = owner_only && prctl(PR_GET_DUMPABLE) != 1;
-	int fd;
-
-	if (toggled)
-		prctl(PR_SET_DUMPABLE, 1);
-	fd = open(path, O_RDONLY | O_CLOEXEC);
-	if (toggled)
-		prctl(PR_SET_DUMPABLE, 0);
+	int fd = owner_only ? open_owner_only(path) :
+			      open(path, O_RDONLY | O_CLOEXEC);
 
 	if (fd < 0)
 		return -1;

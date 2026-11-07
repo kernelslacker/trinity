@@ -27,7 +27,7 @@ state — this is a directory of convenience, not a subsystem.
 - **spsc-ring.c**: embedded as the header of two typed rings — `fd-event.c`'s fd-event ring and `stats/stats-ring.c`'s stats ring (both use init/try_enqueue/drain), and `pre_crash_ring.c` uses `spsc_ring_overwrite_enqueue()` for its rolling-history snapshot buffer. Declared in `include/spsc-ring.h`, `include/pre_crash_ring.h`, `include/stats.h`.
 - **numa.c**: `main/trinity-warmstart.c` calls `init_numa_nodes()` at startup, and `possible_cpus()` for `num_possible_cpus`, which sizes the per-cpu rows of the bpf element commands (`syscalls/bpf-map.c`); `args/gen_arg_scalar.c` calls `random_numa_node()` for `ARG_NUMA_NODE` generation.
 - **fd.c**: `write_all`/`read_all` shared by every on-disk persistence format — `random_syscall/chain-persist.c`, `persist/minicorpus-file.c`,
-  `cmp_hints/persist.c`, `kcov/persist.c`, `utils/persist-envelope.c`.
+  `cmp_hints/persist.c`, `kcov/persist.c`, `utils/persist-envelope.c`; `open_owner_only()` by `ioctls/procfs-self.c` and `childops/mm/pagemap-wp-scan.c`, which open the child's own pagemap.
 - **jsonl.c**: declared in `include/jsonl.h`; its only caller is `stats/rotation_event.c`, which opens the sink before fork() and lets every child inherit it.
 - **sanitiser-fd.c**: declared in `include/sanitiser-fd.h`; used by `syscalls/process/setns.c`, `syscalls/fs/path/fchdir.c` and `fchroot.c`.  An entry that calls `sanitiser_own_fd()` sets `.cleanup = cleanup_sanitiser_fd`.  The `post-state-magic` and `post-state-ownership` gates audit the file.
 
