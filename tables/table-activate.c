@@ -237,8 +237,8 @@ void deactivate_syscall_nolock(unsigned int call, bool do32bit)
  * with no serialisation, which could leave duplicate active entries,
  * stale entries, a wrong active_number, or a drifted nr_active count
  * when two children deactivated overlapping slots.  The active_number
- * recheck under the lock mirrors deactivate_enosys() in syscall.c and
- * absorbs a concurrent removal by a sibling.
+ * recheck under the lock mirrors deactivate_enosys() in
+ * dispatch/syscall-post.c and absorbs a concurrent removal by a sibling.
  */
 void deactivate_syscall_locked(unsigned int call, bool do32bit)
 {

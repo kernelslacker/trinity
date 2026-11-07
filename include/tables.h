@@ -69,7 +69,8 @@ void activate_syscall64(unsigned int calln);
  * deactivate_enosys() does, so concurrent children cannot tear the
  * swap-with-last update of the shared active_syscall[] arrays.
  * deactivate_syscall_nolock() is for callers that already hold the
- * lock (the auto-disable loop in syscall.c and deactivate_enosys()).
+ * lock (the 32-bit auto-disable loop in dispatch/syscall-exec.c and
+ * deactivate_enosys()).
  */
 void deactivate_syscall_locked(unsigned int calln, bool do32bit);
 void deactivate_syscall_nolock(unsigned int calln, bool do32bit);
