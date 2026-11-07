@@ -4,7 +4,7 @@
 Parses three on-disk formats version-aware:
   - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7
   - corpus/<arch>      magic "TRNC", version 4
-  - cmp-hints          magic "CHP_", version 4
+  - cmp-hints          magic "CHP_", version 5
 
 Each carrier is wrapped in a shared 96-byte "TRNPERS" envelope
 (include/persist-envelope.h), stripped before parsing; pre-envelope files
