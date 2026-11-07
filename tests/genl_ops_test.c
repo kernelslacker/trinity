@@ -362,8 +362,9 @@ enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
  * lo to hi, both inclusive; MAX and MIN are ranges that start at 0 and end
  * at the top of the type.  An array's range is of its elements, a nest's of
  * its children, from 1.  SB_ONEOF is the values a handler, not its
- * policy, accepts, listed in oneof. */
-enum slot_bound { SB_NONE, SB_MASK, SB_RANGE, SB_ONEOF };
+ * policy, accepts, listed in oneof, and SB_IN6 an IPv6 address it binds a
+ * socket to, :: or ::1. */
+enum slot_bound { SB_NONE, SB_MASK, SB_RANGE, SB_ONEOF, SB_IN6 };
 
 struct slot {
 	unsigned short id;
@@ -378,7 +379,8 @@ struct slot {
 	uint64_t lo, hi;
 	const unsigned int *oneof;	/* SB_ONEOF: the values accepted */
 	unsigned int n_oneof;
-	unsigned int oneof_seen;	/* one bit per listed value drawn */
+	unsigned int oneof_seen;	/* one bit per listed value drawn, or
+					 * for SB_IN6 one each for :: and ::1 */
 	bool be;			/* SB_ONEOF: a big-endian u32 */
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	uint64_t or_all, and_all, min_v, max_v;
@@ -420,6 +422,10 @@ struct slot {
 #define S_BE32_ONEOF(id, vals, ...) \
 	{ id, SK_BYTES, 4, 4, .bound = SB_ONEOF, .oneof = vals, \
 	  .n_oneof = ARRAY_SIZE(vals), .be = true, ##__VA_ARGS__ }
+/* An IPv6 address a handler binds a socket to, whose policy types it an
+ * NLA_BINARY of up to 16 bytes. */
+#define S_IN6_LOCAL(id, ...) \
+	{ id, SK_BYTES, 0, 16, .bound = SB_IN6, ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 #define S_U16_ONEOF(id, vals, ...) \
@@ -2201,8 +2207,9 @@ extern struct genl_family_grammar fam_l2tp;
  * other ops find a tunnel by its conn id, a session by its IFNAME or else
  * by the conn and session ids, which are marked.  The ids are 1 to 8, so
  * that they name what a create made.  An unmanaged tunnel's socket binds
- * to IP_SADDR, which has to be the host's or any, and connects to
- * IP_DADDR.  NOOP reads nothing.
+ * to its source address, the IPv6 one before the IPv4 one, which has to
+ * be the host's or any, and connects to its destination.  NOOP reads
+ * nothing.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
 static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
@@ -2216,8 +2223,8 @@ static struct slot l2tp_tunnel_create[] = {
 	S_U32(L2TP_ATTR_FD),
 	S_BE32_ONEOF(L2TP_ATTR_IP_SADDR, l2tp_inaddrs),
 	S_BE32_ONEOF(L2TP_ATTR_IP_DADDR, l2tp_inaddrs),
-	S_BLOB(L2TP_ATTR_IP6_SADDR, 0, 16),
-	S_BLOB(L2TP_ATTR_IP6_DADDR, 0, 16),
+	S_IN6_LOCAL(L2TP_ATTR_IP6_SADDR),
+	S_IN6_LOCAL(L2TP_ATTR_IP6_DADDR),
 	S_U16(L2TP_ATTR_UDP_SPORT),
 	S_U16(L2TP_ATTR_UDP_DPORT),
 	S_U8(L2TP_ATTR_UDP_CSUM),
@@ -2684,6 +2691,25 @@ static struct slot *find_slot(struct slot *slots, unsigned int n_slots,
 	return NULL;
 }
 
+/* An SB_IN6 draw is inside its bound when it is all 16 bytes of :: or ::1. */
+static void tally_in6(struct slot *slot, const unsigned char *p, size_t plen)
+{
+	static const struct in6_addr local[] = {
+		IN6ADDR_ANY_INIT, IN6ADDR_LOOPBACK_INIT,
+	};
+	unsigned int i;
+
+	if (plen != sizeof(struct in6_addr))
+		return;
+	for (i = 0; i < ARRAY_SIZE(local); i++) {
+		if (memcmp(p, &local[i], sizeof(local[i])) == 0) {
+			slot->oneof_seen |= 1U << i;
+			slot->in_bound++;
+			return;
+		}
+	}
+}
+
 /*
  * Whether v, a host-order scalar or the count of an array's elements, is
  * inside the slot's bound.  What is inside is kept apart, with the bits it
@@ -2806,7 +2832,9 @@ static bool stream_conforms(const unsigned char *p, size_t len,
 		case SK_BYTES:
 			if (plen < slot->min || plen > slot->max)
 				return false;
-			if (slot->bound != SB_NONE) {
+			if (slot->bound == SB_IN6) {
+				tally_in6(slot, p + off + NLA_HDRLEN, plen);
+			} else if (slot->bound != SB_NONE) {
 				uint64_t v = 0;
 
 				/* A bound is read at the payload's own width:
@@ -2942,6 +2970,10 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		 * share is the mean of the two widths'. */
 		if (slot->kind == SK_ARRAY || slot->kind == SK_NEST) {
 			share = 0;
+		} else if (slot->bound == SB_IN6) {
+			/* The random draws are an NLA_BINARY's, and one of
+			 * an address's 16 bytes is made :: or ::1. */
+			share = 1.0 / (slot->max - slot->min + 1);
 		} else if (slot->bound == SB_ONEOF) {
 			share = (double) slot->n_oneof /
 				(double) (1ULL << (8 * slot->max));
@@ -2977,6 +3009,8 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		if (slot->bound == SB_ONEOF) {
 			spans = slot->n_oneof < 32 &&
 				slot->oneof_seen == (1U << slot->n_oneof) - 1U;
+		} else if (slot->bound == SB_IN6) {
+			spans = slot->oneof_seen == 3U;
 		} else if (slot->bound == SB_MASK) {
 			spans = slot->or_all == slot->hi && slot->and_all == 0;
 		} else {
@@ -3700,8 +3734,8 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * host order; a byte's range, one of them pinned to one number; an
  * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof and
  * a u16 oneof of three values, in host order, a byte's, and a big-endian
- * u32's; an array of two elements at most; and a nest of two children at
- * most.
+ * u32's; an IPv6 address of up to 16 bytes; an array of two elements at
+ * most; and a nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
@@ -3736,6 +3770,7 @@ static void check_bounded_tables(void)
 		  .n_oneof = ARRAY_SIZE(u8_oneof_values) },
 		{ 19, NLA_KIND_BE32_ONEOF, 0, 0, .oneof = be32_oneof_values,
 		  .n_oneof = ARRAY_SIZE(be32_oneof_values) },
+		{ 20, NLA_KIND_IN6_LOCAL, 16 },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3758,6 +3793,7 @@ static void check_bounded_tables(void)
 		S_U16_ONEOF(17, u16_oneof_values),
 		S_U8_ONEOF(18, u8_oneof_values),
 		S_BE32_ONEOF(19, be32_oneof_values),
+		S_IN6_LOCAL(20),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3823,8 +3859,9 @@ static void check_sockaddr_kind(void)
 /*
  * Whether spec declares slot's bound: a mask or range kind at the slot's
  * width, with the bound's ends, a oneof kind at the slot's width and byte
- * order, a byte, u16, u32 or big-endian u32, with the same values, or a
- * nest or array capped where its handler caps it.  A byte's range
+ * order, a byte, u16, u32 or big-endian u32, with the same values, the
+ * IPv6 address kind at the slot's lengths, or a nest or array capped where
+ * its handler caps it.  A byte's range
  * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
  * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
  * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
@@ -3840,6 +3877,9 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 		       spec->max_len == slot->hi;
 	if (slot->bound == SB_NONE)
 		return false;
+	if (slot->bound == SB_IN6)
+		return spec->kind == NLA_KIND_IN6_LOCAL &&
+		       spec->min_len == slot->min && spec->max_len == slot->max;
 	if (slot->bound == SB_ONEOF) {
 		unsigned short kind = slot->be ? NLA_KIND_BE32_ONEOF :
 				      slot->max == 1 ? NLA_KIND_U8_ONEOF :
@@ -3935,6 +3975,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 			  spec->kind == NLA_KIND_U16_ONEOF ||
 			  spec->kind == NLA_KIND_U8_ONEOF ||
 			  spec->kind == NLA_KIND_BE32_ONEOF ||
+			  spec->kind == NLA_KIND_IN6_LOCAL ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||

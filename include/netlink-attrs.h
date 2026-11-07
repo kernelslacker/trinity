@@ -110,6 +110,12 @@ enum nla_kind {
 	 * above the privileged ones.  One draw in eight is random bytes, as
 	 * is a payload a full buffer cut short. */
 	NLA_KIND_SOCKADDR,
+	/* An in6_addr the kernel binds or connects a socket to: :: or ::1,
+	 * as the IPv4 any and loopback addresses are, seven times in eight.
+	 * One draw in eight is as long as an NLA_KIND_BINARY's, min_len to
+	 * max_len, and random bytes unless it is an address's 16, so a
+	 * policy that caps the length without flooring it sees short ones. */
+	NLA_KIND_IN6_LOCAL,
 	/* A nest the kernel validates as NLA_POLICY_NESTED_ARRAY: its
 	 * children are elements, each an NLA_F_NESTED attribute holding an
 	 * attribute stream of its own, drawn from the spec's nest table.

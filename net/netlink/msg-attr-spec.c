@@ -65,6 +65,10 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_SOCKADDR:
 		return RAND_BOOL() ? sizeof(struct sockaddr_in) :
 				     sizeof(struct sockaddr_in6);
+	case NLA_KIND_IN6_LOCAL:
+		if (ONE_IN(8) && spec->max_len > spec->min_len)
+			return RAND_RANGE(spec->min_len, spec->max_len);
+		return sizeof(struct in6_addr);
 	case NLA_KIND_STRING:
 	case NLA_KIND_STRING_CPULIST:
 	case NLA_KIND_BINARY: {
@@ -293,6 +297,13 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 		break;
 	case NLA_KIND_SOCKADDR:
 		spec_fill_sockaddr(p, len);
+		break;
+	case NLA_KIND_IN6_LOCAL:
+		if (len == sizeof(struct in6_addr))
+			memcpy(p, RAND_BOOL() ? &in6addr_any : &in6addr_loopback,
+			       len);
+		else
+			generate_rand_bytes(p, len);
 		break;
 	default:
 		generate_rand_bytes(p, len);

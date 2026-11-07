@@ -35,10 +35,11 @@
  * FD, the socket of a managed tunnel, or an address pair, IPv6 before
  * IPv4, for the socket it makes itself, which a mark cannot say.  That
  * socket binds to the source address, which has to be the host's or any
- * for the bind to succeed, so the IPv4 pair is any or loopback, read with
- * nla_get_in_addr() in network order.  The version is 2 or 3, and
- * UDP_CSUM is read as a flag.  The IPv6 addresses are NLA_BINARYs of up
- * to 16 bytes, which the handler reads as 16.
+ * for the bind to succeed, so each pair is any or loopback, the IPv4 one
+ * read with nla_get_in_addr() in network order.  The IPv6 pair, which the
+ * handler takes first, is NLA_BINARYs of up to 16 bytes that it reads as
+ * 16, past the end of a shorter one.  The version is 2 or 3, and UDP_CSUM
+ * is read as a flag.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
 static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
@@ -58,8 +59,8 @@ static const struct nla_attr_spec l2tp_tunnel_create_attrs[] = {
 	  .oneof = l2tp_inaddrs, .n_oneof = ARRAY_SIZE(l2tp_inaddrs) },
 	{ L2TP_ATTR_IP_DADDR,		NLA_KIND_BE32_ONEOF, 0, 0,
 	  .oneof = l2tp_inaddrs, .n_oneof = ARRAY_SIZE(l2tp_inaddrs) },
-	{ L2TP_ATTR_IP6_SADDR,		NLA_KIND_BINARY, 16 },
-	{ L2TP_ATTR_IP6_DADDR,		NLA_KIND_BINARY, 16 },
+	{ L2TP_ATTR_IP6_SADDR,		NLA_KIND_IN6_LOCAL, 16 },
+	{ L2TP_ATTR_IP6_DADDR,		NLA_KIND_IN6_LOCAL, 16 },
 	{ L2TP_ATTR_UDP_SPORT,		NLA_KIND_U16,    2 },
 	{ L2TP_ATTR_UDP_DPORT,		NLA_KIND_U16,    2 },
 	{ L2TP_ATTR_UDP_CSUM,		NLA_KIND_U8,     1 },
