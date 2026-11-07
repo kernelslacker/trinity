@@ -210,8 +210,14 @@ static size_t gen_rtnl_body_neigh(unsigned char *body, size_t buflen, bool get,
 }
 
 /* RTM_*RULE: struct fib_rule_hdr */
-static size_t gen_rtnl_body_rule(unsigned char *body, size_t buflen, unsigned char *out_family)
+static size_t gen_rtnl_body_rule(unsigned char *body, size_t buflen, bool get,
+				 unsigned char *out_family)
 {
+	/* The families with rules ops, then AF_UNSPEC, which only a dump of
+	 * every family's rules takes. */
+	static const unsigned char families[] = {
+		AF_INET, AF_INET6, RTNL_FAMILY_IPMR, RTNL_FAMILY_IP6MR, AF_UNSPEC,
+	};
 	struct fib_rule_hdr frh;
 
 	if (sizeof(frh) > buflen)
@@ -225,6 +231,27 @@ static size_t gen_rtnl_body_rule(unsigned char *body, size_t buflen, unsigned ch
 	frh.res2 = 0;
 	frh.action = rnd_modulo_u32(256);
 	frh.flags = rand32();
+	/* fib_newrule() and fib_delrule() answer a family with no rules ops
+	 * -EAFNOSUPPORT, and fib_nl2rule() refuses a nonzero src_len or
+	 * dst_len without the FRA_SRC or FRA_DST it needs, which a request
+	 * carries about one time in ten.  The IPv4 and IPv6 rules refuse a
+	 * tos with an ECN bit, IPv4 also one outside IPTOS_TOS_MASK, and the
+	 * dump, on a socket that asks for strict checking, anything in the
+	 * header but the family.  The header stays random one time in
+	 * eight. */
+	if (!ONE_IN(8)) {
+		if (get) {
+			memset(&frh, 0, sizeof(frh));
+			frh.family = RAND_ARRAY(families);
+		} else {
+			frh.family = families[rnd_modulo_u32(ARRAY_SIZE(families) - 1)];
+			frh.dst_len = 0;
+			frh.src_len = 0;
+			frh.tos &= ~IPTOS_ECN_MASK;
+			if (frh.family == AF_INET)
+				frh.tos &= IPTOS_TOS_MASK;
+		}
+	}
 	*out_family = frh.family;
 	memcpy(body, &frh, sizeof(frh));
 	return sizeof(frh);
@@ -468,7 +495,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 3:
 		return gen_rtnl_body_neigh(body, buflen, nlmsg_type == RTM_GETNEIGH,
 					   out_family);
-	case 4:  return gen_rtnl_body_rule(body, buflen, out_family);
+	case 4:
+		return gen_rtnl_body_rule(body, buflen, nlmsg_type == RTM_GETRULE,
+					  out_family);
 	case 8:  return gen_rtnl_body_action(body, buflen, out_family);
 	case 10: /* RTM_*MULTICAST */
 	case 11: /* RTM_*ANYCAST */

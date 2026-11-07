@@ -13,6 +13,8 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/ip.h>
+#include <linux/fib_rules.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
@@ -380,6 +382,59 @@ static void expect_nexthop_header(const struct nexthop_header *add,
 	expect_fraction(other->taken, other->msgs, 0.84, 0.91,
 			"RTM_DELNEXTHOP, RTM_GETNEXTHOP and RTM_GETNEXTHOPBUCKET",
 			"rtnl: a nexthop delete or GET does not have a zero protocol, scope and flags seven times in eight");
+}
+
+/* ---------- The fib_rule_hdr of RTM_NEWRULE, RTM_DELRULE and RTM_GETRULE - */
+
+struct rule_header {
+	unsigned int msgs;
+	unsigned int taken;	/* a header the request's handler takes */
+	unsigned int unspec;	/* AF_UNSPEC, every family's rules */
+};
+
+static void tally_rule_header(struct rule_header *t, const struct nlmsghdr *nlh,
+			      bool get)
+{
+	const struct fib_rule_hdr *frh = NLMSG_DATA(nlh);
+	bool ruled;
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*frh)))
+		return;
+	t->msgs++;
+	t->unspec += frh->family == AF_UNSPEC;
+	if (frh->src_len || frh->dst_len || frh->res1 || frh->res2)
+		return;
+	ruled = frh->family == AF_INET || frh->family == AF_INET6 ||
+		frh->family == RTNL_FAMILY_IPMR || frh->family == RTNL_FAMILY_IP6MR;
+	if (get)
+		t->taken += (ruled || frh->family == AF_UNSPEC) && !frh->tos &&
+			    !frh->table && !frh->action && !frh->flags;
+	else
+		t->taken += ruled && !(frh->tos & IPTOS_ECN_MASK) &&
+			    (frh->family != AF_INET || !(frh->tos & ~IPTOS_TOS_MASK));
+}
+
+/*
+ * fib_newrule() and fib_delrule() answer -EAFNOSUPPORT to a family with no
+ * rules ops, all but AF_INET, AF_INET6, RTNL_FAMILY_IPMR and
+ * RTNL_FAMILY_IP6MR, and fib_nl2rule() refuses a nonzero src_len or dst_len
+ * without the FRA_SRC or FRA_DST it needs; the IPv4 and IPv6 rules refuse a
+ * tos with an ECN bit, and IPv4 a bit outside IPTOS_TOS_MASK.  The dump
+ * takes those families and AF_UNSPEC, and on a socket that asks for strict
+ * checking refuses anything else in the header that is not 0.  The builder
+ * keeps both to that seven times in eight, a dump asking for every family
+ * one time in five.
+ */
+static void expect_rule_header(const struct rule_header *get,
+			       const struct rule_header *newdel)
+{
+	expect_fraction(get->taken, get->msgs, 0.84, 0.91, "RTM_GETRULE",
+			"rtnl: RTM_GETRULE's header is not one the rule dump takes seven times in eight");
+	expect_fraction(get->unspec, get->msgs, 0.15, 0.24, "RTM_GETRULE",
+			"rtnl: RTM_GETRULE does not ask for every family's rules one time in five");
+	expect_fraction(newdel->taken, newdel->msgs, 0.84, 0.91,
+			"RTM_NEWRULE and RTM_DELRULE",
+			"rtnl: a rule add or delete's header is not one fib_nl2rule() and its family take seven times in eight");
 }
 
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
@@ -1262,6 +1317,7 @@ struct tallies {
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
 	struct nexthop_header newnexthop, nexthop;
+	struct rule_header getrule, newdelrule;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1313,6 +1369,13 @@ static void run_rounds(struct tallies *t)
 		case RTM_NEWNEIGH:
 		case RTM_DELNEIGH:
 			tally_neigh_header(&t->newdelneigh, nlh);
+			break;
+		case RTM_GETRULE:
+			tally_rule_header(&t->getrule, nlh, true);
+			break;
+		case RTM_NEWRULE:
+		case RTM_DELRULE:
+			tally_rule_header(&t->newdelrule, nlh, false);
 			break;
 		case RTM_NEWNEXTHOP:
 			tally_nexthop_header(&t->newnexthop, nlh, true);
@@ -1374,6 +1437,7 @@ void rtnl_gen_self_check(void)
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
+	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
