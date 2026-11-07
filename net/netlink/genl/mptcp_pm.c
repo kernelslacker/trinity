@@ -12,29 +12,6 @@
 #include "netlink-genl-families.h"
 #include "utils.h"
 
-/*
- * SET_FLAGS / ANNOUNCE / REMOVE / SUBFLOW_CREATE / SUBFLOW_DESTROY were
- * added to the family after the initial address-table opset.  The
- * numeric ids match the mptcp_pm.h enum ordering and are shimmed here
- * so a host with a partially-populated uapi header still builds under
- * -Werror.
- */
-#ifndef MPTCP_PM_CMD_SET_FLAGS
-#define MPTCP_PM_CMD_SET_FLAGS		7
-#endif
-#ifndef MPTCP_PM_CMD_ANNOUNCE
-#define MPTCP_PM_CMD_ANNOUNCE		8
-#endif
-#ifndef MPTCP_PM_CMD_REMOVE
-#define MPTCP_PM_CMD_REMOVE		9
-#endif
-#ifndef MPTCP_PM_CMD_SUBFLOW_CREATE
-#define MPTCP_PM_CMD_SUBFLOW_CREATE	10
-#endif
-#ifndef MPTCP_PM_CMD_SUBFLOW_DESTROY
-#define MPTCP_PM_CMD_SUBFLOW_DESTROY	11
-#endif
-
 static const struct genl_cmd_grammar mptcp_pm_cmds[] = {
 	{ MPTCP_PM_CMD_ADD_ADDR,         "MPTCP_PM_CMD_ADD_ADDR" },
 	{ MPTCP_PM_CMD_DEL_ADDR,         "MPTCP_PM_CMD_DEL_ADDR" },
