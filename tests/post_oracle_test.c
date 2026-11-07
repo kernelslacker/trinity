@@ -39,7 +39,7 @@
 #include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
 #include "fake_parent.h"	/* fake_output_log */
-#include "kernel/compat.h"	/* struct old_timeval32 */
+#include "kernel/compat.h"	/* struct old_timeval32, ... */
 #include "kernel/io_uring.h"	/* IORING_REGISTER_* */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
@@ -1470,6 +1470,21 @@ static void timerfd_gettime_compat(void)
 	       time_oracle_anomalies(&o, 326, &left32, sizeof(left32)), 0);
 }
 
+/* getitimer() writes a struct old_itimerval32 for a compat call, 105 on
+ * i386, which the range check must read as such: here a timer 1.5 s
+ * from expiry, with no interval. */
+static void getitimer_compat(void)
+{
+	const struct time_oracle o = { &syscall_getitimer, NULL, 2 };
+	const struct itimerval left = { .it_value = { 1, 500000 } };
+	const struct old_itimerval32 left32 = { .it_value = { 1, 500000 } };
+
+	expect("getitimer, a native call's value",
+	       time_oracle_anomalies(&o, 0, &left, sizeof(left)), 0);
+	expect("getitimer, a compat call's value",
+	       time_oracle_anomalies(&o, 105, &left32, sizeof(left32)), 0);
+}
+
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
  * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
  * single-node box takes, writes the policy and none of the mask.  The
@@ -1886,6 +1901,7 @@ void post_oracle_self_check(void)
 	clock_gettime_compat();
 	timer_gettime_compat();
 	timerfd_gettime_compat();
+	getitimer_compat();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
