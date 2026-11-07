@@ -35,6 +35,14 @@
 
 #include "kernel/fcntl.h"
 #include "kernel/splice.h"
+
+/*
+ * An O_DIRECT read takes a buffer aligned to the device's dma_alignment
+ * (511 by default, the cache line under SCSI) and a block-aligned length,
+ * or fails with -EINVAL, which the walkers would take for the end: the
+ * read buffers are page-aligned, and each read asks for a whole chunk,
+ * which EOF cuts short, the 5000-byte canary's tail included.
+ */
 #define READ_CHUNK		4096U
 #define READV_IOV_COUNT		4U
 #define DIFF_NEXT_BYTES		8U
@@ -224,20 +232,19 @@ static void report_mismatch(unsigned int file_idx, const char *path,
 static void mode_read(int fd, unsigned int file_idx, size_t size,
 		      const char *path, unsigned long *direct_calls)
 {
-	unsigned char buf[READ_CHUNK];
+	unsigned char buf[READ_CHUNK] __attribute__((aligned(READ_CHUNK)));
 	size_t off = 0;
 
 	while (off < size) {
-		size_t want = size - off;
 		size_t mis;
 		ssize_t n;
 
-		if (want > sizeof(buf))
-			want = sizeof(buf);
-		n = read(fd, buf, want);
+		n = read(fd, buf, sizeof(buf));
 		(*direct_calls)++;
 		if (n <= 0)
 			return;
+		if ((size_t)n > size - off)
+			n = (ssize_t)(size - off);
 		if (!canary_walk(buf, (size_t)n, file_idx, (off_t)off, &mis)) {
 			report_mismatch(file_idx, path, "read", mis,
 					buf, (size_t)n, off);
@@ -250,7 +257,7 @@ static void mode_read(int fd, unsigned int file_idx, size_t size,
 static void mode_pread(int fd, unsigned int file_idx, size_t size,
 		       const char *path, unsigned long *direct_calls)
 {
-	unsigned char buf[READ_CHUNK];
+	unsigned char buf[READ_CHUNK] __attribute__((aligned(READ_CHUNK)));
 	size_t total_chunks = (size + READ_CHUNK - 1) / READ_CHUNK;
 	size_t bitmap_bytes = (total_chunks + 7) / 8;
 	unsigned char *seen;
@@ -271,20 +278,18 @@ static void mode_pread(int fd, unsigned int file_idx, size_t size,
 		size_t chunk_idx;
 		size_t bit_byte, bit_mask;
 		off_t off;
-		size_t want;
 		size_t mis;
 		ssize_t n;
 
 		chunk_idx = rnd_modulo_u32(total_chunks);
 		off = (off_t)(chunk_idx * READ_CHUNK);
-		want = size - (size_t)off;
-		if (want > sizeof(buf))
-			want = sizeof(buf);
 
-		n = pread(fd, buf, want, off);
+		n = pread(fd, buf, sizeof(buf), off);
 		(*direct_calls)++;
 		if (n <= 0)
 			continue;
+		if ((size_t)n > size - (size_t)off)
+			n = (ssize_t)(size - (size_t)off);
 		if (!canary_walk(buf, (size_t)n, file_idx, off, &mis)) {
 			report_mismatch(file_idx, path, "pread", mis,
 					buf, (size_t)n, (size_t)off);
@@ -434,14 +439,10 @@ static void mode_splice(int fd, unsigned int file_idx, size_t size,
 	(*direct_calls)++;
 
 	while (off < size) {
-		size_t want = size - off;
 		ssize_t spliced, rd;
 		size_t mis;
 
-		if (want > sizeof(buf))
-			want = sizeof(buf);
-
-		spliced = splice(fd, NULL, pfd[1], NULL, want,
+		spliced = splice(fd, NULL, pfd[1], NULL, sizeof(buf),
 				 SPLICE_F_MOVE);
 		(*direct_calls)++;
 		if (spliced <= 0)
@@ -451,6 +452,8 @@ static void mode_splice(int fd, unsigned int file_idx, size_t size,
 		(*direct_calls)++;
 		if (rd <= 0)
 			break;
+		if ((size_t)rd > size - off)
+			rd = (ssize_t)(size - off);
 		if (!canary_walk(buf, (size_t)rd, file_idx, (off_t)off,
 				 &mis)) {
 			report_mismatch(file_idx, path, "splice", mis,
@@ -485,10 +488,7 @@ static void mode_sendfile(int fd, unsigned int file_idx, size_t size,
 	(*direct_calls)++;
 
 	while ((size_t)soff < size) {
-		size_t want = size - (size_t)soff;
-		if (want > sizeof(buf))
-			want = sizeof(buf);
-		sent = sendfile(tfd, fd, &soff, want);
+		sent = sendfile(tfd, fd, &soff, sizeof(buf));
 		(*direct_calls)++;
 		if (sent <= 0)
 			break;
