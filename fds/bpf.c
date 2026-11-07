@@ -267,10 +267,6 @@ static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_TRACING,	BPF_TRACE_FSESSION_MULTI,	"tracing_fsession_multi" },
 };
 
-/* One fd slot per template, so adding a template never silently
- * drops one past the cap. */
-#define MAX_BPF_PROG_FDS	ARRAY_SIZE(bpf_prog_templates)
-
 static const char bpf_prog_license[] = "GPL";
 
 static int bpf_load_template_prog(unsigned int prog_type,
@@ -334,7 +330,6 @@ static int init_bpf_prog_fds(void)
 {
 	struct objhead *head;
 	unsigned int i;
-	unsigned int loaded = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 	head->destroy = &close_fd_destructor;
@@ -376,10 +371,6 @@ static int init_bpf_prog_fds(void)
 		add_object(obj, OBJ_GLOBAL, OBJ_FD_BPF_PROG);
 		__atomic_add_fetch(&shm->stats.ebpf_gen.progs_provided, 1,
 				   __ATOMIC_RELAXED);
-		loaded++;
-
-		if (loaded >= MAX_BPF_PROG_FDS)
-			break;
 	}
 
 	return true;
