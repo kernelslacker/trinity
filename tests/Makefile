@@ -674,9 +674,12 @@ FAKE_SRCS	+= lane_socket_test.c \
 
 # syscalls/process/seccomp.c and syscalls/concurrency/set_robust_list.c
 # bring seccomp, whose GET_ACTION_AVAIL word, and set_robust_list, whose
-# self-linked head, scrub_inputs_test.c follows through the blanket scrub.
+# self-linked head, scrub_inputs_test.c follows through the blanket scrub,
+# and syscalls/process/listns.c listns, whose request it checks the
+# record owns once the sanitiser has moved it into the pool.
 PARENT_SRCS	+= $(TOP)/syscalls/process/seccomp.c \
-		   $(TOP)/syscalls/concurrency/set_robust_list.c
+		   $(TOP)/syscalls/concurrency/set_robust_list.c \
+		   $(TOP)/syscalls/process/listns.c
 
 # syscalls/hardware/getrandom.c brings getrandom, whose sanitiser and
 # .vet_final hook arg_coupling_test.c runs over a real mapping, as the

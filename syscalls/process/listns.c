@@ -205,7 +205,6 @@ static unsigned long pick_listns_flags(void)
 #define LISTNS_POST_STATE_MAGIC	0x4C4E5321UL	/* "LNS!" */
 struct listns_post_state {
 	unsigned long magic;
-	unsigned long req;
 	unsigned long nr_ns_ids;
 };
 
@@ -258,13 +257,19 @@ static void sanitise_listns(struct syscallrecord *rec)
 	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
 	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*ns_ids));
 
-	/* Snapshot for the post handler -- a1 / a3 may be scribbled by a
-	 * sibling syscall before post_listns() runs. */
+	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
+	 * syscall before post_listns() runs. */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = LISTNS_POST_STATE_MAGIC;
-	snap->req = rec->a1;
 	snap->nr_ns_ids = rec->a3;
 	post_state_install(rec, snap);
+
+	/*
+	 * The record owns the heap request: a1 holds the pool copy
+	 * avoid_shared_buffer_inout() made of it, which is no allocation to
+	 * free.  The rec_own carrier frees it after .post runs.
+	 */
+	rec_own(rec, req);
 }
 
 static void post_listns(struct syscallrecord *rec)
@@ -280,10 +285,8 @@ static void post_listns(struct syscallrecord *rec)
 	 * counter on failure -- callers just early-return on NULL.
 	 */
 	snap = post_state_claim_owned(rec, LISTNS_POST_STATE_MAGIC, __func__);
-	if (snap == NULL) {
-		rec->a1 = 0;
+	if (snap == NULL)
 		return;
-	}
 
 	/*
 	 * Kernel ABI: sys_listns writes at most nr_ns_ids u64 namespace IDs
@@ -293,8 +296,7 @@ static void post_listns(struct syscallrecord *rec)
 	 * corruption: a sign-extension tear in the syscall return path, a
 	 * kernel-side write that spilled past the user-supplied bound, or a
 	 * torn read of the namespace iterator counter.  Fall through to
-	 * out_free so the deferred req / post_state buffers are still
-	 * released.
+	 * out_free so the post_state buffer is still released.
 	 */
 	if (ret != -1L && retval > snap->nr_ns_ids) {
 		outputerr("post_listns: retval %lu exceeds requested nr_ns_ids %lu\n",
@@ -304,8 +306,6 @@ static void post_listns(struct syscallrecord *rec)
 	}
 
 out_free:
-	rec->a1 = 0;
-	deferred_freeptr(&snap->req);
 	post_state_release(rec, snap);
 }
 
