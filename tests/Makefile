@@ -572,6 +572,13 @@ FAKE_SRCS	+= testfile_pool_test.c
 PARENT_SRCS	+= $(TOP)/utils/writer-watch.c
 FAKE_SRCS	+= writer_watch_test.c
 
+# child/child-sentinel.c brings the divergence sentinel's tick.
+# sentinel_test.c answers its uname() and sysinfo() with a model, through
+# the fake_syscall hook of landlock_test.c, and stands in for the pre-crash
+# ring it records each divergence in.
+PARENT_SRCS	+= $(TOP)/child/child-sentinel.c
+FAKE_SRCS	+= sentinel_test.c
+
 # syscalls/fs/close.c, close_range.c and fcntl.c and
 # syscalls/pidfd/pidfd_getfd.c bring syscall_close, syscall_close_range,
 # syscall_fcntl and syscall_pidfd_getfd, whose post handlers

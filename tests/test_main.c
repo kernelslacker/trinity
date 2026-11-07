@@ -93,6 +93,7 @@ void sanitiser_owned_mask_pool_self_check(void);
 void canary_path_self_check(void);
 void testfile_pool_self_check(void);
 void writer_watch_self_check(void);
+void sentinel_self_check(void);
 void perf_attr_self_check(void);
 void landlock_self_check(void);
 void numa_self_check(void);
@@ -518,6 +519,11 @@ int main(int argc, char **argv)
 	printf("  writer_watch_self_check ... ");
 	fflush(stdout);
 	writer_watch_self_check();
+	printf("OK\n");
+
+	printf("  sentinel_self_check ... ");
+	fflush(stdout);
+	sentinel_self_check();
 	printf("OK\n");
 
 	printf("  perf_attr_self_check ... ");

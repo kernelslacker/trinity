@@ -75,6 +75,8 @@ struct child_syscall_ring {
  * stray write into an unrelated kernel-managed datum (utsname's
  * boot-stable strings, sysinfo's boot-stable scalars) shows up as the
  * live re-read disagreeing with what we captured the previous tick.
+ * sysinfo's totalram and totalswap, which a balloon, memory hotplug or
+ * swapon also moves, count only as expected drift.
  * __NEW_UTS_LEN is 64 -- arrays sized 65 to include the trailing NUL
  * the kernel always copies.
  */

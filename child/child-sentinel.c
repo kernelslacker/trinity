@@ -153,11 +153,15 @@ static void sentinel_report(struct childdata *child,
 
 	/* SF_UNAME_RELEASE and SF_UNAME_MACHINE are legitimately rewritten
 	 * by personality(PER_LINUX32|UNAME26), which the fuzzer emits
-	 * (UNAME26 is in personality_flags[]).  Route those into a separate
-	 * "expected drift" counter — the pre_crash_ring entry is still
-	 * recorded above so the post-mortem decoder can replay the
-	 * divergence, only the live histogram is carved out. */
-	if (field == SF_UNAME_RELEASE || field == SF_UNAME_MACHINE) {
+	 * (UNAME26 is in personality_flags[]), and the kernel moves totalram
+	 * on a balloon inflate or deflate (adjust_managed_page_count()) and
+	 * memory hotplug, and totalswap on any swapon or swapoff.  Route
+	 * those into a separate "expected drift" counter — the
+	 * pre_crash_ring entry is still recorded above so the post-mortem
+	 * decoder can replay the divergence, only the live histogram is
+	 * carved out. */
+	if (field == SF_UNAME_RELEASE || field == SF_UNAME_MACHINE ||
+	    field == SF_SYSINFO_TOTALRAM || field == SF_SYSINFO_TOTALSWAP) {
 		__atomic_add_fetch(&shm->stats.divergence_sentinel.expected_drift,
 				   1, __ATOMIC_RELAXED);
 		return;

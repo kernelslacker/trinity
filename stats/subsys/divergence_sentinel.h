@@ -54,33 +54,31 @@ struct divergence_sentinel_stats {
 	 * slots -- kept that way so the index matches the on-the-wire
 	 * field id in collected logs.
 	 *
-	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE are routed to
-	 * expected_drift below instead of bumping their shard --
-	 * personality(PER_LINUX32|UNAME26) legitimately rewrites those
-	 * strings whenever the fuzzer emits it (UNAME26 is now back in
-	 * personality_flags[] so the fuzzer can emit it again), so leaving
-	 * them on the anomaly histogram would drown out the real wild-write
-	 * signal.
+	 * SF_UNAME_RELEASE, SF_UNAME_MACHINE, SF_SYSINFO_TOTALRAM and
+	 * SF_SYSINFO_TOTALSWAP are routed to expected_drift below instead
+	 * of bumping their shard -- personality(PER_LINUX32|UNAME26)
+	 * legitimately rewrites the two strings whenever the fuzzer emits
+	 * it (UNAME26 is now back in personality_flags[] so the fuzzer can
+	 * emit it again), and the kernel moves the two totals on its own,
+	 * so leaving them on the anomaly histogram would drown out the real
+	 * wild-write signal.
 	 */
 	unsigned long anomalies[SF__MAX];
 
 	/*
-	 * Counter for divergences in fields that are known to be mutated
-	 * by operator-driven syscalls trinity itself fuzzes -- specifically
-	 * SF_UNAME_RELEASE and SF_UNAME_MACHINE, which personality()
-	 * can rewrite when the fuzzer emits PER_LINUX32 | UNAME26
-	 * (UNAME26 is now back in personality_flags[], restoring that path).
-	 * Bumped per diverging field, aggregate only (no per-field shard)
-	 * -- if a second "expected drift" field is added later this can
-	 * be widened.  Mirror of the 2026-05-09 uid_change_logged split:
-	 * separating expected mutations from corruption keeps the
-	 * headline anomaly array as a real signal rather than a noise
-	 * floor.
-	 *
-	 * SF_SYSINFO_TOTALSWAP intentionally stays on the anomaly array
-	 * -- swapon/swapoff bumps it at a far lower rate than
-	 * personality() bumps RELEASE/MACHINE, and calling that
-	 * "expected" would muddy the meaning of this counter.
+	 * Counter for divergences in fields that are known to change
+	 * without a wild write: SF_UNAME_RELEASE and SF_UNAME_MACHINE,
+	 * which personality() can rewrite when the fuzzer emits
+	 * PER_LINUX32 | UNAME26 (UNAME26 is now back in
+	 * personality_flags[], restoring that path), SF_SYSINFO_TOTALRAM,
+	 * which a balloon inflate or deflate and memory hotplug move
+	 * (adjust_managed_page_count()), and SF_SYSINFO_TOTALSWAP, which
+	 * any swapon or swapoff moves.  The two totals are system-wide,
+	 * so every child would report one change at once.  Bumped per
+	 * diverging field, aggregate only (no per-field shard).  Mirror
+	 * of the 2026-05-09 uid_change_logged split: separating expected
+	 * mutations from corruption keeps the headline anomaly array as a
+	 * real signal rather than a noise floor.
 	 */
 	unsigned long expected_drift;
 };
