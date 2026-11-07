@@ -93,6 +93,7 @@ void objpool_reader_self_check(void);
 void sanitiser_owned_mask_pool_self_check(void);
 void canary_path_self_check(void);
 void testfile_pool_self_check(void);
+void planted_name_self_check(void);
 void writer_watch_self_check(void);
 void sentinel_self_check(void);
 void perf_attr_self_check(void);
@@ -525,6 +526,11 @@ int main(int argc, char **argv)
 	printf("  testfile_pool_self_check ... ");
 	fflush(stdout);
 	testfile_pool_self_check();
+	printf("OK\n");
+
+	printf("  planted_name_self_check ... ");
+	fflush(stdout);
+	planted_name_self_check();
 	printf("OK\n");
 
 	printf("  writer_watch_self_check ... ");

@@ -612,6 +612,14 @@ FAKE_SRCS	+= writer_watch_test.c
 PARENT_SRCS	+= $(TOP)/childops/fs/inode-spewer.c
 FAKE_SRCS	+= inode_spewer_test.c
 
+# fds/sparse-files.c brings the sparse-file pool's provider, which
+# registers itself at load time.  planted_name_test.c runs its init hook
+# against the object-pool hooks in fake_objects.c, with a symlink planted
+# under one of its names.  Same section-per-function treatment as the
+# parent TUs above.
+PARENT_SRCS	+= $(TOP)/fds/sparse-files.c
+FAKE_SRCS	+= planted_name_test.c
+
 # child/child-sentinel.c brings the divergence sentinel's tick.
 # sentinel_test.c answers its uname() and sysinfo() with a model, through
 # the fake_syscall hook of landlock_test.c, and stands in for the pre-crash

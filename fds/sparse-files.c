@@ -58,9 +58,12 @@ static int open_one_sparse_file(unsigned int idx)
 		return false;
 	snprintf(filename, 64, "trinity-sparsefile%u", idx);
 
+	/* The cwd is tmp/ when there is one, which anyone can write to:
+	 * O_EXCL, so a name something took since the unlink fails the slot
+	 * rather than have init write through it. */
 	(void) unlink(filename);
 
-	fd = open(filename, O_CREAT | O_RDWR, 0666);
+	fd = open(filename, O_CREAT | O_EXCL | O_RDWR, 0666);
 	if (fd < 0) {
 		free_shared_str(filename);
 		return false;
