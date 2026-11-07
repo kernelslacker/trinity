@@ -138,12 +138,14 @@ static unsigned long pick_listmount_flags(void)
 }
 
 /*
- * mnt_id_req.param is the iteration order cookie.  Kernel currently
- * ignores it, but mismatched-shape requests have caught argument-
- * validation regressions before.  Keep it overwhelmingly zero with a
- * random-tail arm for unmodelled bit patterns.
+ * mnt_id_req.param is the listing cursor: the last mount id of the
+ * previous batch, after which (before which, under LISTMOUNT_REVERSE)
+ * the kernel resumes.  0 starts from the first (last) mount, and a
+ * nonzero id at or below MNT_UNIQUE_ID_OFFSET, 1 << 31, is EINVAL.  Keep
+ * it overwhelmingly zero, with a random-tail arm that resumes after an
+ * arbitrary id.
  */
-static __u64 pick_listmount_order(void)
+static __u64 pick_listmount_cursor(void)
 {
 	if (rnd_modulo_u32(5) < 4)
 		return 0;
@@ -213,7 +215,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	rec_own(rec, req);
 
 	req->mnt_id = pick_listmount_parent_id();
-	req->param = pick_listmount_order();
+	req->param = pick_listmount_cursor();
 
 	mnt_ids = (__u64 *) get_writable_address(
 		LISTMOUNT_BUF_SLOTS * sizeof(*mnt_ids));
