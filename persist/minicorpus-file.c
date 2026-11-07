@@ -449,53 +449,6 @@ bool minicorpus_load_file(const char *path,
 const char *minicorpus_default_path(void)
 {
 	static char pathbuf[PATH_MAX];
-	const char *xdg = getenv("XDG_CACHE_HOME");
-	const char *home = getenv("HOME");
-	char dir[PATH_MAX];
-	const char *arch;
-	struct utsname u;
-	char *r;
-	int ret;
 
-#if defined(__x86_64__)
-	arch = "x86_64";
-#elif defined(__i386__)
-	arch = "i386";
-#elif defined(__aarch64__)
-	arch = "aarch64";
-#elif defined(__arm__)
-	arch = "arm";
-#elif defined(__riscv) && __riscv_xlen == 64
-	arch = "riscv64";
-#elif defined(__loongarch64)
-	arch = "loongarch64";
-#else
-	arch = "unknown";
-#endif
-
-	if (uname(&u) != 0)
-		return NULL;
-	for (r = u.release; *r; r++) {
-		if (*r == '/')
-			*r = '_';
-	}
-
-	if (xdg && xdg[0] == '/') {
-		ret = snprintf(dir, sizeof(dir), "%s/trinity/corpus", xdg);
-	} else if (home && home[0] == '/') {
-		ret = snprintf(dir, sizeof(dir),
-			"%s/.cache/trinity/corpus", home);
-	} else {
-		return NULL;
-	}
-	if (ret < 0 || (size_t)ret >= sizeof(dir))
-		return NULL;
-
-	if (persist_mkdir_p(dir) != 0)
-		return NULL;
-
-	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s", dir, arch, u.release);
-	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
-		return NULL;
-	return pathbuf;
+	return persist_default_path("corpus", pathbuf, sizeof(pathbuf));
 }

@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/utsname.h>
 #include <unistd.h>
 
 #include "persist-util.h"
@@ -121,4 +122,56 @@ int persist_mkdir_p(char *dir)
 		ret = -1;
 	(void) umask(saved_umask);
 	return ret;
+}
+
+const char *persist_default_path(const char *subdir, char *buf, size_t len)
+{
+	const char *xdg = getenv("XDG_CACHE_HOME");
+	const char *home = getenv("HOME");
+	char dir[PATH_MAX];
+	const char *arch;
+	struct utsname u;
+	char *r;
+	int ret;
+
+#if defined(__x86_64__)
+	arch = "x86_64";
+#elif defined(__i386__)
+	arch = "i386";
+#elif defined(__aarch64__)
+	arch = "aarch64";
+#elif defined(__arm__)
+	arch = "arm";
+#elif defined(__riscv) && __riscv_xlen == 64
+	arch = "riscv64";
+#elif defined(__loongarch64)
+	arch = "loongarch64";
+#else
+	arch = "unknown";
+#endif
+
+	if (uname(&u) != 0)
+		return NULL;
+	for (r = u.release; *r; r++) {
+		if (*r == '/')
+			*r = '_';
+	}
+
+	if (xdg && xdg[0] == '/')
+		ret = snprintf(dir, sizeof(dir), "%s/trinity/%s", xdg, subdir);
+	else if (home && home[0] == '/')
+		ret = snprintf(dir, sizeof(dir), "%s/.cache/trinity/%s",
+			       home, subdir);
+	else
+		return NULL;
+	if (ret < 0 || (size_t)ret >= sizeof(dir))
+		return NULL;
+
+	if (persist_mkdir_p(dir) != 0)
+		return NULL;
+
+	ret = snprintf(buf, len, "%s/%s-%s", dir, arch, u.release);
+	if (ret < 0 || (size_t)ret >= len)
+		return NULL;
+	return buf;
 }
