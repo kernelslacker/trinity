@@ -45,6 +45,7 @@ syscalls/keyctl/add_key.c:syscall_add_key
 syscalls/keyctl/request_key.c:syscall_request_key
 syscalls/landlock/landlock_add_rule.c:syscall_landlock_add_rule
 syscalls/lsm/lsm_get_self_attr.c:syscall_lsm_get_self_attr
+syscalls/lsm/lsm_list_modules.c:syscall_lsm_list_modules
 syscalls/lsm/lsm_set_self_attr.c:syscall_lsm_set_self_attr
 syscalls/mm/mincore.c:syscall_mincore
 syscalls/mm/numa/mbind.c:syscall_mbind

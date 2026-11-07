@@ -68,11 +68,12 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	 * being NULL is a distinct fault condition.
 	 *
 	 * AXIS B (size shape, ~80% of calls): the value-result (ids,
-	 * *size) pair is routed through valresult_alloc() with a
-	 * page_size natural capacity.  The shape catalogue (EXACT /
-	 * UNDER / EXACT_PLUS_ONE / HUGE / ZERO) mutates both the ids
-	 * buffer capacity and the matching *size word in lockstep so the
-	 * kernel can never write past the allocation.  EXACT (~88% of the
+	 * *size) pair is shaped by valresult_alloc() from a page_size
+	 * natural capacity.  The shape catalogue (EXACT / UNDER /
+	 * EXACT_PLUS_ONE / HUGE / ZERO) picks the *size word and the ids
+	 * capacity, and the kernel gets both from the call's pool: a page
+	 * at most holds the 8 bytes per active LSM it writes, which it
+	 * does only when *size covers them all.  EXACT (~88% of the
 	 * AXIS B fraction) keeps the post oracle's stable-equality
 	 * comparison firing on the happy path; the other four shapes are
 	 * new fuzz coverage for the addrlen-style bounds and short-write
@@ -102,15 +103,22 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 		rec->a2 = (unsigned long) size;
 		avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
 	} else {
-		/* AXIS B: size shape via valresult catalogue */
+		/*
+		 * AXIS B.  vrb itself never reaches the kernel: HUGE's
+		 * 4 MiB is a heap buffer no pool can stand in for, which a
+		 * compat call's slot cannot name once malloc() maps it past
+		 * 4 GiB.  The snapshot keeps vrb for the free.
+		 */
+		u32 *size;
+
 		vrb = valresult_alloc(page_size, valresult_pick_shape());
-		buf_len = vrb.cap;
-		rec->a1 = (unsigned long) vrb.buf;
-		rec->a2 = (unsigned long) vrb.len_io;
-		if (rec->a1 != 0)
-			avoid_shared_buffer_out(&rec->a1, buf_len);
-		if (rec->a2 != 0)
-			avoid_shared_buffer_inout(&rec->a2, sizeof(u32));
+		buf_len = min(vrb.cap, (size_t) page_size);
+		rec->a1 = buf_len != 0 ?
+			(unsigned long) get_writable_address(buf_len) : 0;
+		size = (u32 *) get_writable_struct(sizeof(*size));
+		if (size != NULL)
+			*size = (u32) *vrb.len_io;
+		rec->a2 = (unsigned long) size;
 	}
 
 #ifdef HAVE_SYS_LSM_LIST_MODULES

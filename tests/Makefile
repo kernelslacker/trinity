@@ -1100,6 +1100,11 @@ FAKE_SRCS	+= rxrpc_key_install_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex_wait.c
 FAKE_SRCS	+= futex_wait_test.c
 
+# syscalls/lsm/lsm_list_modules.c brings lsm_list_modules' sanitiser,
+# whose buffers lsm_list_modules_test.c checks on a compat call.
+PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_list_modules.c
+FAKE_SRCS	+= lsm_list_modules_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
