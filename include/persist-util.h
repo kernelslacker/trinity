@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stddef.h>
 
 void persist_sweep_stale_tmp(const char *path);
@@ -12,12 +13,18 @@ void persist_sweep_stale_tmp(const char *path);
 int persist_mkdir_p(char *dir);
 
 /*
+ * trinity's cache directory, <cache>/trinity, or <cache>/trinity/@subdir
+ * when @subdir is not NULL, in @dir, made if missing: <cache> is
+ * $XDG_CACHE_HOME, or $HOME/.cache when that is unset or relative.  False
+ * when neither variable names an absolute directory, the path does not fit
+ * or the directory cannot be made.
+ */
+bool persist_cache_dir(const char *subdir, char *dir, size_t len);
+
+/*
  * The default path of a file holding one arch's and one kernel release's
- * state: <cache>/trinity/@subdir/<arch>-<release>, where <cache> is
- * $XDG_CACHE_HOME, or $HOME/.cache when that is unset or relative, and
- * <release> is uname()'s with any '/' made '_'.  Makes the directory.
- * Returns @buf, which gets the path, or NULL when neither variable names
- * an absolute directory, the path does not fit or the directory cannot be
- * made.
+ * state: <arch>-<release> in persist_cache_dir(@subdir), <release> being
+ * uname()'s with any '/' made '_'.  Returns @buf, which gets the path, or
+ * NULL when the directory or the path cannot be had.
  */
 const char *persist_default_path(const char *subdir, char *buf, size_t len);

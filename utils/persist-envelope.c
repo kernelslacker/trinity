@@ -118,21 +118,10 @@ bool persist_envelope_validate(const struct trinity_persist_envelope *env,
 const char *persist_manifest_default_path(void)
 {
 	static char pathbuf[PATH_MAX];
-	const char *xdg = getenv("XDG_CACHE_HOME");
-	const char *home = getenv("HOME");
 	char dir[PATH_MAX];
 	int ret;
 
-	if (xdg && xdg[0] == '/')
-		ret = snprintf(dir, sizeof(dir), "%s/trinity", xdg);
-	else if (home && home[0] == '/')
-		ret = snprintf(dir, sizeof(dir), "%s/.cache/trinity", home);
-	else
-		return NULL;
-	if (ret < 0 || (size_t)ret >= sizeof(dir))
-		return NULL;
-
-	if (persist_mkdir_p(dir) != 0)
+	if (!persist_cache_dir(NULL, dir, sizeof(dir)))
 		return NULL;
 
 	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s", dir,

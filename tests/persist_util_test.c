@@ -2,7 +2,8 @@
  * Self-check for persist_mkdir_p() (utils/persist-util.c): it makes every
  * missing component of a path 0755 whatever the umask, restores the umask
  * and the path, takes a path that exists already, and refuses one through
- * a file or ending at one.  Then persist_default_path(), which builds on it.
+ * a file or ending at one.  Then persist_cache_dir() and
+ * persist_default_path(), which build on it.
  */
 
 #include <limits.h>
@@ -72,6 +73,10 @@ static void default_path_self_check(const char *base)
 	setenv("XDG_CACHE_HOME", base, 1);
 	setenv("HOME", "relative", 1);
 	expect_default_path(base, "corpus", u.release);
+	snprintf(cache, sizeof(cache), "%s/trinity", base);
+	if (!persist_cache_dir(NULL, buf, sizeof(buf)) || strcmp(buf, cache) != 0)
+		BUG("persist util: persist_cache_dir(NULL) is not <cache>/trinity");
+	expect_dir_0755(cache);
 
 	setenv("XDG_CACHE_HOME", "relative", 1);
 	setenv("HOME", base, 1);

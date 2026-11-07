@@ -10,6 +10,7 @@
 #include <libgen.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -124,10 +125,29 @@ int persist_mkdir_p(char *dir)
 	return ret;
 }
 
-const char *persist_default_path(const char *subdir, char *buf, size_t len)
+bool persist_cache_dir(const char *subdir, char *dir, size_t len)
 {
 	const char *xdg = getenv("XDG_CACHE_HOME");
 	const char *home = getenv("HOME");
+	const char *sep = subdir != NULL ? "/" : "";
+	int ret;
+
+	if (subdir == NULL)
+		subdir = "";
+	if (xdg && xdg[0] == '/')
+		ret = snprintf(dir, len, "%s/trinity%s%s", xdg, sep, subdir);
+	else if (home && home[0] == '/')
+		ret = snprintf(dir, len, "%s/.cache/trinity%s%s",
+			       home, sep, subdir);
+	else
+		return false;
+	if (ret < 0 || (size_t)ret >= len)
+		return false;
+	return persist_mkdir_p(dir) == 0;
+}
+
+const char *persist_default_path(const char *subdir, char *buf, size_t len)
+{
 	char dir[PATH_MAX];
 	const char *arch;
 	struct utsname u;
@@ -157,17 +177,7 @@ const char *persist_default_path(const char *subdir, char *buf, size_t len)
 			*r = '_';
 	}
 
-	if (xdg && xdg[0] == '/')
-		ret = snprintf(dir, sizeof(dir), "%s/trinity/%s", xdg, subdir);
-	else if (home && home[0] == '/')
-		ret = snprintf(dir, sizeof(dir), "%s/.cache/trinity/%s",
-			       home, subdir);
-	else
-		return NULL;
-	if (ret < 0 || (size_t)ret >= sizeof(dir))
-		return NULL;
-
-	if (persist_mkdir_p(dir) != 0)
+	if (!persist_cache_dir(subdir, dir, sizeof(dir)))
 		return NULL;
 
 	ret = snprintf(buf, len, "%s/%s-%s", dir, arch, u.release);
