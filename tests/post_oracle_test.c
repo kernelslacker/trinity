@@ -31,6 +31,7 @@
 #include "arch.h"		/* ARCH_IS_BIARCH */
 #include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
+#include "kernel/io_uring.h"	/* IORING_REGISTER_* */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
 #include "maps.h"		/* get_map */
@@ -1115,6 +1116,75 @@ static void sysv_ctl_untouched(void)
 	}
 }
 
+extern bool fake_random_fd_empty;	/* fake_stubs.c */
+
+/* Run io_uring_register's sanitiser until it draws @opcode, so the
+ * snapshot the post handler claims is the one the sanitiser built.  The
+ * payloads of the opcodes drawn on the way pick their fds from an empty
+ * pool. */
+static struct syscallrecord *io_uring_register_rec(unsigned int opcode)
+{
+	static struct syscallrecord rec;
+	unsigned int tries;
+
+	fake_random_fd_empty = true;
+	for (tries = 0; tries < 4096; tries++) {
+		memset(&rec, 0, sizeof(rec));
+		syscall_io_uring_register.sanitise(&rec);
+		if (rec.a2 == opcode)
+			break;
+		free((void *) rec.post_state);
+	}
+	fake_random_fd_empty = false;
+	if (tries == 4096)
+		BUG("io_uring_register sanitiser never drew the opcode");
+	return &rec;
+}
+
+/* io_uring_register() answers by the opcode the kernel ran: PERSONALITY
+ * with a new id, an update with the entries it updated, out of the nr
+ * its struct names, and ENABLE_RINGS with 0.  Chain substitution can
+ * rewrite the opcode, an ARG_OP slot, after the sanitiser built the
+ * payload for its own, which names no nr for an update to be held to. */
+static void io_uring_register_rewritten(void)
+{
+	static const struct {
+		const char *what;
+		unsigned int built;
+		unsigned int ran;
+		unsigned long retval;
+		unsigned int bumps;
+	} cases[] = {
+		{ "io_uring_register, an id from a call rewritten onto PERSONALITY",
+		  IORING_REGISTER_ENABLE_RINGS, IORING_REGISTER_PERSONALITY, 1, 0 },
+		{ "io_uring_register, an id from a call rewritten onto ENABLE_RINGS",
+		  IORING_REGISTER_PERSONALITY, IORING_REGISTER_ENABLE_RINGS, 1, 1 },
+		{ "io_uring_register, a count from a call rewritten onto FILES_UPDATE2",
+		  IORING_REGISTER_ENABLE_RINGS, IORING_REGISTER_FILES_UPDATE2, 1, 0 },
+		{ "io_uring_register, a count past UINT_MAX from a call rewritten onto FILES_UPDATE2",
+		  IORING_REGISTER_ENABLE_RINGS, IORING_REGISTER_FILES_UPDATE2,
+		  1UL << 32, 1 },
+	};
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		struct syscallrecord *rec = io_uring_register_rec(cases[i].built);
+		unsigned long *slots[] = { &rec->a1, &rec->a2, &rec->a3,
+					   &rec->a4, &rec->a5, &rec->a6 };
+
+		/* The slots the kernel was handed, as __do_syscall()
+		 * shadows them. */
+		rec->a2 = cases[i].ran;
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec->arg_shadow[k] = *slots[k];
+		rec->arg_snapshot_mask = syscall_io_uring_register.arg_snapshot_mask;
+		rec->retval = cases[i].retval;
+		bumps = 0;
+		syscall_io_uring_register.post(rec);
+		expect(cases[i].what, bumps, cases[i].bumps);
+	}
+}
+
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
  * (copy_nodes_to_user()), so a call handed a maxnode of 1, which a
  * single-node box takes, writes the policy and none of the mask.  The
@@ -1305,6 +1375,7 @@ void post_oracle_self_check(void)
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
+	io_uring_register_rewritten();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH

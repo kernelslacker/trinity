@@ -656,6 +656,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 # /proc/self/status compares post_oracle_test.c runs.
 PARENT_SRCS	+= $(TOP)/syscalls/cred/setgroups.c
 
+# syscalls/io_uring/io_uring_register.c brings io_uring_register, whose
+# per-opcode retval shapes post_oracle_test.c runs, and the payload
+# builders its sanitiser calls.
+PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_register.c \
+		   $(TOP)/syscalls/io_uring/io_uring_register-payloads.c
+
 # syscalls/lsm/lsm_get_self_attr.c brings lsm_get_self_attr, whose re-call
 # selector_recall_test.c runs against a fake of the syscall.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_get_self_attr.c

@@ -140,9 +140,10 @@ static unsigned long pick_io_uring_register_opcode(void)
  * pool pointers, alloc_iovec()'s writable-pool slot (see
  * rand/random-address.c), or zero.  Trinity never owns the memory
  * backing rec->a3, so the post handler has no free to perform.  The
- * post handler dispatches off the snapshot's opcode (not rec->a2) for
- * the per-op STRONG-VAL retval check below, so a sibling scribble of
- * rec->a2 cannot misroute that validation either.
+ * post handler dispatches the per-op STRONG-VAL retval check below off
+ * the opcode the kernel was handed, shadowed at dispatch, not off the
+ * one the sanitiser built the payload for: chain substitution or a
+ * RedQueen pin can rewrite it in between.
  *
  * The magic cookie hardens the post handler against rec->post_state
  * being scribbled with a heap-shaped pointer to a foreign allocation --
@@ -151,7 +152,6 @@ static unsigned long pick_io_uring_register_opcode(void)
 #define IO_URING_REGISTER_POST_STATE_MAGIC	0x494F5F55524D4147UL	/* "IO_URMAG" */
 struct io_uring_register_post_state {
 	unsigned long magic;
-	unsigned int opcode;
 	/*
 	 * Per-opcode length of the user buffer at rec->a3.  Set in the
 	 * dispatch switch alongside the buffer allocation, then handed to
@@ -163,8 +163,9 @@ struct io_uring_register_post_state {
 	/*
 	 * Entry count named by the struct io_uring_rsrc_update2 behind
 	 * rec->a3 for FILES_UPDATE2 / BUFFERS_UPDATE, the most either can
-	 * return: nr_args is the struct's size there, not a count.  Zero
-	 * for every other opcode.
+	 * return: nr_args is the struct's size there, not a count.
+	 * UINT_MAX for every other opcode, whose payload names no count
+	 * for a call rewritten onto an update opcode to be held to.
 	 */
 	unsigned int nr_update;
 };
@@ -184,7 +185,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * unknown fallback.
 	 */
 	unsigned long arg_len = 0;
-	unsigned int nr_update = 0;
+	unsigned int nr_update = UINT_MAX;
 
 	rec->a2 = pick_io_uring_register_opcode();
 
@@ -343,21 +344,19 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	arg_len = p.len;
 
 	/*
-	 * Snapshot the opcode and the per-opcode user-buffer length for
+	 * Snapshot the per-opcode user-buffer length and update count for
 	 * the post handler.  rec->post_state is private to the post path,
-	 * so a sibling scribble of rec->a2 / rec->a3 between the syscall
-	 * returning and the post handler running cannot misroute the
-	 * snapshot's opcode-gated STRONG-VAL dispatch below.  Snap
-	 * allocation is hoisted above avoid_shared_buffer_inout so the
-	 * per-opcode arg_len can drive the relocation length.  No
-	 * original_alloc capture: every opcode now feeds rec->a3 a
-	 * pool-managed pointer (alloc_iovec migrated to writable-pool in
-	 * the preceding commit), so there is nothing for the post handler
-	 * to free.
+	 * so a sibling scribble of rec->a3 between the syscall returning
+	 * and the post handler running cannot move the count an update is
+	 * held to.  Snap allocation is hoisted above
+	 * avoid_shared_buffer_inout so the per-opcode arg_len can drive
+	 * the relocation length.  No original_alloc capture: every opcode
+	 * now feeds rec->a3 a pool-managed pointer (alloc_iovec migrated
+	 * to writable-pool in the preceding commit), so there is nothing
+	 * for the post handler to free.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = IO_URING_REGISTER_POST_STATE_MAGIC;
-	snap->opcode = opcode & ~IORING_REGISTER_USE_REGISTERED_RING;
 	snap->arg_len = arg_len;
 	snap->nr_update = nr_update;
 	post_state_install(rec, snap);
@@ -407,7 +406,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * the bit either.
 	 *
 	 * post_state safety: the snapshot installed above carries only
-	 * (magic, opcode, arg_len, nr_update) -- no per-arm resource
+	 * (magic, arg_len, nr_update) -- no per-arm resource
 	 * ownership, no deferred free of a3.  The oracle in
 	 * post_io_uring_register is retval-shape only (PERSONALITY
 	 * validates [1, INT_MAX]; ENABLE_RINGS falls into the default
@@ -439,6 +438,8 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	struct io_uring_register_post_state *snap;
 	unsigned long ret = rec->retval;
 	unsigned long a4 = get_arg_snapshot(rec, 4);
+	unsigned int opcode = (unsigned int) get_arg_snapshot(rec, 2) &
+			      ~IORING_REGISTER_USE_REGISTERED_RING;
 
 	rec->a3 = 0;
 
@@ -472,7 +473,8 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 *   IORING_REGISTER_FILES_UPDATE2 / IORING_REGISTER_BUFFERS_UPDATE:
 	 *     the same count, but nr_args is the struct's size there, so the
 	 *     bound is the nr the struct names, which sanitise snapshots in
-	 *     nr_update.  __io_sqe_buffers_update() ends the same way.
+	 *     nr_update, UINT_MAX when it built no such struct.
+	 *     __io_sqe_buffers_update() ends the same way.
 	 *
 	 *   IORING_REGISTER_PERSONALITY: kernel allocates a personality id
 	 *     via xa_alloc_cyclic() with XA_LIMIT(1, INT_MAX) and returns
@@ -492,20 +494,22 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 *     fail-soft for any future opcode the kernel adds: legitimate
 	 *     0/-1UL still passes; only a spurious mid-range retval trips.
 	 *
-	 * Validate using the snapshot's opcode (not rec->a2) so a sibling
-	 * scribble of rec->a2 cannot misroute the dispatch.  -1UL fall-
-	 * through is intentional -- every opcode's documented failure path
-	 * lands there.  The buffer cleanup tail below runs unchanged on
-	 * every retval shape so heap allocations are released either way.
+	 * Validate by the opcode the kernel was handed: chain
+	 * substitution or a RedQueen pin can rewrite it after the
+	 * sanitiser built the payload for its own, and get_arg_snapshot()
+	 * catches a sibling scribble of rec->a2.  -1UL fall-through is
+	 * intentional -- every opcode's documented failure path lands
+	 * there.  The buffer cleanup tail below runs unchanged on every
+	 * retval shape so heap allocations are released either way.
 	 */
 	if (ret != (unsigned long)-1L) {
-		switch (snap->opcode) {
+		switch (opcode) {
 		case IORING_REGISTER_RING_FDS:
 		case IORING_UNREGISTER_RING_FDS:
 		case IORING_REGISTER_FILES_UPDATE:
 			if (ret > a4) {
 				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr_args=%lu\n",
-					  snap->opcode, ret, a4);
+					  opcode, ret, a4);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
@@ -513,7 +517,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 		case IORING_REGISTER_BUFFERS_UPDATE:
 			if (ret > snap->nr_update) {
 				outputerr("post_io_uring_register: opcode=%u rejected count retval=0x%lx > nr=%u\n",
-					  snap->opcode, ret, snap->nr_update);
+					  opcode, ret, snap->nr_update);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
@@ -527,7 +531,7 @@ static void post_io_uring_register(struct syscallrecord *rec)
 		default:
 			if (ret != 0) {
 				outputerr("post_io_uring_register: opcode=%u rejected RZS retval=0x%lx (expected 0 or -1UL)\n",
-					  snap->opcode, ret);
+					  opcode, ret);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
 			break;
@@ -547,16 +551,14 @@ struct syscallentry syscall_io_uring_register = {
 	.flags = NEED_ALARM | KCOV_REMOTE_HEAVY | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_io_uring_register,
 	.post = post_io_uring_register,
-	/* a4 (nr_args) is the upper bound the post oracle compares retval
+	/* opcode (a2) picks the retval shape the post oracle holds the call
+	 * to, and a4 (nr_args) is the upper bound it compares a count
 	 * against for IORING_REGISTER_RING_FDS / IORING_UNREGISTER_RING_FDS
-	 * ("rejected count retval=... > nr_args=...").  The opcode itself
-	 * is already snapshot-protected via the io_uring_register_post_state
-	 * magic-cookie record, but the count operand a4 was left on the
-	 * live cross-child shm slot -- a sibling stomp landing between the
-	 * syscall returning and the post handler running could swing the
-	 * bound and either spuriously flag a legitimate retval as a corrupt
-	 * pointer or mask a real out-of-range return.  Shadow a4 so
-	 * get_arg_snapshot(rec, 4) bumps arg_shadow_stomp on mismatch and
-	 * the oracle validates against the count the kernel actually saw. */
-	.arg_snapshot_mask = (1u << 3),
+	 * / IORING_REGISTER_FILES_UPDATE.  Chain substitution or a RedQueen
+	 * pin can rewrite either after the sanitiser, and a sibling stomp
+	 * landing between the syscall returning and the post handler
+	 * running could swing either; shadow both so the oracle validates
+	 * the call the kernel actually ran, and get_arg_snapshot() bumps
+	 * arg_shadow_stomp on a mismatch. */
+	.arg_snapshot_mask = (1u << 1) | (1u << 3),
 };

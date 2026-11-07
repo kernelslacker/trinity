@@ -4,7 +4,8 @@
  * for the object-pool lookup the fd-to-provider walk reaches.  The stub
  * aborts unless a test has installed a pool, so a test that wanders into
  * that walk fails loudly instead of quietly seeing an untracked fd.  Also
- * the pickers of fds/bpf.c, which the bpf sanitisers draw from.
+ * the pickers of fds/bpf.c, which the bpf sanitisers draw from, and the
+ * ring picker of fds/io_uring.c, which io_uring_register's draws from.
  */
 
 #include <stdio.h>
@@ -126,4 +127,10 @@ int get_rand_bpf_btf_fd(void)
 int get_rand_bpf_token_fd(void)
 {
 	return -1;
+}
+
+/* No ring is set up here, so the pool is empty. */
+struct io_uringobj *get_io_uring_ring(void)
+{
+	return NULL;
 }
