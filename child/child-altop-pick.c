@@ -168,11 +168,10 @@ _Static_assert(ARRAY_SIZE(pick_op_type_table) == NR_CHILD_OP_TYPES - 1,
 /*
  * Reverse of pick_op_type_table[]: given a child_op_type, find the
  * slot index in dormant_op_disabled[] whose pick_op_type_table[]
- * entry points to that op.  Returns -1 if no slot matches (slot-53
- * sentinel for CHILD_OP_SYSCALL would return -1 in current builds;
- * the canary queue never asks for that mapping).  Linear scan over
- * ~100 entries; called once per state transition, never on the hot
- * path.
+ * entry points to that op.  Returns -1 if no slot matches
+ * (CHILD_OP_SYSCALL has none; the canary queue never asks for that
+ * mapping).  Linear scan over ~100 entries; called once per state
+ * transition, never on the hot path.
  *
  * Exists so child-canary-state.c can flip the gate for a specific op
  * without taking a direct reference to pick_op_type_table[] / the
@@ -238,11 +237,10 @@ bool dormant_op_is_active(enum child_op_type op)
  * Dense vector of currently-enabled alt-ops, derived from
  * dormant_op_disabled[] + pick_op_type_table[] by init_altop_dispatch().
  *
- * The previous implementation re-rolled into the full 71-slot space and
- * rejected dormant slots inline, which collapsed the EFFECTIVE altop rate
- * well below the nominal 5% (effective ≈ 5% × enabled/71).  Picking from
- * the dense vector keeps effective ≈ nominal regardless of how many slots
- * are gated off, while keeping dormant_op_disabled[] as the source of truth.
+ * Picking from the dense vector keeps the effective altop rate at the
+ * nominal 5% however many slots are gated off, where re-rolling over
+ * every slot and rejecting the dormant ones would give 5% x enabled /
+ * slots, while dormant_op_disabled[] stays the source of truth.
  *
  * Sized at NR_CHILD_OP_TYPES (one slot per enum value, more than enough to
  * hold every non-sentinel slot in pick_op_type_table[]).
@@ -252,13 +250,13 @@ static unsigned int enabled_altop_count;
 
 /*
  * Walk dormant_op_disabled[] + pick_op_type_table[] in parallel and
- * populate enabled_altops[] / enabled_altop_count.  Skips dormant slots
- * and the slot-53 sentinel hole.  Logs the resulting dispatch config so
- * the operator can see at -v what the effective altop mix actually is.
+ * populate enabled_altops[] / enabled_altop_count.  Skips dormant slots.
+ * Logs the resulting dispatch config so the operator can see at -v what
+ * the effective altop mix actually is.
  *
- * Called once from main_loop before fork_children; the dormant gates
- * are compile-time constants so a single startup pass suffices.
- * dormant_op_set() re-invokes this so runtime flips stay accurate.
+ * Called once from main_loop before fork_children, from the gates'
+ * childop.def defaults, and again by dormant_op_set() whenever a gate
+ * flips at runtime.
  */
 void init_altop_dispatch(void)
 {
@@ -273,8 +271,6 @@ void init_altop_dispatch(void)
 		int n;
 
 		if (dormant_op_disabled[i])
-			continue;
-		if (op == CHILD_OP_SYSCALL)	/* slot-53 sentinel */
 			continue;
 
 		enabled_altops[count++] = op;
