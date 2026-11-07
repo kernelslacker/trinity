@@ -2064,6 +2064,17 @@ static struct slot devlink_region_read[] = {
 	S_U64(DEVLINK_ATTR_REGION_CHUNK_ADDR),
 	S_U64(DEVLINK_ATTR_REGION_CHUNK_LEN),
 };
+/* PORT_NEW's doit answers -EINVAL without the flavour and the PF number,
+ * and PORT_DEL's pre_doit, as PORT_GET's, without the port's index. */
+static struct slot devlink_port_new[] = {
+	S_STR(DEVLINK_ATTR_BUS_NAME, 0, .required = true),
+	S_STR(DEVLINK_ATTR_DEV_NAME, 0, .required = true),
+	S_U32(DEVLINK_ATTR_PORT_INDEX),
+	S_U16_RANGE(DEVLINK_ATTR_PORT_FLAVOUR, 0, 7, .required = true),
+	S_U16(DEVLINK_ATTR_PORT_PCI_PF_NUMBER, .required = true),
+	S_U32(DEVLINK_ATTR_PORT_PCI_SF_NUMBER),
+	S_U32(DEVLINK_ATTR_PORT_CONTROLLER_NUMBER),
+};
 static struct cmd_policy devlink_cmds[] = {
 	P_CMD(DEVLINK_CMD_GET, devlink_get),
 	P_DUMP_NONE(DEVLINK_CMD_GET),
@@ -2079,6 +2090,8 @@ static struct cmd_policy devlink_cmds[] = {
 	P_DUMP_NONE(DEVLINK_CMD_INFO_GET),
 	P_CMD(DEVLINK_CMD_NOTIFY_FILTER_SET, devlink_notify_filter_set),
 	P_CMD(DEVLINK_CMD_REGION_READ, devlink_region_read),
+	P_CMD(DEVLINK_CMD_PORT_NEW, devlink_port_new),
+	P_CMD(DEVLINK_CMD_PORT_DEL, devlink_port_get),
 };
 
 static struct policy_family policy_families[] = {

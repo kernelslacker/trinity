@@ -3,8 +3,8 @@
  * configuration), targeting net/devlink/ and its per-op policies in
  * net/devlink/netlink_gen.c.  The unprivileged *_GET commands and
  * NOTIFY_FILTER_SET are listed, keyed on the BUS_NAME / DEV_NAME pair,
- * with REGION_READ, a dump that is GENL_ADMIN_PERM like the NEW / SET /
- * DEL writers.
+ * with REGION_READ, a dump, and PORT_NEW and PORT_DEL, which are
+ * GENL_ADMIN_PERM like the other NEW / SET / DEL writers.
  */
 
 #include <linux/devlink.h>
@@ -81,6 +81,21 @@ static const struct nla_attr_spec devlink_region_read_attrs[] = {
 	{ DEVLINK_ATTR_REGION_CHUNK_LEN,	NLA_KIND_U64,    8 },
 };
 
+/* PORT_NEW asks the driver's port_new for a port and answers -EINVAL
+ * without the flavour, which its policy holds to PCI_SF at most, or the
+ * PCI PF number; it reads the SF number only for a PCI_SF port.  PORT_DEL
+ * takes PORT_GET's table, its pre_doit needing the port's index too. */
+static const struct nla_attr_spec devlink_port_new_attrs[] = {
+	DEVLINK_NAME_SPECS(.required = true),
+	{ DEVLINK_ATTR_PORT_INDEX,		NLA_KIND_U32,    4 },
+	{ DEVLINK_ATTR_PORT_FLAVOUR,		NLA_KIND_U16_RANGE,
+	  DEVLINK_PORT_FLAVOUR_PCI_SF, 0, .required = true },
+	{ DEVLINK_ATTR_PORT_PCI_PF_NUMBER,	NLA_KIND_U16,    2,
+	  .required = true },
+	{ DEVLINK_ATTR_PORT_PCI_SF_NUMBER,	NLA_KIND_U32,    4 },
+	{ DEVLINK_ATTR_PORT_CONTROLLER_NUMBER,	NLA_KIND_U32,    4 },
+};
+
 static const struct genl_cmd_grammar devlink_cmds[] = {
 	{ DEVLINK_CMD_GET,        "DEVLINK_CMD_GET",
 	  devlink_get_attrs, ARRAY_SIZE(devlink_get_attrs), genl_no_attrs },
@@ -103,6 +118,10 @@ static const struct genl_cmd_grammar devlink_cmds[] = {
 	  ARRAY_SIZE(devlink_notify_filter_set_attrs) },
 	{ DEVLINK_CMD_REGION_READ, "DEVLINK_CMD_REGION_READ",
 	  devlink_region_read_attrs, ARRAY_SIZE(devlink_region_read_attrs) },
+	{ DEVLINK_CMD_PORT_NEW,   "DEVLINK_CMD_PORT_NEW",
+	  devlink_port_new_attrs, ARRAY_SIZE(devlink_port_new_attrs) },
+	{ DEVLINK_CMD_PORT_DEL,   "DEVLINK_CMD_PORT_DEL",
+	  devlink_port_get_attrs, ARRAY_SIZE(devlink_port_get_attrs) },
 };
 
 struct genl_family_grammar fam_devlink = {
