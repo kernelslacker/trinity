@@ -79,6 +79,17 @@ static size_t gen_rtnl_body_addr(unsigned char *body, size_t buflen, bool get,
 		ifa.ifa_index = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
 	else
 		ifa.ifa_index = rnd_modulo_u32(64);
+	/* An add or a delete has a handler under AF_INET and AF_INET6, and
+	 * phonet's and MCTP's, which answer an index that names no device
+	 * -ENODEV, and inet_validate_rtm() refuses an IPv4 add with a prefix
+	 * past 32 bits.  It keeps to that seven times in eight, and names lo
+	 * half of those. */
+	if (!get && !ONE_IN(8)) {
+		ifa.ifa_family = RAND_BOOL() ? AF_INET : AF_INET6;
+		if (ifa.ifa_family == AF_INET)
+			ifa.ifa_prefixlen = rnd_modulo_u32(33);
+		ifa.ifa_index = RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	}
 	*out_family = ifa.ifa_family;
 	memcpy(body, &ifa, sizeof(ifa));
 	return sizeof(ifa);

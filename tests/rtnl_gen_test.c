@@ -238,6 +238,8 @@ struct addr_header {
 	unsigned int msgs;
 	unsigned int zero;	/* prefixlen, flags and scope all 0 */
 	unsigned int index_all, index_lo;
+	unsigned int inet;	/* AF_INET or AF_INET6 */
+	unsigned int v4, v4_prefix;	/* AF_INET, with a prefix of 32 bits at most */
 };
 
 static void tally_addr_header(struct addr_header *t, const struct nlmsghdr *nlh)
@@ -250,6 +252,11 @@ static void tally_addr_header(struct addr_header *t, const struct nlmsghdr *nlh)
 	t->zero += !ifm->ifa_prefixlen && !ifm->ifa_flags && !ifm->ifa_scope;
 	t->index_all += ifm->ifa_index == 0;
 	t->index_lo += ifm->ifa_index == LOOPBACK_IFINDEX;
+	t->inet += ifm->ifa_family == AF_INET || ifm->ifa_family == AF_INET6;
+	if (ifm->ifa_family == AF_INET) {
+		t->v4++;
+		t->v4_prefix += ifm->ifa_prefixlen <= 32;
+	}
 }
 
 /*
@@ -258,8 +265,13 @@ static void tally_addr_header(struct addr_header *t, const struct nlmsghdr *nlh)
  * refuse a GET with a nonzero prefixlen, flags or scope on a socket that
  * asks for strict checking, and the dumps an index that names no device.
  * The builder leaves the three 0 seven times in eight for a GET, and its
- * index is 0 half the time and lo's a quarter; NEW and DEL draw all three
- * at random, which leaves them all 0 about once in eight million.
+ * index is 0 half the time and lo's a quarter.  NEW and DEL have handlers
+ * under AF_INET and AF_INET6, and phonet's and MCTP's, which answer an
+ * index that names no device -ENODEV, and inet_validate_rtm() refuses an
+ * IPv4 add with a prefix past 32 bits; the builder names AF_INET or
+ * AF_INET6 seven times in eight, with an IPv4 prefix of 32 bits at most and
+ * lo's index half of those, and draws the prefixlen, flags and scope at
+ * random, which leaves them all 0 about once in a few million.
  */
 static void expect_addr_header(const struct addr_header *get,
 			       const struct addr_header *newdel)
@@ -273,6 +285,18 @@ static void expect_addr_header(const struct addr_header *get,
 	expect_fraction(newdel->zero, newdel->msgs, 0.0, 0.001,
 			"RTM_NEWADDR and RTM_DELADDR",
 			"rtnl: RTM_NEWADDR and RTM_DELADDR lose their random prefixlen, flags and scope");
+	expect_fraction(newdel->inet, newdel->msgs, 0.88, 0.94,
+			"RTM_NEWADDR and RTM_DELADDR",
+			"rtnl: RTM_NEWADDR and RTM_DELADDR do not name AF_INET or AF_INET6 seven times in eight");
+	expect_fraction(newdel->v4_prefix, newdel->v4, 0.94, 1.0,
+			"IPv4 RTM_NEWADDR and RTM_DELADDR",
+			"rtnl: an IPv4 RTM_NEWADDR or RTM_DELADDR has a prefix past 32 bits more than one time in sixteen");
+	expect_fraction(newdel->index_lo, newdel->msgs, 0.39, 0.50,
+			"RTM_NEWADDR and RTM_DELADDR",
+			"rtnl: RTM_NEWADDR and RTM_DELADDR do not name lo about half the time");
+	expect_fraction(newdel->index_all, newdel->msgs, 0.0, 0.02,
+			"RTM_NEWADDR and RTM_DELADDR",
+			"rtnl: RTM_NEWADDR and RTM_DELADDR name index 0, which no device has, more than one time in fifty");
 }
 
 /* ---------- The ndmsg of RTM_NEWNEIGH, RTM_DELNEIGH and RTM_GETNEIGH ---- */
