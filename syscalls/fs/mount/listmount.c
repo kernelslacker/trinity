@@ -31,8 +31,8 @@
  * The mnt_ids output buffer the kernel writes into.  Always allocated
  * at the maximum nr we ever pass so a kernel-side bound bug cannot
  * scribble past a smaller allocation.  The kernel respects the
- * nr_mnt_ids cap and the post oracle catches a retval that exceeds
- * the cap, but the underlying allocation has to be safe regardless.
+ * nr_mnt_ids cap and enforce_count_bound() catches a retval that
+ * exceeds it, but the underlying allocation has to be safe regardless.
  */
 #define LISTMOUNT_BUF_SLOTS	1024
 
@@ -152,19 +152,19 @@ static __u64 pick_listmount_order(void)
 
 #ifdef HAVE_SYS_LISTMOUNT
 /*
- * Snapshot of the three listmount input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot redirect us at a foreign mount-id buffer or
- * smear the size bound used to seed the re-issue.
+ * Snapshot of the listmount request and mount-id buffer read by the post
+ * oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning and
+ * the post handler running cannot redirect us at a foreign mount-id
+ * buffer.  The nr_mnt_ids and flags the re-call takes are read from the
+ * slots the kernel was handed instead.
  */
 #define LISTMOUNT_POST_STATE_MAGIC	0x4C4953544D4E544DUL	/* "LISTMNTM" */
 struct listmount_post_state {
 	unsigned long magic;
 	unsigned long req;
 	unsigned long mnt_ids;
-	unsigned long nr_mnt_ids;
 };
 #endif
 
@@ -222,7 +222,7 @@ static void sanitise_listmount(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_LISTMOUNT
 	/*
-	 * Snapshot the three input args for the post oracle.  Without this
+	 * Snapshot the two buffer args for the post oracle.  Without this
 	 * the post handler reads rec->aN at post-time, when a sibling
 	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
 	 * cannot tell a real-but-wrong heap address from the original user
@@ -236,7 +236,6 @@ static void sanitise_listmount(struct syscallrecord *rec)
 	snap->magic      = LISTMOUNT_POST_STATE_MAGIC;
 	snap->req        = rec->a1;
 	snap->mnt_ids    = rec->a2;
-	snap->nr_mnt_ids = rec->a3;
 	post_state_install(rec, snap);
 #endif
 
@@ -268,18 +267,18 @@ static void sanitise_listmount(struct syscallrecord *rec)
  *     rec->a1/rec->a2 between the original syscall return and our re-issue
  *     via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: the three input args (req, mnt_ids, nr_mnt_ids) are
- * snapshotted at sanitise time into a heap struct in rec->post_state, so
- * a sibling that scribbles rec->aN between syscall return and post entry
- * cannot redirect us at a foreign mount-id buffer or smear the size
- * bound.  We still snapshot the request struct and the first N ids into
- * stack-locals before re-issuing, with a fresh private stack request and
- * a fresh private stack ids buffer (do NOT pass the snapshot's req /
- * mnt_ids -- a sibling could scribble the user buffers themselves
- * mid-syscall and forge a clean compare).  The re-call passes the flags
- * the kernel was handed: LISTMOUNT_REVERSE lists from the last mount
- * back, so the ids come in the other order, and a short nr_mnt_ids takes
- * them from the other end.
+ * TOCTOU defeat: the two buffer args (req, mnt_ids) are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * us at a foreign mount-id buffer.  We still snapshot the request struct
+ * and the first N ids into stack-locals before re-issuing, with a fresh
+ * private stack request and a fresh private stack ids buffer (do NOT pass
+ * the snapshot's req / mnt_ids -- a sibling could scribble the user
+ * buffers themselves mid-syscall and forge a clean compare).  The re-call
+ * passes the nr_mnt_ids and flags the kernel was handed: another nr lists
+ * another count, and LISTMOUNT_REVERSE lists from the last mount back, so
+ * the ids come in the other order, and under a short nr_mnt_ids from the
+ * other end.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  No early return on first divergence -- multi-field corruption
@@ -309,32 +308,13 @@ static void post_listmount(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	/*
-	 * Kernel ABI: sys_listmount writes at most nr_mnt_ids u64 mount IDs
-	 * to the user buffer and returns the count written, capped at the
-	 * snapshotted nr_mnt_ids arg.  Failure returns -1UL with EFAULT,
-	 * EINVAL, or ENOENT.  Anything > snap->nr_mnt_ids on a non-(-1UL)
-	 * return is a structural ABI regression: a sign-extension tear in
-	 * the syscall return path, a kernel-side write that spilled past
-	 * the user-supplied bound, or a torn read of the iterator counter.
-	 * Reject before the ONE_IN(100) re-issue oracle below, which would
-	 * otherwise miss 99% of corrupted retvals.  Fall through to
-	 * out_release so the post_state ownership bracket is still closed.
-	 */
-	if (ret != -1L && retval > snap->nr_mnt_ids) {
-		outputerr("post_listmount: retval %lu exceeds requested nr_mnt_ids %lu\n",
-			  retval, snap->nr_mnt_ids);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_release;
-	}
-
 	if (!ONE_IN(100))
 		goto out_release;
 
 	if (ret <= 0)
 		goto out_release;
 
-	if (snap->req == 0 || snap->mnt_ids == 0 || snap->nr_mnt_ids == 0)
+	if (snap->req == 0 || snap->mnt_ids == 0)
 		goto out_release;
 
 	if (!post_snapshot_or_skip(&first_req, (void *) snap->req,
@@ -349,8 +329,7 @@ static void post_listmount(struct syscallrecord *rec)
 	{
 		struct mnt_id_req recheck_req = first_req;
 
-		buf_slots = ((unsigned long) snap->nr_mnt_ids < 64ul)
-			? (unsigned long) snap->nr_mnt_ids : 64ul;
+		buf_slots = min(get_arg_snapshot(rec, 3), 64ul);
 		rc = syscall(SYS_listmount, &recheck_req, recheck_ids, buf_slots,
 			     (unsigned int) get_arg_snapshot(rec, 4));
 	}
@@ -408,9 +387,10 @@ struct syscallentry syscall_listmount = {
 	.sanitise = sanitise_listmount,
 	.post = post_listmount,
 	.bound_arg = 3,
-	/* flags (a4): the re-call lists in the order the kernel was asked
-	 * for, which chain substitution may have rewritten after the
-	 * sanitiser drew its own. */
-	.arg_snapshot_mask = (1u << 3),
+	/* nr_mnt_ids (a3) and flags (a4): enforce_count_bound() holds the
+	 * return to the nr, and the re-call lists as many in the order the
+	 * kernel was asked for, either of which chain substitution or a
+	 * RedQueen pin may have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 2) | (1u << 3),
 	.rettype = RET_NUM_BYTES,
 };

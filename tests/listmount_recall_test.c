@@ -3,7 +3,8 @@
  * handler as shipped on a mount of the host's own, handed the ids the kernel
  * listed under it, and counts the anomalies its sampled re-call reports.
  * The order the ids come in depends on the flags the kernel was handed,
- * which chain substitution can rewrite after the sanitiser drew its own.
+ * and how many on the nr_mnt_ids, either of which chain substitution can
+ * rewrite after the sanitiser drew its own.
  */
 
 #include <stdbool.h>
@@ -136,7 +137,8 @@ void listmount_recall_self_check(void)
 {
 	const struct listmount_args forward = { LIST_ALL, 0 };
 	const struct listmount_args reverse = { LIST_ALL, LISTMOUNT_REVERSE };
-	__u64 fwd[LIST_ALL], rev[LIST_ALL];
+	const struct listmount_args first_two = { 2, 0 };
+	__u64 fwd[LIST_ALL], rev[LIST_ALL], swapped[2];
 	long n;
 
 	/* The pool is made once per process: take it as an earlier suite
@@ -161,6 +163,10 @@ void listmount_recall_self_check(void)
 	      listmount_anomalies(&reverse, &reverse, fwd, n) > 0);
 	check("listmount: a call whose flags were rewritten to reverse was re-called forward",
 	      listmount_anomalies(&forward, &reverse, rev, n) == 0);
+	swapped[0] = fwd[1];
+	swapped[1] = fwd[0];
+	check("listmount: a torn copy from a call whose nr was rewritten smaller was not reported",
+	      listmount_anomalies(&forward, &first_two, swapped, 2) > 0);
 
 	if (failed != 0)
 		BUG("a listmount re-call listed in the wrong order");
