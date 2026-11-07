@@ -512,6 +512,7 @@ FAKE_SRCS	:= \
 	stat_recall_test.c \
 	xattr_recall_test.c \
 	selector_recall_test.c \
+	readlink_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -628,6 +629,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 		   $(TOP)/syscalls/process/getrusage.c \
 		   $(TOP)/syscalls/process/prlimit64.c \
 		   $(TOP)/utils/rlimit-safe.c
+
+# syscalls/fs/readlink.c brings readlink, whose count bound
+# post_oracle_test.c drives, and readlinkat, whose re-call
+# readlink_recall_test.c runs on symlinks of its own.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post
