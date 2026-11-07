@@ -357,6 +357,7 @@ static inline int random_futex_wake_op(void)
 static void sanitise_futex(struct syscallrecord *rec)
 {
 	static __thread struct timespec utime_clamp;
+	struct timespec *utime;
 	struct __lock *lock1, *lock2;
 
 	if (RAND_BOOL() && futex_pi_cmd(rec->a2))
@@ -471,9 +472,18 @@ out_setclock:
 	case FUTEX_LOCK_PI_PRIVATE:
 	case FUTEX_LOCK_PI2:
 	case FUTEX_LOCK_PI2_PRIVATE:
-		utime_clamp.tv_sec = rnd_modulo_u32(2);
-		utime_clamp.tv_nsec = rnd_modulo_u32(5 * 1000 * 1000);
-		rec->a4 = (unsigned long) &utime_clamp;
+		/*
+		 * From the call's pool, which a compat call, reading the
+		 * slot as its low 32 bits, can reach; the per-thread
+		 * scratch only when the pool has none to give.
+		 */
+		utime = get_writable_struct(sizeof(*utime));
+		if (utime == NULL)
+			utime = &utime_clamp;
+		utime->tv_sec = rnd_modulo_u32(2);
+		utime->tv_nsec = rnd_modulo_u32(5 * 1000 * 1000);
+		time_struct_for_abi(rec, utime, 1);
+		rec->a4 = (unsigned long) utime;
 		break;
 	default:
 		break;
