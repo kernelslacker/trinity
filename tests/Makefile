@@ -277,13 +277,14 @@ REAL_SRCS	:= \
 # nsfs_test.c checks the group is kept out of; fake_ioctls.c registers the
 # groups with it.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c,
-# syscalls/sched/sched_getaffinity.c and syscalls/socket/recv.c bring
-# syscall_prctl, syscall_sched_getscheduler, syscall_sched_getaffinity
-# and the recv family, whose post handlers post_oracle_test.c drives
-# (prctl, sched_getaffinity and recvmsg through their own sanitisers) with
-# the post_state table, post_snapshot_or_skip() and the corrupt-pointer
-# bump faked; utils/proc-status.c is the /proc/self/status reader
-# sched_getaffinity's oracle compares against.
+# syscalls/sched/sched_getaffinity.c, syscalls/cred/getgroups.c and
+# syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler,
+# syscall_sched_getaffinity, syscall_getgroups and the recv family, whose
+# post handlers post_oracle_test.c drives (prctl, sched_getaffinity,
+# getgroups and recvmsg through their own sanitisers) with the post_state
+# table, post_snapshot_or_skip() and the corrupt-pointer bump faked;
+# utils/proc-status.c is the /proc/self/status reader the
+# sched_getaffinity and getgroups oracles compare against.
 # sanitiser_owned_mask_test.c runs prctl's sanitiser too, for the slot it
 # owns, and arg_coupling_test.c runs the recv and recvfrom sanitisers and
 # their .vet_final hook over the fake pool mapping.  args/valresult.c is
@@ -366,6 +367,7 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/process/prctl.c \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
 	$(TOP)/syscalls/sched/sched_getaffinity.c \
+	$(TOP)/syscalls/cred/getgroups.c \
 	$(TOP)/utils/proc-status.c \
 	$(TOP)/syscalls/socket/recv.c \
 	$(TOP)/args/valresult.c \

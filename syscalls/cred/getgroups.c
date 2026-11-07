@@ -13,21 +13,24 @@
 #include "utils.h"
 
 /*
- * Snapshot of the sanitise-time grouplist address, gidsetsize, and the
- * poison seed stamped into the OUT-buffer, captured at sanitise time and
- * consumed by post_getgroups.  Lives in rec->post_state so a sibling
- * scribble of rec->a1 / rec->a2 between syscall return and the post
- * handler running cannot redirect the poison check at a foreign heap
- * page.  A poison_seed of 0 means sanitise refused to stamp (a1 == 0,
- * grouplist NULL, or the range failed the readability gate) and the
- * post handler no-ops the untouched-buffer arm for that call.
+ * Snapshot of the sanitise-time grouplist address, the gids its poison
+ * covers, and the poison seed stamped into the OUT-buffer, captured at
+ * sanitise time and consumed by post_getgroups.  Lives in
+ * rec->post_state so a sibling scribble of rec->a2 between syscall
+ * return and the post handler running cannot redirect the poison check
+ * at a foreign heap page.  poisoned is the gidsetsize the sanitiser
+ * drew; the gidsetsize the kernel acted on is read from its slot, which
+ * chain substitution or a RedQueen pin may have rewritten.  A
+ * poison_seed of 0 means sanitise refused to stamp (a1 == 0, grouplist
+ * NULL, or the range failed the readability gate) and the post handler
+ * no-ops the untouched-buffer arm for that call.
  */
 #define GETGROUPS_POST_STATE_MAGIC	0x4747525050554CUL	/* "GGRPPUL" */
 #define GETGROUPS_POISON_SEED		0x4747524F55504CULL	/* "GGROUPL" */
 struct getgroups_post_state {
 	unsigned long magic;
 	unsigned long grouplist;
-	unsigned long gidsetsize;
+	unsigned long poisoned;
 	uint64_t poison_seed;
 };
 
@@ -68,7 +71,7 @@ static void sanitise_getgroups(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = GETGROUPS_POST_STATE_MAGIC;
 	snap->grouplist   = rec->a2;
-	snap->gidsetsize  = rec->a1;
+	snap->poisoned    = rec->a1;
 	snap->poison_seed = 0;
 
 	/*
@@ -121,6 +124,7 @@ static void post_getgroups(struct syscallrecord *rec)
 	struct getgroups_post_state *snap;
 	unsigned long retval = rec->retval;
 	long ret = (long) retval;
+	unsigned int gidsetsize;
 	char *buf, *line, *eol;
 
 	/*
@@ -165,21 +169,26 @@ static void post_getgroups(struct syscallrecord *rec)
 	 * ngroups, and both would agree even when the copy is skipped.
 	 *
 	 * Cheap (a per-byte compare, no syscall re-issue), gated on
-	 * retval > 0 (nothing to check on a zero-count) and
-	 * retval <= gidsetsize (the kernel cannot claim to have written
-	 * more entries than the buffer holds; treat that shape as a
-	 * separate ABI violation the ONE_IN(100) count arm handles).
-	 * The check helper snapshots the user range under a sigsetjmp
-	 * bracket before the compare, so a sibling munmap of the
-	 * writable-pool page between syscall return and here degrades to
-	 * a skipped sample instead of faulting.  Byte-lengths beyond
+	 * retval > 0 (nothing to check on a zero-count) and retval <=
+	 * gidsetsize (the kernel cannot claim to have written more
+	 * entries than the buffer holds; treat that shape as a separate
+	 * ABI violation the ONE_IN(100) count arm handles).  The
+	 * gidsetsize is the int the kernel acted on: a gidsetsize of 0
+	 * asks for the count and copies nothing, whatever the sanitiser
+	 * drew.  Only the gids the poison covers are compared.  The check
+	 * helper snapshots the user range under a sigsetjmp bracket
+	 * before the compare, so a sibling munmap of the writable-pool
+	 * page between syscall return and here degrades to a skipped
+	 * sample instead of faulting.  Byte-lengths beyond
 	 * CHECK_OUTPUT_STRUCT_SNAP_MAX return false and no-op the arm --
 	 * the small-count path (up to 128 gids) is the interesting one
 	 * for the "kernel returned success but skipped the copy" shape.
 	 */
+	gidsetsize = (unsigned int) get_arg_snapshot(rec, 1);
 	if (ret > 0 && snap->grouplist != 0 && snap->poison_seed != 0 &&
-	    (unsigned long) ret <= snap->gidsetsize) {
-		size_t bytes = (size_t) ret * sizeof(gid_t);
+	    (unsigned long) ret <= gidsetsize) {
+		size_t bytes = (size_t) min((unsigned long) ret, snap->poisoned) *
+			       sizeof(gid_t);
 
 		if (check_output_struct_user_or_skip(
 				(void *)(unsigned long) snap->grouplist,
@@ -246,6 +255,9 @@ struct syscallentry syscall_getgroups = {
 	.flags = REEXEC_SANITISE_OK,
 	.group = GROUP_CRED,
 	.post = post_getgroups,
+	/* gidsetsize (a1): post_getgroups checks the poison only on a call
+	 * the kernel was handed a buffer to copy into. */
+	.arg_snapshot_mask = (1u << 0),
 };
 
 

@@ -3,7 +3,8 @@
  * worked.  Each case hands a post handler the return a successful call
  * produces and counts the corrupt-pointer bumps it makes: a value the
  * kernel returns must not bump, one it cannot return must.  A sampled
- * compare is counted by the anomalies it reports instead.  The handlers
+ * compare is counted by the anomalies it reports instead, and an
+ * untouched-buffer check by the untouched buffers it reports.  The handlers
  * run as shipped; the post_state table, post_snapshot_or_skip() and the
  * bump itself are faked here.
  */
@@ -674,6 +675,47 @@ static void sched_getaffinity_pid(void)
 	}
 }
 
+/* A grouplist still holding the poison getgroups' sanitiser stamped over
+ * the 4 gids it drew, after a return of gids copied, is a buffer the
+ * kernel never wrote; but a gidsetsize rewritten to 0 asks for the count
+ * and copies nothing. */
+static void getgroups_untouched(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long gidsetsize;
+		unsigned long retval;
+		unsigned int untouched;
+	} cases[] = {
+		{ "getgroups, the count under a rewritten gidsetsize of 0", 0, 2, 0 },
+		{ "getgroups, two gids claimed and none written", 4, 2, 1 },
+		{ "getgroups, six gids claimed under a larger rewritten gidsetsize, none written",
+		  8, 6, 1 },
+	};
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		unsigned long before;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = 4;
+		rec.a2 = (unsigned long) get_writable_address(page_size);
+		syscall_getgroups.sanitise(&rec);
+
+		rec.a1 = cases[i].gidsetsize;
+		rec.arg_snapshot_mask = syscall_getgroups.arg_snapshot_mask;
+		rec.arg_shadow[0] = rec.a1;
+		rec.arg_shadow[1] = rec.a2;
+		rec.retval = cases[i].retval;
+		before = shm->stats.post_handler_untouched_out_buf;
+		syscall_getgroups.post(&rec);
+		expect(cases[i].what,
+		       shm->stats.post_handler_untouched_out_buf - before,
+		       cases[i].untouched);
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -717,6 +759,7 @@ void post_oracle_self_check(void)
 	xattr_size();
 	sched_getaffinity_len();
 	sched_getaffinity_pid();
+	getgroups_untouched();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif
