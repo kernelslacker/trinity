@@ -300,7 +300,8 @@ static size_t gen_rtnl_body_neightbl(unsigned char *body, size_t buflen, unsigne
 }
 
 /* RTM_*ADDRLABEL: struct ifaddrlblmsg */
-static size_t gen_rtnl_body_addrlabel(unsigned char *body, size_t buflen, unsigned char *out_family)
+static size_t gen_rtnl_body_addrlabel(unsigned char *body, size_t buflen, bool get,
+				      unsigned char *out_family)
 {
 	struct ifaddrlblmsg ifal;
 
@@ -312,6 +313,20 @@ static size_t gen_rtnl_body_addrlabel(unsigned char *body, size_t buflen, unsign
 	ifal.ifal_flags = rnd_modulo_u32(256);
 	ifal.ifal_index = rand32();
 	ifal.ifal_seq = rand32();
+	/* net/ipv6/addrlabel.c registers the three types for PF_INET6 alone,
+	 * and an add and the GET doit refuse an index that names no device.
+	 * The GET doit wants a prefix of 128 and, on a socket that asks for
+	 * strict checking, no flags or seq, and the dump a header of zeros.
+	 * The header stays random one time in eight. */
+	if (!ONE_IN(8)) {
+		ifal.ifal_family = AF_INET6;
+		ifal.ifal_index = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+		if (get) {
+			ifal.ifal_prefixlen = RAND_BOOL() ? 128 : 0;
+			ifal.ifal_flags = 0;
+			ifal.ifal_seq = 0;
+		}
+	}
 	*out_family = ifal.ifal_family;
 	memcpy(body, &ifal, sizeof(ifal));
 	return sizeof(ifal);
@@ -517,7 +532,10 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 11: /* RTM_*ANYCAST */
 		return gen_rtnl_body_addr_dump(body, buflen, group == 11, out_family);
 	case 12: return gen_rtnl_body_neightbl(body, buflen, out_family);
-	case 14: return gen_rtnl_body_addrlabel(body, buflen, out_family);
+	case 14:
+		return gen_rtnl_body_addrlabel(body, buflen,
+					       nlmsg_type == RTM_GETADDRLABEL,
+					       out_family);
 	case 15: return gen_rtnl_body_dcb(body, buflen, out_family);
 	case 16: return gen_rtnl_body_netconf(body, buflen, out_family);
 	case 17: return gen_rtnl_body_mdb(body, buflen, out_family);

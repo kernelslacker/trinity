@@ -15,6 +15,7 @@
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <linux/fib_rules.h>
+#include <linux/if_addrlabel.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
@@ -459,6 +460,66 @@ static void expect_rule_header(const struct rule_header *get,
 	expect_fraction(newdel->taken, newdel->msgs, 0.84, 0.91,
 			"RTM_NEWRULE and RTM_DELRULE",
 			"rtnl: a rule add or delete's header is not one fib_nl2rule() and its family take seven times in eight");
+}
+
+/* ---------- The ifaddrlblmsg of RTM_*ADDRLABEL --------------------------- */
+
+struct addrlabel_header {
+	unsigned int msgs;
+	unsigned int inet6;	/* AF_INET6 */
+	unsigned int index_all, index_lo, index_small;	/* 0, lo's, under 64 */
+	unsigned int taken;	/* no flags, seq or reserved, a prefix of 0 or 128 */
+};
+
+static void tally_addrlabel_header(struct addrlabel_header *t,
+				   const struct nlmsghdr *nlh)
+{
+	const struct ifaddrlblmsg *ifal = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ifal)))
+		return;
+	t->msgs++;
+	t->inet6 += ifal->ifal_family == AF_INET6;
+	t->index_all += ifal->ifal_index == 0;
+	t->index_lo += ifal->ifal_index == LOOPBACK_IFINDEX;
+	t->index_small += ifal->ifal_index < 64;
+	t->taken += !ifal->__ifal_reserved && !ifal->ifal_flags &&
+		    !ifal->ifal_seq &&
+		    (ifal->ifal_prefixlen == 0 || ifal->ifal_prefixlen == 128);
+}
+
+/*
+ * net/ipv6/addrlabel.c registers the three types for PF_INET6 alone, and
+ * an add and the GET doit refuse an index that names no device.  The GET
+ * doit wants a prefix of 128 and, on a socket that asks for strict
+ * checking, no flags or seq, and the dump a header of zeros.  The builder
+ * names AF_INET6 and an index of 0, lo's or one under 64 seven times in
+ * eight, 0 half of those and lo's a quarter, and a GET a prefix of 128 or
+ * 0 with no flags or seq; an add or delete keeps its random flags and seq,
+ * which neither reads.
+ */
+static void expect_addrlabel_header(const struct addrlabel_header *get,
+				    const struct addrlabel_header *newdel)
+{
+	unsigned int msgs = get->msgs + newdel->msgs;
+
+	expect_fraction(get->inet6 + newdel->inet6, msgs, 0.86, 0.93,
+			"RTM_*ADDRLABEL",
+			"rtnl: RTM_*ADDRLABEL does not name AF_INET6 seven times in eight");
+	expect_fraction(get->index_small + newdel->index_small, msgs, 0.84, 0.91,
+			"RTM_*ADDRLABEL",
+			"rtnl: RTM_*ADDRLABEL's index is not 0, lo's or a small one seven times in eight");
+	expect_fraction(get->index_all + newdel->index_all, msgs, 0.38, 0.50,
+			"RTM_*ADDRLABEL",
+			"rtnl: RTM_*ADDRLABEL does not name index 0 about half the time");
+	expect_fraction(get->index_lo + newdel->index_lo, msgs, 0.17, 0.28,
+			"RTM_*ADDRLABEL",
+			"rtnl: RTM_*ADDRLABEL does not name lo about a quarter of the time");
+	expect_fraction(get->taken, get->msgs, 0.84, 0.91, "RTM_GETADDRLABEL",
+			"rtnl: RTM_GETADDRLABEL's header is not one the GET takes seven times in eight");
+	expect_fraction(newdel->taken, newdel->msgs, 0.0, 0.001,
+			"RTM_NEWADDRLABEL and RTM_DELADDRLABEL",
+			"rtnl: RTM_NEWADDRLABEL and RTM_DELADDRLABEL lose their random flags and seq");
 }
 
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
@@ -1349,6 +1410,7 @@ struct tallies {
 	struct neigh_header getneigh, newdelneigh;
 	struct nexthop_header newnexthop, nexthop;
 	struct rule_header getrule, newdelrule;
+	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1403,6 +1465,13 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_GETRULE:
 			tally_rule_header(&t->getrule, nlh, true);
+			break;
+		case RTM_GETADDRLABEL:
+			tally_addrlabel_header(&t->getaddrlabel, nlh);
+			break;
+		case RTM_NEWADDRLABEL:
+		case RTM_DELADDRLABEL:
+			tally_addrlabel_header(&t->newdeladdrlabel, nlh);
 			break;
 		case RTM_NEWRULE:
 		case RTM_DELRULE:
@@ -1469,6 +1538,7 @@ void rtnl_gen_self_check(void)
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_rule_header(&t.getrule, &t.newdelrule);
+	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");
