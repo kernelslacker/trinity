@@ -265,12 +265,13 @@ static struct socket_triplet alg_triplet[] = {
 /*
  * Boundary keylens for ALG_SET_KEY.  Mixes valid sizes (16/24/32/64 for
  * AES/Camellia/HMAC ranges), exact off-by-ones around common per-cipher
- * max-key declarations (16,32,64,256,1024), and oversize values that
- * push the kernel's count-vs-capacity validation: the userspace buffer
- * is one page, so any keylen > KEY_BUF_BYTES is a deliberate over-claim
- * that lets copy_from_user EFAULT past the buffer (which is the path
- * we want to exercise — a kernel that kalloc()s `keylen` bytes without
- * bounding it is the bug class).
+ * max-key declarations (16,32,64,256,1024), and oversize values: the
+ * userspace buffer is one page, so any keylen > KEY_BUF_BYTES is a
+ * deliberate over-claim.  alg_setkey() sock_kmalloc()s keylen bytes
+ * before it copies, so a keylen past net.core.optmem_max (128 KiB by
+ * default) fails ENOMEM there, the allocation bound the oversize values
+ * probe, and a smaller one is copied in full, reading on past the
+ * buffer into whatever is mapped after it.
  */
 static const unsigned int alg_boundary_keylens[] = {
 	0, 1, 7,
@@ -312,9 +313,7 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 		/*
 		 * Pick a keylen from the boundary table.  Fill is clamped to
 		 * the caller-provided page-sized buffer; optlen may deliberately
-		 * over-claim so the kernel's copy_from_user EFAULTs past the
-		 * buffer — the count-vs-capacity validation path we want to
-		 * exercise.
+		 * over-claim (see alg_boundary_keylens[]).
 		 */
 		len = alg_boundary_keylens[
 			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
