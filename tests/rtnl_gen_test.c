@@ -272,6 +272,66 @@ static void expect_addr_header(const struct addr_header *get,
 			"rtnl: RTM_NEWADDR and RTM_DELADDR lose their random prefixlen, flags and scope");
 }
 
+/* ---------- The ndmsg of RTM_NEWNEIGH, RTM_DELNEIGH and RTM_GETNEIGH ---- */
+
+struct neigh_header {
+	unsigned int msgs;
+	unsigned int tabled;	/* AF_INET, AF_INET6 or AF_BRIDGE */
+	unsigned int taken;	/* pads, state and type 0, and a flag a GET takes */
+	unsigned int index_all, index_lo;
+};
+
+static void tally_neigh_header(struct neigh_header *t, const struct nlmsghdr *nlh)
+{
+	const struct ndmsg *ndm = NLMSG_DATA(nlh);
+	uint8_t get_flags;
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ndm)))
+		return;
+	t->msgs++;
+	t->tabled += ndm->ndm_family == AF_INET || ndm->ndm_family == AF_INET6 ||
+		     ndm->ndm_family == AF_BRIDGE;
+	get_flags = ndm->ndm_family == AF_BRIDGE ? NTF_MASTER | NTF_SELF : NTF_PROXY;
+	t->taken += !ndm->ndm_pad1 && !ndm->ndm_pad2 && !ndm->ndm_state &&
+		    !ndm->ndm_type && !(ndm->ndm_flags & ~get_flags);
+	t->index_all += ndm->ndm_ifindex == 0;
+	t->index_lo += ndm->ndm_ifindex == LOOPBACK_IFINDEX;
+}
+
+/*
+ * neigh_add(), neigh_delete() and neigh_get() answer -EAFNOSUPPORT to a
+ * family with no neighbour table, all but AF_INET and AF_INET6, AF_BRIDGE
+ * going to the fdb handlers instead, -ENODEV to an index that names no
+ * device and, but for a proxy entry, -EINVAL to an index of 0, which a
+ * strict dump wants.  neigh_get() and rtnl_fdb_get() refuse a nonzero pad,
+ * state or type, and a flag but NTF_PROXY, or NTF_MASTER and NTF_SELF for
+ * the fdb, on every socket, and the dumps the same on a socket that asks
+ * for strict checking.  The builder names one of the three families seven
+ * times in eight and holds a GET's header to that seven times in eight;
+ * its index is 0 half the time and lo's a quarter, and NEW and DEL keep
+ * their state, flags and type random.
+ */
+static void expect_neigh_header(const struct neigh_header *get,
+				const struct neigh_header *newdel)
+{
+	unsigned int msgs = get->msgs + newdel->msgs;
+
+	expect_fraction(get->tabled + newdel->tabled, msgs, 0.90, 0.96,
+			"RTM_*NEIGH",
+			"rtnl: RTM_*NEIGH does not name AF_INET, AF_INET6 or AF_BRIDGE seven times in eight");
+	expect_fraction(get->taken, get->msgs, 0.84, 0.91, "RTM_GETNEIGH",
+			"rtnl: RTM_GETNEIGH's state, type and flags are not a GET's seven times in eight");
+	expect_fraction(get->index_all + newdel->index_all, msgs, 0.44, 0.57,
+			"RTM_*NEIGH",
+			"rtnl: RTM_*NEIGH does not name index 0 half the time");
+	expect_fraction(get->index_lo + newdel->index_lo, msgs, 0.20, 0.31,
+			"RTM_*NEIGH",
+			"rtnl: RTM_*NEIGH does not name lo a quarter of the time");
+	expect_fraction(newdel->taken, newdel->msgs, 0.0, 0.001,
+			"RTM_NEWNEIGH and RTM_DELNEIGH",
+			"rtnl: RTM_NEWNEIGH and RTM_DELNEIGH lose their random state, flags and type");
+}
+
 /* ---------- The VNI filter entries of RTM_*TUNNEL ------------------------ */
 
 struct tunnel_attrs {
@@ -1150,6 +1210,7 @@ struct tallies {
 	unsigned int msgs, unhandled;
 	struct dump_bits dumps, dcb;
 	struct addr_header getaddr, newdeladdr;
+	struct neigh_header getneigh, newdelneigh;
 	struct tunnel_attrs tunnel;
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
@@ -1194,6 +1255,13 @@ static void run_rounds(struct tallies *t)
 		case RTM_NEWADDR:
 		case RTM_DELADDR:
 			tally_addr_header(&t->newdeladdr, nlh);
+			break;
+		case RTM_GETNEIGH:
+			tally_neigh_header(&t->getneigh, nlh);
+			break;
+		case RTM_NEWNEIGH:
+		case RTM_DELNEIGH:
+			tally_neigh_header(&t->newdelneigh, nlh);
 			break;
 		case RTM_NEWTUNNEL:
 		case RTM_DELTUNNEL:
@@ -1245,6 +1313,7 @@ void rtnl_gen_self_check(void)
 	expect_handled_types(t.unhandled, t.msgs);
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
+	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_tunnel_attrs(&t.tunnel);
 	builds_vni_entries_the_policy_takes();
 	expect_addr_dump(&t.multicast, true, "RTM_GETMULTICAST");

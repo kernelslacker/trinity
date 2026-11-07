@@ -175,20 +175,35 @@ static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned c
 	return sizeof(rtm);
 }
 
-/* RTM_*NEIGH: struct ndmsg */
-static size_t gen_rtnl_body_neigh(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*NEIGH: struct ndmsg.  Only AF_INET and AF_INET6 have a neighbour
+ * table, and AF_BRIDGE's requests go to the fdb handlers; any other family
+ * is answered -EAFNOSUPPORT.  The index has to name a device, or be 0 for a
+ * proxy entry or a dump, and neigh_get() and rtnl_fdb_get() refuse a
+ * nonzero state or type and a flag but NTF_PROXY, or NTF_MASTER and
+ * NTF_SELF for the fdb, on every socket, as the dumps do on a socket that
+ * asks for strict checking.  So a request names one of the three families
+ * and a GET keeps to that header seven times in eight, and the index is
+ * every device, lo or a small one.
+ */
+static size_t gen_rtnl_body_neigh(unsigned char *body, size_t buflen, bool get,
+				  unsigned char *out_family)
 {
-	struct ndmsg ndm;
+	static const unsigned char families[] = { AF_INET, AF_INET6, AF_BRIDGE };
+	struct ndmsg ndm = { 0 };
 
 	if (sizeof(ndm) > buflen)
 		return 0;
-	ndm.ndm_family = rand_family();
-	ndm.ndm_pad1 = 0;
-	ndm.ndm_pad2 = 0;
-	ndm.ndm_ifindex = rnd_modulo_u32(64);
-	ndm.ndm_state = rand16();
-	ndm.ndm_flags = rnd_modulo_u32(256);
-	ndm.ndm_type = rnd_modulo_u32(256);
+	ndm.ndm_family = ONE_IN(8) ? rand_family() : RAND_ARRAY(families);
+	ndm.ndm_ifindex = RAND_BOOL() ? 0 : RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	if (!get || ONE_IN(8)) {
+		ndm.ndm_state = rand16();
+		ndm.ndm_flags = rnd_modulo_u32(256);
+		ndm.ndm_type = rnd_modulo_u32(256);
+	} else if (RAND_BOOL()) {
+		ndm.ndm_flags = ndm.ndm_family != AF_BRIDGE ? NTF_PROXY :
+				RAND_BOOL() ? NTF_MASTER : NTF_SELF;
+	}
 	*out_family = ndm.ndm_family;
 	memcpy(body, &ndm, sizeof(ndm));
 	return sizeof(ndm);
@@ -433,7 +448,9 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 		return gen_rtnl_body_addr(body, buflen, nlmsg_type == RTM_GETADDR,
 					  out_family);
 	case 2:  return gen_rtnl_body_route(body, buflen, out_family);
-	case 3:  return gen_rtnl_body_neigh(body, buflen, out_family);
+	case 3:
+		return gen_rtnl_body_neigh(body, buflen, nlmsg_type == RTM_GETNEIGH,
+					   out_family);
 	case 4:  return gen_rtnl_body_rule(body, buflen, out_family);
 	case 8:  return gen_rtnl_body_action(body, buflen, out_family);
 	case 10: /* RTM_*MULTICAST */
