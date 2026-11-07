@@ -69,9 +69,8 @@ static unsigned int brk_refresh_counter;
  * -- could extend live brk past cached_brk_end + 256 MiB between
  * BRK_REFRESH_INTERVAL ticks, opening a window where a fuzzed
  * mmap(MAP_FIXED, PROT_READ) landing in the live-brk extension sailed
- * past the guard and stamped a read-only page on brk arena bookkeeping.
- * The downstream get_writable_address() upgrade then stored
- * map->known_rw=true on the now-RO page and the child took SEGV_ACCERR.
+ * past the guard and stamped a read-only page on brk arena bookkeeping,
+ * and the next store to it took SEGV_ACCERR.
  *
  * The new ceiling is the user/kernel split (0x800000000000UL on
  * x86_64): below it, an address is canonical userspace and the
@@ -531,9 +530,8 @@ bool range_overlaps_libc_heap(unsigned long addr, unsigned long len)
 		 * the next malloc anywhere in the child aborts with
 		 * "malloc(): corrupted top size"; or a fuzzed
 		 * mmap(MAP_FIXED, PROT_READ) lands on brk arena and the
-		 * next get_writable_address() upgrade SEGV_ACCERRs on the
-		 * known_rw=true store.  Pay one sbrk(0) when the address
-		 * sits at or above the cached bound but below the
+		 * next store to it SEGV_ACCERRs.  Pay one sbrk(0) when
+		 * the address sits at or above the cached bound but below the
 		 * user/kernel split (HEAP_BRK_RETEST_CEILING -- wild-high /
 		 * kernel-VA / non-canonical addresses skip the syscall),
 		 * refresh the cache, and re-test the brk arm; if the

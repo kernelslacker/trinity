@@ -113,7 +113,6 @@ void retire_holed_map(struct map *map, enum objecttype type,
 
 	map->holed = true;
 	map->prot = 0;
-	map->known_rw = false;
 
 	if (map->owns_vma &&
 	    base >= 0x10000UL && base < 0x800000000000UL &&

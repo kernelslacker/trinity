@@ -5194,7 +5194,7 @@ static void shmat_compat_address_truncated(int shmid)
 
 /* A SHM_REMAP attach that worked replaced pages of the mapping with the
  * segment's, so the post handler retires the pool entry: holed, prot 0,
- * known_rw cleared, and the snapshot released.  One that failed, or an
+ * and the snapshot released.  One that failed, or an
  * attach with no SHM_REMAP, where the kernel picked the address, leaves
  * the entry as it was. */
 static void shmat_remap_drops_entry(int shmid)
@@ -5214,14 +5214,12 @@ static void shmat_remap_drops_entry(int shmid)
 			syscall_shmat.sanitise(&rec);
 		}
 		pool_obj.map.prot = PROT_READ | PROT_WRITE;
-		pool_obj.map.known_rw = true;
 		pool_obj.map.holed = false;
 		rec.retval = c == 1 ? (unsigned long) -1L : POOL_MAP + page_size;
 		syscall_shmat.post(&rec);
 		if (rec.post_state != 0)
 			BUG("shmat: the post handler left the snapshot behind");
 		if ((pool_obj.map.prot == 0) != drops ||
-		    pool_obj.map.known_rw == drops ||
 		    pool_obj.map.holed != drops)
 			BUG("shmat: the pool entry was kept after a SHM_REMAP attach, or dropped after another call");
 		syscall_shmat.cleanup(&rec);
