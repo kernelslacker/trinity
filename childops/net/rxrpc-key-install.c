@@ -151,6 +151,23 @@ static void append_be32(unsigned char *buf, size_t *off, uint32_t v)
 	*off += 4;
 }
 
+/* Append an XDR opaque<> at *off: a __be32 length word saying @claim,
+ * then @written random bytes zero-padded to a word.  A claim past what
+ * was written is how an arm reaches a parser's length rejects. */
+static void append_opaque(unsigned char *buf, size_t *off,
+			  uint32_t claim, uint32_t written)
+{
+	size_t pad = (written + 3) & ~3U;
+	uint32_t i;
+
+	append_be32(buf, off, claim);
+	for (i = 0; i < written; i++)
+		buf[*off + i] = (unsigned char) (rand32() & 0xff);
+	for (i = written; i < pad; i++)
+		buf[*off + i] = 0;
+	*off += pad;
+}
+
 /*
  * Build an XDR envelope head (flags + cellname + ntoken) into buf at
  * offset *off.  Cellname is forced to printable ASCII so the kernel's
@@ -179,38 +196,29 @@ static void build_xdr_head(unsigned char *buf, size_t *off,
 }
 
 /*
- * Build an XDR-RXKAD inner body (sec_ix == 2).  Layout per
- * rxrpc_preparse_xdr_rxkad: 8 __be32 header words (vice_id, kvno,
+ * Build an XDR-RXKAD inner body up to its ticket (sec_ix == 2).  Layout
+ * per rxrpc_preparse_xdr_rxkad: 8 __be32 header words (vice_id, kvno,
  * session_key[8 bytes spread across xdr[2]/xdr[3]], start, expiry,
- * primary_flag, ticket_length) followed by tktlen ticket bytes.
+ * primary_flag, ticket_length) followed by the ticket bytes; the caller
+ * appends ticket_length and the ticket as an opaque<>.
  */
-static void build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
-				  uint32_t tktlen)
+static void build_xdr_rxkad_inner(unsigned char *buf, size_t *off)
 {
-	size_t pad = (tktlen + 3) & ~3U;
-	uint32_t i;
-
 	append_be32(buf, off, (uint32_t) rand32());		/* vice_id */
 	append_be32(buf, off, (uint32_t) rand32());		/* kvno */
 	append_rand(buf, off, 8);				/* session_key */
 	append_be32(buf, off, (uint32_t) rand32());		/* start */
 	append_be32(buf, off, (uint32_t) rand32());		/* expiry */
 	append_be32(buf, off, (uint32_t) rand32() & 1U);	/* primary_flag */
-	append_be32(buf, off, tktlen);				/* ticket_length */
-
-	for (i = 0; i < tktlen; i++)
-		buf[*off + i] = (unsigned char) (rand32() & 0xff);
-	for (i = tktlen; i < pad; i++)
-		buf[*off + i] = 0;
-	*off += pad;
 }
 
 /*
- * Build an XDR-RXGK inner body (sec_ix == 6).  Layout per
- * rxrpc_preparse_xdr_yfs_rxgk: six 64-bit fields (begintime, endtime,
- * level, lifetime, bytelife, enctype) then opaque key<> then opaque
- * ticket<>.  Lengths are length-prefixed and 4-padded.  Caller picks
- * keylen / tktlen so we can deliberately overshoot on some iterations.
+ * Build an XDR-RXGK inner body up to its ticket (sec_ix == 6).  Layout
+ * per rxrpc_preparse_xdr_yfs_rxgk: six 64-bit fields (begintime,
+ * endtime, level, lifetime, bytelife, enctype) then opaque key<> then
+ * opaque ticket<>, which the caller appends.  Lengths are
+ * length-prefixed and 4-padded.  Caller picks keylen so we can
+ * deliberately overshoot on some iterations.
  * Caller also picks endtime (s64 100ns-units) to cover the four
  * branches of the expiry check at net/rxrpc/key.c:232-237: zero (skip
  * the whole block), positive (rxrpc_s64_to_time64 -> nonneg ->
@@ -218,13 +226,9 @@ static void build_xdr_rxkad_inner(unsigned char *buf, size_t *off,
  * goto expired), and s64 extremes near INT64_MIN.
  */
 static void build_xdr_rxgk_inner(unsigned char *buf, size_t *off,
-				 uint32_t keylen, uint32_t tktlen,
+				 uint32_t keylen,
 				 int64_t level, int64_t enctype, int64_t endtime)
 {
-	uint32_t kpad = (keylen + 3) & ~3U;
-	uint32_t tpad = (tktlen + 3) & ~3U;
-	uint32_t i;
-
 	append_be32(buf, off, (uint32_t) (rand32() & 0x7fffffff));	/* begintime hi */
 	append_be32(buf, off, (uint32_t) rand32());			/* begintime lo */
 	append_be32(buf, off, (uint32_t) ((uint64_t) endtime >> 32));	/* endtime hi */
@@ -238,19 +242,7 @@ static void build_xdr_rxgk_inner(unsigned char *buf, size_t *off,
 	append_be32(buf, off, (uint32_t) ((uint64_t) enctype >> 32));
 	append_be32(buf, off, (uint32_t) ((uint64_t) enctype));
 
-	append_be32(buf, off, keylen);
-	for (i = 0; i < keylen; i++)
-		buf[*off + i] = (unsigned char) (rand32() & 0xff);
-	for (i = keylen; i < kpad; i++)
-		buf[*off + i] = 0;
-	*off += kpad;
-
-	append_be32(buf, off, tktlen);
-	for (i = 0; i < tktlen; i++)
-		buf[*off + i] = (unsigned char) (rand32() & 0xff);
-	for (i = tktlen; i < tpad; i++)
-		buf[*off + i] = 0;
-	*off += tpad;
+	append_opaque(buf, off, keylen, keylen);
 }
 
 /*
@@ -414,7 +406,6 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter,
 {
 	unsigned char buf[512];
 	size_t off = 0;
-	size_t header_off;
 	uint32_t flags, cell_len, ntoken;
 	uint32_t toklen, sec_ix;
 	bool inject_bad_byte;
@@ -447,8 +438,6 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter,
 	toklen = 4 + rnd_modulo_u32(64);
 	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
 					       0UL, (unsigned long) toklen);
-	header_off = off;
-
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, sec_ix);
 	if (toklen > 4) {
@@ -466,7 +455,6 @@ static void arm_xdr_envelope(int32_t *ring, unsigned int iter,
 
 		append_rand(buf, &off, need);
 	}
-	(void) header_off;
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xdr-%u-%u",
 		 (unsigned int) mypid(), iter);
@@ -480,40 +468,40 @@ static void arm_xdr_rxkad(int32_t *ring, unsigned int iter,
 {
 	unsigned char buf[1024];
 	size_t off = 0;
-	size_t inner_start;
 	uint32_t cell_len = 4;
-	uint32_t tktlen;
+	uint32_t tktlen, written;
 	uint32_t toklen;
 	char desc[64];
 	int32_t serial;
 
 	build_xdr_head(buf, &off, 0u, cell_len, 1u, false);
 
-	/* tktlen mostly small (8..64), with occasional spike to drive the
-	 * tktlen > AFSTOKEN_RK_TIX_MAX (12000) reject branch.  Shadow-
-	 * resolve as BOUNDARY -- rng draw commits verbatim. */
-	tktlen = (rnd_modulo_u32(8) == 0)
-			? (uint32_t)(13000 + rnd_modulo_u32(1024))
-			: (uint32_t)(8 + rnd_modulo_u32(56));
+	/* The ticket written is 8..63 bytes, and its ticket_length mostly
+	 * says so.  One in eight spikes it past AFSTOKEN_RK_TIX_MAX
+	 * (12000), and one in four of the rest claims up to 64 bytes more
+	 * than was written: rxrpc_preparse_xdr_rxkad()'s two ticket-length
+	 * rejects.  Shadow-resolve as BOUNDARY -- rng draw commits
+	 * verbatim. */
+	written = 8 + rnd_modulo_u32(56);
+	tktlen = written;
+	if (rnd_modulo_u32(8) == 0)
+		tktlen = 13000 + rnd_modulo_u32(1024);
+	else if (rnd_modulo_u32(4) == 0)
+		tktlen += 1 + rnd_modulo_u32(64);
 	tktlen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
 					       0UL, (unsigned long) tktlen);
 
-	/* One in four iterations advertises a toklen that disagrees with
-	 * what we actually wrote, exercising the
-	 * "toklen < 8*4 + tktlen" / total-length mismatch checks. */
-	toklen = 8 * 4 + ((tktlen + 3) & ~3U);
-	if (rnd_modulo_u32(4) == 0)
-		toklen += rnd_modulo_u32(64);
+	/* toklen counts the sec_ix word and the body as written, which is
+	 * what rxrpc_preparse_xdr()'s walk of the wrappers holds it to
+	 * before any parser runs. */
+	toklen = 4 + 8 * 4 + ((written + 3) & ~3U);
 	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
 					       0UL, (unsigned long) toklen);
 
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, RXKAD_SEC_IDX);
-
-	inner_start = off;
-	if (tktlen > sizeof(buf) - inner_start - 8 * 4)
-		tktlen = (uint32_t)(sizeof(buf) - inner_start - 8 * 4);
-	build_xdr_rxkad_inner(buf, &off, tktlen);
+	build_xdr_rxkad_inner(buf, &off);
+	append_opaque(buf, &off, tktlen, written);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxkad-%u-%u",
 		 (unsigned int) mypid(), iter);
@@ -601,9 +589,8 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter,
 {
 	unsigned char buf[1024];
 	size_t off = 0;
-	size_t inner_start;
 	uint32_t cell_len = 4;
-	uint32_t keylen, tktlen;
+	uint32_t keylen, tktlen, written;
 	uint32_t toklen;
 	int64_t level, enctype, endtime;
 	char desc[64];
@@ -645,9 +632,12 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter,
 	keylen = (rnd_modulo_u32(8) == 0)
 			? (uint32_t)(70 + rnd_modulo_u32(64))
 			: (uint32_t)(16 + rnd_modulo_u32(32));
+	/* The ticket written is 64..319 bytes; one in sixteen spikes its
+	 * length word past AFSTOKEN_GK_TOKEN_MAX (16384). */
+	written = 64 + rnd_modulo_u32(256);
 	tktlen = (rnd_modulo_u32(16) == 0)
 			? (uint32_t)(17000 + rnd_modulo_u32(256))
-			: (uint32_t)(64 + rnd_modulo_u32(256));
+			: written;
 	/* tktlen is the ticket length check; shadow-resolve as BOUNDARY. */
 	tktlen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
 					       0UL, (unsigned long) tktlen);
@@ -655,7 +645,7 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter,
 	endtime = pick_xrxgk_endtime();
 
 	toklen = 4 + 6 * 8 + 4 + ((keylen + 3) & ~3U)
-		 + 4 + ((tktlen + 3) & ~3U);
+		 + 4 + ((written + 3) & ~3U);
 	/* toklen is the outer envelope length check; shadow-resolve
 	 * as BOUNDARY so the counter partition matches the xrxkad arm. */
 	toklen = (uint32_t) childop_cmp_value(__NR_add_key, CMP_HINT_BOUNDARY,
@@ -663,12 +653,8 @@ static void arm_xdr_rxgk(int32_t *ring, unsigned int iter,
 
 	append_be32(buf, &off, toklen);
 	append_be32(buf, &off, RXGK_SEC_IDX);
-
-	inner_start = off;
-	if ((size_t)(6 * 8 + 8 + ((keylen + 3) & ~3U)
-		     + ((tktlen + 3) & ~3U)) > sizeof(buf) - inner_start)
-		tktlen = 16;
-	build_xdr_rxgk_inner(buf, &off, keylen, tktlen, level, enctype, endtime);
+	build_xdr_rxgk_inner(buf, &off, keylen, level, enctype, endtime);
+	append_opaque(buf, &off, tktlen, written);
 
 	snprintf(desc, sizeof(desc), "trinity-rxrpc-xrxgk-%u-%u",
 		 (unsigned int) mypid(), iter);

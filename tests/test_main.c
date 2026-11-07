@@ -108,6 +108,7 @@ void rt_sigaction_self_check(void);
 void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
 void cmsg_build_self_check(void);
+void rxrpc_key_install_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -605,6 +606,11 @@ int main(int argc, char **argv)
 	printf("  cmsg_build_self_check ... ");
 	fflush(stdout);
 	cmsg_build_self_check();
+	printf("OK\n");
+
+	printf("  rxrpc_key_install_self_check ... ");
+	fflush(stdout);
+	rxrpc_key_install_self_check();
 	printf("OK\n");
 
 	return 0;

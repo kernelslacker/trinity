@@ -1086,6 +1086,12 @@ FAKE_SRCS	+= userfaultfd_arm_test.c
 PARENT_SRCS	+= $(TOP)/lib/cmsg_build.c
 FAKE_SRCS	+= cmsg_build_test.c
 
+# childops/net/rxrpc-key-install.c brings the rxrpc_key_install childop,
+# whose add_key() payloads rxrpc_key_install_test.c holds to a model of
+# the net/rxrpc/key.c parsers through landlock_test.c's syscall() hook.
+PARENT_SRCS	+= $(TOP)/childops/net/rxrpc-key-install.c
+FAKE_SRCS	+= rxrpc_key_install_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
