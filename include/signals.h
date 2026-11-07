@@ -180,6 +180,37 @@ static inline bool fault_signal_is_real(int sig, const siginfo_t *info, pid_t se
 }
 
 /*
+ * The SIGSEGV and SIGBUS dispositions a scoped fault guard displaces,
+ * captured once before its first install so a fault the guard does not
+ * own can still reach child_fault_handler(), which stamps the shm fault
+ * beacon and logs the bug.
+ */
+struct saved_fault_handlers {
+	struct sigaction segv;
+	struct sigaction bus;
+	bool saved;
+};
+
+/*
+ * Pass @sig on to the disposition @h saved for it: call it directly when
+ * it takes siginfo, else reinstall it and re-raise.  Only sigaction()
+ * and raise(), so a guard's signal handler can call it.
+ */
+static inline void chain_saved_fault_handler(int sig, siginfo_t *info,
+					     void *ctx,
+					     const struct saved_fault_handlers *h)
+{
+	const struct sigaction *saved = sig == SIGBUS ? &h->bus : &h->segv;
+
+	if (h->saved && (saved->sa_flags & SA_SIGINFO))
+		saved->sa_sigaction(sig, info, ctx);
+	else {
+		sigaction(sig, saved, NULL);
+		raise(sig);
+	}
+}
+
+/*
  * Whether a SIGIO that F_SETSIG routes to @sig leaves the parent alone,
  * for the F_SETSIG sanitiser and for validate_arg_coupling(), which asks
  * again at dispatch.  A child can make the parent the owner, so @sig has
