@@ -69,6 +69,7 @@ static unsigned long do_create_and_destroy(void)
 	int fd;
 	unsigned long size;
 	unsigned long direct_calls = 0;
+	bool unlinked = false;
 
 	ensure_spew_dir(spew_dir, sizeof(spew_dir));
 
@@ -126,6 +127,7 @@ static unsigned long do_create_and_destroy(void)
 	 */
 	if (ONE_IN(10)) {
 		(void)unlink(path);
+		unlinked = true;
 		direct_calls++;
 	}
 
@@ -133,8 +135,10 @@ static unsigned long do_create_and_destroy(void)
 	direct_calls++;
 
 	/* Unlink if we didn't already. */
-	(void)unlink(path);
-	direct_calls++;
+	if (!unlinked) {
+		(void)unlink(path);
+		direct_calls++;
+	}
 
 	return direct_calls;
 }
