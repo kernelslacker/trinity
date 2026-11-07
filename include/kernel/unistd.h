@@ -19,3 +19,6 @@
 #if !defined(SYS_listmount) && defined(__NR_listmount)
 #define SYS_listmount	__NR_listmount
 #endif
+#if !defined(SYS_listxattrat) && defined(__NR_listxattrat)
+#define SYS_listxattrat	__NR_listxattrat
+#endif

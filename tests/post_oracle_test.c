@@ -511,6 +511,7 @@ static void xattr_size(void)
 		{ &syscall_listxattr, 3 },
 		{ &syscall_llistxattr, 3 },
 		{ &syscall_flistxattr, 3 },
+		{ &syscall_listxattrat, 5 },
 	};
 	static const struct {
 		const char *what;
@@ -529,7 +530,7 @@ static void xattr_size(void)
 	};
 	static struct syscallrecord rec;
 	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
-	unsigned int g, i, tries;
+	unsigned int g, i, k, tries;
 
 	for (g = 0; g < ARRAY_SIZE(getters); g++) {
 		const struct syscallentry *entry = getters[g].entry;
@@ -551,8 +552,11 @@ static void xattr_size(void)
 				BUG("an xattr sanitiser never kept the size it was handed");
 
 			*slots[slot - 1] = cases[i].size;
+			/* The shadow __do_syscall() takes of what the kernel
+			 * was handed. */
+			for (k = 0; k < ARRAY_SIZE(slots); k++)
+				rec.arg_shadow[k] = *slots[k];
 			rec.arg_snapshot_mask = entry->arg_snapshot_mask;
-			rec.arg_shadow[slot - 1] = cases[i].size;
 			rec.retval = cases[i].retval;
 			rec.errno_post = ((long) cases[i].retval == -1L) ? ENODATA : 0;
 			bumps = 0;

@@ -20,6 +20,7 @@
 #include "xattr.h"
 
 #include "kernel/fcntl.h"
+#include "kernel/unistd.h"
 /*
  * Mirrors the MAX_TESTFILES bound in fds/testfiles.c so we land inside
  * the same trinity-testfile<N> inodes the rest of the xattr-family
@@ -44,21 +45,21 @@ static unsigned long listxattrat_at_flags[] = {
 
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 /*
- * Snapshot of the four listxattrat input args read by the post oracle,
+ * Snapshot of the listxattrat pointer args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect us at a foreign list buffer or hand
- * the re-call the wrong (dfd, pathname, at_flags) tuple.
+ * the re-call the wrong pathname.  The dfd, at_flags and size are read
+ * from the slots the kernel was handed instead (get_arg_snapshot()),
+ * which chain substitution or a RedQueen pin may have rewritten after
+ * the sanitiser drew its own.
  */
 #define LISTXATTRAT_POST_STATE_MAGIC	0x4C53584154544154UL	/* "LSXATTAT" */
 struct listxattrat_post_state {
 	unsigned long magic;
-	unsigned long dfd;
 	unsigned long pathname;
-	unsigned long at_flags;
 	unsigned long list;
-	unsigned long size;
 	size_t buf_alloc_size;
 };
 #endif
@@ -212,23 +213,21 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
 	/*
-	 * Snapshot all four input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buffer pointers, so the memcpy / re-call would touch a foreign
-	 * allocation.  post_state is private to the post handler.  Gated
-	 * on SYS_listxattrat to mirror the .post registration -- on systems
-	 * without SYS_listxattrat the post handler is not registered and a
+	 * Snapshot the pathname and list pointers for the post oracle.
+	 * Without this the post handler reads rec->aN at post-time, when
+	 * a sibling syscall may have scribbled the slots:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original user buffer pointers, so the memcpy /
+	 * re-call would touch a foreign allocation.  post_state is
+	 * private to the post handler.  Gated on SYS_listxattrat to
+	 * mirror the .post registration -- on systems without
+	 * SYS_listxattrat the post handler is not registered and a
 	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = LISTXATTRAT_POST_STATE_MAGIC;
-	snap->dfd      = rec->a1;
 	snap->pathname = rec->a2;
-	snap->at_flags = rec->a3;
 	snap->list     = rec->a4;
-	snap->size     = rec->a5;
 	snap->buf_alloc_size = buf_alloc_size;
 	post_state_install(rec, snap);
 #else
@@ -237,10 +236,6 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
 }
 
 #if defined(SYS_listxattrat) || defined(__NR_listxattrat)
-#ifndef SYS_listxattrat
-#define SYS_listxattrat __NR_listxattrat
-#endif
-
 /*
  * Oracle: listxattrat(dfd, pathname, at_flags, list, size) fills `list`
  * with the NUL-separated names of the extended attributes attached to
@@ -263,26 +258,27 @@ static void sanitise_listxattrat(struct syscallrecord *rec)
  *     lookup a different inode for the same (dfd, pathname), where the
  *     xattr name set differs between the two inodes.
  *
- * TOCTOU defeat: the four input args (dfd, pathname, at_flags, list)
- * are snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->aN between syscall return and post
- * entry cannot redirect us at a foreign list buffer or hand the re-call
- * the wrong (dfd, pathname, at_flags) tuple.  We still snapshot the
- * pathname bytes and the first retval bytes of the receive buffer into
- * stack-locals before re-issuing, with a fresh private stack buffer for
- * the re-call (NOT the snapshot's list -- a sibling could mutate the
- * user buffer itself mid-syscall and forge a clean compare).  Drop the
- * sample if the re-call returns <= 0 (xattrs were removed between calls
- * -- benign, returns 0 or ENOENT) or if it returns a different length
- * (sibling [l|f]setxattr/[l|f]removexattr changed the name set --
- * benign size-class drift).  Compare exactly snap_len bytes with
- * memcmp; do not early-return on first divergence so a multi-byte tear
- * surfaces in a single sample, but bump the anomaly counter only once.
- * Sample one in a hundred to stay in line with the rest of the oracle
- * family.
+ * TOCTOU defeat: the pathname and list pointers are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * us at a foreign list buffer or hand the re-call the wrong pathname.
+ * The dfd, at_flags and size are read from the slots the kernel was
+ * handed, which chain substitution or a RedQueen pin may have rewritten
+ * after the sanitiser.  We still snapshot the pathname bytes and the
+ * first retval bytes of the receive buffer into stack-locals before
+ * re-issuing, with a fresh private stack buffer for the re-call (NOT the
+ * snapshot's list -- a sibling could mutate the user buffer itself
+ * mid-syscall and forge a clean compare).  Drop the sample if the re-call
+ * returns <= 0 (xattrs were removed between calls -- benign, returns 0 or
+ * ENOENT) or if it returns a different length (sibling
+ * [l|f]setxattr/[l|f]removexattr changed the name set -- benign
+ * size-class drift).  Compare exactly snap_len bytes with memcmp; do not
+ * early-return on first divergence so a multi-byte tear surfaces in a
+ * single sample, but bump the anomaly counter only once.  Sample one in a
+ * hundred to stay in line with the rest of the oracle family.
  *
  * AT_FDCWD is a perfectly valid (negative) dfd value, so do not gate
- * on negative snapshotted dfds the way fd-only oracles do.
+ * on negative dfds the way fd-only oracles do.
  *
  * On most fleets listxattrat rarely returns a non-empty list (most
  * paths have no xattrs) and the retval > 0 gate keeps this oracle
@@ -293,9 +289,10 @@ static void post_listxattrat(struct syscallrecord *rec)
 {
 	struct listxattrat_post_state *snap;
 	unsigned long retval = rec->retval;
-	int snap_dfd;
+	unsigned long size;
+	int dfd;
 	char snap_path[PATH_MAX];
-	unsigned int snap_at_flags;
+	unsigned int at_flags;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -320,16 +317,15 @@ static void post_listxattrat(struct syscallrecord *rec)
 	 * structural ABI regression -- sign-extension tear in the return
 	 * slot, sibling-stomp of rec->retval between syscall return and
 	 * post entry, or -errno leaking through the success slot.  Compare
-	 * against the snapshotted size (snap->size) rather than rec->a5 so
-	 * a sibling that scribbles rec->aN between syscall return and post
-	 * entry cannot launder an oversized retval past this gate.  Fires
-	 * unconditionally, ahead of the ONE_IN(100) sample gate, so every
-	 * offending retval is counted.
+	 * against the size the kernel was handed, which chain substitution
+	 * or a RedQueen pin may have rewritten after the sanitiser drew its
+	 * own.  Fires unconditionally, ahead of the ONE_IN(100) sample gate,
+	 * so every offending retval is counted.
 	 */
-	if ((long) retval != -1L && snap->size != 0 &&
-	    retval > snap->size) {
+	size = get_arg_snapshot(rec, 5);
+	if ((long) retval != -1L && size != 0 && retval > size) {
 		outputerr("post_listxattrat: rejected retval=0x%lx > size=%lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_free;
 	}
@@ -345,7 +341,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 	 * user buffer was not populated -- the equality oracle would
 	 * compare stale pool bytes against a real namebuffer.
 	 */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_free;
 
 	if (snap->list == 0)
@@ -354,8 +350,8 @@ static void post_listxattrat(struct syscallrecord *rec)
 	if (snap->pathname == 0)
 		goto out_free;
 
-	snap_dfd = (int) snap->dfd;
-	snap_at_flags = (unsigned int) snap->at_flags;
+	dfd = (int) get_arg_snapshot(rec, 1);
+	at_flags = (unsigned int) get_arg_snapshot(rec, 3);
 
 	if (!post_snapshot_str(snap_path, sizeof(snap_path),
 			       (const char *)(unsigned long) snap->pathname))
@@ -379,7 +375,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 				   snap_len))
 		goto out_free;
 
-	rc = syscall(SYS_listxattrat, snap_dfd, snap_path, snap_at_flags,
+	rc = syscall(SYS_listxattrat, dfd, snap_path, at_flags,
 		     recheck_buf, sizeof(recheck_buf));
 
 	if (rc <= 0)
@@ -408,7 +404,7 @@ static void post_listxattrat(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:listxattrat] dfd=%d path=%s at_flags=0x%x len=%zu first %s vs recheck %s\n",
-		       snap_dfd, snap_path, snap_at_flags, snap_len,
+		       dfd, snap_path, at_flags, snap_len,
 		       first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.oracle.listxattrat_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
@@ -427,6 +423,9 @@ struct syscallentry syscall_listxattrat = {
 	.arg_params[2].list = ARGLIST(listxattrat_at_flags),
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 5,
+	/* dfd (a1), at_flags (a3) and size (a5): post_listxattrat re-calls
+	 * on the first two and judges the return by the last. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 2) | (1u << 4),
 	.sanitise = sanitise_listxattrat,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
