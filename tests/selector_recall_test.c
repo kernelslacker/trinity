@@ -177,6 +177,69 @@ static void getrusage_cases(void)
 		failed++;
 }
 
+#if defined(SYS_prlimit64) || defined(__NR_prlimit64)
+/* prlimit64() calls the sanitiser built on this task and resource @built,
+ * which the kernel ran on resource @ran, as a pure read when @read_only
+ * (new_rlim cleared, as a RedQueen pin can), each answering @answer in
+ * old_rlim; the anomalies the re-call reports. */
+static unsigned long prlimit64_anomalies(unsigned long built, unsigned long ran,
+					 bool read_only,
+					 const struct rlimit64 *answer)
+{
+	unsigned long before = shm->stats.oracle.prlimit64_oracle_anomalies;
+	unsigned int i, tries;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		for (tries = 0; tries < DRAW_TRIES; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.a2 = built;
+			rec.a4 = (unsigned long) get_writable_address(sizeof(*answer));
+			syscall_prlimit64.sanitise(&rec);
+			if (rec.a1 == 0 && rec.a2 == built)
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == DRAW_TRIES)
+			BUG("prlimit64's sanitiser never drew the resource");
+
+		memcpy((void *) rec.a4, answer, sizeof(*answer));
+		rec.a2 = ran;
+		if (read_only)
+			rec.a3 = 0;
+		shadow_slots(&syscall_prlimit64);
+		rec.retval = 0;
+		syscall_prlimit64.post(&rec);
+	}
+	return shm->stats.oracle.prlimit64_oracle_anomalies - before;
+}
+
+/* Two resources the sanitiser keeps on this task, whose limits differ.
+ * Only a pure read is re-called: a call that set a limit moved it. */
+static void prlimit64_cases(void)
+{
+	struct rlimit64 sigpending, msgqueue;
+
+	if (prlimit64(0, RLIMIT_SIGPENDING, NULL, &sigpending) != 0 ||
+	    prlimit64(0, RLIMIT_MSGQUEUE, NULL, &msgqueue) != 0)
+		BUG("selector recall: no resource limits to compare");
+	if (sigpending.rlim_cur == msgqueue.rlim_cur &&
+	    sigpending.rlim_max == msgqueue.rlim_max) {
+		printf("(resource limits alike) ");
+		return;
+	}
+
+	check("prlimit64: a pure read rewritten onto another resource was re-called on the first",
+	      prlimit64_anomalies(RLIMIT_SIGPENDING, RLIMIT_MSGQUEUE, true,
+				  &msgqueue) == 0);
+	check("prlimit64: a rewritten pure read answering the first resource's limits was not reported",
+	      prlimit64_anomalies(RLIMIT_MSGQUEUE, RLIMIT_SIGPENDING, true,
+				  &msgqueue) > 0);
+	check("prlimit64: a call that set a limit was re-called",
+	      prlimit64_anomalies(RLIMIT_MSGQUEUE, RLIMIT_SIGPENDING, false,
+				  &msgqueue) == 0);
+}
+#endif
+
 void selector_recall_self_check(void);
 void selector_recall_self_check(void)
 {
@@ -192,6 +255,9 @@ void selector_recall_self_check(void)
 	getrlimit_cases();
 #endif
 	getrusage_cases();
+#if defined(SYS_prlimit64) || defined(__NR_prlimit64)
+	prlimit64_cases();
+#endif
 
 	if (failed != 0)
 		BUG("a selector re-call asked about the wrong selector");

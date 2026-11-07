@@ -30,25 +30,23 @@
 
 #ifdef HAVE_SYS_PRLIMIT64
 /*
- * Snapshot of the four prlimit64 input args plus the poison seed read
- * by the post oracle, captured at sanitise time and consumed by the
- * post handler.  Lives in rec->post_state, a slot the syscall ABI does
- * not expose, so a sibling syscall scribbling rec->aN between the
- * syscall returning and the post handler running cannot redirect the
- * oracle at a foreign old_rlim buffer, retarget the pid self-filter,
- * smear the resource bound used to gate the re-issue, or smear the
- * poison seed against a heap page that happens to still carry a
- * residual pattern from an earlier call.  A poison_seed of 0 means the
- * sanitise-time writability check refused to stamp poison for this
+ * Snapshot of the prlimit64 old_rlim buffer plus the poison seed read by
+ * the post oracle, captured at sanitise time and consumed by the post
+ * handler.  Lives in rec->post_state, a slot the syscall ABI does not
+ * expose, so a sibling syscall scribbling rec->aN between the syscall
+ * returning and the post handler running cannot redirect the oracle at a
+ * foreign old_rlim buffer, or smear the poison seed against a heap page
+ * that happens to still carry a residual pattern from an earlier call.
+ * The pid, resource and new_rlim are read from the slots the kernel was
+ * handed instead, which chain substitution or a RedQueen pin may have
+ * rewritten after the sanitiser drew its own.  A poison_seed of 0 means
+ * the sanitise-time writability check refused to stamp poison for this
  * call (NULL old_rlim, or the range gate rejected the address) and the
  * post handler must no-op the untouched-buffer check.
  */
 #define PRLIMIT64_POST_STATE_MAGIC	0x50524C36UL	/* "PRL6" */
 struct prlimit64_post_state {
 	unsigned long magic;
-	unsigned long pid;
-	unsigned long resource;
-	unsigned long new_rlim;
 	unsigned long old_rlim;
 	uint64_t poison_seed;
 };
@@ -227,23 +225,18 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_PRLIMIT64
 	/*
-	 * Snapshot the four input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original
-	 * old_rlim pointer, the pid self-filter would resolve against a
-	 * scribbled value, and the resource bound check could be smeared
-	 * past RLIMIT_NLIMITS.  post_state is private to the post handler.
-	 * Gated on HAVE_SYS_PRLIMIT64 to mirror the .post registration --
-	 * on systems without SYS_prlimit64 the post handler is not
-	 * registered and a snapshot only the post handler can free would
-	 * leak.
+	 * Snapshot the old_rlim pointer for the post oracle.  Without
+	 * this the post handler reads rec->a4 at post-time, when a
+	 * sibling syscall may have scribbled the slot:
+	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
+	 * address from the original old_rlim pointer.  post_state is
+	 * private to the post handler.  Gated on HAVE_SYS_PRLIMIT64 to
+	 * mirror the .post registration -- on systems without
+	 * SYS_prlimit64 the post handler is not registered and a snapshot
+	 * only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic     = PRLIMIT64_POST_STATE_MAGIC;
-	snap->pid       = rec->a1;
-	snap->resource  = rec->a2;
-	snap->new_rlim  = rec->a3;
 	snap->old_rlim  = rec->a4;
 
 	/*
@@ -293,25 +286,28 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
  *   - Sibling-thread scribble of either rec->aN or the user buffer between
  *     syscall return and our post-hook re-read.
  *
- * Mode A (new_rlim != NULL) is gated out by the rec->a3 != 0 check: the
- * sanitiser always wires a non-NULL rlim into a3 today, but if a future
- * sanitiser revision starts emitting mode-B calls the oracle picks them up
+ * Mode A (new_rlim != NULL) is gated out by the a3 != 0 check: the
+ * sanitiser always wires a non-NULL rlim into a3 today, so only a
+ * RedQueen pin that cleared it reaches mode B, but if a future sanitiser
+ * revision starts emitting mode-B calls the oracle picks them up
  * automatically.  Other-pid targets (pid != 0 && pid != gettid()) are
  * gated out -- another task's limits can be legitimately mutated by a
  * sibling between our two reads, which would surface as a benign
  * divergence storm.  RLIMIT_NLIMITS is checked defensively in case a
- * future kernel/glibc adds resource constants the sanitiser table does not
- * yet know about.
+ * future kernel/glibc adds resource constants the sanitiser table does
+ * not yet know about.
  *
- * TOCTOU defeat: the four input args (pid, resource, new_rlim, old_rlim)
- * are snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->aN between syscall return and post
- * entry cannot redirect the oracle at a foreign old_rlim, retarget the
- * pid self-filter, or smear the resource bound that gates the re-issue.
- * The rlimit64 payload at *old_rlim is then snapshotted into a stack-local
- * before re-issuing, and the re-call writes into a fresh private stack
- * buffer (NOT the snapshot's old_rlim -- a sibling could mutate the user
- * buffer itself mid-syscall and forge a clean compare).
+ * TOCTOU defeat: the old_rlim pointer is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->a4 between syscall return and post entry cannot redirect the
+ * oracle at a foreign old_rlim.  The pid, resource and new_rlim, which
+ * pick the mode, the target and the limit the re-issue reads, come from
+ * the slots the kernel was handed, which chain substitution or a RedQueen
+ * pin may have rewritten after the sanitiser.  The rlimit64 payload at
+ * *old_rlim is then snapshotted into a stack-local before re-issuing, and
+ * the re-call writes into a fresh private stack buffer (NOT the
+ * snapshot's old_rlim -- a sibling could mutate the user buffer itself
+ * mid-syscall and forge a clean compare).
  *
  * Snap gating: the snap is registered in the ownership table at install
  * time and the post handler gates entry through post_state_claim_owned(),
@@ -319,8 +315,7 @@ static void sanitise_prlimit64(struct syscallrecord *rec)
  * inner-field deref -- a stale same-type snapshot still readable in the
  * deferred-free queue, or a sibling scribble of rec->post_state with a
  * heap-shaped pointer at a foreign allocation, is rejected before the
- * pid self-filter, resource bound, old_rlim deref, or the re-issue are
- * touched.
+ * old_rlim deref or the re-issue are touched.
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous
@@ -344,6 +339,8 @@ static void post_prlimit64(struct syscallrecord *rec)
 				       __func__);
 	struct rlimit64 first_rlim;
 	struct rlimit64 recheck_rlim;
+	unsigned int resource;
+	pid_t pid;
 	long rc;
 
 	if (snap == NULL)
@@ -376,17 +373,18 @@ static void post_prlimit64(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if (snap->new_rlim != 0)
+	if (get_arg_snapshot(rec, 3) != 0)
 		goto out_free;
 
 	if (snap->old_rlim == 0)
 		goto out_free;
 
-	if (snap->pid != 0 &&
-	    snap->pid != (unsigned long) syscall(SYS_gettid))
+	pid = (pid_t) get_arg_snapshot(rec, 1);
+	if (pid != 0 && pid != (pid_t) syscall(SYS_gettid))
 		goto out_free;
 
-	if (snap->resource >= RLIMIT_NLIMITS)
+	resource = (unsigned int) get_arg_snapshot(rec, 2);
+	if (resource >= RLIMIT_NLIMITS)
 		goto out_free;
 
 	if (!post_snapshot_or_skip(&first_rlim,
@@ -395,8 +393,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 		goto out_free;
 
 	memset(&recheck_rlim, 0, sizeof(recheck_rlim));
-	rc = syscall(SYS_prlimit64, (pid_t) snap->pid,
-		     (unsigned int) snap->resource, NULL, &recheck_rlim);
+	rc = syscall(SYS_prlimit64, pid, resource, NULL, &recheck_rlim);
 	if (rc != 0)
 		goto out_free;
 
@@ -405,7 +402,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 		       "[oracle:prlimit64] rlim_cur %llu vs %llu (resource=%u)\n",
 		       (unsigned long long) first_rlim.rlim_cur,
 		       (unsigned long long) recheck_rlim.rlim_cur,
-		       (unsigned int) snap->resource);
+		       resource);
 		__atomic_add_fetch(&shm->stats.oracle.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -415,7 +412,7 @@ static void post_prlimit64(struct syscallrecord *rec)
 		       "[oracle:prlimit64] rlim_max %llu vs %llu (resource=%u)\n",
 		       (unsigned long long) first_rlim.rlim_max,
 		       (unsigned long long) recheck_rlim.rlim_max,
-		       (unsigned int) snap->resource);
+		       resource);
 		__atomic_add_fetch(&shm->stats.oracle.prlimit64_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -436,6 +433,10 @@ struct syscallentry syscall_prlimit64 = {
 #ifdef HAVE_SYS_PRLIMIT64
 	.post = post_prlimit64,
 #endif
+	/* pid (a1), resource (a2) and new_rlim (a3): post_prlimit64
+	 * re-issues only a pure read (no new_rlim) of this task's limits,
+	 * on the resource the kernel read. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1) | (1u << 2),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

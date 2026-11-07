@@ -615,12 +615,15 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/syscalls/xattr/listxattrat.c \
 		   $(TOP)/args/pools/xattr.c
 
-# syscalls/clock/clock_getres.c, syscalls/process/getrlimit.c and
-# getrusage.c bring the selector re-call oracles whose sanitisers and post
-# handlers selector_recall_test.c runs.
+# syscalls/clock/clock_getres.c, syscalls/process/getrlimit.c,
+# getrusage.c and prlimit64.c bring the selector re-call oracles whose
+# sanitisers and post handlers selector_recall_test.c runs, and
+# utils/rlimit-safe.c the resource picks prlimit64's sanitiser makes.
 PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 		   $(TOP)/syscalls/process/getrlimit.c \
-		   $(TOP)/syscalls/process/getrusage.c
+		   $(TOP)/syscalls/process/getrusage.c \
+		   $(TOP)/syscalls/process/prlimit64.c \
+		   $(TOP)/utils/rlimit-safe.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post
