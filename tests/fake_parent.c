@@ -443,11 +443,6 @@ void pre_crash_ring_reset(struct pre_crash_ring *ring)
 	(void)ring;
 }
 
-void inode_spewer_reap(pid_t pid)
-{
-	(void)pid;
-}
-
 void kmsg_monitor_note_reaped(pid_t pid, int status)
 {
 	(void)pid; (void)status;

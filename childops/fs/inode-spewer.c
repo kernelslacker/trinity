@@ -30,6 +30,7 @@
 #include "shm.h"
 #include "tmpdir.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 
 #include "kernel/falloc.h"
@@ -282,35 +283,52 @@ bool inode_spewer(struct childdata *child)
  * Drain trinity-inodes-<pid>/ and rmdir it.  Used by both the
  * graceful-exit cleanup (own pid) and the parent-side reaper
  * (reaped child's pid, in case the child was SIGKILL'd before
- * running its own cleanup).
+ * running its own cleanup).  tmp/ is world-writable, so the name may
+ * be a planted symlink or another user's dir, which a root parent
+ * would empty as root: the dir is opened O_NOFOLLOW, taken only if
+ * the uid children run as owns it, and drained relative to its fd.
  */
 static void cleanup_spew_dir_for(pid_t pid)
 {
-	char dir[PATH_MAX + 32];
-	DIR *d;
+	char name[32];
 	struct dirent *de;
+	struct stat st;
+	DIR *d;
+	int tmpfd, fd;
 
-	snprintf(dir, sizeof(dir), "%s/trinity-inodes-%d",
-		 trinity_tmpdir_abs(), (int)pid);
+	tmpfd = open(trinity_tmpdir_abs(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (tmpfd < 0)
+		return;
 
-	d = opendir(dir);
-	if (d != NULL) {
-		while ((de = readdir(d)) != NULL) {
-			char path[PATH_MAX + 32 + NAME_MAX + 2];
-
-			if (de->d_name[0] == '.' &&
-			    (de->d_name[1] == '\0' ||
-			     (de->d_name[1] == '.' && de->d_name[2] == '\0')))
-				continue;
-
-			snprintf(path, sizeof(path), "%s/%s", dir, de->d_name);
-			if (unlink(path) == -1 && errno == EISDIR)
-				(void)rmdir(path);
-		}
-		closedir(d);
+	snprintf(name, sizeof(name), "trinity-inodes-%d", (int)pid);
+	fd = openat(tmpfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+	if (fd < 0)
+		goto out;
+	if (fstat(fd, &st) != 0 ||
+	    st.st_uid != ((orig_uid == 0) ? nobody_uid : orig_uid)) {
+		close(fd);
+		goto out;
+	}
+	d = fdopendir(fd);
+	if (d == NULL) {
+		close(fd);
+		goto out;
 	}
 
-	(void)rmdir(dir);
+	while ((de = readdir(d)) != NULL) {
+		if (de->d_name[0] == '.' &&
+		    (de->d_name[1] == '\0' ||
+		     (de->d_name[1] == '.' && de->d_name[2] == '\0')))
+			continue;
+
+		if (unlinkat(fd, de->d_name, 0) == -1 && errno == EISDIR)
+			(void)unlinkat(fd, de->d_name, AT_REMOVEDIR);
+	}
+	closedir(d);
+
+	(void)unlinkat(tmpfd, name, AT_REMOVEDIR);
+out:
+	close(tmpfd);
 }
 
 /*

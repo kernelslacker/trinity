@@ -595,6 +595,13 @@ FAKE_SRCS	+= testfile_pool_test.c
 PARENT_SRCS	+= $(TOP)/utils/writer-watch.c
 FAKE_SRCS	+= writer_watch_test.c
 
+# childops/fs/inode-spewer.c brings inode_spewer_reap(), which
+# inode_spewer_test.c runs over spew dirs and a planted symlink in a tmp/
+# of its own.  Same section-per-function treatment as the parent TUs
+# above.
+PARENT_SRCS	+= $(TOP)/childops/fs/inode-spewer.c
+FAKE_SRCS	+= inode_spewer_test.c
+
 # child/child-sentinel.c brings the divergence sentinel's tick.
 # sentinel_test.c answers its uname() and sysinfo() with a model, through
 # the fake_syscall hook of landlock_test.c, and stands in for the pre-crash
