@@ -17,14 +17,6 @@
 #include "utils.h"
 #include "valresult.h"
 
-#if defined(SYS_getpeername) || defined(__NR_getpeername)
-#ifndef SYS_getpeername
-#define SYS_getpeername __NR_getpeername
-#endif
-#define HAVE_SYS_GETPEERNAME 1
-#endif
-
-#ifdef HAVE_SYS_GETPEERNAME
 /*
  * Snapshot of the getpeername address buffers read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
@@ -51,18 +43,14 @@ struct getpeername_post_state {
 	unsigned long usockaddr_len;
 	struct valresult_buf vrb;
 };
-#endif
 
 static void sanitise_getpeername(struct syscallrecord *rec)
 {
-#ifdef HAVE_SYS_GETPEERNAME
 	struct getpeername_post_state *snap;
-
-	rec->post_state = 0;
-#endif
 	struct sockaddr_storage *addr;
 	struct valresult_buf vrb;
 
+	rec->post_state = 0;
 	rec->a1 = fd_from_socketinfo((struct socketinfo *) rec->a1);
 
 	/*
@@ -107,13 +95,7 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) vrb.len_io;
 	avoid_shared_buffer_inout(&rec->a3, sizeof(socklen_t));
 
-#ifdef HAVE_SYS_GETPEERNAME
-	/*
-	 * magic-cookie / private post_state: see post_state_register().
-	 * Gated on HAVE_SYS_GETPEERNAME to mirror the .post registration --
-	 * without the post handler a snap that only the post path frees
-	 * would leak.
-	 */
+	/* magic-cookie / private post_state: see post_state_register(). */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic         = GETPEERNAME_POST_STATE_MAGIC;
 	snap->usockaddr     = rec->a2;
@@ -121,7 +103,6 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 	snap->vrb           = vrb;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);
-#endif
 }
 
 /*
@@ -182,7 +163,6 @@ static void sanitise_getpeername(struct syscallrecord *rec)
  * silently skipped.  recheck_len != first_len is also treated as benign
  * size-class drift rather than corruption.
  */
-#ifdef HAVE_SYS_GETPEERNAME
 /*
  * Phase 1 (snap ownership): shape -> ownership -> magic gate on the
  * post_state pointer.  Returns true when snap is proven to be the
@@ -446,7 +426,6 @@ static void post_getpeername(struct syscallrecord *rec)
 
 	getpeername_release(rec, snap);
 }
-#endif
 
 struct syscallentry syscall_getpeername = {
 	.name = "getpeername",
@@ -457,9 +436,7 @@ struct syscallentry syscall_getpeername = {
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
 	.sanitise = sanitise_getpeername,
-#ifdef HAVE_SYS_GETPEERNAME
 	.post = post_getpeername,
-#endif
 	/* fd (a1): the re-call asks the socket the kernel did, which a
 	 * RedQueen pin may have rewritten after the sanitiser drew its
 	 * own. */
