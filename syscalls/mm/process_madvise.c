@@ -118,11 +118,12 @@ struct process_madvise_post_state {
  * stretch vlen past the iovecs it set, so a final GUARD_INSTALL is refused
  * unless every iovec the kernel reads that names a page
  * (map_range_pages()) names pages of the call's own throwaway mapping.
- * Only an array in the iovec pool can be judged, as nothing but this
- * child writes it; a compat call reads 32-bit iovecs at the low 32 bits
- * of the slot, never an array built here.  A count of 0, or one past
- * UIO_MAXIOV, reads none.  The advice is read as an int.  Shape, then
- * ownership, then magic, as post_state_claim_owned() orders them.
+ * Only a native array in the iovec pool can be judged, as nothing but
+ * this child writes it; a compat call's array holds 32-bit compat_iovec
+ * entries, which this walk does not read, so its GUARD_INSTALL is
+ * refused.  A count of 0, or one past UIO_MAXIOV, reads none.  The
+ * advice is read as an int.  Shape, then ownership, then magic, as
+ * post_state_claim_owned() orders them.
  */
 static int vet_final_process_madvise(struct syscallrecord *rec,
 				     const struct syscallentry *entry __unused__)
