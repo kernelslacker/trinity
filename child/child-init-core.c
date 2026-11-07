@@ -73,6 +73,14 @@ void init_child(struct childdata *child, int childno)
 
 	init_child_rendezvous_parent(child, childno);
 
+	/*
+	 * Open the --writer-watch breakpoint while the child still holds the
+	 * parent's capabilities: watching kernel writes needs CAP_PERFMON
+	 * unless perf_event_paranoid <= 1, and the sandbox drops them all.
+	 * It is opened disabled and enabled last, below.
+	 */
+	writer_watch_open_child();
+
 	init_child_setup_sandbox(child, childno);
 
 	/*
@@ -150,8 +158,8 @@ void init_child(struct childdata *child, int childno)
 	/*
 	 * Arm the Stage-2 writer-pinning canary hardware breakpoint last.
 	 * Default-OFF: writer_watch_arm_child() short-circuits when
-	 * --writer-watch was not passed (writer_watch_addr == 0).  Runs
-	 * after mask_signals_child() has installed the SIGTRAP handler
+	 * writer_watch_open_child() opened none.  Runs after
+	 * mask_signals_child() has installed the SIGTRAP handler
 	 * (mask_signals_child is called earlier via init_child_setup_sandbox
 	 * -> ... -> the child fork-side init path), so a trap delivered
 	 * to this thread immediately after arming is dispatched to

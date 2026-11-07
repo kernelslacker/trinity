@@ -23,35 +23,19 @@
 
 #include "kernel/hw_breakpoint.h"
 /*
- * Per-child fd for the open perf event.  Kept at file scope so a future
- * teardown helper could close it; currently the child holds it for its
- * lifetime and the kernel cleans it up at exit.  Inherited COW from
- * the parent only by accident -- the parent never opens one; each
- * child arms its own after fork because perf events do NOT propagate
- * across fork to track the child.
+ * Per-child fd for the open perf event, from writer_watch_open_child()
+ * until writer_watch_arm_child() enables it; the child then holds it for
+ * its lifetime and the kernel cleans it up at exit.  Each child opens its
+ * own after fork because perf events do NOT propagate across fork to
+ * track the child.
  */
 static int writer_watch_fd = -1;
 
-void writer_watch_arm_child(void)
+/* perf_event_open() of the breakpoint on this task, disabled, or -1 with
+ * errno set. */
+static long writer_watch_open(void)
 {
 	struct perf_event_attr a;
-	long fd;
-
-	if (writer_watch_addr == 0)
-		return;
-
-	/*
-	 * Validate 8-byte alignment up front.  Most x86 implementations
-	 * reject an unaligned HW_BREAKPOINT_LEN_8 with -EINVAL from
-	 * perf_event_open(); failing loudly here points the operator at
-	 * the real cause instead of a kernel error message.
-	 */
-	if ((writer_watch_addr & 0x7UL) != 0) {
-		outputerr("writer-watch: addr=0x%lx is not 8-byte aligned"
-			  " (HW_BREAKPOINT_LEN_8 requires 8-byte alignment)\n",
-			  writer_watch_addr);
-		return;
-	}
 
 	/*
 	 * memset before partial fill: perf_event_attr is large and grows
@@ -72,17 +56,20 @@ void writer_watch_arm_child(void)
 	 * the path that makes info->si_addr meaningful and puts the
 	 * faulting RIP in the ucontext -- the alternative (F_SETSIG on a
 	 * SIGIO fd) delivers asynchronously and si_addr is unrelated to
-	 * the watched address.  sigtrap=1 was added in Linux 5.13.
+	 * the watched address.  sigtrap=1 was added in Linux 5.13, and
+	 * perf_copy_attr() refuses it without remove_on_exec.
 	 */
 	a.sample_period  = 1;
 	a.sigtrap        = 1;
+	a.remove_on_exec = 1;
 	a.sig_data       = (uint64_t)writer_watch_addr;
 	/*
 	 * exclude_kernel=0: count writes from kernel context too, so a
 	 * value-result copy_to_user landing in the watched address is
 	 * caught alongside trinity-userspace scribbles.  This directly
 	 * answers the open question of whether the wild writer is trinity-
-	 * side or kernel-side.
+	 * side or kernel-side.  perf_event_open() takes it only from a
+	 * caller with CAP_PERFMON, or with perf_event_paranoid <= 1.
 	 */
 	a.exclude_kernel = 0;
 	a.exclude_hv     = 1;
@@ -102,21 +89,68 @@ void writer_watch_arm_child(void)
 	 * children are single-threaded after fork; "this thread" == "this
 	 * process".  group_fd=-1: standalone event.
 	 */
-	fd = trinity_raw_syscall(__NR_perf_event_open, &a, 0, -1, -1, 0UL);
+	return trinity_raw_syscall(__NR_perf_event_open, &a, 0, -1, -1, 0UL);
+}
+
+bool writer_watch_probe(void)
+{
+	long fd;
+
+	if (writer_watch_addr == 0)
+		return true;
+
+	/*
+	 * HW_BREAKPOINT_LEN_8 takes only an 8-byte aligned address; say so
+	 * rather than pass on the kernel's bare EINVAL.
+	 */
+	if ((writer_watch_addr & 0x7UL) != 0) {
+		outputerr("--writer-watch: addr=0x%lx is not 8-byte aligned"
+			  " (HW_BREAKPOINT_LEN_8 requires 8-byte alignment)\n",
+			  writer_watch_addr);
+		return false;
+	}
+
+	fd = writer_watch_open();
+	if (fd < 0) {
+		outputerr("--writer-watch: perf_event_open(addr=0x%lx) failed: %s%s\n",
+			  writer_watch_addr, strerror(errno),
+			  errno == EACCES ? " (watching kernel writes needs"
+			  " CAP_PERFMON or perf_event_paranoid <= 1)" : "");
+		return false;
+	}
+	(void)close((int)fd);
+	return true;
+}
+
+void writer_watch_open_child(void)
+{
+	long fd;
+
+	if (writer_watch_addr == 0)
+		return;
+
+	fd = writer_watch_open();
 	if (fd < 0) {
 		outputerr("writer-watch: perf_event_open(addr=0x%lx) failed: %s\n",
 			  writer_watch_addr, strerror(errno));
 		return;
 	}
+	writer_watch_fd = (int)fd;
+}
 
-	if (ioctl((int)fd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
+void writer_watch_arm_child(void)
+{
+	if (writer_watch_fd < 0)
+		return;
+
+	if (ioctl(writer_watch_fd, PERF_EVENT_IOC_ENABLE, 0) < 0) {
 		outputerr("writer-watch: PERF_EVENT_IOC_ENABLE failed: %s\n",
 			  strerror(errno));
-		(void)close((int)fd);
+		(void)close(writer_watch_fd);
+		writer_watch_fd = -1;
 		return;
 	}
 
-	writer_watch_fd = (int)fd;
 	outputerr("writer-watch: armed addr=0x%lx fd=%d pid=%d"
 		  " (HW write breakpoint, synchronous SIGTRAP on hit"
 		  " via perf_event_attr.sigtrap)\n",

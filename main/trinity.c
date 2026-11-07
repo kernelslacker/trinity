@@ -45,6 +45,7 @@
 #include "uid.h"
 #include "utils.h"
 #include "version.h"
+#include "writer-watch.h"
 
 /*
  * Epoch-based wrapper around main_loop().
@@ -350,6 +351,11 @@ int main(int argc, char* argv[])
 		show_unannotated_args();
 		exit(EXIT_SUCCESS);
 	}
+
+	/* A child's own perf_event_open() failure reaches only its stderr
+	 * memfd, so ask before any setup whether --writer-watch can arm. */
+	if (!writer_watch_probe())
+		exit(EXIT_FAILURE);
 
 	create_shm();
 

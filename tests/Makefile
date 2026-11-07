@@ -566,6 +566,12 @@ PARENT_SRCS	+= $(TOP)/fds/testfiles.c \
 		   $(TOP)/fds/files.c
 FAKE_SRCS	+= testfile_pool_test.c
 
+# utils/writer-watch.c brings the --writer-watch breakpoint's probe, open
+# and arm.  writer_watch_test.c answers their perf_event_open() with a model
+# of the kernel's checks, through the fake_syscall hook of landlock_test.c.
+PARENT_SRCS	+= $(TOP)/utils/writer-watch.c
+FAKE_SRCS	+= writer_watch_test.c
+
 # syscalls/fs/close.c, close_range.c and fcntl.c and
 # syscalls/pidfd/pidfd_getfd.c bring syscall_close, syscall_close_range,
 # syscall_fcntl and syscall_pidfd_getfd, whose post handlers

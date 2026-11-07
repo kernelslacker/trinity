@@ -1,5 +1,7 @@
 #pragma once
 
+#include <stdbool.h>
+
 #include "kernel/hw_breakpoint.h"
 /*
  * Stage-2 writer-pinning canary (--writer-watch=<hexaddr>).
@@ -16,13 +18,25 @@
  * (--writer-pin-sweep) hands an address to this stage; Stage 2 names
  * the wild writer.
  *
- * Default-OFF: a NULL writer_watch_addr leaves writer_watch_arm_child()
- * as a no-op.  Heavyweight debug tool -- only enable for a targeted
+ * Default-OFF: a zero writer_watch_addr leaves all three calls below
+ * no-ops.  Heavyweight debug tool -- only enable for a targeted
  * corruption hunt: the perf fd has real cost and the SIGTRAP handler
  * _exit()s, so an accidental hit on a live host kills the child.
  */
 
-/* Open the per-child hardware write breakpoint.  Called once from
- * init_child after fork, after the per-child SIGTRAP disposition is in
- * place.  Reads writer_watch_addr; no-op when it is zero. */
+/* Whether this kernel, with these privileges, opens the breakpoint the
+ * children will: checked before the fork and reported here, since a
+ * child's own failure reaches only its stderr memfd.  True when
+ * writer_watch_addr is zero. */
+bool writer_watch_probe(void);
+
+/* Open the per-child hardware write breakpoint, disabled.  Called from
+ * init_child before the sandbox drops the child's capabilities, as
+ * watching kernel writes needs CAP_PERFMON unless perf_event_paranoid
+ * <= 1.  No-op when writer_watch_addr is zero. */
+void writer_watch_open_child(void);
+
+/* Enable the breakpoint writer_watch_open_child() opened, closing it if
+ * the enable fails.  Called last in init_child, after the per-child
+ * SIGTRAP disposition is in place; no-op when none is open. */
 void writer_watch_arm_child(void);
