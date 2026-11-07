@@ -135,7 +135,13 @@ static void sanitise_write(struct syscallrecord *rec)
 		generate_rand_bytes(ptr, size);
 	}
 
+	/*
+	 * The kernel reads the buffer, and the blanket scrub would move a
+	 * heap one into the writable pool without its bytes: move it with
+	 * them.  The heap original stays the one rec_own() frees.
+	 */
 	rec->a2 = (unsigned long) ptr;
+	avoid_shared_buffer_inout(&rec->a2, size);
 	rec->a3 = size;
 	/*
 	 * Snapshot (buf, count) for the post handler -- a2/a3 may be

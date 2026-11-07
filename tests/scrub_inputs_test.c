@@ -27,10 +27,12 @@ extern bool fake_socket_fd_none;	/* post_oracle_test.c */
 
 static struct syscallrecord rec;
 
-static void sanitise(struct syscallentry *entry)
+/* @a1 is what the generator left in the first slot. */
+static void sanitise(struct syscallentry *entry, unsigned long a1)
 {
 	memset(&rec, 0, sizeof(rec));
 	rec.entry = entry;
+	rec.a1 = a1;
 	entry->sanitise(&rec);
 }
 
@@ -42,8 +44,11 @@ static void survives_scrub(struct syscallentry *entry, unsigned long *slot,
 			   size_t len, const char *what)
 {
 	struct syscallentry scrubbed = *entry;
-	void *built = malloc(len);
+	void *built;
 
+	if (len == 0)
+		return;
+	built = malloc(len);
 	if (built == NULL)
 		BUG("scrub inputs: out of memory");
 	memcpy(built, (void *) *slot, len);
@@ -71,18 +76,33 @@ static void recv_headers(void)
 
 	fake_socket_fd_none = true;
 	for (i = 0; i < DRAWS; i++) {
-		sanitise(&syscall_recvmsg);
+		sanitise(&syscall_recvmsg, 0);
 		survives_scrub(&syscall_recvmsg, &rec.a2, sizeof(struct msghdr),
 			       "recvmsg's msghdr");
 		end_call();
 
-		sanitise(&syscall_recvmmsg);
+		sanitise(&syscall_recvmmsg, 0);
 		survives_scrub(&syscall_recvmmsg, &rec.a2,
 			       rec.a3 * sizeof(struct mmsghdr),
 			       "recvmmsg's mmsghdr array");
 		end_call();
 	}
 	fake_socket_fd_none = false;
+}
+
+/* An fd above stdio, which the sanitiser keeps. */
+#define WRITE_FD	100
+
+static void write_buffer(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < DRAWS; i++) {
+		sanitise(&syscall_write, WRITE_FD);
+		survives_scrub(&syscall_write, &rec.a2, rec.a3,
+			       "write's buffer");
+		end_call();
+	}
 }
 
 void scrub_inputs_self_check(void);
@@ -95,5 +115,6 @@ void scrub_inputs_self_check(void)
 
 	fake_overlaps_libc_heap = true;
 	recv_headers();
+	write_buffer();
 	fake_overlaps_libc_heap = false;
 }
