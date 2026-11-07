@@ -507,6 +507,7 @@ FAKE_SRCS	:= \
 	ctime_rule_test.c \
 	stat_recall_test.c \
 	xattr_recall_test.c \
+	selector_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -613,6 +614,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/syscalls/xattr/listxattr.c \
 		   $(TOP)/syscalls/xattr/listxattrat.c \
 		   $(TOP)/args/pools/xattr.c
+
+# syscalls/clock/clock_getres.c brings the selector re-call oracles whose
+# sanitisers and post handlers selector_recall_test.c runs.
+PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post

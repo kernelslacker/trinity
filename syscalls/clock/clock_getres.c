@@ -25,20 +25,21 @@ static unsigned long clock_ids[] = {
 };
 
 /*
- * Snapshot of the two clock_getres input args read by the post oracle,
+ * Snapshot of the clock_getres tp buffer read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget the re-issue at a different clockid or
- * redirect the source memcpy at a foreign user buffer.  poison_seed is
- * the per-call seed poison_output_struct() stamped into the tp buffer
- * at sanitise time; 0 means the poison arm was skipped (NULL tp) and
- * the post handler must skip the matching untouched-buffer check.
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The clockid is read from the slot the kernel was handed
+ * instead, which chain substitution or a RedQueen pin may have rewritten
+ * after the sanitiser drew its own.  poison_seed is the per-call seed
+ * poison_output_struct() stamped into the tp buffer at sanitise time; 0
+ * means the poison arm was skipped (NULL tp) and the post handler must
+ * skip the matching untouched-buffer check.
  */
 #define CLOCK_GETRES_POST_STATE_MAGIC	0x43475253UL	/* "CGRS" */
 struct clock_getres_post_state {
 	unsigned long magic;
-	unsigned long clockid;
 	unsigned long tp;
 	uint64_t poison_seed;
 };
@@ -59,17 +60,14 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, sizeof(struct timespec));
 
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->a1/a2 at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original tp
-	 * pointer, and a stomped clockid would silently steer the re-issue
-	 * at a different clock and forge a divergence.  post_state is
-	 * private to the post handler.
+	 * Snapshot the tp pointer for the post oracle.  Without this the
+	 * post handler reads rec->a2 at post-time, when a sibling syscall
+	 * may have scribbled the slot: looks_like_corrupted_ptr() cannot
+	 * tell a real-but-wrong heap address from the original tp pointer.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = CLOCK_GETRES_POST_STATE_MAGIC;
-	snap->clockid = rec->a1;
 	snap->tp      = rec->a2;
 
 	/*
@@ -110,18 +108,19 @@ static void sanitise_clock_getres(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     syscall return and our post-hook re-read.
  *
- * TOCTOU defeat (two arguments worth of it): the clockid and the user
- * buffer pointer are snapshotted at sanitise time into a heap struct in
- * rec->post_state, so a sibling that scribbles rec->a1/a2 between syscall
- * return and post entry cannot retarget the re-issue against a different
- * clockid (which would resolve a different resolution and forge a
- * divergence) or redirect the source memcpy at a foreign user buffer.
- * The buffer payload is then snapshotted into a stack-local before the
+ * TOCTOU defeat: the user buffer pointer is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
+ * rec->a2 between syscall return and post entry cannot redirect the
+ * source memcpy at a foreign user buffer.  The clockid is read from the
+ * slot the kernel was handed: chain substitution or a RedQueen pin may
+ * have rewritten it after the sanitiser, and a re-issue against the drawn
+ * clock would resolve a different resolution and forge a divergence.  The
+ * buffer payload is then snapshotted into a stack-local before the
  * re-call so a sibling-thread scribble of the user buffer itself after
  * the original return cannot drive a false divergence either.  If the
  * re-call fails, give up rather than report.  Compare tv_sec and tv_nsec
- * individually with no early-return so multi-field corruption surfaces
- * in a single sample, but bump the anomaly counter only once per sample.
+ * individually with no early-return so multi-field corruption surfaces in
+ * a single sample, but bump the anomaly counter only once per sample.
  * Emit one log line carrying both 2-tuples plus the clockid so the
  * operator sees the full divergence shape at once.  Sample one in a
  * hundred to stay in line with the rest of the oracle family.
@@ -157,7 +156,7 @@ static void post_clock_getres(struct syscallrecord *rec)
 	if (snap->tp == 0)
 		goto out_free;
 
-	clockid = (clockid_t) snap->clockid;
+	clockid = (clockid_t) get_arg_snapshot(rec, 1);
 
 	if (!post_snapshot_or_skip(&first,
 				   (const void *)(unsigned long) snap->tp,
@@ -210,6 +209,8 @@ struct syscallentry syscall_clock_getres = {
 	.arg_params[0].list = ARGLIST(clock_ids),
 	.sanitise = sanitise_clock_getres,
 	.post = post_clock_getres,
+	/* which_clock (a1): post_clock_getres re-calls on it. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

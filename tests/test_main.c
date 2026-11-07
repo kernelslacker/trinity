@@ -77,6 +77,7 @@ void userns_lane_self_check(void);
 void ctime_rule_self_check(void);
 void stat_recall_self_check(void);
 void xattr_recall_self_check(void);
+void selector_recall_self_check(void);
 void mount_pool_self_check(void);
 void bpf_gen_self_check(void);
 void objpool_reader_self_check(void);
@@ -427,6 +428,11 @@ int main(int argc, char **argv)
 	printf("  xattr_recall_self_check ... ");
 	fflush(stdout);
 	xattr_recall_self_check();
+	printf("OK\n");
+
+	printf("  selector_recall_self_check ... ");
+	fflush(stdout);
+	selector_recall_self_check();
 	printf("OK\n");
 
 	printf("  mount_pool_self_check ... ");
