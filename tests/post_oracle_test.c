@@ -132,12 +132,16 @@ void *post_state_claim_owned(struct syscallrecord *rec,
  * and every map lookup empty, so its iovec entries come out empty.
  * get_map() hands out fake_map_drawn, which a test that wants a mapping
  * picked sets and clears again, and a test that runs a sanitiser asking
- * for a socket fd sets fake_socket_fd_none to have it get -1, no socket. */
+ * for a socket fd sets fake_socket_fd_none to have it get -1, no socket,
+ * or fake_socketinfo_fds to have it get the fd of the socketinfo it
+ * handed the sanitiser. */
 bool fake_socket_fd_none;
+bool fake_socketinfo_fds;
 
 int fd_from_socketinfo(struct socketinfo *si)
 {
-	(void) si;
+	if (fake_socketinfo_fds)
+		return si->fd;
 	if (!fake_socket_fd_none)
 		BUG("a sanitiser asked for a socket fd");
 	return -1;

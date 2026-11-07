@@ -514,6 +514,7 @@ FAKE_SRCS	:= \
 	selector_recall_test.c \
 	readlink_recall_test.c \
 	listmount_recall_test.c \
+	sockname_recall_test.c \
 	mount_pool_test.c \
 	bpf_gen_test.c \
 	test_main.c
@@ -639,6 +640,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 # post_oracle_test.c drives, and readlinkat, whose re-call
 # readlink_recall_test.c runs on symlinks of its own.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
+
+# syscalls/socket/getsockname.c brings getsockname, whose re-call
+# sockname_recall_test.c runs on sockets of its own, handed to the
+# sanitiser through post_oracle_test.c's fd_from_socketinfo().
+PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post
