@@ -121,6 +121,7 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 		}
 		flags |= TFD_TIMER_ABSTIME;
 	}
+	time_struct_for_abi(rec, its, 2);
 
 	/* CANCEL_ON_SET is only valid on CLOCK_REALTIME timerfds and only
 	 * paired with ABSTIME -- gate on both. */

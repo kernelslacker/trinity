@@ -21,9 +21,11 @@
 #include "debug.h"		/* BUG */
 #include "kernel/compat.h"	/* struct old_timespec32 */
 #include "kernel/stat.h"	/* UTIME_NOW */
+#include "objects.h"		/* struct objhead */
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_timer_settime */
+#include "syscalls/syscalls.h"	/* syscall_timer_settime, ... */
+#include "utils-macros.h"	/* ARRAY_SIZE */
 
 /* gen_arg_buf_sized(), which shares gen_arg_time.c, reaches these; no
  * case here draws it. */
@@ -57,14 +59,27 @@ int32_t seed_timerid_if_empty(void)
 	return -1;
 }
 
+extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
+					   enum objecttype type);	/* fake_objects.c */
+
+/* timerfd_settime's sanitiser looks the timerfd's clock up in its pool,
+ * which stays empty here too. */
+static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
+{
+	(void) scope;
+	(void) type;
+	return NULL;
+}
+
 /* clock_nanosleep on i386, and its y2038 twin; timer_settime,
- * settimeofday and setitimer on i386. */
+ * settimeofday, setitimer, utimensat and timerfd_settime on i386. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
 #define NR_SETTIMEOFDAY_TIME32		79
 #define NR_SETITIMER_TIME32		104
 #define NR_UTIMENSAT_TIME32		320
+#define NR_TIMERFD_SETTIME_TIME32	325
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -130,59 +145,55 @@ static bool compat_interval_last_usec(const void *buf)
 	       itv->it_interval.tv_usec == 999999;
 }
 
-/* timer_settime's sanitiser rewrites the generated struct with a valid
- * it_value three calls in four, tv_sec under 5 but for TIMER_ABSTIME's
- * deadline and tv_nsec under a second, which a time32 call must find
- * where it reads it_value. */
-static bool timer_settime_compat_value(void)
+/* Run @entry's sanitiser as a compat call numbered @nr, its first four
+ * slots handed zeroed pool buffers, until the buffer it leaves in slot
+ * @slot passes @hit. */
+static bool sanitised(const struct syscallentry *entry, unsigned int nr,
+		      unsigned int slot, bool (*hit)(const void *buf))
 {
 	struct syscallrecord rec;
-	unsigned int i;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4 };
+	unsigned int i, k;
 
 	for (i = 0; i < DRAWS; i++) {
-		struct old_itimerspec32 *its =
-			get_writable_struct(sizeof(struct itimerspec));
-		bool valid;
+		bool found;
 
-		memset(its, 0, sizeof(struct itimerspec));
 		memset(&rec, 0, sizeof(rec));
 		rec.do32bit = true;
-		rec.nr = NR_TIMER_SETTIME_TIME32;
-		rec.a3 = (unsigned long) its;
-		rec.a4 = (unsigned long) get_writable_struct(sizeof(struct itimerspec));
-		syscall_timer_settime.sanitise(&rec);
-		free((void *) rec.post_state);
+		rec.nr = nr;
+		for (k = 0; k < ARRAY_SIZE(slots); k++) {
+			void *buf = get_writable_struct(sizeof(struct itimerspec));
 
-		valid = its->it_value.tv_sec >= 0 && its->it_value.tv_sec < 5 &&
-			its->it_value.tv_nsec > 0 &&
-			its->it_value.tv_nsec < 1000000000;
-		if (valid)
+			memset(buf, 0, sizeof(struct itimerspec));
+			*slots[k] = (unsigned long) buf;
+		}
+		entry->sanitise(&rec);
+
+		found = *slots[slot - 1] != 0 &&
+			hit((const void *) *slots[slot - 1]);
+		free((void *) rec.post_state);
+		if (found)
 			return true;
 	}
 	return false;
 }
 
-/* utimensat's sanitiser sets both times to UTIME_NOW in some draws,
- * which a time32 call must find where it reads the first tv_nsec. */
-static bool utimensat_compat_now(void)
+/* An it_value a sanitiser arms: tv_sec under 5 and tv_nsec inside a
+ * second, but not 0, which a misplaced read leaves there. */
+static bool compat_value_armed(const void *buf)
 {
-	struct syscallrecord rec;
-	unsigned int i;
+	const struct old_itimerspec32 *its = buf;
 
-	for (i = 0; i < DRAWS; i++) {
-		const struct old_timespec32 *ts;
+	return its->it_value.tv_sec >= 0 && its->it_value.tv_sec < 5 &&
+	       its->it_value.tv_nsec > 0 &&
+	       its->it_value.tv_nsec < 1000000000;
+}
 
-		memset(&rec, 0, sizeof(rec));
-		rec.do32bit = true;
-		rec.nr = NR_UTIMENSAT_TIME32;
-		syscall_utimensat.sanitise(&rec);
+static bool compat_first_now(const void *buf)
+{
+	const struct old_timespec32 *ts = buf;
 
-		ts = (const struct old_timespec32 *) rec.a3;
-		if (ts != NULL && ts[0].tv_sec == 0 &&
-		    ts[0].tv_nsec == UTIME_NOW)
-			return true;
-	}
-	return false;
+	return ts[0].tv_sec == 0 && ts[0].tv_nsec == UTIME_NOW;
 }
 
 void gen_arg_time_self_check(void);
@@ -217,7 +228,10 @@ void gen_arg_time_self_check(void)
 	rec.nr = NR_TIMER_SETTIME_TIME32;
 	if (!drawn(gen_arg_itimerspec, &rec, compat_interval_last_nsec))
 		BUG("gen_arg_time: a time32 itimerspec never got the 999999999 ns bucket");
-	if (!timer_settime_compat_value())
+	/* timer_settime's sanitiser rewrites the generated struct with a
+	 * valid it_value three calls in four. */
+	if (!sanitised(&syscall_timer_settime, NR_TIMER_SETTIME_TIME32, 3,
+		       compat_value_armed))
 		BUG("gen_arg_time: timer_settime's rewrite missed a time32 call's it_value");
 
 	rec.nr = NR_SETTIMEOFDAY_TIME32;
@@ -227,6 +241,12 @@ void gen_arg_time_self_check(void)
 	if (!drawn(gen_arg_itimerval, &rec, compat_interval_last_usec))
 		BUG("gen_arg_time: a time32 itimerval never got the 999999 us bucket");
 
-	if (!utimensat_compat_now())
+	if (!sanitised(&syscall_utimensat, NR_UTIMENSAT_TIME32, 3,
+		       compat_first_now))
 		BUG("gen_arg_time: utimensat's UTIME_NOW never reached a time32 call");
+	fake_get_objhead = no_pool;
+	if (!sanitised(&syscall_timerfd_settime, NR_TIMERFD_SETTIME_TIME32, 3,
+		       compat_value_armed))
+		BUG("gen_arg_time: timerfd_settime's timer never reached a time32 call");
+	fake_get_objhead = NULL;
 }
