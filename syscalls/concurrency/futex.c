@@ -156,29 +156,18 @@ struct __lock * get_random_lock(void)
 	return &obj->lock;
 }
 
+/*
+ * A futex word at the start of a mapping get_map_handle() picks: it hands
+ * a compat call, which reads each slot as its low 32 bits, a mapping below
+ * 4 GiB when the pools hold one, and runs the pool guards on the way.
+ */
 static uint32_t * get_futex_mmap(void)
 {
-	struct object *obj;
-	struct map *map;
-	enum obj_scope scope;
+	struct map_handle h;
 
-	/*
-	 * If a child creates a futex, it should add it to OBJ_LOCAL
-	 * list instead, because if it segfaults, we'll end up with
-	 * a stale address in a global list.
-	 */
-	if (this_child() == NULL)
-		scope = OBJ_GLOBAL;
-	else
-		scope = OBJ_LOCAL;
-
-	obj = get_random_object(OBJ_MMAP_ANON, scope);
-	if (!obj || obj->map.holed)
+	if (!get_map_handle(&h))
 		return NULL;
-
-	map = &obj->map;
-	return (uint32_t *)map->ptr;
-
+	return (uint32_t *) h.map->ptr;
 }
 
 /*
