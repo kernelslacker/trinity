@@ -155,7 +155,7 @@ static bool arm_userfaultfd(int fd)
  * from every child that inherits it; only a per-child uffd registers,
  * copies and write-protects the child's own ranges.
  */
-static bool open_userfaultfd(void)
+static void open_userfaultfd(void)
 {
 	struct object *obj;
 	int fd, flags;
@@ -167,22 +167,21 @@ static bool open_userfaultfd(void)
 	fd = create_userfaultfd(flags);
 
 	if (fd < 0)
-		return false;
+		return;
 
 	if (!arm_userfaultfd(fd)) {
 		close(fd);
-		return false;
+		return;
 	}
 
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
-		return false;
+		return;
 	}
 	obj->userfaultobj.fd = fd;
 	obj->userfaultobj.flags = flags;
 	add_object(obj, OBJ_LOCAL, OBJ_FD_USERFAULTFD);
-	return true;
 }
 
 /*

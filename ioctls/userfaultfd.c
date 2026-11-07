@@ -37,22 +37,11 @@ IOCTL_SIZE_ASSERT(UFFDIO_SET_MODE, struct uffdio_set_mode);
 
 static int userfaultfd_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
-	struct objhead *head;
-	struct object *obj;
-	unsigned int idx;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_FD_USERFAULTFD);
-
-	for_each_obj(head, obj, idx) {
-		if (obj->userfaultobj.fd == fd)
-			return 0;
-	}
-
 	/*
 	 * The per-child provider and the userfaultfd() post handler
-	 * publish into the child's own pool: a uffd is bound to its
-	 * creator's mm, so only a child-local one acts on the child's
-	 * ranges, and the group must claim it as its own.
+	 * publish into the child's own pool, and nothing into the
+	 * parent's: a uffd is bound to its creator's mm, so only a
+	 * child-local one acts on the child's ranges.
 	 */
 	if (find_local_object_by_fd(OBJ_FD_USERFAULTFD, fd) != NULL)
 		return 0;
