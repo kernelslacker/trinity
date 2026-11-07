@@ -125,6 +125,10 @@ static size_t gen_rtnl_body_addr_dump(unsigned char *body, size_t buflen, bool a
 /* RTM_*ROUTE: struct rtmsg */
 static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned char *out_family)
 {
+	/* The scopes a route has, narrowest last. */
+	static const unsigned char scopes[] = {
+		RT_SCOPE_UNIVERSE, RT_SCOPE_SITE, RT_SCOPE_LINK, RT_SCOPE_HOST,
+	};
 	struct rtmsg rtm;
 
 	if (sizeof(rtm) > buflen)
@@ -140,14 +144,30 @@ static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned c
 	rtm.rtm_flags = rand32();
 	/* rtm_to_fib_config() refuses an IPv4 route with an ECN bit in its
 	 * tos or a prefix past 32 bits, and rtm_to_fib6_config() an IPv6 one
-	 * with any tos, before reading an attribute; the rtmsg stays random
-	 * one time in eight. */
+	 * with any tos, before reading an attribute.  fib_create_info() then
+	 * refuses an IPv4 route whose scope is narrower than its type's
+	 * (fib_props[]: host for a local route, link for broadcast and
+	 * anycast, and no scope at all for UNSPEC, NAT and XRESOLVE) or wider
+	 * than host, or whose flags hold DEAD or LINKDOWN, and
+	 * fib6_config_validate() an IPv6 one whose type is past RTN_MAX or
+	 * whose flags hold RTM_F_CLONED.  The rtmsg stays random one time in
+	 * eight. */
 	if (!ONE_IN(8)) {
 		if (rtm.rtm_family == AF_INET) {
+			unsigned int narrowest;
+
 			rtm.rtm_tos &= ~IPTOS_ECN_MASK;
 			rtm.rtm_dst_len = rnd_modulo_u32(33);
+			rtm.rtm_type = RAND_RANGE(RTN_UNICAST, RTN_THROW);
+			narrowest = rtm.rtm_type == RTN_LOCAL ? 3 :
+				    rtm.rtm_type == RTN_BROADCAST ||
+				    rtm.rtm_type == RTN_ANYCAST ? 2 : 0;
+			rtm.rtm_scope = scopes[RAND_RANGE(narrowest, ARRAY_SIZE(scopes) - 1)];
+			rtm.rtm_flags &= ~(RTNH_F_DEAD | RTNH_F_LINKDOWN);
 		} else if (rtm.rtm_family == AF_INET6) {
 			rtm.rtm_tos = 0;
+			rtm.rtm_type = rnd_modulo_u32(RTN_MAX + 1);
+			rtm.rtm_flags &= ~RTM_F_CLONED;
 		}
 	}
 	*out_family = rtm.rtm_family;

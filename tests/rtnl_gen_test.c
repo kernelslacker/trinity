@@ -732,7 +732,26 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 
 struct route_header {
 	unsigned int v4, v4_tos, v4_len;	/* AF_INET; ECN bits clear; prefix <= 32 */
+	unsigned int v4_scope;			/* ... a type and a scope the fib takes */
+	unsigned int v4_flags;			/* ... neither DEAD nor LINKDOWN */
 	unsigned int v6, v6_tos;		/* AF_INET6; tos 0 */
+	unsigned int v6_type, v6_flags;		/* ... type <= RTN_MAX; not CLONED */
+};
+
+/* fib_props[]'s scopes: the narrowest a route of each type may have. */
+static const unsigned char fib_type_scope[RTN_MAX + 1] = {
+	[RTN_UNSPEC]		= RT_SCOPE_NOWHERE,
+	[RTN_UNICAST]		= RT_SCOPE_UNIVERSE,
+	[RTN_LOCAL]		= RT_SCOPE_HOST,
+	[RTN_BROADCAST]		= RT_SCOPE_LINK,
+	[RTN_ANYCAST]		= RT_SCOPE_LINK,
+	[RTN_MULTICAST]		= RT_SCOPE_UNIVERSE,
+	[RTN_BLACKHOLE]		= RT_SCOPE_UNIVERSE,
+	[RTN_UNREACHABLE]	= RT_SCOPE_UNIVERSE,
+	[RTN_PROHIBIT]		= RT_SCOPE_UNIVERSE,
+	[RTN_THROW]		= RT_SCOPE_UNIVERSE,
+	[RTN_NAT]		= RT_SCOPE_NOWHERE,
+	[RTN_XRESOLVE]		= RT_SCOPE_NOWHERE,
 };
 
 static void tally_route_header(struct route_header *t, const struct nlmsghdr *nlh)
@@ -745,9 +764,15 @@ static void tally_route_header(struct route_header *t, const struct nlmsghdr *nl
 		t->v4++;
 		t->v4_tos += !(rtm->rtm_tos & 0x03);
 		t->v4_len += rtm->rtm_dst_len <= 32;
+		t->v4_scope += rtm->rtm_type <= RTN_MAX &&
+			       rtm->rtm_scope >= fib_type_scope[rtm->rtm_type] &&
+			       rtm->rtm_scope <= RT_SCOPE_HOST;
+		t->v4_flags += !(rtm->rtm_flags & (RTNH_F_DEAD | RTNH_F_LINKDOWN));
 	} else if (rtm->rtm_family == AF_INET6) {
 		t->v6++;
 		t->v6_tos += rtm->rtm_tos == 0;
+		t->v6_type += rtm->rtm_type <= RTN_MAX;
+		t->v6_flags += !(rtm->rtm_flags & RTM_F_CLONED);
 	}
 }
 
@@ -758,6 +783,13 @@ static void tally_route_header(struct route_header *t, const struct nlmsghdr *nl
  * random rtmsg one time in eight and holds the rest to that, so about 0.91
  * of the IPv4 routes clear each check and 0.88 of the IPv6 ones the tos;
  * random fields cleared them a quarter of the time and one time in 256.
+ * fib_create_info() refuses an IPv4 route whose type is past RTN_MAX, whose
+ * scope is narrower than its type's fib_props[] one or wider than host, or
+ * whose flags hold DEAD or LINKDOWN, and fib6_config_validate() an IPv6 one
+ * whose type is past RTN_MAX or whose flags hold RTM_F_CLONED, which sets
+ * RTF_CACHE.  About 0.91 of the IPv4 routes clear the first two, and 0.94
+ * of the IPv6 ones each of theirs; random fields cleared them a quarter,
+ * a quarter, a half and a half of the time.
  */
 static void expect_route_header(const struct route_header *t)
 {
@@ -767,6 +799,14 @@ static void expect_route_header(const struct route_header *t)
 			"rtnl: an IPv4 route's prefix is mostly longer than 32 bits");
 	expect_fraction(t->v6_tos, t->v6, 0.80, 0.95, "IPv6 route tos",
 			"rtnl: an IPv6 route mostly carries the tos rtm_to_fib6_config() refuses");
+	expect_fraction(t->v4_scope, t->v4, 0.84, 0.97, "IPv4 route type and scope",
+			"rtnl: an IPv4 route's type and scope are mostly ones fib_create_info() refuses");
+	expect_fraction(t->v4_flags, t->v4, 0.84, 0.97, "IPv4 route flags",
+			"rtnl: an IPv4 route's flags mostly hold the DEAD or LINKDOWN fib_create_info() refuses");
+	expect_fraction(t->v6_type, t->v6, 0.88, 0.99, "IPv6 route type",
+			"rtnl: an IPv6 route's type is mostly past the RTN_MAX fib6_config_validate() refuses");
+	expect_fraction(t->v6_flags, t->v6, 0.88, 0.99, "IPv6 route flags",
+			"rtnl: an IPv6 route's flags mostly hold the RTM_F_CLONED fib6_config_validate() refuses");
 }
 
 /* ---------- The RTA_ENCAP_TYPE of RTM_NEWROUTE, DELROUTE and GETROUTE --- */
