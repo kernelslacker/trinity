@@ -491,6 +491,74 @@ static void write_count(void)
 	}
 }
 
+/* The size the xattr getters are handed here, which their sanitisers keep
+ * half the time. */
+#define XATTR_DRAWN	64
+
+/* The value's bytes, at most the size the kernel was handed, which chain
+ * substitution or a RedQueen pin can rewrite after the sanitiser drew its
+ * own; a size of 0 asks for the value's length, which nothing bounds. */
+static void xattr_size(void)
+{
+	static const struct {
+		const struct syscallentry *entry;
+		unsigned int slot;	/* the size's; the buffer's is the one before */
+	} getters[] = {
+		{ &syscall_getxattr, 4 },
+	};
+	static const struct {
+		const char *what;
+		unsigned long size;
+		unsigned long retval;
+		unsigned int bumps;
+	} cases[] = {
+		{ "a rewritten size of 0, the value's length",
+		  0, XATTR_DRAWN + 1, 0 },
+		{ "a rewritten size of 0, -1", 0, (unsigned long) -1L, 0 },
+		{ "a larger rewritten size, filled past the drawn one",
+		  4096, XATTR_DRAWN + 1, 0 },
+		{ "a byte past a larger rewritten size", 4096, 4097, 1 },
+		{ "a byte past a smaller rewritten size",
+		  XATTR_DRAWN / 2, XATTR_DRAWN / 2 + 1, 1 },
+	};
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int g, i, tries;
+
+	for (g = 0; g < ARRAY_SIZE(getters); g++) {
+		const struct syscallentry *entry = getters[g].entry;
+		unsigned int slot = getters[g].slot;
+
+		for (i = 0; i < ARRAY_SIZE(cases); i++) {
+			char what[128];
+
+			for (tries = 0; tries < 4096; tries++) {
+				memset(&rec, 0, sizeof(rec));
+				*slots[slot - 2] = (unsigned long) get_writable_address(page_size);
+				*slots[slot - 1] = XATTR_DRAWN;
+				entry->sanitise(&rec);
+				if (*slots[slot - 1] == XATTR_DRAWN)
+					break;
+				free((void *) rec.post_state);
+			}
+			if (tries == 4096)
+				BUG("an xattr sanitiser never kept the size it was handed");
+
+			*slots[slot - 1] = cases[i].size;
+			rec.arg_snapshot_mask = entry->arg_snapshot_mask;
+			rec.arg_shadow[slot - 1] = cases[i].size;
+			rec.retval = cases[i].retval;
+			rec.errno_post = ((long) cases[i].retval == -1L) ? ENODATA : 0;
+			bumps = 0;
+			dispatch_post(entry, &rec);
+
+			snprintf(what, sizeof(what), "%s, %s", entry->name,
+				 cases[i].what);
+			expect(what, bumps, cases[i].bumps);
+		}
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -531,6 +599,7 @@ void post_oracle_self_check(void)
 	recv_count();
 	recvmsg_count();
 	write_count();
+	xattr_size();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif
