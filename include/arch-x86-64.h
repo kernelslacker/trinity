@@ -17,6 +17,11 @@
 #define SYSCALLS32 syscalls_i386
 #define SYSCALLS64 syscalls_x86_64
 
+/*
+ * a6 takes a register: GCC addresses a memory operand off %rsp, and the
+ * asm reads it after its pushes have moved %rsp.  The kernel writes
+ * through the pointer arguments, hence the memory clobber.
+ */
 #define DO_32_SYSCALL \
 	__asm__ volatile ( \
 		"pushq %%rbp\n\t" \
@@ -32,6 +37,6 @@
 		"popq %%r8\n\t" \
 		"popq %%rbp\n\t" \
 		: "=a" (__res) \
-		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "g" ((long)(a6)) \
-		: "%rbp" /* mark EBP reg as dirty */ \
+		: "0" (call),"b" ((long)(a1)),"c" ((long)(a2)),"d" ((long)(a3)), "S" ((long)(a4)),"D" ((long)(a5)), "r" ((long)(a6)) \
+		: "%rbp" /* mark EBP reg as dirty */, "memory" \
 	);

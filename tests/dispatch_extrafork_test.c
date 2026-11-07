@@ -3,12 +3,14 @@
  * reports back through the shared record and a --dry-run call records in
  * the caller's own.  The fchdir, fchroot and setns sanitisers close only the
  * fd they opened, the coupling validator keeps F_SETSIG to signals the parent
- * ignores, the kernel is handed the slots the validator vetted, and a fork
- * failing in a dead pid namespace recycles the child.
+ * ignores, the kernel is handed the slots the validator vetted, a fork
+ * failing in a dead pid namespace recycles the child, and a compat call
+ * reaches the kernel with all six arguments.
  */
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/futex.h>
 #include <sched.h>
 #include <signal.h>
 #include <stdbool.h>
@@ -23,6 +25,7 @@
 #include <unistd.h>
 
 #include "args-internal.h"	/* nested_address_scrub */
+#include "arch.h"		/* DO_32_SYSCALL */
 #include "child.h"
 #include "child-internal.h"	/* pidns_note_fork_target, pidns_init_lost */
 #include "debug.h"		/* BUG */
@@ -438,6 +441,74 @@ static void selftest_vetted_slots_dispatched(void)
 	munmap(child, sizeof(*child));
 }
 
+#ifdef DO_32_SYSCALL
+/* i386 syscall numbers, as a compat call names them. */
+#define NR_GETPID_I386	20
+#define NR_FUTEX_I386	240
+
+/* Without IA32 emulation, int $0x80 faults; probe it in a fork. */
+static bool have_compat_calls(void)
+{
+	pid_t pid = fork();
+	int status;
+
+	if (pid < 0)
+		BUG("dispatch_extrafork: fork failed");
+	if (pid == 0) {
+		long ret;
+
+		__asm__ volatile ("int $0x80" : "=a" (ret) : "0" (NR_GETPID_I386)
+				  : "r8", "r9", "r10", "r11", "memory");
+		_exit(ret == getpid() ? 0 : 1);
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid)
+		BUG("dispatch_extrafork: cannot reap the compat probe");
+	return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+/*
+ * FUTEX_CMP_REQUEUE compares its sixth argument with the futex word and
+ * fails EAGAIN on a mismatch, so its return shows whether a compat call's
+ * sixth argument reached the kernel.  A compat call can only name a word
+ * below 4 GiB.
+ */
+static void selftest_compat_sixth_arg(void)
+{
+	struct syscallentry entry = { .name = "probe", .num_args = 6 };
+	struct childdata *child;
+	struct syscallrecord *rec;
+	uint32_t *word;
+
+	if (!have_compat_calls()) {
+		printf("(no IA32 emulation, skipping the compat call) ");
+		return;
+	}
+	word = mmap(NULL, page_size, PROT_READ | PROT_WRITE,
+		    MAP_PRIVATE | MAP_ANONYMOUS | MAP_32BIT, -1, 0);
+	if (word == MAP_FAILED)
+		BUG("dispatch_extrafork: cannot map a futex word below 4 GiB");
+	word[0] = 42;
+
+	child = map_child();
+	rec = &child->syscall;
+	rec->entry = &entry;
+	rec->do32bit = true;
+	rec->nr = NR_FUTEX_I386;
+	rec->a1 = (unsigned long) &word[0];
+	rec->a2 = FUTEX_CMP_REQUEUE | FUTEX_PRIVATE_FLAG;
+	rec->a3 = 0;
+	rec->a4 = 0;
+	rec->a5 = (unsigned long) &word[1];
+	rec->a6 = 42;
+	do_syscall(rec, &entry, &child->kcov, child);
+
+	if (rec->retval != 0)
+		BUG("dispatch_extrafork: a compat call lost its sixth argument");
+	munmap(child, sizeof(*child));
+	munmap(word, page_size);
+}
+#endif
+
 void dispatch_extrafork_self_check(void);
 void dispatch_extrafork_self_check(void)
 {
@@ -447,4 +518,7 @@ void dispatch_extrafork_self_check(void)
 	selftest_owned_fds();
 	selftest_fcntl_setsig();
 	selftest_vetted_slots_dispatched();
+#ifdef DO_32_SYSCALL
+	selftest_compat_sixth_arg();
+#endif
 }
