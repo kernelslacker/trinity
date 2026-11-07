@@ -12,9 +12,10 @@
 
 /*
  * Detect a fork-die-respawn busy-loop: when something corrupts shm such
- * that freshly-spawned children trip a startup check (e.g.
- * EXIT_SHM_CORRUPTION at child.c:613 or EXIT_REPARENT_PROBLEM at
- * child.c:795) and exit within milliseconds of being forked, the parent
+ * that freshly-spawned children trip an early check (e.g.
+ * EXIT_SHM_CORRUPTION in init_child_setup_sandbox(), or
+ * EXIT_REPARENT_PROBLEM from check_parent_pid() on the first loop
+ * iteration) and exit within milliseconds of being forked, the parent
  * enters a perpetual reap-replace cycle.  The existing
  * consecutive_fork_failures cap in fork_children() only counts
  * spawn_child() returning false (fork() itself failing); it does NOT

@@ -293,7 +293,7 @@ struct childop_stats {
 	 * accounting-noise counter for doubly-forked contexts: fork
 	 * grandchildren inherit cached_childno/cached_pid/cached_child
 	 * unchanged via COW and take the fast path; this_child() never
-	 * returns NULL inside a childop body (dispatch/pids.c:181-201).
+	 * returns NULL inside a childop body (dispatch/pids.c).
 	 * A non-zero value is a corruption signal and should be treated
 	 * as diagnostic evidence of shm integrity loss.  RELAXED
 	 * add-fetch: cumulative diagnostic, multi-producer. */

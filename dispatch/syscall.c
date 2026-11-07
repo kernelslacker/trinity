@@ -39,12 +39,13 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		 * total_calls / per_syscall_calls[nr] and the arg-drain
 		 * in handle_syscall_ret() still runs on return.
 		 *
-		 * Deliberately softer than the two child/child.c chokepoints
-		 * (loop-top :299 and childop-dispatch :736) which abort the
-		 * child on any seal failure.  A mprotect failure at this site
-		 * lets the iteration complete so handle_syscall_ret() drains
-		 * the arg state cleanly; the loop-top seal at the next
-		 * iteration will catch a persistent failure and abort then.
+		 * Deliberately softer than the two chokepoints in
+		 * child_process(), the loop-top seal and the childop-dispatch
+		 * seal, which abort the child on any seal failure.  A
+		 * mprotect failure at this site lets the iteration complete
+		 * so handle_syscall_ret() drains the arg state cleanly; the
+		 * loop-top seal at the next iteration will catch a persistent
+		 * failure and abort then.
 		 * This bounds the impact to at most one miscounted op per
 		 * child cycle while avoiding a mid-iteration teardown that
 		 * would leak post_state.  The softer behaviour is intentional

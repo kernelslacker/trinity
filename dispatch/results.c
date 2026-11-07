@@ -240,7 +240,7 @@ void handle_success(struct syscallrecord *rec, struct syscallentry *entry)
 	 * without bumping the results[] table -- would let __builtin_ctz
 	 * return 6 or 7 and the get_results_ptr() lookup below would
 	 * index past the per-entry six-result array.  Mirrors the same
-	 * clamp at syscall.c:255 for arg_snapshot_mask. */
+	 * clamp on arg_snapshot_mask in snapshot_dispatch_args(). */
 	mask &= 0x3f;
 	while (mask != 0) {
 		unsigned int i = (unsigned int)__builtin_ctz(mask) + 1;

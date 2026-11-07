@@ -481,10 +481,11 @@ void child_process(struct childdata *child, int childno)
 		 * vDSO clock_gettime is fast (~20 ns) but at ~700 ops/sec
 		 * across 32 children it adds up; rec->tp consumers (taint
 		 * ordering, pre_crash_ring) only need second-level
-		 * granularity, and the parent-side stall reaper compares
-		 * tv_sec with a 30-second threshold (main/loop.c:653).  At 700
-		 * iters/sec a 16-iter sample interval is ~23 ms — well
-		 * inside the second-level tolerance. */
+		 * granularity, and the parent-side stall reaper,
+		 * is_child_making_progress(), compares tv_sec against a
+		 * 30-second threshold.  At 700 iters/sec a 16-iter sample
+		 * interval is ~23 ms — well inside the second-level
+		 * tolerance. */
 		if (tick16)
 			clock_gettime(CLOCK_MONOTONIC, &child->tp);
 
