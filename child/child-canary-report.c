@@ -336,9 +336,10 @@ enum child_op_type canary_active_op(void)
 		return canary_active_op_cell;
 	if (canary_pending_op_set)
 		return canary_pending_op;
-	/* Parked: stamp the slot with the default syscall op so the
-	 * child runs the normal pick_op_type() path until the queue
-	 * stages a new pending op. */
+	/* Parked: stamp the slot with the default syscall op.  A canary
+	 * slot is a dedicated alt-op child, which skips pick_op_type(),
+	 * so it runs the plain syscall loop until the queue stages a new
+	 * pending op. */
 	return CHILD_OP_SYSCALL;
 }
 
