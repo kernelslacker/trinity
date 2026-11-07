@@ -1398,6 +1398,83 @@ static void cut_fd_rewritten(void)
 	}
 }
 
+/* Calls per rt_sigpending case: its procfs compare is sampled one in a
+ * hundred. */
+#define SIGPENDING_CALLS	1500
+
+/* rt_sigpending calls the sanitiser built with a sigsetsize of 8, which
+ * the kernel ran with @ran, writing that many bytes of this process's
+ * pending mask, none pending, when @written; the untouched buffers and
+ * the anomalies they report.  The buffer is a page, so a read past the
+ * kernel's 8 bytes stays mapped. */
+static void sigpending_reports(unsigned long ran, bool written,
+			       unsigned long *untouched,
+			       unsigned long *anomalies)
+{
+	static struct syscallrecord rec;
+	static const uint64_t none_pending;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned long untouched_before = shm->stats.post_handler_untouched_out_buf;
+	unsigned long anomalies_before = shm->stats.oracle.rt_sigpending_oracle_anomalies;
+	unsigned int i, k, tries;
+
+	for (i = 0; i < SIGPENDING_CALLS; i++) {
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = (unsigned long) get_writable_address(page_size);
+			syscall_rt_sigpending.sanitise(&rec);
+			if (rec.a2 == sizeof(uint64_t))
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == 4096)
+			BUG("rt_sigpending sanitiser never drew the kernel's sigsetsize");
+
+		if (written)
+			memcpy((void *) rec.a1, &none_pending, ran);
+		/* The slots the kernel was handed, as __do_syscall()
+		 * shadows them. */
+		rec.a2 = ran;
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec.arg_shadow[k] = *slots[k];
+		rec.arg_snapshot_mask = syscall_rt_sigpending.arg_snapshot_mask;
+		rec.retval = 0;
+		syscall_rt_sigpending.post(&rec);
+	}
+	*untouched = shm->stats.post_handler_untouched_out_buf - untouched_before;
+	*anomalies = shm->stats.oracle.rt_sigpending_oracle_anomalies - anomalies_before;
+}
+
+/* rt_sigpending() writes the kernel's 8-byte set, not glibc's 128-byte
+ * sigset_t: a call that wrote it is no untouched one and agrees with
+ * /proc/self/status, and one that left the sanitiser's poison is reported
+ * by both checks. */
+static void sigpending_cases(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long ran;
+		bool written;
+		bool untouched, anomalies;
+	} cases[] = {
+		{ "rt_sigpending, the whole mask", 8, true, false, false },
+		{ "rt_sigpending, the mask left unwritten", 8, false, true, true },
+	};
+	unsigned long untouched, anomalies;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		sigpending_reports(cases[i].ran, cases[i].written, &untouched,
+				   &anomalies);
+		if ((untouched != 0) != cases[i].untouched ||
+		    (anomalies != 0) != cases[i].anomalies) {
+			fprintf(stderr, "%s: %lu untouched, %lu anomalies\n",
+				cases[i].what, untouched, anomalies);
+			failed++;
+		}
+	}
+}
+
 #ifdef USE_BPF
 static unsigned int bpf_published;
 
@@ -1518,6 +1595,7 @@ void post_oracle_self_check(void)
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
+	sigpending_cases();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH

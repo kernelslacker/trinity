@@ -165,7 +165,6 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	struct rt_sigpending_post_state *snap;
 	uint64_t syscall_pending, proc_pending;
 	uint64_t sigpnd = 0, shdpnd = 0;
-	sigset_t sset;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -184,9 +183,11 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	if (snap->sigsetsize != KERNEL_SIGSET_SIZE)
 		goto out_free;
 
-	if (!post_snapshot_or_skip(&sset,
+	/* The kernel writes its own KERNEL_SIGSET_SIZE-byte set, not
+	 * glibc's 128-byte sigset_t, and the poison covers only that. */
+	if (!post_snapshot_or_skip(&syscall_pending,
 				   (const void *) snap->set,
-				   sizeof(sset)))
+				   sizeof(syscall_pending)))
 		goto out_free;
 
 	/*
@@ -200,14 +201,13 @@ static void post_rt_sigpending(struct syscallrecord *rec)
 	 * cheaper, no-re-issue signal.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct(&sset, sizeof(sset), snap->poison_seed))
+	    check_output_struct(&syscall_pending, sizeof(syscall_pending),
+				snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
 		goto out_free;
-
-	memcpy(&syscall_pending, &sset, sizeof(syscall_pending));
 
 	/*
 	 * Pair-read both halves from a single /proc/self/status snapshot.

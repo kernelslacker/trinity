@@ -675,6 +675,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
 PARENT_SRCS	+= $(TOP)/syscalls/fs/fallocate.c \
 		   $(TOP)/syscalls/fs/ftruncate.c
 
+# syscalls/signal/rt_sigpending.c brings rt_sigpending, whose
+# untouched-buffer check and /proc/self/status compare post_oracle_test.c
+# runs.
+PARENT_SRCS	+= $(TOP)/syscalls/signal/rt_sigpending.c
+
 # syscalls/lsm/lsm_get_self_attr.c brings lsm_get_self_attr, whose re-call
 # selector_recall_test.c runs against a fake of the syscall.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_get_self_attr.c
