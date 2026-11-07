@@ -20,7 +20,7 @@
 #include "fd.h"			/* read_all, write_all */
 #include "kcov-internal.h"	/* kcov_kaslr_base, public kcov API */
 #include "persist-envelope.h"
-#include "persist-util.h"	/* persist_sweep_stale_tmp, persist_mkdir_p */
+#include "persist-util.h"	/* persist_sweep_stale_tmp, persist_default_path */
 #include "pids.h"		/* mypid */
 #include "shm.h"		/* shm */
 #include "stats.h"		/* stats_log_write */
@@ -1334,68 +1334,8 @@ bool kcov_bitmap_load_file(const char *path)
 const char *kcov_bitmap_default_path(void)
 {
 	static char pathbuf[PATH_MAX];
-	const char *xdg = getenv("XDG_CACHE_HOME");
-	const char *home = getenv("HOME");
-	char dir[PATH_MAX];
-	const char *arch;
-	char release[256];
-	int ret;
-	int rfd;
-	ssize_t rn;
-	char *nl;
 
-#if defined(__x86_64__)
-	arch = "x86_64";
-#elif defined(__i386__)
-	arch = "i386";
-#elif defined(__aarch64__)
-	arch = "aarch64";
-#elif defined(__arm__)
-	arch = "arm";
-#elif defined(__riscv) && __riscv_xlen == 64
-	arch = "riscv64";
-#elif defined(__loongarch64)
-	arch = "loongarch64";
-#else
-	arch = "unknown";
-#endif
-
-	rfd = open("/proc/sys/kernel/osrelease", O_RDONLY);
-	if (rfd < 0)
-		return NULL;
-	rn = read(rfd, release, sizeof(release) - 1);
-	(void)close(rfd);
-	if (rn <= 0)
-		return NULL;
-	release[rn] = '\0';
-	nl = strchr(release, '\n');
-	if (nl != NULL)
-		*nl = '\0';
-	/* Sanitise: '/' would split the path; replace in place. */
-	for (nl = release; *nl; nl++) {
-		if (*nl == '/')
-			*nl = '_';
-	}
-
-	if (xdg && xdg[0] == '/')
-		ret = snprintf(dir, sizeof(dir),
-			       "%s/trinity/kcov-bitmap", xdg);
-	else if (home && home[0] == '/')
-		ret = snprintf(dir, sizeof(dir),
-			       "%s/.cache/trinity/kcov-bitmap", home);
-	else
-		return NULL;
-	if (ret < 0 || (size_t)ret >= sizeof(dir))
-		return NULL;
-
-	if (persist_mkdir_p(dir) != 0)
-		return NULL;
-
-	ret = snprintf(pathbuf, sizeof(pathbuf), "%s/%s-%s",
-		       dir, arch, release);
-	if (ret < 0 || (size_t)ret >= sizeof(pathbuf))
-		return NULL;
-	return pathbuf;
+	return persist_default_path("kcov-bitmap", pathbuf, sizeof(pathbuf));
 }
 
 /*
