@@ -82,6 +82,7 @@ static void sanitise_mseal(struct syscallrecord *rec)
 {
 	struct mseal_post_state *snap;
 	unsigned long first, pages;
+	int mflags = MAP_PRIVATE | MAP_ANONYMOUS;
 	void *p;
 
 	snap = zmalloc_tracked(sizeof(*snap));
@@ -90,16 +91,21 @@ static void sanitise_mseal(struct syscallrecord *rec)
 	/*
 	 * A sub-range of a fresh anonymous mapping, outside every pool and
 	 * tracked region, its length now and then short of its last page,
-	 * which the kernel rounds up to.  Past the cap, or with no mapping,
-	 * the range is empty: the kernel still checks the flags and the
-	 * start, then returns 0 having sealed nothing.
+	 * which the kernel rounds up to.  A compat call reads the start as
+	 * its low 32 bits, so its mapping is made MAP_32BIT, where they
+	 * reach it.  Past the cap, or with no mapping, the range is empty:
+	 * the kernel still checks the flags and the start, then returns 0
+	 * having sealed nothing.
 	 */
+#if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
+	if (rec->do32bit)
+		mflags |= MAP_32BIT;
+#endif
 	rec->a1 = 0;
 	rec->a2 = 0;
 	if (mseal_sealed < MSEAL_MAX_SEALED) {
 		p = mmap(NULL, MSEAL_MAP_PAGES * page_size,
-			 PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS,
-			 -1, 0);
+			 PROT_READ | PROT_WRITE, mflags, -1, 0);
 		if (p != MAP_FAILED) {
 			snap->base = (unsigned long) p;
 			snap->size = MSEAL_MAP_PAGES * page_size;

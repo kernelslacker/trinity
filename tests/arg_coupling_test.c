@@ -1788,6 +1788,29 @@ static void mseal_rewrites_held(struct syscallrecord *mrec, unsigned long base)
 		BUG("mseal: flags that pass or fail as the drawn ones did were refused");
 }
 
+/* A compat call reads mseal's start as its low 32 bits, so the disposable
+ * mapping a compat record gets lies below 4 GiB, and the range built in it
+ * passes the hook as it stands.  Runs before the cap is used up. */
+static void mseal_compat_range_reachable(void)
+{
+#if defined(ARCH_IS_BIARCH) && defined(MAP_32BIT)
+	struct syscallentry entry = syscall_mseal;
+	struct syscallrecord *mrec = mm_call(&entry);
+
+	mrec->do32bit = true;
+	entry.sanitise(mrec);
+	if (mrec->a1 == 0)
+		BUG("mseal: a compat call under the cap was given no mapping");
+	if (mrec->a1 + mrec->a2 > UINT32_MAX)
+		BUG("mseal: a compat call's range lies past 4 GiB");
+	if (validate_arg_coupling(mrec, mrec->entry) != 0)
+		BUG("mseal: a compat call's range was refused");
+	mrec->retval = (unsigned long) -1L;
+	entry.cleanup(mrec);
+	fake_this_child = NULL;
+#endif
+}
+
 /* mseal seals only a mapping its sanitiser makes for the call, never a
  * pool mapping, and holds the final slots to it.  The cleanup gives the
  * mapping back by its extent, not by the slots a rewrite moved, unless the
@@ -5966,6 +5989,7 @@ void arg_coupling_self_check(void)
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();
 	home_node_range_gets_a_policy();
+	mseal_compat_range_reachable();
 	mseal_seals_only_its_own_mapping();
 	remap_file_pages_range_held_to_mapping();
 	mprotect_range_held_to_mapping();
