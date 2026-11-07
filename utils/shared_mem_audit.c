@@ -40,6 +40,7 @@ bool range_overlaps_shared_slow(unsigned long addr, unsigned long len,
 				unsigned long *entry_size,
 				const char **entry_origin)
 {
+	const struct shared_region_entry *r;
 	unsigned long end;
 	unsigned int i;
 
@@ -47,9 +48,9 @@ bool range_overlaps_shared_slow(unsigned long addr, unsigned long len,
 		return true;
 	end = addr + len;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		unsigned long rstart = shared_regions[i].addr;
-		unsigned long rsize = shared_regions[i].size;
+	for_each_shared_region(i, r) {
+		unsigned long rstart = r->addr;
+		unsigned long rsize = r->size;
 		unsigned long rend;
 
 		if (rsize == 0)
@@ -59,23 +60,7 @@ bool range_overlaps_shared_slow(unsigned long addr, unsigned long len,
 			     : (addr < rend && rstart < end)) {
 			if (entry_addr)   *entry_addr = rstart;
 			if (entry_size)   *entry_size = rsize;
-			if (entry_origin) *entry_origin = shared_regions[i].origin;
-			return true;
-		}
-	}
-	for (i = 0; i < nr_shared_regions_overflow; i++) {
-		unsigned long rstart = shared_regions_overflow[i].addr;
-		unsigned long rsize = shared_regions_overflow[i].size;
-		unsigned long rend;
-
-		if (rsize == 0)
-			continue;
-		rend = rstart + rsize;
-		if (len == 0 ? (addr >= rstart && addr < rend)
-			     : (addr < rend && rstart < end)) {
-			if (entry_addr)   *entry_addr = rstart;
-			if (entry_size)   *entry_size = rsize;
-			if (entry_origin) *entry_origin = shared_regions_overflow[i].origin;
+			if (entry_origin) *entry_origin = r->origin;
 			return true;
 		}
 	}
