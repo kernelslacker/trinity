@@ -40,7 +40,7 @@ void init_global_objects(void)
 
 /*
  * Lift the parent's pre-fork OBJ_GLOBAL pool into the owning child's
- * private heap.  The parent populates shm->global_objects[] in
+ * private heap.  The parent populates parent_global_objects[] in
  * init_global_objects() before fork; each child then runs this routine
  * from init_child() to take a shallow snapshot of the head fields and
  * the live slot pointers into the child's own zmalloc'd backing.
