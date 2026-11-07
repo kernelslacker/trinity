@@ -4,9 +4,10 @@
  * the y2038 calls reads them as 32-bit fields (struct old_timespec32,
  * old_timeval32 and the itimer pairs of them), so each is written in
  * that layout for one and as the native struct for any other call.
- * pselect6's sigset argpack, which every compat call reads as 32-bit
- * words, is held to its layout too.  Each case draws until the buffer
- * shows a value only the right layout can hold.
+ * pselect6's sigset argpack and the block old_select() reads its
+ * arguments from, which every compat call reads as 32-bit words, are
+ * held to their layouts too.  Each case draws until the buffer shows a
+ * value only the right layout can hold.
  */
 
 #include <limits.h>
@@ -100,6 +101,7 @@ static struct object *no_object(int fd)
 #define NR_UTIMENSAT_TIME32		320
 #define NR_TIMERFD_SETTIME_TIME32	325
 #define NR_NEWSELECT_TIME32		142
+#define NR_OLD_SELECT_TIME32		82
 #define NR_PSELECT6_TIME32		308
 #define NR_PSELECT6_TIME64		413
 #define NR_ADJTIMEX_TIME32		124
@@ -246,6 +248,18 @@ static bool compat_tick_set(const void *buf)
 	return tx->modes == ADJ_TICK && tx->tick >= 9000 && tx->tick <= 11000;
 }
 
+/* old_select()'s block, an nfds in the range the sanitiser draws and the
+ * four buffers; a pool buffer first, as a call handed the bare slots
+ * carries nfds where the block's pointer goes. */
+static bool compat_select_block(const void *buf)
+{
+	const struct compat_sel_arg_struct *args = buf;
+
+	return starts_in_call_pools((unsigned long) buf) &&
+	       args->n >= 1 && args->n <= 1023 && args->inp != 0 &&
+	       args->outp != 0 && args->exp != 0 && args->tvp != 0;
+}
+
 /* A mask, and the 8 bytes set_compat_user_sigmask() wants for one. */
 static bool compat_argpack_sized(const void *buf)
 {
@@ -312,6 +326,9 @@ void gen_arg_time_self_check(void)
 	if (!sanitised(&syscall_select, NR_NEWSELECT_TIME32, 5,
 		       compat_short_usec_wait))
 		BUG("gen_arg_time: select's timeout never reached a time32 call");
+	if (!sanitised(&syscall_select, NR_OLD_SELECT_TIME32, 1,
+		       compat_select_block))
+		BUG("gen_arg_time: select at 82 never handed old_select() its block");
 	if (!sanitised(&syscall_pselect6, NR_PSELECT6_TIME32, 5,
 		       compat_short_wait))
 		BUG("gen_arg_time: pselect6's timeout never reached a time32 call");

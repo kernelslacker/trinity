@@ -2,9 +2,12 @@
  * SYSCALL_DEFINE5(select, int, n, fd_set __user *, inp, fd_set __user *, outp,
 	fd_set __user *, exp, struct timeval __user *, tvp)
  */
+#include <stdbool.h>
+#include <stdint.h>
 #include <sys/time.h>
 
 #include "fd.h"
+#include "kernel/compat.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -63,6 +66,27 @@ struct select_post_state {
 	unsigned long magic;
 	unsigned int nfds;
 };
+
+/*
+ * i386's select at 82, and so an x86-64 compat call through the i386
+ * table, is old_select(): the kernel copies all five arguments from a
+ * block at a1 (sys_old_select(), compat_sys_old_select()), five 32-bit
+ * words either way, which the sanitiser builds.  _newselect at 142 takes
+ * them in the slots.
+ */
+#define NR_I386_OLD_SELECT	82
+
+static bool select_takes_arg_struct(const struct syscallrecord *rec)
+{
+#if defined(__x86_64__)
+	return rec->do32bit && rec->nr == NR_I386_OLD_SELECT;
+#elif defined(__i386__)
+	return rec->nr == NR_I386_OLD_SELECT;
+#else
+	(void) rec;
+	return false;
+#endif
+}
 
 static void sanitise_select(struct syscallrecord *rec)
 {
@@ -156,6 +180,22 @@ static void sanitise_select(struct syscallrecord *rec)
 		time_struct_for_abi(rec, tv, 1);
 		rec->a5 = (unsigned long) tv;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct timeval));
+	}
+
+	/* get_writable_struct() serves a compat call from the low pool, so
+	 * a1 carries the block's address whole. */
+	if (select_takes_arg_struct(rec)) {
+		struct compat_sel_arg_struct *args =
+			get_writable_struct(sizeof(*args));
+
+		if (args != NULL) {
+			args->n    = (uint32_t) rec->a1;
+			args->inp  = (uint32_t) rec->a2;
+			args->outp = (uint32_t) rec->a3;
+			args->exp  = (uint32_t) rec->a4;
+			args->tvp  = (uint32_t) rec->a5;
+			rec->a1 = (unsigned long) args;
+		}
 	}
 
 	/*

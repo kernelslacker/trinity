@@ -40,6 +40,16 @@ struct compat_sigset_argpack {
 	__u32 size;
 };
 
+/* Also from fs/select.c: the block i386's select at 82, old_select(),
+ * reads its five arguments from. */
+struct compat_sel_arg_struct {
+	__u32 n;
+	__u32 inp;
+	__u32 outp;
+	__u32 exp;
+	__u32 tvp;
+};
+
 /*
  * The y2038 calls sit at 403 (clock_gettime64) to 423 on every 32-bit
  * ABI, and every call numbered past them takes 64-bit time, so a compat
@@ -102,6 +112,8 @@ _Static_assert(sizeof(struct compat_mmsghdr) == 32,
 	       "compat_mmsghdr must be a compat msghdr plus one 32-bit word");
 _Static_assert(sizeof(struct compat_sigset_argpack) == 8,
 	       "compat_sigset_argpack must be two 32-bit words");
+_Static_assert(sizeof(struct compat_sel_arg_struct) == 20,
+	       "compat_sel_arg_struct must be five 32-bit words");
 _Static_assert(sizeof(struct old_timespec32) == 8,
 	       "old_timespec32 must be two 32-bit words");
 _Static_assert(sizeof(struct old_itimerspec32) == 16,
