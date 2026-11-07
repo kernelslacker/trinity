@@ -1811,6 +1811,41 @@ static void mseal_compat_range_reachable(void)
 #endif
 }
 
+/* A compat call's kernel reads map_shadow_stack's size as its low 32 bits
+ * and maps that much, so the post handler gives back that much and no
+ * more: the 64-bit slot would run the unmap past the shadow stack over
+ * whatever lies above it.  The page past the one mapped stands in for
+ * that, held by the munmap wrap. */
+static void map_shadow_stack_compat_unmaps_its_mapping(void)
+{
+	struct syscallentry entry = syscall_map_shadow_stack;
+	struct syscallrecord *mrec = mm_call(&entry);
+	unsigned char vec;
+	unsigned long base;
+	void *p;
+
+	p = mmap(NULL, 2 * page_size, PROT_READ | PROT_WRITE,
+		 MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+	if (p == MAP_FAILED)
+		BUG("map_shadow_stack: no mapping to stand in for a shadow stack");
+	base = (unsigned long) p;
+
+	mrec->do32bit = true;
+	mrec->a2 = (1UL << 32) + page_size;
+	mrec->retval = base;
+	munmap_sealed = base + page_size;
+	munmap_refused_len = 0;
+	entry.post(mrec);
+	munmap_sealed = 0;
+	fake_this_child = NULL;
+
+	if (munmap_refused_len != 0)
+		BUG("map_shadow_stack: a compat call's unmap ran past the size the kernel mapped");
+	if (mincore(p, page_size, &vec) == 0)
+		BUG("map_shadow_stack: a compat call's mapping was not given back");
+	munmap((void *) (base + page_size), page_size);
+}
+
 /* mseal seals only a mapping its sanitiser makes for the call, never a
  * pool mapping, and holds the final slots to it.  The cleanup gives the
  * mapping back by its extent, not by the slots a rewrite moved, unless the
@@ -5989,6 +6024,7 @@ void arg_coupling_self_check(void)
 	range_pages_read_as_the_kernel_does();
 	home_node_range_held_to_mapping();
 	home_node_range_gets_a_policy();
+	map_shadow_stack_compat_unmaps_its_mapping();
 	mseal_compat_range_reachable();
 	mseal_seals_only_its_own_mapping();
 	remap_file_pages_range_held_to_mapping();

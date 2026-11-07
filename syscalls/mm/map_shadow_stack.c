@@ -29,6 +29,7 @@ static void sanitise_map_shadow_stack(struct syscallrecord *rec)
 static void post_map_shadow_stack(struct syscallrecord *rec)
 {
 	void *p = (void *)rec->retval;
+	unsigned long size;
 
 	if (p == MAP_FAILED)
 		return;
@@ -49,7 +50,12 @@ static void post_map_shadow_stack(struct syscallrecord *rec)
 		return;
 	}
 
-	munmap(p, get_arg_snapshot(rec, 2));
+	/* A compat call's kernel mapped the size's low 32 bits; the rest
+	 * would unmap whatever lies above the shadow stack. */
+	size = get_arg_snapshot(rec, 2);
+	if (rec->do32bit)
+		size = (unsigned int) size;
+	munmap(p, size);
 }
 
 struct syscallentry syscall_map_shadow_stack = {

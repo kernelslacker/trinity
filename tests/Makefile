@@ -944,10 +944,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/process/wait4.c \
 # mapping in the test process and whose hook and cleanup the same test
 # runs.  syscalls/mm/numa/move_pages.c brings move_pages, whose sanitiser
 # and hook it runs too, the arrays on the heap with every map lookup empty.
+# syscalls/mm/map_shadow_stack.c brings map_shadow_stack, whose post
+# handler's unmap it holds to a stand-in mapping through the munmap wrap.
 PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/set_mempolicy_home_node.c \
 		   $(TOP)/syscalls/mm/mseal.c \
 		   $(TOP)/syscalls/mm/remap_file_pages.c \
-		   $(TOP)/syscalls/mm/numa/move_pages.c
+		   $(TOP)/syscalls/mm/numa/move_pages.c \
+		   $(TOP)/syscalls/mm/map_shadow_stack.c
 
 # objects/registry-pick.c and registry.c bring the pool readers:
 # get_random_object(), objpool_check(), objects_empty() and
