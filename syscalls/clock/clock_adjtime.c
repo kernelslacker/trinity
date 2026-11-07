@@ -75,6 +75,7 @@ static void sanitise_clock_adjtime(struct syscallrecord *rec)
 		break;
 	}
 
+	timex_for_abi(rec, tx);
 	rec->a2 = (unsigned long) tx;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct timex));
 }

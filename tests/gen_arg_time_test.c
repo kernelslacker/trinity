@@ -82,6 +82,7 @@ int get_pollable_random_fd(void)
 }
 
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
+extern bool fake_pid_draws;	/* dup_pool_test.c */
 
 static struct object *no_object(int fd)
 {
@@ -102,6 +103,7 @@ static struct object *no_object(int fd)
 #define NR_PSELECT6_TIME32		308
 #define NR_PSELECT6_TIME64		413
 #define NR_ADJTIMEX_TIME32		124
+#define NR_CLOCK_ADJTIME_TIME32		343
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -322,4 +324,11 @@ void gen_arg_time_self_check(void)
 	if (!sanitised(&syscall_adjtimex, NR_ADJTIMEX_TIME32, 1,
 		       compat_tick_set))
 		BUG("gen_arg_time: adjtimex's tick never reached a time32 call");
+	/* clock_adjtime's sanitiser picks a clock, a process CPU clock
+	 * among them, which names the test's own pid. */
+	fake_pid_draws = true;
+	if (!sanitised(&syscall_clock_adjtime, NR_CLOCK_ADJTIME_TIME32, 2,
+		       compat_tick_set))
+		BUG("gen_arg_time: clock_adjtime's tick never reached a time32 call");
+	fake_pid_draws = false;
 }

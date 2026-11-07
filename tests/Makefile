@@ -993,15 +993,17 @@ FAKE_SRCS	+= io_uring_register_test.c
 # layout each call's ABI reads, syscalls/timer/timer_settime.c the
 # sanitiser that rewrites ARG_ITIMERSPEC's struct, and
 # syscalls/fs/timestamp/utimensat.c, syscalls/timer/timerfd_settime.c,
-# syscalls/poll/pselect6.c, syscalls/poll/select.c and
-# syscalls/clock/adjtimex.c ones that build their own.
+# syscalls/poll/pselect6.c, syscalls/poll/select.c,
+# syscalls/clock/adjtimex.c and syscalls/clock/clock_adjtime.c ones that
+# build their own.
 PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
 		   $(TOP)/syscalls/timer/timer_settime.c \
 		   $(TOP)/syscalls/fs/timestamp/utimensat.c \
 		   $(TOP)/syscalls/timer/timerfd_settime.c \
 		   $(TOP)/syscalls/poll/pselect6.c \
 		   $(TOP)/syscalls/poll/select.c \
-		   $(TOP)/syscalls/clock/adjtimex.c
+		   $(TOP)/syscalls/clock/adjtimex.c \
+		   $(TOP)/syscalls/clock/clock_adjtime.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
 # syscalls/concurrency/futex.c brings futex's sanitiser, which
