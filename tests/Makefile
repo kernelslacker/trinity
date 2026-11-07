@@ -627,13 +627,16 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/read.c \
 		   $(TOP)/args/pools/xattr.c
 
 # syscalls/clock/clock_getres.c, syscalls/process/getrlimit.c,
-# getrusage.c and prlimit64.c bring the selector re-call oracles whose
-# sanitisers and post handlers selector_recall_test.c runs, and
-# utils/rlimit-safe.c the resource picks prlimit64's sanitiser makes.
+# getrusage.c, prlimit64.c and syscalls/fs/stat/sysfs.c bring the
+# selector re-call oracles whose sanitisers and post handlers
+# selector_recall_test.c runs, sysfs's answered through landlock_test.c's
+# syscall() seam, and utils/rlimit-safe.c the resource picks prlimit64's
+# sanitiser makes.
 PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 		   $(TOP)/syscalls/process/getrlimit.c \
 		   $(TOP)/syscalls/process/getrusage.c \
 		   $(TOP)/syscalls/process/prlimit64.c \
+		   $(TOP)/syscalls/fs/stat/sysfs.c \
 		   $(TOP)/utils/rlimit-safe.c
 
 # syscalls/fs/readlink.c brings readlink, whose count bound

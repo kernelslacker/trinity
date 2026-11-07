@@ -14,29 +14,25 @@
 #include "trinity.h"
 #include "utils.h"
 
+#include "kernel/unistd.h"
+
 static unsigned long sysfs_options[] = {
 	1, 2, 3,
 };
 
 #if defined(SYS_sysfs) || defined(__NR_sysfs)
-#ifndef SYS_sysfs
-#define SYS_sysfs __NR_sysfs
-#endif
-
 /*
- * Snapshot of the three sysfs input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect us at a foreign user
- * buffer and cannot smear the option discriminator or the index used
- * to seed the re-issue.
+ * Snapshot of the sysfs buffer read by the post oracle, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect us at a foreign user buffer.  The
+ * option and the index the re-issue takes are read from the slots the
+ * kernel was handed instead.
  */
 #define SYSFS_POST_STATE_MAGIC	0x53595346535354UL	/* "SYSFSST" */
 struct sysfs_post_state {
 	unsigned long magic;
-	unsigned long option;
-	unsigned long idx;
 	unsigned long buf;
 };
 #endif
@@ -66,24 +62,21 @@ static void sanitise_sysfs(struct syscallrecord *rec)
 
 #if defined(SYS_sysfs) || defined(__NR_sysfs)
 	/*
-	 * Snapshot the three input args for the post oracle.  Without
-	 * this the post handler reads rec->aN at post-time, when a
-	 * sibling syscall may have scribbled the slots:
-	 * looks_like_corrupted_ptr() cannot tell a real-but-wrong heap
-	 * address from the original user buffer pointer, so the memcpy
-	 * / re-issue would touch a foreign allocation.  post_state is
-	 * private to the post handler.  Done unconditionally for all
-	 * three options -- option 1 and option 3 will short-circuit in
-	 * the post handler, but always-allocating keeps the post path
-	 * branch-free of option-specific snapshot logic.  Gated to
-	 * mirror the .post registration -- on systems without
-	 * SYS_sysfs the post handler is not registered and a snapshot
-	 * only the post handler can free would leak.
+	 * Snapshot the buffer for the post oracle.  Without this the post
+	 * handler reads rec->a3 at post-time, when a sibling syscall may
+	 * have scribbled the slot: looks_like_corrupted_ptr() cannot tell
+	 * a real-but-wrong heap address from the original user buffer
+	 * pointer, so the memcpy / re-issue would touch a foreign
+	 * allocation.  post_state is private to the post handler.  Done
+	 * unconditionally for all three options -- option 1 and option 3
+	 * will short-circuit in the post handler, but always-allocating
+	 * keeps the post path branch-free of option-specific snapshot
+	 * logic.  Gated to mirror the .post registration -- on systems
+	 * without SYS_sysfs the post handler is not registered and a
+	 * snapshot only the post handler can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic  = SYSFS_POST_STATE_MAGIC;
-	snap->option = rec->a1;
-	snap->idx    = rec->a2;
 	snap->buf    = rec->a3;
 	post_state_install(rec, snap);
 #endif
@@ -115,21 +108,21 @@ static void sanitise_sysfs(struct syscallrecord *rec)
  *     entry under load and producing an off-by-one index→name map.
  *
  * Only option 2 has a writeback buffer to oracle: option 1 returns an
- * index in the retval (no buffer) and option 3 returns a count (no
- * args).  The three input args (option, idx, buf) are snapshotted at
- * sanitise time into a heap struct in rec->post_state, so a sibling
- * that scribbles rec->aN between syscall return and post entry cannot
- * redirect us at a foreign user buffer and cannot smear the index
- * used to seed the re-issue.  The receive buffer contents are then
- * snapshotted to a stack-local before re-issuing the syscall.  The
- * re-call MUST target a fresh stack buffer, never the snapshot's buf
- * field -- a sibling could mutate the original receive buffer
- * mid-syscall and forge a clean compare.  Drop the sample if the
- * re-call returns < 0 (kernel rejected the index on retry, benign).
- * Compare with a length-bounded memcmp using strnlen on both buffers
- * so a missing NUL terminator does not walk off the stack frame.
- * Sample one in a hundred to stay in line with the rest of the
- * oracle family.
+ * index in the retval (no buffer) and option 3 returns a count (no args).
+ * The option and the index are the ones the kernel was handed, which
+ * chain substitution may have rewritten after the sanitiser drew its own,
+ * and the buf pointer is snapshotted at sanitise time into a heap struct
+ * in rec->post_state, so a sibling that scribbles rec->aN between syscall
+ * return and post entry cannot redirect us at a foreign user buffer.  The
+ * receive buffer contents are then snapshotted to a stack-local before
+ * re-issuing the syscall.  The re-call MUST target a fresh stack buffer,
+ * never the snapshot's buf field -- a sibling could mutate the original
+ * receive buffer mid-syscall and forge a clean compare.  Drop the sample
+ * if the re-call returns < 0 (kernel rejected the index on retry,
+ * benign).  Compare with a length-bounded memcmp using strnlen on both
+ * buffers so a missing NUL terminator does not walk off the stack frame.
+ * Sample one in a hundred to stay in line with the rest of the oracle
+ * family.
  */
 static void post_sysfs(struct syscallrecord *rec)
 {
@@ -137,6 +130,7 @@ static void post_sysfs(struct syscallrecord *rec)
 	char first[256];
 	char recheck_buf[256];
 	size_t first_len, recheck_len, cmp_len;
+	unsigned long idx;
 	long rc;
 
 	snap = post_state_claim_owned(rec, SYSFS_POST_STATE_MAGIC, __func__);
@@ -146,8 +140,10 @@ static void post_sysfs(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_release;
 
-	if (snap->option != 2)
+	/* The option the kernel ran, and the index it named. */
+	if ((int) get_arg_snapshot(rec, 1) != 2)
 		goto out_release;
+	idx = get_arg_snapshot(rec, 2);
 
 	if ((long) rec->retval < 0)
 		goto out_release;
@@ -159,7 +155,7 @@ static void post_sysfs(struct syscallrecord *rec)
 				   sizeof(first)))
 		goto out_release;
 
-	rc = syscall(SYS_sysfs, 2UL, snap->idx, (unsigned long) recheck_buf);
+	rc = syscall(SYS_sysfs, 2UL, idx, (unsigned long) recheck_buf);
 
 	if (rc < 0)
 		goto out_release;
@@ -190,7 +186,7 @@ static void post_sysfs(struct syscallrecord *rec)
 
 		output(0,
 		       "[oracle:sysfs] idx=%lu first_len=%zu recheck_len=%zu first %s vs recheck %s\n",
-		       snap->idx, first_len, recheck_len,
+		       idx, first_len, recheck_len,
 		       first_hex, recheck_hex);
 		__atomic_add_fetch(&shm->stats.oracle.sysfs_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
@@ -212,6 +208,10 @@ struct syscallentry syscall_sysfs = {
 #if defined(SYS_sysfs) || defined(__NR_sysfs)
 	.post = post_sysfs,
 #endif
+	/* option (a1) and arg1 (a2): the re-call asks for the name the
+	 * kernel copied, which chain substitution or a RedQueen pin may
+	 * have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.rettype = RET_BORING,
 	.flags = REEXEC_SANITISE_OK,
 };

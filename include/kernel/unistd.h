@@ -25,3 +25,6 @@
 #if !defined(SYS_file_getattr) && defined(__NR_file_getattr)
 #define SYS_file_getattr	__NR_file_getattr
 #endif
+#if !defined(SYS_sysfs) && defined(__NR_sysfs)
+#define SYS_sysfs	__NR_sysfs
+#endif

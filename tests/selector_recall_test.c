@@ -1,12 +1,14 @@
 /*
- * Self-check for the re-call oracles keyed on a selector, a clock or a
- * resource: each runs its sanitiser and post handler as shipped, handed the
- * answer the kernel gave for the selector it was handed, and counts the
- * anomalies its sampled re-call reports.  Chain substitution or a RedQueen
- * pin can change the selector after the sanitiser drew it, and the re-call
- * has to ask about the one the kernel answered.
+ * Self-check for the re-call oracles keyed on a selector, a clock, a
+ * resource or a filesystem index: each runs its sanitiser and post
+ * handler as shipped, handed the answer the kernel gave for the selector
+ * it was handed, and counts the anomalies its sampled re-call reports.
+ * Chain substitution or a RedQueen pin can change the selector after the
+ * sanitiser drew it, and the re-call has to ask about the one the kernel
+ * answered.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +21,7 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
+#include "kernel/unistd.h"	/* SYS_sysfs */
 #include "sanitise.h"		/* get_writable_address */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
@@ -27,6 +30,8 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_pid_draws;			/* dup_pool_test.c */
+extern bool (*fake_syscall)(long number, const unsigned long a[6],
+			    long *ret);		/* landlock_test.c */
 
 static unsigned int failed;
 
@@ -240,6 +245,73 @@ static void prlimit64_cases(void)
 }
 #endif
 
+#ifdef SYS_sysfs
+/* The filesystem names a fake sysfs() lists, by index: the syscall is
+ * configured out of many a kernel. */
+static const char *const fake_fs_names[] = { "sysfs", "tmpfs" };
+
+static bool fake_sysfs(long number, const unsigned long a[6], long *ret)
+{
+	unsigned int idx = (unsigned int) a[1];
+
+	if (number != SYS_sysfs)
+		return false;
+	*ret = -EINVAL;
+	if ((int) a[0] == 2 && idx < ARRAY_SIZE(fake_fs_names)) {
+		strcpy((char *) a[2], fake_fs_names[idx]);
+		*ret = 0;
+	} else if ((int) a[0] == 3) {
+		*ret = ARRAY_SIZE(fake_fs_names);
+	}
+	return true;
+}
+
+/* sysfs(2, index, buf) calls the sanitiser built on index @built, which the
+ * kernel ran as option @option on index @ran, each leaving @answer in the
+ * buffer; the anomalies the re-call reports. */
+static unsigned long sysfs_anomalies(unsigned long built, unsigned long option,
+				     unsigned long ran, const char *answer)
+{
+	unsigned long before = shm->stats.oracle.sysfs_oracle_anomalies;
+	unsigned int i, tries;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		for (tries = 0; tries < DRAW_TRIES; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = 2;
+			syscall_sysfs.sanitise(&rec);
+			if (rec.a2 == built)
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == DRAW_TRIES)
+			BUG("sysfs's sanitiser never drew the index");
+
+		strcpy((char *) rec.a3, answer);
+		rec.a1 = option;
+		rec.a2 = ran;
+		shadow_slots(&syscall_sysfs);
+		rec.retval = 0;
+		syscall_sysfs.post(&rec);
+	}
+	return shm->stats.oracle.sysfs_oracle_anomalies - before;
+}
+
+/* An index rewritten to another filesystem's, and an option rewritten to
+ * the count, which leaves the buffer as it was. */
+static void sysfs_cases(void)
+{
+	fake_syscall = fake_sysfs;
+	check("sysfs: a call rewritten onto another index was re-called on the first",
+	      sysfs_anomalies(0, 2, 1, "tmpfs") == 0);
+	check("sysfs: a rewritten call answering the first index's name was not reported",
+	      sysfs_anomalies(0, 2, 1, "sysfs") > 0);
+	check("sysfs: a call rewritten to count the filesystems was judged by its buffer",
+	      sysfs_anomalies(0, 3, 0, "stale") == 0);
+	fake_syscall = NULL;
+}
+#endif
+
 void selector_recall_self_check(void);
 void selector_recall_self_check(void)
 {
@@ -257,6 +329,9 @@ void selector_recall_self_check(void)
 	getrusage_cases();
 #if defined(SYS_prlimit64) || defined(__NR_prlimit64)
 	prlimit64_cases();
+#endif
+#ifdef SYS_sysfs
+	sysfs_cases();
 #endif
 
 	if (failed != 0)
