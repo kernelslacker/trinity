@@ -4,11 +4,13 @@
  * shipped, handed the answer a call gave, and counts the anomalies its
  * sampled re-call reports.  Only a call on this task is compared, and the
  * task is the one the kernel was handed, which chain substitution can
- * rewrite after the sanitiser drew its own.
+ * rewrite after the sanitiser drew its own, as it, or a RedQueen pin, can
+ * sched_getattr's size.
  */
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -38,7 +40,7 @@ static void check(const char *what, bool ok)
 #define RECALL_CALLS	1500
 
 /* The shadow __do_syscall() takes of what the kernel was handed, @ran
- * being the pid it ran on. */
+ * being the pid it ran on and the rest of the record the other slots. */
 static void ran_on(struct syscallrecord *rec, const struct syscallentry *entry,
 		   pid_t ran)
 {
@@ -102,9 +104,10 @@ static void robust_list_cases(void)
 #define ATTR_BYTES	256
 
 /* sched_getattr calls the sanitiser built on pid @built, which the kernel
- * ran on pid @ran, each answering the ATTR_BYTES at @answer; the anomalies
- * the re-call reports. */
+ * ran on pid @ran with a size of @ran_size, each answering the ATTR_BYTES at
+ * @answer; the anomalies the re-call reports. */
 static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
+					  unsigned long ran_size,
 					  const unsigned char *answer)
 {
 	unsigned long before = shm->stats.oracle.sched_getattr_oracle_anomalies;
@@ -118,6 +121,7 @@ static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
 		syscall_sched_getattr.sanitise(&rec);
 
 		memcpy((void *) rec.a2, answer, ATTR_BYTES);
+		rec.a3 = ran_size;
 		ran_on(&rec, &syscall_sched_getattr, ran);
 		rec.retval = 0;
 		syscall_sched_getattr.post(&rec);
@@ -125,23 +129,37 @@ static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
 	return shm->stats.oracle.sched_getattr_oracle_anomalies - before;
 }
 
+/* The smallest size sched_getattr() takes, SCHED_ATTR_SIZE_VER0, which is
+ * what a RedQueen pin hands it from that check. */
+#define ATTR_SIZE_VER0	48
+
 static void sched_attr_cases(void)
 {
 	static unsigned char own[ATTR_BYTES], others[ATTR_BYTES];
+	static unsigned char own_v0[ATTR_BYTES];
 	pid_t other = gettid() + 1;
+	uint32_t v0 = ATTR_SIZE_VER0;
 
 	if (syscall(SYS_sched_getattr, 0, own, ATTR_BYTES, 0) != 0)
 		BUG("pid recall: cannot read this task's scheduling attributes");
 	/* Another task's: a nice value one off, at offsetof(sched_nice). */
 	memcpy(others, own, ATTR_BYTES);
 	others[16] ^= 1;
+	/* What a call handed SCHED_ATTR_SIZE_VER0 gets: that much of the
+	 * struct, and that size in its leading size word. */
+	memcpy(own_v0, own, ATTR_SIZE_VER0);
+	memcpy(own_v0, &v0, sizeof(v0));
 
 	check("sched_getattr: a call answering this task's attributes was reported",
-	      sched_attr_anomalies(0, 0, own) == 0);
+	      sched_attr_anomalies(0, 0, ATTR_BYTES, own) == 0);
 	check("sched_getattr: a call run on another task was compared with this one",
-	      sched_attr_anomalies(0, other, others) == 0);
+	      sched_attr_anomalies(0, other, ATTR_BYTES, others) == 0);
 	check("sched_getattr: a call run on this task answering another's attributes was not reported",
-	      sched_attr_anomalies(other, 0, others) > 0);
+	      sched_attr_anomalies(other, 0, ATTR_BYTES, others) > 0);
+	check("sched_getattr: a call handed the smallest size was judged on the whole struct",
+	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, own_v0) == 0);
+	check("sched_getattr: a call handed the smallest size answering a larger size word was not reported",
+	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, own) > 0);
 }
 #endif
 

@@ -69,16 +69,15 @@ static unsigned long sched_getattr_flags[] = {
  * resolved at sanitise time (catalog struct_size, or the fallback when
  * the catalog misses; bumped to rec->a3 when avoid_shared_buffer_out()
  * redirected to a fresh writable region sized for the fuzzed length).
- * The post oracle's source memcpy MUST clamp to this -- snap->size is
- * the fuzzed size argument the kernel got, not the size of the buffer
- * backing snap->attr, and the two diverge whenever fuzz picks a size
- * larger than the catalog struct.
+ * The post oracle's source memcpy MUST clamp to this -- the size argument
+ * the kernel got is fuzz-chosen, not the size of the buffer backing
+ * snap->attr, and the two diverge whenever fuzz picks a size larger than
+ * the catalog struct.
  */
 #define SCHED_GETATTR_POST_STATE_MAGIC	0x5343484741545452UL	/* "SCHGATTR" */
 struct sched_getattr_post_state {
 	unsigned long magic;
 	unsigned long attr;
-	unsigned long size;
 	size_t attr_alloc_size;
 	uint64_t poison_seed;
 };
@@ -119,9 +118,9 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	 *
 	 * Snapshotting this at sanitise time keeps the post oracle's source
 	 * memcpy from reading past the live allocation when fuzz picks a
-	 * size argument (rec->a3 -> snap->size) larger than the buffer the
-	 * generator handed the kernel: ASAN otherwise trips on a 256-byte
-	 * read out of a 56-byte sched_attr_v0 allocation.
+	 * size argument (rec->a3) larger than the buffer the generator
+	 * handed the kernel: ASAN otherwise trips on a 256-byte read out of
+	 * a 56-byte sched_attr_v0 allocation.
 	 */
 	if (rec->a2 != pre_a2) {
 		attr_alloc_size = (size_t) rec->a3;
@@ -170,7 +169,6 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic           = SCHED_GETATTR_POST_STATE_MAGIC;
 	snap->attr            = rec->a2;
-	snap->size            = rec->a3;
 	snap->attr_alloc_size = attr_alloc_size;
 	snap->poison_seed     = 0;
 
@@ -234,33 +232,33 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
  * kernel was handed, which chain substitution can rewrite after the
  * sanitiser.
  *
- * TOCTOU defeat: the buffer args (attr, size) are snapshotted at sanitise
- * time into a heap struct in rec->post_state, so a sibling that scribbles
+ * TOCTOU defeat: the buffer arg (attr) is snapshotted at sanitise time
+ * into a heap struct in rec->post_state, so a sibling that scribbles
  * rec->aN between syscall return and post entry cannot redirect the
- * source memcpy at a foreign user buffer, or smear the size word that
- * bounds the comparison.  The user buffer at snap->attr is still user
- * memory a sibling can scribble between calls, so snapshot up to
- * min(snap->size, sizeof(user_snap)) bytes into a stack-local buffer
- * before re-issuing.  The re-call uses a fresh private stack buffer (do
- * NOT pass snap->attr -- a sibling could mutate it mid-syscall and forge
- * a clean compare).  Pass the FULL kernel_snap size so the kernel writes
- * whatever it would write at maximum size and reflects that back in the
- * leading size word.
+ * source memcpy at a foreign user buffer, and the size comes from the
+ * dispatch-time shadow of the slot.  The user buffer at snap->attr is
+ * still user memory a sibling can scribble between calls, so snapshot up
+ * to min(size, sizeof(user_snap)) bytes into a stack-local buffer before
+ * re-issuing.  The re-call uses a fresh private stack buffer (do NOT pass
+ * snap->attr -- a sibling could mutate it mid-syscall and forge a clean
+ * compare).  Pass the FULL kernel_snap size so the kernel writes whatever
+ * it would write at maximum size and reflects that back in the leading
+ * size word.
  *
  * The audit row says 'stable equality' on a2; flags drives which fields
  * the kernel populates (DL_DYNAMIC etc), so a divergence on the canonical-
  * baseline read with flags=0 is interesting independently of any flag drift
  * on the original call.  Use flags=0 for the re-issue.
  *
- * Reject undersize requests (snap->size < SCHED_ATTR_SIZE_VER0): the kernel
+ * Reject undersize requests (size < SCHED_ATTR_SIZE_VER0): the kernel
  * itself rejects them with E2BIG/EINVAL, so the original retval == 0 gate
  * already excludes them, but be defensive.  An rc != 0 re-call is treated
  * as 'give up' (the task may have been the target of a sched_setattr in
  * between, or hit some other transient).  Compare both the leading size
- * word (kernel-written, must match) and the first cmp_len bytes of the
- * struct payload, but bump the anomaly counter only once per divergent
- * sample.  Sample one in a hundred to stay in line with the rest of the
- * oracle family.
+ * word (kernel-written, the shorter of size and the struct) and the first
+ * cmp_len bytes of the struct payload, but bump the anomaly counter only
+ * once per divergent sample.  Sample one in a hundred to stay in line
+ * with the rest of the oracle family.
  */
 static void post_sched_getattr(struct syscallrecord *rec)
 {
@@ -270,6 +268,7 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	unsigned char kernel_snap[256];
 	__u32 user_size_returned;
 	__u32 kernel_size_returned;
+	__u32 size, expected_size;
 	size_t cpy_len, cmp_len;
 	int memcmp_result;
 	pid_t pid;
@@ -322,24 +321,25 @@ static void post_sched_getattr(struct syscallrecord *rec)
 	if (pid != 0 && pid != gettid())
 		goto out_free;
 
-	if (snap->size < SCHED_ATTR_SIZE_VER0)
+	size = (__u32) get_arg_snapshot(rec, 3);
+	if (size < SCHED_ATTR_SIZE_VER0)
 		goto out_free;
 
 	/*
 	 * cpy_len bound by THREE inputs:
-	 *   - snap->size:           the size argument the kernel was given,
+	 *   - size:                 the size argument the kernel was given,
 	 *                           caps how many bytes the kernel can have
 	 *                           legitimately written into the user buffer.
 	 *   - sizeof(user_snap):    the local stack buffer the snapshot lands in.
 	 *   - snap->attr_alloc_size: the real allocation backing snap->attr.
-	 *                           snap->size is fuzz-chosen and routinely
-	 *                           exceeds the buffer's actual size (e.g. a
-	 *                           256-byte size argument over a 56-byte
-	 *                           sched_attr_v0 allocation).  Without this
-	 *                           bound memcpy reads past the live region
-	 *                           and ASAN reports an out-of-bounds load.
+	 *                           size is fuzz-chosen and routinely exceeds
+	 *                           the buffer's actual size (e.g. a 256-byte
+	 *                           size argument over a 56-byte sched_attr_v0
+	 *                           allocation).  Without this bound memcpy
+	 *                           reads past the live region and ASAN
+	 *                           reports an out-of-bounds load.
 	 */
-	cpy_len = (size_t) snap->size;
+	cpy_len = (size_t) size;
 	if (cpy_len > sizeof(user_snap))
 		cpy_len = sizeof(user_snap);
 	if (cpy_len > snap->attr_alloc_size)
@@ -368,9 +368,18 @@ static void post_sched_getattr(struct syscallrecord *rec)
 
 	memcpy(&kernel_size_returned, kernel_snap, sizeof(kernel_size_returned));
 
-	cmp_len = user_size_returned;
-	if (kernel_size_returned < cmp_len)
-		cmp_len = kernel_size_returned;
+	/*
+	 * The kernel copies min(size, sizeof(struct sched_attr)) bytes and
+	 * puts that length in the leading size word, so a call handed less
+	 * than the struct the re-call got answers that much of it, under
+	 * that length.
+	 */
+	expected_size = kernel_size_returned;
+	if (size < expected_size)
+		expected_size = size;
+	memcpy(kernel_snap, &expected_size, sizeof(expected_size));
+
+	cmp_len = expected_size;
 	if (cpy_len < cmp_len)
 		cmp_len = cpy_len;
 	if (sizeof(kernel_snap) < cmp_len)
@@ -378,10 +387,10 @@ static void post_sched_getattr(struct syscallrecord *rec)
 
 	memcmp_result = memcmp(user_snap, kernel_snap, cmp_len);
 
-	if (memcmp_result != 0 || user_size_returned != kernel_size_returned) {
+	if (memcmp_result != 0 || user_size_returned != expected_size) {
 		output(0,
 		       "[oracle:sched_getattr] size %u vs %u cmp_len %zu memcmp_diff %d\n",
-		       user_size_returned, kernel_size_returned,
+		       user_size_returned, expected_size,
 		       cmp_len, memcmp_result);
 		__atomic_add_fetch(&shm->stats.oracle.sched_getattr_oracle_anomalies,
 				   1, __ATOMIC_RELAXED);
@@ -403,10 +412,11 @@ struct syscallentry syscall_sched_getattr = {
 	.arg_params[3].list = ARGLIST(sched_getattr_flags),
 	.sanitise = sanitise_sched_getattr,
 	.post = post_sched_getattr,
-	/* pid (a1): the re-call compares only a call on this task, and the
-	 * task is the one the kernel read, which chain substitution may have
-	 * rewritten after the sanitiser drew its own. */
-	.arg_snapshot_mask = (1u << 0),
+	/* pid (a1) and size (a3): the re-call compares only a call on this
+	 * task, the one the kernel read, as much of the struct as it was
+	 * asked for, either of which chain substitution or a RedQueen pin
+	 * may have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 2),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };
