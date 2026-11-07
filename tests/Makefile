@@ -228,6 +228,12 @@ LDFLAGS		+= -Wl,--wrap=ctime_marks_change -Wl,--wrap=stat_mnt_id
 # moment it is published; unhooked, the call goes on to the stand-in.
 LDFLAGS		+= -Wl,--wrap=publish_resource
 
+# pick_cmsg_kind() and cmsg_build() stand-ins: lib/cmsg_build.c is linked
+# for cmsg_build_test.c, which runs the builder through __real_, and the
+# send.c sanitisers get arg_coupling_test.c's wrappers, which build no
+# control message.
+LDFLAGS		+= -Wl,--wrap=pick_cmsg_kind -Wl,--wrap=cmsg_build
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -1073,6 +1079,12 @@ FAKE_SRCS	+= epoll_volatility_test.c
 # through procfs_self_test.c's ioctl() stand-in.
 PARENT_SRCS	+= $(TOP)/fds/userfaultfd.c
 FAKE_SRCS	+= userfaultfd_arm_test.c
+
+# lib/cmsg_build.c brings the sendmsg control builder, whose messages
+# for AF_UNIX and AF_NETLINK cmsg_build_test.c holds to what
+# __scm_send() takes.
+PARENT_SRCS	+= $(TOP)/lib/cmsg_build.c
+FAKE_SRCS	+= cmsg_build_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

@@ -36,9 +36,6 @@
 #ifndef TLS_SET_RECORD_TYPE
 #define TLS_SET_RECORD_TYPE	1
 #endif
-#ifndef SCM_SECURITY
-#define SCM_SECURITY		0x03
-#endif
 
 enum cmsg_richness_mode cmsg_richness_mode = CMSG_RICHNESS_OFF;
 
@@ -65,19 +62,18 @@ enum cmsg_kind pick_cmsg_kind(unsigned int family)
 		return CMSG_KIND_MULTI;
 
 	/*
-	 * Family-gated eligible single-cmsg pool.  SOL_SOCKET-level
-	 * kinds (SCM_TIMESTAMPING, SCM_TXTIME) are accepted by the
-	 * generic cmsg parser regardless of the family, but the per-
-	 * proto post-parse gates reject mismatches anyway, so widen
-	 * only to the families where the kind is plausibly meaningful
-	 * rather than EINVAL-ing immediately.
+	 * Family-gated single-cmsg pool.  AF_UNIX and AF_NETLINK parse
+	 * control messages in __scm_send(), which takes SCM_RIGHTS and
+	 * SCM_CREDENTIALS at SOL_SOCKET and refuses any other type
+	 * there, so they get those two and nothing else.  Every other
+	 * family gets SCM_TIMESTAMPING, which INET, INET6 and PACKET
+	 * parse in __sock_cmsg_send(), as they do SCM_TXTIME.
 	 */
-	pool[n++] = CMSG_KIND_SO_TIMESTAMPING;
-
-	if (family == AF_UNIX) {
+	if (family == AF_UNIX || family == AF_NETLINK) {
 		pool[n++] = CMSG_KIND_SCM_RIGHTS;
 		pool[n++] = CMSG_KIND_SCM_CREDENTIALS;
-		pool[n++] = CMSG_KIND_SCM_SECURITY;
+	} else {
+		pool[n++] = CMSG_KIND_SO_TIMESTAMPING;
 	}
 	if (family == AF_PACKET)
 		pool[n++] = CMSG_KIND_PACKET_AUXDATA;
@@ -95,8 +91,7 @@ enum cmsg_kind pick_cmsg_kind(unsigned int family)
 		pool[n++] = CMSG_KIND_IPV6_HOPLIMIT;
 		pool[n++] = CMSG_KIND_IPV6_RTHDR;
 	}
-	if (family == AF_INET || family == AF_INET6 ||
-	    family == AF_PACKET || family == AF_UNIX)
+	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET)
 		pool[n++] = CMSG_KIND_SCM_TXTIME;
 	/*
 	 * TLS records flow over INET / INET6 stream sockets after the
@@ -199,38 +194,6 @@ static int build_scm_credentials(struct msghdr *m)
 	return 0;
 }
 
-/*
- * SCM_SECURITY carries an LSM security label (opaque bytes -- SELinux
- * context string, Smack label, etc.).  Kernel-side unix_recv_scm() /
- * scm_passec() copy a bounded blob; length is whatever userspace
- * supplies.  Bound to 4..64 bytes so the parser sees short and
- * medium-length labels without inflating the writable-pool draw.
- */
-static int build_scm_security(struct msghdr *m)
-{
-	struct cmsghdr *cmsg;
-	size_t plen = RAND_RANGE(4, 64);
-	unsigned int i;
-	uint8_t *p;
-
-	void *buf = get_writable_struct(CMSG_SPACE(plen));
-	if (buf == NULL)
-		return -1;
-	memset(buf, 0, CMSG_SPACE(plen));
-
-	m->msg_control = buf;
-	m->msg_controllen = CMSG_SPACE(plen);
-	cmsg = CMSG_FIRSTHDR(m);
-	cmsg->cmsg_level = SOL_SOCKET;
-	cmsg->cmsg_type = SCM_SECURITY;
-	cmsg->cmsg_len = CMSG_LEN(plen);
-
-	p = (uint8_t *) CMSG_DATA(cmsg);
-	for (i = 0; i < plen; i++)
-		p[i] = (uint8_t) rand32();
-	return 0;
-}
-
 static int build_so_timestamping(struct msghdr *m)
 {
 	struct cmsghdr *cmsg;
@@ -260,8 +223,9 @@ static int build_packet_auxdata(struct msghdr *m)
 	struct cmsghdr *cmsg;
 	size_t plen = sizeof(struct tpacket_auxdata);
 
-	/* Payload zero-filled; AF_PACKET writes this out on recv, on
-	 * sendmsg the per-proto cmsg-type sieve rejects it. */
+	/* Payload zero-filled; AF_PACKET writes this out on recv, and on
+	 * sendmsg sock_cmsg_send() skips it, as it does any cmsg not at
+	 * SOL_SOCKET. */
 	void *buf = get_writable_struct(CMSG_SPACE(plen));
 	if (buf == NULL)
 		return -1;
@@ -342,8 +306,9 @@ static void fill_int_small(void *dst)
 
 static void fill_int_ttl(void *dst)
 {
-	/* IP_TTL / IPV6_HOPLIMIT: -1 means "use default"; valid range
-	 * is 0..255.  Mix with random ints to exercise the validator. */
+	/* IPV6_HOPLIMIT takes -1 (use the default) through 255;
+	 * ip_cmsg_send() holds IP_TTL to 1..255, so there -1 and 0
+	 * probe the reject arm. */
 	int v;
 
 	if (ONE_IN(4))
@@ -634,15 +599,8 @@ static unsigned int build_multi_pool(unsigned int family,
 		}							\
 	} while (0)
 
-	/* SOL_SOCKET-level entries available widely. */
-	PUSH(SOL_SOCKET, SCM_TIMESTAMPING, sizeof(uint32_t),
-	     fill_so_timestamping);
-	if (family == AF_INET || family == AF_INET6 ||
-	    family == AF_PACKET || family == AF_UNIX)
-		PUSH(SOL_SOCKET, SCM_TXTIME, sizeof(uint64_t),
-		     fill_u64_txtime);
-
-	if (family == AF_UNIX) {
+	/* SOL_SOCKET entries follow pick_cmsg_kind()'s family rules. */
+	if (family == AF_UNIX || family == AF_NETLINK) {
 		/*
 		 * SCM_RIGHTS in the multi-pack uses the same get_random_fd
 		 * shape as the single-cmsg builder; capped at one fd to
@@ -653,7 +611,13 @@ static unsigned int build_multi_pool(unsigned int family,
 		PUSH(SOL_SOCKET, SCM_RIGHTS, sizeof(int), NULL);
 		PUSH(SOL_SOCKET, SCM_CREDENTIALS, sizeof(struct ucred),
 		     fill_scm_credentials);
+	} else {
+		PUSH(SOL_SOCKET, SCM_TIMESTAMPING, sizeof(uint32_t),
+		     fill_so_timestamping);
 	}
+	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET)
+		PUSH(SOL_SOCKET, SCM_TXTIME, sizeof(uint64_t),
+		     fill_u64_txtime);
 	if (family == AF_PACKET)
 		PUSH(SOL_PACKET, PACKET_AUXDATA,
 		     sizeof(struct tpacket_auxdata), NULL);
@@ -772,7 +736,6 @@ int cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
 	case CMSG_KIND_SCM_TXTIME:	return build_scm_txtime(m);
 	case CMSG_KIND_TLS_SET_RECORD_TYPE:
 		return build_tls_set_record_type(m);
-	case CMSG_KIND_SCM_SECURITY:	return build_scm_security(m);
 	case CMSG_KIND_MULTI:		return build_cmsg_multi(m, family);
 	default:
 		return -1;

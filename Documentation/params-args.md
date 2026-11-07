@@ -33,7 +33,7 @@ Extended `sendmsg` / `sendmmsg` control-message generator.
 - `on`: extends the per-call cmsg pool with family-gated single-cmsg
   kinds -- `IP_PKTINFO` / `IPV6_PKTINFO`, `IP_TOS` / `IP_TTL` /
   `IP_RETOPTS`, `IPV6_TCLASS` / `IPV6_HOPLIMIT` / `IPV6_RTHDR`,
-  `SCM_TXTIME`, `TLS_SET_RECORD_TYPE`, `SCM_SECURITY` -- and adds a
+  `SCM_TXTIME`, `TLS_SET_RECORD_TYPE` -- and adds a
   `ONE_IN(4)` multi-cmsg packer that sizes the buffer by the sum of
   `CMSG_SPACE(plen)` across 2-3 distinct entries from a per-family
   pool, zero-fills the buffer up front, and walks `CMSG_FIRSTHDR`

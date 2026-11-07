@@ -34,7 +34,7 @@
 #include "arch.h"				/* page_size */
 #include "arg_coupling.h"
 #include "child.h"			/* struct childdata */
-#include "cmsg_build.h"			/* pick_cmsg_kind, cmsg_build */
+#include "cmsg_build.h"			/* enum cmsg_kind */
 #include "debug.h"			/* BUG */
 #include "deferred-free.h"		/* deferred_alloc_track, deferred_free_flush */
 #include "ipc-common.h"			/* SEMGET_NSEMS_CAP */
@@ -845,15 +845,17 @@ static void recv_buffer_names_mapping(void)
 
 /* send.c brings sendmsg and sendmmsg along, and an ASAN build keeps them
  * linked.  Only the sendmmsg cases build messages, with no socket and so
- * no address, and the control builder declines, leaving each message the
- * sanitiser's random control arm. */
-enum cmsg_kind pick_cmsg_kind(unsigned int family)
+ * no address, and the control builder, wrapped here, declines, leaving
+ * each message the sanitiser's random control arm. */
+enum cmsg_kind __wrap_pick_cmsg_kind(unsigned int family);
+enum cmsg_kind __wrap_pick_cmsg_kind(unsigned int family)
 {
 	(void) family;
 	return CMSG_KIND_SCM_RIGHTS;
 }
 
-int cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
+int __wrap_cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family);
+int __wrap_cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
 {
 	(void) m;
 	(void) k;
