@@ -178,6 +178,7 @@ bool range_overlaps_shared_audited(const char *site,
 void internal_mprotect_audit_kcov(const char *who, unsigned long addr,
 				  unsigned long len, int prot)
 {
+	const struct shared_region_entry *r;
 	unsigned long end;
 	unsigned int i;
 
@@ -187,46 +188,26 @@ void internal_mprotect_audit_kcov(const char *who, unsigned long addr,
 		return;
 	end = addr + len;
 
-	for (i = 0; i < nr_shared_regions; i++) {
-		const char *origin = shared_regions[i].origin;
+	for_each_shared_region(i, r) {
+		const char *origin = r->origin;
 		unsigned long rstart, rsize, rend;
 
 		if (origin == NULL)
 			continue;
 		if (strncmp(origin, "kcov-", 5) != 0)
 			continue;
-		rstart = shared_regions[i].addr;
-		rsize  = shared_regions[i].size;
+		rstart = r->addr;
+		rsize  = r->size;
 		if (rsize == 0)
 			continue;
 		rend = rstart + rsize;
 		if (addr < rend && rstart < end) {
 			outputerr("internal_mprotect_audit: %s mprotect "
 				  "[0x%lx+0x%lx) prot=0x%x overlaps "
-				  "%s region [0x%lx+0x%lx)\n",
+				  "%s region [0x%lx+0x%lx)%s\n",
 				  who, addr, len, (unsigned int) prot,
-				  origin, rstart, rsize);
-		}
-	}
-	for (i = 0; i < nr_shared_regions_overflow; i++) {
-		const char *origin = shared_regions_overflow[i].origin;
-		unsigned long rstart, rsize, rend;
-
-		if (origin == NULL)
-			continue;
-		if (strncmp(origin, "kcov-", 5) != 0)
-			continue;
-		rstart = shared_regions_overflow[i].addr;
-		rsize  = shared_regions_overflow[i].size;
-		if (rsize == 0)
-			continue;
-		rend = rstart + rsize;
-		if (addr < rend && rstart < end) {
-			outputerr("internal_mprotect_audit: %s mprotect "
-				  "[0x%lx+0x%lx) prot=0x%x overlaps "
-				  "%s region [0x%lx+0x%lx) (overflow)\n",
-				  who, addr, len, (unsigned int) prot,
-				  origin, rstart, rsize);
+				  origin, rstart, rsize,
+				  i >= nr_shared_regions ? " (overflow)" : "");
 		}
 	}
 }
