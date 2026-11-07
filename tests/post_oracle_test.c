@@ -449,6 +449,48 @@ static void recvmsg_count(void)
 	}
 }
 
+/* An fd above stdio, which write's sanitiser keeps. */
+#define WRITE_FD	100
+
+/* The bytes written, at most the count the kernel was handed, which chain
+ * substitution or a RedQueen pin can rewrite after the sanitiser drew its
+ * own (1, or below a page). */
+static void write_count(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long count;
+		unsigned long retval;
+		unsigned int bumps;
+	} cases[] = {
+		{ "a rewritten count, all of it written", 65536, 65536, 0 },
+		{ "a rewritten count, a short write", 65536, 4096, 0 },
+		{ "nothing", 65536, 0, 0 },
+		{ "-1", 65536, (unsigned long) -1L, 0 },
+		{ "a byte past the rewritten count", 65536, 65537, 1 },
+		{ "a byte past a rewritten count of 0", 0, 1, 1 },
+	};
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = WRITE_FD;
+		syscall_write.sanitise(&rec);
+		rec.a3 = cases[i].count;
+		rec.arg_snapshot_mask = syscall_write.arg_snapshot_mask;
+		rec.arg_shadow[2] = cases[i].count;
+		rec.retval = cases[i].retval;
+		rec.errno_post = ((long) cases[i].retval == -1L) ? EBADF : 0;
+		bumps = 0;
+		dispatch_post(&syscall_write, &rec);
+		expect(cases[i].what, bumps, cases[i].bumps);
+		free((void *) rec.post_state);
+		while (rec.owned_count > 0)
+			free(rec.owned[--rec.owned_count]);
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -488,6 +530,7 @@ void post_oracle_self_check(void)
 	sched_getscheduler_policy();
 	recv_count();
 	recvmsg_count();
+	write_count();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif

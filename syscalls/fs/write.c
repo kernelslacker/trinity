@@ -16,41 +16,11 @@
 #include "utils.h"
 
 #include "kernel/fs.h"
-/*
- * Snapshot of the (buf, count) pair the post handler needs, captured at
- * sanitise time and parked in rec->post_state -- a slot the syscall ABI
- * does not expose, so a sibling syscall scribbling rec->a2/a3 between
- * syscall return and post_write() running cannot redirect us at a foreign
- * buffer or hand the count-bound validator the wrong length.  Shared by
- * write(2) and pwrite64(2): both register post_write.
- *
- * Wired into the post_state ownership table by post_state_install() at
- * sanitise time; post_write() gates the snap through
- * post_state_claim_owned() before any field deref, so a sibling stomp
- * that redirects rec->post_state at a foreign heap chunk is rejected by
- * the ownership lookup before the leading-word magic compare ever runs.
- * The kernel-input buffer itself is captured into the rec owned[]
- * carrier at sanitise time and drained unconditionally after .post, so
- * snap->buf is read-only here -- a foreign re-read can no longer drive
- * a bad free.  Padded to 32 bytes (48-byte glibc malloc chunk) so the
- * snap lands in its own free-list bucket, separate from the 32-byte
- * chunk bucket shared with size=1 bufs (the RAND_BOOL branch below uses
- * size=1 half the time) and with the small post_state structs -- bucket
- * separation is defense-in-depth on top of ownership + cookie.
- */
-#define WRITE_POST_STATE_MAGIC	0x5752495445504F53UL	/* "WRITEPOS" */
-struct write_post_state {
-	unsigned long magic;
-	unsigned long buf;
-	unsigned long count;
-	unsigned long _bucket_pad;
-};
 
 static void sanitise_write(struct syscallrecord *rec)
 {
 	unsigned int size;
 	void *ptr;
-	struct write_post_state *snap;
 	int forced_fd = -1;
 	int forced_size = -1;
 	bool eventfd_payload = false;
@@ -143,71 +113,14 @@ static void sanitise_write(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) ptr;
 	avoid_shared_buffer_inout(&rec->a2, size);
 	rec->a3 = size;
-	/*
-	 * Snapshot (buf, count) for the post handler -- a2/a3 may be
-	 * scribbled by a sibling syscall before post_write() runs, so the
-	 * count-bound validator must read count from the post-state-private
-	 * slot rather than the sibling-stomp-vulnerable rec->a3.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = WRITE_POST_STATE_MAGIC;
-	snap->buf = (unsigned long) ptr;
-	snap->count = size;
-	post_state_install(rec, snap);
 
 	/*
 	 * Capture the genuine kernel-input buffer at sanitise time, before
-	 * any sibling can stomp rec->a2 or rec->post_state; the carrier drain
-	 * after .post frees it unconditionally and also closes the skip-.post
-	 * leak on retfd-rejected / killed-EXTRA_FORK paths.
+	 * any sibling can stomp rec->a2; the carrier drain after the call
+	 * frees it unconditionally, retfd-rejected and killed-EXTRA_FORK
+	 * calls included.
 	 */
 	rec_own(rec, ptr);
-}
-
-static void post_write(struct syscallrecord *rec)
-{
-	struct write_post_state *snap;
-	unsigned long retval = rec->retval;
-
-	rec->a2 = 0;
-
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- callers just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, WRITE_POST_STATE_MAGIC, __func__);
-	if (snap == NULL)
-		return;
-
-	/*
-	 * STRONG-VAL count bound: write(2) / pwrite64(2) on success return
-	 * the number of bytes successfully written (0..count); failure
-	 * returns -1UL.  A retval > count on a non-(-1UL) return is a
-	 * structural ABI regression -- a sign-extension tear in the syscall
-	 * return path, a torn write of count by a parallel signal-restart
-	 * path, or -errno leaking through the success slot.  Read count from
-	 * snap->count, not rec->a3: snap lives in the post-state-private
-	 * slot the syscall ABI does not expose, so it is immune to the
-	 * sibling-stomp class that can scribble rec->aN between syscall
-	 * return and post entry.  Mirrors the lgetxattr / fgetxattr / getxattr
-	 * size-bound shape with snap->count instead of snap->size.
-	 */
-	if ((long) retval == -1L)
-		goto skip_bound;
-	if (retval > snap->count) {
-		outputerr("corrupt write retval %lu > count %lu\n",
-			  retval, snap->count);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
-	}
-
-skip_bound:
-	/* fall through */
-
-out_free:
-	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_write = {
@@ -217,9 +130,12 @@ struct syscallentry syscall_write = {
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count" },
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_write,
-	.post     = post_write,
 	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
+	/* count (a3): enforce_count_bound() holds the return to the count
+	 * the kernel was handed, which chain substitution or a RedQueen pin
+	 * may have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 2),
 	.rettype = RET_NUM_BYTES,
 };
 
@@ -349,9 +265,10 @@ struct syscallentry syscall_pwrite64 = {
 	.argname = { [0] = "fd", [1] = "buf", [2] = "count", [3] = "pos" },
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.sanitise = sanitise_pwrite64,
-	.post     = post_write,
 	.group = GROUP_VFS_IO,
 	.bound_arg = 3,
+	/* count (a3), as for write. */
+	.arg_snapshot_mask = (1u << 2),
 	.rettype = RET_NUM_BYTES,
 };
 
