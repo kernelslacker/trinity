@@ -26,12 +26,14 @@ void extrafork_reap(pid_t extrapid, unsigned int polls)
 	 * continued grandchild is still alive, so ask for neither report;
 	 * a ptrace-stop is reported whatever the flags, so skip that too.
 	 */
-	for (unsigned int i = 0; pid == 0 && i < polls; i++) {
+	for (unsigned int i = 0; i < polls; i++) {
 		int childstatus;
 
 		pid = waitpid_eintr(extrapid, &childstatus, WNOHANG);
 		if (pid > 0 && WIFSTOPPED(childstatus))
 			pid = 0;
+		if (pid != 0)
+			break;
 		usleep(1000);
 	}
 

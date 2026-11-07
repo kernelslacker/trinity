@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_parent.h"	/* fake_clock_start, fake_sleeps */
 #include "syscall-internal.h"
 #include "utils.h"		/* waitpid_eintr */
 
@@ -99,6 +100,31 @@ static void selftest_exited(void)
 
 	if (waitpid_eintr(pid, NULL, WNOHANG) != -1 || errno != ECHILD)
 		BUG("extrafork_reap: an exited grandchild was not reaped");
+}
+
+/* A grandchild already gone at the first poll is reaped without a
+ * sleep.  waitid(WNOWAIT) holds its exit for extrafork_reap() to take,
+ * and the fake clock counts the sleeps; the second reset stops it again
+ * for the fixtures that need real ones. */
+static void selftest_exited_without_sleeping(void)
+{
+	pid_t pid = spawn(exit_now);
+	siginfo_t info;
+	unsigned int sleeps;
+
+	while (waitid(P_PID, pid, &info, WEXITED | WNOWAIT) != 0) {
+		if (errno != EINTR)
+			BUG("extrafork_reap: waitid on an exiting grandchild failed");
+	}
+
+	fake_parent_reset();
+	fake_clock_start();
+	extrafork_reap(pid, POLLS);
+	sleeps = fake_sleeps;
+	fake_parent_reset();
+
+	if (sleeps != 0)
+		BUG("extrafork_reap: slept after reaping an exited grandchild");
 }
 
 static void selftest_running_at_timeout(void)
@@ -186,6 +212,7 @@ void extrafork_reap_self_check(void);
 void extrafork_reap_self_check(void)
 {
 	selftest_exited();
+	selftest_exited_without_sleeping();
 	selftest_running_at_timeout();
 	selftest_stopped();
 	selftest_continued();
