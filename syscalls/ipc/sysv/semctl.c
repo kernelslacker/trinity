@@ -2,6 +2,7 @@
  * SYSCALL_DEFINE(semctl)(int semid, int semnum, int cmd, union semun arg)
  */
 #include <stdint.h>
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/sem.h>
 #include <unistd.h>
@@ -82,14 +83,12 @@ static int pick_semnum(int semid)
  *
  * On x86-64 the union semun is passed by value in a single register,
  * so storing the per-cmd value through rec->a4 is sufficient -- no
- * separate type slot to track.  The struct buffers are zmalloc_tracked
- * so the per-call lifetime matches the syscall's, and the SETALL/GETALL
- * arrays come from the call's pool (see there).  For IPC_SET, which the
- * kernel reads, we then run avoid_shared_buffer_inout() so the
- * relocation away from any shared-mem overlap preserves the curated
- * payload; for the kernel-WRITTEN cmds and the ignored-arg default we
- * use avoid_shared_buffer_out(), which relocates without copying (the
- * kernel is about to overwrite the buffer anyway).
+ * separate type slot to track.  The struct buffers and the SETALL/GETALL
+ * arrays come from the call's pool, which avoid_shared_buffer_out()
+ * leaves where it is, so the kernel reads and writes them in place: a
+ * kernel-WRITTEN cmd fills the buffer its poison is stamped into.  The
+ * ignored-arg default goes through avoid_shared_buffer_out(), which
+ * relocates without copying.
  */
 static void build_semun_arg(struct syscallrecord *rec)
 {
@@ -129,16 +128,22 @@ static void build_semun_arg(struct syscallrecord *rec)
 	case IPC_STAT:
 	case SEM_STAT:
 	case SEM_STAT_ANY:
-		ds = zmalloc_tracked(sizeof(*ds));
+		ds = get_writable_struct(sizeof(*ds));
 		u.buf = ds;
 		rec->a4 = (unsigned long) u.buf;
+		if (ds == NULL)
+			return;
 		snap = ipcctl_post_state_alloc(rec, ds, sizeof(*ds));
 		snap->poison_seed = poison_output_struct(ds, sizeof(*ds), 0);
-		avoid_shared_buffer_out(&rec->a4, sizeof(*ds));
 		return;
 
 	case IPC_SET:
-		ds = zmalloc_tracked(sizeof(*ds));
+		ds = get_writable_struct(sizeof(*ds));
+		u.buf = ds;
+		rec->a4 = (unsigned long) u.buf;
+		if (ds == NULL)
+			return;
+		memset(ds, 0, sizeof(*ds));
 		/*
 		 * IPC_SET copies sem_perm.uid / .gid / .mode out of the
 		 * caller-supplied semid_ds and applies them to the sem
@@ -159,19 +164,17 @@ static void build_semun_arg(struct syscallrecord *rec)
 				mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))]
 				| 0400;
 		}
-		u.buf = ds;
-		rec->a4 = (unsigned long) u.buf;
-		avoid_shared_buffer_inout(&rec->a4, sizeof(*ds));
 		return;
 
 	case IPC_INFO:
 	case SEM_INFO:
-		info = zmalloc_tracked(sizeof(*info));
+		info = get_writable_struct(sizeof(*info));
 		u.__buf = info;
 		rec->a4 = (unsigned long) u.__buf;
+		if (info == NULL)
+			return;
 		snap = ipcctl_post_state_alloc(rec, info, sizeof(*info));
 		snap->poison_seed = poison_output_struct(info, sizeof(*info), 0);
-		avoid_shared_buffer_out(&rec->a4, sizeof(*info));
 		return;
 
 	case GETPID:

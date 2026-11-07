@@ -1,6 +1,7 @@
 /*
  * SYSCALL_DEFINE3(msgctl, int, msqid, int, cmd, struct msqid_ds __user *, buf)
  */
+#include <string.h>
 #include <sys/ipc.h>
 #include <sys/msg.h>
 #include <unistd.h>
@@ -22,7 +23,6 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 	struct ipcctl_post_state *snap;
 	void *buf;
 	unsigned long allocated_size;
-	bool input_buf = false;
 
 	rec->post_state = 0;
 
@@ -33,7 +33,6 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 	case IPC_INFO:
 	case MSG_INFO:
 		allocated_size = sizeof(struct msginfo);
-		buf = zmalloc_tracked(allocated_size);
 		break;
 	case IPC_SET: {
 		/*
@@ -52,52 +51,42 @@ static void sanitise_msgctl(struct syscallrecord *rec)
 		 * this guard a later msgrcv / msgctl(IPC_STAT) from the
 		 * same child trips EACCES, defeating the point of fixing
 		 * the coverage gap.  msg_qbytes becomes the queue's byte
-		 * limit (IPC_SET_MSG_QBYTES).
+		 * limit (IPC_SET_MSG_QBYTES).  The buffer comes from the
+		 * call's pool, where the kernel reads it in place.
 		 */
 		static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
-		struct msqid_ds *ds;
+		struct msqid_ds *ds = get_writable_struct(sizeof(*ds));
 
-		allocated_size = sizeof(struct msqid_ds);
-		buf = zmalloc_tracked(allocated_size);
-		ds = buf;
+		rec->a3 = (unsigned long) ds;
+		if (ds == NULL)
+			return;
+		memset(ds, 0, sizeof(*ds));
 		ds->msg_perm.uid = getuid();
 		ds->msg_perm.gid = getgid();
 		ds->msg_perm.mode =
 			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
 		ds->msg_qbytes = IPC_SET_MSG_QBYTES;
-		input_buf = true;
-		break;
+		return;
 	}
 	default:
 		/* IPC_STAT, MSG_STAT */
 		allocated_size = sizeof(struct msqid_ds);
-		buf = zmalloc_tracked(allocated_size);
 		break;
 	}
 
-	rec->a3 = (unsigned long) buf;
-
-	snap = ipcctl_post_state_alloc(rec, buf, allocated_size);
-
 	/*
-	 * IPC_SET is the only input branch: the kernel reads msg_perm
-	 * from the buffer.  Relocate copy-preserving so the curated
-	 * uid/gid/mode survive the move into the writable pool; without
-	 * it the kernel reads pool zeros and EINVALs/EPERMs the call,
-	 * silently neutering IPC_SET coverage.  IPC_INFO / MSG_INFO /
-	 * IPC_STAT / MSG_STAT / MSG_STAT_ANY are pure outputs -- the
-	 * kernel writes them, so the cheaper relocate-only suffices.
-	 * The pure-output branches also stamp a poison pattern into
-	 * the out-buffer that the shared post handler re-reads to
-	 * detect a success return with no matching copy_to_user().
+	 * The rest are pure outputs.  The buffer comes from the call's
+	 * pool, which avoid_shared_buffer_out() would leave where it is,
+	 * so the kernel writes the buffer the poison is stamped into, and
+	 * the shared post handler re-reads it to catch a success return
+	 * with no matching copy_to_user().
 	 */
-	if (input_buf) {
-		avoid_shared_buffer_inout(&rec->a3, allocated_size);
-	} else {
-		snap->poison_seed = poison_output_struct(buf,
-							 allocated_size, 0);
-		avoid_shared_buffer_out(&rec->a3, allocated_size);
-	}
+	buf = get_writable_struct(allocated_size);
+	rec->a3 = (unsigned long) buf;
+	if (buf == NULL)
+		return;
+	snap = ipcctl_post_state_alloc(rec, buf, allocated_size);
+	snap->poison_seed = poison_output_struct(buf, allocated_size, 0);
 }
 
 static void post_msgctl(struct syscallrecord *rec)

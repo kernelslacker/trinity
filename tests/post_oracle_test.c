@@ -20,7 +20,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ipc.h>
+#include <sys/msg.h>
 #include <sys/prctl.h>
+#include <sys/sem.h>
+#include <sys/shm.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -1006,6 +1010,58 @@ static void getgroups_untouched(void)
 	}
 }
 
+extern bool fake_overlaps_libc_heap;	/* fake_shm.c */
+
+/* The SysV ctl commands that fill a buffer hand the kernel the buffer
+ * their poison was stamped into, so a success whose copy reached it is no
+ * untouched one.  The kernel's copy is stood in for by a byte flipped in
+ * the buffer the call hands it.  A heap buffer is one asb_relocate()
+ * moves the call off, and the fake allocator's are none, so every range
+ * is said to overlap the heap while a sanitiser runs. */
+static void sysv_ctl_untouched(void)
+{
+	static const struct {
+		const char *what;
+		struct syscallentry *entry;
+		unsigned int cmd_slot;
+		unsigned long cmd;
+		unsigned int buf_slot;
+	} cases[] = {
+		{ "shmctl IPC_STAT", &syscall_shmctl, 2, IPC_STAT, 3 },
+		{ "shmctl SHM_INFO", &syscall_shmctl, 2, SHM_INFO, 3 },
+		{ "msgctl IPC_STAT", &syscall_msgctl, 2, IPC_STAT, 3 },
+		{ "msgctl MSG_INFO", &syscall_msgctl, 2, MSG_INFO, 3 },
+		{ "semctl IPC_STAT", &syscall_semctl, 3, IPC_STAT, 4 },
+		{ "semctl SEM_INFO", &syscall_semctl, 3, SEM_INFO, 4 },
+	};
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int i, written;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		for (written = 0; written < 2; written++) {
+			unsigned long before;
+			char what[128];
+
+			memset(&rec, 0, sizeof(rec));
+			*slots[cases[i].cmd_slot - 1] = cases[i].cmd;
+			fake_overlaps_libc_heap = true;
+			cases[i].entry->sanitise(&rec);
+			fake_overlaps_libc_heap = false;
+			if (written)
+				*(unsigned char *) *slots[cases[i].buf_slot - 1] ^= 0xff;
+			rec.retval = 0;
+			before = shm->stats.post_handler_untouched_out_buf;
+			cases[i].entry->post(&rec);
+
+			snprintf(what, sizeof(what), "%s, %s", cases[i].what,
+				 written ? "the buffer written" : "nothing written");
+			expect(what, shm->stats.post_handler_untouched_out_buf - before,
+			       written ? 0 : 1);
+		}
+	}
+}
+
 #ifdef ARCH_IS_BIARCH
 /* No compat base is a kernel address: x86-64's access_ok() passes
  * 0xffffffff, and iter_to_pipe() returns the bytes the segments before
@@ -1149,6 +1205,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_len();
 	sched_getaffinity_pid();
 	getgroups_untouched();
+	sysv_ctl_untouched();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH

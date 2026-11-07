@@ -3,6 +3,7 @@
  */
 #include <linux/ipc.h>
 #include <linux/shm.h>
+#include <string.h>
 #include <unistd.h>
 #include "ipc-common.h"
 #include "output-poison.h"
@@ -22,7 +23,6 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 	struct ipcctl_post_state *snap;
 	void *buf;
 	unsigned long allocated_size;
-	bool input_buf = false;
 
 	rec->post_state = 0;
 
@@ -34,11 +34,9 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 		return;
 	case IPC_INFO:
 		allocated_size = sizeof(struct shminfo);
-		buf = zmalloc_tracked(allocated_size);
 		break;
 	case SHM_INFO:
 		allocated_size = sizeof(struct shm_info);
-		buf = zmalloc_tracked(allocated_size);
 		break;
 	case IPC_SET: {
 		/*
@@ -56,51 +54,41 @@ static void sanitise_shmctl(struct syscallrecord *rec)
 		 * keeps read access to the segment after the SET -- without
 		 * this guard a later shmat / shmctl(IPC_STAT) from the
 		 * same child trips EACCES, defeating the point of fixing
-		 * the coverage gap.
+		 * the coverage gap.  The buffer comes from the call's pool,
+		 * where the kernel reads it in place.
 		 */
 		static const unsigned short mode_dict[] = { 0600, 0644, 0666 };
-		struct shmid_ds *ds;
+		struct shmid_ds *ds = get_writable_struct(sizeof(*ds));
 
-		allocated_size = sizeof(struct shmid_ds);
-		buf = zmalloc_tracked(allocated_size);
-		ds = buf;
+		rec->a3 = (unsigned long) ds;
+		if (ds == NULL)
+			return;
+		memset(ds, 0, sizeof(*ds));
 		ds->shm_perm.uid = getuid();
 		ds->shm_perm.gid = getgid();
 		ds->shm_perm.mode =
 			mode_dict[rnd_modulo_u32(ARRAY_SIZE(mode_dict))] | 0400;
-		input_buf = true;
-		break;
+		return;
 	}
 	default:
 		/* IPC_STAT, SHM_STAT, SHM_STAT_ANY */
 		allocated_size = sizeof(struct shmid_ds);
-		buf = zmalloc_tracked(allocated_size);
 		break;
 	}
 
-	rec->a3 = (unsigned long) buf;
-
-	snap = ipcctl_post_state_alloc(rec, buf, allocated_size);
-
 	/*
-	 * IPC_SET is the only input branch: the kernel reads shm_perm
-	 * from the buffer.  Relocate copy-preserving so the curated
-	 * uid/gid/mode survive the move into the writable pool; without
-	 * it the kernel reads pool zeros and EINVALs/EPERMs the call,
-	 * silently neutering IPC_SET coverage.  IPC_INFO / SHM_INFO /
-	 * IPC_STAT / SHM_STAT / SHM_STAT_ANY are pure outputs -- the
-	 * kernel writes them, so the cheaper relocate-only suffices.
-	 * The pure-output branches also stamp a poison pattern into
-	 * the out-buffer that the shared post handler re-reads to
-	 * detect a success return with no matching copy_to_user().
+	 * The rest are pure outputs.  The buffer comes from the call's
+	 * pool, which avoid_shared_buffer_out() would leave where it is,
+	 * so the kernel writes the buffer the poison is stamped into, and
+	 * the shared post handler re-reads it to catch a success return
+	 * with no matching copy_to_user().
 	 */
-	if (input_buf) {
-		avoid_shared_buffer_inout(&rec->a3, allocated_size);
-	} else {
-		snap->poison_seed = poison_output_struct(buf,
-							 allocated_size, 0);
-		avoid_shared_buffer_out(&rec->a3, allocated_size);
-	}
+	buf = get_writable_struct(allocated_size);
+	rec->a3 = (unsigned long) buf;
+	if (buf == NULL)
+		return;
+	snap = ipcctl_post_state_alloc(rec, buf, allocated_size);
+	snap->poison_seed = poison_output_struct(buf, allocated_size, 0);
 }
 
 static void post_shmctl(struct syscallrecord *rec)

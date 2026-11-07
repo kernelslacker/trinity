@@ -38,10 +38,10 @@ struct syscallrecord;
  *   magic       - cookie verified in the post handler after the
  *                 heap-shape gate; catches a sibling scribble that
  *                 redirected rec->post_state to a foreign allocation.
- *   buf         - inner IPC out-buffer (zmalloc_tracked at sanitise
- *                 time); freed via deferred_freeptr in the post path.
- *   buf_size    - byte count of the out-buffer; drives both the
- *                 poison stamp/check window and the free-side size.
+ *   buf         - inner IPC out-buffer, from the call's pool, which
+ *                 the kernel writes in place.
+ *   buf_size    - byte count of the out-buffer; drives the poison
+ *                 stamp/check window.
  *   poison_seed - non-zero if the sanitiser stamped a poison pattern
  *                 into the buffer; a zero seed means the poison arm
  *                 was skipped (input-only branch, or no out-buffer
@@ -92,10 +92,10 @@ struct ipcctl_post_state *ipcctl_post_state_alloc(struct syscallrecord *rec,
 /*
  * Post-handler shape shared by shmctl/msgctl IPC_STAT / IPC_INFO paths.
  * Walks the snap hung off rec->post_state, gates on heap-shape, magic
- * cookie, and ownership-table membership, then releases the inner IPC
- * buffer + the snap itself through deferred-free.  On any gate fail
- * the snap + inner buf leak rather than getting fed to free() with a
- * sibling-redirected pointer.  @name is the per-syscall log prefix
- * embedded in the outputerr() lines on reject.
+ * cookie, and ownership-table membership, then checks the inner IPC
+ * buffer for the poison its sanitiser stamped and releases the snap.
+ * On any gate fail the snap leaks rather than getting fed to free()
+ * with a sibling-redirected pointer.  @name is the per-syscall log
+ * prefix embedded in the outputerr() lines on reject.
  */
 void post_ipcctl_buf_free(struct syscallrecord *rec, const char *name);

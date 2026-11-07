@@ -5469,10 +5469,6 @@ static void msgctl_set_leaves_the_queue_room(void)
 		r->a2 = IPC_SET;
 		syscall_msgctl.sanitise(r);
 		ds = (const struct msqid_ds *) r->a3;
-		/* The post handler gives the buffer back through deferred
-		 * free, which takes only what the alloc-track holds, and this
-		 * binary's zmalloc_tracked() registers nothing. */
-		deferred_alloc_track((void *) ds, sizeof(*ds));
 		if (ds->msg_perm.uid != getuid() || ds->msg_perm.gid != getgid() ||
 		    !(ds->msg_perm.mode & 0400))
 			BUG("msgctl: an IPC_SET hands the queue someone else's ownership or no read access");
@@ -5481,7 +5477,6 @@ static void msgctl_set_leaves_the_queue_room(void)
 		r->retval = (unsigned long) -1L;
 		syscall_msgctl.post(r);
 	}
-	deferred_free_flush();
 	fake_this_child = NULL;
 }
 

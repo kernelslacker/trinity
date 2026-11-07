@@ -2,11 +2,11 @@
  * Post-handler helpers shared across the SysV IPC syscall family (shmget,
  * msgget, semget, shmctl, msgctl): the *get handlers bound-check the retval
  * and publish the id into the per-child OBJ_LOCAL pool; the *ctl handlers
- * validate the out-buffer snapshot on rec->post_state and deferred-free it.
+ * validate the out-buffer snapshot on rec->post_state and check the buffer
+ * the kernel was to fill.
  */
 #include <limits.h>
 #include <stddef.h>
-#include "deferred-free.h"
 #include "ipc-common.h"
 #include "output-poison.h"
 #include "shm.h"
@@ -126,6 +126,5 @@ void post_ipcctl_buf_free(struct syscallrecord *rec, const char *name)
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 
-	deferred_freeptr(&snap->buf);
 	post_state_release(rec, snap);
 }

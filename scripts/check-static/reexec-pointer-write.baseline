@@ -36,8 +36,10 @@ syscalls/fs/stat/sysfs.c:syscall_sysfs
 syscalls/fs/timestamp/futimesat.c:syscall_futimesat
 syscalls/fs/timestamp/utimensat.c:syscall_utimensat
 syscalls/ioctl.c:syscall_ioctl
+syscalls/ipc/sysv/msgctl.c:syscall_msgctl
 syscalls/ipc/sysv/semop.c:syscall_semop
 syscalls/ipc/sysv/semtimedop.c:syscall_semtimedop
+syscalls/ipc/sysv/shmctl.c:syscall_shmctl
 syscalls/kexec/kexec_load.c:syscall_kexec_load
 syscalls/keyctl/add_key.c:syscall_add_key
 syscalls/keyctl/request_key.c:syscall_request_key
