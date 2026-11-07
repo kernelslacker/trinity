@@ -725,6 +725,50 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 			"rtnl: RTM_GETDCB, which has only a doit, is sent a dump bit");
 }
 
+/* ---------- The attributes of RTM_NEWACTION, DELACTION and GETACTION ---- */
+
+struct action_attrs {
+	unsigned int attrs;
+	unsigned int tabs;	/* of type TCA_ROOT_TAB */
+};
+
+static void tally_action_attrs(struct action_attrs *t, const struct nlmsghdr *nlh)
+{
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct tcamsg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct tcamsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct tcamsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		t->attrs++;
+		t->tabs += (nla->nla_type & NLA_TYPE_MASK) == TCA_ROOT_TAB;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * tc_ctl_action() refuses a request without TCA_ACT_TAB, which is
+ * TCA_ROOT_TAB, before it reads anything else, and tc_dump_action() finds
+ * the kind to list in it.  An attribute takes the group's hint seven times
+ * in eight, and the hint is one of the five TCA_ROOT_* types, so about
+ * 0.18 of the attributes are TCA_ROOT_TAB; a random 16-bit type is that one
+ * time in 65536.  Over the ninety thousand attributes the bounds are many
+ * standard deviations out.
+ */
+static void expect_action_attrs(const struct action_attrs *t)
+{
+	expect_fraction(t->tabs, t->attrs, 0.12, 0.25, "RTM_*ACTION attributes",
+			"rtnl: an action request almost never carries a TCA_ROOT_TAB");
+}
+
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
@@ -735,6 +779,7 @@ struct tallies {
 	struct addr_dump multicast, anycast;
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
+	struct action_attrs action;
 };
 
 static void run_rounds(struct tallies *t)
@@ -793,6 +838,11 @@ static void run_rounds(struct tallies *t)
 		case RTM_SETNEIGHTBL:
 			tally_probe_interval(&t->probe_interval, nlh);
 			break;
+		case RTM_NEWACTION:
+		case RTM_DELACTION:
+		case RTM_GETACTION:
+			tally_action_attrs(&t->action, nlh);
+			break;
 		}
 next:
 		free(buf);
@@ -814,4 +864,5 @@ void rtnl_gen_self_check(void)
 	expect_addr_dump(&t.anycast, false, "RTM_GETANYCAST");
 	expect_link_limits(t.limits);
 	expect_probe_interval(&t.probe_interval);
+	expect_action_attrs(&t.action);
 }

@@ -300,6 +300,16 @@ static const unsigned short netnsa_attrs[] = {
 	NETNSA_TARGET_NSID, NETNSA_CURRENT_NSID,
 };
 
+/* TCA_ROOT_* attr types for RTM_*ACTION (rtnl group 8).  File-static
+ * here for the same reason as ndtbl_attrs above.  tc_ctl_action()
+ * refuses a request without TCA_ROOT_TAB (TCA_ACT_TAB) and parses with
+ * no policy; FLAGS and TIME_DELTA steer the dump, and COUNT and
+ * EXT_WARN_MSG, reply-only, ride along like NETNSA_CURRENT_NSID. */
+static const unsigned short tca_root_attrs[] = {
+	TCA_ROOT_TAB, TCA_ROOT_FLAGS, TCA_ROOT_COUNT,
+	TCA_ROOT_TIME_DELTA, TCA_ROOT_EXT_WARN_MSG,
+};
+
 /* TCA_* attr types the chain handler (rtnl group 21) actually consumes.
  * tc_ctl_chain shares rtm_tca_policy with cases 5/6/7 but only reads
  * this narrow subset; the rest of tca_attrs is silently ignored, so a
@@ -339,6 +349,7 @@ unsigned short pick_rtnl_attr_type(unsigned short nlmsg_type)
 	case 5:
 	case 6:
 	case 7: return tca_attrs[rnd_modulo_u32(tca_attrs_n)].type;
+	case 8: return RAND_ARRAY(tca_root_attrs);
 	case 10:
 	case 11: return IFA_TARGET_NETNSID;
 	case 12: return RAND_ARRAY(ndtbl_attrs);
