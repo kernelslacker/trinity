@@ -99,6 +99,7 @@ void landlock_self_check(void);
 void numa_self_check(void);
 void bpf_pick_self_check(void);
 void pathname_pool_self_check(void);
+void io_uring_register_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -551,6 +552,11 @@ int main(int argc, char **argv)
 	printf("  pathname_pool_self_check ... ");
 	fflush(stdout);
 	pathname_pool_self_check();
+	printf("OK\n");
+
+	printf("  io_uring_register_self_check ... ");
+	fflush(stdout);
+	io_uring_register_self_check();
 	printf("OK\n");
 
 	return 0;

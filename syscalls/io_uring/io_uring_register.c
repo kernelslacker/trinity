@@ -216,7 +216,11 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 		rec->a2 = blind_opcodes[rnd_modulo_u32(ARRAY_SIZE(blind_opcodes))];
 	}
 
-	opcode = rec->a2;
+	/*
+	 * The kernel masks the modifier off before it dispatches, so a
+	 * modifier draw takes its base opcode's payload.
+	 */
+	opcode = rec->a2 & ~IORING_REGISTER_USE_REGISTERED_RING;
 
 	switch (opcode) {
 	case IORING_REGISTER_BUFFERS:

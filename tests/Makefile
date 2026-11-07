@@ -972,6 +972,10 @@ FAKE_SRCS	+= bpf_pick_test.c
 PARENT_SRCS	+= $(TOP)/args/pools/pathnames.c
 FAKE_SRCS	+= pathname_pool_test.c
 
+# io_uring_register_test.c runs io_uring_register's sanitiser, linked above
+# for post_oracle_test.c, and holds it to the payloads the kernel takes.
+FAKE_SRCS	+= io_uring_register_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
