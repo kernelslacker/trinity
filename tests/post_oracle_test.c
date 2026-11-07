@@ -13,6 +13,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/fanotify.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -1254,11 +1255,66 @@ static void vmsplice_compat_iovec(void)
 }
 #endif
 
-#ifdef USE_BPF
 extern struct object *(*fake_publish_resource)(enum objecttype type,
 					       unsigned long id,
 					       const struct resource_meta *meta);	/* landlock_test.c */
 
+static struct resource_meta published_meta;
+
+static struct object *record_publish(enum objecttype type, unsigned long id,
+				     const struct resource_meta *meta)
+{
+	(void) type;
+	(void) id;
+	published_meta = *meta;
+	return NULL;
+}
+
+/* fanotify_init publishes its fd tagged with the flags and event flags
+ * the kernel made the group with, which fanotify_mark's sanitiser reads
+ * to pick the events a group of that class takes.  Chain substitution
+ * can rewrite either slot after the sanitiser drew its own. */
+static void fanotify_init_rewritten(void)
+{
+	static const unsigned long ran_flags = FAN_CLOEXEC | FAN_CLASS_NOTIF |
+					       FAN_REPORT_MNT;
+	static const unsigned long ran_event_flags = O_RDWR | O_LARGEFILE;
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int tries, k;
+
+	for (tries = 0; tries < 4096; tries++) {
+		memset(&rec, 0, sizeof(rec));
+		syscall_fanotify_init.sanitise(&rec);
+		if (rec.a1 != ran_flags && rec.a2 != ran_event_flags)
+			break;
+	}
+	if (tries == 4096)
+		BUG("fanotify_init sanitiser never drew other flags");
+
+	/* The slots the kernel was handed, as __do_syscall() shadows
+	 * them. */
+	rec.a1 = ran_flags;
+	rec.a2 = ran_event_flags;
+	for (k = 0; k < ARRAY_SIZE(slots); k++)
+		rec.arg_shadow[k] = *slots[k];
+	rec.arg_snapshot_mask = syscall_fanotify_init.arg_snapshot_mask;
+	rec.retval = 7;
+	memset(&published_meta, 0, sizeof(published_meta));
+	fake_publish_resource = record_publish;
+	syscall_fanotify_init.post(&rec);
+	fake_publish_resource = NULL;
+	if (published_meta.flags != ran_flags ||
+	    published_meta.aux != ran_event_flags) {
+		fprintf(stderr, "fanotify_init: a rewritten call's fd tagged %#lx/%#lx, not %#lx/%#lx\n",
+			(unsigned long) published_meta.flags,
+			(unsigned long) published_meta.aux,
+			ran_flags, ran_event_flags);
+		failed++;
+	}
+}
+
+#ifdef USE_BPF
 static unsigned int bpf_published;
 
 static struct object *count_publish(enum objecttype type, unsigned long id,
@@ -1376,6 +1432,7 @@ void post_oracle_self_check(void)
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
 	io_uring_register_rewritten();
+	fanotify_init_rewritten();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH

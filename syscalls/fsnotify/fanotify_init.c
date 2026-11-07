@@ -96,63 +96,25 @@ static unsigned long sanitise_fanotify_init_flags(void)
 				fanotify_init_flags);
 }
 
-/*
- * Snapshot of the (flags, event_f_flags) pair the post handler uses
- * to publish the new OBJ_FD_FANOTIFY.  The old post handler read
- * both fields directly off rec->a1 / rec->a2; a sibling child
- * scribbling those slots between the syscall returning and the post
- * handler running would mis-tag the published fanotify fd, so the
- * downstream fanotify_mark sanitiser (which reads back
- * fanotifyobj.flags to gate FAN_FS_ERROR / FAN_PRE_ACCESS on the
- * init-fd's class) would OR in invalid combinations the kernel
- * rejects or skip valid ones.  Stashing the snap in rec->post_state
- * — a slot the syscall ABI does not expose — keeps the post handler
- * immune to such scribbles.
- */
-#define FANOTIFY_INIT_POST_STATE_MAGIC	0x46414e49UL	/* "FANI" */
-struct fanotify_init_post_state {
-	unsigned long magic;
-	unsigned long flags;
-	unsigned long event_f_flags;
-};
-
 static void sanitise_fanotify_init(struct syscallrecord *rec)
 {
-	struct fanotify_init_post_state *snap;
-
-	/*
-	 * Clear post_state up front so an early return below leaves the
-	 * post handler with a NULL snapshot to bail on rather than a stale
-	 * pointer carried over from an earlier syscall on this record.
-	 */
-	rec->post_state = 0;
-
 	rec->a1 = sanitise_fanotify_init_flags();
 	rec->a2 = get_fanotify_init_event_flags();
-
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic         = FANOTIFY_INIT_POST_STATE_MAGIC;
-	snap->flags         = rec->a1;
-	snap->event_f_flags = rec->a2;
-	post_state_install(rec, snap);
 }
 
+/*
+ * Publish the new fd tagged with the flags and event flags the group was
+ * made with: the fanotify_mark sanitiser reads fanotifyobj.flags back to
+ * gate FAN_FS_ERROR and FAN_MNT_* on the init-fd's class, and a wrong tag
+ * has it OR in combinations the kernel rejects or skip valid ones.  Both
+ * come from the slots the kernel was handed, shadowed at dispatch: chain
+ * substitution or a RedQueen pin can rewrite either after the sanitiser
+ * drew its own.
+ */
 static void post_fanotify_init(struct syscallrecord *rec)
 {
-	struct fanotify_init_post_state *snap;
 	unsigned long retval;
 	int fd;
-
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- callers just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, FANOTIFY_INIT_POST_STATE_MAGIC,
-				      __func__);
-	if (snap == NULL)
-		return;
 
 	/*
 	 * Snapshot rec->retval once.  rec lives in the child's shm
@@ -165,18 +127,15 @@ static void post_fanotify_init(struct syscallrecord *rec)
 	fd = (int) retval;
 
 	if ((long) retval < 0)
-		goto out_free;
+		return;
 
 	{
 		struct resource_meta meta = {
-			.flags = snap->flags,
-			.aux = snap->event_f_flags,
+			.flags = get_arg_snapshot(rec, 1),
+			.aux = get_arg_snapshot(rec, 2),
 		};
 		publish_resource(OBJ_FD_FANOTIFY, fd, &meta);
 	}
-
-out_free:
-	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_fanotify_init = {
@@ -189,6 +148,9 @@ struct syscallentry syscall_fanotify_init = {
 	.ret_objtype = OBJ_FD_FANOTIFY,
 	.sanitise = sanitise_fanotify_init,
 	.post = post_fanotify_init,
+	/* flags (a1) and event_f_flags (a2): the fd is tagged with the ones
+	 * the kernel made the group with. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.group = GROUP_VFS_IO,
 	.flags = REEXEC_SANITISE_OK,
 };
