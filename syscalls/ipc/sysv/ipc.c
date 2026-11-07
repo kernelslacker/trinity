@@ -348,7 +348,8 @@ static void sanitise_ipc_msgctl(struct syscallrecord *rec)
 	switch (cmd) {
 	case IPC_STAT:
 	case IPC_SET:
-	case MSG_STAT: {
+	case MSG_STAT:
+	case MSG_STAT_ANY: {
 		struct msqid_ds *buf;
 		buf = (struct msqid_ds *) get_writable_struct(sizeof(*buf));
 		if (!buf)
@@ -471,7 +472,8 @@ static void sanitise_ipc_shmctl(struct syscallrecord *rec)
 	switch (cmd) {
 	case IPC_STAT:
 	case IPC_SET:
-	case SHM_STAT: {
+	case SHM_STAT:
+	case SHM_STAT_ANY: {
 		struct shmid_ds *buf;
 		buf = (struct shmid_ds *) get_writable_struct(sizeof(*buf));
 		if (!buf)

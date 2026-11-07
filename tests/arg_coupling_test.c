@@ -5607,6 +5607,56 @@ static void msgctl_set_leaves_the_queue_room(void)
 	fake_this_child = NULL;
 }
 
+/* ipc()'s MSGCTL and SHMCTL hand MSG_STAT_ANY and SHM_STAT_ANY the buffer
+ * their STAT twins get: msgctl_stat() and shmctl_stat() copy a whole
+ * msqid64_ds or shmid64_ds out for either.  The command is drawn, so each
+ * case runs the sanitiser until it draws the one it is about. */
+static void ipc_stat_any_gets_a_buffer(void)
+{
+	static const struct {
+		unsigned long call;
+		int cmd;
+		size_t len;
+		const char *name;
+	} cases[] = {
+		{ IPC_MSGCTL, MSG_STAT_ANY, sizeof(struct msqid_ds), "MSG_STAT_ANY" },
+		{ IPC_SHMCTL, SHM_STAT_ANY, sizeof(struct shmid_ds), "SHM_STAT_ANY" },
+	};
+#ifdef ARCH_IS_BIARCH
+	const unsigned int abis = 2;	/* native, then compat */
+#else
+	const unsigned int abis = 1;
+#endif
+	unsigned int i, compat, tries;
+
+	if (get_writable_struct(1) == NULL)
+		writable_pool_init();
+
+	for (compat = 0; compat < abis; compat++) {
+		for (i = 0; i < ARRAY_SIZE(cases); i++) {
+			struct syscallrecord *r = NULL;
+
+			for (tries = 0; tries < 10000; tries++) {
+				r = child_call(&syscall_ipc, compat);
+				r->a1 = cases[i].call;
+				syscall_ipc.sanitise(r);
+				if ((int) r->a3 == cases[i].cmd)
+					break;
+				syscall_ipc.cleanup(r);
+			}
+			if (tries == 10000)
+				BUG("ipc: a STAT_ANY command is never drawn");
+			if (!call_reaches_buffer(r, r->a5, cases[i].len)) {
+				fprintf(stderr, "ipc: %s%s\n", cases[i].name,
+					compat ? " (compat)" : "");
+				BUG("ipc: a STAT_ANY command gets no buffer");
+			}
+			syscall_ipc.cleanup(r);
+		}
+	}
+	fake_this_child = NULL;
+}
+
 /* do_msgsnd() reads only IPC_NOWAIT from msgflg, so the list draws no
  * other flag, and the sanitiser clears that one on some calls: a send to
  * a full queue sleeps only without it, the case NEED_ALARM is there for.
@@ -6076,6 +6126,7 @@ void arg_coupling_self_check(void)
 	ipc_semctl_semun_through_ptr();
 	semctl_arrays_from_pool();
 	msgctl_set_leaves_the_queue_room();
+	ipc_stat_any_gets_a_buffer();
 	msgsnd_draws_only_ipc_nowait();
 	prctl_irreversible_states_held();
 #ifdef ARCH_IS_BIARCH
