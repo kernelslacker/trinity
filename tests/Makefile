@@ -277,11 +277,12 @@ REAL_SRCS	:= \
 # nsfs_test.c checks the group is kept out of; fake_ioctls.c registers the
 # groups with it.
 # syscalls/process/prctl.c, syscalls/sched/sched_getscheduler.c,
-# syscalls/sched/sched_getaffinity.c, syscalls/cred/getgroups.c and
-# syscalls/socket/recv.c bring syscall_prctl, syscall_sched_getscheduler,
-# syscall_sched_getaffinity, syscall_getgroups and the recv family, whose
-# post handlers post_oracle_test.c drives (prctl, sched_getaffinity,
-# getgroups and recvmsg through their own sanitisers) with the post_state
+# syscalls/sched/sched_getaffinity.c, syscalls/cred/getgroups.c,
+# syscalls/fs/getcwd.c and syscalls/socket/recv.c bring syscall_prctl,
+# syscall_sched_getscheduler, syscall_sched_getaffinity,
+# syscall_getgroups, syscall_getcwd and the recv family, whose post
+# handlers post_oracle_test.c drives (prctl, sched_getaffinity, getgroups,
+# getcwd and recvmsg through their own sanitisers) with the post_state
 # table, post_snapshot_or_skip() and the corrupt-pointer bump faked;
 # utils/proc-status.c is the /proc/self/status reader the
 # sched_getaffinity and getgroups oracles compare against.
@@ -368,6 +369,7 @@ PARENT_SRCS	:= \
 	$(TOP)/syscalls/sched/sched_getscheduler.c \
 	$(TOP)/syscalls/sched/sched_getaffinity.c \
 	$(TOP)/syscalls/cred/getgroups.c \
+	$(TOP)/syscalls/fs/getcwd.c \
 	$(TOP)/utils/proc-status.c \
 	$(TOP)/syscalls/socket/recv.c \
 	$(TOP)/args/valresult.c \

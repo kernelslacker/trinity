@@ -675,6 +675,74 @@ static void sched_getaffinity_pid(void)
 	}
 }
 
+/* The entries whose return enforce_count_bound() holds to a count the
+ * kernel was handed, which chain substitution or a RedQueen pin can
+ * rewrite after the sanitiser drew its own, and the count's slot. */
+static void count_rewritten(void)
+{
+	static const struct {
+		const struct syscallentry *entry;
+		unsigned int slot;
+	} entries[] = {
+		{ &syscall_getcwd, 2 },
+	};
+	/* The kernel handed twice the count the sanitiser drew, or half,
+	 * and filling all of it, or returning a byte past it. */
+	static const struct {
+		const char *what;
+		bool larger;
+		bool past;
+		unsigned int bumps;
+	} cases[] = {
+		{ "a larger rewritten count, all of it filled", true, false, 0 },
+		{ "a byte past a larger rewritten count", true, true, 1 },
+		{ "a smaller rewritten count, all of it filled", false, false, 0 },
+		{ "a byte past a smaller rewritten count", false, true, 1 },
+	};
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int e, i, k, tries;
+
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		const struct syscallentry *entry = entries[e].entry;
+		unsigned long *count = slots[entries[e].slot - 1];
+
+		for (i = 0; i < ARRAY_SIZE(cases); i++) {
+			unsigned long drawn;
+			char what[128];
+
+			for (tries = 0; tries < 4096; tries++) {
+				memset(&rec, 0, sizeof(rec));
+				for (k = 0; k < ARRAY_SIZE(slots); k++)
+					*slots[k] = (unsigned long) get_writable_address(page_size);
+				*count = 64;
+				entry->sanitise(&rec);
+				if (*count >= 2)
+					break;
+				free((void *) rec.post_state);
+				while (rec.owned_count > 0)
+					free(rec.owned[--rec.owned_count]);
+			}
+			if (tries == 4096)
+				BUG("a sanitiser never drew a count past 1");
+
+			drawn = *count;
+			*count = cases[i].larger ? drawn * 2 : drawn / 2;
+			for (k = 0; k < ARRAY_SIZE(slots); k++)
+				rec.arg_shadow[k] = *slots[k];
+			rec.arg_snapshot_mask = entry->arg_snapshot_mask;
+			rec.retval = *count + (cases[i].past ? 1 : 0);
+			bumps = 0;
+			dispatch_post(entry, &rec);
+			while (rec.owned_count > 0)
+				free(rec.owned[--rec.owned_count]);
+
+			snprintf(what, sizeof(what), "%s, %s", entry->name, cases[i].what);
+			expect(what, bumps, cases[i].bumps);
+		}
+	}
+}
+
 /* A grouplist still holding the poison getgroups' sanitiser stamped over
  * the 4 gids it drew, after a return of gids copied, is a buffer the
  * kernel never wrote; but a gidsetsize rewritten to 0 asks for the count
@@ -760,6 +828,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_len();
 	sched_getaffinity_pid();
 	getgroups_untouched();
+	count_rewritten();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
 #endif

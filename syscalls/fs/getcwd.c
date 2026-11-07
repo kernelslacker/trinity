@@ -12,18 +12,17 @@
 #include "utils.h"
 
 /*
- * Snapshot of the getcwd input args read by the post oracle, captured
+ * Snapshot of the getcwd buf pointer read by the post oracle, captured
  * at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
  * handler running cannot redirect the source memcpy at a foreign user
- * buffer or launder an oversized retval past the size bound below.
+ * buffer.
  */
 #define GETCWD_POST_STATE_MAGIC	0x47435744UL	/* "GCWD" */
 struct getcwd_post_state {
 	unsigned long magic;
 	unsigned long buf;
-	unsigned long size;
 };
 
 static void sanitise_getcwd(struct syscallrecord *rec)
@@ -55,7 +54,6 @@ static void sanitise_getcwd(struct syscallrecord *rec)
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = GETCWD_POST_STATE_MAGIC;
 	snap->buf = rec->a1;
-	snap->size = rec->a2;
 	post_state_install(rec, snap);
 }
 
@@ -102,26 +100,6 @@ static void post_getcwd(struct syscallrecord *rec)
 	if (snap == NULL)
 		return;
 
-	/*
-	 * STRONG-VAL length bound: sys_getcwd on success returns the byte
-	 * length (including the trailing NUL) of the path written into the
-	 * user `buf`, capped at the caller-supplied `size`.  Failure
-	 * returns a negative errno.  A retval > size on a positive return
-	 * is a structural ABI regression -- a torn write of the length, a
-	 * sibling-stomp of rec->retval between syscall return and post
-	 * entry, or a path-component miscount in prepend_path().  Compare
-	 * against the snapshotted size (snap->size) rather than rec->a2 so
-	 * a sibling that scribbles rec->aN cannot launder an oversized
-	 * retval past this gate.  Fires unconditionally, ahead of the
-	 * ONE_IN(100) sample gate, so every offending retval is counted.
-	 */
-	if (ret > 0 && retval > snap->size) {
-		outputerr("post_getcwd: rejected retval=0x%lx > size=%lu\n",
-			  retval, snap->size);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_release;
-	}
-
 	if (!ONE_IN(100))
 		goto out_release;
 
@@ -167,5 +145,9 @@ struct syscallentry syscall_getcwd = {
 	.rettype = RET_PATH,
 	.group = GROUP_VFS_IO,
 	.bound_arg = 2,
+	/* size (a2): enforce_count_bound() holds the return to the size the
+	 * kernel was handed, which chain substitution or a RedQueen pin may
+	 * have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 1),
 	.flags = REEXEC_SANITISE_OK,
 };
