@@ -103,18 +103,14 @@ enum cmp_hyp_live_inject_reason {
 };
 
 /*
- * RANGE-identity discriminators.  Carried per-entry on CMP_HYP_RANGE
- * hypotheses so dedup keys the entry by an inferred logical-probe
- * identity rather than by literal compare operands -- value churn at
- * any single comparison site, and multiple sites that observe the same
- * logical range, both collapse to ONE entry.  Zero for non-RANGE
- * kinds; their dedup keys are unchanged.
+ * A RANGE hypothesis's shape, inferred from its site's cluster and
+ * carried on CMP_HYP_RANGE entries alone (zero for every other kind).
  *
  * KCOV records only operand values, NOT the compare OPERATOR, so
  * direction is INFERRED heuristically from the accumulated cluster
  * (exemplar position relative to lo/hi).  CMP_RANGE_DIR_UNKNOWN is
  * the honest answer when no clear edge signal exists -- an
- * un-inferable probe is keyed under UNKNOWN rather than force-fit to
+ * un-inferable probe is recorded as UNKNOWN rather than force-fit to
  * a guessed direction.
  */
 enum cmp_range_direction {
@@ -124,11 +120,9 @@ enum cmp_range_direction {
 };
 
 /*
- * Signedness is part of identity (same discipline as the
- * discriminated-arg width/sign handling): a 4-byte signed range whose
- * bounds straddle the signed/unsigned boundary is NOT the same probe
- * as an 8-byte unsigned range with the same numeric bounds.  Inferred
- * from whether either bound has the sign bit of its width set.
+ * Inferred from whether either bound has the sign bit of its width
+ * set; the derive ladder reads it to tell a signed-negative bound from
+ * an unsigned-large one.
  */
 enum cmp_range_signedness {
 	CMP_RANGE_SIGN_UNSIGNED = 0,
@@ -161,8 +155,8 @@ enum cmp_range_relation {
  * every entry was observed in this run.
  *
  * range_direction / range_signedness / range_relation are populated
- * only for CMP_HYP_RANGE entries and participate in their dedup key;
- * for every other kind they are zero and ignored.
+ * only for CMP_HYP_RANGE entries; for every other kind they are zero
+ * and ignored.
  */
 struct cmp_hypothesis {
 	unsigned int nr;

@@ -16,7 +16,7 @@
 #include "cmp_hints.h"
 
 /*
- * hyp-pool.c: allocation + identity helpers used by hyp-observe.c.
+ * hyp-pool.c: allocation + RANGE-inference helpers used by hyp-observe.c.
  * Every writer runs under the matching durable cmp_hint_pool lock so
  * hyp_pools[nr][do32] is serialised per-(nr, do32) without a second
  * lock of its own -- callers are responsible for holding it.
@@ -36,10 +36,6 @@ void cmp_hyp_range_identity_infer(uint64_t lo, uint64_t hi,
 				  const struct cmp_hypothesis *src,
 				  uint8_t *out_dir, uint8_t *out_sign,
 				  uint8_t *out_rel);
-struct cmp_hypothesis *
-cmp_hyp_find_range_by_identity(struct cmp_hyp_pool *pool, uint64_t lo,
-			       uint64_t hi, uint8_t width, uint8_t dir,
-			       uint8_t sign, uint8_t rel);
 
 /*
  * hyp-pick.c: value-agnostic picker used by hyp-live.c to resolve the

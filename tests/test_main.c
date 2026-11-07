@@ -50,6 +50,7 @@ void dispatch_extrafork_self_check(void);
 void tables_extrafork_self_check(void);
 void cmp_collect_self_check(void);
 void cmp_hyp_credit_self_check(void);
+void cmp_hyp_store_self_check(void);
 void sanitiser_owned_mask_self_check(void);
 void minicorpus_abi_self_check(void);
 void chain_corpus_self_check(void);
@@ -325,6 +326,11 @@ int main(int argc, char **argv)
 	printf("  cmp_hyp_credit_self_check ... ");
 	fflush(stdout);
 	cmp_hyp_credit_self_check();
+	printf("OK\n");
+
+	printf("  cmp_hyp_store_self_check ... ");
+	fflush(stdout);
+	cmp_hyp_store_self_check();
 	printf("OK\n");
 
 	printf("  sanitiser_owned_mask_self_check ... ");

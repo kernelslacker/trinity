@@ -1,5 +1,5 @@
 /*
- * SHADOW typed-hypothesis pool primitives: find / alloc / range-identity,
+ * SHADOW typed-hypothesis pool primitives: find / alloc / RANGE inference,
  * shared by the lane files through cmp_hints/hyp-internal.h.  Every writer
  * runs under the matching durable cmp_hint_pool lock, so hyp_pools[nr][do32]
  * is serialised per (nr, do32) without a second lock of its own.
@@ -51,20 +51,18 @@ struct cmp_hypothesis *cmp_hyp_find_exact(struct cmp_hyp_pool *pool,
 }
 
 /*
- * Infer the RANGE-identity discriminators (direction / signedness /
- * relation-class) from an ENUM_FAMILY cluster summary at the same
- * (cmp_ip, width).  KCOV does NOT expose the kernel-side compare
- * operator -- direction is APPROXIMATE.  The heuristic: if the
- * most-recent exemplar sits at the high end of the cluster, treat the
- * probe as ASCENDING (kernel keeps comparing against a rising bound);
- * at the low end, DESCENDING; otherwise UNKNOWN so an un-inferable
- * probe is bucketed honestly rather than force-fit to a guess.
+ * Infer a RANGE's direction / signedness / relation-class from the
+ * ENUM_FAMILY cluster summary at the same (cmp_ip, width).  KCOV does
+ * NOT expose the kernel-side compare operator -- direction is
+ * APPROXIMATE.  The heuristic: if the most-recent exemplar sits at the
+ * high end of the cluster, treat the probe as ASCENDING (kernel keeps
+ * comparing against a rising bound); at the low end, DESCENDING;
+ * otherwise UNKNOWN so an un-inferable probe is bucketed honestly
+ * rather than force-fit to a guess.
  *
- * Signedness: a bound whose sign bit (relative to its width) is set
- * cannot legitimately share identity with an unsigned probe that
- * happens to have the same numeric value -- a u8 hi=0xFF and an s8
- * hi=-1 are different probes.  Conservative classifier: SIGNED if
- * either bound has the width's sign bit set, else UNSIGNED.
+ * Signedness: a u8 hi=0xFF and an s8 hi=-1 are different probes.
+ * Conservative classifier: SIGNED if either bound has the width's sign
+ * bit set, else UNSIGNED.
  *
  * Relation: only INSIDE is reachable from the observer side -- KCOV
  * gives us matching operand values, not edge-rejection events.  The
@@ -99,40 +97,6 @@ void cmp_hyp_range_identity_infer(uint64_t lo, uint64_t hi,
 		*out_sign = CMP_RANGE_SIGN_UNSIGNED;
 
 	*out_rel = CMP_RANGE_REL_INSIDE;
-}
-
-/*
- * RANGE dedup by inferred identity, NOT cmp_ip: two comparison sites
- * that observe the same logical range probe (same bounds, same
- * inferred direction, same width / signedness / relation-class)
- * collapse to ONE entry, and value churn at a single site that does
- * not shift the bounds folds into the same slot.  Bounds are part of
- * identity rather than payload, so a probe whose bounds drift even
- * one step apart is keyed as a distinct hypothesis.
- */
-struct cmp_hypothesis *
-cmp_hyp_find_range_by_identity(struct cmp_hyp_pool *pool, uint64_t lo,
-			       uint64_t hi, uint8_t width, uint8_t dir,
-			       uint8_t sign, uint8_t rel)
-{
-	unsigned int i, n = pool->count;
-
-	if (n > CMP_HYP_PER_SYSCALL)
-		return NULL;
-	for (i = 0; i < n; i++) {
-		struct cmp_hypothesis *h = &pool->entries[i];
-
-		if (h->kind != CMP_HYP_RANGE || h->width != width)
-			continue;
-		if (h->lo != lo || h->hi != hi)
-			continue;
-		if (h->range_direction != dir
-		    || h->range_signedness != sign
-		    || h->range_relation != rel)
-			continue;
-		return h;
-	}
-	return NULL;
 }
 
 /*

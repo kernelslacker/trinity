@@ -160,16 +160,12 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 	 * implicit in {lo, hi}; the consumer derives it at pick time so the
 	 * shadow store does not need to materialise it.
 	 *
-	 * Dedup key is an inferred RANGE-IDENTITY tuple {lo, hi, direction,
-	 * width, signedness, relation-class}, NOT cmp_ip.  Two comparison
-	 * sites that produce the same logical range probe -- regardless of
-	 * the literal constants the kernel happened to compare against --
-	 * collapse to ONE entry.  Width and signedness are part of the
-	 * identity (per the discriminated-arg discipline): a u32 range and
-	 * a u64 range with the same numeric bounds are not the same probe.
+	 * Keyed by site (cmp_ip, width), as ENUM_FAMILY is, since the
+	 * picker serves a hypothesis only at its own site; the bounds,
+	 * direction and signedness follow the cluster as it widens.
 	 * Direction is APPROXIMATE -- KCOV cannot recover the operator --
 	 * and CMP_RANGE_DIR_UNKNOWN owns un-inferable probes so they are
-	 * keyed honestly instead of force-fit to a guess.
+	 * recorded honestly instead of force-fit to a guess.
 	 *
 	 * Bound math safety: the > 32 / <= early-bail above guarantees
 	 * hi > lo at the subtraction site; the second-line check below
@@ -189,20 +185,16 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 
 		cmp_hyp_range_identity_infer(r_lo, r_hi, width, e,
 					     &dir, &sign, &rel);
-		h = cmp_hyp_find_range_by_identity(pool, r_lo, r_hi, width,
-						   dir, sign, rel);
-		if (h == NULL) {
+		h = cmp_hyp_find(pool, CMP_HYP_RANGE, cmp_ip, width);
+		if (h == NULL)
 			h = cmp_hyp_alloc(pool, CMP_HYP_RANGE, nr, do32,
 					  cmp_ip, width);
-			if (h != NULL) {
-				h->range_direction = dir;
-				h->range_signedness = sign;
-				h->range_relation = rel;
-				h->lo = r_lo;
-				h->hi = r_hi;
-			}
-		}
 		if (h != NULL) {
+			h->range_direction = dir;
+			h->range_signedness = sign;
+			h->range_relation = rel;
+			h->lo = r_lo;
+			h->hi = r_hi;
 			h->exemplar = e->exemplar;
 			h->seen_count = e->seen_count;
 			h->last_used_generation = generation;
