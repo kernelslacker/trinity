@@ -626,9 +626,16 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 		output(0, "corrupt-ptr reject sample: syscall=%s value=0x%lx "
 			  "label=%s caller=%s\n",
 			  name, v, corrupt_ptr_label(v),
-			  pc_to_string(__builtin_return_address(0),
-				       pcbuf, sizeof(pcbuf)));
+			  pc_to_string(caller_pc, pcbuf, sizeof(pcbuf)));
 	}
 	return true;
+}
+
+/* noinline, as add_object() is, so the return address it records is
+ * the call site's (include/utils-alloc.h). */
+__attribute__((noinline))
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
+{
+	return looks_like_corrupted_ptr_pc(rec, p, __builtin_return_address(0));
 }
 

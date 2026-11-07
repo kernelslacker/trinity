@@ -178,27 +178,22 @@ static inline bool is_corrupt_ptr_shape(const void *p)
  * Variant that additionally records @caller_pc into the per-callsite
  * sub-attribution ring on a positive result.  Used directly from
  * deferred_free_enqueue (rec==NULL) so the recorded PC identifies the
- * deferred_free_enqueue caller; the looks_like_corrupted_ptr() inline
- * wrapper below routes every other call site through here with
- * __builtin_return_address(0) so per-handler rows in the dump can be
- * broken down by the specific looks_like_corrupted_ptr() callsite.
+ * deferred_free_enqueue caller; looks_like_corrupted_ptr() below routes
+ * every other call site through here with its own return address, so
+ * per-handler rows in the dump can be broken down by the specific
+ * looks_like_corrupted_ptr() callsite.
  */
 bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 				 void *caller_pc) __must_check;
 
 /*
- * Inline wrapper so each call site automatically supplies its own
- * caller PC without source change.  Kept as static inline in the header
- * (rather than a regular function in utils.c that captures
- * __builtin_return_address(0)) so the recorded PC is the syscall
- * handler's own callsite rather than this wrapper's.
+ * looks_like_corrupted_ptr_pc() with the call site's own PC, which an
+ * out-of-line function in utils/corrupt_ptr.c captures as its return
+ * address: an inline one folded into a handler would capture the
+ * handler's return address, one PC for every call site in it.
  */
-__must_check
-static inline bool looks_like_corrupted_ptr(struct syscallrecord *rec,
-					    const void *p)
-{
-	return looks_like_corrupted_ptr_pc(rec, p, __builtin_return_address(0));
-}
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
+	__must_check;
 
 /*
  * Bump the post_handler_corrupt_ptr counter and record per-handler

@@ -201,6 +201,12 @@ bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,
 	return false;
 }
 
+bool looks_like_corrupted_ptr(struct syscallrecord *rec, const void *p)
+{
+	(void)rec; (void)p;
+	return false;
+}
+
 void log_self_corrupt_culprit(const char *site, unsigned long wild,
 			      const struct syscallrecord *rec)
 {
