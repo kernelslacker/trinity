@@ -930,6 +930,13 @@ FAKE_SRCS	+= numa_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/sched/getcpu.c \
 		   $(TOP)/syscalls/cred/capget.c
 
+# syscalls/cred/setreuid.c, setresuid.c, setregid.c and setresgid.c bring
+# the set*id calls whose getres[ug]id() compares post_oracle_test.c runs.
+PARENT_SRCS	+= $(TOP)/syscalls/cred/setreuid.c \
+		   $(TOP)/syscalls/cred/setresuid.c \
+		   $(TOP)/syscalls/cred/setregid.c \
+		   $(TOP)/syscalls/cred/setresgid.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

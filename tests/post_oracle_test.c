@@ -959,6 +959,54 @@ static void capget_target(void)
 	}
 }
 
+/* @entry's post handler on calls with @a1-@a3 that answered 0, which
+ * @reported says its sampled getres[ug]id() compare should report. */
+static void setid_case(const struct syscallentry *entry, unsigned long a1,
+		       unsigned long a2, unsigned long a3, bool reported)
+{
+	unsigned long before = shm->stats.oracle.cred_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = a1;
+		rec.a2 = a2;
+		rec.a3 = a3;
+		rec.retval = 0;
+		entry->post(&rec);
+	}
+	if ((shm->stats.oracle.cred_oracle_anomalies != before) == reported)
+		return;
+	fprintf(stderr, "%s(%ld, %ld, %ld): %s\n", entry->name,
+		(long) a1, (long) a2, (long) a3,
+		reported ? "an id the call did not set went unreported"
+			 : "an id left unchanged was checked");
+	failed++;
+}
+
+/* A RedQueen pin can hand a set*id call (uid_t)-1, the "leave unchanged"
+ * id the kernel compares each against: an id passed as -1 is not checked,
+ * one the caller does not hold still is. */
+static void setid_unchanged(void)
+{
+	const unsigned long keep = (uid_t) -1;
+	uid_t r, e, s;
+	gid_t rg, eg, sg;
+
+	if (getresuid(&r, &e, &s) != 0 || getresgid(&rg, &eg, &sg) != 0)
+		BUG("set*id: cannot read the test's ids");
+
+	setid_case(&syscall_setreuid, keep, e, 0, false);
+	setid_case(&syscall_setreuid, r + 1, e, 0, true);
+	setid_case(&syscall_setresuid, keep, keep, keep, false);
+	setid_case(&syscall_setresuid, r, e, s + 1, true);
+	setid_case(&syscall_setregid, keep, eg, 0, false);
+	setid_case(&syscall_setregid, rg + 1, eg, 0, true);
+	setid_case(&syscall_setresgid, keep, keep, keep, false);
+	setid_case(&syscall_setresgid, rg, eg, sg + 1, true);
+}
+
 /* setgroups calls the sanitiser built for @built gids, which the kernel
  * ran with @ran, the @ran at @gids, and answered 0; the anomalies the
  * sampled getgroups() and /proc/self/status compares report. */
@@ -1707,6 +1755,7 @@ void post_oracle_self_check(void)
 	sched_getaffinity_pid();
 	getcpu_spliced();
 	capget_target();
+	setid_unchanged();
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();

@@ -10,8 +10,9 @@
 
 /*
  * Oracle: all three slots set by setresuid must round-trip through
- * getresuid().  trinity always passes 0..65535 (no -1 sentinel), so every
- * arg is an expected value.
+ * getresuid().  Generation keeps each arg to 0..65535, but a RedQueen pin
+ * can write the (uid_t)-1 "leave unchanged" id the kernel compares each
+ * against, so an id passed as -1 is not checked.
  */
 static void post_setresuid(struct syscallrecord *rec)
 {
@@ -31,7 +32,9 @@ static void post_setresuid(struct syscallrecord *rec)
 	want_r = r_in;
 	want_e = e_in;
 	want_s = s_in;
-	if (r != want_r || e != want_e || s != want_s) {
+	if ((want_r != (uid_t) -1 && r != want_r) ||
+	    (want_e != (uid_t) -1 && e != want_e) ||
+	    (want_s != (uid_t) -1 && s != want_s)) {
 		output(0, "cred oracle: setresuid(%u, %u, %u) succeeded but "
 		       "getresuid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, want_s, r, e, s);

@@ -25,7 +25,8 @@ static void post_setregid(struct syscallrecord *rec)
 
 	want_r = r_in;
 	want_e = e_in;
-	if (r != want_r || e != want_e) {
+	if ((want_r != (gid_t) -1 && r != want_r) ||
+	    (want_e != (gid_t) -1 && e != want_e)) {
 		output(0, "cred oracle: setregid(%u, %u) succeeded but "
 		       "getresgid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, r, e, s);

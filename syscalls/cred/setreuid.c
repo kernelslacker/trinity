@@ -9,9 +9,10 @@
 #include "trinity.h"
 
 /*
- * Oracle: setreuid(r, e) — verify both ids stuck via getresuid().  trinity's
- * sanitise gives us 0..65535 for each arg, so we never pass the (uid_t)-1
- * "leave unchanged" sentinel; treat both args as required values.
+ * Oracle: setreuid(r, e) — verify both ids stuck via getresuid().
+ * Generation keeps each arg to 0..65535, but a RedQueen pin can write the
+ * (uid_t)-1 "leave unchanged" id the kernel compares each against, so an
+ * id passed as -1 is not checked.
  */
 static void post_setreuid(struct syscallrecord *rec)
 {
@@ -29,7 +30,8 @@ static void post_setreuid(struct syscallrecord *rec)
 
 	want_r = r_in;
 	want_e = e_in;
-	if (r != want_r || e != want_e) {
+	if ((want_r != (uid_t) -1 && r != want_r) ||
+	    (want_e != (uid_t) -1 && e != want_e)) {
 		output(0, "cred oracle: setreuid(%u, %u) succeeded but "
 		       "getresuid()={r=%u, e=%u, s=%u}\n",
 		       want_r, want_e, r, e, s);
