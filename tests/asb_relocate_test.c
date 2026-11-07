@@ -1,8 +1,9 @@
 /*
  * Self-check for the writable-pool exemption in asb_relocate(), reached
- * through avoid_shared_buffer_out(): a range wholly inside the pool stays,
- * any other flagged range moves into it (one whose end wraps the address
- * space included), and a length the pool cannot hold leaves the pointer.
+ * through avoid_shared_buffer_out(): a range that starts inside the pool
+ * stays, any other flagged range moves into it (one whose end wraps the
+ * address space included), and a length the pool cannot hold leaves the
+ * pointer.
  * get_writable_address() refuses such a size, a wrapping round-up included.
  * A pointer that starts in the low pool, a compat call's, stays too.
  * The iovec scrub leaves the entries asb_relocate() would leave, where it
@@ -73,15 +74,20 @@ static void pool_exemption(unsigned long base)
 		{ "an all-ones pointer",
 		  ULONG_MAX, page_size, true },
 
-		/* Wholly inside the pool, to its last byte. */
+		/* Starting inside the pool, however far the range runs: the
+		 * pool ends at a guard page.  The blanket scrub judges every
+		 * slot as a page. */
 		{ "the middle of the pool", base + 4096, 64, false },
 		{ "the last bytes of the pool", end - 64, 64, false },
 		{ "the whole pool", base, WRITABLE_POOL_BYTES, false },
-
-		/* Not wholly inside it. */
 		{ "a range running a byte past the pool end",
-		  end - 64, 65, true },
+		  end - 64, 65, false },
+		{ "a page from the pool's last 64 bytes",
+		  end - 64, page_size, false },
+
+		/* Starting outside it. */
 		{ "a range starting below the pool", base - 64, 64, true },
+		{ "a range starting at the pool's end", end, 64, true },
 		{ "a range outside the pool",
 		  (unsigned long) outside, sizeof(outside), true },
 
@@ -171,9 +177,8 @@ static void run_scrub_cases(const struct scrub_case *cases, unsigned int nr,
 }
 
 /* Both pools are tracked, so every entry they vend is flagged, but both
- * are kernel-write scratch: an entry wholly in the writable pool stays, as
- * does one that starts in the low pool, which ends at a guard page, in a
- * compat iovec as in a native one. */
+ * are kernel-write scratch: an entry that starts in either stays, since
+ * each ends at a guard page, in a compat iovec as in a native one. */
 static void scrub_pool_exemption(unsigned long base, unsigned long low)
 {
 	const unsigned long end = base + WRITABLE_POOL_BYTES;
@@ -182,7 +187,8 @@ static void scrub_pool_exemption(unsigned long base, unsigned long low)
 		{ "the middle of the pool", base + 4096, 64, true },
 		{ "the whole pool", base, WRITABLE_POOL_BYTES, true },
 		{ "a range running a byte past the pool end",
-		  end - 64, 65, false },
+		  end - 64, 65, true },
+		{ "a range starting at the pool's end", end, 64, false },
 		{ "a range starting below the pool", base - 64, 64, false },
 		{ "a range straddling the pool start", base - 32, 64, false },
 		{ "a range outside the pools",

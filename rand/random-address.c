@@ -224,9 +224,11 @@ bool range_in_writable_pool(unsigned long addr, unsigned long len)
 	return addr >= base && addr - base <= WRITABLE_POOL_BYTES - len;
 }
 
-bool range_in_call_pools(unsigned long addr, unsigned long len)
+bool starts_in_call_pools(unsigned long addr)
 {
-	return range_in_writable_pool(addr, len) ||
+	return (writable_pool != NULL &&
+		addr >= (unsigned long) writable_pool &&
+		addr - (unsigned long) writable_pool < WRITABLE_POOL_BYTES) ||
 	       (low_pool != NULL && addr >= (unsigned long) low_pool &&
 		addr - (unsigned long) low_pool < WRITABLE_POOL_BYTES);
 }
@@ -304,40 +306,22 @@ static void asb_relocate(unsigned long *addr, unsigned long len,
 		return;
 
 	/*
-	 * Skip pointers that already live inside the writable pool.  The
-	 * pool is track_shared_region()'d at init so every pool-vended
-	 * address trips overlap_shared, but the pool is a safe kernel-
-	 * write target by construction (MAP_PRIVATE|MAP_ANON scratch,
-	 * never add_object'd, not on the libc heap) -- redirecting a
-	 * pool address to a fresh pool address is pure waste and, when
-	 * the two ranges intersect, feeds overlapping src/dst into the
+	 * Skip pointers that start inside the writable pool or the low
+	 * pool.  Both are track_shared_region()'d at init so every address
+	 * they vend trips overlap_shared, but both are safe kernel-write
+	 * targets by construction (MAP_PRIVATE|MAP_ANON scratch, never
+	 * add_object'd, not on the libc heap) -- redirecting a pool
+	 * address to a fresh pool address is pure waste and, when the two
+	 * ranges intersect, feeds overlapping src/dst into the
 	 * copy_original memcpy below (undefined behaviour, flagged by
-	 * ASAN's memcpy-param-overlap).
-	 *
-	 * range_in_writable_pool() subtracts instead of adding, so a wild
-	 * *addr whose sum with len wraps is not taken for a pool range.
-	 * It refuses an empty range, which is no reason to move a zero-
-	 * length buffer off a pool address, so len == 0 compares the
-	 * pointer alone against the pool's extent.
+	 * ASAN's memcpy-param-overlap).  A low pool pointer is a compat
+	 * call's buffer, which a writable pool replacement would hand the
+	 * kernel cut to 32 bits.  Only the start is judged: each pool ends
+	 * at a guard page, so a range that starts inside runs into nothing
+	 * of ours, the page the blanket scrub judges every slot by
+	 * included.
 	 */
-	{
-		unsigned long pool_start = (unsigned long) writable_pool;
-
-		if (len == 0 ? (writable_pool != NULL &&
-				*addr >= pool_start &&
-				*addr - pool_start <= WRITABLE_POOL_BYTES)
-			     : range_in_writable_pool(*addr, len))
-			return;
-	}
-
-	/*
-	 * A pointer into the low pool is a compat call's buffer, which a
-	 * writable pool replacement would hand the kernel cut to 32 bits.
-	 * Only the start is judged: what follows the pool is its guard
-	 * page, so a range that starts inside runs into nothing of ours.
-	 */
-	if (low_pool != NULL && *addr >= (unsigned long) low_pool &&
-	    *addr - (unsigned long) low_pool < WRITABLE_POOL_BYTES)
+	if (starts_in_call_pools(*addr))
 		return;
 
 	replacement = get_writable_address(len ? len : page_size);
@@ -500,7 +484,7 @@ static bool iov_entry_needs_scrub(unsigned long base, unsigned long len)
 	if (base == 0 || len == 0)
 		return false;
 
-	if (range_in_call_pools(base, len))
+	if (starts_in_call_pools(base))
 		return false;
 
 	overlap_shared = range_overlaps_shared(base, len);
@@ -542,10 +526,11 @@ static bool iov_entry_needs_scrub(unsigned long base, unsigned long len)
  * Walk the array one final time and zero any entry whose [base, base+
  * len) overlaps either an alloc_shared region or the libc brk arena.
  * Zero base + zero len makes the kernel skip the entry without erroring
- * the whole call.  An entry asb_relocate() would leave in the writable
- * pool or the low pool stays (range_in_call_pools()): both are tracked,
- * so every entry they vend overlaps, but they are kernel-write scratch,
- * and sendmsg's gen_msg payload and the SHAPE_POOL entries live there.
+ * the whole call.  An entry that starts in the writable pool or the low
+ * pool stays, as asb_relocate() would leave it (starts_in_call_pools()):
+ * both are tracked, so every entry they vend overlaps, but they are
+ * kernel-write scratch ending at a guard page, and sendmsg's gen_msg
+ * payload and the SHAPE_POOL entries live there.
  * process_madvise, whose entries are ranges to advise, drops them
  * itself.  Bumps libc_heap_embedded_redirected so the operator can see
  * the second-pass coverage independently from the

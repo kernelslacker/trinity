@@ -50,11 +50,12 @@ void *get_writable_struct(size_t size);
  */
 bool range_in_writable_pool(unsigned long addr, unsigned long len);
 /*
- * True iff [addr, addr + len) is scratch a call's buffers come from: wholly
- * inside the writable pool, or starting in the low pool, which ends at a
- * guard page.  The iovec scrubs leave such an entry for a kernel write.
+ * True iff addr starts in the scratch a call's buffers come from, the
+ * writable pool or the low pool.  Each ends at a guard page, so a range
+ * that starts inside runs into nothing else: asb_relocate() leaves such a
+ * pointer, and the iovec scrubs such an entry, for a kernel write.
  */
-bool range_in_call_pools(unsigned long addr, unsigned long len);
+bool starts_in_call_pools(unsigned long addr);
 /*
  * Output-only redirect: relocate *addr away from shared/heap if it
  * overlaps, without copying the original bytes. Use for buffers the

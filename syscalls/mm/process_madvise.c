@@ -199,8 +199,7 @@ static void sanitise_process_madvise(struct syscallrecord *rec)
 	 */
 	scrub_iovec_for_kernel_write_layout(iov, rec->a3, rec->do32bit);
 	for (i = 0; iov != NULL && i < rec->a3 && i < UIO_MAXIOV; i++) {
-		if (range_in_call_pools(iovec_entry_base(iov, i, rec->do32bit),
-					iovec_entry_len(iov, i, rec->do32bit)))
+		if (starts_in_call_pools(iovec_entry_base(iov, i, rec->do32bit)))
 			iovec_set_entry(iov, i, 0, 0, rec->do32bit);
 	}
 
