@@ -17,9 +17,14 @@
 #define MAX_HANDLE_SZ 128
 #endif
 
+/* The flags name_to_handle_at() takes; it refuses any other bit with
+ * -EINVAL before the lookup. */
+#define NAME_TO_HANDLE_AT_FLAGS	(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH | \
+				 AT_HANDLE_FID | AT_HANDLE_MNT_ID_UNIQUE | \
+				 AT_HANDLE_CONNECTABLE)
+
 static unsigned long name_to_handle_at_flags[] = {
-	AT_SYMLINK_NOFOLLOW, AT_HANDLE_FID, AT_SYMLINK_FOLLOW,
-	AT_NO_AUTOMOUNT, AT_EMPTY_PATH,
+	AT_HANDLE_FID, AT_SYMLINK_FOLLOW, AT_EMPTY_PATH,
 	AT_HANDLE_MNT_ID_UNIQUE, AT_HANDLE_CONNECTABLE,
 };
 
@@ -52,6 +57,16 @@ static void sanitise_name_to_handle_at(struct syscallrecord *rec)
 	 * pointer carried over from an earlier syscall on this record.
 	 */
 	rec->post_state = 0;
+
+	/*
+	 * flag (a5): handle_arg_list ORs stray bits into some draws.  Strip
+	 * them from seven calls in eight; the eighth keeps the reject path,
+	 * with a lookup flag the other *at() calls take and this one refuses.
+	 */
+	if (ONE_IN(8))
+		rec->a5 |= RAND_BOOL() ? AT_SYMLINK_NOFOLLOW : AT_NO_AUTOMOUNT;
+	else
+		rec->a5 &= NAME_TO_HANDLE_AT_FLAGS;
 
 	/*
 	 * name (a2) is the generator's pathname.  One call in eight empties

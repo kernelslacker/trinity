@@ -1,8 +1,9 @@
 /*
  * Self-check for name_to_handle_at's sanitiser: the lookup gets the
- * pathname its generator built, and the empty-path arm empties that
- * buffer in place and asks for AT_EMPTY_PATH, without the
- * AT_HANDLE_CONNECTABLE bit the kernel refuses beside it.
+ * pathname its generator built, the empty-path arm empties that buffer in
+ * place and asks for AT_EMPTY_PATH, without the AT_HANDLE_CONNECTABLE bit
+ * the kernel refuses beside it, and most calls carry only flags the
+ * syscall takes.
  */
 
 #include <fcntl.h>
@@ -27,8 +28,14 @@ static void check(const char *what, bool ok)
 	failed++;
 }
 
-/* Calls per case: the empty-path arm takes one call in eight. */
+/* Calls per case: the empty-path and refused-flag arms each take one
+ * call in eight. */
 #define NTH_CALLS	512
+
+/* The flags fs/fhandle.c's name_to_handle_at() takes; it refuses any
+ * other bit with -EINVAL before the lookup. */
+#define NTH_FLAGS	(AT_SYMLINK_FOLLOW | AT_EMPTY_PATH | AT_HANDLE_FID | \
+			 AT_HANDLE_MNT_ID_UNIQUE | AT_HANDLE_CONNECTABLE)
 
 static const char path[] = "/proc/self/status";
 
@@ -79,6 +86,33 @@ static void lookup_names_generated_path(void)
 	      emptied <= NTH_CALLS / 4);
 }
 
+static void flags_mostly_taken(void)
+{
+	static struct syscallrecord rec;
+	unsigned int i, stray = 0, refused = 0;
+
+	/* handle_arg_list ORs stray bits into some draws. */
+	for (i = 0; i < NTH_CALLS; i++) {
+		sanitise(&rec, ~0UL);
+		if (rec.a5 & ~(unsigned long) NTH_FLAGS)
+			stray++;
+		release(&rec);
+	}
+	check("more than one call in four kept flags the syscall refuses",
+	      stray <= NTH_CALLS / 4);
+
+	for (i = 0; i < NTH_CALLS; i++) {
+		sanitise(&rec, AT_HANDLE_FID);
+		if (rec.a5 & (AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT))
+			refused++;
+		release(&rec);
+	}
+	check("no call carried a lookup flag the syscall refuses",
+	      refused > 0);
+	check("more than one call in four carried a refused lookup flag",
+	      refused <= NTH_CALLS / 4);
+}
+
 void name_to_handle_at_self_check(void);
 void name_to_handle_at_self_check(void)
 {
@@ -88,6 +122,7 @@ void name_to_handle_at_self_check(void)
 		writable_pool_init();
 
 	lookup_names_generated_path();
+	flags_mostly_taken();
 
 	if (failed != 0)
 		BUG("name_to_handle_at built a call the kernel turns away");
