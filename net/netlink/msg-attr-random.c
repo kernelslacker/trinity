@@ -6,10 +6,12 @@
  */
 #include <stddef.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_link.h>
 #include <linux/if_bridge.h>
+#include <linux/neighbour.h>
 #include <linux/net_namespace.h>
 #include "msg-internal.h"
 #include "random.h"
@@ -331,6 +333,15 @@ static const unsigned short linkprop_attrs[] = {
 	IFLA_PROP_LIST, IFLA_IFNAME, IFLA_ALT_IFNAME,
 };
 
+/* The NDA_* types the GETNEIGH handlers take, each parsing strictly:
+ * rtnl_fdb_get(), the bridge's doit, needs its lookup address and takes
+ * three filters, and the strict neighbour and fdb dumps take two.
+ * neigh_get(), every other family's doit, takes NDA_DST alone. */
+static const unsigned short nda_fdb_get_attrs[] = {
+	NDA_LLADDR, NDA_MASTER, NDA_VLAN, NDA_VNI,
+};
+static const unsigned short nda_dump_attrs[] = { NDA_IFINDEX, NDA_MASTER };
+
 /* Pick an nlattr type appropriate for an rtnetlink message group.
  * Returns 0 for unknown groups (caller falls back to random). */
 unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh)
@@ -356,7 +367,16 @@ unsigned short pick_rtnl_attr_type(const struct nlmsghdr *nlh)
 			type = rta_attrs[rnd_modulo_u32(rta_attrs_n)];
 		return type;
 	}
-	case 3: return nda_attrs[rnd_modulo_u32(nda_attrs_n)];
+	case 3:
+		/* A GETNEIGH draws what its handler takes all but one time in
+		 * eight, by its dump bit and, for the doit, its family. */
+		if (nlmsg_type != RTM_GETNEIGH || ONE_IN(8))
+			return nda_attrs[rnd_modulo_u32(nda_attrs_n)];
+		if (nlh->nlmsg_flags & NLM_F_DUMP)
+			return RAND_ARRAY(nda_dump_attrs);
+		if (((const struct ndmsg *) NLMSG_DATA(nlh))->ndm_family == AF_BRIDGE)
+			return RAND_ARRAY(nda_fdb_get_attrs);
+		return NDA_DST;
 	case 4: return fra_attrs[rnd_modulo_u32(fra_attrs_n)];
 	case 5:
 	case 6:

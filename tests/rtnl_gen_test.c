@@ -361,6 +361,84 @@ static void expect_neigh_header(const struct neigh_header *get,
 			"rtnl: RTM_NEWNEIGH and RTM_DELNEIGH lose their random state, flags and type");
 }
 
+/* ---------- The attributes of RTM_GETNEIGH ------------------------------ */
+
+struct getneigh_attrs {
+	unsigned int doits, doits_taken;	/* AF_INET, AF_INET6 or AF_BRIDGE */
+	unsigned int dumps, dumps_taken;
+};
+
+/* A GET whose attributes are all flat ones of a type its handler takes, and
+ * for a doit at least one, an NDA_DST of the family's key length where the
+ * doit is neigh_get(). */
+static void tally_getneigh_attrs(struct getneigh_attrs *t,
+				 const struct nlmsghdr *nlh)
+{
+	const struct ndmsg *ndm = NLMSG_DATA(nlh);
+	bool dump = nlh->nlmsg_flags & NLM_F_DUMP;
+	unsigned int attrs = 0, taken = 0;
+	const unsigned char *p;
+	const struct nlattr *nla;
+	unsigned int key_len;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(*ndm)))
+		return;
+	key_len = ndm->ndm_family == AF_INET6 ? 16 : 4;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(*ndm));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(*ndm));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		attrs++;
+		if (nla->nla_type & NLA_F_NESTED)
+			;
+		else if (dump)
+			taken += type == NDA_IFINDEX || type == NDA_MASTER;
+		else if (ndm->ndm_family == AF_BRIDGE)
+			taken += type == NDA_LLADDR || type == NDA_MASTER ||
+				 type == NDA_VLAN || type == NDA_VNI;
+		else
+			taken += type == NDA_DST &&
+				 nla->nla_len == NLA_HDRLEN + key_len;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (dump) {
+		t->dumps++;
+		t->dumps_taken += taken == attrs;
+	} else if (ndm->ndm_family == AF_INET || ndm->ndm_family == AF_INET6 ||
+		   ndm->ndm_family == AF_BRIDGE) {
+		t->doits++;
+		t->doits_taken += attrs && taken == attrs;
+	}
+}
+
+/*
+ * neigh_valid_get_req() parses neigh_get()'s attributes strictly on every
+ * socket and refuses any but NDA_DST, which it needs, and neigh_get() one
+ * that is not the family's key length; the bridge's rtnl_fdb_get() takes
+ * NDA_LLADDR, which it needs, NDA_MASTER, NDA_VLAN and NDA_VNI, and the
+ * strict neighbour and fdb dumps NDA_IFINDEX and NDA_MASTER.  The builder
+ * draws a GETNEIGH's types from those seven times in eight, and the rest
+ * of the attribute path still makes one in eight a random type and one in
+ * seven a nested container, so about 0.24 of the doits and 0.36 of the
+ * dumps carry nothing else; drawing from every NDA_* type left 0.01 and
+ * 0.14.
+ */
+static void expect_getneigh_attrs(const struct getneigh_attrs *t)
+{
+	expect_fraction(t->doits_taken, t->doits, 0.17, 0.30,
+			"RTM_GETNEIGH doits",
+			"rtnl: a GETNEIGH doit rarely carries only what neigh_get() or rtnl_fdb_get() takes");
+	expect_fraction(t->dumps_taken, t->dumps, 0.30, 0.42,
+			"RTM_GETNEIGH dumps",
+			"rtnl: a GETNEIGH dump rarely carries only the NDA_IFINDEX and NDA_MASTER the strict dump takes");
+}
+
 /* ---------- The nhmsg of RTM_*NEXTHOP and RTM_GETNEXTHOPBUCKET ---------- */
 
 struct nexthop_header {
@@ -1545,6 +1623,7 @@ struct tallies {
 	struct dump_bits dumps, dcb;
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
+	struct getneigh_attrs getneigh_attrs;
 	struct nexthop_header newnexthop, nexthop;
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
@@ -1598,6 +1677,7 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_GETNEIGH:
 			tally_neigh_header(&t->getneigh, nlh);
+			tally_getneigh_attrs(&t->getneigh_attrs, nlh);
 			break;
 		case RTM_NEWNEIGH:
 		case RTM_DELNEIGH:
@@ -1702,6 +1782,7 @@ void rtnl_gen_self_check(void)
 	expect_dump_bits(&t.dumps, &t.dcb);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
+	expect_getneigh_attrs(&t.getneigh_attrs);
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
