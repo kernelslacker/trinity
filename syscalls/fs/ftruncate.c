@@ -8,27 +8,8 @@
 #include "sanitise.h"
 #include "utils.h"
 
-/*
- * Snapshot of the ftruncate inputs read by the post handler, captured
- * at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->a1 between the syscall returning and the
- * post handler running cannot retarget invalidate_obj_mmap_by_fd() at
- * a foreign fd whose OBJ_MMAP_FILE/TESTFILE entries the ftruncate call
- * never actually affected.
- */
-#define FTRUNCATE_POST_STATE_MAGIC	0x46545255UL	/* "FTRU" */
-struct ftruncate_post_state {
-	unsigned long magic;
-	unsigned long fd;
-};
-
 static void sanitise_ftruncate(struct syscallrecord *rec)
 {
-	struct ftruncate_post_state *snap;
-
-	rec->post_state = 0;
-
 	/* Bias the fd toward the writable pagecache pool so the actual
 	 * regular-file truncate paths fire instead of bouncing off the
 	 * VFS prologue on pipes / sockets / read-only handles drawn from
@@ -46,29 +27,12 @@ static void sanitise_ftruncate(struct syscallrecord *rec)
 	 * extend it to multi-GB and turn the next SIGABRT-handler bug-log
 	 * drain into a host-swamping write. */
 	reroll_protected_fd_arg(&rec->a1);
-
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = FTRUNCATE_POST_STATE_MAGIC;
-	snap->fd    = rec->a1;
-	post_state_install(rec, snap);
 }
 
 static void post_ftruncate(struct syscallrecord *rec)
 {
-	struct ftruncate_post_state *snap;
-
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- callers just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, FTRUNCATE_POST_STATE_MAGIC, __func__);
-	if (snap == NULL)
-		return;
-
 	if (rec->retval != 0)
-		goto out_free;
+		return;
 
 	/*
 	 * Truncate-down past a mapped extent destroys the backing pages of
@@ -78,12 +42,13 @@ static void post_ftruncate(struct syscallrecord *rec)
 	 * shrink-vs-grow -- a grow is harmless to invalidate (the next
 	 * get_map() pick re-populates the pool), the cost is a few extra
 	 * mmap-pool refills, and avoiding the gate keeps the post handler
-	 * out of an fstat() syscall on the hot path.
+	 * out of an fstat() syscall on the hot path.  The fd is the one the
+	 * kernel was handed, shadowed at dispatch: chain substitution or a
+	 * RedQueen pin can rewrite it after the sanitiser drew its own, and
+	 * invalidating the mappings of a file the call never cut leaves the
+	 * cut one's live.
 	 */
-	invalidate_obj_mmap_by_fd((int) snap->fd);
-
-out_free:
-	post_state_release(rec, snap);
+	invalidate_obj_mmap_by_fd((int) get_arg_snapshot(rec, 1));
 }
 
 struct syscallentry syscall_ftruncate = {
@@ -93,6 +58,9 @@ struct syscallentry syscall_ftruncate = {
 	.argname = { [0] = "fd", [1] = "length" },
 	.sanitise = sanitise_ftruncate,
 	.post = post_ftruncate,
+	/* fd (a1): the mappings invalidated are those of the file the
+	 * kernel cut. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,
@@ -113,6 +81,9 @@ struct syscallentry syscall_ftruncate64 = {
 	.argname = { [0] = "fd", [1] = "length" },
 	.sanitise = sanitise_ftruncate,
 	.post = post_ftruncate,
+	/* fd (a1): the mappings invalidated are those of the file the
+	 * kernel cut. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,

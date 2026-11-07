@@ -1342,16 +1342,17 @@ unsigned int invalidate_obj_mmap_by_fd(int fd)
 #define CUT_FD		42
 #define BUILT_FD	41
 
-/* fallocate's content-destroying modes cut the file the kernel was
- * handed, whose pooled mappings a later write through would SIGBUS on.
- * Chain substitution can rewrite the ARG_FD slot with a previous call's
- * fd, and the ARG_LIST mode, after the sanitiser drew its own. */
+/* ftruncate and fallocate's content-destroying modes cut the file the
+ * kernel was handed, whose pooled mappings a later write through would
+ * SIGBUS on.  Chain substitution can rewrite the ARG_FD slot with a
+ * previous call's fd, and fallocate's ARG_LIST mode, after the sanitiser
+ * drew its own. */
 static void cut_fd_rewritten(void)
 {
 	static const struct {
 		const char *what;
 		struct syscallentry *entry;
-		unsigned long built_a2;		/* the mode the sanitiser drew */
+		unsigned long built_a2;		/* the a2 the sanitiser drew */
 		unsigned long ran_a2;		/* and the one the kernel ran */
 		int invalidated;
 	} cases[] = {
@@ -1359,6 +1360,8 @@ static void cut_fd_rewritten(void)
 		  0, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, CUT_FD },
 		{ "fallocate, a punch rewritten to an allocation", &syscall_fallocate,
 		  FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 0, -1 },
+		{ "ftruncate, a rewritten fd", &syscall_ftruncate, 0, 0, CUT_FD },
+		{ "ftruncate64, a rewritten fd", &syscall_ftruncate64, 0, 0, CUT_FD },
 	};
 	static struct syscallrecord rec;
 	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
@@ -1374,7 +1377,7 @@ static void cut_fd_rewritten(void)
 			free((void *) rec.post_state);
 		}
 		if (tries == 4096)
-			BUG("a sanitiser never drew the mode a case builds on");
+			BUG("a sanitiser never drew the a2 a case builds on");
 
 		/* The slots the kernel was handed, as __do_syscall()
 		 * shadows them. */
