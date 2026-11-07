@@ -151,11 +151,17 @@ struct ioring_register_payload ioring_reg_probe_payload(void)
 }
 
 /*
- * IORING_REGISTER_PERSONALITY / IORING_UNREGISTER_PERSONALITY: no arg.
+ * IORING_REGISTER_PERSONALITY: no arg and no count.
+ * IORING_UNREGISTER_PERSONALITY: no arg, and the id to drop in nr_args.
+ * The personalities xarray is XA_FLAGS_ALLOC1, so ids start at 1, and
+ * the cyclic allocator hands out small ones first.
  */
-struct ioring_register_payload ioring_reg_personality_payload(void)
+struct ioring_register_payload ioring_reg_personality_payload(unsigned int opcode)
 {
 	struct ioring_register_payload p = { 0, 0, 0 };
+
+	if (opcode == IORING_UNREGISTER_PERSONALITY)
+		p.nr = 1 + rnd_modulo_u32(16);
 	return p;
 }
 

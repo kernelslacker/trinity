@@ -7,6 +7,7 @@
  * nr_args is the one the kernel checks for before the handler runs.
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +75,15 @@ void io_uring_register_self_check(void)
 	free((void *) rec.post_state);
 	if (rec.a3 != 0 || rec.a4 != 0)
 		BUG("io_uring_register: a modifier draw of PERSONALITY got another opcode's payload");
+
+	/* UNREGISTER_PERSONALITY names the id in nr_args, with no arg; the
+	 * personalities xarray is XA_FLAGS_ALLOC1, so ids start at 1, and
+	 * io_register_personality() allocates no higher than USHRT_MAX. */
+	if (!draw(&rec, IORING_UNREGISTER_PERSONALITY))
+		BUG("io_uring_register: UNREGISTER_PERSONALITY was never drawn");
+	free((void *) rec.post_state);
+	if (rec.a3 != 0 || rec.a4 == 0 || rec.a4 > USHRT_MAX)
+		BUG("io_uring_register: UNREGISTER_PERSONALITY names an id the kernel never hands out");
 
 	/* The picker, not only a chain substitution onto the opcode slot,
 	 * reaches each opcode the slot lists. */

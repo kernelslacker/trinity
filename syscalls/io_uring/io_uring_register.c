@@ -272,7 +272,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 
 	case IORING_REGISTER_PERSONALITY:
 	case IORING_UNREGISTER_PERSONALITY:
-		p = ioring_reg_personality_payload();
+		p = ioring_reg_personality_payload(opcode);
 		break;
 
 	case IORING_REGISTER_RESTRICTIONS:
