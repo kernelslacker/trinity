@@ -271,10 +271,10 @@ const char stats_golden_cmp_full_1[] =
 	"  runtime_enable=EFAULT/3\n"
 	"KCOV PC DIAG (first-failure-wins errnos + retry counters, cumulative):\n"
 	"  pc_enable=EBADF/2\n"
-	"KCOV CMP hyp store per-syscall saturation over last 600s (top-2 of 2 occupied pools, 17 entries, cap 128/pool):\n"
+	"KCOV CMP hyp store per-syscall saturation over last 600s (top-2 of 2 occupied pools, 17 entries, cap 80/pool):\n"
 	"  syscall                  arch count/cap fill%         exact         range      boundary       bitmask   enum_family     alignment        length foreign_value\n"
-	"  poll                        -    11/128    8%             2             3             4             5             6             7             8             9\n"
-	"  close                       -     6/128    4%             1             2             3             4             5             6             7             8\n";
+	"  poll                        -     11/80   13%             2             3             4             5             6             7             8             9\n"
+	"  close                       -      6/80    7%             1             2             3             4             5             6             7             8\n";
 
 const char stats_golden_cmp_full_2[] =
 	"KCOV CMP stats over last 777s:\n"
@@ -617,10 +617,10 @@ const char stats_golden_cmp_full_2[] =
 	"    alignment                  37193518     37193051     100%\n"
 	"    length                     37193609     37193142     100%\n"
 	"    foreign_value              37193700     37193233     100%\n"
-	"KCOV CMP hyp store per-syscall saturation over last 777s (top-2 of 2 occupied pools, 17 entries, cap 128/pool):\n"
+	"KCOV CMP hyp store per-syscall saturation over last 777s (top-2 of 2 occupied pools, 17 entries, cap 80/pool):\n"
 	"  syscall                  arch count/cap fill%         exact         range      boundary       bitmask   enum_family     alignment        length foreign_value\n"
-	"  poll                        -    11/128    8%             2             3             4             5             6             7             8             9\n"
-	"  close                       -     6/128    4%             1             2             3             4             5             6             7             8\n";
+	"  poll                        -     11/80   13%             2             3             4             5             6             7             8             9\n"
+	"  close                       -      6/80    7%             1             2             3             4             5             6             7             8\n";
 
 const char stats_golden_cmp_idle[] =
 	"KCOV CMP hyp live inject stats over last 600s:\n"
@@ -653,10 +653,10 @@ const char stats_golden_cmp_idle[] =
 	"KCOV RedQueen pending-buffer pick success (cumulative, policy=first):\n"
 	"  counter              p0         p1         p2         p3         p4         p5         p6         p7\n"
 	"  success        37123726   37123817   37123908   37123999   37124090   37124181   37124272   37124363\n"
-	"KCOV CMP hyp store per-syscall saturation over last 600s (top-2 of 2 occupied pools, 17 entries, cap 128/pool):\n"
+	"KCOV CMP hyp store per-syscall saturation over last 600s (top-2 of 2 occupied pools, 17 entries, cap 80/pool):\n"
 	"  syscall                  arch count/cap fill%         exact         range      boundary       bitmask   enum_family     alignment        length foreign_value\n"
-	"  poll                        -    11/128    8%             2             3             4             5             6             7             8             9\n"
-	"  close                       -     6/128    4%             1             2             3             4             5             6             7             8\n";
+	"  poll                        -     11/80   13%             2             3             4             5             6             7             8             9\n"
+	"  close                       -      6/80    7%             1             2             3             4             5             6             7             8\n";
 
 const char stats_golden_cmp_probe_frontier[] =
 	"KCOV CMP stats over last 600s:\n"

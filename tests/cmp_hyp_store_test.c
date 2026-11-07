@@ -6,6 +6,7 @@
  * own site.  A kind at its cap gives a new hypothesis the slot of a
  * RETIRED one, or else of one at a site the durable pool no longer
  * holds, a PROMOTED one last, and never one the live arm can still reach.
+ * A pool whose every kind is at its cap is full.
  */
 
 #include <stdint.h>
@@ -17,6 +18,7 @@
 
 #define STORE_NR	11U
 #define REUSE_NR	12U
+#define FULL_NR		13U
 #define SITE_A		0x5150UL
 #define SITE_B		0x5151UL
 
@@ -57,10 +59,10 @@ static void check_range_per_site(void)
 		BUG("cmp hyp store: a second site with the same range got none of its own");
 }
 
-/* Leave the durable pool holding one entry, at CMP_IP. */
-static void hold_site(unsigned long cmp_ip)
+/* Leave NR's durable pool holding one entry, at CMP_IP. */
+static void hold_site(unsigned int nr, unsigned long cmp_ip)
 {
-	struct cmp_hint_pool *raw = &cmp_hints_shm->pools[REUSE_NR][0];
+	struct cmp_hint_pool *raw = &cmp_hints_shm->pools[nr][0];
 
 	raw->entries[0].cmp_ip = cmp_ip;
 	raw->entries[0].size = 4;
@@ -75,7 +77,7 @@ static void check_slot_reuse(void)
 	unsigned int i;
 
 	/* Values too far apart for a RANGE, none of them a single bit. */
-	hold_site(SITE_A);
+	hold_site(REUSE_NR, SITE_A);
 	for (i = 0; i < CMP_HYP_PER_KIND; i++)
 		cmp_hyp_observe(REUSE_NR, false, SITE_A, 0x1003 + i * 0x100, 4);
 	cmp_hyp_observe(REUSE_NR, false, SITE_B, 0x7003, 4);
@@ -101,7 +103,7 @@ static void check_slot_reuse(void)
 
 	/* SITE_A leaves the durable pool, and its hypotheses the live
 	 * arm's reach. */
-	hold_site(SITE_B);
+	hold_site(REUSE_NR, SITE_B);
 	cmp_hyp_observe(REUSE_NR, false, SITE_B, 0x7203, 4);
 	if (hyps_at(pool, CMP_HYP_EXACT, SITE_B, &h) != 2)
 		BUG("cmp hyp store: a full kind kept slots the live arm can no longer reach");
@@ -114,6 +116,31 @@ static void check_slot_reuse(void)
 		BUG("cmp hyp store: a refused insert went uncounted, or a reuse counted as one");
 }
 
+static void check_full_pool(void)
+{
+	struct cmp_hyp_pool *pool = &cmp_hints_shm->hyp_pools[FULL_NR][0];
+	unsigned long kind_full = kcov_shm->hyp_flat.cmp_hyp_kind_full;
+	unsigned int kind, i;
+
+	/* Every kind cmp_hyp_observe() makes at its cap, at a site the
+	 * durable pool holds. */
+	hold_site(FULL_NR, SITE_A);
+	for (kind = CMP_HYP_EXACT; kind <= CMP_HYP_ENUM_FAMILY; kind++) {
+		for (i = 0; i < CMP_HYP_PER_KIND; i++) {
+			struct cmp_hypothesis *h = &pool->entries[pool->count++];
+
+			h->kind = kind;
+			h->cmp_ip = SITE_A;
+			h->width = 4;
+		}
+		pool->per_kind_count[kind] = CMP_HYP_PER_KIND;
+	}
+	cmp_hyp_observe(FULL_NR, false, SITE_B, 0x9003, 4);
+	if (kcov_shm->cmp_hyp_lifecycle.cmp_hyp_pool_full_by_kind[CMP_HYP_EXACT] != 1 ||
+	    kcov_shm->hyp_flat.cmp_hyp_kind_full != kind_full)
+		BUG("cmp hyp store: a pool with every kind at its cap was not full");
+}
+
 void cmp_hyp_store_self_check(void);
 void cmp_hyp_store_self_check(void)
 {
@@ -124,6 +151,7 @@ void cmp_hyp_store_self_check(void)
 
 	check_range_per_site();
 	check_slot_reuse();
+	check_full_pool();
 
 	free(cmp_hints_shm);
 	free(kcov_shm);

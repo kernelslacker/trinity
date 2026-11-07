@@ -200,13 +200,13 @@ struct cmp_hypothesis {
 /*
  * Hard caps per syscall + per kind.  Keeps the store bounded under the
  * worst-case fuzz workload: a single syscall whose comparisons explode
- * across every kind can populate at most CMP_HYP_KIND_NR *
- * CMP_HYP_PER_KIND entries, and no single kind can starve the others
- * out of its slots.  cmp_hyp_observe() honours the partition via
- * per_kind_count[]: an exhausted kind gives a new hypothesis one of its
- * own slots that the live arm can no longer reach (cmp_hyp_alloc()),
- * and bumps cmp_hyp_kind_full when it has none, leaving the other kinds
- * free; an exhausted total does the same with cmp_hyp_pool_full.
+ * across every kind can populate at most CMP_HYP_PER_SYSCALL entries,
+ * and no single kind can starve the others out of its slots.
+ * cmp_hyp_observe() honours the partition via per_kind_count[]: an
+ * exhausted kind gives a new hypothesis one of its own slots that the
+ * live arm can no longer reach (cmp_hyp_alloc()), and bumps
+ * cmp_hyp_kind_full when it has none, leaving the other kinds free; an
+ * exhausted total does the same with cmp_hyp_pool_full.
  *
  * CMP_HYP_PER_KIND was raised from 2 to 16 after first telemetry: at 2,
  * cmp_hyp_kind_full ran ~2x cmp_hyp_observations (the EXACT and
@@ -216,16 +216,19 @@ struct cmp_hypothesis {
  * kind room for the distinct comparison sites a busy syscall exercises
  * while staying memory-bounded.
  *
- * Footprint is sizeof(struct cmp_hypothesis) (144 B) * CMP_HYP_PER_KIND *
- * CMP_HYP_KIND_NR per pool, over a hyp_pools[MAX_NR_SYSCALL][2] grid.  At
- * 16 that is 144 * 16 * 8 = 18432 B of entries per pool, ~18472 B per
- * pool with the header, and ~36 MiB across the 2048-pool grid (up from
- * ~4.6 MiB at 2).  The grid is shared memory allocated once at init; the
- * biarch [*][1] half is unused on uniarch builds, mirroring the existing
- * cmp_hint_pool grid's identical waste.
+ * Only the kinds up to ENUM_FAMILY take slots: cmp_hyp_observe() makes
+ * no ALIGNMENT, LENGTH or FOREIGN_VALUE hypothesis, so the pool is sized
+ * for the other five.  Footprint is CMP_HYP_PER_SYSCALL entries of
+ * sizeof(struct cmp_hypothesis) (144 B) per pool, over a
+ * hyp_pools[MAX_NR_SYSCALL][2] grid: 144 * 16 * 5 = 11520 B of entries
+ * per pool, ~11560 B with the header, and ~22.6 MiB across the
+ * 2048-pool grid.  The grid is shared memory allocated once at init;
+ * the biarch [*][1] half is unused on uniarch builds, mirroring the
+ * existing cmp_hint_pool grid's identical waste.
  */
 #define CMP_HYP_PER_KIND	16U
-#define CMP_HYP_PER_SYSCALL	(CMP_HYP_KIND_NR * CMP_HYP_PER_KIND)
+#define CMP_HYP_SLOT_KIND_NR	(CMP_HYP_ENUM_FAMILY + 1)
+#define CMP_HYP_PER_SYSCALL	(CMP_HYP_SLOT_KIND_NR * CMP_HYP_PER_KIND)
 
 struct cmp_hyp_pool {
 	unsigned int count;
