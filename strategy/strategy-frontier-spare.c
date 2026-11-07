@@ -40,10 +40,9 @@
  * equality / ordering tests, never arithmetic, so a stale or torn
  * read cannot drive an unsigned subtraction or latch permanent state.
  * The producer-observer lookup is a single bit-test against the
- * immutable-after-init bitmap, published release-acquire by
- * ensure_producer_observer_built() above; the rotation-hot caller
- * (frontier_live_cool_spare on every LIVE-regime miss) pays one
- * lookup per call, no get_syscall_entry indirection.
+ * immutable-after-init bitmap ensure_producer_observer_built() makes;
+ * the rotation-hot caller (frontier_live_cool_spare on every LIVE-regime
+ * miss) pays one lookup per call, no get_syscall_entry indirection.
  */
 /* enum frontier_spare_reason lives in include/strategy.h so the shadow
  * attribution-confidence dump in stats/dump.c can bucket per-syscall
@@ -105,8 +104,7 @@ frontier_spare_lane_decide(unsigned int syscallnr, bool do32)
 	 * precomputed producer-observer bitmap above -- the per-pick
 	 * get_syscall_entry() table indirection (and the biarch branch
 	 * inside it) the original inline shape paid for is collapsed to a
-	 * single bit-test.  Build is lazy with release/acquire publish so a
-	 * partially-built bitmap is NEVER visible to a concurrent reader.
+	 * single bit-test, on a bitmap built once per process on first use.
 	 */
 	ensure_producer_observer_built();
 	if (producer_observer_lookup(syscallnr, do32))

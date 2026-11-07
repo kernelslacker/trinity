@@ -2,7 +2,6 @@
  * Producer-observer bitmap for the coverage-frontier spare-lane classifier.
  */
 
-#include <sched.h>		/* sched_yield */
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -35,16 +34,10 @@
  * the helper exists to remove the per-pick lookup, not to change the
  * spared set.
  *
- * Publish ordering: build_producer_observer() runs once-per-process
- * (each child has its own copy of the file-scope statics under
- * fork()-COW; the work is small and idempotent so each child paying
- * for one build is fine).  The publish is a RELEASE store to
- * producer_observer_ready and the read in frontier_satcool_spare is
- * an ACQUIRE load -- a partially-initialised bitmap is NEVER visible
- * to a concurrent reader.  A second caller racing the first sees
- * ready==0, loses the CAS to claim the build slot, and spins on the
- * acquire load until the winner publishes -- bounded spin (the build
- * is a few hundred bit-stores).
+ * Built once per process, on first use: each child has its own copy of
+ * the file-scope statics under fork()-COW, and a child is single-
+ * threaded, so no reader can find a build half done.  The build only
+ * sets bits, so one interrupted and run again still ends complete.
  */
 #define FRONTIER_PRODUCER_OBSERVER_WORDS ((MAX_NR_SYSCALL + 63) / 64)
 
@@ -55,12 +48,7 @@ static uint64_t producer_observer_bits_64[FRONTIER_PRODUCER_OBSERVER_WORDS];
 static uint64_t producer_observer_bits[FRONTIER_PRODUCER_OBSERVER_WORDS];
 #endif
 
-/*
- * 0 = not yet built, 1 = build in progress, 2 = built and published.
- * Three states (instead of a simple bool) so a racing caller can wait
- * on the publish without re-entering the build.
- */
-static int producer_observer_ready;
+static bool producer_observer_built;
 
 static void build_producer_observer_bitmap(const struct syscalltable *table,
 					   unsigned int table_nr,
@@ -93,41 +81,19 @@ static void build_producer_observer_bitmap(const struct syscalltable *table,
 
 void ensure_producer_observer_built(void)
 {
-	int state;
-	int expected;
-
-	state = __atomic_load_n(&producer_observer_ready, __ATOMIC_ACQUIRE);
-	if (state == 2)
+	if (producer_observer_built)
 		return;
 
-	expected = 0;
-	if (__atomic_compare_exchange_n(&producer_observer_ready, &expected,
-					1, false, __ATOMIC_ACQUIRE,
-					__ATOMIC_ACQUIRE)) {
 #ifdef ARCH_IS_BIARCH
-		build_producer_observer_bitmap(syscalls_64bit,
-					       max_nr_64bit_syscalls,
-					       producer_observer_bits_64);
-		build_producer_observer_bitmap(syscalls_32bit,
-					       max_nr_32bit_syscalls,
-					       producer_observer_bits_32);
+	build_producer_observer_bitmap(syscalls_64bit, max_nr_64bit_syscalls,
+				       producer_observer_bits_64);
+	build_producer_observer_bitmap(syscalls_32bit, max_nr_32bit_syscalls,
+				       producer_observer_bits_32);
 #else
-		build_producer_observer_bitmap(syscalls, max_nr_syscalls,
-					       producer_observer_bits);
+	build_producer_observer_bitmap(syscalls, max_nr_syscalls,
+				       producer_observer_bits);
 #endif
-		__atomic_store_n(&producer_observer_ready, 2,
-				 __ATOMIC_RELEASE);
-		return;
-	}
-
-	/*
-	 * Lost the CAS -- another caller is building.  Wait until they
-	 * publish; the build is a bounded sequence of bit-stores so the
-	 * spin terminates in microseconds.
-	 */
-	while (__atomic_load_n(&producer_observer_ready,
-			       __ATOMIC_ACQUIRE) != 2)
-		sched_yield();
+	producer_observer_built = true;
 }
 
 bool producer_observer_lookup(unsigned int nr,
