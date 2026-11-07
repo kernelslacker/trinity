@@ -893,7 +893,9 @@ struct childdata {
  * If the slot is zero (uninitialised, or wild-write zeroed), fall back
  * to `base` so the loop never collapses to zero iterations — this is
  * the fixed childop budget used before adaptive budget multipliers, and
- * it remains the safe default.
+ * it remains the safe default.  Any other value is held to
+ * ADAPT_BUDGET_MIN..ADAPT_BUDGET_MAX: adapt_budget() clamps only what
+ * it writes, and a stray write can leave the slot anywhere in a u16.
  *
  * Caller must have shm.h in scope (childop .c files already do).  The
  * macro evaluates `op` and `base` exactly once each via statement-
@@ -905,5 +907,9 @@ struct childdata {
 	uint16_t _m = __atomic_load_n(&shm->stats.childop.budget_mult[(op)], \
 				      __ATOMIC_RELAXED);		\
 	unsigned int _b = (unsigned int)(base);				\
+	if (_m != 0 && _m < ADAPT_BUDGET_MIN)				\
+		_m = ADAPT_BUDGET_MIN;					\
+	if (_m > ADAPT_BUDGET_MAX)					\
+		_m = ADAPT_BUDGET_MAX;					\
 	_m ? ((_b * (unsigned int)_m) >> 8) : _b;			\
 })

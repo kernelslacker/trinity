@@ -1123,6 +1123,10 @@ FAKE_SRCS	+= listmount_test.c
 # by fake_stubs.c's fd pool, against the real protected-fd registry.
 FAKE_SRCS	+= struct_fill_fd_test.c
 
+# budgeted_test.c reads BUDGETED() (include/child.h) over the fake shm's
+# childop multipliers.
+FAKE_SRCS	+= budgeted_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
