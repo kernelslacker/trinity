@@ -161,6 +161,8 @@ static void post_timer_gettime(struct syscallrecord *rec)
 	if (check_output_struct(&first, sizeof(first), snap->poison_seed))
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
+	/* After the poison check, which wants the bytes as written. */
+	time_struct_from_abi(rec, &first, 2);
 
 	if (first.it_value.tv_nsec < 0 ||
 	    first.it_value.tv_nsec > 999999999L ||

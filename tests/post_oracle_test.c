@@ -1350,7 +1350,8 @@ static void io_uring_register_rewritten(void)
 }
 
 /* A post oracle over a time struct the kernel writes: its entry, its
- * anomaly counter and the slot of the buffer the kernel answers into. */
+ * anomaly counter, or NULL for one that bumps the corrupt-pointer
+ * counter, and the slot of the buffer the kernel answers into. */
 struct time_oracle {
 	struct syscallentry *entry;
 	unsigned long *anomalies;
@@ -1364,7 +1365,7 @@ static unsigned int time_oracle_anomalies(const struct time_oracle *o,
 					  unsigned int nr,
 					  const void *answer, size_t len)
 {
-	unsigned long before = *o->anomalies;
+	unsigned long before = o->anomalies != NULL ? *o->anomalies : bumps;
 	unsigned int i;
 
 	/* A whole-pool draw starts the bump cursor over, so no draw below
@@ -1391,7 +1392,7 @@ static unsigned int time_oracle_anomalies(const struct time_oracle *o,
 		o->entry->post(&rec);
 	}
 	fake_pid_draws = false;
-	return *o->anomalies - before;
+	return (o->anomalies != NULL ? *o->anomalies : bumps) - before;
 }
 
 /* gettimeofday() writes tv as a struct old_timeval32 for a compat call,
@@ -1437,6 +1438,21 @@ static void clock_gettime_compat(void)
 	       time_oracle_anomalies(&o, 0, &now, sizeof(now)), 0);
 	expect("clock_gettime, a time32 call's time",
 	       time_oracle_anomalies(&o, 265, &now32, sizeof(now32)), 0);
+}
+
+/* timer_gettime() writes a struct old_itimerspec32 for a time32 call,
+ * 261 on i386, which the range check must read as such: here a timer
+ * 1.5 s from expiry, with no interval. */
+static void timer_gettime_compat(void)
+{
+	const struct time_oracle o = { &syscall_timer_gettime, NULL, 2 };
+	const struct itimerspec left = { .it_value = { 1, 500000000 } };
+	const struct old_itimerspec32 left32 = { .it_value = { 1, 500000000 } };
+
+	expect("timer_gettime, a native call's setting",
+	       time_oracle_anomalies(&o, 0, &left, sizeof(left)), 0);
+	expect("timer_gettime, a time32 call's setting",
+	       time_oracle_anomalies(&o, 261, &left32, sizeof(left32)), 0);
 }
 
 /* get_mempolicy() writes maxnode - 1 bits of the node mask
@@ -1853,6 +1869,7 @@ void post_oracle_self_check(void)
 	get_mempolicy_untouched();
 	gettimeofday_compat();
 	clock_gettime_compat();
+	timer_gettime_compat();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
