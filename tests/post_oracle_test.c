@@ -1306,11 +1306,12 @@ static struct syscallrecord *io_uring_register_rec(unsigned int opcode)
 }
 
 /* io_uring_register() answers by the opcode the kernel ran: PERSONALITY
- * with a new id, an update with the entries it updated, out of the nr
- * its struct names, and ENABLE_RINGS with 0.  Chain substitution can
+ * with a new id, which io_register_personality() allocates in [1,
+ * USHRT_MAX], an update with the entries it updated, out of the nr its
+ * struct names, and ENABLE_RINGS with 0.  Chain substitution can
  * rewrite the opcode, an ARG_OP slot, after the sanitiser built the
  * payload for its own, which names no nr for an update to be held to. */
-static void io_uring_register_rewritten(void)
+static void io_uring_register_answers(void)
 {
 	static const struct {
 		const char *what;
@@ -1321,6 +1322,12 @@ static void io_uring_register_rewritten(void)
 	} cases[] = {
 		{ "io_uring_register, an id from a call rewritten onto PERSONALITY",
 		  IORING_REGISTER_ENABLE_RINGS, IORING_REGISTER_PERSONALITY, 1, 0 },
+		{ "io_uring_register, the highest personality id",
+		  IORING_REGISTER_PERSONALITY, IORING_REGISTER_PERSONALITY,
+		  USHRT_MAX, 0 },
+		{ "io_uring_register, a personality id past USHRT_MAX",
+		  IORING_REGISTER_PERSONALITY, IORING_REGISTER_PERSONALITY,
+		  USHRT_MAX + 1UL, 1 },
 		{ "io_uring_register, an id from a call rewritten onto ENABLE_RINGS",
 		  IORING_REGISTER_PERSONALITY, IORING_REGISTER_ENABLE_RINGS, 1, 1 },
 		{ "io_uring_register, a count from a call rewritten onto FILES_UPDATE2",
@@ -1902,7 +1909,7 @@ void post_oracle_self_check(void)
 	timer_gettime_compat();
 	timerfd_gettime_compat();
 	getitimer_compat();
-	io_uring_register_rewritten();
+	io_uring_register_answers();
 	fd_tag_rewritten();
 	cut_fd_rewritten();
 	sigpending_cases();

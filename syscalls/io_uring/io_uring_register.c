@@ -442,7 +442,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	 * (magic, arg_len, nr_update) -- no per-arm resource
 	 * ownership, no deferred free of a3.  The oracle in
 	 * post_io_uring_register is retval-shape only (PERSONALITY
-	 * validates [1, INT_MAX]; ENABLE_RINGS and the UNREGISTER_* ones
+	 * validates [1, USHRT_MAX]; ENABLE_RINGS and the UNREGISTER_* ones
 	 * fall into the default "must be 0 or -1UL" arm), with no state
 	 * that a re-exec would corrupt.  The parent's post handler has
 	 * already run (handle_syscall_ret fires .post before dispatch_step's
@@ -510,11 +510,10 @@ static void post_io_uring_register(struct syscallrecord *rec)
 	 *     __io_sqe_buffers_update() ends the same way.
 	 *
 	 *   IORING_REGISTER_PERSONALITY: kernel allocates a personality id
-	 *     via xa_alloc_cyclic() with XA_LIMIT(1, INT_MAX) and returns
-	 *     the new id.  0 or any value > INT_MAX would be a structural
-	 *     regression -- xa_alloc_cyclic() never returns 0 with that
-	 *     limit, and ids do not legitimately span the high half of an
-	 *     unsigned long.
+	 *     via xa_alloc_cyclic() under XA_LIMIT(0, USHRT_MAX), in an
+	 *     XA_FLAGS_ALLOC1 xarray that keeps index 0 busy, and returns
+	 *     the new id.  0 or any value > USHRT_MAX would be a structural
+	 *     regression.
 	 *
 	 *   All other emitted opcodes (BUFFERS / FILES / EVENTFD /
 	 *     EVENTFD_ASYNC / IOWQ_AFF / IOWQ_MAX_WORKERS /
@@ -555,8 +554,8 @@ static void post_io_uring_register(struct syscallrecord *rec)
 			}
 			break;
 		case IORING_REGISTER_PERSONALITY:
-			if (ret < 1 || ret > (unsigned long) INT_MAX) {
-				outputerr("post_io_uring_register: opcode=PERSONALITY rejected id retval=0x%lx outside [1, INT_MAX]\n",
+			if (ret < 1 || ret > USHRT_MAX) {
+				outputerr("post_io_uring_register: opcode=PERSONALITY rejected id retval=0x%lx outside [1, USHRT_MAX]\n",
 					  ret);
 				post_handler_corrupt_ptr_bump(rec, NULL);
 			}
