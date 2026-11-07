@@ -25,37 +25,9 @@ static unsigned long timerfd_create_flags[] = {
 	TFD_NONBLOCK, TFD_CLOEXEC,
 };
 
-/*
- * Snapshot of the (clockid, flags) pair the post handler uses to
- * publish the new OBJ_FD_TIMERFD.  The old post handler read both
- * fields directly off rec->a1 / rec->a2; a sibling thread scribbling
- * those slots between the syscall returning and the post handler
- * running would mis-tag the published timerfd, so downstream
- * timerfd_settime / timerfd_gettime consumers would feed the kernel
- * absolute vs relative timeouts against the wrong clockid (e.g.
- * CLOCK_REALTIME_ALARM expectations against a CLOCK_MONOTONIC fd) or
- * an inverted TFD_NONBLOCK / TFD_CLOEXEC pair.  Stashing the snap in
- * rec->post_state — a slot the syscall ABI does not expose — keeps
- * the post handler immune to such scribbles.
- */
-#define TIMERFD_POST_STATE_MAGIC	0x54464443UL	/* "TFDC" */
-struct timerfd_post_state {
-	unsigned long magic;
-	unsigned long clockid;
-	unsigned long flags;
-};
-
 static void sanitise_timerfd_create(struct syscallrecord *rec)
 {
-	struct timerfd_post_state *snap;
 	unsigned int pick = rnd_modulo_u32(20);
-
-	/*
-	 * Clear post_state up front so an early return below leaves the
-	 * post handler with a NULL snapshot to bail on rather than a stale
-	 * pointer carried over from an earlier syscall on this record.
-	 */
-	rec->post_state = 0;
 
 	switch (pick) {
 	case 0 ... 5:
@@ -75,36 +47,21 @@ static void sanitise_timerfd_create(struct syscallrecord *rec)
 		rec->a2 = 0x80000000UL;
 		break;
 	}
-
-	/*
-	 * Snapshot the inputs the post handler reads.  The kernel only
-	 * looks at the low bits of clockid / flags, so a sibling scribble
-	 * of rec->a1 / rec->a2 between the syscall returning and the post
-	 * handler running would mis-tag the published OBJ_FD_TIMERFD with
-	 * a clockid the fd was not actually created against.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic   = TIMERFD_POST_STATE_MAGIC;
-	snap->clockid = rec->a1;
-	snap->flags   = rec->a2;
-	post_state_install(rec, snap);
 }
 
+/*
+ * Publish the new fd tagged with the clockid and flags it was made with:
+ * timerfd_settime's sanitiser reads the clockid back to decide whether
+ * TFD_TIMER_CANCEL_ON_SET applies, and a wrong tag has it hand the
+ * kernel a flag the timer's clock refuses, or keep it from one it takes.
+ * Both come from the slots the kernel was handed, shadowed at dispatch:
+ * chain substitution or a RedQueen pin can rewrite either after the
+ * sanitiser drew its own.
+ */
 static void post_timerfd_create(struct syscallrecord *rec)
 {
-	struct timerfd_post_state *snap;
 	unsigned long retval;
 	int fd;
-
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- callers just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, TIMERFD_POST_STATE_MAGIC, __func__);
-	if (snap == NULL)
-		return;
 
 	/*
 	 * Snapshot rec->retval once.  rec lives in the child's shm
@@ -123,18 +80,15 @@ static void post_timerfd_create(struct syscallrecord *rec)
 	fd = (int) retval;
 
 	if ((long) retval < 0)
-		goto out_free;
+		return;
 
 	{
 		struct resource_meta meta = {
-			.flags = snap->flags,
-			.aux = snap->clockid,
+			.flags = get_arg_snapshot(rec, 2),
+			.aux = get_arg_snapshot(rec, 1),
 		};
 		publish_resource(OBJ_FD_TIMERFD, fd, &meta);
 	}
-
-out_free:
-	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_timerfd_create = {
@@ -149,5 +103,8 @@ struct syscallentry syscall_timerfd_create = {
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_TIMERFD,
 	.post = post_timerfd_create,
+	/* clockid (a1) and flags (a2): the fd is tagged with the ones the
+	 * kernel made the timer with. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.flags = REEXEC_SANITISE_OK,
 };

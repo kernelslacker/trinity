@@ -662,9 +662,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/cred/setgroups.c
 PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_register.c \
 		   $(TOP)/syscalls/io_uring/io_uring_register-payloads.c
 
-# syscalls/fsnotify/fanotify_init.c brings fanotify_init, whose published
-# fd post_oracle_test.c checks the tag of.
-PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c
+# syscalls/fsnotify/fanotify_init.c and syscalls/timer/timerfd_create.c
+# bring fanotify_init and timerfd_create, whose published fds
+# post_oracle_test.c checks the tags of.
+PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
+		   $(TOP)/syscalls/timer/timerfd_create.c
 
 # syscalls/lsm/lsm_get_self_attr.c brings lsm_get_self_attr, whose re-call
 # selector_recall_test.c runs against a fake of the syscall.

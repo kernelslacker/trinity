@@ -27,6 +27,7 @@
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "arch.h"		/* ARCH_IS_BIARCH */
@@ -35,6 +36,7 @@
 #include "kernel/io_uring.h"	/* IORING_REGISTER_* */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
+#include "kernel/timerfd.h"	/* TFD_CLOEXEC */
 #include "maps.h"		/* get_map */
 #include "net.h"		/* fd_from_socketinfo */
 #include "publish_resource.h"	/* struct resource_meta */
@@ -1270,48 +1272,60 @@ static struct object *record_publish(enum objecttype type, unsigned long id,
 	return NULL;
 }
 
-/* fanotify_init publishes its fd tagged with the flags and event flags
- * the kernel made the group with, which fanotify_mark's sanitiser reads
- * to pick the events a group of that class takes.  Chain substitution
- * can rewrite either slot after the sanitiser drew its own. */
-static void fanotify_init_rewritten(void)
+/* An fd a call publishes is tagged with the flags it was made with, which
+ * a later sanitiser reads back: fanotify_mark's the group's class, and
+ * timerfd_settime's the timer's clock.  Chain substitution can rewrite
+ * either slot after the sanitiser drew its own. */
+static void fd_tag_rewritten(void)
 {
-	static const unsigned long ran_flags = FAN_CLOEXEC | FAN_CLASS_NOTIF |
-					       FAN_REPORT_MNT;
-	static const unsigned long ran_event_flags = O_RDWR | O_LARGEFILE;
+	static const struct {
+		const char *what;
+		struct syscallentry *entry;
+		unsigned long ran[2];		/* the a1 and a2 the kernel ran */
+		unsigned int flags, aux;	/* the tag they make */
+	} cases[] = {
+		{ "fanotify_init", &syscall_fanotify_init,
+		  { FAN_CLOEXEC | FAN_CLASS_NOTIF | FAN_REPORT_MNT, O_RDWR },
+		  FAN_CLOEXEC | FAN_CLASS_NOTIF | FAN_REPORT_MNT, O_RDWR },
+		{ "timerfd_create", &syscall_timerfd_create,
+		  { CLOCK_BOOTTIME, TFD_CLOEXEC }, TFD_CLOEXEC, CLOCK_BOOTTIME },
+	};
 	static struct syscallrecord rec;
 	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
-	unsigned int tries, k;
+	unsigned int i, k, tries;
 
-	for (tries = 0; tries < 4096; tries++) {
-		memset(&rec, 0, sizeof(rec));
-		syscall_fanotify_init.sanitise(&rec);
-		if (rec.a1 != ran_flags && rec.a2 != ran_event_flags)
-			break;
-	}
-	if (tries == 4096)
-		BUG("fanotify_init sanitiser never drew other flags");
-
-	/* The slots the kernel was handed, as __do_syscall() shadows
-	 * them. */
-	rec.a1 = ran_flags;
-	rec.a2 = ran_event_flags;
-	for (k = 0; k < ARRAY_SIZE(slots); k++)
-		rec.arg_shadow[k] = *slots[k];
-	rec.arg_snapshot_mask = syscall_fanotify_init.arg_snapshot_mask;
-	rec.retval = 7;
-	memset(&published_meta, 0, sizeof(published_meta));
 	fake_publish_resource = record_publish;
-	syscall_fanotify_init.post(&rec);
-	fake_publish_resource = NULL;
-	if (published_meta.flags != ran_flags ||
-	    published_meta.aux != ran_event_flags) {
-		fprintf(stderr, "fanotify_init: a rewritten call's fd tagged %#lx/%#lx, not %#lx/%#lx\n",
-			(unsigned long) published_meta.flags,
-			(unsigned long) published_meta.aux,
-			ran_flags, ran_event_flags);
-		failed++;
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			cases[i].entry->sanitise(&rec);
+			if (rec.a1 != cases[i].ran[0] && rec.a2 != cases[i].ran[1])
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == 4096)
+			BUG("a sanitiser never drew other slots than the kernel ran");
+
+		/* The slots the kernel was handed, as __do_syscall()
+		 * shadows them. */
+		rec.a1 = cases[i].ran[0];
+		rec.a2 = cases[i].ran[1];
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec.arg_shadow[k] = *slots[k];
+		rec.arg_snapshot_mask = cases[i].entry->arg_snapshot_mask;
+		rec.retval = 7;
+		memset(&published_meta, 0, sizeof(published_meta));
+		cases[i].entry->post(&rec);
+		if (published_meta.flags != cases[i].flags ||
+		    published_meta.aux != cases[i].aux) {
+			fprintf(stderr, "%s: a rewritten call's fd tagged %#x/%#x, not %#x/%#x\n",
+				cases[i].what, published_meta.flags,
+				published_meta.aux, cases[i].flags,
+				cases[i].aux);
+			failed++;
+		}
 	}
+	fake_publish_resource = NULL;
 }
 
 #ifdef USE_BPF
@@ -1432,7 +1446,7 @@ void post_oracle_self_check(void)
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();
 	io_uring_register_rewritten();
-	fanotify_init_rewritten();
+	fd_tag_rewritten();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH
