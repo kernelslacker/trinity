@@ -144,6 +144,63 @@ static void register_shared_overflow(const char *who, unsigned long addr,
 #endif
 }
 
+/*
+ * Shared register-with-optional-origin core.  Plain track_shared_region
+ * forwards origin=NULL so the existing call sites stay byte-identical;
+ * track_shared_region_tagged plumbs through a short string used by the
+ * diagnostic audit (range_overlaps_shared_slow) and the in-handler
+ * dumps to name the offending region.  @guarded records a
+ * guard_pages_alloc() layout for free_shared() to invert; @who and
+ * @caller name the registration if it lands in the overflow tail.
+ */
+static void track_shared_region_inner(unsigned long addr, unsigned long size,
+				      bool guarded, const char *origin,
+				      const char *who, void *caller)
+{
+	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
+		shared_regions[nr_shared_regions].addr = addr;
+		shared_regions[nr_shared_regions].size = size;
+#ifdef CONFIG_GUARD_SHARED
+		shared_regions[nr_shared_regions].guarded = guarded ? 1 : 0;
+		shared_regions[nr_shared_regions].origin = origin;
+#else
+		(void) guarded;
+		(void) origin;
+#endif
+		shared_bitmap_mark(addr, size);
+		tracked_size_mark(size);
+		nr_shared_regions++;
+	} else {
+		register_shared_overflow(who, addr, size,
+#ifdef CONFIG_GUARD_SHARED
+					 guarded, origin,
+#endif
+					 caller);
+	}
+}
+
+/*
+ * Poison a fresh shared mapping with independently-random bytes, to
+ * expose uninitialised reads, and register it.  The allocators share
+ * the poison so their consumers see the same clear-before-use contract.
+ */
+static void fill_and_register(void *ret, size_t size, bool guarded,
+			      const char *who, void *caller)
+{
+	unsigned char *p = ret;
+	size_t i;
+
+	for (i = 0; i + sizeof(unsigned int) <= size; i += sizeof(unsigned int)) {
+		unsigned int r = rnd_u32();
+		memcpy(p + i, &r, sizeof(r));
+	}
+	for (; i < size; i++)
+		p[i] = (unsigned char)rnd_u32();
+
+	track_shared_region_inner((unsigned long) ret, size, guarded, NULL,
+				  who, caller);
+}
+
 #ifdef CONFIG_GUARD_SHARED
 /*
  * Primary shared-region allocator under CONFIG_GUARD_SHARED.  is_pool
@@ -320,50 +377,23 @@ void * alloc_shared(size_t size)
  * fuzzed munmap/mremap/madvise/mprotect calls that target it.  Used by
  * code that mmaps via something other than alloc_shared() and still
  * needs the region protected from the fuzzer -- e.g., the per-child
- * kcov ring buffer mapped from /sys/kernel/debug/kcov.
+ * kcov ring buffer mapped from /sys/kernel/debug/kcov.  Externally
+ * mmap'd means never guarded by __alloc_shared.
  */
-/*
- * Shared register-with-optional-origin core.  Plain track_shared_region
- * forwards origin=NULL so the existing call sites stay byte-identical;
- * track_shared_region_tagged plumbs through a short string used by the
- * diagnostic audit (range_overlaps_shared_slow) and the in-handler
- * dumps to name the offending region.
- */
-static void track_shared_region_inner(unsigned long addr, unsigned long size,
-				      const char *origin)
-{
-	if (nr_shared_regions < MAX_SHARED_ALLOCS) {
-		shared_regions[nr_shared_regions].addr = addr;
-		shared_regions[nr_shared_regions].size = size;
-#ifdef CONFIG_GUARD_SHARED
-		/* Externally-mmap'd, never guarded by __alloc_shared. */
-		shared_regions[nr_shared_regions].guarded = 0;
-		shared_regions[nr_shared_regions].origin = origin;
-#else
-		(void) origin;
-#endif
-		shared_bitmap_mark(addr, size);
-		tracked_size_mark(size);
-		nr_shared_regions++;
-	} else {
-		register_shared_overflow("track_shared_region", addr, size,
-#ifdef CONFIG_GUARD_SHARED
-					 false, origin,
-#endif
-					 __builtin_return_address(0));
-	}
-}
-
 void track_shared_region(unsigned long addr, unsigned long size)
 {
-	track_shared_region_inner(addr, size, NULL);
+	track_shared_region_inner(addr, size, false, NULL,
+				  "track_shared_region",
+				  __builtin_return_address(0));
 }
 
 #ifdef CONFIG_GUARD_SHARED
 void track_shared_region_tagged(unsigned long addr, unsigned long size,
 				const char *origin)
 {
-	track_shared_region_inner(addr, size, origin);
+	track_shared_region_inner(addr, size, false, origin,
+				  "track_shared_region",
+				  __builtin_return_address(0));
 }
 #endif
 
@@ -456,8 +486,6 @@ void *alloc_shared_page_aligned(size_t inner_size, size_t *out_rounded_len)
 {
 	size_t rounded;
 	void *ret;
-	unsigned char *p;
-	size_t i;
 
 	if (inner_size == 0 || page_size == 0) {
 		outputerr("alloc_shared_page_aligned: bad args inner=%zu page_size=%u\n",
@@ -475,19 +503,8 @@ void *alloc_shared_page_aligned(size_t inner_size, size_t *out_rounded_len)
 		exit(EXIT_FAILURE);
 	}
 
-	/* Poison with random bytes to expose uninitialised reads, matching
-	 * alloc_shared()'s post-mmap poison so the two allocation paths
-	 * present the same "clear-before-use" contract to consumers. */
-	p = ret;
-	for (i = 0; i + sizeof(unsigned int) <= rounded;
-	     i += sizeof(unsigned int)) {
-		unsigned int r = rnd_u32();
-		memcpy(p + i, &r, sizeof(r));
-	}
-	for (; i < rounded; i++)
-		p[i] = (unsigned char)rnd_u32();
-
-	track_shared_region((unsigned long)ret, rounded);
+	fill_and_register(ret, rounded, false, "alloc_shared_page_aligned",
+			  __builtin_return_address(0));
 
 	if (out_rounded_len != NULL)
 		*out_rounded_len = rounded;
