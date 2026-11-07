@@ -2,6 +2,10 @@
 
 int get_rand_testfile_fd(void);
 
+/* The absolute directory the pool made trinity-testfile<N> in, to build a
+ * path to one from; trinity_tmpdir_abs() if the pool never ran. */
+const char *testfile_dir_abs(void);
+
 /*
  * Soft-invalidate every OBJ_MMAP_TESTFILE entry backed by an fd that
  * fds/testfiles.c opened against trinity-testfile<index>.  Called from

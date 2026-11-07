@@ -1,13 +1,15 @@
 /*
  * Self-check for the testfile pool (fds/testfiles.c): every fd sits on one
  * of the linked trinity-testfile inodes, the files the path-side calls
- * reach, each fd is mapped page_size into the testfile mmap pool, and a
- * root run hands every file to nobody, whom its children run as.  Init
- * runs through the provider's hook, as a root run, against fake
- * object-pool hooks and an fchown() that only records.
+ * reach from any cwd, wherever init made them, each fd is mapped
+ * page_size into the testfile mmap pool, and a root run hands every file
+ * to nobody, whom its children run as.  Init runs through the provider's
+ * hook, as a root run, against fake object-pool hooks and an fchown()
+ * that only records.
  */
 
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -22,6 +24,7 @@
 #include "list.h"
 #include "maps.h"
 #include "objects.h"
+#include "pathnames.h"		/* get_testfile_path_indexed */
 #include "uid.h"		/* orig_uid, nobody_uid, nobody_gid */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 #include "utils-mem.h"		/* free_shared_str */
@@ -64,6 +67,24 @@ static bool inode_chowned(int fd)
 		return false;
 	for (i = 0; i < nr_chowned; i++) {
 		if (chowned[i] == st.st_ino)
+			return true;
+	}
+	return false;
+}
+
+/* Whether a pool fd opened as trinity-testfile<index> sits on @ino. */
+static bool pool_holds(ino_t ino, unsigned int index)
+{
+	char name[32];
+	unsigned int i;
+
+	snprintf(name, sizeof(name), "trinity-testfile%u", index);
+	for (i = 0; i < nr_files; i++) {
+		struct stat st;
+
+		if (strcmp(files[i]->testfileobj.filename, name) == 0 &&
+		    fstat(files[i]->testfileobj.fd, &st) == 0 &&
+		    st.st_ino == ino)
 			return true;
 	}
 	return false;
@@ -156,6 +177,24 @@ void testfile_pool_self_check(void)
 		munmap(maps[i]->map.ptr, page_size);
 		free_shared_str(maps[i]->map.name);
 	}
+
+	/* Init ran in a directory that is no tmp/ of trinity's, as in a
+	 * run launched where there is none; ask from another cwd, as a
+	 * child whose cwd a fuzzed chdir() moved. */
+	if (chdir("/") != 0)
+		BUG("testfile pool: cannot leave the test directory");
+	for (i = 0; i < 16; i++) {
+		unsigned int index;
+		char *path = get_testfile_path_indexed(&index);
+		struct stat st;
+
+		if (path == NULL || stat(path, &st) != 0 ||
+		    !pool_holds(st.st_ino, index))
+			BUG("testfile pool: a testfile path names a file init did not create");
+		free(path);
+	}
+	if (chdir(base) != 0)
+		BUG("testfile pool: cannot return to the test directory");
 
 	for (i = 0; i < nr_files; i++) {
 		(void) unlink(files[i]->testfileobj.filename);

@@ -16,7 +16,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
-#include "tmpdir.h"
+#include "testfile.h"
 #include "trinity.h"
 #include "uid.h"
 #include "utils.h"
@@ -833,7 +833,7 @@ char *get_testfile_path_indexed(unsigned int *index_out)
 
 	index = 1 + rnd_modulo_u32(TRINITY_NR_TESTFILES);
 	snprintf(buf, MAX_PATH_LEN, "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), index);
+		 testfile_dir_abs(), index);
 	if (index_out != NULL)
 		*index_out = index;
 	return buf;

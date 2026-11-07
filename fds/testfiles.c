@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <limits.h>
 #include <unistd.h>
 #include <asm/unistd.h>
 #include <fcntl.h>
@@ -16,11 +17,25 @@
 #include "shm.h"
 #include "syscalls/syscalls.h"
 #include "testfile.h"
+#include "tmpdir.h"
 #include "uid.h"
 #include "utils.h"
 
 #define MAX_TESTFILES 4
 #define MAX_TESTFILE_FDS 20
+
+/*
+ * Where init made the testfiles: the parent's cwd then, tmp/ when there is
+ * one and the launch directory when not, so not trinity_tmpdir_abs(),
+ * which falls back to /tmp.  Absolute, for children a fuzzed chdir() has
+ * moved.
+ */
+static char testfile_dir[PATH_MAX];
+
+const char *testfile_dir_abs(void)
+{
+	return testfile_dir[0] ? testfile_dir : trinity_tmpdir_abs();
+}
 
 static void testfile_destructor(struct object *obj)
 {
@@ -83,6 +98,9 @@ static int open_testfile_fds(void)
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
 	head->destroy = &testfile_destructor;
 	head->dump = &testfile_dump;
+
+	if (getcwd(testfile_dir, sizeof(testfile_dir)) == NULL)
+		testfile_dir[0] = '\0';
 
 	/*
 	 * The files might be around from an earlier run, so nuke them, once:

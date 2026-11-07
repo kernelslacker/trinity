@@ -21,7 +21,7 @@
 #include "random.h"
 #include "rnd.h"
 #include "shm.h"
-#include "tmpdir.h"
+#include "testfile.h"
 #include "utils.h"
 
 /* Number of trinity-testfile? files we open private fds onto.  Matches
@@ -64,7 +64,7 @@ static int open_one(unsigned int idx)
 	char path[PATH_MAX + 32];
 
 	snprintf(path, sizeof(path), "%s/trinity-testfile%u",
-		 trinity_tmpdir_abs(), idx);
+		 testfile_dir_abs(), idx);
 	return open(path, O_RDWR | O_CREAT, 0666);
 }
 
@@ -87,7 +87,7 @@ static unsigned int xattr_thrash_iter_setup_fds(struct xattr_slot *slots)
 		slots[opened].fd = fd;
 		slots[opened].idx = 1 + i;
 		snprintf(slots[opened].path, sizeof(slots[opened].path),
-			 "%s/trinity-testfile%u", trinity_tmpdir_abs(), 1 + i);
+			 "%s/trinity-testfile%u", testfile_dir_abs(), 1 + i);
 		opened++;
 	}
 
