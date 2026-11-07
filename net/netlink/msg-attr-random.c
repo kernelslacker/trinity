@@ -20,6 +20,7 @@
 #include "utils.h"
 
 #include "kernel/if_addr.h"
+#include "kernel/nexthop.h"
 #include "kernel/rtnetlink.h"
 
 /* Forward declaration — defined in net/netlink/msg-rtnl-neigh.c.
@@ -219,6 +220,7 @@ size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	size_t structured_len;
 	size_t total;
 	unsigned short nla_type;
+	bool flag;
 
 	if (offset + NLA_HDRLEN > buflen)
 		return offset;
@@ -232,7 +234,14 @@ size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	/* Try structured payload generation for known types */
 	structured_len = gen_rta_payload(buf, offset + NLA_HDRLEN, buflen,
 					nla_type, family, rtnl_group);
-	if (structured_len > 0) {
+	/* An NLA_FLAG takes no payload, and validate_nla() refuses one with
+	 * any (-ERANGE), where a 0 from gen_rta_payload() means it has none
+	 * to offer: the nexthop group's flags go out empty but one time in
+	 * eight. */
+	flag = structured_len == 0 && (rtnl_group == 22 || rtnl_group == 25) &&
+	       (nla_type == NHA_BLACKHOLE || nla_type == NHA_FDB ||
+		nla_type == NHA_GROUPS) && !ONE_IN(8);
+	if (structured_len > 0 || flag) {
 		payload_len = structured_len;
 	} else {
 		/* Fall back to random bytes */
@@ -256,10 +265,10 @@ size_t append_nlattr(unsigned char *buf, size_t offset, size_t buflen,
 	 * refuses an NLA_NESTED attribute without it, and never on a
 	 * structured-but-flat one (RTA_DST, RTA_OIF, IFLA_MTU, …), which a
 	 * strict parse refuses with it.  Random-byte payloads
-	 * (structured_len == 0) keep the 1-in-4 OR: bad-attr is
-	 * intentional novelty on that path.
+	 * (structured_len == 0, bar an empty flag) keep the 1-in-4 OR:
+	 * bad-attr is intentional novelty on that path.
 	 */
-	if (structured_len == 0) {
+	if (structured_len == 0 && !flag) {
 		if (ONE_IN(4))
 			nla.nla_type |= NLA_F_NESTED;
 	} else if (rta_payload_is_nested(rtnl_group, nla_type) && !ONE_IN(8)) {

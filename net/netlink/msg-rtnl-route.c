@@ -325,10 +325,9 @@ size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
  *   NHA_ENCAP       — opaque per-encap-type payload (mpls labels, ila
  *                     identifier, seg6 srh, …); only useful in lock-
  *                     step with NHA_ENCAP_TYPE, deferred.
- *   NHA_BLACKHOLE / NHA_GROUPS / NHA_FDB — NLA_FLAG attrs that need a
- *                     zero-byte payload; the current generator->caller
- *                     protocol treats a 0 return as "fall back to
- *                     random", so these can't be expressed here.
+ *   NHA_BLACKHOLE / NHA_GROUPS / NHA_FDB — NLA_FLAG attrs, which
+ *                     append_nlattr() sends empty, since a 0 return here
+ *                     means "fall back to random".
  *   NHA_RES_GROUP / NHA_RES_BUCKET / NHA_GROUP_STATS — nested sub-attr
  *                     namespaces; would need their own tables to emit
  *                     usefully, deferred.

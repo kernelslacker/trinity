@@ -488,6 +488,54 @@ static void expect_nexthop_header(const struct nexthop_header *add,
 			"rtnl: a nexthop delete or GET does not have a zero protocol, scope and flags seven times in eight");
 }
 
+/* ---------- The NLA_FLAG attributes of RTM_*NEXTHOP --------------------- */
+
+struct nexthop_flags {
+	unsigned int flags;	/* NHA_BLACKHOLE, NHA_FDB or NHA_GROUPS */
+	unsigned int empty;	/* ... with no payload and no NLA_F_NESTED */
+};
+
+static void tally_nexthop_flags(struct nexthop_flags *t,
+				const struct nlmsghdr *nlh)
+{
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct nhmsg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct nhmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nhmsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if (type == NHA_BLACKHOLE || type == NHA_FDB || type == NHA_GROUPS) {
+			t->flags++;
+			t->empty += nla->nla_len == NLA_HDRLEN &&
+				    !(nla->nla_type & NLA_F_NESTED);
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
+/*
+ * NHA_BLACKHOLE, NHA_FDB and NHA_GROUPS are NLA_FLAGs, which validate_nla()
+ * refuses with any payload (-ERANGE), and the nexthop parses are strict, so
+ * they refuse one flagged NLA_F_NESTED as well.  The builder sends them
+ * empty all but one time in eight where the attribute path does not make
+ * one a nested container's outer attribute, about 0.73 of them; random
+ * bytes left about one in a hundred empty.
+ */
+static void expect_nexthop_flags(const struct nexthop_flags *t)
+{
+	expect_fraction(t->empty, t->flags, 0.66, 0.80, "nexthop flags",
+			"rtnl: NHA_BLACKHOLE, NHA_FDB and NHA_GROUPS mostly carry the payload an NLA_FLAG refuses");
+}
+
 /* ---------- The fib_rule_hdr of RTM_NEWRULE, RTM_DELRULE and RTM_GETRULE - */
 
 struct rule_header {
@@ -1625,6 +1673,7 @@ struct tallies {
 	struct neigh_header getneigh, newdelneigh;
 	struct getneigh_attrs getneigh_attrs;
 	struct nexthop_header newnexthop, nexthop;
+	struct nexthop_flags nexthop_flags;
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
@@ -1723,11 +1772,13 @@ static void run_rounds(struct tallies *t)
 			break;
 		case RTM_NEWNEXTHOP:
 			tally_nexthop_header(&t->newnexthop, nlh, true);
+			tally_nexthop_flags(&t->nexthop_flags, nlh);
 			break;
 		case RTM_DELNEXTHOP:
 		case RTM_GETNEXTHOP:
 		case RTM_GETNEXTHOPBUCKET:
 			tally_nexthop_header(&t->nexthop, nlh, false);
+			tally_nexthop_flags(&t->nexthop_flags, nlh);
 			break;
 		case RTM_NEWTUNNEL:
 		case RTM_DELTUNNEL:
@@ -1784,6 +1835,7 @@ void rtnl_gen_self_check(void)
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_getneigh_attrs(&t.getneigh_attrs);
 	expect_nexthop_header(&t.newnexthop, &t.nexthop);
+	expect_nexthop_flags(&t.nexthop_flags);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);
