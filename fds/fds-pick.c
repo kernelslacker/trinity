@@ -175,9 +175,11 @@ regen:
 		child->current_fd = get_new_random_fd();
 
 		/*
-		 * get_new_random_fd() returns -1 only when every active
+		 * get_new_random_fd() returns -1 when every active
 		 * provider's OBJ_GLOBAL pool is currently empty (or no
-		 * providers are active).  Provider pools populate once at
+		 * providers are active), and when its ten rerolls all drew
+		 * an fd <= 2; the bail below treats the two alike.  The
+		 * first state lasts: provider pools populate once at
 		 * init via .init and only ever drain after that — no
 		 * provider exposes a runtime .open replenish hook — so
 		 * further outer iterations in this child will see the same
