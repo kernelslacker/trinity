@@ -15,7 +15,9 @@
 #include <netinet/in.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
+#include <linux/pkt_cls.h>
 #include <linux/rtnetlink.h>
+#include <linux/tc_act/tc_gact.h>
 
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
@@ -730,7 +732,116 @@ static void expect_dump_bits(const struct dump_bits *dumps,
 struct action_attrs {
 	unsigned int attrs;
 	unsigned int tabs;	/* of type TCA_ROOT_TAB */
+	unsigned int gacts;	/* actions in them of kind "gact" */
+	unsigned int parms;	/* ... with a TCA_GACT_PARMS tcf_gact_init() takes */
+	unsigned int indexed;	/* ... of those, naming index 1 to 8 */
+	unsigned int probs;	/* ... and with a TCA_GACT_PROB it takes */
 };
+
+/* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
+ * goto chain to name. */
+static bool ctrlact_takes(int action)
+{
+	int opcode = TC_ACT_EXT_OPCODE(action);
+
+	if (TC_ACT_EXT_CMP(action, TC_ACT_GOTO_CHAIN))
+		return false;
+	if (!opcode)
+		return action <= TC_ACT_VALUE_MAX;
+	return opcode <= TC_ACT_EXT_OPCODE_MAX || action == TC_ACT_UNSPEC;
+}
+
+/* The TCA_ACT_OPTIONS of one gact action, as tcf_gact_init() reads them. */
+static void tally_gact_options(struct action_attrs *t, const unsigned char *p,
+			       size_t len)
+{
+	const struct nlattr *nla;
+	bool parms = false, prob = false;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_GACT_PARMS:
+			if (nla->nla_len >= NLA_HDRLEN + sizeof(struct tc_gact)) {
+				struct tc_gact parm;
+
+				memcpy(&parm, data, sizeof(parm));
+				parms = ctrlact_takes(parm.action);
+				t->indexed += parms && parm.index >= 1 &&
+					      parm.index <= 8;
+			}
+			break;
+		case TCA_GACT_PROB:
+			if (nla->nla_len >= NLA_HDRLEN + sizeof(struct tc_gact_p)) {
+				struct tc_gact_p pp;
+
+				memcpy(&pp, data, sizeof(pp));
+				prob = pp.ptype < MAX_RAND &&
+				       ctrlact_takes(pp.paction);
+			}
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	t->parms += parms;
+	t->probs += parms && prob;
+}
+
+/* One action of a TCA_ROOT_TAB: its kind, and a gact's options. */
+static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
+			     size_t len)
+{
+	const unsigned char *options = NULL;
+	size_t options_len = 0;
+	const struct nlattr *nla;
+	bool gact = false;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_ACT_KIND:
+			gact = plen == sizeof("gact") &&
+			       !memcmp(p + NLA_HDRLEN, "gact", sizeof("gact"));
+			break;
+		case TCA_ACT_OPTIONS:
+			options = p + NLA_HDRLEN;
+			options_len = plen;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!gact)
+		return;
+	t->gacts++;
+	if (options != NULL)
+		tally_gact_options(t, options, options_len);
+}
+
+static void tally_tab(struct action_attrs *t, const unsigned char *p,
+		      size_t len)
+{
+	const struct nlattr *act;
+
+	while ((act = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(act->nla_len);
+
+		tally_tab_action(t, p + NLA_HDRLEN, act->nla_len - NLA_HDRLEN);
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
 
 static void tally_action_attrs(struct action_attrs *t, const struct nlmsghdr *nlh)
 {
@@ -746,7 +857,10 @@ static void tally_action_attrs(struct action_attrs *t, const struct nlmsghdr *nl
 		size_t total = NLA_ALIGN(nla->nla_len);
 
 		t->attrs++;
-		t->tabs += (nla->nla_type & NLA_TYPE_MASK) == TCA_ROOT_TAB;
+		if ((nla->nla_type & NLA_TYPE_MASK) == TCA_ROOT_TAB) {
+			t->tabs++;
+			tally_tab(t, p + NLA_HDRLEN, nla->nla_len - NLA_HDRLEN);
+		}
 		if (total >= len)
 			break;
 		p += total;
@@ -762,11 +876,28 @@ static void tally_action_attrs(struct action_attrs *t, const struct nlmsghdr *nl
  * 0.18 of the attributes are TCA_ROOT_TAB; a random 16-bit type is that one
  * time in 65536.  Over the ninety thousand attributes the bounds are many
  * standard deviations out.
+ *
+ * tcf_gact_init() refuses a gact action without TCA_ACT_OPTIONS or without
+ * a TCA_GACT_PARMS in them, and a TCA_GACT_PROB whose ptype is past
+ * PGACT_DETERM or whose fallback verdict is no verdict or a goto chain;
+ * the PARMS verdict goes to tcf_action_check_ctrlact(), which refuses a
+ * goto chain on an action with no filter.  The builder gives every gact
+ * action PARMS the kernel takes, unless the action outgrows its room,
+ * naming index 1 to 8 three times in four, so a NLM_F_REPLACE can meet an
+ * action an earlier call made, and adds a PROB it takes half the time.
+ * Over the thousand or more gact actions the bounds are several standard
+ * deviations out.
  */
 static void expect_action_attrs(const struct action_attrs *t)
 {
 	expect_fraction(t->tabs, t->attrs, 0.12, 0.25, "RTM_*ACTION attributes",
 			"rtnl: an action request almost never carries a TCA_ROOT_TAB");
+	expect_fraction(t->parms, t->gacts, 0.90, 1.0, "gact actions",
+			"rtnl: a gact action carries no TCA_GACT_PARMS tcf_gact_init() takes");
+	expect_fraction(t->indexed, t->parms, 0.65, 0.85, "gact PARMS",
+			"rtnl: a gact action does not name a small index three times in four");
+	expect_fraction(t->probs, t->parms, 0.40, 0.60, "gact PROBs",
+			"rtnl: a gact action does not carry a TCA_GACT_PROB half the time");
 }
 
 /* ---------- The rounds --------------------------------------------------- */

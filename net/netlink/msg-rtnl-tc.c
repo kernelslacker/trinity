@@ -11,6 +11,7 @@
 #include <linux/if_link.h>
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
+#include <linux/tc_act/tc_gact.h>
 #include "netlink-attrs.h"
 #include "msg-internal.h"
 #include "msg-rtnl-common.h"
@@ -371,9 +372,46 @@ static const char * const tc_act_kinds[] = {
 };
 
 /*
+ * gact's TCA_ACT_OPTIONS.  tcf_gact_init() refuses the action without
+ * TCA_GACT_PARMS.  Index 1 to 8 names an action an earlier call may have
+ * made, so a NLM_F_REPLACE meets one, and the TCA_GACT_PROB sent half the
+ * time sets the ptype/pval pair that a replace without one leaves in
+ * place.  The verdicts are the plain ones and a short jump: a goto chain
+ * is refused on an action no filter holds.
+ */
+static size_t build_gact_options(unsigned char *p, size_t avail)
+{
+	struct tc_gact parm;
+	struct tc_gact_p prob;
+	size_t off = 0;
+
+	if (!start_nlattr(p, off, avail, TCA_GACT_PARMS, sizeof(parm)))
+		return 0;
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	memcpy(p + off + NLA_HDRLEN, &parm, sizeof(parm));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(parm));
+
+	if (RAND_BOOL() &&
+	    start_nlattr(p, off, avail, TCA_GACT_PROB, sizeof(prob))) {
+		memset(&prob, 0, sizeof(prob));
+		prob.ptype = rnd_modulo_u32(MAX_RAND);
+		prob.pval = RAND_BOOL() ? RAND_RANGE(0, 10) : (__u16) rnd_u32();
+		prob.paction = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+			       RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+		memcpy(p + off + NLA_HDRLEN, &prob, sizeof(prob));
+		off += NLA_ALIGN(NLA_HDRLEN + sizeof(prob));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
- * (required; tcf_action_init_1 -EINVALs the action when missing) then
+ * (required; tcf_action_init_1 -EINVALs the action when missing), for
+ * gact the typed TCA_ACT_OPTIONS build_gact_options() fills, then
  * 0-3 random siblings drawn from the inner TCA_ACT_* set sized to the
  * widths the kernel's tca_act_policy walker expects (NLA_BITFIELD32
  * for FLAGS / HW_STATS, NLA_U32 for INDEX / USED_HW_STATS /
@@ -388,12 +426,14 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 	size_t off = 0;
 	size_t cap;
 	int nchildren;
+	bool gact;
 
 	cap = avail;
 	if (cap > 192)
 		cap = 192;
 
 	kind = tc_act_kinds[rnd_modulo_u32(ARRAY_SIZE(tc_act_kinds))];
+	gact = strcmp(kind, "gact") == 0;
 	klen = strlen(kind) + 1;
 	if (off + NLA_ALIGN(NLA_HDRLEN + klen) > cap)
 		return 0;
@@ -401,6 +441,21 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		return 0;
 	memcpy(p + off + NLA_HDRLEN, kind, klen);
 	off += NLA_ALIGN(NLA_HDRLEN + klen);
+
+	if (gact && off + NLA_HDRLEN < cap) {
+		size_t olen = build_gact_options(p + off + NLA_HDRLEN,
+						 cap - off - NLA_HDRLEN);
+
+		if (olen != 0) {
+			struct nlattr nla = {
+				.nla_len = NLA_HDRLEN + olen,
+				.nla_type = TCA_ACT_OPTIONS | NLA_F_NESTED,
+			};
+
+			memcpy(p + off, &nla, NLA_HDRLEN);
+			off += NLA_ALIGN(NLA_HDRLEN + olen);
+		}
+	}
 
 	nchildren = RAND_RANGE(0, 3);
 	while (nchildren-- > 0) {
@@ -436,8 +491,11 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 			 * tc_action_ops::policy and TCA_STATS_* and differ per
 			 * kind.  Random siblings here keep the inner walker
 			 * exercised without the per-kind table the policy
-			 * would need to validate cleanly. */
-			atype = RAND_BOOL() ? TCA_ACT_OPTIONS : TCA_ACT_STATS;
+			 * would need to validate cleanly.  gact has its
+			 * table above, which a second OPTIONS would
+			 * displace: the parse keeps the last. */
+			atype = gact || RAND_BOOL() ? TCA_ACT_STATS :
+						      TCA_ACT_OPTIONS;
 			plen = RAND_RANGE(4, 16);
 			break;
 		}
