@@ -293,16 +293,16 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
-
-	if (rec->do32bit) {
-		sanitise_sendmsg_compat(rec);
-		return;
-	}
 	struct sockaddr *sa = NULL;
 	socklen_t salen = 0;
 	struct sendmsg_post_state *snap;
 	unsigned long iov_len_sum = 0;
 	unsigned int cmsg_family;
+
+	if (rec->do32bit) {
+		sanitise_sendmsg_compat(rec);
+		return;
+	}
 
 	rec->a4 = 0;	/* sendmsg_used_gen_msg: set to 1 if gen_msg path taken */
 

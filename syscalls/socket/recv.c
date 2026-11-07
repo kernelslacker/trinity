@@ -464,15 +464,15 @@ static void sanitise_recvmsg(struct syscallrecord *rec)
 {
 	struct socketinfo *si = (struct socketinfo *) rec->a1;
 	struct msghdr *msg;
+	struct sockaddr *sa = NULL;
+	socklen_t salen = 0;
+	struct recvmsg_post_state *snap;
+	unsigned long iov_len_sum = 0;
 
 	if (rec->do32bit) {
 		sanitise_recvmsg_compat(rec);
 		return;
 	}
-	struct sockaddr *sa = NULL;
-	socklen_t salen = 0;
-	struct recvmsg_post_state *snap;
-	unsigned long iov_len_sum = 0;
 
 	if (si == NULL)		// handle --disable-fds=sockets
 		goto skip_si;
