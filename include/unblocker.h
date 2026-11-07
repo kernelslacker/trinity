@@ -21,11 +21,13 @@
  *     ::1, or AF_UNIX.  For AF_INET/AF_INET6 listeners bound to a
  *     wildcard/external addr the destination is rewritten to loopback
  *     keeping the port.
- *   - Connector socket is SOCK_NONBLOCK|SOCK_CLOEXEC, connect returns
- *     EINPROGRESS instantly, fd is closed immediately.  No wait on
- *     completion; the connector itself cannot wedge.
- *   - Bounded work: one socket() + one connect() + one close per call,
- *     plus an optional getsockopt+getsockname when the cache misses.
+ *   - Connector socket takes the listener's type and protocol and is
+ *     SOCK_NONBLOCK|SOCK_CLOEXEC, connect returns EINPROGRESS
+ *     instantly, fd is closed immediately.  No wait on completion; the
+ *     connector itself cannot wedge.
+ *   - Bounded work: two getsockopt()s for the type and protocol, one
+ *     socket() + one connect() + one close per call, plus an optional
+ *     getsockopt+getsockname when the cache misses.
  *
  * Returns nothing; counts surface via shm->stats.accept_unblocker_*.
  */

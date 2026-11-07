@@ -244,6 +244,11 @@ LDFLAGS		+= -Wl,--wrap=get_writable_address
 # forwards to the real call.
 LDFLAGS		+= -Wl,--wrap=ebpf_gen_program
 
+# accept_unblocker_fire() stand-in: the accept and socketcall sanitisers
+# get dup_pool_test.c's wrapper, which fails a handler that fires it, and
+# unblocker_test.c fires the real connector through __real_.
+LDFLAGS		+= -Wl,--wrap=accept_unblocker_fire
+
 # ASAN target: `make -C tests ASAN=1` swaps in the ASAN knobs for the
 # integration path.  -Og +
 # -ggdb3 mirror the top-level `make asan` recipe so a failing
@@ -1128,6 +1133,11 @@ FAKE_SRCS	+= struct_fill_fd_test.c
 # budgeted_test.c reads BUDGETED() (include/child.h) over the fake shm's
 # childop multipliers.
 FAKE_SRCS	+= budgeted_test.c
+
+# net/unblocker.c brings the accept unblocker, whose connector
+# unblocker_test.c fires at a unix SOCK_SEQPACKET listener.
+PARENT_SRCS	+= $(TOP)/net/unblocker.c
+FAKE_SRCS	+= unblocker_test.c
 
 # syscalls/x86/modify_ldt.c brings modify_ldt's sanitiser, whose buffers
 # modify_ldt_test.c checks; it compiles to nothing off x86, as the test

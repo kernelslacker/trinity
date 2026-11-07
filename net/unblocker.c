@@ -159,9 +159,9 @@ static int family_for_addr(const struct sockaddr *sa)
 void accept_unblocker_fire(int fd, const struct socketinfo *si)
 {
 	struct sockaddr_storage ss;
-	socklen_t slen;
+	socklen_t slen, olen;
 	struct sockaddr *sa;
-	int family, cfd, r;
+	int family, type, protocol, cfd, r;
 
 	if (fd < 0)
 		return;
@@ -212,13 +212,28 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	}
 
 	/*
+	 * Connect with the listener's own type and protocol.  A unix
+	 * SOCK_SEQPACKET listener is out of a SOCK_STREAM connect's reach
+	 * (unix_find_bsd() refuses it with EPROTOTYPE, and an abstract
+	 * name's lookup, hashed on the type, misses it), and an SCTP
+	 * listener's port is not one a TCP SYN reaches.  A failed read
+	 * leaves the stream default.
+	 */
+	olen = sizeof(type);
+	if (getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &olen) != 0)
+		type = SOCK_STREAM;
+	olen = sizeof(protocol);
+	if (getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, &protocol, &olen) != 0)
+		protocol = 0;
+
+	/*
 	 * Throwaway connector socket.  SOCK_NONBLOCK so connect() can
 	 * never wedge us (returns EINPROGRESS once the SYN is queued).
 	 * SOCK_CLOEXEC so a concurrent fork in the same child never
 	 * inherits this fd.  We do not publish cfd to the obj pool —
 	 * it is a private throwaway and is closed before returning.
 	 */
-	cfd = socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+	cfd = socket(family, type | SOCK_NONBLOCK | SOCK_CLOEXEC, protocol);
 	if (cfd < 0) {
 		__atomic_add_fetch(&shm->stats.accept_unblocker.probe_failed,
 				   1, __ATOMIC_RELAXED);
