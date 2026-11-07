@@ -4,13 +4,15 @@
  * for the object-pool lookup the fd-to-provider walk reaches.  The stub
  * aborts unless a test has installed a pool, so a test that wanders into
  * that walk fails loudly instead of quietly seeing an untracked fd.  Also
- * the pickers of fds/bpf.c, which the bpf sanitisers draw from, and the
- * ring picker of fds/io_uring.c, which io_uring_register's draws from.
+ * the pickers of fds/bpf.c, which the bpf sanitisers draw from, the ring
+ * picker of fds/io_uring.c, which io_uring_register's draws from, and an
+ * unlink() that can plant a symlink under the name it removes.
  */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "bpf.h"
 #include "cgroup.h"
@@ -18,6 +20,31 @@
 #include "list.h"
 #include "objects.h"
 #include "utils.h"
+
+/*
+ * For the providers that unlink a name in the run's cwd, then create it:
+ * armed with that name, the next unlink() of it leaves a symlink to
+ * fake_unlink_target in its place, as a local user who wins the race in
+ * a world-writable tmp/ would, and disarms.  Unarmed, the real call.
+ */
+const char *fake_unlink_plant;
+const char *fake_unlink_target;
+
+int __real_unlink(const char *path);
+int __wrap_unlink(const char *path);
+int __wrap_unlink(const char *path)
+{
+	int ret = __real_unlink(path);
+
+	if (fake_unlink_plant != NULL && strcmp(path, fake_unlink_plant) == 0) {
+		fake_unlink_plant = NULL;
+		if (symlink(fake_unlink_target, path) != 0) {
+			fprintf(stderr, "fake unlink: cannot plant %s\n", path);
+			abort();
+		}
+	}
+	return ret;
+}
 
 /* Owned by utils/zmalloc.c in production.  The registry relies on zeroed nodes. */
 void *__zmalloc(size_t size, const char *func)

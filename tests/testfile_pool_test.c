@@ -3,9 +3,10 @@
  * of the linked trinity-testfile inodes, the files the path-side calls
  * reach from any cwd, wherever init made them, each fd is mapped
  * page_size into the testfile mmap pool, and a root run hands every file
- * to nobody, whom its children run as.  Init runs through the provider's
- * hook, as a root run, against fake object-pool hooks and an fchown()
- * that only records.
+ * to nobody, whom its children run as.  A symlink planted under a name
+ * between init's unlink and its create keeps that name out of the pool.
+ * Init runs through the provider's hook, as a root run, against fake
+ * object-pool hooks and an fchown() that only records.
  */
 
 #include <fcntl.h>
@@ -31,6 +32,8 @@
 
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
+extern const char *fake_unlink_plant;	/* fake_fds.c */
+extern const char *fake_unlink_target;	/* fake_fds.c */
 
 static struct object objs[64];
 static unsigned int nr_objs;
@@ -117,12 +120,96 @@ static void add_hook(struct object *obj, enum obj_scope scope,
 		BUG("testfile pool: init added an unexpected object");
 }
 
+/* Run the provider's init hook as a root run's open_fds() does, against
+ * the fake object-pool hooks and the recording fchown(). */
+static void run_init_as_root(int (*init)(void))
+{
+	uid_t saved_uid = orig_uid, saved_nobody_uid = nobody_uid;
+	gid_t saved_nobody_gid = nobody_gid;
+
+	fake_get_objhead = head_hook;
+	fake_alloc_object = alloc_hook;
+	fake_add_object = add_hook;
+	orig_uid = 0;
+	nobody_uid = 65534;
+	nobody_gid = 65533;
+	fchown_armed = true;
+	init();
+	fchown_armed = false;
+	orig_uid = saved_uid;
+	nobody_uid = saved_nobody_uid;
+	nobody_gid = saved_nobody_gid;
+	fake_get_objhead = NULL;
+	fake_alloc_object = NULL;
+	fake_add_object = NULL;
+}
+
+/* Unmap, close and unlink what an init built, and start the records over. */
+static void release_pool(void)
+{
+	unsigned int i;
+
+	for (i = 0; i < nr_maps; i++) {
+		munmap(maps[i]->map.ptr, maps[i]->map.size);
+		free_shared_str(maps[i]->map.name);
+	}
+	for (i = 0; i < nr_files; i++) {
+		(void) unlink(files[i]->testfileobj.filename);
+		close(files[i]->testfileobj.fd);
+		free_shared_str((void *) files[i]->testfileobj.filename);
+	}
+	nr_objs = nr_files = nr_maps = nr_chowned = 0;
+}
+
+/*
+ * A symlink planted under a testfile's name between init's unlink and its
+ * create, as a local user racing into a world-writable tmp/ can: the file
+ * it names is neither pooled, resized nor handed to nobody, and the other
+ * names still fill the pool.
+ */
+static void check_planted_name(int (*init)(void))
+{
+	char base[] = "/tmp/trinity-testfile-plant.XXXXXX";
+	struct stat victim, st;
+	unsigned int i;
+	int fd;
+
+	if (mkdtemp(base) == NULL || chdir(base) != 0)
+		BUG("testfile pool: cannot set up the planted directory");
+	fd = open("victim", O_WRONLY | O_CREAT | O_EXCL, 0600);
+	if (fd < 0 || write(fd, "x", 1) != 1 || fstat(fd, &victim) != 0)
+		BUG("testfile pool: cannot make the planted link's target");
+	close(fd);
+
+	fake_unlink_target = "victim";
+	fake_unlink_plant = "trinity-testfile1";
+	run_init_as_root(init);
+	fake_unlink_plant = NULL;
+
+	if (stat("victim", &st) != 0 || st.st_size != 1)
+		BUG("testfile pool: init resized the file a planted link names");
+	for (i = 0; i < nr_files; i++) {
+		if (fstat(files[i]->testfileobj.fd, &st) == 0 &&
+		    st.st_ino == victim.st_ino)
+			BUG("testfile pool: init pooled the file a planted link names");
+	}
+	for (i = 0; i < nr_chowned; i++) {
+		if (chowned[i] == victim.st_ino)
+			BUG("testfile pool: init gave nobody the file a planted link names");
+	}
+	if (nr_files == 0)
+		BUG("testfile pool: a planted name kept every testfile out of the pool");
+
+	release_pool();
+	if (unlink("trinity-testfile1") != 0 || unlink("victim") != 0 ||
+	    chdir("/") != 0 || rmdir(base) != 0)
+		BUG("testfile pool: cannot remove the planted directory");
+}
+
 void testfile_pool_self_check(void);
 void testfile_pool_self_check(void)
 {
 	char base[] = "/tmp/trinity-testfile-test.XXXXXX";
-	uid_t saved_uid = orig_uid, saved_nobody_uid = nobody_uid;
-	gid_t saved_nobody_gid = nobody_gid;
 	int (*init)(void) = NULL;
 	struct list_head *node;
 	unsigned int i;
@@ -141,21 +228,7 @@ void testfile_pool_self_check(void)
 	if (cwd < 0 || mkdtemp(base) == NULL || chdir(base) != 0)
 		BUG("testfile pool: cannot set up the test directory");
 
-	fake_get_objhead = head_hook;
-	fake_alloc_object = alloc_hook;
-	fake_add_object = add_hook;
-	orig_uid = 0;
-	nobody_uid = 65534;
-	nobody_gid = 65533;
-	fchown_armed = true;
-	init();
-	fchown_armed = false;
-	orig_uid = saved_uid;
-	nobody_uid = saved_nobody_uid;
-	nobody_gid = saved_nobody_gid;
-	fake_get_objhead = NULL;
-	fake_alloc_object = NULL;
-	fake_add_object = NULL;
+	run_init_as_root(init);
 
 	if (nr_files == 0)
 		BUG("testfile pool: init opened no testfile");
@@ -174,8 +247,6 @@ void testfile_pool_self_check(void)
 	for (i = 0; i < nr_maps; i++) {
 		if (maps[i]->map.size != page_size)
 			BUG("testfile pool: a testfile mapping is not page_size long");
-		munmap(maps[i]->map.ptr, page_size);
-		free_shared_str(maps[i]->map.name);
 	}
 
 	/* Init ran in a directory that is no tmp/ of trinity's, as in a
@@ -196,12 +267,13 @@ void testfile_pool_self_check(void)
 	if (chdir(base) != 0)
 		BUG("testfile pool: cannot return to the test directory");
 
-	for (i = 0; i < nr_files; i++) {
-		(void) unlink(files[i]->testfileobj.filename);
-		close(files[i]->testfileobj.fd);
-		free_shared_str((void *) files[i]->testfileobj.filename);
-	}
-	if (fchdir(cwd) != 0 || rmdir(base) != 0)
+	release_pool();
+	if (chdir("/") != 0 || rmdir(base) != 0)
 		BUG("testfile pool: cannot remove the test directory");
+
+	check_planted_name(init);
+
+	if (fchdir(cwd) != 0)
+		BUG("testfile pool: cannot return to the starting directory");
 	close(cwd);
 }

@@ -166,6 +166,11 @@ LDFLAGS		+= -Wl,--wrap=getuid -Wl,--wrap=getgid
 # call unless armed.
 LDFLAGS		+= -Wl,--wrap=geteuid
 
+# unlink() stand-in: fake_fds.c wraps it so a provider test can plant a
+# symlink under a name between the provider's unlink and its create.
+# The wrapper forwards to the real call unless armed.
+LDFLAGS		+= -Wl,--wrap=unlink
+
 # get_map() and get_map_with_prot() stand-ins: mm/maps-pick.c is linked
 # for get_map_handle(), and its wrappers would draw from pools most tests
 # never build.  post_oracle_test.c wraps both: get_map() hands out the

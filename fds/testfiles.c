@@ -62,18 +62,19 @@ static int open_testfile(struct object *obj, char *filename)
 
 	if (RAND_BOOL()) {
 		const unsigned long open_flags[] = { O_DIRECT, O_DSYNC, O_SYNC, };
-		int flags = 0;
+		int flags;
 
-		flags = set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);
-		obj->testfileobj.flags = O_CREAT | O_RDWR | flags;
-		fd = open(filename, O_CREAT | O_RDWR | flags, 0666);
+		flags = O_RDWR | O_NOFOLLOW |
+			set_rand_bitmask(ARRAY_SIZE(open_flags), open_flags);
+		obj->testfileobj.flags = flags;
+		fd = open(filename, flags);
 		obj->testfileobj.fopened = false;
 		obj->testfileobj.fcntl_flags = 0;
 	} else {
 		obj->testfileobj.fopened = true;
 		obj->testfileobj.flags = O_RDWR;
 
-		fd = open_with_fopen(filename, O_RDWR);
+		fd = open_with_fopen(filename, O_RDWR | O_NOFOLLOW);
 		if (fd != -1) {
 			int fcntl_flags;
 
@@ -91,8 +92,9 @@ static int open_testfile_fds(void)
 	struct objhead *head;
 	struct object *obj = NULL;
 	struct object *opened[MAX_TESTFILE_FDS];
+	unsigned int made[MAX_TESTFILES];
 	char name[32];
-	unsigned int i, nr = 0;
+	unsigned int i, nr = 0, nr_made = 0;
 	unsigned int fails = 0;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TESTFILE);
@@ -103,17 +105,29 @@ static int open_testfile_fds(void)
 		testfile_dir[0] = '\0';
 
 	/*
-	 * The files might be around from an earlier run, so nuke them, once:
-	 * an unlink per open would strand the earlier fds of a name on an
-	 * orphaned inode the path-side calls never reach.
+	 * The files might be around from an earlier run, so nuke them and
+	 * make them afresh, once: an unlink per open would strand the earlier
+	 * fds of a name on an orphaned inode the path-side calls never reach.
+	 * The cwd is tmp/ when there is one, which anyone can write to, so
+	 * the create is O_EXCL and a name something took in between stays
+	 * out of the pool; the opens after it are O_NOFOLLOW.  Sized here,
+	 * as mmap_fd() keeps no mapping of an empty file.
 	 */
 	for (i = 1; i <= MAX_TESTFILES; i++) {
+		int fd;
+
 		snprintf(name, sizeof(name), "trinity-testfile%u", i);
 		(void) unlink(name);
+		fd = open(name, O_RDWR | O_CREAT | O_EXCL, 0666);
+		if (fd < 0)
+			continue;
+		(void) ftruncate(fd, page_size);
+		close(fd);
+		made[nr_made++] = i;
 	}
 
-	i = 1;
-	while (nr < MAX_TESTFILE_FDS) {
+	i = 0;
+	while (nr_made > 0 && nr < MAX_TESTFILE_FDS) {
 		char *filename;
 		int fd;
 
@@ -125,7 +139,7 @@ static int open_testfile_fds(void)
 			output(2, "testfile init aborted: shared str heap exhausted at i=%u\n", i);
 			break;
 		}
-		snprintf(filename, 64, "trinity-testfile%u", i);
+		snprintf(filename, 64, "trinity-testfile%u", made[i]);
 
 		if (obj == NULL) {
 			obj = alloc_object();
@@ -146,9 +160,7 @@ static int open_testfile_fds(void)
 			obj->testfileobj.fd = fd;
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
 
-			i++;
-			if (i > MAX_TESTFILES)
-				i = 1;
+			i = (i + 1) % nr_made;
 			opened[nr++] = obj;
 
 			fails = 0;
@@ -168,15 +180,6 @@ static int open_testfile_fds(void)
 	if (obj != NULL)
 		tracked_free_now(obj);
 
-	/*
-	 * Size the files only now every fd is open, as the fopen arm's "w+"
-	 * truncates, then map each fd: mmap_fd() keeps no mapping of an
-	 * empty file.
-	 */
-	for (i = 1; i <= MAX_TESTFILES; i++) {
-		snprintf(name, sizeof(name), "trinity-testfile%u", i);
-		(void) truncate(name, page_size);
-	}
 	for (i = 0; i < nr; i++)
 		mmap_fd(opened[i]->testfileobj.fd, opened[i]->testfileobj.filename,
 			page_size, PROT_READ|PROT_WRITE, OBJ_MMAP_TESTFILE);

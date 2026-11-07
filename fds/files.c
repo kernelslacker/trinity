@@ -16,13 +16,17 @@
 #include "syscalls/syscalls.h"
 #include "utils.h"
 
+/*
+ * open(), then fdopen() for the stream, as fopen() takes no O_NOFOLLOW.
+ * @flags are open()'s, the access mode among them picking the stream's.
+ */
 int open_with_fopen(const char *filename, int flags)
 {
 	FILE *file;
-	int fd = -1;
+	int fd;
 	char mode[3] = "";
 
-	switch (flags) {
+	switch (flags & O_ACCMODE) {
 	case O_RDONLY:  mode[0] = 'r';
 			mode[1] = 0;
 			break;
@@ -35,11 +39,16 @@ int open_with_fopen(const char *filename, int flags)
 			break;
 	}
 
-	file = fopen(filename, mode);
-	if (file) {
-		fd = dup(fileno(file));
-		fclose(file);
+	fd = open(filename, flags, 0666);
+	if (fd < 0)
+		return -1;
+	file = fdopen(fd, mode);
+	if (file == NULL) {
+		close(fd);
+		return -1;
 	}
+	fd = dup(fileno(file));
+	fclose(file);
 
 	return fd;
 }
