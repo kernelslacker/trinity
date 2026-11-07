@@ -928,6 +928,7 @@ struct route_header {
 	unsigned int v4_flags;			/* ... neither DEAD nor LINKDOWN */
 	unsigned int v6, v6_tos;		/* AF_INET6; tos 0 */
 	unsigned int v6_type, v6_flags;		/* ... type <= RTN_MAX; not CLONED */
+	unsigned int v6_src;			/* ... no source prefix */
 };
 
 /* fib_props[]'s scopes: the narrowest a route of each type may have. */
@@ -965,6 +966,7 @@ static void tally_route_header(struct route_header *t, const struct nlmsghdr *nl
 		t->v6_tos += rtm->rtm_tos == 0;
 		t->v6_type += rtm->rtm_type <= RTN_MAX;
 		t->v6_flags += !(rtm->rtm_flags & RTM_F_CLONED);
+		t->v6_src += rtm->rtm_src_len == 0;
 	}
 }
 
@@ -981,7 +983,10 @@ static void tally_route_header(struct route_header *t, const struct nlmsghdr *nl
  * whose type is past RTN_MAX or whose flags hold RTM_F_CLONED, which sets
  * RTF_CACHE.  About 0.91 of the IPv4 routes clear the first two, and 0.94
  * of the IPv6 ones each of theirs; random fields cleared them a quarter,
- * a quarter, a half and a half of the time.
+ * a quarter, a half and a half of the time.  Without CONFIG_IPV6_SUBTREES,
+ * fib6_config_validate() also refuses an IPv6 route with a source prefix,
+ * which about 0.44 of them leave out, so a kernel with subtrees still sees
+ * source-specific routes; a random length left it out one time in 129.
  */
 static void expect_route_header(const struct route_header *t)
 {
@@ -999,6 +1004,8 @@ static void expect_route_header(const struct route_header *t)
 			"rtnl: an IPv6 route's type is mostly past the RTN_MAX fib6_config_validate() refuses");
 	expect_fraction(t->v6_flags, t->v6, 0.88, 0.99, "IPv6 route flags",
 			"rtnl: an IPv6 route's flags mostly hold the RTM_F_CLONED fib6_config_validate() refuses");
+	expect_fraction(t->v6_src, t->v6, 0.38, 0.50, "IPv6 route source prefix",
+			"rtnl: an IPv6 route does not leave out the source prefix a kernel without subtrees refuses about half the time");
 }
 
 /* ---------- RTA_FLOWLABEL ---------------------------------------------- */

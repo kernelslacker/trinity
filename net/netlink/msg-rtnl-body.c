@@ -161,8 +161,9 @@ static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned c
 	 * anycast, and no scope at all for UNSPEC, NAT and XRESOLVE) or wider
 	 * than host, or whose flags hold DEAD or LINKDOWN, and
 	 * fib6_config_validate() an IPv6 one whose type is past RTN_MAX or
-	 * whose flags hold RTM_F_CLONED.  The rtmsg stays random one time in
-	 * eight. */
+	 * whose flags hold RTM_F_CLONED, or, without CONFIG_IPV6_SUBTREES,
+	 * with a source prefix, which half of them leave out.  The rtmsg
+	 * stays random one time in eight. */
 	if (!ONE_IN(8)) {
 		if (rtm.rtm_family == AF_INET) {
 			unsigned int narrowest;
@@ -179,6 +180,8 @@ static size_t gen_rtnl_body_route(unsigned char *body, size_t buflen, unsigned c
 			rtm.rtm_tos = 0;
 			rtm.rtm_type = rnd_modulo_u32(RTN_MAX + 1);
 			rtm.rtm_flags &= ~RTM_F_CLONED;
+			if (RAND_BOOL())
+				rtm.rtm_src_len = 0;
 		}
 	}
 	*out_family = rtm.rtm_family;
