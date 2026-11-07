@@ -350,7 +350,7 @@ static void fill_timespec_bucket(struct timespec *ts)
  * so the blanket address scrub is a no-op.  No .cleanup needed.
  */
 unsigned long gen_arg_itimerval(struct syscallentry *entry __unused__,
-				       struct syscallrecord *rec __unused__,
+				       struct syscallrecord *rec,
 				       unsigned int argnum __unused__)
 {
 	struct itimerval *itv;
@@ -379,6 +379,7 @@ unsigned long gen_arg_itimerval(struct syscallentry *entry __unused__,
 		itv->it_value.tv_usec = 0;
 	}
 
+	time_struct_for_abi(rec, itv, 2);
 	return (unsigned long) itv;
 }
 
@@ -457,7 +458,7 @@ unsigned long gen_arg_itimerspec(struct syscallentry *entry __unused__,
  * so the blanket address scrub is a no-op.  No .cleanup needed.
  */
 unsigned long gen_arg_timeval(struct syscallentry *entry __unused__,
-				     struct syscallrecord *rec __unused__,
+				     struct syscallrecord *rec,
 				     unsigned int argnum __unused__)
 {
 	struct timeval *tv;
@@ -489,6 +490,7 @@ unsigned long gen_arg_timeval(struct syscallentry *entry __unused__,
 		fill_timeval_bucket(tv);
 	}
 
+	time_struct_for_abi(rec, tv, 1);
 	return (unsigned long) tv;
 }
 

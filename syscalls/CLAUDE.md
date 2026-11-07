@@ -83,7 +83,13 @@ literals `tables/` copies into shared memory.
    layout helpers in `include/sanitise.h`, keyed on the record's
    `do32bit`, unless it returns on a compat call first — a
    native-stride walk reads a full compat array on the last pool
-   slice off the slice, onto the guard page.
+   slice off the slice, onto the guard page.  Time structs follow the
+   ABI too: a compat call numbered below `NR_COMPAT_TIME64_FIRST` (403,
+   where the y2038 calls start) reads `struct old_timespec32`,
+   `old_timeval32` and the itimer pairs of them, so the time generators
+   narrow their fill through `time_struct_for_abi()`, and a sanitiser
+   that rewrites the generated struct runs it again
+   (`timer/timer_settime.c`).
 3. **`.post`/`.cleanup` split for allocation lifetime, not for logic.**
    `.post` runs for every record in `state == AFTER` — an errno'd failure and
    `--dry-run`'s synthesized `-1`/`ENOSYS` included; the dispatcher skips it

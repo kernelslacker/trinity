@@ -35,7 +35,8 @@ struct compat_mmsghdr {
 /*
  * The y2038 calls sit at 403 (clock_gettime64) to 423 on every 32-bit
  * ABI, and every call numbered past them takes 64-bit time, so a compat
- * call numbered below 403 reads its time structs as old_timespec32.
+ * call numbered below 403 reads its time structs as old_timespec32,
+ * old_timeval32 and the itimer pairs of them.
  */
 #define NR_COMPAT_TIME64_FIRST	403
 
@@ -49,6 +50,16 @@ struct old_itimerspec32 {
 	struct old_timespec32 it_value;
 };
 
+struct old_timeval32 {
+	__s32 tv_sec;
+	__s32 tv_usec;
+};
+
+struct old_itimerval32 {
+	struct old_timeval32 it_interval;
+	struct old_timeval32 it_value;
+};
+
 _Static_assert(sizeof(struct compat_iovec) == 8,
 	       "compat_iovec must be two 32-bit words");
 _Static_assert(sizeof(struct compat_msghdr) == 28,
@@ -59,3 +70,7 @@ _Static_assert(sizeof(struct old_timespec32) == 8,
 	       "old_timespec32 must be two 32-bit words");
 _Static_assert(sizeof(struct old_itimerspec32) == 16,
 	       "old_itimerspec32 must be two old_timespec32s");
+_Static_assert(sizeof(struct old_timeval32) == 8,
+	       "old_timeval32 must be two 32-bit words");
+_Static_assert(sizeof(struct old_itimerval32) == 16,
+	       "old_itimerval32 must be two old_timeval32s");

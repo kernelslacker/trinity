@@ -1,11 +1,11 @@
 /*
  * Self-check for the time-argument generators (args/gen_arg_time.c): a
  * compat call numbered below the y2038 calls reads its time structs as
- * 32-bit fields (struct old_timespec32, old_itimerspec32), so the
- * generators write that layout for one and the native struct for any
- * other call, as does timer_settime's sanitiser when it rewrites the
- * generated struct.  Each case draws until the buffer shows a value only
- * the right layout can hold.
+ * 32-bit fields (struct old_timespec32, old_timeval32 and the itimer
+ * pairs of them), so the generators write that layout for one and the
+ * native struct for any other call, as does timer_settime's sanitiser
+ * when it rewrites the generated struct.  Each case draws until the
+ * buffer shows a value only the right layout can hold.
  */
 
 #include <limits.h>
@@ -56,16 +56,19 @@ int32_t seed_timerid_if_empty(void)
 	return -1;
 }
 
-/* clock_nanosleep on i386, and its y2038 twin; timer_settime on i386. */
+/* clock_nanosleep on i386, and its y2038 twin; timer_settime,
+ * settimeofday and setitimer on i386. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
+#define NR_SETTIMEOFDAY_TIME32		79
+#define NR_SETITIMER_TIME32		104
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
 				   unsigned int argnum);
 
-/* Draws, all of which miss a 1-in-19 bucket one time in about 10^23. */
+/* Draws, all of which miss a 1-in-32 bucket one time in about 10^14. */
 #define DRAWS	1000
 
 /* Draw until a buffer @gen hands back for @rec passes @hit. */
@@ -108,6 +111,21 @@ static bool compat_interval_last_nsec(const void *buf)
 
 	return its->it_interval.tv_sec == 0 &&
 	       its->it_interval.tv_nsec == 999999999;
+}
+
+static bool compat_last_usec(const void *buf)
+{
+	const struct old_timeval32 *tv = buf;
+
+	return tv->tv_sec == 0 && tv->tv_usec == 999999;
+}
+
+static bool compat_interval_last_usec(const void *buf)
+{
+	const struct old_itimerval32 *itv = buf;
+
+	return itv->it_interval.tv_sec == 0 &&
+	       itv->it_interval.tv_usec == 999999;
 }
 
 /* timer_settime's sanitiser rewrites the generated struct with a valid
@@ -176,4 +194,11 @@ void gen_arg_time_self_check(void)
 		BUG("gen_arg_time: a time32 itimerspec never got the 999999999 ns bucket");
 	if (!timer_settime_compat_value())
 		BUG("gen_arg_time: timer_settime's rewrite missed a time32 call's it_value");
+
+	rec.nr = NR_SETTIMEOFDAY_TIME32;
+	if (!drawn(gen_arg_timeval, &rec, compat_last_usec))
+		BUG("gen_arg_time: a time32 timeval never got the 999999 us bucket");
+	rec.nr = NR_SETITIMER_TIME32;
+	if (!drawn(gen_arg_itimerval, &rec, compat_interval_last_usec))
+		BUG("gen_arg_time: a time32 itimerval never got the 999999 us bucket");
 }
