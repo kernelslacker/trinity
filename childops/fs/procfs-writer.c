@@ -622,8 +622,6 @@ static void add_per_task_files(const char *base)
 
 static void discover_targets(void)
 {
-	char per_pid[PROCFS_MAX_PATH];
-
 	entries = zmalloc(MAX_DISCOVERY_ENTRIES * sizeof(*entries));
 
 	walk_dir("/sys/kernel/debug", MAX_DISCOVERY_DEPTH);
@@ -634,8 +632,6 @@ static void discover_targets(void)
 	walk_dir("/proc/sys", MAX_DISCOVERY_DEPTH);
 
 	add_per_task_files("/proc/self");
-	snprintf(per_pid, sizeof(per_pid), "/proc/%d", mypid());
-	add_per_task_files(per_pid);
 }
 
 /*
@@ -690,11 +686,23 @@ static unsigned long do_one_write(const struct discovered_entry *e)
 	 * the buffer-length checks that 256-byte writes never reach.
 	 */
 	char text_buf[4096];
+	char task_path[PROCFS_MAX_PATH];
+	const char *path = e->path;
 	unsigned int len;
 	ssize_t ret;
 	int fd;
 
-	fd = open(e->path, O_WRONLY | O_NONBLOCK);
+	/*
+	 * Discovery runs in the parent, so it records the per-task files
+	 * under /proc/self alone: a /proc/<pid> it recorded would name the
+	 * parent.  Half the writes reach them through the child's own pid.
+	 */
+	if (strncmp(path, "/proc/self/", 11) == 0 && RAND_BOOL() &&
+	    (size_t)snprintf(task_path, sizeof(task_path), "/proc/%d/%s",
+			     mypid(), path + 11) < sizeof(task_path))
+		path = task_path;
+
+	fd = open(path, O_WRONLY | O_NONBLOCK);
 	if (fd < 0) {
 		/*
 		 * EACCES/EPERM here are the steady-state signal that the
