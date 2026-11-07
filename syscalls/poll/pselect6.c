@@ -152,6 +152,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	} else {
 		ts->tv_sec = 0;
 		ts->tv_nsec = 10000;
+		time_struct_for_abi(rec, ts, 1);
 		rec->a5 = (unsigned long) ts;
 		avoid_shared_buffer_inout(&rec->a5, sizeof(struct timespec));
 	}

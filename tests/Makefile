@@ -992,12 +992,13 @@ FAKE_SRCS	+= io_uring_register_test.c
 # fake_arg_gens.c's stand-ins, which gen_arg_time_test.c holds to the
 # layout each call's ABI reads, syscalls/timer/timer_settime.c the
 # sanitiser that rewrites ARG_ITIMERSPEC's struct, and
-# syscalls/fs/timestamp/utimensat.c and syscalls/timer/timerfd_settime.c
-# ones that build their own.
+# syscalls/fs/timestamp/utimensat.c, syscalls/timer/timerfd_settime.c
+# and syscalls/poll/pselect6.c ones that build their own.
 PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
 		   $(TOP)/syscalls/timer/timer_settime.c \
 		   $(TOP)/syscalls/fs/timestamp/utimensat.c \
-		   $(TOP)/syscalls/timer/timerfd_settime.c
+		   $(TOP)/syscalls/timer/timerfd_settime.c \
+		   $(TOP)/syscalls/poll/pselect6.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

@@ -19,6 +19,7 @@
 #include "args-internal.h"	/* gen_arg_timespec */
 #include "blob_mutator.h"	/* blob_mutator_mode */
 #include "debug.h"		/* BUG */
+#include "fd.h"			/* get_pollable_random_fd */
 #include "kernel/compat.h"	/* struct old_timespec32 */
 #include "kernel/stat.h"	/* UTIME_NOW */
 #include "objects.h"		/* struct objhead */
@@ -71,8 +72,24 @@ static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
 	return NULL;
 }
 
+/* pselect6's sanitiser draws pollable fds, of which there are none, and
+ * looks up the object behind each other fd it sets, which finds none. */
+int get_pollable_random_fd(void)
+{
+	return -1;
+}
+
+extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
+
+static struct object *no_object(int fd)
+{
+	(void) fd;
+	return NULL;
+}
+
 /* clock_nanosleep on i386, and its y2038 twin; timer_settime,
- * settimeofday, setitimer, utimensat and timerfd_settime on i386. */
+ * settimeofday, setitimer, utimensat, timerfd_settime and pselect6 on
+ * i386. */
 #define NR_CLOCK_NANOSLEEP_TIME32	267
 #define NR_CLOCK_NANOSLEEP_TIME64	407
 #define NR_TIMER_SETTIME_TIME32		260
@@ -80,6 +97,7 @@ static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
 #define NR_SETITIMER_TIME32		104
 #define NR_UTIMENSAT_TIME32		320
 #define NR_TIMERFD_SETTIME_TIME32	325
+#define NR_PSELECT6_TIME32		308
 
 typedef unsigned long (*generator)(struct syscallentry *entry,
 				   struct syscallrecord *rec,
@@ -145,14 +163,15 @@ static bool compat_interval_last_usec(const void *buf)
 	       itv->it_interval.tv_usec == 999999;
 }
 
-/* Run @entry's sanitiser as a compat call numbered @nr, its first four
- * slots handed zeroed pool buffers, until the buffer it leaves in slot
- * @slot passes @hit. */
+/* Run @entry's sanitiser as a compat call numbered @nr, its six slots
+ * handed zeroed pool buffers, until the buffer it leaves in slot @slot
+ * passes @hit. */
 static bool sanitised(const struct syscallentry *entry, unsigned int nr,
 		      unsigned int slot, bool (*hit)(const void *buf))
 {
 	struct syscallrecord rec;
-	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4 };
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3,
+				   &rec.a4, &rec.a5, &rec.a6 };
 	unsigned int i, k;
 
 	for (i = 0; i < DRAWS; i++) {
@@ -194,6 +213,15 @@ static bool compat_first_now(const void *buf)
 	const struct old_timespec32 *ts = buf;
 
 	return ts[0].tv_sec == 0 && ts[0].tv_nsec == UTIME_NOW;
+}
+
+/* A wait under a second, but not 0, which a misplaced read leaves. */
+static bool compat_short_wait(const void *buf)
+{
+	const struct old_timespec32 *ts = buf;
+
+	return ts->tv_sec == 0 && ts->tv_nsec > 0 &&
+	       ts->tv_nsec < 1000000000;
 }
 
 void gen_arg_time_self_check(void);
@@ -249,4 +277,10 @@ void gen_arg_time_self_check(void)
 		       compat_value_armed))
 		BUG("gen_arg_time: timerfd_settime's timer never reached a time32 call");
 	fake_get_objhead = NULL;
+
+	fake_find_object_by_fd = no_object;
+	if (!sanitised(&syscall_pselect6, NR_PSELECT6_TIME32, 5,
+		       compat_short_wait))
+		BUG("gen_arg_time: pselect6's timeout never reached a time32 call");
+	fake_find_object_by_fd = NULL;
 }
