@@ -15,9 +15,10 @@
 # mention waitpid() at all:
 #
 #   include/utils.h      - the wrapper itself
-#   syscalls/wait*.c     - the wait4 / waitpid / waitid syscall
-#                          definitions, which fuzz the kernel's wait
-#                          family and must call the bare syscall
+#   syscalls/process/wait*.c - the wait4 / waitpid / waitid syscall
+#                              definitions, which fuzz the kernel's
+#                              wait family and must call the bare
+#                              syscall
 #
 # Everywhere else, bare waitpid() is forbidden.  This check grep-matches
 # the token "waitpid" followed by `(` on a word boundary (so waitpid_eintr
@@ -29,6 +30,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="no-bare-waitpid"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
@@ -36,6 +40,9 @@ ROOT="${REPO_ROOT:-$(pwd)}"
 PATTERN='\bwaitpid[[:space:]]*\('
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
+
+srcs="$(list_c_sources)" ||
+	{ echo "FAIL: $NAME: cannot list the source files"; exit 1; }
 
 hits_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp"' EXIT
@@ -46,15 +53,14 @@ trap 'rm -f "$hits_tmp"' EXIT
 # fuzz-target syscall definitions).
 while IFS= read -r srcfile; do
 	case "$srcfile" in
-		./include/utils.h|include/utils.h)               continue ;;
-		syscalls/process/wait4.c)             continue ;;
-		syscalls/process/waitpid.c)         continue ;;
-		syscalls/process/waitid.c)           continue ;;
+		include/utils.h)		continue ;;
+		syscalls/process/wait4.c)	continue ;;
+		syscalls/process/waitpid.c)	continue ;;
+		syscalls/process/waitid.c)	continue ;;
 	esac
 
 	grep -E -H -n "$PATTERN" "$srcfile" 2>/dev/null
-done < <(find . \( -name '*.c' -o -name '*.h' \) -type f \
-		-not -path './.git/*' -print | sort) | \
+done <<< "$srcs" | \
 while IFS= read -r match; do
 	# match is "path:line:content".  Split the first two colons off
 	# manually so a colon inside the source line does not corrupt
@@ -75,7 +81,7 @@ while IFS= read -r match; do
 		//*)    continue ;;
 	esac
 
-	echo "${path#./}:$lineno: $trimmed"
+	echo "$path:$lineno: $trimmed"
 done > "$hits_tmp"
 
 n="$(wc -l < "$hits_tmp" | tr -d ' ')"

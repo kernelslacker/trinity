@@ -20,6 +20,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="srec-no-lock-around-publish"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
@@ -63,10 +66,11 @@ scan() {
 	' "$@"
 }
 
-mapfile -t SRCFILES < <(find . \( -name '*.c' -o -name '*.h' \) -type f \
-		-not -path './.git/*' -print | sort)
+srcs="$(list_c_sources)" ||
+	{ echo "FAIL: $NAME: cannot list the source files"; exit 1; }
+mapfile -t SRCFILES <<< "$srcs"
 
-if [ "${#SRCFILES[@]}" -eq 0 ]; then
+if [ -z "$srcs" ]; then
 	echo "FAIL: $NAME: no source files found"
 	exit 1
 fi

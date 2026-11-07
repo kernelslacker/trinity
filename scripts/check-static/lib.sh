@@ -7,6 +7,29 @@
 #
 # Do NOT execute this file directly.
 
+# list_c_sources
+#
+# Print the tree's .c and .h files, sorted, one per line, relative to the
+# current directory, which the caller has made the repo root.  In a git
+# checkout these are the files git tracks plus the untracked ones it does
+# not ignore, so gitignored copies (agent worktrees, tmp/, build-uapi/)
+# stay out, as does a tracked file deleted from the worktree; an export
+# with no .git is walked whole.  Fails if git cannot list the files.
+list_c_sources() {
+	local files f
+
+	if [ -e .git ]; then
+		files="$(git ls-files -co --exclude-standard -- '*.c' '*.h')" ||
+			return 1
+		while IFS= read -r f; do
+			[ -f "$f" ] && printf '%s\n' "$f"
+		done <<< "$files" | sort
+	else
+		find . \( -name '*.c' -o -name '*.h' \) -type f -print |
+			sed 's|^\./||' | sort
+	fi
+}
+
 # strip_c_comments FILE
 #
 # Emit FILE with all C block comments (/* ... */) and line comments (//)

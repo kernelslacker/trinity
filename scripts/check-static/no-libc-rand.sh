@@ -26,6 +26,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="no-libc-rand"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
@@ -34,6 +37,9 @@ PATTERN='\b(rand|random|srand|srandom|drand48|erand48|lrand48|nrand48|mrand48|jr
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
+srcs="$(list_c_sources)" ||
+	{ echo "FAIL: $NAME: cannot list the source files"; exit 1; }
+
 hits_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp"' EXIT
 
@@ -41,13 +47,12 @@ trap 'rm -f "$hits_tmp"' EXIT
 # pattern.  The allow-list is the single file rand/rand-warn.c.
 while IFS= read -r srcfile; do
 	case "$srcfile" in
-		./rand/rand-warn.c|rand/rand-warn.c) continue ;;
+		rand/rand-warn.c) continue ;;
 	esac
 
 	# grep -E -n -H for "path:line:content" output.
 	grep -E -H -n "$PATTERN" "$srcfile" 2>/dev/null
-done < <(find . \( -name '*.c' -o -name '*.h' \) -type f \
-		-not -path './.git/*' -print | sort) | \
+done <<< "$srcs" | \
 while IFS= read -r match; do
 	# match is "path:line:content".  Split the first two colons off
 	# manually so a colon inside the source line does not corrupt
@@ -71,7 +76,7 @@ while IFS= read -r match; do
 		//*)    continue ;;
 	esac
 
-	echo "${path#./}:$lineno: $trimmed"
+	echo "$path:$lineno: $trimmed"
 done > "$hits_tmp"
 
 n="$(wc -l < "$hits_tmp" | tr -d ' ')"

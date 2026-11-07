@@ -21,6 +21,9 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="no-time-subtraction"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
@@ -29,13 +32,15 @@ PATTERN='time\(NULL\)[[:space:]]*-|-[[:space:]]*time\(NULL\)'
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
 
+srcs="$(list_c_sources)" ||
+	{ echo "FAIL: $NAME: cannot list the source files"; exit 1; }
+
 hits_tmp="$(mktemp)"
 trap 'rm -f "$hits_tmp"' EXIT
 
 while IFS= read -r srcfile; do
 	grep -E -H -n "$PATTERN" "$srcfile" 2>/dev/null
-done < <(find . \( -name '*.c' -o -name '*.h' \) -type f \
-		-not -path './.git/*' -print | sort) | \
+done <<< "$srcs" | \
 while IFS= read -r match; do
 	# match is "path:lineno:content".  Split carefully so a colon
 	# inside the source line does not corrupt the content field.
@@ -55,7 +60,7 @@ while IFS= read -r match; do
 		//*)   continue ;;
 	esac
 
-	echo "${path#./}:$lineno: $trimmed"
+	echo "$path:$lineno: $trimmed"
 done > "$hits_tmp"
 
 n="$(wc -l < "$hits_tmp" | tr -d ' ')"

@@ -43,10 +43,16 @@
 
 set -u
 
+# shellcheck source=lib.sh
+source "$(dirname "$0")/lib.sh"
+
 NAME="stats-ring-op-clock-atomic"
 ROOT="${REPO_ROOT:-$(pwd)}"
 
 cd "$ROOT" || { echo "FAIL: $NAME: cannot cd to $ROOT"; exit 1; }
+
+srcs="$(list_c_sources)" ||
+	{ echo "FAIL: $NAME: cannot list the source files"; exit 1; }
 
 hits_tmp="$(mktemp)"
 grep_err_tmp="$(mktemp)"
@@ -138,11 +144,8 @@ _ws_is_whole_struct_write() {
 }
 
 while IFS= read -r srcfile; do
-	# Normalise to a path without leading ./
-	nf="${srcfile#./}"
-
 	# Explicit allow-list.
-	case "$nf" in
+	case "$srcfile" in
 		tests/*) continue ;;
 	esac
 
@@ -159,8 +162,8 @@ while IFS= read -r srcfile; do
 	grep_out="$(grep -nE '(->|\.)lossless_op_count' "$srcfile")"
 	grep_status=$?
 	if [ "$grep_status" -ge 2 ]; then
-		echo "  $NAME: grep error (status $grep_status) scanning $nf" >&2
-		echo "$nf" >> "$grep_err_tmp"
+		echo "  $NAME: grep error (status $grep_status) scanning $srcfile" >&2
+		echo "$srcfile" >> "$grep_err_tmp"
 		continue
 	fi
 
@@ -194,10 +197,9 @@ while IFS= read -r srcfile; do
 		fi
 
 		# Surviving lines are plain (non-atomic) accesses -- FAIL.
-		echo "${nf}:${lineno}: ${trimmed}"
+		echo "${srcfile}:${lineno}: ${trimmed}"
 	done <<< "$grep_out"
-done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
-     >> "$hits_tmp"
+done <<< "$srcs" >> "$hits_tmp"
 
 # Assert we actually scanned at least one file.
 if [ "$scanned" -eq 0 ]; then
@@ -249,8 +251,7 @@ fi
 # skipped (no typed locals → no whole-struct races possible).
 
 while IFS= read -r srcfile; do
-	nf="${srcfile#./}"
-	case "$nf" in
+	case "$srcfile" in
 		tests/*) continue ;;
 	esac
 	# Only scan files that actually reference struct stats_ring.
@@ -297,11 +298,10 @@ while IFS= read -r srcfile; do
 			echo "$trimmed" | grep -qE \
 				"struct[[:space:]]+stats_ring[[:space:]]*\*[[:space:]]*${_ws_name}[[:space:]]*=" \
 				&& continue
-			echo "${nf}:${lineno}: ${trimmed}"
+			echo "${srcfile}:${lineno}: ${trimmed}"
 		done <<< "$ws_grep_out"
 	done
-done < <(find . \( -name '*.c' -o -name '*.h' \) -type f -not -path './.git/*' -print | sort) \
-     >> "$ws_hits_tmp"
+done <<< "$srcs" >> "$ws_hits_tmp"
 
 ws_n="$(wc -l < "$ws_hits_tmp" | tr -d ' ')"
 if [ "$ws_n" -gt 0 ]; then
