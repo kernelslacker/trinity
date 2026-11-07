@@ -80,36 +80,11 @@ static const unsigned long fallocate_extra_bits[] = {
 	0x100, 0x200, 0x400, 0x800, 0x1000, 0x2000,
 };
 
-/*
- * Snapshot of the fallocate inputs read by the post handler, captured
- * at sanitise time and consumed by the post handler.  Lives in
- * rec->post_state, a slot the syscall ABI does not expose, so a sibling
- * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget invalidate_obj_mmap_by_fd() at the
- * wrong fd (soft-invalidating mappings unrelated to the hole-punch and
- * starving the consumer pools) or flip the mode gate to bypass
- * invalidation when the call actually was a hole-punch / range-zero.
- */
-#define FALLOCATE_POST_STATE_MAGIC	0x46414C4CUL	/* "FALL" */
-struct fallocate_post_state {
-	unsigned long magic;
-	unsigned long fd;
-	unsigned long mode;
-};
-
 static void sanitise_fallocate(struct syscallrecord *rec)
 {
-	struct fallocate_post_state *snap;
 	uint32_t pick = rnd_modulo_u32(100);
 	unsigned long mode;
 	int64_t offset, len;
-
-	/*
-	 * Clear post_state up front so an early return below leaves the
-	 * post handler with a NULL snapshot to bail on rather than a stale
-	 * pointer carried over from an earlier syscall on this record.
-	 */
-	rec->post_state = 0;
 
 	if (pick < 75) {
 		mode = RAND_ARRAY(fallocate_valid_combos);
@@ -167,16 +142,6 @@ static void sanitise_fallocate(struct syscallrecord *rec)
 	 * extend it to multi-GB and turn the next SIGABRT-handler bug-log
 	 * drain into a host-swamping write. */
 	reroll_protected_fd_arg(&rec->a1);
-
-	/*
-	 * Snapshot fd and mode after the rewrites above so the post
-	 * handler sees the final values the syscall actually ran with.
-	 */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = FALLOCATE_POST_STATE_MAGIC;
-	snap->fd    = rec->a1;
-	snap->mode  = rec->a2;
-	post_state_install(rec, snap);
 }
 
 /*
@@ -202,30 +167,21 @@ static bool fallocate_mode_destroys_content(unsigned long mode)
 			FALLOC_FL_INSERT_RANGE)) != 0;
 }
 
+/*
+ * The fd and mode come from the slots the kernel was handed, shadowed at
+ * dispatch: chain substitution or a RedQueen pin can rewrite either after
+ * the sanitiser drew its own, and invalidating the mappings of a file the
+ * call never cut leaves the cut one's live.
+ */
 static void post_fallocate(struct syscallrecord *rec)
 {
-	struct fallocate_post_state *snap;
-
-	/*
-	 * Canonical ownership bracket: shape -> ownership -> magic, in that
-	 * order.  post_state_claim_owned() has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption counter
-	 * on failure -- just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, FALLOCATE_POST_STATE_MAGIC, __func__);
-	if (snap == NULL)
+	if (rec->retval != 0)
 		return;
 
-	if (rec->retval != 0)
-		goto out_free;
+	if (!fallocate_mode_destroys_content(get_arg_snapshot(rec, 2)))
+		return;
 
-	if (!fallocate_mode_destroys_content(snap->mode))
-		goto out_free;
-
-	invalidate_obj_mmap_by_fd((int) snap->fd);
-
-out_free:
-	post_state_release(rec, snap);
+	invalidate_obj_mmap_by_fd((int) get_arg_snapshot(rec, 1));
 }
 
 struct syscallentry syscall_fallocate = {
@@ -236,6 +192,9 @@ struct syscallentry syscall_fallocate = {
 	.arg_params[1].list = ARGLIST(fallocate_modes),
 	.sanitise = sanitise_fallocate,
 	.post = post_fallocate,
+	/* fd (a1) and mode (a2): the mappings invalidated are those of the
+	 * file the kernel cut. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_IO,

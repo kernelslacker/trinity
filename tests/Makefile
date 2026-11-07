@@ -668,6 +668,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_register.c \
 PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
 		   $(TOP)/syscalls/timer/timerfd_create.c
 
+# syscalls/fs/fallocate.c brings fallocate, whose post handler
+# post_oracle_test.c checks invalidates the pooled mappings of the file
+# the kernel cut, through a fake of mm/maps-proc.c's
+# invalidate_obj_mmap_by_fd().
+PARENT_SRCS	+= $(TOP)/syscalls/fs/fallocate.c
+
 # syscalls/lsm/lsm_get_self_attr.c brings lsm_get_self_attr, whose re-call
 # selector_recall_test.c runs against a fake of the syscall.
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_get_self_attr.c

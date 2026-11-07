@@ -1328,6 +1328,73 @@ static void fd_tag_rewritten(void)
 	fake_publish_resource = NULL;
 }
 
+/* The fd the last invalidate_obj_mmap_by_fd() named, which mm/maps-proc.c
+ * implements outside this binary; -1 for none. */
+static int invalidated_fd = -1;
+
+unsigned int invalidate_obj_mmap_by_fd(int fd)
+{
+	invalidated_fd = fd;
+	return 0;
+}
+
+/* The fd a call cuts the file of, and the one its sanitiser drew. */
+#define CUT_FD		42
+#define BUILT_FD	41
+
+/* fallocate's content-destroying modes cut the file the kernel was
+ * handed, whose pooled mappings a later write through would SIGBUS on.
+ * Chain substitution can rewrite the ARG_FD slot with a previous call's
+ * fd, and the ARG_LIST mode, after the sanitiser drew its own. */
+static void cut_fd_rewritten(void)
+{
+	static const struct {
+		const char *what;
+		struct syscallentry *entry;
+		unsigned long built_a2;		/* the mode the sanitiser drew */
+		unsigned long ran_a2;		/* and the one the kernel ran */
+		int invalidated;
+	} cases[] = {
+		{ "fallocate, a hole punched in a rewritten fd", &syscall_fallocate,
+		  0, FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, CUT_FD },
+		{ "fallocate, a punch rewritten to an allocation", &syscall_fallocate,
+		  FALLOC_FL_PUNCH_HOLE | FALLOC_FL_KEEP_SIZE, 0, -1 },
+	};
+	static struct syscallrecord rec;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int i, k, tries;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = BUILT_FD;
+			cases[i].entry->sanitise(&rec);
+			if (rec.a2 == cases[i].built_a2)
+				break;
+			free((void *) rec.post_state);
+		}
+		if (tries == 4096)
+			BUG("a sanitiser never drew the mode a case builds on");
+
+		/* The slots the kernel was handed, as __do_syscall()
+		 * shadows them. */
+		rec.a1 = CUT_FD;
+		rec.a2 = cases[i].ran_a2;
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			rec.arg_shadow[k] = *slots[k];
+		rec.arg_snapshot_mask = cases[i].entry->arg_snapshot_mask;
+		rec.retval = 0;
+		invalidated_fd = -1;
+		cases[i].entry->post(&rec);
+		if (invalidated_fd != cases[i].invalidated) {
+			fprintf(stderr, "%s: fd %d's mappings invalidated, wanted %d\n",
+				cases[i].what, invalidated_fd,
+				cases[i].invalidated);
+			failed++;
+		}
+	}
+}
+
 #ifdef USE_BPF
 static unsigned int bpf_published;
 
@@ -1447,6 +1514,7 @@ void post_oracle_self_check(void)
 	get_mempolicy_untouched();
 	io_uring_register_rewritten();
 	fd_tag_rewritten();
+	cut_fd_rewritten();
 	count_rewritten();
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH
