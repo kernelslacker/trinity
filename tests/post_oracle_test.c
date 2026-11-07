@@ -3,10 +3,11 @@
  * worked.  Each case hands a post handler the return a successful call
  * produces and counts the corrupt-pointer bumps it makes: a value the
  * kernel returns must not bump, one it cannot return must.  A sampled
- * compare is counted by the anomalies it reports instead, and an
- * untouched-buffer check by the untouched buffers it reports.  The handlers
- * run as shipped; the post_state table, post_snapshot_or_skip() and the
- * bump itself are faked here.
+ * compare is counted by the anomalies it reports instead, an
+ * untouched-buffer check by the untouched buffers it reports, and the
+ * PR_FUTEX_HASH -EBUSY tally by what it counts.  The handlers run as
+ * shipped; the post_state table, post_snapshot_or_skip() and the bump
+ * itself are faked here.
  */
 
 #include <errno.h>
@@ -173,16 +174,16 @@ static void expect(const char *what, unsigned int got, unsigned int want)
 /* The out-param the kernel writes through arg2. */
 static unsigned int *out;
 
-/* Run prctl's own sanitiser until it draws @option, so the snapshot the
- * post handler claims is the one the sanitiser built. */
-static struct syscallrecord *prctl_rec(int option)
+/* Run prctl's own sanitiser on @arg2 until it draws @option, so the
+ * snapshot the post handler claims is the one the sanitiser built. */
+static struct syscallrecord *prctl_rec(int option, unsigned long arg2)
 {
 	static struct syscallrecord rec;
 	unsigned int tries;
 
 	for (tries = 0; tries < 4096; tries++) {
 		memset(&rec, 0, sizeof(rec));
-		rec.a2 = (unsigned long) out;
+		rec.a2 = arg2;
 		syscall_prctl.sanitise(&rec);
 		if (rec.a1 == (unsigned long) option)
 			return &rec;
@@ -192,10 +193,22 @@ static struct syscallrecord *prctl_rec(int option)
 	return NULL;
 }
 
+/* The option and arg2 the kernel was handed, as __do_syscall() shadows
+ * them. */
+static void prctl_ran(struct syscallrecord *rec, unsigned long option,
+		      unsigned long arg2)
+{
+	rec->a1 = option;
+	rec->a2 = arg2;
+	rec->arg_snapshot_mask = syscall_prctl.arg_snapshot_mask;
+	rec->arg_shadow[0] = option;
+	rec->arg_shadow[1] = arg2;
+}
+
 static unsigned int prctl_get(int option, unsigned long retval,
 			      unsigned int out_word)
 {
-	struct syscallrecord *rec = prctl_rec(option);
+	struct syscallrecord *rec = prctl_rec(option, (unsigned long) out);
 
 	*out = out_word;
 	rec->retval = retval;
@@ -228,7 +241,8 @@ static void get_tsc(void)
 		{ "PR_GET_TSC, a -errno in the return slot",
 		  (unsigned long) -22L, 0, true, 1 },
 	};
-	unsigned int i;
+	struct syscallrecord *rec;
+	unsigned int i, mode;
 
 	for (i = 0; i < ARRAY_SIZE(cases); i++) {
 		snapshot_readable = cases[i].readable;
@@ -238,6 +252,17 @@ static void get_tsc(void)
 		       cases[i].bumps);
 	}
 	snapshot_readable = true;
+
+	/* An arg2 rewritten after the sanitiser is where the kernel put the
+	 * mode, and the buffer the sanitiser built is left as it was. */
+	rec = prctl_rec(PR_GET_TSC, (unsigned long) out);
+	*out = 0;
+	mode = PR_TSC_ENABLE;
+	prctl_ran(rec, PR_GET_TSC, (unsigned long) &mode);
+	rec->retval = 0;
+	bumps = 0;
+	syscall_prctl.post(rec);
+	expect("PR_GET_TSC, the mode stored through a rewritten arg2", bumps, 0);
 }
 
 /* 0 when THP is not disabled, 1 when it is disabled completely, and
@@ -266,6 +291,138 @@ static void get_thp_disable(void)
 		expect(cases[i].what,
 		       prctl_get(PR_GET_THP_DISABLE, cases[i].retval, 0),
 		       cases[i].bumps);
+}
+
+/* Calls per round-trip case: the readback is sampled one in twenty. */
+#define ROUNDTRIP_CALLS	300
+
+/* prctl calls the sanitiser built as @option on @arg2, which the kernel
+ * ran as @ran_option on *@ran_arg2, or on the arg2 the sanitiser built
+ * when @ran_arg2 is NULL, and answered 0; the cred anomalies their
+ * sampled SET/GET round trips report. */
+static unsigned long roundtrip_anomalies(int option, unsigned long arg2,
+					 int ran_option,
+					 const unsigned long *ran_arg2)
+{
+	unsigned long before = shm->stats.oracle.cred_oracle_anomalies;
+	unsigned int i;
+
+	for (i = 0; i < ROUNDTRIP_CALLS; i++) {
+		struct syscallrecord *rec = prctl_rec(option, arg2);
+
+		prctl_ran(rec, (unsigned long) ran_option,
+			  ran_arg2 != NULL ? *ran_arg2 : rec->a2);
+		rec->retval = 0;
+		syscall_prctl.post(rec);
+	}
+	return shm->stats.oracle.cred_oracle_anomalies - before;
+}
+
+/* A SET that worked is read back with its GET and compared with the arg2
+ * the kernel was handed, which chain substitution or a RedQueen pin can
+ * rewrite after the sanitiser drew its own, as they can the option: a
+ * call the kernel ran as another option is no SET to read back. */
+static void prctl_roundtrip(void)
+{
+	unsigned long dumpable = (unsigned long) prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
+	unsigned long keepcaps = (unsigned long) prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
+	unsigned long other_dumpable = dumpable ^ 1, other_keepcaps = keepcaps ^ 1;
+	unsigned long pdeathsig, other_sig, other_name;
+	char name[16] = { 0 };
+	int sig = 0;
+	const struct {
+		const char *what;
+		int option;
+		unsigned long arg2;
+		int ran_option;
+		const unsigned long *ran_arg2;
+		bool reported;
+	} cases[] = {
+		{ "PR_SET_DUMPABLE, arg2 pinned to the value read back",
+		  PR_SET_DUMPABLE, (unsigned long) out,
+		  PR_SET_DUMPABLE, &dumpable, false },
+		{ "PR_SET_DUMPABLE, a readback other than the arg2 run on",
+		  PR_SET_DUMPABLE, dumpable,
+		  PR_SET_DUMPABLE, &other_dumpable, true },
+		{ "PR_SET_DUMPABLE, run as PR_GET_TIMING",
+		  PR_SET_DUMPABLE, other_dumpable, PR_GET_TIMING, NULL, false },
+		{ "PR_SET_KEEPCAPS, arg2 pinned to the value read back",
+		  PR_SET_KEEPCAPS, (unsigned long) out,
+		  PR_SET_KEEPCAPS, &keepcaps, false },
+		{ "PR_SET_KEEPCAPS, a readback other than the arg2 run on",
+		  PR_SET_KEEPCAPS, keepcaps,
+		  PR_SET_KEEPCAPS, &other_keepcaps, true },
+		{ "PR_SET_PDEATHSIG, arg2 pinned to the signal read back",
+		  PR_SET_PDEATHSIG, 0, PR_SET_PDEATHSIG, &pdeathsig, false },
+		{ "PR_SET_PDEATHSIG, a readback other than the arg2 run on",
+		  PR_SET_PDEATHSIG, 0, PR_SET_PDEATHSIG, &other_sig, true },
+		{ "PR_SET_NAME, run on another buffer",
+		  PR_SET_NAME, 0, PR_SET_NAME, &other_name, false },
+		{ "PR_SET_NAME, a readback other than the name built",
+		  PR_SET_NAME, 0, PR_SET_NAME, NULL, true },
+	};
+	unsigned int i;
+
+	if (prctl(PR_GET_PDEATHSIG, (unsigned long) &sig, 0, 0, 0) != 0 ||
+	    prctl(PR_GET_NAME, (unsigned long) name, 0, 0, 0) != 0)
+		BUG("prctl round trip: cannot read this task's state");
+	pdeathsig = (unsigned long) sig;
+	other_sig = pdeathsig ^ 1;
+	/* Another buffer, holding the name the task already has. */
+	other_name = (unsigned long) name;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		unsigned long n = roundtrip_anomalies(cases[i].option,
+						      cases[i].arg2,
+						      cases[i].ran_option,
+						      cases[i].ran_arg2);
+
+		if ((n != 0) != cases[i].reported) {
+			fprintf(stderr, "prctl round trip, %s: %lu anomalies\n",
+				cases[i].what, n);
+			failed++;
+		}
+	}
+}
+
+/* SET_SLOTS refused with -EBUSY is counted by the sub-op the kernel was
+ * handed, not the one the sanitiser drew. */
+static void futex_hash_ebusy(void)
+{
+	static const struct {
+		const char *what;
+		unsigned long ran_op;
+		unsigned long counted;
+	} cases[] = {
+		{ "SET_SLOTS refused busy", PR_FUTEX_HASH_SET_SLOTS, 1 },
+		{ "SET_SLOTS rewritten to GET_SLOTS", PR_FUTEX_HASH_GET_SLOTS, 0 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		unsigned long before = shm->stats.prctl_futex_hash.set_slots_ebusy;
+		unsigned long counted;
+		struct syscallrecord *rec;
+
+		/* The sanitiser draws either sub-op: build on SET_SLOTS. */
+		for (;;) {
+			rec = prctl_rec(PR_FUTEX_HASH, 0);
+			if (rec->a2 == PR_FUTEX_HASH_SET_SLOTS)
+				break;
+			free((void *) rec->post_state);
+		}
+		prctl_ran(rec, PR_FUTEX_HASH, cases[i].ran_op);
+		rec->retval = (unsigned long) -1L;
+		rec->errno_post = EBUSY;
+		syscall_prctl.post(rec);
+
+		counted = shm->stats.prctl_futex_hash.set_slots_ebusy - before;
+		if (counted != cases[i].counted) {
+			fprintf(stderr, "PR_FUTEX_HASH, %s: counted %lu, wanted %lu\n",
+				cases[i].what, counted, cases[i].counted);
+			failed++;
+		}
+	}
 }
 
 /* The policy, with SCHED_RESET_ON_FORK OR'd in while the task has
@@ -881,6 +1038,8 @@ void post_oracle_self_check(void)
 
 	get_tsc();
 	get_thp_disable();
+	prctl_roundtrip();
+	futex_hash_ebusy();
 	sched_getscheduler_policy();
 	recv_count();
 	recvmsg_count();

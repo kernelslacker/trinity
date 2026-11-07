@@ -154,13 +154,13 @@ struct prctl_post_state {
 	int option;
 	struct sock_fprog *bpf;
 	/*
-	 * Snapshot of the SET-side argument captured at sanitise time so
-	 * the 1-in-20 SET/GET roundtrip oracles can compare the GET
-	 * readback against what we asked the kernel to store -- immune
-	 * to sibling-thread scribbles of rec->a2 or the writable buffer
-	 * it pointed at.  set_arg is the literal arg2 for the scalar
-	 * SET options; set_name is a content snapshot for PR_SET_NAME,
-	 * truncated and NUL-terminated like the kernel will do.
+	 * The arg2 the sanitiser built and, for PR_SET_NAME, the name it
+	 * points at, truncated and NUL-terminated as the kernel stores it:
+	 * the 1-in-20 SET/GET round trip compares the readback with a copy
+	 * a scribble of the writable buffer cannot reach, on a call handed
+	 * that buffer.  The scalar round trips compare with the arg2 the
+	 * kernel was handed, which chain substitution or a RedQueen pin may
+	 * have rewritten after the sanitiser drew its own.
 	 */
 	unsigned long set_arg;
 	unsigned char set_name[16];
@@ -572,9 +572,8 @@ static struct sock_fprog *sanitise_prctl_option(struct syscallrecord *rec,
  * the post_state snapshot sanitise_prctl() registers is a
  * pure retval / stored-value readback oracle that stays coherent
  * across a CMP RedQueen re-exec (the SET is idempotent for these
- * scalar-only arms, and the readback compares against the
- * captured set_arg which does not depend on which of the two
- * dispatches the reaper observes).  See include/syscall.h
+ * scalar-only arms, and each dispatch's readback compares against
+ * the arg2 its own dispatch-time shadow holds).  See include/syscall.h
  * REEXEC_OK for the safety contract and
  * random_syscall/dispatch-step.c:redqueen_reexec_step() for the gate
  * that consumes this bit -- the syscall entry lacks the static
@@ -833,7 +832,8 @@ static void post_set_no_new_privs(unsigned long retval)
 	}
 }
 
-static void post_set_name(const struct prctl_post_state *snap,
+static void post_set_name(struct syscallrecord *rec,
+			  const struct prctl_post_state *snap,
 			  unsigned long retval)
 {
 	/*
@@ -841,13 +841,17 @@ static void post_set_name(const struct prctl_post_state *snap,
 	 * reads it back.  Compare against the byte snapshot we took
 	 * at sanitise time -- not the userspace buffer at rec->a2,
 	 * which a sibling thread may have scribbled between the SET
-	 * and the readback.
+	 * and the readback.  The snapshot is of the buffer the
+	 * sanitiser built, and says nothing of a name the kernel
+	 * read from another.
 	 */
 	char readback[16] = { 0 };
 
 	if ((long) retval != 0)
 		return;
 	if (!ONE_IN(20))
+		return;
+	if (get_arg_snapshot(rec, 2) != snap->set_arg)
 		return;
 	if (prctl(PR_GET_NAME, (unsigned long) readback, 0, 0, 0) != 0)
 		return;
@@ -859,9 +863,9 @@ static void post_set_name(const struct prctl_post_state *snap,
 	}
 }
 
-static void post_set_dumpable(const struct prctl_post_state *snap,
-			      unsigned long retval)
+static void post_set_dumpable(struct syscallrecord *rec, unsigned long retval)
 {
+	unsigned long arg2;
 	long got;
 
 	/*
@@ -874,18 +878,19 @@ static void post_set_dumpable(const struct prctl_post_state *snap,
 	if (!ONE_IN(20))
 		return;
 	got = prctl(PR_GET_DUMPABLE, 0, 0, 0, 0);
-	if ((unsigned long) got != snap->set_arg) {
+	arg2 = get_arg_snapshot(rec, 2);
+	if ((unsigned long) got != arg2) {
 		output(0, "cred oracle: prctl(PR_SET_DUMPABLE %lu) "
 		       "succeeded but PR_GET_DUMPABLE=%ld\n",
-		       snap->set_arg, got);
+		       arg2, got);
 		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
 
-static void post_set_keepcaps(const struct prctl_post_state *snap,
-			      unsigned long retval)
+static void post_set_keepcaps(struct syscallrecord *rec, unsigned long retval)
 {
+	unsigned long arg2;
 	long got;
 
 	/*
@@ -898,23 +903,25 @@ static void post_set_keepcaps(const struct prctl_post_state *snap,
 	if (!ONE_IN(20))
 		return;
 	got = prctl(PR_GET_KEEPCAPS, 0, 0, 0, 0);
-	if ((unsigned long) got != snap->set_arg) {
+	arg2 = get_arg_snapshot(rec, 2);
+	if ((unsigned long) got != arg2) {
 		output(0, "cred oracle: prctl(PR_SET_KEEPCAPS %lu) "
 		       "succeeded but PR_GET_KEEPCAPS=%ld\n",
-		       snap->set_arg, got);
+		       arg2, got);
 		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
 }
 
-static void post_set_pdeathsig(const struct prctl_post_state *snap,
+static void post_set_pdeathsig(struct syscallrecord *rec,
 			       unsigned long retval)
 {
 	/*
 	 * Oracle: PR_SET_PDEATHSIG accepts 0 or a valid signal
 	 * number.  PR_GET_PDEATHSIG writes the stored value to the
-	 * int* at arg2; compare against the snapshot.
+	 * int* at arg2; compare against the arg2 the SET was handed.
 	 */
+	unsigned long arg2;
 	int sig = -1;
 
 	if ((long) retval != 0)
@@ -923,10 +930,11 @@ static void post_set_pdeathsig(const struct prctl_post_state *snap,
 		return;
 	if (prctl(PR_GET_PDEATHSIG, (unsigned long) &sig, 0, 0, 0) != 0)
 		return;
-	if ((unsigned long) sig != snap->set_arg) {
+	arg2 = get_arg_snapshot(rec, 2);
+	if ((unsigned long) sig != arg2) {
 		output(0, "cred oracle: prctl(PR_SET_PDEATHSIG %lu) "
 		       "succeeded but PR_GET_PDEATHSIG=%d\n",
-		       snap->set_arg, sig);
+		       arg2, sig);
 		__atomic_add_fetch(&shm->stats.oracle.cred_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
@@ -1049,9 +1057,7 @@ static void post_get_fp_exc_emu(struct syscallrecord *rec, unsigned long retval)
 	}
 }
 
-static void post_get_tsc(struct syscallrecord *rec,
-			 const struct prctl_post_state *snap,
-			 unsigned long retval)
+static void post_get_tsc(struct syscallrecord *rec, unsigned long retval)
 {
 	unsigned int mode;
 
@@ -1072,14 +1078,13 @@ static void post_get_tsc(struct syscallrecord *rec,
 		return;
 
 	/*
-	 * Judge the mode where the kernel put it.  snap->set_arg is the
-	 * arg2 out-buffer captured at sanitise time; a buffer outside
-	 * trinity's tracked regions drops the sample.  Any mode but the
-	 * two above is a torn read of thread->flags or a scribbled
-	 * buffer.
+	 * Judge the mode where the kernel put it, through the arg2 it was
+	 * handed; a buffer outside trinity's tracked regions drops the
+	 * sample.  Any mode but the two above is a torn read of
+	 * thread->flags or a scribbled buffer.
 	 */
 	if (!post_snapshot_or_skip(&mode,
-				   (const void *)(unsigned long) snap->set_arg,
+				   (const void *) get_arg_snapshot(rec, 2),
 				   sizeof(mode)))
 		return;
 	if (mode != PR_TSC_ENABLE && mode != PR_TSC_SIGSEGV) {
@@ -1138,8 +1143,7 @@ static void post_get_seccomp(struct syscallrecord *rec, unsigned long retval)
 	}
 }
 
-static void post_futex_hash(const struct prctl_post_state *snap,
-			    unsigned long retval, int errno_post)
+static void post_futex_hash(struct syscallrecord *rec, unsigned long retval)
 {
 	/*
 	 * PR_FUTEX_HASH_SET_SLOTS(0) pivots the mm to the global
@@ -1153,8 +1157,8 @@ static void post_futex_hash(const struct prctl_post_state *snap,
 	 * The old check '(long)retval == -EBUSY' (== -16) could never
 	 * match, making this counter permanently zero.
 	 */
-	if (snap->set_arg == PR_FUTEX_HASH_SET_SLOTS &&
-	    (long)retval == -1L && errno_post == EBUSY)
+	if (get_arg_snapshot(rec, 2) == PR_FUTEX_HASH_SET_SLOTS &&
+	    (long)retval == -1L && rec->errno_post == EBUSY)
 		__atomic_add_fetch(
 			&shm->stats.prctl_futex_hash.set_slots_ebusy,
 			1, __ATOMIC_RELAXED);
@@ -1240,9 +1244,21 @@ static void post_prctl(struct syscallrecord *rec)
 
 	retval = rec->retval;
 
+	/*
+	 * Chain substitution or a RedQueen pin may have handed the kernel
+	 * another option than the one the snapshot was built for: free the
+	 * sock_fprog the sanitiser built, but judge nothing, as every arm
+	 * below reads back or bounds what its own option does.
+	 */
+	if ((int) get_arg_snapshot(rec, 1) != snap->option) {
+		post_set_seccomp(snap);
+		post_state_release(rec, snap);
+		return;
+	}
+
 	switch (snap->option) {
 	case PR_FUTEX_HASH:
-		post_futex_hash(snap, retval, rec->errno_post);
+		post_futex_hash(rec, retval);
 		break;
 	case PR_SET_SECCOMP:
 		post_set_seccomp(snap);
@@ -1251,16 +1267,16 @@ static void post_prctl(struct syscallrecord *rec)
 		post_set_no_new_privs(retval);
 		break;
 	case PR_SET_NAME:
-		post_set_name(snap, retval);
+		post_set_name(rec, snap, retval);
 		break;
 	case PR_SET_DUMPABLE:
-		post_set_dumpable(snap, retval);
+		post_set_dumpable(rec, retval);
 		break;
 	case PR_SET_KEEPCAPS:
-		post_set_keepcaps(snap, retval);
+		post_set_keepcaps(rec, retval);
 		break;
 	case PR_SET_PDEATHSIG:
-		post_set_pdeathsig(snap, retval);
+		post_set_pdeathsig(rec, retval);
 		break;
 	case PR_GET_PDEATHSIG:
 		post_get_pdeathsig(rec, retval);
@@ -1288,7 +1304,7 @@ static void post_prctl(struct syscallrecord *rec)
 		post_get_fp_exc_emu(rec, retval);
 		break;
 	case PR_GET_TSC:
-		post_get_tsc(rec, snap, retval);
+		post_get_tsc(rec, retval);
 		break;
 	case PR_GET_THP_DISABLE:
 		post_get_thp_disable(rec, retval);
@@ -1321,5 +1337,10 @@ struct syscallentry syscall_prctl = {
 	.sanitiser_owned_mask = (1u << 0),
 	.sanitise = sanitise_prctl,
 	.post = post_prctl,
+	/* option (a1) and arg2 (a2): the oracles judge the option the
+	 * kernel ran and the arg2 it stored or wrote through, either of
+	 * which chain substitution or a RedQueen pin may have rewritten
+	 * after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.rettype = RET_BORING,
 };
