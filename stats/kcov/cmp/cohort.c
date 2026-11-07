@@ -6,21 +6,8 @@
  * structure-aware picker cohort).
  */
 
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <string.h>
-#include <sys/utsname.h>
-#include <stdio.h>
-#include "arch.h"
-#include "cmp_hints.h"
-#include "kcov.h"
 #include "shm.h"
 #include "stats.h"
-#include "stats-internal.h"
-#include "trinity.h"
-#include "utils.h"
 
 #include "stats/kcov/cmp/internal.h"
 

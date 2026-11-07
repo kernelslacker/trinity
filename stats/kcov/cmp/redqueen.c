@@ -4,16 +4,8 @@
  * skip-reason breakdown.
  */
 
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
 #include <string.h>
-#include <sys/utsname.h>
-#include <stdio.h>
 #include "arch.h"
-#include "child-api.h"
-#include "cmp_hints.h"
 #include "kcov.h"
 #include "shm.h"
 #include "stats.h"

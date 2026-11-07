@@ -8,23 +8,12 @@
  * typed hypothesis layer that lives in stats/kcov/cmp/hyp_*.c.
  */
 
-#include <errno.h>
-#include <inttypes.h>
-#include <stdarg.h>
-#include <stddef.h>
-#include <stdlib.h>
 #include <string.h>
-#include <sys/utsname.h>
-#include <stdio.h>
 #include "arch.h"
-#include "child-api.h"
 #include "cmp_hints.h"
 #include "kcov.h"
-#include "params.h"
-#include "pc_format.h"
 #include "shm.h"
 #include "stats.h"
-#include "stats-internal.h"
 #include "syscall.h"
 #include "tables.h"
 #include "trinity.h"
