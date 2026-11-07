@@ -477,12 +477,12 @@ void mmap_fd(int fd, const char *name, size_t len, int prot, enum objecttype typ
 	int retries = 0;
 
 	/*
-	 * Create an MMAP of the same fd.  OBJ_GLOBAL entries are added to
-	 * shm-visible lists that children walk, so the obj struct AND the
-	 * name string MUST live in shared memory — otherwise children
-	 * dereference parent-private pointers and SEGV in libc string
-	 * functions when they read the name (the bug class the rest of
-	 * the OBJ_GLOBAL sweep closed).
+	 * Create an MMAP of the same fd.  Every caller is a provider's
+	 * .init, run in the parent before fork, so the obj struct
+	 * alloc_object() takes from the parent's heap reaches each child
+	 * at the same address through the fork.  The name goes on the
+	 * shared heap because map_destructor_shared() releases an
+	 * OBJ_GLOBAL entry's name with free_shared_str().
 	 */
 	obj = alloc_object();
 	if (obj == NULL)
