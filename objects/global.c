@@ -99,17 +99,6 @@ void clone_global_objects_to_child(struct childdata *child)
 		 * the child's mirror at zero.
 		 */
 		dst->next_slot_version = src->next_slot_version;
-		/*
-		 * Mirror the snapshot's starting array_generation.  The child
-		 * grows its own copy via add_object(OBJ_GLOBAL) never (the
-		 * post-fork guard rejects every such call) so the value is
-		 * effectively read-only on the child side; start it at the
-		 * parent's last published value so the field is self-consistent
-		 * rather than fresh-from-zero.  Any indexed-read snapshot in
-		 * the child that observes a destroy_objects() teardown on this
-		 * pool will see its own monotonic bump and discard.
-		 */
-		dst->array_generation = src->array_generation;
 
 		if (n == 0 || src->array == NULL)
 			continue;

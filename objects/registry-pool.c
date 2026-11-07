@@ -31,19 +31,18 @@
  * miss after thousands of intervening zmalloc_tracked calls in
  * cap>=1024 pools.  An alloc_track miss would leak the old chunk
  * rather than UAF it, but still silently bypasses the deferred-free
- * path the indexed-read correctness model relies on.
+ * path.
  *
  * Both scopes use the same allocate-copy-defer-free shape: a fresh
  * zmalloc_tracked container (OBJ_LOCAL prefers an arena one), memcpy
- * the live slots over, publish head->array + array_capacity, bump
- * array_generation, then deferred_free_enqueue(oldarray), except that
- * an arena old container is never freed and stays in place.  The
- * deferred-free TTL (5-50 syscalls, effective 80-800 with
- * DEFERRED_TICK_BATCH) keeps the old chunk readable across any
- * in-flight reader's snapshot through objhead_indexed_read() --
- * without it, the same process can re-enter the picker during
- * arg-gen, hold a cached head->array snapshot across the grow, and
- * UAF the freed container.  Same hazard shape as the obj-struct
+ * the live slots over, publish head->array + array_capacity, then
+ * deferred_free_enqueue(oldarray), except that an arena old container
+ * is never freed and stays in place.  The deferred-free TTL (5-50
+ * syscalls, effective 80-800 with DEFERRED_TICK_BATCH) keeps the old
+ * chunk readable for a reader still holding the old head->array: a
+ * for_each_obj walk keeps its own snapshot across its body, so a body
+ * that grows the pool would otherwise go on indexing a freed
+ * container.  Same hazard shape as the obj-struct
  * deferred-free path: a live container freed underneath a cached
  * reader is a use-after-free.
  *
@@ -77,8 +76,7 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 	 * refresh the live container ages out of the 4096-slot ring and
 	 * the next grow's deferred_free_enqueue(oldarray) rejects on
 	 * alloc_track miss (leak, not UAF, but still silently bypasses
-	 * the deferred-free path the indexed-read correctness model
-	 * relies on).  Same pattern as the clone_global_mmap_pool
+	 * the deferred-free path).  Same pattern as the clone_global_mmap_pool
 	 * dedup-skip refresh: any long-lived container must be revived
 	 * with alloc_track_refresh() before it can be deferred-freed.
 	 * An arena container, the usual OBJ_LOCAL one, is neither tracked
@@ -96,14 +94,13 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 		if (n >= cap) {
 			/*
 			 * Grow on the parent's private heap.  Single-writer
-			 * (parent pre-fork only) but NOT single-reader: the
-			 * parent re-enters get_random_object() during its own
-			 * arg-gen and can hold a cached head->array snapshot
-			 * across this grow.  An immediate free of the old
-			 * container would UAF the in-flight indexed-read.
-			 * Use the same allocate-copy-defer-free shape as the
-			 * OBJ_LOCAL branch below; the deferred-free TTL keeps
-			 * the old chunk readable across any reader's window.
+			 * (parent pre-fork only) but NOT single-reader: a
+			 * for_each_obj walk whose body grows the pool still
+			 * holds the old head->array, and an immediate free of
+			 * the old container would UAF it.  Use the same
+			 * allocate-copy-defer-free shape as the OBJ_LOCAL
+			 * branch below; the deferred-free TTL keeps the old
+			 * chunk readable across any reader's window.
 			 */
 			struct object **newarray;
 			struct object **oldarray;
@@ -132,16 +129,6 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 				       cap * sizeof(struct object *));
 			head->array = newarray;
 			head->array_capacity = newcap;
-			/*
-			 * Bump before the deferred-free hand-off so any reader
-			 * whose snapshot raced this grow re-reads the new
-			 * generation and drops the pick rather than indexing
-			 * the (now-ttl'd) old container.  Pool-private
-			 * single-writer (parent pre-fork on OBJ_GLOBAL, owning
-			 * child on OBJ_LOCAL), so an unlocked bump is
-			 * sufficient.  See objhead_indexed_read().
-			 */
-			head->array_generation++;
 			if (oldarray != NULL)
 				deferred_free_enqueue(oldarray);
 		}
@@ -203,13 +190,6 @@ bool add_object_grow_capacity(struct object *obj, enum obj_scope scope,
 			memcpy(newarray, oldarray, cap * sizeof(struct object *));
 		head->array = newarray;
 		head->array_capacity = newcap;
-		/*
-		 * Bump before the deferred-free hand-off so any reader whose
-		 * snapshot raced this grow re-reads the new generation and
-		 * drops the pick rather than indexing the (now-ttl'd) old
-		 * container.  See objhead_indexed_read().
-		 */
-		head->array_generation++;
 		if (oldarray != NULL) {
 			unsigned long oldbytes =
 				(unsigned long)cap * sizeof(struct object *);

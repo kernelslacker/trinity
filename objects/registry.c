@@ -153,7 +153,7 @@ struct objhead * get_objhead(enum obj_scope scope, enum objecttype type)
  *
  * The array_snap is additionally gated through
  * objpool_storage_plausible() over the n_snap slots the walk loads
- * before it publishes n_snap, the same check objhead_indexed_read()
+ * before it publishes n_snap, the same check get_random_object()
  * makes.  A scribbled head->array that survives the NULL test still
  * lands the indexed load off for_each_obj's array_snap[idx] on an
  * unmapped page; forcing n_snap to 0 makes the iterator bail cleanly

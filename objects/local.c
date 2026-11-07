@@ -205,7 +205,6 @@ void init_object_lists(enum obj_scope scope, struct childdata *child)
 		head->array_capacity = 0;
 		head->fd_hash = NULL;
 		head->next_slot_version = 0;
-		head->array_generation = 0;
 
 		/*
 		 * child lists can inherit properties from global lists.

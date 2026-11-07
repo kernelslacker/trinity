@@ -293,18 +293,10 @@ struct diag_stats {
 	unsigned long pagecache_canary_corrupt_caught;
 
 	/*
-	 * objhead_indexed_read() rejected a pick whose array
-	 * snapshot either failed the cheap stateless provenance
-	 * check on the captured head->array pointer, or whose
-	 * post-load re-read of head->array_generation no longer
-	 * matched the value sampled at pick time.  The first case is
-	 * wild-pointer noise (early-init or a scribbled head->array);
-	 * the second case is the racy-grow / teardown the field
-	 * exists to detect -- an indexed read off a container the
-	 * deferred-free TTL has handed back to glibc.  Non-zero here
-	 * means the array-generation gate caught the same UAF class
-	 * the 0117 ASAN run flagged at get_random_object()'s
-	 * head->array[idx] load.
+	 * get_random_object() or a for_each_obj walk refused a pool
+	 * whose head->array and num_entries failed
+	 * objpool_storage_plausible(), drawing or walking nothing:
+	 * early-init noise or a scribbled head->array or num_entries.
 	 */
 	unsigned long objpool_array_stale_caught;
 

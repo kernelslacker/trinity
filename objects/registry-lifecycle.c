@@ -533,15 +533,9 @@ void destroy_objects(enum objecttype type, enum obj_scope scope)
 	head->array = NULL;
 	head->array_capacity = 0;
 	/*
-	 * Teardown is the third array-replace site (the two grow paths
-	 * are the others).  Bump before the deferred-free hand-off so a
-	 * stale pick whose snapshot caught the pre-teardown array
-	 * pointer re-reads a different generation and discards rather
-	 * than indexing the (now-ttl'd) old container.  oldarray was
-	 * allocated via zmalloc_tracked in add_object_grow_capacity()
-	 * so deferred_free_enqueue() accepts it.
+	 * oldarray was allocated via zmalloc_tracked in
+	 * add_object_grow_capacity() so deferred_free_enqueue() accepts it.
 	 */
-	head->array_generation++;
 	deferred_free_enqueue(oldarray);
 }
 

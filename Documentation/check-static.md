@@ -238,15 +238,6 @@ update this section to match `ls scripts/check-static/*.sh`.)
   planted binary, launcher and fixture references must fire; a planted
   comment, a `lib-find.sh` helper and the cache, tmp and awk-comment
   lines that contain the word must not.
-- `objpool-array-gen`: enforce the `array_generation` invariant on
-  `struct objhead` in `include/objects.h` and `objects/registry*.c`
-  -- (i) the field exists, (ii) `get_random_object()` routes its
-  indexed load through `objhead_indexed_read()` (no bare
-  `head->array[idx]`), and (iii) every site that frees or replaces
-  `head->array` is followed within a small window by
-  `head->array_generation++`.  Guards the deferred-free / TTL grow /
-  teardown class where a captured `head->array` pointer becomes a
-  chunk glibc has already recycled.
 - `params-value-lists`: the values the tree advertises for a mode option
   must be the values its parser accepts.  The parser is the
   `strcmp(arg, "value")` arms under `strcmp("option", name)` in
