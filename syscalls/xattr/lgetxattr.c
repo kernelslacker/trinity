@@ -37,7 +37,6 @@
 struct lgetxattr_post_state {
 	unsigned long magic;
 	unsigned long value;
-	unsigned long size;
 	size_t buf_alloc_size;
 	char pathname[PATH_MAX];
 	char name[256];
@@ -180,7 +179,6 @@ static void sanitise_lgetxattr_install_post_snapshot(struct syscallrecord *rec,
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = LGETXATTR_POST_STATE_MAGIC;
 	snap->value    = rec->a3;
-	snap->size     = rec->a4;
 	snap->buf_alloc_size = buf_alloc_size;
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 			       (const char *)(unsigned long) rec->a1))
@@ -266,6 +264,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 {
 	struct lgetxattr_post_state *snap;
 	unsigned long retval = rec->retval;
+	unsigned long size;
 	unsigned char first_buf[4096];
 	unsigned char recheck_buf[4096];
 	size_t snap_len;
@@ -293,12 +292,15 @@ static void post_lgetxattr(struct syscallrecord *rec)
 	 * ahead of the ONE_IN(100) sample gate that throttles the equality
 	 * oracle, so every offending retval is counted, not one-in-a-hundred.
 	 * The pre-existing retval <= 0 gate after the sample stays in place.
+	 * The size is the one the kernel was handed, which chain substitution
+	 * or a RedQueen pin may have rewritten after the sanitiser drew its own.
 	 */
+	size = get_arg_snapshot(rec, 4);
 	if ((long) retval < 0)
 		goto out_release;
-	if (snap->size != 0 && retval > snap->size) {
+	if (size != 0 && retval > size) {
 		outputerr("post_lgetxattr: rejecting retval %lu > size %lu\n",
-			  retval, snap->size);
+			  retval, size);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 		goto out_release;
 	}
@@ -310,7 +312,7 @@ static void post_lgetxattr(struct syscallrecord *rec)
 		goto out_release;
 
 	/* size=0 / NULL-buffer probe -- see post_getxattr for rationale. */
-	if (snap->size == 0)
+	if (size == 0)
 		goto out_release;
 
 	if (snap->value == 0)
@@ -384,6 +386,8 @@ struct syscallentry syscall_lgetxattr = {
 	.argname = { [0] = "pathname", [1] = "name", [2] = "value", [3] = "size" },
 	.rettype = RET_NUM_BYTES,
 	.buf_count_slot = 4,
+	/* size (a4): post_lgetxattr judges the return by it. */
+	.arg_snapshot_mask = (1u << 3),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_XATTR,
 	.sanitise = sanitise_lgetxattr,

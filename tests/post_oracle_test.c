@@ -505,6 +505,7 @@ static void xattr_size(void)
 		unsigned int slot;	/* the size's; the buffer's is the one before */
 	} getters[] = {
 		{ &syscall_getxattr, 4 },
+		{ &syscall_lgetxattr, 4 },
 	};
 	static const struct {
 		const char *what;
