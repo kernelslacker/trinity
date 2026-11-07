@@ -84,11 +84,13 @@ enum nla_kind {
 	NLA_KIND_UINT_MASK,
 	/* A scalar the handler, not the policy, narrows to a few values,
 	 * which the spec lists in oneof.  Stored as the policy's width reads
-	 * it: a byte, big-endian, or a host-order u32.  One draw in eight
-	 * is random bytes, so the handler's reject arm still sees traffic. */
+	 * it: a byte, big-endian, or a host-order u16 or u32.  One draw in
+	 * eight is random bytes, so the handler's reject arm still sees
+	 * traffic. */
 	NLA_KIND_U8_ONEOF,
 	NLA_KIND_BE16_ONEOF,
 	NLA_KIND_BE32_ONEOF,
+	NLA_KIND_U16_ONEOF,
 	NLA_KIND_U32_ONEOF,
 	/* A NUL-terminated string that is the spec's word, so that attributes
 	 * which name one another (an nftables table and what is in it) agree.

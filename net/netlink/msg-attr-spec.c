@@ -35,6 +35,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 		return 1;
 	case NLA_KIND_U16:
 	case NLA_KIND_U16_RANGE:
+	case NLA_KIND_U16_ONEOF:
 		return 2;
 	case NLA_KIND_UINT_RANGE:
 	case NLA_KIND_UINT_MASK:
@@ -123,6 +124,7 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
 	case NLA_KIND_BE32_ONEOF:
+	case NLA_KIND_U16_ONEOF:
 	case NLA_KIND_U32_ONEOF:
 		v = spec->oneof[rnd_modulo_u32(spec->n_oneof)];
 		break;
@@ -135,7 +137,8 @@ static void spec_fill_bounded(unsigned char *p, size_t len,
 		uint32_t host = v;
 
 		memcpy(p, &host, sizeof(host));
-	} else if (spec->kind == NLA_KIND_U16_RANGE) {
+	} else if (spec->kind == NLA_KIND_U16_RANGE ||
+		   spec->kind == NLA_KIND_U16_ONEOF) {
 		uint16_t host = v;
 
 		memcpy(p, &host, sizeof(host));
@@ -284,6 +287,7 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 	case NLA_KIND_U8_ONEOF:
 	case NLA_KIND_BE16_ONEOF:
 	case NLA_KIND_BE32_ONEOF:
+	case NLA_KIND_U16_ONEOF:
 	case NLA_KIND_U32_ONEOF:
 		spec_fill_bounded(p, len, spec);
 		break;

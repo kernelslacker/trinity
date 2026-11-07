@@ -7,6 +7,7 @@
 
 #if __has_include(<linux/mptcp_pm.h>)
 
+#include <sys/socket.h>
 #include <linux/mptcp_pm.h>
 
 #include "netlink-genl-families.h"
@@ -15,13 +16,18 @@
 /*
  * The address nest, mptcp_pm_address_nl_policy, whose ids are its own.
  * mptcp_pm_parse_pm_addr_attr() answers -EINVAL to a nest without FAMILY
- * where the op needs one (ADD_ADDR, ANNOUNCE and the subflow ops), and to
- * one without the address of the family it names; a mark cannot pick that
- * address, so both are marked.  ADDR4 is an NLA_BE32 and ADDR6 exactly 16
- * bytes, and IF_IDX is an NLA_S32.
+ * where the op needs one (ADD_ADDR, ANNOUNCE and the subflow ops), to a
+ * FAMILY other than AF_INET and AF_INET6, and to a nest without the
+ * address of the family it names; a mark cannot pick that address, so
+ * both are marked.  ADDR4 is an NLA_BE32 and ADDR6 exactly 16 bytes, and
+ * IF_IDX is an NLA_S32.
  */
+static const unsigned int mptcp_pm_families[] = { AF_INET, AF_INET6 };
+
 static const struct nla_attr_spec mptcp_pm_addr_attrs[] = {
-	{ MPTCP_PM_ADDR_ATTR_FAMILY,	NLA_KIND_U16,    2, .required = true },
+	{ MPTCP_PM_ADDR_ATTR_FAMILY,	NLA_KIND_U16_ONEOF, 0, 0,
+	  .oneof = mptcp_pm_families, .n_oneof = ARRAY_SIZE(mptcp_pm_families),
+	  .required = true },
 	{ MPTCP_PM_ADDR_ATTR_ID,	NLA_KIND_U8,     1 },
 	{ MPTCP_PM_ADDR_ATTR_ADDR4,	NLA_KIND_U32,    4, .required = true },
 	{ MPTCP_PM_ADDR_ATTR_ADDR6,	NLA_KIND_BINARY, 16, 16, .required = true },

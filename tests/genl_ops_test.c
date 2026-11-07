@@ -415,6 +415,9 @@ struct slot {
 	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
+#define S_U16_ONEOF(id, vals, ...) \
+	{ id, SK_BYTES, 2, 2, .bound = SB_ONEOF, .oneof = vals, \
+	  .n_oneof = ARRAY_SIZE(vals), ##__VA_ARGS__ }
 #define S_U8_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 1, 1, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 /* An NLA_UINT takes 4 or 8 bytes, host order, and its bound is a u32's. */
@@ -2108,11 +2111,15 @@ extern struct genl_family_grammar fam_mptcp_pm;
  * ANNOUNCE, REMOVE and subflow ops, REMOVE's local id and both ends of a
  * subflow.  mptcp_pm_parse_pm_addr_attr() refuses a nest without the
  * family the op needs or without the address of the family it names, and
- * a mark cannot pick which address that is, so both are marked.
- * SET_LIMITS refuses a limit above MPTCP_PM_SUBFLOWS_MAX, 64.
+ * a mark cannot pick which address that is, so both are marked.  The
+ * family is AF_INET or AF_INET6, or the nest is refused.  SET_LIMITS
+ * refuses a limit above MPTCP_PM_SUBFLOWS_MAX, 64.
  */
+static const unsigned int mptcp_pm_families[] = { AF_INET, AF_INET6 };
+
 static struct slot mptcp_pm_addr[] = {
-	S_U16(MPTCP_PM_ADDR_ATTR_FAMILY, .required = true),
+	S_U16_ONEOF(MPTCP_PM_ADDR_ATTR_FAMILY, mptcp_pm_families,
+		    .required = true),
 	S_U8(MPTCP_PM_ADDR_ATTR_ID),
 	S_U32(MPTCP_PM_ADDR_ATTR_ADDR4, .required = true),
 	S_BLOB(MPTCP_PM_ADDR_ATTR_ADDR6, 16, 16, .required = true),
@@ -2838,7 +2845,8 @@ static void expect_slots_bounded(const struct slot *slots, unsigned int n_slots,
 		if (slot->kind == SK_ARRAY || slot->kind == SK_NEST) {
 			share = 0;
 		} else if (slot->bound == SB_ONEOF) {
-			share = (double) slot->n_oneof / 4294967296.0;
+			share = (double) slot->n_oneof /
+				(double) (1ULL << (8 * slot->max));
 		} else {
 			unsigned int w;
 
@@ -3592,13 +3600,14 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * which is NLA_POLICY_MAX; one that runs to the top of the type, as
  * NLA_POLICY_MIN does; the same three of a u16, which is two bytes and
  * host order; a byte's range, one of them pinned to one number; an
- * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof of
- * three values, in host order; an array of two elements at most; and a
- * nest of two children at most.
+ * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof and
+ * a u16 oneof of three values, in host order; an array of two elements at
+ * most; and a nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
 	static const unsigned int oneof_values[] = { 2, 17, 300 };
+	static const unsigned int u16_oneof_values[] = { 2, 10, 40000 };
 	static const struct nla_attr_spec leaf[] = {
 		{ 1, NLA_KIND_U32, 4 },
 	};
@@ -3620,6 +3629,8 @@ static void check_bounded_tables(void)
 		{ 15, NLA_KIND_UINT_MASK, 0x3ffff },
 		{ 16, NLA_KIND_U32_ONEOF, 0, 0, .oneof = oneof_values,
 		  .n_oneof = ARRAY_SIZE(oneof_values) },
+		{ 17, NLA_KIND_U16_ONEOF, 0, 0, .oneof = u16_oneof_values,
+		  .n_oneof = ARRAY_SIZE(u16_oneof_values) },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3639,6 +3650,7 @@ static void check_bounded_tables(void)
 		S_UINT_MASK(14, 0x1),
 		S_UINT_MASK(15, 0x3ffff),
 		S_U32_ONEOF(16, oneof_values),
+		S_U16_ONEOF(17, u16_oneof_values),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3703,8 +3715,9 @@ static void check_sockaddr_kind(void)
 
 /*
  * Whether spec declares slot's bound: a mask or range kind at the slot's
- * width, with the bound's ends, a u32 oneof kind with the same values,
- * or a nest or array capped where its handler caps it.  A byte's range
+ * width, with the bound's ends, a oneof kind at the slot's width, u16 or
+ * u32, with the same values, or a nest or array capped where its handler
+ * caps it.  A byte's range
  * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
  * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
  * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
@@ -3721,10 +3734,11 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 	if (slot->bound == SB_NONE)
 		return false;
 	if (slot->bound == SB_ONEOF) {
+		unsigned short kind = slot->max == 2 ? NLA_KIND_U16_ONEOF :
+						       NLA_KIND_U32_ONEOF;
 		unsigned int i, j;
 
-		if (spec->kind != NLA_KIND_U32_ONEOF ||
-		    spec->n_oneof != slot->n_oneof)
+		if (spec->kind != kind || spec->n_oneof != slot->n_oneof)
 			return false;
 		for (i = 0; i < slot->n_oneof; i++) {
 			for (j = 0; j < spec->n_oneof; j++) {
@@ -3809,6 +3823,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 		bounded = spec->kind == NLA_KIND_U32_MASK ||
 			  spec->kind == NLA_KIND_U32_RANGE ||
 			  spec->kind == NLA_KIND_U32_ONEOF ||
+			  spec->kind == NLA_KIND_U16_ONEOF ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||
