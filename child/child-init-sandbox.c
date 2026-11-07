@@ -104,10 +104,12 @@ static int userns_lane_write_proc(const char *path, const char *line)
  * Set to true after maybe_enter_userns_admin_lane() completes all
  * three idmap writes successfully.  Consulted by lane_netlink_
  * socketinfo() to send the child's netlink on sockets in the lane's
- * netns.  Not consulted by the cap-drop oracle: its SO_RCVBUFFORCE
- * probe expects EPERM in every namespace, since sockopt_capable()
- * is capable() (the init user namespace), never ns_capable() on the
- * socket's netns.  Process-local: each forked child gets its own copy.
+ * netns, and by check_uid(), for which the lane's uid 0 is the
+ * child's own.  Not consulted by the cap-drop oracle: its
+ * SO_RCVBUFFORCE probe expects EPERM in every namespace, since
+ * sockopt_capable() is capable() (the init user namespace), never
+ * ns_capable() on the socket's netns.  Process-local: each forked
+ * child gets its own copy.
  */
 static bool child_userns_lane_active;
 
@@ -264,8 +266,7 @@ static void maybe_enter_userns_admin_lane(int childno)
 /*
  * Returns true iff this child successfully entered the userns-admin
  * lane (unshare + all three idmap writes completed).  Consumed by
- * lane_netlink_socketinfo() to send the child's netlink on sockets
- * in the lane's netns.
+ * lane_netlink_socketinfo() and check_uid().
  */
 bool child_userns_lane_is_active(void)
 {

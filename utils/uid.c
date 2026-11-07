@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include "child-api.h"	/* child_userns_lane_is_active */
 #include "debug.h"
 #include "exit.h"
 #include "params.h"
@@ -126,6 +127,12 @@ void check_uid(void)
 	/* unshare() can change us to /proc/sys/kernel/overflowuid.
 	 * Value cached at startup by cache_overflowuid(). */
 	if (myuid == overflowuid)
+		return;
+
+	/* The userns-admin lane maps this child's uid, and nothing else,
+	 * to 0 in a user namespace of its own: there 0 is the child's own
+	 * uid, not root's. */
+	if (myuid == 0 && child_userns_lane_is_active())
 		return;
 
 	/* uid drifted to root: this is the ONLY case that's actually

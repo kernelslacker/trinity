@@ -32,12 +32,13 @@ extern int (*fake_netlink_socket)(int type, int protocol);	/* fake_net.c */
 #define DRAWS		256
 #define POOL_CAP	8
 
-static bool lane_active;
+/* Also set by userns_lane_test.c. */
+bool fake_lane_active;
 
 /* What child-init-sandbox.c answers in a run. */
 bool child_userns_lane_is_active(void)
 {
-	return lane_active;
+	return fake_lane_active;
 }
 
 static struct objhead local_sockets;
@@ -132,7 +133,7 @@ static void reset(void)
 	retire_all();
 	socket_calls = 0;
 	socket_errno = 0;
-	lane_active = true;
+	fake_lane_active = true;
 }
 
 /* Draws @si DRAWS times, each answer @si itself or @own; counts the
@@ -182,7 +183,7 @@ static void outside_the_lane_the_drawn_socket_stays(void)
 	};
 
 	reset();
-	lane_active = false;
+	fake_lane_active = false;
 	if (swaps_to(&si, NULL) != 0 || socket_calls != 0)
 		BUG("lane socket: swapped outside the lane");
 }
@@ -389,5 +390,5 @@ void lane_socket_self_check(void)
 	fake_add_object = NULL;
 	fake_alloc_object = NULL;
 	fake_get_objhead = saved_hook;
-	lane_active = false;
+	fake_lane_active = false;
 }
