@@ -114,6 +114,19 @@ LDFLAGS		+= -Wl,--wrap=fill_arg
 # no testfile.
 LDFLAGS		+= -Wl,--wrap=get_rand_testfile_fd
 
+# The bpf pickers' stand-ins: fds/bpf.c is linked for bpf_pick_test.c,
+# which runs the pickers through __real_, and every other caller gets
+# fake_fds.c's wrappers, which read no pool.
+LDFLAGS		+= -Wl,--wrap=get_rand_bpf_map -Wl,--wrap=get_rand_bpf_fd \
+		   -Wl,--wrap=get_rand_bpf_prog -Wl,--wrap=get_rand_bpf_prog_fd \
+		   -Wl,--wrap=get_rand_bpf_link_fd -Wl,--wrap=get_rand_bpf_btf_fd \
+		   -Wl,--wrap=get_rand_bpf_token_fd
+
+# set_object_fd() stand-in: objects/dispatch.c is linked for
+# fd_from_object(), and no test is meant to reach its set_object_fd(),
+# which fake_objects.c wraps with one that aborts.
+LDFLAGS		+= -Wl,--wrap=set_object_fd
+
 # get_objhead() stand-in: objects/registry.c is linked for the
 # for_each_obj snapshot, and its get_objhead() would resolve pools
 # through childdata no test builds.  fake_objects.c wraps it with the
@@ -936,6 +949,13 @@ PARENT_SRCS	+= $(TOP)/syscalls/cred/setreuid.c \
 		   $(TOP)/syscalls/cred/setresuid.c \
 		   $(TOP)/syscalls/cred/setregid.c \
 		   $(TOP)/syscalls/cred/setresgid.c
+
+# fds/bpf.c brings the bpf object pickers bpf_pick_test.c runs against the
+# pools it installs through the get_objhead() stand-in, and
+# objects/dispatch.c the fd_from_object() they read an object's fd with.
+PARENT_SRCS	+= $(TOP)/fds/bpf.c \
+		   $(TOP)/objects/dispatch.c
+FAKE_SRCS	+= bpf_pick_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

@@ -56,7 +56,10 @@ void add_object(struct object *obj, enum obj_scope scope, enum objecttype type)
 	abort();
 }
 
-void set_object_fd(struct object *obj, enum objecttype type, int fd)
+/* The real set_object_fd() of objects/dispatch.c, linked for
+ * fd_from_object(), is not meant to be reached. */
+void __wrap_set_object_fd(struct object *obj, enum objecttype type, int fd);
+void __wrap_set_object_fd(struct object *obj, enum objecttype type, int fd)
 {
 	(void)obj; (void)type; (void)fd;
 	fprintf(stderr, "fake set_object_fd called unexpectedly\n");

@@ -60,30 +60,34 @@ struct object *find_object_by_fd(int fd)
 }
 
 /*
- * The pickers of fds/bpf.c, whose pools no test provides: the sanitisers of
- * syscalls/bpf*.c and the perf ioctl group take -1 from each, as they do
- * from an empty pool, but for the map picker, which answers with the map a
- * test installs a hook to name, and the program picker, which answers with
- * the program a test's hook names or, unhooked, a program of no particular
- * type at the fd a test sets.
+ * Stand-ins for the pickers of fds/bpf.c, which bpf_pick_test.c runs
+ * through __real_: every other caller, the sanitisers of syscalls/bpf*.c
+ * and the perf ioctl group among them, gets these, which read no pool.
+ * Each answers -1, as an empty pool does, but for the map picker, which
+ * answers with the map a test installs a hook to name, and the program
+ * picker, which answers with the program a test's hook names or, unhooked,
+ * a program of no particular type at the fd a test sets.
  */
 bool (*fake_get_rand_bpf_map)(struct bpfobj *map);
 bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);
 int fake_bpf_prog_fd = -1;
 
-bool get_rand_bpf_map(struct bpfobj *map)
+bool __wrap_get_rand_bpf_map(struct bpfobj *map);
+bool __wrap_get_rand_bpf_map(struct bpfobj *map)
 {
 	return fake_get_rand_bpf_map != NULL && fake_get_rand_bpf_map(map);
 }
 
-int get_rand_bpf_fd(void)
+int __wrap_get_rand_bpf_fd(void);
+int __wrap_get_rand_bpf_fd(void)
 {
 	struct bpfobj map;
 
-	return get_rand_bpf_map(&map) ? map.map_fd : -1;
+	return __wrap_get_rand_bpf_map(&map) ? map.map_fd : -1;
 }
 
-bool get_rand_bpf_prog(struct bpfprogobj *prog)
+bool __wrap_get_rand_bpf_prog(struct bpfprogobj *prog);
+bool __wrap_get_rand_bpf_prog(struct bpfprogobj *prog)
 {
 	if (fake_get_rand_bpf_prog != NULL)
 		return fake_get_rand_bpf_prog(prog);
@@ -92,14 +96,28 @@ bool get_rand_bpf_prog(struct bpfprogobj *prog)
 	return fake_bpf_prog_fd >= 0;
 }
 
-int get_rand_bpf_prog_fd(void)
+int __wrap_get_rand_bpf_prog_fd(void);
+int __wrap_get_rand_bpf_prog_fd(void)
 {
 	struct bpfprogobj prog;
 
-	return get_rand_bpf_prog(&prog) ? prog.fd : -1;
+	return __wrap_get_rand_bpf_prog(&prog) ? prog.fd : -1;
 }
 
-int get_rand_bpf_link_fd(void)
+int __wrap_get_rand_bpf_link_fd(void);
+int __wrap_get_rand_bpf_link_fd(void)
+{
+	return -1;
+}
+
+int __wrap_get_rand_bpf_btf_fd(void);
+int __wrap_get_rand_bpf_btf_fd(void)
+{
+	return -1;
+}
+
+int __wrap_get_rand_bpf_token_fd(void);
+int __wrap_get_rand_bpf_token_fd(void)
 {
 	return -1;
 }
@@ -117,16 +135,6 @@ int get_rand_perf_fd(void)
 int get_rand_cgroup_fd(void)
 {
 	return fake_cgroup_fd;
-}
-
-int get_rand_bpf_btf_fd(void)
-{
-	return -1;
-}
-
-int get_rand_bpf_token_fd(void)
-{
-	return -1;
 }
 
 /* No ring is set up here, so the pool is empty. */

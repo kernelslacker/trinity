@@ -97,6 +97,7 @@ void sentinel_self_check(void);
 void perf_attr_self_check(void);
 void landlock_self_check(void);
 void numa_self_check(void);
+void bpf_pick_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -539,6 +540,11 @@ int main(int argc, char **argv)
 	printf("  numa_self_check ... ");
 	fflush(stdout);
 	numa_self_check();
+	printf("OK\n");
+
+	printf("  bpf_pick_self_check ... ");
+	fflush(stdout);
+	bpf_pick_self_check();
 	printf("OK\n");
 
 	return 0;
