@@ -586,7 +586,13 @@ skip_si:
 			iov_len_sum += msg->msg_iov[i].iov_len;
 	}
 
+	/*
+	 * The kernel reads the msghdr, and the blanket scrub would move a
+	 * heap one into the writable pool without its bytes: move it with
+	 * them.  snap->msg keeps the heap original, which rec_own() frees.
+	 */
 	rec->a2 = (unsigned long) msg;
+	avoid_shared_buffer_inout(&rec->a2, sizeof(struct msghdr));
 
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = RECVMSG_POST_STATE_MAGIC;
@@ -954,7 +960,10 @@ static void sanitise_recvmmsg(struct syscallrecord *rec)
 		scrub_msghdr_for_kernel_write(msg);
 	}
 
+	/* The kernel reads the array: off the heap with its bytes, as for
+	 * recvmsg's msghdr. */
 	rec->a2 = (unsigned long) msgs;
+	avoid_shared_buffer_inout(&rec->a2, vlen * sizeof(struct mmsghdr));
 	rec->a3 = vlen;
 	rec->post_state = (unsigned long) snap;
 	post_state_register(snap);

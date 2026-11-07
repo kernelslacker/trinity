@@ -497,6 +497,7 @@ FAKE_SRCS	:= \
 	get_num_fds_test.c \
 	spawn_test.c \
 	post_oracle_test.c \
+	scrub_inputs_test.c \
 	dup_pool_test.c \
 	ctime_rule_test.c \
 	stat_recall_test.c \

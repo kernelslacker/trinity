@@ -70,6 +70,7 @@ void reap_fault_beacon_self_check(void);
 void get_num_fds_self_check(void);
 void spawn_self_check(void);
 void post_oracle_self_check(void);
+void scrub_inputs_self_check(void);
 void dup_pool_self_check(void);
 void lane_socket_self_check(void);
 void userns_lane_self_check(void);
@@ -390,6 +391,11 @@ int main(int argc, char **argv)
 	printf("  post_oracle_self_check ... ");
 	fflush(stdout);
 	post_oracle_self_check();
+	printf("OK\n");
+
+	printf("  scrub_inputs_self_check ... ");
+	fflush(stdout);
+	scrub_inputs_self_check();
 	printf("OK\n");
 
 	printf("  dup_pool_self_check ... ");
