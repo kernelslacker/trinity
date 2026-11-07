@@ -1,8 +1,8 @@
 /*
  * Self-check for the args the ioctl group sanitisers build: what they draw
  * has to be what the kernel's own checks take, and the draw has to reach all
- * of it.  The drm group's client caps and object types, and the ext group's
- * new requests, are covered.
+ * of it.  The drm group's client caps and object types, the ext group's new
+ * requests, and the userfaultfd group's handshake are covered.
  */
 
 #include <stdbool.h>
@@ -28,11 +28,14 @@
 #include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
 #include "kernel/ext4.h"
+#include "kernel/userfaultfd.h"
 #include "sanitise.h"		/* writable pool */
 #include "syscall.h"		/* struct syscallrecord */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 #define ROUNDS		4000
+
+extern bool fake_rand_bitmask_draws;		/* genl_ops_test.c */
 
 /*
  * What the sanitiser that returned @p reserved for it, as the bytes from @p
@@ -470,6 +473,43 @@ static void size0_pointer_requests_get_a_buffer(void)
 	close(fd);
 }
 
+/*
+ * The kernel arms a uffd once, with the first UFFDIO_API that succeeds,
+ * and nothing reads these fds: one armed without UFFD_FEATURE_SIGBUS
+ * leaves a later fault on a range it registered asleep in
+ * handle_userfault() until the watchdog.  userfaultfd() pools its fds
+ * unarmed, so the group's handshake may be the one that arms them.
+ */
+static void userfaultfd_api_always_asks_sigbus(void)
+{
+	static struct syscallrecord rec;
+	const struct ioctl_group *grp = fake_ioctl_group("userfaultfd");
+	unsigned int i, others = 0;
+
+	if (grp == NULL)
+		BUG("ioctl args: the userfaultfd group is not linked");
+
+	fake_rand_bitmask_draws = true;
+	for (i = 0; i < ROUNDS; i++) {
+		const struct uffdio_api *ua;
+
+		memset(&rec, 0, sizeof(rec));
+		fake_ioctl_request = UFFDIO_API;
+		grp->sanitise(grp, &rec);
+		if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+			BUG("ioctl args: UFFDIO_API got no struct");
+
+		ua = (const struct uffdio_api *) rec.a3;
+		if (!(ua->features & UFFD_FEATURE_SIGBUS))
+			BUG("ioctl args: a UFFDIO_API handshake without UFFD_FEATURE_SIGBUS");
+		if (ua->features & ~(__u64) UFFD_FEATURE_SIGBUS)
+			others++;
+	}
+	fake_rand_bitmask_draws = false;
+	if (others == 0)
+		BUG("ioctl args: UFFDIO_API never asks for a feature past SIGBUS");
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -486,4 +526,5 @@ void ioctl_args_self_check(void)
 	ext_checkpoint_never_flushes_the_journal();
 	size_rewrites_rebuild_the_arg();
 	size0_pointer_requests_get_a_buffer();
+	userfaultfd_api_always_asks_sigbus();
 }

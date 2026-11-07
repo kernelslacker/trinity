@@ -72,7 +72,6 @@ static void sanitise_uffdio_api(struct syscallrecord *rec)
 		UFFD_FEATURE_PAGEFAULT_FLAG_WP,
 		UFFD_FEATURE_MISSING_HUGETLBFS,
 		UFFD_FEATURE_MISSING_SHMEM,
-		UFFD_FEATURE_SIGBUS,
 		UFFD_FEATURE_THREAD_ID,
 		UFFD_FEATURE_MINOR_HUGETLBFS,
 		UFFD_FEATURE_MINOR_SHMEM,
@@ -105,7 +104,15 @@ static void sanitise_uffdio_api(struct syscallrecord *rec)
 	 * so any subsequent ioctl on this fd has a chance of succeeding.
 	 * Occasionally fuzz the api number to exercise the reject path. */
 	ua->api = ONE_IN(20) ? (__u64) rand64() : UFFD_API;
-	ua->features = set_rand_bitmask(ARRAY_SIZE(api_features), api_features);
+	/*
+	 * SIGBUS on every handshake: the kernel arms a uffd once, with the
+	 * first handshake that succeeds, and userfaultfd() pools its fds
+	 * unarmed, so this may be the one.  Nothing reads these fds, so a
+	 * fault on a range one registered would otherwise sleep until the
+	 * watchdog (arm_userfaultfd() in fds/userfaultfd.c).
+	 */
+	ua->features = UFFD_FEATURE_SIGBUS |
+		       set_rand_bitmask(ARRAY_SIZE(api_features), api_features);
 	ua->ioctls = 0;
 	rec->a3 = (unsigned long) ua;
 }
