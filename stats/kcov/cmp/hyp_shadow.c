@@ -247,6 +247,7 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	static unsigned long prev_hyp_inserted;
 	static unsigned long prev_hyp_pool_full;
 	static unsigned long prev_hyp_pool_overflow;
+	static unsigned long prev_hyp_slot_mismatch;
 	static unsigned long prev_hyp_kind_full;
 	static unsigned long prev_hyp_consumed;
 	static unsigned long prev_hyp_pc_wins;
@@ -265,6 +266,8 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_pool_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_pool_overflow =
 		__atomic_load_n(&kcov_shm->cmp_hyp_results.cmp_hyp_pool_overflow, __ATOMIC_RELAXED);
+	unsigned long cur_hyp_slot_mismatch =
+		__atomic_load_n(&kcov_shm->cmp_hyp_results.cmp_hyp_credit_slot_mismatch, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_kind_full =
 		__atomic_load_n(&kcov_shm->hyp_flat.cmp_hyp_kind_full, __ATOMIC_RELAXED);
 	unsigned long cur_hyp_consumed =
@@ -289,6 +292,7 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	unsigned long delta_hyp_inserted = sat_sub_ul(cur_hyp_inserted, prev_hyp_inserted);
 	unsigned long delta_hyp_pool_full = sat_sub_ul(cur_hyp_pool_full, prev_hyp_pool_full);
 	unsigned long delta_hyp_pool_overflow = sat_sub_ul(cur_hyp_pool_overflow, prev_hyp_pool_overflow);
+	unsigned long delta_hyp_slot_mismatch = sat_sub_ul(cur_hyp_slot_mismatch, prev_hyp_slot_mismatch);
 	unsigned long delta_hyp_kind_full = sat_sub_ul(cur_hyp_kind_full, prev_hyp_kind_full);
 	unsigned long delta_hyp_consumed = sat_sub_ul(cur_hyp_consumed, prev_hyp_consumed);
 	unsigned long delta_hyp_pc_wins = sat_sub_ul(cur_hyp_pc_wins, prev_hyp_pc_wins);
@@ -301,7 +305,8 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	unsigned long delta_hyp_context_skip = sat_sub_ul(cur_hyp_context_skip, prev_hyp_context_skip);
 
 	if ((delta_hyp_observations | delta_hyp_inserted | delta_hyp_pool_full |
-	     delta_hyp_pool_overflow | delta_hyp_kind_full |
+	     delta_hyp_pool_overflow | delta_hyp_slot_mismatch |
+	     delta_hyp_kind_full |
 	     delta_hyp_consumed | delta_hyp_pc_wins |
 	     delta_hyp_transition_wins | delta_hyp_cmp_novelty_wins |
 	     delta_hyp_misses | delta_hyp_disabled_skips |
@@ -317,6 +322,9 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 		stats_log_write("  %-32s +%lu  (total %lu)\n",
 				"cmp_hyp_pool_overflow",
 				delta_hyp_pool_overflow, cur_hyp_pool_overflow);
+		stats_log_write("  %-32s +%lu  (total %lu)\n",
+				"cmp_hyp_credit_slot_mismatch",
+				delta_hyp_slot_mismatch, cur_hyp_slot_mismatch);
 		stats_log_write("  %-32s +%lu  (total %lu)\n",
 				"cmp_hyp_kind_full", delta_hyp_kind_full, cur_hyp_kind_full);
 		stats_log_write("  %-32s +%lu  (total %lu)\n",
@@ -355,6 +363,7 @@ void kcov_cmp_render_hyp_shadow_stats_block(long elapsed)
 	prev_hyp_inserted = cur_hyp_inserted;
 	prev_hyp_pool_full = cur_hyp_pool_full;
 	prev_hyp_pool_overflow = cur_hyp_pool_overflow;
+	prev_hyp_slot_mismatch = cur_hyp_slot_mismatch;
 	prev_hyp_kind_full = cur_hyp_kind_full;
 	prev_hyp_consumed = cur_hyp_consumed;
 	prev_hyp_pc_wins = cur_hyp_pc_wins;

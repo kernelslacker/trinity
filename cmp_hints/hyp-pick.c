@@ -27,12 +27,10 @@
 
 /*
  * Picker.  Walks the typed-hypothesis pool for (cmp_ip, width) -- no
- * value constraint, unlike cmp_hyp_find_for_credit which matches on
- * (cmp_ip, width, value).  Records per-ladder-kind presence as it
- * walks, then applies the SAME specificity ordering
- * cmp_hyp_find_for_credit uses (EXACT > ENUM_FAMILY > BITMASK >
- * RANGE) to choose the pick.  Within each kind, state-aware
- * preference is applied:
+ * value constraint.  Records per-ladder-kind presence as it walks,
+ * then applies the specificity ordering EXACT > ENUM_FAMILY > BITMASK
+ * > RANGE > BOUNDARY to choose the pick.  Within each kind,
+ * state-aware preference is applied:
  *
  *   PROMOTED  -- first match wins, preferred over OBSERVED
  *   OBSERVED  -- fallback when no PROMOTED slot exists
@@ -54,12 +52,12 @@
  *
  * Lock-free read against a parallel writer (cmp_hyp_observe under the
  * matching durable cmp_hint_pool lock): a torn count or half-written
- * entry tolerates the same way cmp_hyp_find_for_credit tolerates it --
- * the count > cap bail bounds the walk and a misread kind / cmp_ip at
- * worst drops the shadow attribution for one pull, never indexes off
- * the array.  h->state is read RELAXED -- the credit-side writer is
- * RELAXED too; a torn read at worst routes one pick under a stale
- * state, and the picker is non-mutating so the race is benign.
+ * entry is tolerated -- the count > cap bail bounds the walk and a
+ * misread kind / cmp_ip at worst drops the shadow attribution for one
+ * pull, never indexes off the array.  h->state is read RELAXED -- the
+ * credit-side writer is RELAXED too; a torn read at worst routes one
+ * pick under a stale state, and the picker is non-mutating so the race
+ * is benign.
  */
 struct cmp_hypothesis *
 cmp_hyp_would_pick_locked(struct cmp_hyp_pool *pool, unsigned long cmp_ip,

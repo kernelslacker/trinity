@@ -991,7 +991,7 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
 				 callsite,
 				 served_cmp_ip, served_value, served_size,
 				 use,
-				 false, 0, false, true);
+				 false, 0, NULL, true);
 	return true;
 }
 

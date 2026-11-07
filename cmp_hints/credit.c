@@ -245,10 +245,9 @@ void cmp_hints_feedback_credit_pc(bool outcome_win)
 		 * denominator), so the conversion ratio finally measures
 		 * what the typed store earns over the raw replay baseline. */
 		if (e->hyp_injected)
-			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-					       e->value, e->size,
-					       outcome_win ? CMP_HYP_OUTCOME_PC_WIN
-							   : CMP_HYP_OUTCOME_MISS);
+			cmp_hyp_credit_outcome(e, outcome_win ?
+					       CMP_HYP_OUTCOME_PC_WIN :
+					       CMP_HYP_OUTCOME_MISS);
 
 		/* Per-tier + per-age conversion partition.  The flat
 		 * cmp_hint_wins / cmp_hint_misses counters above bump once
@@ -331,9 +330,7 @@ void cmp_hints_feedback_credit_cmp_novelty(void)
 		 * typed-arm-driven CMP novelty rather than coincidental
 		 * raw-replay overlap with the hypothesis store. */
 		if (e->hyp_injected)
-			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-					       e->value, e->size,
-					       CMP_HYP_OUTCOME_CMP_NOVELTY);
+			cmp_hyp_credit_outcome(e, CMP_HYP_OUTCOME_CMP_NOVELTY);
 
 		/* SHADOW old-flat-pool by-kind CMP-novelty partition.  Kept
 		 * SEPARATE from the PC-outcome partition above so harvested-
@@ -376,9 +373,7 @@ void cmp_hints_feedback_credit_transition(void)
 			&child->cmp_hints_consumed_stash[i];
 
 		if (e->hyp_injected)
-			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-					       e->value, e->size,
-					       CMP_HYP_OUTCOME_TRANSITION_WIN);
+			cmp_hyp_credit_outcome(e, CMP_HYP_OUTCOME_TRANSITION_WIN);
 	}
 }
 
@@ -406,8 +401,6 @@ void cmp_hints_feedback_credit_corpus_save(void)
 			&child->cmp_hints_consumed_stash[i];
 
 		if (e->hyp_injected)
-			cmp_hyp_credit_outcome(e->nr, e->do32 != 0, e->cmp_ip,
-					       e->value, e->size,
-					       CMP_HYP_OUTCOME_CORPUS_SAVE);
+			cmp_hyp_credit_outcome(e, CMP_HYP_OUTCOME_CORPUS_SAVE);
 	}
 }

@@ -240,7 +240,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		unsigned long stash_value = picked_value;
 		bool hyp_injected = false;
 		bool inject_gate_fired = false;
-		uint8_t inject_kind = 0;
+		struct cmp_hyp_ref inject_hyp = { 0, 0 };
 
 		/* LIVE typed-hypothesis inject arm.  Runs only for callers
 		 * that opted in (the typed-safe argtype set).  When the
@@ -248,11 +248,10 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		 * hypothesis at the same (cmp_ip, width) the raw pick just
 		 * served, the raw value is replaced by a value derived from
 		 * that hypothesis.  Bypasses cmp_hint_apply_transform so the
-		 * derived constant reaches the kernel verbatim -- a +/-1
-		 * BOUNDARY shift on top of the derived value would dodge the
-		 * value-keyed credit re-resolution path in
-		 * cmp_hyp_find_for_credit, silently dropping the conversion
-		 * attribution this arm exists to measure.  Raw pool stays
+		 * derived constant reaches the kernel verbatim: the typed
+		 * credit lands on the hypothesis the value came from, and a
+		 * +/-1 BOUNDARY shift on top would score that hypothesis for
+		 * a probe its derive ladder did not choose.  Raw pool stays
 		 * the fallback on any gate miss / empty resolver / derive
 		 * bail.
 		 *
@@ -268,7 +267,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 						    picked_size, arg_idx,
 						    callsite,
 						    &derived,
-						    &inject_kind,
+						    &inject_hyp,
 						    &inject_gate_fired)) {
 				*out = derived;
 				stash_value = derived;
@@ -325,7 +324,7 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 				__atomic_fetch_add(&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected,
 						   1UL, __ATOMIC_RELAXED);
 				__atomic_fetch_add(
-					&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[inject_kind],
+					&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_live_injected_by_kind[inject_hyp.kind],
 					1UL, __ATOMIC_RELAXED);
 				/* Placement-proof fill-slot counter.
 				 * Sibling of reexec_attribution_slot_hist
@@ -387,7 +386,8 @@ static bool cmp_try_get_durable_tier(unsigned int nr, bool do32,
 		cmp_hints_stash_consumed(nr, do32, CMP_HINT_POOL_PER_SYSCALL,
 					 callsite,
 					 picked_cmp_ip, stash_value, picked_size, use,
-					 false, bucket, hyp_injected, false);
+					 false, bucket,
+					 hyp_injected ? &inject_hyp : NULL, false);
 	}
 	cmp_hyp_would_pick(nr, do32, picked_cmp_ip, picked_size, picked_value);
 	if (out_size != NULL)
@@ -496,7 +496,7 @@ static enum cmp_tier_result cmp_try_get_recent_tier(unsigned int nr, bool do32,
 							 callsite,
 							 re_cmp_ip, re_value,
 							 re_size, use,
-							 true, 0, false, false);
+							 true, 0, NULL, false);
 				cmp_hyp_would_pick(nr, do32, re_cmp_ip,
 						   re_size, re_value);
 				if (out_size != NULL)

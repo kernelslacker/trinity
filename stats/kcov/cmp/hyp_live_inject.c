@@ -188,18 +188,16 @@ void kcov_cmp_render_hyp_live_inject_reasons_block(long elapsed __unused__)
  * shadow counters into one render so the operator can read the
  * inserted-vs-consumed ratio at a glance: how often a BOUNDARY
  * hypothesis was created, how often one was available at a
- * served pick site, how often the value-keyed would-pick ladder
- * picked it (expected near zero -- EXACT outranks), how often
- * the live inject arm derived from it, and how often a credited
- * PC / transition resolved to BOUNDARY via the |v - exemplar|
- * <= 2 window.  Gated on any-delta so a quiet run reads as
+ * served pick site, how often the would-pick precedence picked
+ * it (expected near zero -- EXACT outranks), how often the live
+ * inject arm derived from it, and how often a typed consume
+ * credited it.  Gated on any-delta so a quiet run reads as
  * silence, matching the sibling cmp_hyp shadow blocks above.
  */
 void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 {
 	static unsigned long prev_b_inserted;
 	static unsigned long prev_b_candidate_available;
-	static unsigned long prev_b_credit_window_hits;
 	static unsigned long prev_b_would_pick;
 	static unsigned long prev_b_would_miss;
 	static unsigned long prev_b_live_injected;
@@ -208,9 +206,6 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_inserted, __ATOMIC_RELAXED);
 	unsigned long cur_b_candidate_available = __atomic_load_n(
 		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_candidate_available,
-		__ATOMIC_RELAXED);
-	unsigned long cur_b_credit_window_hits = __atomic_load_n(
-		&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_credit_window_hits,
 		__ATOMIC_RELAXED);
 	unsigned long cur_b_would_pick = __atomic_load_n(
 		&kcov_shm->cmp_hyp_lifecycle.cmp_hyp_would_pick_by_kind[CMP_HYP_BOUNDARY],
@@ -227,7 +222,6 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 	unsigned long any_delta =
 		sat_sub_ul(cur_b_inserted, prev_b_inserted) |
 		sat_sub_ul(cur_b_candidate_available, prev_b_candidate_available) |
-		sat_sub_ul(cur_b_credit_window_hits, prev_b_credit_window_hits) |
 		sat_sub_ul(cur_b_would_pick, prev_b_would_pick) |
 		sat_sub_ul(cur_b_would_miss, prev_b_would_miss) |
 		sat_sub_ul(cur_b_live_injected, prev_b_live_injected) |
@@ -260,15 +254,10 @@ void kcov_cmp_render_hyp_boundary_scorecard_block(long elapsed __unused__)
 				"cmp_hyp_consumed_by_kind[boundary]",
 				sat_sub_ul(cur_b_consumed, prev_b_consumed),
 				cur_b_consumed);
-		stats_log_write("  %-40s +%lu  (total %lu)\n",
-				"cmp_hyp_boundary_credit_window_hits",
-				sat_sub_ul(cur_b_credit_window_hits, prev_b_credit_window_hits),
-				cur_b_credit_window_hits);
 	}
 
 	prev_b_inserted = cur_b_inserted;
 	prev_b_candidate_available = cur_b_candidate_available;
-	prev_b_credit_window_hits = cur_b_credit_window_hits;
 	prev_b_would_pick = cur_b_would_pick;
 	prev_b_would_miss = cur_b_would_miss;
 	prev_b_live_injected = cur_b_live_injected;

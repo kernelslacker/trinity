@@ -29,15 +29,14 @@ unsigned long cmp_hyp_kind_full_by_kind[CMP_HYP_KIND_NR];
 unsigned long cmp_hyp_consumed_by_kind[CMP_HYP_KIND_NR];
 
 /*
- * SHADOW would-pick telemetry resolved alongside each successful
- * raw cmp_hints_try_get_ex() return.  For the same (nr, do32,
- * cmp_ip, width) the raw pool just served, the typed hypothesis
- * store is walked through the same EXACT > ENUM_FAMILY > BITMASK >
- * RANGE specificity ladder cmp_hyp_credit_outcome() uses; the
- * resulting "what would the store have picked" is then bumped into
- * the counters below.  Pure observation -- the live pick is the
- * raw pool value, byte-for-byte unchanged; nothing here is gated
- * by a CLI knob.
+ * SHADOW would-pick telemetry resolved alongside each successful raw
+ * cmp_hints_try_get_ex() return.  For the same (nr, do32, cmp_ip,
+ * width) the raw pool just served, the typed hypothesis store is walked
+ * by the live inject arm's picker (cmp_hyp_would_pick_locked, EXACT >
+ * ENUM_FAMILY > BITMASK > RANGE > BOUNDARY); the resulting "what would
+ * the store have picked" is then bumped into the counters below.  Pure
+ * observation -- the live pick is the raw pool value, byte-for-byte
+ * unchanged; nothing here is gated by a CLI knob.
  *
  *  cmp_hyp_would_pick_by_kind[k]
  *      Bumped at index k = picked->kind when the ladder resolves

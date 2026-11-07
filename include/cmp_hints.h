@@ -85,11 +85,11 @@ struct cmp_hints_shared {
 	 *     with cmp_hyp_derive_value() and, on a channel-A/B/C fire,
 	 *     substitutes the derived value for the raw pool pick before
 	 *     it reaches the caller's accept gate.
-	 *   - cmp_hyp_credit_outcome() (hyp-credit.c) resolves the credit
-	 *     back to a hypothesis and mutates h->state through the
-	 *     OBSERVED ↔ PROMOTED ↔ DEMOTED graph (DEMOTED → RETIRED at
-	 *     CMP_HYP_RETIRE_MISS_THRESHOLD sustained misses), closing the
-	 *     feedback loop the picker routes on.
+	 *   - cmp_hyp_credit_outcome() (hyp-credit.c) credits the
+	 *     hypothesis the inject was derived from and mutates h->state
+	 *     through the OBSERVED ↔ PROMOTED ↔ DEMOTED graph (DEMOTED →
+	 *     RETIRED at CMP_HYP_RETIRE_MISS_THRESHOLD sustained misses),
+	 *     closing the feedback loop the picker routes on.
 	 * Concurrency: writers (observe, credit-side state mutation) run
 	 * lock-free RELAXED against parallel readers (pick, inject); the
 	 * count > cap bail bounds walks and torn RELAXED reads on h->state
@@ -168,15 +168,13 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
 /*
  * Per-hypothesis feedback credit.
  *
- * Resolve the would-have-been-chosen hypothesis at hyp_pools[nr][do32]
- * from the (cmp_ip, value, width) tuple via the same EXACT >
- * ENUM_FAMILY > BITMASK > RANGE > BOUNDARY (|value - exemplar| <=
- * CMP_HYP_BOUNDARY_CREDIT_WINDOW) specificity ladder the picker and
- * inject arm use, then bump the matching per-hypothesis outcome
- * counter and the matching cmp_hyp_* flat counter in kcov_shm.
- * Out-of-range nr / unsupported size / NULL shm / no-matching-
- * hypothesis are bailed silently (a credit that finds no hypothesis
- * is just an unobserved value, never a correctness issue).
+ * Credit OUTCOME to the hypothesis the live inject arm derived E's
+ * value from -- the slot stashed in E->hyp, checked against the pool
+ * so a scribbled slot drops the credit -- by bumping the matching
+ * per-hypothesis outcome counter and the matching cmp_hyp_* flat
+ * counter in kcov_shm.  Callers pass only stash entries the inject arm
+ * produced (hyp_injected).  NULL shm / out-of-range nr / an outcome
+ * outside the menu are bailed silently.
  *
  * Feedback-driven state transition.  After the counter bumps the
  * function recomputes h->score_bucket and drives the live state
@@ -189,13 +187,9 @@ void cmp_hyp_observe(unsigned int nr, bool do32, unsigned long cmp_ip,
  * These state changes are what the picker (hyp-pick.c) and the
  * PROMOTED-bypass channel of the inject arm (hyp-live.c) route on --
  * this hook is the feedback edge that closes the observe -> select ->
- * inject -> credit -> transition loop.  Callers pass the same
- * (cmp_ip, value, size) tuple they stashed at hint-pull time so the
- * credit lands on the hypothesis whose typed inference explains the
- * picked value.
+ * inject -> credit -> transition loop.
  */
-void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
-			    unsigned long value, unsigned int size,
+void cmp_hyp_credit_outcome(const struct cmp_hint_consumed_entry *e,
 			    enum cmp_hyp_outcome outcome);
 
 /* Extract a random hint value for the given syscall and apply the

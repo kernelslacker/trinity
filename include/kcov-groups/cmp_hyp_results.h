@@ -167,21 +167,13 @@ unsigned long cmp_hyp_probe_class_hist[CMP_HYP_PROBE_CLASS_NR];
  *      Bumped at each successful raw cmp_hints_try_get_ex() pick
  *      where a CMP_HYP_BOUNDARY entry exists at the served
  *      (cmp_ip, width) AND the derive arm would not bail.
- *      Decoupled from the value-keyed would_pick / find_for_credit
- *      resolvers per the spec's Q3 analysis -- a counter that just
- *      counted "BOUNDARY won the precedence ladder" would stay
- *      structurally near zero (EXACT is populated at every
- *      observation and always outranks).  This is the headline
- *      shadow metric: it estimates how often the boundary arm
- *      WOULD have something to inject if precedence let it.
- *  cmp_hyp_boundary_credit_window_hits
- *      Bumped in cmp_hyp_find_for_credit()'s BOUNDARY arm each
- *      time a credited value resolves to BOUNDARY via the
- *      |v - exemplar| <= 2 window (EXACT / ENUM / BITMASK / RANGE
- *      having all missed first).  This is the conversion proof
- *      for the lane: a credited PC / transition win at a value
- *      nothing else explains is a boundary-adjacent neighbour the
- *      derive ladder produced.
+ *      Decoupled from the would_pick precedence per the spec's Q3
+ *      analysis -- a counter that just counted "BOUNDARY won the
+ *      precedence ladder" would stay structurally near zero (EXACT
+ *      is populated at every observation and always outranks).
+ *      This is the headline shadow metric: it estimates how often
+ *      the boundary arm WOULD have something to inject if
+ *      precedence let it.
  *
  * Kill criterion (same bar that killed exact-inject): if a
  * representative run shows cmp_hyp_live_injected_by_kind[BOUNDARY]
@@ -190,5 +182,12 @@ unsigned long cmp_hyp_probe_class_hist[CMP_HYP_PROBE_CLASS_NR];
  */
 unsigned long cmp_hyp_boundary_inserted;
 unsigned long cmp_hyp_boundary_candidate_available;
-unsigned long cmp_hyp_boundary_credit_window_hits;
+
+/*
+ * Typed credits dropped because the hypothesis slot a consume stash
+ * entry carries no longer holds the kind, cmp_ip and width the live
+ * inject arm picked.  Pools are append-only, so a mismatch means a torn
+ * or scribbled pool or stash entry.
+ */
+unsigned long cmp_hyp_credit_slot_mismatch;
 };

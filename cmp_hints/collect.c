@@ -1078,7 +1078,7 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      unsigned int size, enum cmp_hint_use use,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
-			      bool hyp_injected,
+			      const struct cmp_hyp_ref *hyp,
 			      bool served_from_shared)
 {
 	struct childdata *child = this_child();
@@ -1118,7 +1118,9 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	 * this is belt-and-braces against a future caller. */
 	e->age_bucket = (age_bucket < CMP_HINT_AGE_BUCKETS) ?
 			age_bucket : (uint8_t)(CMP_HINT_AGE_BUCKETS - 1U);
-	e->hyp_injected = hyp_injected ? 1 : 0;
+	e->hyp_injected = hyp != NULL ? 1 : 0;
+	if (hyp != NULL)
+		e->hyp = *hyp;
 	e->served_from_shared = served_from_shared ? 1 : 0;
 
 	if (kcov_shm != NULL) {
@@ -1147,6 +1149,6 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 	 * value a stored hypothesis happens to explain does not count.  A
 	 * shared-served pull never runs the inject arm, so its cross-nr
 	 * cmp_ip stays out too. */
-	if (hyp_injected)
-		cmp_hyp_credit_consume(nr, do32, cmp_ip, value, size);
+	if (hyp != NULL)
+		cmp_hyp_credit_consume(e);
 }

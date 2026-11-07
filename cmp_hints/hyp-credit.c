@@ -1,6 +1,6 @@
 /*
- * SHADOW typed-hypothesis credit path: the credit-side resolver
- * (cmp_hyp_find_for_credit), the per-outcome field and flat-counter
+ * SHADOW typed-hypothesis credit path: the stashed-slot resolver
+ * (cmp_hyp_injected_from), the per-outcome field and flat-counter
  * selectors, and the public credit entry points cmp_hyp_credit_outcome and
  * cmp_hyp_credit_consume.  The pool is read lock-free with RELAXED loads.
  */
@@ -14,92 +14,33 @@
 #include "shm.h"
 
 /*
- * Resolve the would-have-been-chosen hypothesis for a (cmp_ip, width,
- * value) tuple against the SHADOW hyp_pool at (nr, do32).  Walks the
- * pool once and returns the most-specific kind whose stored shape
- * explains the value: EXACT (exemplar == value) > ENUM_FAMILY (lo..hi
- * cluster containing value) > BITMASK (single-bit value set in mask)
- * > RANGE (lo..hi interval containing value).  Returns NULL if no
- * hypothesis at the matching (cmp_ip, width) explains the value -- the
- * picked constant pre-dates the inference layer or sits in a slot the
- * observer never fired, both of which are unobservable from the credit
- * side.  Same RELAXED-load discipline as the rest of the SHADOW reader
- * path: torn fields tolerate the consumer-side advisory contract, and a
- * count past CMP_HYP_PER_SYSCALL (a torn or scribbled pool) bails before the
- * walk.
+ * The hypothesis E's value was derived from, at the slot the live inject
+ * arm stashed.  Pools are append-only, so the slot still names it; a slot
+ * past the pool, or one no longer holding the stashed kind, cmp_ip and
+ * width, means a torn or scribbled pool or stash entry, and the credit is
+ * dropped rather than landed on another hypothesis.
  */
-/*
- * BOUNDARY credit window: |value - exemplar| <= 2 explains values the
- * N-1 / N+1 / N+/-2 derive ladder produces.  The strict-inequality case
- * the lane is built for needs +/-1; the wider +/-2 slot covers the
- * sweep arm without inflating the window so far that an unrelated
- * value-near-N collision is plausibly attributable.  Matches the same
- * order of magnitude as the derive ladder.
- */
-#define CMP_HYP_BOUNDARY_CREDIT_WINDOW 2U
-
-static struct cmp_hypothesis *cmp_hyp_find_for_credit(struct cmp_hyp_pool *pool,
-						      unsigned long cmp_ip,
-						      uint8_t width,
-						      uint64_t value)
+static struct cmp_hypothesis *
+cmp_hyp_injected_from(const struct cmp_hint_consumed_entry *e)
 {
-	struct cmp_hypothesis *enum_match = NULL;
-	struct cmp_hypothesis *bitmask_match = NULL;
-	struct cmp_hypothesis *range_match = NULL;
-	struct cmp_hypothesis *boundary_match = NULL;
-	unsigned int i, n = pool->count;
-	bool single_bit = (value != 0) && ((value & (value - 1)) == 0);
+	struct cmp_hyp_pool *pool;
+	struct cmp_hypothesis *h;
 
-	if (n > CMP_HYP_PER_SYSCALL)
+	if (cmp_hints_shm == NULL || e->nr >= MAX_NR_SYSCALL)
 		return NULL;
-	for (i = 0; i < n; i++) {
-		struct cmp_hypothesis *h = &pool->entries[i];
 
-		if (h->cmp_ip != (uint64_t)cmp_ip || h->width != width)
-			continue;
-		switch (h->kind) {
-		case CMP_HYP_EXACT:
-			if (h->exemplar == value)
-				return h;
-			break;
-		case CMP_HYP_ENUM_FAMILY:
-			if (value >= h->lo && value <= h->hi && enum_match == NULL)
-				enum_match = h;
-			break;
-		case CMP_HYP_BITMASK:
-			if (single_bit && (h->mask & value) != 0
-			    && bitmask_match == NULL)
-				bitmask_match = h;
-			break;
-		case CMP_HYP_RANGE:
-			if (value >= h->lo && value <= h->hi && range_match == NULL)
-				range_match = h;
-			break;
-		case CMP_HYP_BOUNDARY:
-			if (boundary_match == NULL) {
-				uint64_t ex = h->exemplar;
-				uint64_t d = (value >= ex)
-					? (value - ex)
-					: (ex - value);
-
-				if (d <= CMP_HYP_BOUNDARY_CREDIT_WINDOW)
-					boundary_match = h;
-			}
-			break;
-		default:
-			break;
-		}
+	pool = &cmp_hints_shm->hyp_pools[e->nr][e->do32 != 0 ? 1 : 0];
+	if (e->hyp.slot < CMP_HYP_PER_SYSCALL && e->hyp.slot < pool->count &&
+	    e->hyp.kind < CMP_HYP_KIND_NR) {
+		h = &pool->entries[e->hyp.slot];
+		if (h->kind == e->hyp.kind &&
+		    h->cmp_ip == (uint64_t)e->cmp_ip && h->width == e->size)
+			return h;
 	}
-	if (enum_match != NULL)
-		return enum_match;
-	if (bitmask_match != NULL)
-		return bitmask_match;
-	if (range_match != NULL)
-		return range_match;
-	if (boundary_match != NULL && kcov_shm != NULL)
-		__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_boundary_credit_window_hits,
+	if (kcov_shm != NULL)
+		__atomic_fetch_add(&kcov_shm->cmp_hyp_results.cmp_hyp_credit_slot_mismatch,
 				   1UL, __ATOMIC_RELAXED);
-	return boundary_match;
+	return NULL;
 }
 
 /*
@@ -149,33 +90,23 @@ static unsigned long *cmp_hyp_outcome_flat(enum cmp_hyp_outcome outcome)
 	}
 }
 
-void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
-			    unsigned long value, unsigned int size,
+void cmp_hyp_credit_outcome(const struct cmp_hint_consumed_entry *e,
 			    enum cmp_hyp_outcome outcome)
 {
-	struct cmp_hyp_pool *pool;
 	struct cmp_hypothesis *h;
 	uint64_t *field;
 	unsigned long *flat;
-	uint8_t width;
+	unsigned int nr = e->nr;
 
-	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return;
-	if (size != 1 && size != 2 && size != 4 && size != 8)
-		return;
 	if ((unsigned int)outcome >= CMP_HYP_OUTCOME_NR)
 		return;
 
-	width = (uint8_t)size;
-	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
-
 	/* Lock-free read against the parallel hyp_pool grid.  Writers
 	 * (cmp_hyp_observe) run under the matching durable cmp_hint_pool
-	 * lock so a torn count or a half-written entry is possible from
-	 * this side; the find walk tolerates both -- a misread kind /
-	 * exemplar at worst drops the credit, never indexes off the
-	 * array thanks to the count > cap bail. */
-	h = cmp_hyp_find_for_credit(pool, cmp_ip, width, (uint64_t)value);
+	 * lock, so a torn count or a half-written entry is possible from
+	 * this side; either at worst fails the slot check and drops the
+	 * credit, never indexes off the array. */
+	h = cmp_hyp_injected_from(e);
 	if (h == NULL)
 		return;
 
@@ -399,30 +330,16 @@ void cmp_hyp_credit_outcome(unsigned int nr, bool do32, unsigned long cmp_ip,
 }
 
 /*
- * SHADOW per-hypothesis credit at hint-pull (consume) time.  Resolved
- * via the same EXACT > ENUM_FAMILY > BITMASK > RANGE specificity
- * ladder as cmp_hyp_credit_outcome(); on a hit, bumps the per-
- * hypothesis consumed_count and the flat cmp_hyp_consumed kcov_shm
- * counter so the fleet sees the typed-consumer denominator the
- * follow-up live-pick will weigh outcomes against.
+ * SHADOW per-hypothesis credit at hint-pull (consume) time.  Bumps the
+ * consumed_count of the hypothesis E's value was derived from, the same
+ * one cmp_hyp_credit_outcome() scores, and the flat cmp_hyp_consumed
+ * kcov_shm counter, so the fleet sees the typed-consumer denominator
+ * the follow-up live-pick will weigh outcomes against.
  */
-void cmp_hyp_credit_consume(unsigned int nr, bool do32,
-			    unsigned long cmp_ip, unsigned long value,
-			    unsigned int size)
+void cmp_hyp_credit_consume(const struct cmp_hint_consumed_entry *e)
 {
-	struct cmp_hyp_pool *pool;
-	struct cmp_hypothesis *h;
-	uint8_t width;
+	struct cmp_hypothesis *h = cmp_hyp_injected_from(e);
 
-	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
-		return;
-	if (size != 1 && size != 2 && size != 4 && size != 8)
-		return;
-
-	width = (uint8_t)size;
-	pool = &cmp_hints_shm->hyp_pools[nr][do32 ? 1 : 0];
-
-	h = cmp_hyp_find_for_credit(pool, cmp_ip, width, (uint64_t)value);
 	if (h == NULL)
 		return;
 

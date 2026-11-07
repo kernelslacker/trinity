@@ -57,6 +57,8 @@
  */
 #define CMP_HYP_LIVE_INJECT_PROMOTED_DENOM	64U
 
+_Static_assert(CMP_HYP_PER_SYSCALL <= 256,
+	       "struct cmp_hyp_ref cannot hold every hypothesis slot");
 
 /*
  * LIVE typed-hypothesis inject try.  Composes the conservative gate
@@ -84,15 +86,16 @@
  *                      observability the gate_passed - live_injected
  *                      delta currently surfaces, just gated on the
  *                      value actually reaching the consumer.
- *   *out_kind       -- picked->kind, valid iff the function returns
- *                      true (i.e. picked != NULL AND derive
- *                      succeeded).  The caller bumps live_injected /
- *                      live_injected_by_kind[*out_kind] under the
- *                      same accept-gate.
+ *   *out_hyp        -- picked's pool slot and kind, valid iff the
+ *                      function returns true (i.e. picked != NULL
+ *                      AND derive succeeded).  The caller bumps
+ *                      live_injected / live_injected_by_kind[kind]
+ *                      under the same accept-gate and stashes the
+ *                      slot for the typed credit.
  *
  * Both out-params are written on every entry: out_gate_fired starts
- * at false and only flips true once the gate passes, out_kind is left
- * at 0 unless the function returns true.  Callers can therefore key
+ * at false and only flips true once the gate passes, out_hyp is left
+ * zeroed unless the function returns true.  Callers can therefore key
  * their accounting off the bool return alone for live_injected and off
  * *out_gate_fired for gate_passed without re-checking helper inputs.
  */
@@ -101,7 +104,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned int arg_idx __attribute__((unused)),
 			     enum cmp_hint_callsite callsite,
 			     unsigned long *out,
-			     uint8_t *out_kind,
+			     struct cmp_hyp_ref *out_hyp,
 			     bool *out_gate_fired)
 {
 	struct cmp_hyp_pool *pool;
@@ -116,7 +119,8 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	uint8_t picked_state;
 
 	*out_gate_fired = false;
-	*out_kind = 0;
+	out_hyp->slot = 0;
+	out_hyp->kind = 0;
 
 	if (cmp_hints_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return false;
@@ -224,6 +228,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 	}
 
 	*out = derived;
-	*out_kind = picked->kind;
+	out_hyp->slot = (uint8_t)(picked - pool->entries);
+	out_hyp->kind = picked->kind;
 	return true;
 }

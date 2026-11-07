@@ -186,14 +186,14 @@ struct cmp_hypothesis {
 	uint64_t consumed_count;
 	/*
 	 * Per-hypothesis SHADOW outcome counters.  Bumped by
-	 * cmp_hyp_credit_outcome() on the would-have-been-chosen hypothesis
-	 * resolved from a (cmp_ip, value, width) tuple at credit time.  Per
-	 * the [11-feedback-loop] discipline cmp_novelty_wins is kept
-	 * SEPARATE from pc_wins so harvested-but-flat CMP novelty cannot
-	 * masquerade as a PC-edge conversion.  Saturating semantics: bumps
-	 * are RELAXED, a u64 cannot realistically wrap inside any single
-	 * fuzz run.  All fields are zero until a credit fires; the live
-	 * pick path does NOT read them.
+	 * cmp_hyp_credit_outcome() on the hypothesis a live typed
+	 * inject was derived from.  Per the [11-feedback-loop]
+	 * discipline cmp_novelty_wins is kept SEPARATE from pc_wins so
+	 * harvested-but-flat CMP novelty cannot masquerade as a PC-edge
+	 * conversion.  Saturating semantics: bumps are RELAXED, a u64
+	 * cannot realistically wrap inside any single fuzz run.  All
+	 * fields are zero until a credit fires; the live pick path does
+	 * NOT read them.
 	 */
 	uint64_t pc_wins;
 	uint64_t transition_wins;
@@ -243,15 +243,14 @@ struct cmp_hyp_pool {
 
 /*
  * SHADOW per-hypothesis feedback outcome menu.  Each enumerator names a
- * channel cmp_hyp_credit_outcome() can credit to the would-have-been-
- * chosen hypothesis at the matching (nr, do32, cmp_ip, value, width)
- * tuple.  CMP_NOVELTY is deliberately a peer of PC_WIN rather than a
- * variant: harvested-but-flat novelty must never be folded into PC-edge
- * conversion accounting ([11-feedback-loop] discipline).  CORPUS_SAVE /
- * DESTRUCTIVE_SKIP / CONTEXT_SKIP are part of the published menu so the
- * struct is laid out for the consumer + skip-site wiring that lands in
- * follow-up units; until then those channels never fire and the per-
- * hypothesis counters stay zero.
+ * channel cmp_hyp_credit_outcome() can credit to the hypothesis a live
+ * typed inject was derived from.  CMP_NOVELTY is deliberately a peer of
+ * PC_WIN rather than a variant: harvested-but-flat novelty must never
+ * be folded into PC-edge conversion accounting ([11-feedback-loop]
+ * discipline).  CORPUS_SAVE / DESTRUCTIVE_SKIP / CONTEXT_SKIP are part
+ * of the published menu so the struct is laid out for the consumer +
+ * skip-site wiring that lands in follow-up units; until then those
+ * channels never fire and the per-hypothesis counters stay zero.
  */
 enum cmp_hyp_outcome {
 	CMP_HYP_OUTCOME_PC_WIN,

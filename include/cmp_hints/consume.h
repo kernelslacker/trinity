@@ -119,6 +119,17 @@ enum cmp_hint_pool_kind {
 };
 
 /*
+ * The hypothesis a live typed inject derived its value from: its slot
+ * in hyp_pools[nr][do32] and its kind.  Pools are append-only, so the
+ * slot names the same hypothesis for the rest of the run; the kind
+ * lets the credit side reject a slot a scribble has since rewritten.
+ */
+struct cmp_hyp_ref {
+	uint8_t slot;
+	uint8_t kind;			/* enum cmp_hypothesis_kind */
+};
+
+/*
  * Per-child stash entry recording one cmp_hints_try_get_ex() return.
  * The credit drain re-finds the pool entry from (nr, do32, cmp_ip,
  * value, size), so those round-trip through the stash.  The 8-deep
@@ -168,6 +179,9 @@ struct cmp_hint_consumed_entry {
 	 * finally measures real hypothesis-derived conversion rather
 	 * than coincidence. */
 	uint8_t hyp_injected;
+	/* Valid iff hyp_injected: the typed credit lands on this
+	 * hypothesis, not on whichever one the value happens to fit. */
+	struct cmp_hyp_ref hyp;
 	/* 1 == value came from the quarantined shared-tier COMBINED-mode
 	 * serve at pick time (cmp_shared_tier_try_serve_cold_miss); 0 ==
 	 * native pool / recent ring value.  The credit drain routes the

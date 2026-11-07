@@ -157,18 +157,17 @@ void cmp_hints_stash_consumed(unsigned int nr, bool do32,
 			      unsigned int size, enum cmp_hint_use use,
 			      bool served_from_recent,
 			      uint8_t age_bucket,
-			      bool hyp_injected,
+			      const struct cmp_hyp_ref *hyp,
 			      bool served_from_shared);
 
 /*
  * SHADOW typed-hypothesis consume credit.  Called from
  * cmp_hints_stash_consumed() (collect.c) for each pull the live inject
  * arm produced, so the typed denominator counts the pulls the typed
- * outcome credit scores.  Definition in cmp_hints/hyp-credit.c.
+ * outcome credit scores, on the same hypothesis.  Definition in
+ * cmp_hints/hyp-credit.c.
  */
-void cmp_hyp_credit_consume(unsigned int nr, bool do32,
-			    unsigned long cmp_ip, unsigned long value,
-			    unsigned int size);
+void cmp_hyp_credit_consume(const struct cmp_hint_consumed_entry *e);
 
 /*
  * SHADOW would-pick resolver.  Invoked on every successful raw-pool
@@ -265,10 +264,10 @@ bool cmp_shared_tier_try_serve_cold_miss(unsigned int nr, bool do32,
  * LIVE typed-hypothesis inject arm.  Called from cmp_hints/get.c on
  * durable-tier picks whose caller opted in (allow_hyp_inject).  On a
  * gate + resolver + derive triple-hit the raw pool value is replaced
- * by a hypothesis-derived value; the *out_kind / *out_gate_fired
+ * by a hypothesis-derived value; the *out_hyp / *out_gate_fired
  * out-params let the caller book the accept-gated denominator +
- * per-kind partition at the commit point.  Definition in
- * cmp_hints/hyp-live.c.
+ * per-kind partition at the commit point and stash the hypothesis the
+ * typed credit lands on.  Definition in cmp_hints/hyp-live.c.
  *
  * arg_idx is the caller's syscall argnum (1..6) threaded through from
  * cmp_hints_try_get_ex for the placement-proof observability contract
@@ -293,7 +292,7 @@ bool cmp_hyp_try_live_inject(unsigned int nr, bool do32,
 			     unsigned int arg_idx,
 			     enum cmp_hint_callsite callsite,
 			     unsigned long *out,
-			     uint8_t *out_kind,
+			     struct cmp_hyp_ref *out_hyp,
 			     bool *out_gate_fired);
 
 #endif /* _CMP_HINTS_INTERNAL_H */

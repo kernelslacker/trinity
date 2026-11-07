@@ -492,19 +492,9 @@ static void cmp_hyp_sign_switch_shadow_probe(const struct cmp_hypothesis *picked
  * parity with the raw arm and lets the strict-inequality
  * boundary gates convert on the typed arm too.
  *
- * Credit attribution: EXACT's find_for_credit arm demands
- * exemplar == value, so the +/-1 probes do NOT re-resolve
- * back to this EXACT hypothesis at credit time -- they fall
- * through to the BOUNDARY arm's +/-2 credit window
- * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) and get attributed
- * to whichever BOUNDARY entry the observe path registered
- * at the same (cmp_ip, width).  Both EXACT and BOUNDARY
- * co-populate on every observation (see cmp_hyp_observe),
- * so a fired shifted probe has a home; if the BOUNDARY
- * slot was reclaimed, per-hypothesis credit misses but the
- * pc_win itself is still counted in the flat kcov_shm
- * rollup.  The exemplar arm still re-resolves to this
- * EXACT hypothesis exactly as before.
+ * Credit attribution: all three arms credit this EXACT
+ * hypothesis -- the typed credit follows the slot the
+ * inject arm derived from, not the value.
  *
  * Unsigned wrap at the extremes (N == 0 -> N-1 ==
  * ULONG_MAX; N == ULONG_MAX -> N+1 == 0) is intentional
@@ -558,11 +548,8 @@ static void derive_exact(const struct cmp_hypothesis *picked,
  *
  * Neighbourhood ladder around the exemplar N: the strict-
  * inequality boundary EXACT cannot pass (the passing value
- * for `x < N` is N-1, for `x > N` is N+1) and RANGE refuses
- * to emit (the comment at RANGE bans lo-1 / hi+1 because the
- * value-keyed credit walk cannot re-resolve them; the lane
- * here owns that emission and the BOUNDARY arm of
- * cmp_hyp_find_for_credit() owns the matching credit walk).
+ * for `x < N` is N-1, for `x > N` is N+1) and RANGE leaves
+ * to this lane (RANGE emits only its lo / hi / midpoint).
  *
  * Bug-pattern guards from the audit batch:
  *   * unsigned underflow: emit N-1 / N-2 only when N >= 1
@@ -637,8 +624,7 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 		}
 		/* Both sweep directions strand the value at this
 		 * width.  Fall back to the exemplar so the lane never
-		 * emits "no value" -- the find_for_credit BOUNDARY
-		 * window covers exemplar matches too. */
+		 * emits "no value". */
 		cand = n;
 		*cls = CMP_HYP_PROBE_CLASS_BOUNDARY_EXACT;
 		break;
@@ -648,22 +634,13 @@ static bool derive_boundary(const struct cmp_hypothesis *picked,
 }
 
 /*
- * Derive ONE candidate value from PICKED via the spec's ladder.  Every
- * derived value is constructed so cmp_hyp_find_for_credit() will
- * re-resolve back to a hypothesis at the same (cmp_ip, width) at
- * credit time -- either the SAME hypothesis (EXACT.exemplar matches
- * EXACT; ENUM_FAMILY exemplar / lo / hi all lie in [lo, hi]; BITMASK
- * single set-bit is single-bit AND set in mask; RANGE lo / hi /
- * midpoint all lie in [lo, hi]) or, for the EXACT +/-1 arms, the
- * co-populated BOUNDARY hypothesis at the same (cmp_ip, width) via
- * its +/-2 credit window.  For RANGE, boundary probes (lo-1, hi+1)
- * are deliberately NOT emitted -- they fall outside [lo, hi] and so
- * are unreachable by the value-keyed credit walk, which would
- * silently drop their attribution; that neighbourhood is instead the
- * BOUNDARY arm's job.  The EXACT arm's +/-1 rotation is safe because
- * BOUNDARY co-registers on every observation and its credit window
- * (CMP_HYP_BOUNDARY_CREDIT_WINDOW == 2) is wide enough to cover the
- * shifted values.
+ * Derive ONE candidate value from PICKED via the spec's ladder: EXACT
+ * rotates {N-1, N, N+1}, ENUM_FAMILY emits its exemplar / lo / hi,
+ * BITMASK one set bit of its mask, RANGE its lo / hi / midpoint and
+ * BOUNDARY its neighbourhood ladder.  The typed credit lands on PICKED
+ * whatever the value, through the slot the inject arm stashes.  For
+ * RANGE, boundary probes (lo-1, hi+1) are deliberately NOT emitted --
+ * that neighbourhood is the BOUNDARY arm's job.
  *
  * Bug-pattern rules applied:
  *   * midpoint computed as lo + ((hi - lo) >> 1) so (lo + hi) cannot

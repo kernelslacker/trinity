@@ -225,8 +225,7 @@ enum prop_injected_callsite {
  * The set deliberately excludes the false-return rejects (hi < lo,
  * default kind) which emit no value.  The BOUNDARY_* classes are the
  * neighbourhood ladder the CMP_HYP_BOUNDARY arm walks -- inequality-
- * gate-friendly probes RANGE deliberately refuses to emit because the
- * value-keyed credit walk can only reach interior members.
+ * gate-friendly probes RANGE leaves to that arm.
  *
  * SHADOW-only classes are appended at the tail below _SINGLE_BIT's
  * live siblings.  They are reserved as dedicated bucket ids so a
