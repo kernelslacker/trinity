@@ -392,10 +392,11 @@ static void bpf_post_validate_retval(struct syscallrecord *rec,
 	 * leaking through the success path without becoming -1UL.  None
 	 * of the four register through add_object, so the FD-pool blanket
 	 * gate at add_object's entry never sees their retval; this per-
-	 * cmd guard closes that gap.  Validate against the snapshotted
-	 * cmd, not rec->a1, so a sibling scribble of rec->a1 cannot
-	 * misroute the dispatch.  -1UL fall-through is intentional --
-	 * every documented failure path lands there.
+	 * cmd guard closes that gap.  Validate against the cmd the kernel
+	 * ran, as __do_syscall() shadowed it, not rec->a1, so a sibling
+	 * scribble of rec->a1 cannot misroute the dispatch.  -1UL
+	 * fall-through is intentional -- every documented failure path
+	 * lands there.
 	 */
 	if (ret != (unsigned long)-1L) {
 		switch (cmd) {
@@ -456,8 +457,9 @@ static void post_bpf_token_create(int fd)
  * them produce a kind of fd that fits one of our pools, so they
  * get closed immediately to avoid leaking.  We can't blindly
  * close on all commands because non-fd commands return 0 for
- * success, and closing fd 0 would destroy stdin. */
-static void post_bpf_close_orphan_fd(int fd, unsigned int cmd)
+ * success, and closing fd 0 would destroy stdin.  A call the
+ * switch above did not take (@tracked false) is tracked nowhere. */
+static void post_bpf_close_orphan_fd(int fd, unsigned int cmd, bool tracked)
 {
 	switch (cmd) {
 	case BPF_MAP_CREATE:
@@ -470,7 +472,9 @@ static void post_bpf_close_orphan_fd(int fd, unsigned int cmd)
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_TOKEN_CREATE:
 	case BPF_PROG_STREAM_OPEN:
-		/* Already tracked above. */
+		/* Already tracked above, if the switch took the call. */
+		if (!tracked)
+			close(fd);
 		break;
 	case BPF_OBJ_GET:
 	case BPF_RAW_TRACEPOINT_OPEN:
@@ -487,7 +491,7 @@ static void post_bpf(struct syscallrecord *rec)
 {
 	struct bpf_post_state *snap = (struct bpf_post_state *) rec->post_state;
 	union bpf_attr *attr;
-	unsigned int cmd;
+	unsigned int cmd, ran_cmd;
 	int fd = rec->retval;
 	int saved_errno = rec->errno_post;
 	unsigned long ret = rec->retval;
@@ -552,14 +556,27 @@ static void post_bpf(struct syscallrecord *rec)
 	attr_readable = alloc_track_lookup(attr) ||
 			range_readable_user(attr, sizeof(union bpf_attr));
 
-	bpf_post_validate_retval(rec, cmd, ret);
+	ran_cmd = (unsigned int) get_arg_snapshot(rec, 1) & ~BPF_COMMON_ATTRS;
+	bpf_post_validate_retval(rec, ran_cmd, ret);
+
+	/*
+	 * Chain substitution or a RedQueen pin may have handed the kernel
+	 * another cmd than the one the attr was built for.  What came back
+	 * is that cmd's: an fd of its kind, not one to pool as the built
+	 * cmd's, or a 0 or a count, which is no fd at all.
+	 */
+	if (ran_cmd != cmd) {
+		if (fd >= 0)
+			post_bpf_close_orphan_fd(fd, ran_cmd, false);
+		goto release;
+	}
 
 	switch (cmd) {
 	case BPF_MAP_CREATE:
 		post_bpf_map_create(fd, attr_readable, attr);
 		break;
 	case BPF_PROG_LOAD:
-		post_bpf_prog_load(fd, attr_readable, attr, snap->classic_bpf_insns, saved_errno);
+		post_bpf_prog_load(fd, attr_readable, attr, saved_errno);
 		break;
 	case BPF_MAP_GET_FD_BY_ID:
 		post_bpf_map_get_fd_by_id(fd);
@@ -591,8 +608,12 @@ static void post_bpf(struct syscallrecord *rec)
 	}
 
 	if (fd >= 0)
-		post_bpf_close_orphan_fd(fd, cmd);
+		post_bpf_close_orphan_fd(fd, cmd, true);
 
+release:
+	if (cmd == BPF_PROG_LOAD)
+		bpf_prog_load_release_insns(attr_readable, attr,
+					    snap->classic_bpf_insns);
 	if (snap->owned_fd >= 0)
 		close(snap->owned_fd);
 
@@ -661,6 +682,10 @@ struct syscallentry syscall_bpf = {
 	.sanitise = sanitise_bpf,
 	.sanitiser_owned_mask = (1u << 3) | (1u << 4),
 	.post = post_bpf,
+	/* cmd (a1): the post handler judges and pools what came back by
+	 * the cmd the kernel ran, which chain substitution or a RedQueen
+	 * pin may have rewritten after the sanitiser built the attr. */
+	.arg_snapshot_mask = (1u << 0),
 	.cleanup = cleanup_bpf,
 };
 #endif

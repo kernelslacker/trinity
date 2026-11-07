@@ -7,10 +7,12 @@
  * untouched-buffer check by the untouched buffers it reports, and the
  * PR_FUTEX_HASH -EBUSY tally by what it counts.  The handlers run as
  * shipped; the post_state table, post_snapshot_or_skip() and the bump
- * itself are faked here.
+ * itself are faked here, and bpf's pool publishes are counted through
+ * landlock_test.c's publish_resource() hook.
  */
 
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <sched.h>
 #include <stdbool.h>
@@ -23,11 +25,13 @@
 #include <unistd.h>
 
 #include "arch.h"		/* ARCH_IS_BIARCH */
+#include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
 #include "maps.h"		/* get_map */
 #include "net.h"		/* fd_from_socketinfo */
+#include "publish_resource.h"	/* struct resource_meta */
 #include "sanitise.h"		/* writable pool */
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
@@ -1027,6 +1031,103 @@ static void vmsplice_compat_iovec(void)
 }
 #endif
 
+#ifdef USE_BPF
+extern struct object *(*fake_publish_resource)(enum objecttype type,
+					       unsigned long id,
+					       const struct resource_meta *meta);	/* landlock_test.c */
+
+static unsigned int bpf_published;
+
+static struct object *count_publish(enum objecttype type, unsigned long id,
+				    const struct resource_meta *meta)
+{
+	(void) type;
+	(void) id;
+	(void) meta;
+	bpf_published++;
+	return NULL;
+}
+
+/* A bpf call the sanitiser built as @built, which the kernel ran as @ran
+ * and which returned @retval; the bumps its post handler makes.  The
+ * post handler hands the attr to deferred free, which refuses what the
+ * fake allocator never tracked, so it is freed here. */
+static unsigned int bpf_post(unsigned int built, unsigned int ran,
+			     unsigned long retval)
+{
+	static struct syscallrecord rec;
+	void *attr;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = built;
+	syscall_bpf.sanitise(&rec);
+	attr = (void *) rec.a2;
+	rec.a1 = ran;
+	rec.arg_shadow[0] = ran;
+	rec.arg_snapshot_mask = syscall_bpf.arg_snapshot_mask;
+	rec.retval = retval;
+	bumps = 0;
+	syscall_bpf.post(&rec);
+	free(attr);
+	return bumps;
+}
+
+/* bpf's post handler judges, pools and closes what came back by the cmd
+ * the kernel ran, which chain substitution or a RedQueen pin can rewrite
+ * after the sanitiser built the attr for its own: an fd another cmd
+ * returned is no object of the built cmd's pool, and a cmd that returns
+ * no fd answers 0 or a count, which is no fd of the call's to close.
+ * Every call here returns the number of an fd the case holds open. */
+static void bpf_cmd_rewritten(void)
+{
+	static const struct {
+		const char *what;
+		unsigned int built;
+		unsigned int ran;
+		unsigned int bumps;
+		unsigned int published;
+		bool closed;
+	} cases[] = {
+		{ "a GET_NEXT_ID call run as MAP_CREATE",
+		  BPF_PROG_GET_NEXT_ID, BPF_MAP_CREATE, 0, 0, true },
+		{ "a BTF_GET_FD_BY_ID call run as MAP_GET_FD_BY_ID",
+		  BPF_BTF_GET_FD_BY_ID, BPF_MAP_GET_FD_BY_ID, 0, 0, true },
+		{ "an OBJ_GET call run as PROG_STREAM_READ_BY_FD",
+		  BPF_OBJ_GET, BPF_PROG_STREAM_READ_BY_FD, 0, 0, false },
+		{ "a BTF_GET_FD_BY_ID call", BPF_BTF_GET_FD_BY_ID,
+		  BPF_BTF_GET_FD_BY_ID, 0, 1, false },
+		{ "an OBJ_GET call", BPF_OBJ_GET, BPF_OBJ_GET, 0, 0, true },
+	};
+	unsigned int i;
+
+	fake_publish_resource = count_publish;
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		int fd = open("/dev/null", O_RDONLY);
+		bool closed;
+		char what[128];
+
+		if (fd < 0)
+			BUG("bpf: cannot open an fd to hand back");
+		bpf_published = 0;
+		snprintf(what, sizeof(what), "bpf, %s", cases[i].what);
+		expect(what, bpf_post(cases[i].built, cases[i].ran,
+				      (unsigned long) fd),
+		       cases[i].bumps);
+
+		closed = fcntl(fd, F_GETFD) == -1 && errno == EBADF;
+		if (bpf_published != cases[i].published ||
+		    closed != cases[i].closed) {
+			fprintf(stderr, "%s: %u published, fd %s\n", what,
+				bpf_published, closed ? "closed" : "open");
+			failed++;
+		}
+		if (!closed)
+			close(fd);
+	}
+	fake_publish_resource = NULL;
+}
+#endif
+
 void post_oracle_self_check(void);
 void post_oracle_self_check(void)
 {
@@ -1052,6 +1153,9 @@ void post_oracle_self_check(void)
 	mmsg_count();
 #ifdef ARCH_IS_BIARCH
 	vmsplice_compat_iovec();
+#endif
+#ifdef USE_BPF
+	bpf_cmd_rewritten();
 #endif
 
 	if (failed != 0)

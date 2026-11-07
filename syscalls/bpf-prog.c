@@ -309,7 +309,7 @@ unsigned int bpf_prog_loaded_attach_type(unsigned int prog_type,
 }
 
 void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
-			bool classic_bpf_insns, int errnum)
+			int errnum)
 {
 	if (fd < 0) {
 		if (errnum == EINVAL)
@@ -340,7 +340,11 @@ void post_bpf_prog_load(int fd, bool attr_readable, union bpf_attr *attr,
 	if (fd >= 0 && attr_readable &&
 	    attr->prog_type == BPF_PROG_TYPE_SK_LOOKUP)
 		bpf_attach_sk_lookup(fd);
+}
 
+void bpf_prog_load_release_insns(bool attr_readable, union bpf_attr *attr,
+				 bool classic_bpf_insns)
+{
 	/* Two instruction-buffer allocators feed BPF_PROG_LOAD: the
 	 * classic-BPF branch returns a tracked sock_fprog wrapper that
 	 * owns a separate inner filter buffer (both allocations need

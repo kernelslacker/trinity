@@ -4200,7 +4200,7 @@ static void bpf_prog_load_records_the_attach_type_it_was_loaded_for(void)
 		memset(&attr, 0, sizeof(attr));
 		attr.prog_type = loads[i].prog_type;
 		attr.expected_attach_type = loads[i].requested;
-		post_bpf_prog_load(fd, true, &attr, false, 0);
+		post_bpf_prog_load(fd, true, &attr, 0);
 		e = pool_find(fd, OBJ_FD_BPF_PROG);
 		check("the loaded program was not pooled", "bpf", e != NULL);
 		check("the pooled program lost its type", "bpf", e != NULL &&
