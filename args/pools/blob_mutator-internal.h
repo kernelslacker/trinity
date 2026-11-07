@@ -53,6 +53,11 @@ enum blob_splat_form pick_splat_form(void);
 uint64_t apply_splat_form(uint64_t v, unsigned int width,
 			  enum blob_splat_form form);
 
+/* The low @width bytes of a value at @p, little-endian: the byte order
+ * every arm's in-place read and write uses. */
+uint64_t blob_load_le(const unsigned char *p, unsigned int width);
+void blob_store_le(unsigned char *p, unsigned int width, uint64_t v);
+
 /* Byte + bit flipper arms (blob_mutator_flip.c). */
 void havoc_bit_flip(unsigned char *buf, size_t len);
 void havoc_byte_flip(unsigned char *buf, size_t len);

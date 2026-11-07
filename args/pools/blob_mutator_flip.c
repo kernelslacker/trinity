@@ -64,35 +64,5 @@ void havoc_set_interesting(unsigned char *buf, size_t len,
 	 * interesting-values table. */
 	val = (rnd_u32() & 1u) ? get_boundary_value() : get_interesting_value();
 
-	switch (width) {
-	case 1:
-		buf[pos] = (unsigned char) val;
-		break;
-	case 2: {
-		uint16_t v = (uint16_t) val;
-		buf[pos]     = (unsigned char) (v & 0xffu);
-		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-		break;
-	}
-	case 4: {
-		uint32_t v = (uint32_t) val;
-		buf[pos]     = (unsigned char) (v & 0xffu);
-		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-		buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
-		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
-		break;
-	}
-	case 8: {
-		uint64_t v = (uint64_t) val;
-		buf[pos]     = (unsigned char) (v & 0xffu);
-		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-		buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
-		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
-		buf[pos + 4] = (unsigned char) ((v >> 32) & 0xffu);
-		buf[pos + 5] = (unsigned char) ((v >> 40) & 0xffu);
-		buf[pos + 6] = (unsigned char) ((v >> 48) & 0xffu);
-		buf[pos + 7] = (unsigned char) ((v >> 56) & 0xffu);
-		break;
-	}
-	}
+	blob_store_le(buf + pos, width, (uint64_t) val);
 }

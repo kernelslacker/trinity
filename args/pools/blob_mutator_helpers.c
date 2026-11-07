@@ -131,3 +131,21 @@ uint64_t apply_splat_form(uint64_t v, unsigned int width,
 		return v & mask;
 	}
 }
+
+uint64_t blob_load_le(const unsigned char *p, unsigned int width)
+{
+	uint64_t v = 0;
+	unsigned int i;
+
+	for (i = 0; i < width; i++)
+		v |= (uint64_t) p[i] << (8 * i);
+	return v;
+}
+
+void blob_store_le(unsigned char *p, unsigned int width, uint64_t v)
+{
+	unsigned int i;
+
+	for (i = 0; i < width; i++)
+		p[i] = (unsigned char) (v >> (8 * i));
+}

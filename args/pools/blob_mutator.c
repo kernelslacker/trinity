@@ -258,31 +258,7 @@ static unsigned int blob_cmpdict(unsigned char *buf, size_t len,
 		/* Little-endian splat of the (possibly transformed) value.
 		 * Safe by construction: width is <= len and pos <=
 		 * len - width, so pos + width <= len. */
-		switch (width) {
-		case 1:
-			buf[pos] = (unsigned char) (v & 0xffu);
-			break;
-		case 2:
-			buf[pos]     = (unsigned char) (v & 0xffu);
-			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-			break;
-		case 4:
-			buf[pos]     = (unsigned char) (v & 0xffu);
-			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
-			buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
-			break;
-		case 8:
-			buf[pos]     = (unsigned char) (v & 0xffu);
-			buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-			buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
-			buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
-			buf[pos + 4] = (unsigned char) ((v >> 32) & 0xffu);
-			buf[pos + 5] = (unsigned char) ((v >> 40) & 0xffu);
-			buf[pos + 6] = (unsigned char) ((v >> 48) & 0xffu);
-			buf[pos + 7] = (unsigned char) ((v >> 56) & 0xffu);
-			break;
-		}
+		blob_store_le(buf + pos, width, v);
 		if (from_static)
 			static_committed++;
 		else

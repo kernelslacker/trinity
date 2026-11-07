@@ -46,44 +46,14 @@ void havoc_arith(unsigned char *buf, size_t len,
 	 * length / counter fields. */
 	mag = 1u + rnd_modulo_u32(35);
 
-	switch (width) {
-	case 1:
-		v = buf[pos];
-		break;
-	case 2:
-		v = (uint64_t) buf[pos]
-		  | ((uint64_t) buf[pos + 1] << 8);
-		break;
-	case 4:
-	default:
-		v = (uint64_t) buf[pos]
-		  | ((uint64_t) buf[pos + 1] << 8)
-		  | ((uint64_t) buf[pos + 2] << 16)
-		  | ((uint64_t) buf[pos + 3] << 24);
-		break;
-	}
+	v = blob_load_le(buf + pos, width);
 
 	if (sub)
 		v -= (uint64_t) mag;
 	else
 		v += (uint64_t) mag;
 
-	switch (width) {
-	case 1:
-		buf[pos] = (unsigned char) (v & 0xffu);
-		break;
-	case 2:
-		buf[pos]     = (unsigned char) (v & 0xffu);
-		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-		break;
-	case 4:
-	default:
-		buf[pos]     = (unsigned char) (v & 0xffu);
-		buf[pos + 1] = (unsigned char) ((v >> 8) & 0xffu);
-		buf[pos + 2] = (unsigned char) ((v >> 16) & 0xffu);
-		buf[pos + 3] = (unsigned char) ((v >> 24) & 0xffu);
-		break;
-	}
+	blob_store_le(buf + pos, width, v);
 }
 
 /*
@@ -140,62 +110,7 @@ void havoc_prefix_len(unsigned char *buf, size_t len)
 	}
 
 	be = (rnd_u32() & 1u) != 0u;
-
-	switch (width) {
-	case 1:
-		buf[0] = (unsigned char) (v & 0xffu);
-		break;
-	case 2: {
-		uint16_t x = (uint16_t) v;
-
-		if (be) {
-			buf[0] = (unsigned char) ((x >> 8) & 0xffu);
-			buf[1] = (unsigned char) (x & 0xffu);
-		} else {
-			buf[0] = (unsigned char) (x & 0xffu);
-			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
-		}
-		break;
-	}
-	case 4: {
-		uint32_t x = (uint32_t) v;
-
-		if (be) {
-			buf[0] = (unsigned char) ((x >> 24) & 0xffu);
-			buf[1] = (unsigned char) ((x >> 16) & 0xffu);
-			buf[2] = (unsigned char) ((x >> 8) & 0xffu);
-			buf[3] = (unsigned char) (x & 0xffu);
-		} else {
-			buf[0] = (unsigned char) (x & 0xffu);
-			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
-			buf[2] = (unsigned char) ((x >> 16) & 0xffu);
-			buf[3] = (unsigned char) ((x >> 24) & 0xffu);
-		}
-		break;
-	}
-	case 8: {
-		uint64_t x = v;
-
-		if (be) {
-			buf[0] = (unsigned char) ((x >> 56) & 0xffu);
-			buf[1] = (unsigned char) ((x >> 48) & 0xffu);
-			buf[2] = (unsigned char) ((x >> 40) & 0xffu);
-			buf[3] = (unsigned char) ((x >> 32) & 0xffu);
-			buf[4] = (unsigned char) ((x >> 24) & 0xffu);
-			buf[5] = (unsigned char) ((x >> 16) & 0xffu);
-			buf[6] = (unsigned char) ((x >> 8) & 0xffu);
-			buf[7] = (unsigned char) (x & 0xffu);
-		} else {
-			buf[0] = (unsigned char) (x & 0xffu);
-			buf[1] = (unsigned char) ((x >> 8) & 0xffu);
-			buf[2] = (unsigned char) ((x >> 16) & 0xffu);
-			buf[3] = (unsigned char) ((x >> 24) & 0xffu);
-			buf[4] = (unsigned char) ((x >> 32) & 0xffu);
-			buf[5] = (unsigned char) ((x >> 40) & 0xffu);
-			buf[6] = (unsigned char) ((x >> 48) & 0xffu);
-			buf[7] = (unsigned char) ((x >> 56) & 0xffu);
-		}
-		break;
-	}
-	}
+	if (be)
+		v = apply_splat_form(v, width, BLOB_SPLAT_BE);
+	blob_store_le(buf, width, v);
 }
