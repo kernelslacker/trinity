@@ -58,10 +58,11 @@ unsigned int cmp_hint_inject_denom(unsigned int baseline)
  * Per-child A/B-gated baseline cmp-hint inject decision.
  *
  * Replaces the bare ONE_IN(cmp_hint_inject_denom(CMP_HINT_INJECT_DENOM_BASELINE))
- * gate at each of the three BASELINE callsites in this file (ARG_RANGE,
- * ARG_OP, ARG_LIST).  The AMPLIFIED callsites at gen_undefined_arg
- * (denom 9) and the ARG_STRUCT_SIZE fallback (denom 10) are out of
- * scope by design and continue to call cmp_hint_inject_denom() directly.
+ * gate at each of the three BASELINE callsites in args/handle_arg.c
+ * (ARG_RANGE, ARG_OP, ARG_LIST).  The gen_undefined_arg (denom 9) and
+ * ARG_STRUCT_SIZE fallback (denom 10) callsites, whose own baselines
+ * cmp_hint_inject_denom() amplifies the same way, are out of scope by
+ * design and continue to call cmp_hint_inject_denom() directly.
  *
  * Behaviour summary:
  *  - When cmp_hint_inject_denom() returns AMPLIFIED (plateau path),

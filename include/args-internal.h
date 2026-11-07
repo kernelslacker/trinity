@@ -25,12 +25,13 @@
  *
  * cmp_hint_inject_denom() resolves the ONE_IN denom for a callsite's
  * baseline (16 for the ARG_RANGE/OP/LIST callsites, 9 for the
- * gen_undefined_arg case-0 shortcut, 10 for the ARG_STRUCT_SIZE
- * fallback), amplifying to 4 during a plateau-driven rescue.
+ * gen_undefined_arg shortcut ahead of its switch, 10 for the
+ * ARG_STRUCT_SIZE fallback), amplifying to 4 during a plateau-driven
+ * rescue.
  *
  * cmp_hint_baseline_should_inject() folds the per-child A/B baseline
  * gate around cmp_hint_inject_denom().  Used only at the three
- * BASELINE callsites; the AMPLIFIED callsites keep calling
+ * BASELINE callsites; the denom-9 and denom-10 callsites keep calling
  * cmp_hint_inject_denom() directly.
  *
  * credit_cmp_hint_injection() runs at every callsite that commits an
