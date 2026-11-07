@@ -685,6 +685,7 @@ static void count_rewritten(void)
 		unsigned int slot;
 	} entries[] = {
 		{ &syscall_getcwd, 2 },
+		{ &syscall_listns, 3 },
 	};
 	/* The kernel handed twice the count the sanitiser drew, or half,
 	 * and filling all of it, or returning a byte past it. */

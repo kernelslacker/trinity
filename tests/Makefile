@@ -676,7 +676,8 @@ FAKE_SRCS	+= lane_socket_test.c \
 # bring seccomp, whose GET_ACTION_AVAIL word, and set_robust_list, whose
 # self-linked head, scrub_inputs_test.c follows through the blanket scrub,
 # and syscalls/process/listns.c listns, whose request it checks the
-# record owns once the sanitiser has moved it into the pool.
+# record owns once the sanitiser has moved it into the pool, and whose
+# count bound post_oracle_test.c drives.
 PARENT_SRCS	+= $(TOP)/syscalls/process/seccomp.c \
 		   $(TOP)/syscalls/concurrency/set_robust_list.c \
 		   $(TOP)/syscalls/process/listns.c

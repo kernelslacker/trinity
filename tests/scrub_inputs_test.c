@@ -24,7 +24,6 @@
 #include "debug.h"		/* BUG */
 #include "kernel/seccomp.h"	/* SECCOMP_* ops */
 #include "sanitise.h"		/* blanket_address_scrub, writable_pool_init */
-#include "shm.h"
 #include "syscall.h"		/* compute_address_scrub_mask */
 #include "syscalls/syscalls.h"
 
@@ -226,18 +225,12 @@ static void socketcall_words(bool compat)
  */
 static void listns_request(void)
 {
-	struct deferred_free_stats before;
 	unsigned int i;
 
 	for (i = 0; i < DRAWS; i++) {
 		sanitise(&syscall_listns, 0);
 		if (rec.owned_count != 1 || rec.owned[0] == (void *) rec.a1)
 			BUG("scrub inputs: the record does not own listns's request");
-		before = shm->stats.deferred_free;
-		rec.retval = (unsigned long) -1L;
-		syscall_listns.post(&rec);
-		if (memcmp(&before, &shm->stats.deferred_free, sizeof(before)) != 0)
-			BUG("scrub inputs: listns handed deferred free something it does not own");
 		end_call();
 	}
 }

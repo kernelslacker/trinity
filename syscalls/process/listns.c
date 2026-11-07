@@ -16,7 +16,6 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
-#include "shm.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -36,8 +35,8 @@ static const unsigned long ns_types[] = {
  * Output buffer sized for the largest nr_ns_ids bucket.  We always
  * allocate the maximum; the syscall arg picks a smaller value from
  * the bucket below.  A kernel-side bound bug cannot then scribble
- * past the allocation -- the post oracle still catches a retval that
- * exceeds the snapshotted nr_ns_ids cap.
+ * past the allocation -- enforce_count_bound() still catches a retval
+ * past the nr_ns_ids the kernel was handed.
  */
 #define LISTNS_BUF_SLOTS	1024
 
@@ -189,25 +188,6 @@ static unsigned long pick_listns_flags(void)
 	return rnd_u32();
 }
 
-/*
- * Snapshot of the listns input args read by the post oracle, captured at
- * sanitise time and consumed by the post handler.  Lives in rec->post_state,
- * a slot the syscall ABI does not expose, so a sibling syscall scribbling
- * rec->aN between the syscall returning and the post handler running cannot
- * smear the size bound used to validate the retval.
- *
- * Wired into the post_state ownership table by post_state_install() at
- * sanitise time; post_listns() gates the snap through
- * post_state_claim_owned() before any field deref, so a sibling stomp that
- * redirects rec->post_state at a foreign heap chunk is rejected by the
- * ownership lookup before the leading-word magic compare ever runs.
- */
-#define LISTNS_POST_STATE_MAGIC	0x4C4E5321UL	/* "LNS!" */
-struct listns_post_state {
-	unsigned long magic;
-	unsigned long nr_ns_ids;
-};
-
 static const struct csfu_desc desc_listns = {
 	.name = "ns_id_req",
 	.ksize = sizeof(struct ns_id_req),
@@ -220,7 +200,6 @@ static void sanitise_listns(struct syscallrecord *rec)
 	struct csfu_buf csfu;
 	struct ns_id_req *req;
 	__u64 *ns_ids;
-	struct listns_post_state *snap;
 	unsigned long nr;
 
 	csfu = build_csfu_struct(&desc_listns);
@@ -257,56 +236,12 @@ static void sanitise_listns(struct syscallrecord *rec)
 	avoid_shared_buffer_inout(&rec->a1, csfu.usize);
 	avoid_shared_buffer_out(&rec->a2, nr * sizeof(*ns_ids));
 
-	/* Snapshot for the post handler -- a3 may be scribbled by a sibling
-	 * syscall before post_listns() runs. */
-	snap = zmalloc_tracked(sizeof(*snap));
-	snap->magic = LISTNS_POST_STATE_MAGIC;
-	snap->nr_ns_ids = rec->a3;
-	post_state_install(rec, snap);
-
 	/*
 	 * The record owns the heap request: a1 holds the pool copy
 	 * avoid_shared_buffer_inout() made of it, which is no allocation to
-	 * free.  The rec_own carrier frees it after .post runs.
+	 * free.  The rec_own carrier frees it once the call has returned.
 	 */
 	rec_own(rec, req);
-}
-
-static void post_listns(struct syscallrecord *rec)
-{
-	struct listns_post_state *snap;
-	unsigned long retval = rec->retval;
-	long ret = (long) retval;
-
-	/*
-	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
-	 * in that order.  The helper has already cleared rec->post_state,
-	 * emitted any outputerr() diagnostic, and bumped the corruption
-	 * counter on failure -- callers just early-return on NULL.
-	 */
-	snap = post_state_claim_owned(rec, LISTNS_POST_STATE_MAGIC, __func__);
-	if (snap == NULL)
-		return;
-
-	/*
-	 * Kernel ABI: sys_listns writes at most nr_ns_ids u64 namespace IDs
-	 * to the user buffer and returns the count written, capped at the
-	 * snapshotted nr_ns_ids arg.  Failure returns -1UL.  Anything >
-	 * snap->nr_ns_ids on a non-(-1UL) return is structural ABI
-	 * corruption: a sign-extension tear in the syscall return path, a
-	 * kernel-side write that spilled past the user-supplied bound, or a
-	 * torn read of the namespace iterator counter.  Fall through to
-	 * out_free so the post_state buffer is still released.
-	 */
-	if (ret != -1L && retval > snap->nr_ns_ids) {
-		outputerr("post_listns: retval %lu exceeds requested nr_ns_ids %lu\n",
-			  retval, snap->nr_ns_ids);
-		post_handler_corrupt_ptr_bump(rec, NULL);
-		goto out_free;
-	}
-
-out_free:
-	post_state_release(rec, snap);
 }
 
 struct syscallentry syscall_listns = {
@@ -315,9 +250,12 @@ struct syscallentry syscall_listns = {
 	.argname = { [0] = "req", [1] = "ns_ids", [2] = "nr_ns_ids", [3] = "flags" },
 	.argtype = { [0] = ARG_ADDRESS, [1] = ARG_ADDRESS, [2] = ARG_LEN },
 	.sanitise = sanitise_listns,
-	.post = post_listns,
 	.group = GROUP_NS,
 	.bound_arg = 3,
+	/* nr_ns_ids (a3): enforce_count_bound() holds the return to the
+	 * count the kernel was handed, which chain substitution or a
+	 * RedQueen pin may have rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 2),
 	.rettype = RET_NUM_BYTES,
 	.flags = REEXEC_SANITISE_OK,
 };
