@@ -67,11 +67,10 @@ static inline unsigned long maps_pick_read_cycles(void)
 }
 
 /*
- * Bucket the loop-exit index `i` into a log2 histogram slot that
- * mirrors fd_live_remove_scan_histogram exactly: slot 0 for i==0
- * (first-iteration hit), slot k for i in [2^(k-1), 2^k) up to a
- * saturating tail slot for i >= 2^(N-1).  RELAXED add-fetch on the
- * shared shm counter matches the shm->stats convention used
+ * Bucket the loop-exit index `i` into a log2 histogram slot: slot 0
+ * for i==0 (first-iteration hit), slot k for i in [2^(k-1), 2^k) up
+ * to a saturating tail slot for i >= 2^(N-1).  RELAXED add-fetch on
+ * the shared shm counter matches the shm->stats convention used
  * elsewhere in the file.
  */
 static void maps_pick_bump_scan_histogram(unsigned int i)

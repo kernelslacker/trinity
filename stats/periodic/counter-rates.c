@@ -262,9 +262,8 @@ static const struct {
 	{ "maps_pick_cycles_sampled_count",
 	  offsetof(struct stats_s, maps.pick_cycles_sampled_count) },
 	/* Log2 histogram of the get_map_handle() retry-loop exit
-	 * index, bumped on both success and exhaustion paths.  Mirrors
-	 * fd_live_remove_scan_histogram bucket layout: hist_0 is
-	 * first-iteration hits, hist_ge64 is the saturating tail. */
+	 * index, bumped on both success and exhaustion paths: hist_0
+	 * is first-iteration hits, hist_ge64 is the saturating tail. */
 	{ "maps_pick_scan_hist_0",
 	  offsetof(struct stats_s, maps.pick_scan_histogram[0]) },
 	{ "maps_pick_scan_hist_1",
@@ -287,32 +286,10 @@ static const struct {
 	  offsetof(struct stats_s, maps.type_resolution_scan_length_sum) },
 	{ "maps_type_resolution_hits",
 	  offsetof(struct stats_s, maps.type_resolution_hits) },
-	/* FD bookkeeping rows.  fd_live_remove
-	 * histogram surfaces whether the linear scan
-	 * an fd live-list index would replace is actually expensive;
-	 * fd_event_full_* says which producer drove a ring
-	 * overflow; close_range_* surfaces the compression ratio
-	 * the range opcode buys vs the per-fd path. */
-	{ "fd_live_remove_calls",
-	  offsetof(struct stats_s, fd.live_remove_calls) },
-	{ "fd_live_remove_miss",
-	  offsetof(struct stats_s, fd.live_remove_miss) },
-	{ "fd_live_remove_scan_hist_0",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[0]) },
-	{ "fd_live_remove_scan_hist_1",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[1]) },
-	{ "fd_live_remove_scan_hist_2_3",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[2]) },
-	{ "fd_live_remove_scan_hist_4_7",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[3]) },
-	{ "fd_live_remove_scan_hist_8_15",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[4]) },
-	{ "fd_live_remove_scan_hist_16_31",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[5]) },
-	{ "fd_live_remove_scan_hist_32_63",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[6]) },
-	{ "fd_live_remove_scan_hist_ge64",
-	  offsetof(struct stats_s, fd.live_remove_scan_histogram[7]) },
+	/* FD bookkeeping rows.  fd_event_full_* says which producer
+	 * drove a ring overflow; close_range_* surfaces the
+	 * compression ratio the range opcode buys vs the per-fd
+	 * path. */
 	{ "fd_event_full_close",
 	  offsetof(struct stats_s, fd.event_full_close) },
 	{ "fd_event_full_evict",

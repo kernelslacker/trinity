@@ -561,7 +561,7 @@ void init_object_lists(enum obj_scope scope, struct childdata *child);
  * brought up and before the bring-up of any caller that resolves an
  * OBJ_GLOBAL objhead.  Allocates child->global_objects[MAX_OBJECT_TYPES]
  * and per-type slot arrays sized to the parent's current num_entries,
- * plus child-private copies of shm->fd_hash[] and shm->fd_live[].
+ * plus a child-private copy of the parent's fd hash, parent_fd_hash[].
  * Cross-process fd / mmap resources are inherited by fork; the
  * snapshot only duplicates the bookkeeping pointers that name them.
  */
@@ -702,17 +702,6 @@ void remove_local_objects_in_range(unsigned int lo, unsigned int hi,
 
 /* fd hash table for O(1) fd→object lookup */
 #define FD_HASH_SIZE 4096	/* power of 2, must exceed max tracked fds */
-
-/*
- * Cap on the parallel compact live-fd list (shm->fd_live[]) maintained
- * alongside fd_hash[].  The list lets "iterate every live fd" walkers
- * skip the sparse-hash empty-slot scan.  Sized to FD_HASH_SIZE so overflow is impossible by
- * construction (fd_hash_insert refuses past FD_HASH_SIZE entries
- * already), but the writer still gates on this cap and silently
- * drops overflow entries from the live list — a walker that misses an
- * entry just skips that fd.
- */
-#define FD_LIVE_MAX FD_HASH_SIZE
 
 struct fd_hash_entry {
 	int fd;			/* -1 = empty slot */

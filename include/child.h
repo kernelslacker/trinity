@@ -455,9 +455,6 @@ struct childdata {
 	 * parent's table, parent_fd_hash.
 	 */
 	struct fd_hash_entry *fd_hash;
-	int *fd_live;
-	unsigned int fd_hash_count;
-	unsigned int fd_live_count;
 
 	/* Per-child shards of the corrupted-pointer attribution rings.
 	 * Sole writer is the owning child (the *_record functions in

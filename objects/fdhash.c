@@ -10,16 +10,14 @@
 #include "utils.h"
 
 /*
- * Parent-private fd->object hash and parallel compact live-fd list.
+ * Parent-private fd->object hash.
  * Same shape as the per-child snapshots; fd_hash_insert / fd_hash_remove
  * mutate these from the parent's pre-fork init and post-fork fd-event
  * drains.  Children read their own snapshots; the parent reads these
  * directly when servicing remove_object_by_fd() out of fd_event_drain().
  */
 struct fd_hash_entry parent_fd_hash[FD_HASH_SIZE];
-int parent_fd_live[FD_LIVE_MAX];
 unsigned int parent_fd_hash_count;
-unsigned int parent_fd_live_count;
 
 /*
  * Hash table mapping fd → (object, type) for O(1) lookup in the
@@ -38,83 +36,6 @@ void fd_hash_init(void)
 		parent_fd_hash[i].gen = 0;
 	}
 	parent_fd_hash_count = 0;
-	/*
-	 * fd_live[] entries are gated by fd_live_count, so initialising
-	 * just the count is sufficient; stale slot contents past the
-	 * count are never read.
-	 */
-	parent_fd_live_count = 0;
-}
-
-/*
- * Append fd to the parent's parallel live-fd list.  Called from
- * fd_hash_insert() after transitioning a slot from empty to occupied.
- * Single-writer (the parent); no cross-process coherence required.
- * Silently drops the entry if the cap is hit; the auditor that reads
- * via the per-child snapshot tolerates a missed fd.
- */
-static void fd_live_append(int fd)
-{
-	unsigned int idx = parent_fd_live_count;
-
-	if (idx >= FD_LIVE_MAX)
-		return;
-
-	parent_fd_live[idx] = fd;
-	parent_fd_live_count = idx + 1;
-}
-
-/*
- * Swap-remove fd from the parent's parallel live-fd list.  Linear scan
- * over parent_fd_live[0..count); typical occupancy is a few hundred
- * entries so the cost is negligible.
- *
- * The "typical few hundred entries" comment is the very
- * thing a planned fd live-list index should be gated on confirming.
- * Bump a log2 histogram of the position the match lands at + a miss
- * counter so the "does the scan actually cost" question is
- * directly answerable from the periodic dump without a profile run.
- * Single-writer (parent) so RELAXED add-fetch is uniform with the
- * shm->stats convention rather than load-bearing for ordering.
- */
-static void fd_live_remove(int fd)
-{
-	unsigned int count = parent_fd_live_count;
-	unsigned int i;
-
-	__atomic_add_fetch(&shm->stats.fd.live_remove_calls, 1, __ATOMIC_RELAXED);
-
-	for (i = 0; i < count; i++) {
-		unsigned int depth;
-		unsigned int bucket;
-
-		if (parent_fd_live[i] != fd)
-			continue;
-
-		if (i != count - 1)
-			parent_fd_live[i] = parent_fd_live[count - 1];
-		parent_fd_live_count = count - 1;
-
-		/* Bucket index = floor(log2(depth)) + 1, with depth==0
-		 * landing in bucket 0 (match-on-first-slot).  Saturates at
-		 * the last bucket so >=64 collapses into one tail slot. */
-		depth = i;
-		if (depth == 0)
-			bucket = 0;
-		else {
-			unsigned int lz = (unsigned int)__builtin_clz(depth);
-			unsigned int hi_bit = 31u - lz;
-
-			bucket = hi_bit + 1u;
-			if (bucket >= ARRAY_SIZE(shm->stats.fd.live_remove_scan_histogram))
-				bucket = ARRAY_SIZE(shm->stats.fd.live_remove_scan_histogram) - 1u;
-		}
-		__atomic_add_fetch(&shm->stats.fd.live_remove_scan_histogram[bucket],
-				   1, __ATOMIC_RELAXED);
-		return;
-	}
-
-	__atomic_add_fetch(&shm->stats.fd.live_remove_miss, 1, __ATOMIC_RELAXED);
 }
 
 static unsigned int fd_hash_slot(int fd)
@@ -173,10 +94,8 @@ bool fd_hash_insert(int fd, struct object *obj, enum objecttype type)
 	while (parent_fd_hash[slot].fd != -1 && parent_fd_hash[slot].fd != fd)
 		slot = (slot + 1) & (FD_HASH_SIZE - 1);
 
-	if (parent_fd_hash[slot].fd == -1) {
+	if (parent_fd_hash[slot].fd == -1)
 		parent_fd_hash_count++;
-		fd_live_append(fd);
-	}
 
 	parent_fd_hash[slot].obj = obj;
 	parent_fd_hash[slot].type = type;
@@ -199,7 +118,6 @@ void fd_hash_remove(int fd)
 		if (parent_fd_hash[slot].fd == fd) {
 			parent_fd_hash[slot].gen++;
 			parent_fd_hash[slot].fd = -1;
-			fd_live_remove(fd);
 			parent_fd_hash_count--;
 			next = (slot + 1) & (FD_HASH_SIZE - 1);
 			while (parent_fd_hash[next].fd != -1) {

@@ -18,14 +18,12 @@
 extern struct objhead parent_global_objects[MAX_OBJECT_TYPES];
 
 /*
- * Parent-private fd->object hash and parallel compact live-fd list.
- * Storage lives in objects/fdhash.c.  Read by clone_global_objects_to_child
- * (objects/global.c) when snapshotting into a child.
+ * Parent-private fd->object hash.  Storage lives in objects/fdhash.c.
+ * Read by clone_global_objects_to_child (objects/global.c) when
+ * snapshotting into a child.
  */
 extern struct fd_hash_entry parent_fd_hash[FD_HASH_SIZE];
-extern int parent_fd_live[FD_LIVE_MAX];
 extern unsigned int parent_fd_hash_count;
-extern unsigned int parent_fd_live_count;
 
 /*
  * Per-type dispatch helpers.  invalidate_object_fd is used by the

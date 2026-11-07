@@ -46,39 +46,6 @@ struct fd_stats {
 	 */
 	unsigned long provider_outstanding[MAX_OBJECT_TYPES];
 
-	/* FD bookkeeping observability.
-	 *
-	 * fd_live_remove() (objects/fdhash.c) does a linear scan of
-	 * parent_fd_live[0..parent_fd_live_count) on every parent-
-	 * side fd retirement.  Comment at the bump site says
-	 * "typical occupancy is a few hundred entries so the cost
-	 * is negligible" but a planned fd live-list index should only
-	 * be built once this histogram shows the scan actually
-	 * expensive in practice.
-	 *
-	 * Single-writer (parent) — no atomics needed for
-	 * correctness, but RELAXED bumps used uniformly to match
-	 * the rest of the shm->stats convention so a future
-	 * concurrent caller can be added without rewriting the
-	 * read path.
-	 *
-	 * Bucket index = log2(scan_depth) with a 1-floor:
-	 *   0: scan ==0 (match on first slot)
-	 *   1: scan 1..1
-	 *   2: scan 2..3
-	 *   3: scan 4..7
-	 *   4: scan 8..15
-	 *   5: scan 16..31
-	 *   6: scan 32..63
-	 *   7: scan >=64
-	 * Bumped per matched call; misses bump fd_live_remove_miss
-	 * separately (a miss is a fd that hash_remove asked us to
-	 * retire but no live_fd slot held — symmetry-bug signal,
-	 * not a scan-cost signal). */
-	unsigned long live_remove_scan_histogram[8];
-	unsigned long live_remove_calls;
-	unsigned long live_remove_miss;
-
 	/* fd_event_enqueue() ring-full failure split by enqueue
 	 * type.  Bumped at the spsc_ring_try_enqueue()==false site
 	 * in fd-event.c, indexed by the producer-supplied
@@ -141,7 +108,7 @@ struct fd_stats {
 
 	/* fd_hash_reinsert() exhausted the linear-probe chain without
 	 * finding a free slot and silently dropped the displaced entry.
-	 * Only reachable when fd_hash_count == FD_HASH_SIZE; non-zero
+	 * Only reachable when parent_fd_hash_count == FD_HASH_SIZE; non-zero
 	 * means we lost an fd registration during a removal-driven
 	 * re-seat and the per-iter outputerr names which fd. */
 	unsigned long hash_reinsert_dropped;

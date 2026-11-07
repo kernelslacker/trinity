@@ -151,13 +151,13 @@ static void dump_stats_render_maps_pick_ratios(void)
  * added alongside the maps_pick_attempts ratio: a log2 histogram of
  * the reject-loop exit index (bumped on both success and exhaustion
  * paths) and the mean cycles-per-call derived from the rdtsc
- * sample-sum / sample-count pair.  Bucket layout mirrors
- * fd_live_remove_scan_histogram exactly; the row labels use the
- * same _hist_<lo>_<hi> / _hist_ge<max> shape.  Zero buckets are
- * skipped to keep the dump readable when a run never hits them, and
- * the cycles-per-call row is skipped when the sample denominator is
- * zero (no sampled calls yet, or non-x86 non-aarch64 target where
- * maps_pick_read_cycles() returns 0).
+ * sample-sum / sample-count pair.  Bucket 0 is a first-iteration
+ * hit and bucket k an index in [2^(k-1), 2^k), up to a saturating
+ * tail; the row labels take the _hist_<lo>_<hi> / _hist_ge<max>
+ * shape.  Zero buckets are skipped to keep the dump readable when a
+ * run never hits them, and the cycles-per-call row is skipped when
+ * the sample denominator is zero (no sampled calls yet, or non-x86
+ * non-aarch64 target where maps_pick_read_cycles() returns 0).
  */
 static void dump_stats_render_maps_pick_shadow(void)
 {

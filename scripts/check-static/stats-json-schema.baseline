@@ -47,9 +47,6 @@ stats	object
     stats.fd_lifecycle.epoll_blocking_poll_skipped	u64
     stats.fd_lifecycle.random_exhausted	u64
     stats.fd_lifecycle.provider_invalid	u64
-    stats.fd_lifecycle.live_remove_calls	u64
-    stats.fd_lifecycle.live_remove_miss	u64
-    stats.fd_lifecycle.live_remove_scan_histogram	array
     stats.fd_lifecycle.event_full_close	u64
     stats.fd_lifecycle.event_full_evict	u64
     stats.fd_lifecycle.event_full_close_range	u64

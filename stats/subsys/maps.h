@@ -166,10 +166,9 @@ struct maps_stats {
 	 * both the success path (i == the 0-indexed iteration
 	 * that landed the pick) and the exhaustion path (i ==
 	 * final loop counter after all_empty break or the
-	 * full 1000-iter budget).  Shape mirrors
-	 * fd_live_remove_scan_histogram exactly: log2 bucket
-	 * with a match-on-first-slot floor and a saturating
-	 * tail slot, RELAXED per-call adds.  The bucket
+	 * full 1000-iter budget).  Shape: log2 bucket with a
+	 * match-on-first-slot floor and a saturating tail
+	 * slot, RELAXED per-call adds.  The bucket
 	 * distribution answers "how deep does the reject
 	 * chain typically run before yielding a hit" -- a
 	 * distribution biased toward the tail slot is the
