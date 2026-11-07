@@ -251,6 +251,11 @@ static long count_sysfs_nodes(void)
  *   - CPU/node hotplug between samples: possible/online sets shift.
  *     Range check uses possible (boot-stable on typical hosts), so this
  *     only matters on long-uptime VMs that actually unplug CPUs.
+ *   - Overlapping slots: the kernel writes the cpu and then the node, so
+ *     a nodep inside the cpu's word leaves the node over part of it (cpu
+ *     5 on node 1 reads back as 261 through nodep == cpup + 1, which
+ *     handle_arg_address() hands one call in eight).  The cpu check
+ *     skips a cpu the node overlaps; the node, written last, reads whole.
  *
  * Corruption shapes this catches:
  *   - copy_to_user mis-write past or before the cpup/nodep slot
@@ -272,6 +277,7 @@ static void post_getcpu(struct syscallrecord *rec)
 	unsigned int cpu_user, node_user;
 	long nproc_configured;
 	long max_node;
+	bool cpu_spliced;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -342,8 +348,11 @@ static void post_getcpu(struct syscallrecord *rec)
 				   sizeof(node_user)))
 		goto out_free;
 
+	cpu_spliced = snap->cpup < snap->nodep + sizeof(node_user) &&
+		      snap->nodep < snap->cpup + sizeof(cpu_user);
+
 	nproc_configured = sysconf(_SC_NPROCESSORS_CONF);
-	if (nproc_configured > 0 &&
+	if (!cpu_spliced && nproc_configured > 0 &&
 	    cpu_user >= (unsigned int)nproc_configured) {
 		output(0, "getcpu oracle: cpu=%u >= _SC_NPROCESSORS_CONF=%ld\n",
 		       cpu_user, nproc_configured);

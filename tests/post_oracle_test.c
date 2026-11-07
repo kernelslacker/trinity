@@ -3,12 +3,13 @@
  * worked.  Each case hands a post handler the return a successful call
  * produces and counts the corrupt-pointer bumps it makes: a value the
  * kernel returns must not bump, one it cannot return must.  A sampled
- * compare is counted by the anomalies it reports instead, an
- * untouched-buffer check by the untouched buffers it reports, and the
- * PR_FUTEX_HASH -EBUSY tally by what it counts.  The handlers run as
- * shipped; the post_state table, post_snapshot_or_skip() and the bump
- * itself are faked here, and bpf's pool publishes are counted through
- * landlock_test.c's publish_resource() hook.
+ * compare is counted by the anomalies it reports instead, or by the
+ * line it logs where two share a counter, an untouched-buffer check by
+ * the untouched buffers it reports, and the PR_FUTEX_HASH -EBUSY tally
+ * by what it counts.  The handlers run as shipped; the post_state
+ * table, post_snapshot_or_skip() and the bump itself are faked here,
+ * and bpf's pool publishes are counted through landlock_test.c's
+ * publish_resource() hook.
  */
 
 #include <errno.h>
@@ -33,6 +34,7 @@
 #include "arch.h"		/* ARCH_IS_BIARCH */
 #include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
+#include "fake_parent.h"	/* fake_output_log */
 #include "kernel/io_uring.h"	/* IORING_REGISTER_* */
 #include "kernel/prctl.h"	/* PR_THP_DISABLE_EXCEPT_ADVISED */
 #include "kernel/sched.h"	/* SCHED_EXT, SCHED_RESET_ON_FORK */
@@ -848,6 +850,49 @@ static void sched_getaffinity_pid(void)
 	}
 }
 
+/* getcpu calls built by its sanitiser with nodep @offset bytes past cpup,
+ * on which the kernel wrote @cpu and then @node; whether the sampled range
+ * check reported the cpu it read back.  Told by the line it logs, as the
+ * node check bumps the same counter. */
+static bool getcpu_cpu_reported(unsigned int offset, unsigned int cpu,
+				unsigned int node)
+{
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	fake_output_log[0] = '\0';
+	for (i = 0; i < SAMPLED_CALLS; i++) {
+		char *buf = get_writable_address(2 * sizeof(unsigned int));
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) buf;
+		rec.a2 = (unsigned long) (buf + offset);
+		syscall_getcpu.sanitise(&rec);
+		memcpy((void *) rec.a1, &cpu, sizeof(cpu));
+		memcpy((void *) rec.a2, &node, sizeof(node));
+		rec.retval = 0;
+		syscall_getcpu.post(&rec);
+	}
+	return strstr(fake_output_log, "getcpu oracle: cpu=") != NULL;
+}
+
+/* Only a cpu the node was not written over is range checked.  A node in
+ * the top three bytes of cpu 0 reads back as 256 times the node, so one
+ * a cpu count in 256s past the host's reads back as a cpu it lacks. */
+static void getcpu_spliced(void)
+{
+	long conf = sysconf(_SC_NPROCESSORS_CONF);
+
+	if (getcpu_cpu_reported(1, 0, (unsigned int) conf / 256 + 1)) {
+		fprintf(stderr, "getcpu: a cpu the node was written over was range checked\n");
+		failed++;
+	}
+	if (!getcpu_cpu_reported(sizeof(unsigned int), (unsigned int) conf, 0)) {
+		fprintf(stderr, "getcpu: a cpu past the host's count went unreported\n");
+		failed++;
+	}
+}
+
 /* setgroups calls the sanitiser built for @built gids, which the kernel
  * ran with @ran, the @ran at @gids, and answered 0; the anomalies the
  * sampled getgroups() and /proc/self/status compares report. */
@@ -1594,6 +1639,7 @@ void post_oracle_self_check(void)
 	xattr_size();
 	sched_getaffinity_len();
 	sched_getaffinity_pid();
+	getcpu_spliced();
 	getgroups_untouched();
 	sysv_ctl_untouched();
 	get_mempolicy_untouched();

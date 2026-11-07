@@ -924,6 +924,10 @@ FAKE_SRCS	+= landlock_test.c
 PARENT_SRCS	+= $(TOP)/lib/numa.c
 FAKE_SRCS	+= numa_test.c
 
+# syscalls/sched/getcpu.c brings getcpu, whose post handler
+# post_oracle_test.c drives through its own sanitiser.
+PARENT_SRCS	+= $(TOP)/syscalls/sched/getcpu.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
