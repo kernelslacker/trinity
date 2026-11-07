@@ -16,9 +16,8 @@
 
 /*
  * Ownership table for syscall handlers that snapshot state into a
- * zmalloc'd struct hung off rec->post_state.  Currently only execve /
- * execveat use it, but the API is shape-agnostic so any post handler
- * that needs the same guarantee can call in.
+ * zmalloc'd struct hung off rec->post_state.  The API is shape-agnostic:
+ * any post handler that needs the guarantee calls in.
  *
  * Background: rec->post_state is private to the post handler in the
  * syscall ABI sense, but the whole syscallrecord is reachable from
@@ -46,10 +45,12 @@
  *
  * Storage layout: 64-slot fixed pointer table in BSS, COW-shared at
  * fork, written single-threaded by the owning child.  No locking
- * needed.  Each child has at most one in-flight execve post_state at a
- * time (syscalls execute sequentially within a child), so the typical
- * working set is 0-1 entries; 64 slots leaves ample headroom for
- * collision tolerance and silent-drop on the rare table-full case.
+ * needed.  Each child has at most one post_state in flight at a time
+ * (syscalls execute sequentially within a child, and a RedQueen re-exec
+ * dispatches only after the call it repeats has run its .post and
+ * .cleanup), so the typical working set is 0-1 entries; 64 slots leaves
+ * ample headroom for collision tolerance and silent-drop on the rare
+ * table-full case.
  *
  * Hash: top bits of the pointer above glibc's 16-byte chunk
  * alignment.  Open addressing with linear probing for insert.  Lookup

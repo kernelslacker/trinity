@@ -18,8 +18,8 @@ void * __zmalloc(size_t size, const char *func);
  * ring.  Use at allocation sites whose pointer is bound to flow
  * through deferred_free_enqueue() / deferred_freeptr(); plain
  * zmalloc() stays at sites freed directly (process-lifetime tables,
- * direct-free error fallbacks).  See utils.c __zmalloc_tracked() and
- * the alloc-tracking audit for the opt-in-vs-default rationale.
+ * direct-free error fallbacks).  See __zmalloc_tracked() in
+ * utils/zmalloc.c for the opt-in-vs-default rationale.
  */
 void * __zmalloc_tracked(size_t size, const char *func);
 #define zmalloc_tracked(size)	__zmalloc_tracked(size, __func__)
@@ -30,8 +30,9 @@ void * __zmalloc_tracked(size_t size, const char *func);
  * time, release through post_state_release() before the chunk is
  * queued for free, and lookup in the post handler to verify the
  * snap pointer wasn't redirected to a foreign chunk by a sibling-stomp
- * write.  See utils.c for the full rationale and the libsanitizer-UB
- * regression in the prior malloc_usable_size-based guard this replaces.
+ * write.  See utils/post_state.c for the full rationale and the
+ * libsanitizer-UB regression in the prior malloc_usable_size-based
+ * guard this replaces.
  */
 void post_state_register(void *p);
 bool post_state_is_owned(const void *p);
@@ -87,8 +88,8 @@ bool post_state_is_owned(const void *p);
  * snap's leading-word magic, and the allocation size into the
  * ownership table so post_state_release() can reject double frees,
  * wrong-owner frees, and stomped magic before letting the chunk reach
- * libc free().  See utils.c struct post_state_entry for the tag
- * field semantics and the four-gate reject contract.
+ * libc free().  See struct post_state_entry in utils/post_state.c for
+ * the tag field semantics and the four-gate reject contract.
  *
  * Implemented as a macro that forwards sizeof(*snap) to
  * post_state_install_sized() at the call site -- every existing
@@ -146,8 +147,8 @@ void post_state_release(struct syscallrecord *rec, void *snap);
  * Heuristic: does `p` look like a fuzzed value-result syscall scribbled
  * a non-pointer (typically a pid/tid or a small int) into a slot trinity
  * was about to deref or free?  Returns true if the value cannot plausibly
- * be a heap pointer we handed out.  See utils.c for the rationale and
- * the cluster-1/2/3 crash signature this guards against.
+ * be a heap pointer we handed out.  See utils/corrupt_ptr.c for the
+ * rationale and the cluster-1/2/3 crash signature this guards against.
  *
  * @rec is the syscallrecord context the call originates from, used for
  * per-handler attribution of the global post_handler_corrupt_ptr counter.
