@@ -784,7 +784,7 @@ PARENT_SRCS	+= $(TOP)/strategy/strategy-frontier-window.c
 # syscalls/socket/getsockname.c and getpeername.c bring getsockname and
 # getpeername, whose re-calls sockname_recall_test.c runs on sockets of
 # its own, handed to the sanitisers through post_oracle_test.c's
-# fd_from_socketinfo(); sockname-recall.c is the oracle getsockname runs.
+# fd_from_socketinfo(); sockname-recall.c is the oracle both run.
 PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
 		   $(TOP)/syscalls/socket/getpeername.c \
 		   $(TOP)/syscalls/socket/sockname-recall.c
