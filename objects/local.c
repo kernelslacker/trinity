@@ -266,6 +266,8 @@ struct object *find_local_object_by_fd(enum objecttype type, int fd)
 	return NULL;
 }
 
+/* fd_from_object() answers -1 outside the fd-typed range is_fd_type() in
+ * registry-lifecycle.c names, so no other pool can hold @fd. */
 struct object *local_fd_find_by_fd(int fd)
 {
 	unsigned int type;
@@ -273,7 +275,7 @@ struct object *local_fd_find_by_fd(int fd)
 	if (fd < 0)
 		return NULL;
 
-	for (type = OBJ_NONE + 1; type < MAX_OBJECT_TYPES; type++) {
+	for (type = OBJ_FD_PIPE; type <= OBJ_FD_SCRATCH_BLOCK; type++) {
 		struct object *obj;
 
 		obj = find_local_object_by_fd((enum objecttype)type, fd);
