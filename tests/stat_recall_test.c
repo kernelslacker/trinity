@@ -550,8 +550,9 @@ static void rewritten_cases(void)
 {
 	static char file_name[] = "file", link_name[] = "link";
 	struct statx file_b_stx, link_a_stx;
+	struct statfs proc_sfs, proc_moved;
 	struct stat file_b, link_a;
-	int a, b, fd_a, fd_b;
+	int a, b, fd_a, fd_b, proc;
 
 	a = scratch_dir(0);
 	b = scratch_dir(1);
@@ -567,6 +568,12 @@ static void rewritten_cases(void)
 	link_a.st_mode ^= S_IXUSR;
 	file_b_stx.stx_mode ^= S_IXUSR;
 	link_a_stx.stx_mode ^= S_IXUSR;
+	/* Another filesystem than the scratch directories'. */
+	proc = open("/proc", O_RDONLY | O_DIRECTORY);
+	if (proc < 0 || fstatfs(proc, &proc_sfs) != 0)
+		BUG("stat recall: cannot statfs /proc");
+	proc_moved = proc_sfs;
+	proc_moved.f_bsize *= 2;
 	fake_ctime_rule = FAKE_CTIME_HOLDS;
 
 	{
@@ -626,7 +633,25 @@ static void rewritten_cases(void)
 					  sizeof(link_a_stx)) > 0);
 	}
 
+	{
+		const unsigned long built[6] = { fd_a }, ran[6] = { proc };
+
+		check("a call substituted onto another filesystem's fd was judged on the first",
+		      "fstatfs",
+		      rewritten_anomalies(&syscall_fstatfs,
+					  &shm->stats.oracle.fstatfs_oracle_anomalies,
+					  built, ran, 2, &proc_sfs,
+					  sizeof(proc_sfs)) == 0);
+		check("a torn copy from a call substituted onto another filesystem's fd was not reported",
+		      "fstatfs",
+		      rewritten_anomalies(&syscall_fstatfs,
+					  &shm->stats.oracle.fstatfs_oracle_anomalies,
+					  built, ran, 2, &proc_moved,
+					  sizeof(proc_moved)) > 0);
+	}
+
 	fake_ctime_rule = FAKE_CTIME_REAL;
+	close(proc);
 	close(fd_a);
 	close(fd_b);
 	remove_scratch_dir(0, a);

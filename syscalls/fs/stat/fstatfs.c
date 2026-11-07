@@ -16,17 +16,17 @@
 #include "utils.h"
 
 /*
- * Snapshot of the two fstatfs input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot retarget the re-issue at a
- * different fd or redirect the source memcpy at a foreign user buffer.
+ * Snapshot of the fstatfs buf read by the post oracle, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The fd the re-issue asks about is read from the slot the
+ * kernel was handed instead.
  */
 #define FSTATFS_POST_STATE_MAGIC	0x46535446UL	/* "FSTF" */
 struct fstatfs_post_state {
 	unsigned long magic;
-	unsigned long fd;
 	unsigned long buf;
 	uint64_t poison_seed;
 };
@@ -40,18 +40,15 @@ static void sanitise_fstatfs(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * buf pointer, so the source memcpy would touch a foreign
-	 * allocation, and a stomped fd would silently steer the re-issue
-	 * against a different mount entirely.  post_state is private to
-	 * the post handler.
+	 * Snapshot the buf for the post oracle.  Without this the post
+	 * handler reads rec->a2 at post-time, when a sibling syscall may
+	 * have scribbled the slot: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original user buf pointer,
+	 * so the source memcpy would touch a foreign allocation.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic = FSTATFS_POST_STATE_MAGIC;
-	snap->fd  = rec->a1;
 	snap->buf = rec->a2;
 
 	/*
@@ -161,7 +158,8 @@ static void post_fstatfs(struct syscallrecord *rec)
 	if (snap->buf == 0)
 		goto out_release;
 
-	fd = (int) snap->fd;
+	/* The fd the kernel answered for. */
+	fd = (int) get_arg_snapshot(rec, 1);
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
@@ -217,6 +215,10 @@ struct syscallentry syscall_fstatfs = {
 	.argname = { [0] = "fd", [1] = "buf" },
 	.sanitise = sanitise_fstatfs,
 	.post = post_fstatfs,
+	/* fd (a1): the re-call asks about the filesystem the kernel did,
+	 * which chain substitution or a RedQueen pin may have rewritten
+	 * after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_STAT,
@@ -232,19 +234,17 @@ struct syscallentry syscall_fstatfs = {
 
 #ifdef SYS_fstatfs64
 /*
- * Snapshot of the three fstatfs64 input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot retarget the re-issue at a
- * different fd, smear the buffer-size word used to seed the re-issue,
- * or steer the source memcpy at a foreign user buffer.
+ * Snapshot of the fstatfs64 buf read by the post oracle, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot steer the source memcpy at a foreign user
+ * buffer.  The fd and the buffer-size word the re-issue takes are read
+ * from the slots the kernel was handed instead.
  */
 #define FSTATFS64_POST_STATE_MAGIC	0x46534636UL	/* "FSF6" */
 struct fstatfs64_post_state {
 	unsigned long magic;
-	unsigned long fd;
-	unsigned long sz;
 	unsigned long buf;
 	uint64_t poison_seed;
 };
@@ -261,20 +261,16 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
 		rec->post_state = 0;
 
 		/*
-		 * Snapshot the three input args for the post oracle.
-		 * Without this the post handler reads rec->aN at post-time,
-		 * when a sibling syscall may have scribbled the slots:
+		 * Snapshot the buf for the post oracle.  Without this the
+		 * post handler reads rec->a3 at post-time, when a sibling
+		 * syscall may have scribbled the slot:
 		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
 		 * heap address from the original user buf pointer, so the
-		 * source memcpy would touch a foreign allocation, and a
-		 * stomped fd or sz word would silently steer the re-issue
-		 * against a different mount or change the buffer-size
-		 * semantics.  post_state is private to the post handler.
+		 * source memcpy would touch a foreign allocation.
+		 * post_state is private to the post handler.
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = FSTATFS64_POST_STATE_MAGIC;
-		snap->fd  = rec->a1;
-		snap->sz  = rec->a2;
 		snap->buf = rec->a3;
 
 		/*
@@ -318,10 +314,10 @@ static void sanitise_fstatfs64(struct syscallrecord *rec)
  * remounts and mount_setattr(), so they stay excluded; f_spare[] is
  * reserved padding with no contract.
  *
- * Re-issue the syscall with the original sz so the recheck mirrors
- * the original call exactly — if a sibling closes the fd between the
- * two calls the recheck returns -EBADF and we benign-skip the
- * sample.  ONE_IN(100) sampling, single counter bump per anomalous
+ * Re-issue the syscall on the fd and with the sz the kernel was handed so
+ * the recheck mirrors the original call exactly — if a sibling closes the
+ * fd between the two calls the recheck returns -EBADF and we benign-skip
+ * the sample.  ONE_IN(100) sampling, single counter bump per anomalous
  * sample, no early-return on first divergence so multi-field damage
  * surfaces in one log line.
  *
@@ -372,8 +368,9 @@ static void post_fstatfs64(struct syscallrecord *rec)
 	if (snap->buf == 0)
 		goto out_release;
 
-	fd = (int) snap->fd;
-	sz = (size_t) snap->sz;
+	/* The call the kernel answered. */
+	fd = (int) get_arg_snapshot(rec, 1);
+	sz = (size_t) get_arg_snapshot(rec, 2);
 
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
@@ -432,6 +429,10 @@ struct syscallentry syscall_fstatfs64 = {
 #ifdef SYS_fstatfs64
 	.post = post_fstatfs64,
 #endif
+	/* fd (a1) and sz (a2): the re-call repeats the call the kernel
+	 * answered, which chain substitution or a RedQueen pin may have
+	 * rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 1),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_STAT,
