@@ -93,7 +93,7 @@ void futex_self_check(void)
 	static const struct timespec drawn = { .tv_sec = LONG_MAX };
 	static struct childdata compat;
 	struct syscallrecord rec, *crec = &compat.syscall;
-	bool armed = false, low = false;
+	bool armed = false;
 	unsigned int i;
 
 	fake_get_objhead = no_pool;
@@ -148,14 +148,10 @@ void futex_self_check(void)
 		crec->a2 = FUTEX_WAKE;
 		syscall_futex.sanitise(crec);
 
-		if (crec->a1 == HIGH_MAP || crec->a5 == HIGH_MAP)
-			BUG("futex: a compat call was handed a futex word past 4 GiB");
-		low |= crec->a1 == LOW_MAP;
+		if (crec->a1 != LOW_MAP || crec->a5 != LOW_MAP)
+			BUG("futex: a compat call went without futex words below 4 GiB");
 	}
 	fake_this_child = NULL;
-	/* The mapping branch, one call in four, drew the word below. */
-	if (!low)
-		BUG("futex: a compat call never drew the futex word below 4 GiB");
 	fake_heap_size = 0;
 	fake_get_objhead = NULL;
 }

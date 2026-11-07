@@ -358,8 +358,12 @@ static void sanitise_futex(struct syscallrecord *rec)
 	 * address from the mmap playground -- which spices things up
 	 * from a memory point of view, but should still be pretty
 	 * trivial for the actual futex subsystem.
+	 *
+	 * A compat call, which reads each slot as its low 32 bits, always
+	 * takes the playground: the reserved futexes sit in the objpool
+	 * arena and the shared words in a shared mapping, both past 4 GiB.
 	 */
-	if (RAND_BOOL()) {
+	if (!rec->do32bit && RAND_BOOL()) {
 		lock1 = get_random_lock();
 		lock2 = get_random_lock();
 		if (!lock1 || !lock2)
@@ -368,7 +372,7 @@ static void sanitise_futex(struct syscallrecord *rec)
 		rec->a1 = (unsigned long) &lock1->futex; /* uaddr */
 		/* ^^ no, we do not have 64-bit futexes :P */
 		rec->a5 = (unsigned long) &lock2->futex; /* uaddr2 */
-	} else if (RAND_BOOL()) {
+	} else if (!rec->do32bit && RAND_BOOL()) {
 		/*
 		 * Pull from the shared cross-child futex word pool.  Same VA
 		 * across children, so two unrelated children passing these
