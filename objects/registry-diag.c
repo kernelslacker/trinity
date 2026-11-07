@@ -53,6 +53,8 @@ void generic_fd_dump(struct object *obj, enum obj_scope scope)
 	case OBJ_FD_LANDLOCK:		name = "landlock"; break;
 	case OBJ_FD_MOUNT:		name = "mount"; break;
 	case OBJ_FD_SIGNALFD:		name = "signalfd"; break;
+	case OBJ_FD_BPF_BTF:		name = "bpf btf"; break;
+	case OBJ_FD_BPF_TOKEN:		name = "bpf token"; break;
 	default:			name = "?"; break;
 	}
 

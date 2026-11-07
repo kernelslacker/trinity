@@ -491,28 +491,13 @@ REG_FD_PROV(bpf_link_fd_provider);
  * speculative cross-platform assumption and the syscall fuzz path
  * gets there anyway via random id probing.
  */
-static void bpf_btf_destructor(struct object *obj)
-{
-	close(obj->bpfbtfobj.fd);
-}
-
-/*
- * Cross-process safe: reads obj->bpfbtfobj.fd and the scope scalar.
- * These survive fork/COW and no process-local pointers are
- * dereferenced.
- */
-static void bpf_btf_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "bpf btf fd:%d scope:%d\n", obj->bpfbtfobj.fd, scope);
-}
-
 static int init_bpf_btf_fds(void)
 {
 	struct objhead *head;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_BTF);
-	head->destroy = &bpf_btf_destructor;
-	head->dump = &bpf_btf_dump;
+	head->destroy = &close_fd_destructor;
+	head->dump = &generic_fd_dump;
 	/*
 	 * bpfbtfobj is {int fd;} with no pointer members, so the
 	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
@@ -556,28 +541,13 @@ REG_FD_PROV(bpf_btf_fd_provider);
  * lands a successful BPF_TOKEN_CREATE -- same lazy-fill pattern as the
  * link / btf providers.
  */
-static void bpf_token_destructor(struct object *obj)
-{
-	close(obj->bpftokenobj.fd);
-}
-
-/*
- * Cross-process safe: reads obj->bpftokenobj.fd and the scope scalar.
- * These survive fork/COW and no process-local pointers are
- * dereferenced.
- */
-static void bpf_token_dump(struct object *obj, enum obj_scope scope)
-{
-	output(2, "bpf token fd:%d scope:%d\n", obj->bpftokenobj.fd, scope);
-}
-
 static int init_bpf_token_fds(void)
 {
 	struct objhead *head;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_BPF_TOKEN);
-	head->destroy = &bpf_token_destructor;
-	head->dump = &bpf_token_dump;
+	head->destroy = &close_fd_destructor;
+	head->dump = &generic_fd_dump;
 	/*
 	 * bpftokenobj is {int fd;} with no pointer members, so the
 	 * OBJ_GLOBAL pool's scalars stay valid across fork/COW and
