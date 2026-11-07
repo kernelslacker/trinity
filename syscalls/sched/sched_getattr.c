@@ -245,10 +245,12 @@ static void sanitise_sched_getattr(struct syscallrecord *rec)
  * it would write at maximum size and reflects that back in the leading
  * size word.
  *
- * The audit row says 'stable equality' on a2; flags drives which fields
- * the kernel populates (DL_DYNAMIC etc), so a divergence on the canonical-
- * baseline read with flags=0 is interesting independently of any flag drift
- * on the original call.  Use flags=0 for the re-issue.
+ * The re-issue passes flags 0, which reads what the call read for every
+ * policy but SCHED_DEADLINE, where DL_DYNAMIC has the kernel answer the
+ * remaining runtime and current deadline in place of dl_runtime and
+ * dl_deadline (__getparam_dl()).  Those move between any two calls, so a
+ * call that carried DL_DYNAMIC, in the flags the kernel was handed, is
+ * passed over.
  *
  * Reject undersize requests (size < SCHED_ATTR_SIZE_VER0): the kernel
  * itself rejects them with E2BIG/EINVAL, so the original retval == 0 gate
@@ -319,6 +321,9 @@ static void post_sched_getattr(struct syscallrecord *rec)
 
 	pid = (pid_t) get_arg_snapshot(rec, 1);
 	if (pid != 0 && pid != gettid())
+		goto out_free;
+
+	if ((unsigned int) get_arg_snapshot(rec, 4) & SCHED_GETATTR_FLAG_DL_DYNAMIC)
 		goto out_free;
 
 	size = (__u32) get_arg_snapshot(rec, 3);
@@ -412,11 +417,12 @@ struct syscallentry syscall_sched_getattr = {
 	.arg_params[3].list = ARGLIST(sched_getattr_flags),
 	.sanitise = sanitise_sched_getattr,
 	.post = post_sched_getattr,
-	/* pid (a1) and size (a3): the re-call compares only a call on this
-	 * task, the one the kernel read, as much of the struct as it was
-	 * asked for, either of which chain substitution or a RedQueen pin
-	 * may have rewritten after the sanitiser drew its own. */
-	.arg_snapshot_mask = (1u << 0) | (1u << 2),
+	/* pid (a1), size (a3) and flags (a4): the re-call compares only a
+	 * call on this task, the one the kernel read, as much of the struct
+	 * as it was asked for, without DL_DYNAMIC, any of which chain
+	 * substitution or a RedQueen pin may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 2) | (1u << 3),
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
 };

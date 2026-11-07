@@ -5,7 +5,7 @@
  * sampled re-call reports.  Only a call on this task is compared, and the
  * task is the one the kernel was handed, which chain substitution can
  * rewrite after the sanitiser drew its own, as it, or a RedQueen pin, can
- * sched_getattr's size.
+ * sched_getattr's size and flags.
  */
 
 #include <stdbool.h>
@@ -104,10 +104,11 @@ static void robust_list_cases(void)
 #define ATTR_BYTES	256
 
 /* sched_getattr calls the sanitiser built on pid @built, which the kernel
- * ran on pid @ran with a size of @ran_size, each answering the ATTR_BYTES at
- * @answer; the anomalies the re-call reports. */
+ * ran on pid @ran with a size of @ran_size and flags of @ran_flags, each
+ * answering the ATTR_BYTES at @answer; the anomalies the re-call reports. */
 static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
 					  unsigned long ran_size,
+					  unsigned long ran_flags,
 					  const unsigned char *answer)
 {
 	unsigned long before = shm->stats.oracle.sched_getattr_oracle_anomalies;
@@ -122,6 +123,7 @@ static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
 
 		memcpy((void *) rec.a2, answer, ATTR_BYTES);
 		rec.a3 = ran_size;
+		rec.a4 = ran_flags;
 		ran_on(&rec, &syscall_sched_getattr, ran);
 		rec.retval = 0;
 		syscall_sched_getattr.post(&rec);
@@ -133,10 +135,15 @@ static unsigned long sched_attr_anomalies(pid_t built, pid_t ran,
  * what a RedQueen pin hands it from that check. */
 #define ATTR_SIZE_VER0	48
 
+/* SCHED_GETATTR_FLAG_DL_DYNAMIC, which has a deadline task answer its
+ * remaining runtime, at offsetof(sched_runtime), and current deadline. */
+#define DL_DYNAMIC	0x01
+#define RUNTIME_OFFSET	24
+
 static void sched_attr_cases(void)
 {
 	static unsigned char own[ATTR_BYTES], others[ATTR_BYTES];
-	static unsigned char own_v0[ATTR_BYTES];
+	static unsigned char own_v0[ATTR_BYTES], dl_moved[ATTR_BYTES];
 	pid_t other = gettid() + 1;
 	uint32_t v0 = ATTR_SIZE_VER0;
 
@@ -149,17 +156,24 @@ static void sched_attr_cases(void)
 	 * struct, and that size in its leading size word. */
 	memcpy(own_v0, own, ATTR_SIZE_VER0);
 	memcpy(own_v0, &v0, sizeof(v0));
+	/* A deadline task's dynamic runtime, which moved since the call. */
+	memcpy(dl_moved, own, ATTR_BYTES);
+	dl_moved[RUNTIME_OFFSET] ^= 1;
 
 	check("sched_getattr: a call answering this task's attributes was reported",
-	      sched_attr_anomalies(0, 0, ATTR_BYTES, own) == 0);
+	      sched_attr_anomalies(0, 0, ATTR_BYTES, 0, own) == 0);
 	check("sched_getattr: a call run on another task was compared with this one",
-	      sched_attr_anomalies(0, other, ATTR_BYTES, others) == 0);
+	      sched_attr_anomalies(0, other, ATTR_BYTES, 0, others) == 0);
 	check("sched_getattr: a call run on this task answering another's attributes was not reported",
-	      sched_attr_anomalies(other, 0, ATTR_BYTES, others) > 0);
+	      sched_attr_anomalies(other, 0, ATTR_BYTES, 0, others) > 0);
 	check("sched_getattr: a call handed the smallest size was judged on the whole struct",
-	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, own_v0) == 0);
+	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, 0, own_v0) == 0);
 	check("sched_getattr: a call handed the smallest size answering a larger size word was not reported",
-	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, own) > 0);
+	      sched_attr_anomalies(0, 0, ATTR_SIZE_VER0, 0, own) > 0);
+	check("sched_getattr: a DL_DYNAMIC call was compared with a re-call without the flag",
+	      sched_attr_anomalies(0, 0, ATTR_BYTES, DL_DYNAMIC, dl_moved) == 0);
+	check("sched_getattr: a call without DL_DYNAMIC answering a moved runtime was not reported",
+	      sched_attr_anomalies(0, 0, ATTR_BYTES, 0, dl_moved) > 0);
 }
 #endif
 
