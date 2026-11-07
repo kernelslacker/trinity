@@ -641,10 +641,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/clock/clock_getres.c \
 # readlink_recall_test.c runs on symlinks of its own.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/readlink.c
 
-# syscalls/socket/getsockname.c brings getsockname, whose re-call
-# sockname_recall_test.c runs on sockets of its own, handed to the
-# sanitiser through post_oracle_test.c's fd_from_socketinfo().
-PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c
+# syscalls/socket/getsockname.c and getpeername.c bring getsockname and
+# getpeername, whose re-calls sockname_recall_test.c runs on sockets of
+# its own, handed to the sanitisers through post_oracle_test.c's
+# fd_from_socketinfo().
+PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockname.c \
+		   $(TOP)/syscalls/socket/getpeername.c
 
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post

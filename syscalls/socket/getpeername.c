@@ -26,12 +26,13 @@
 
 #ifdef HAVE_SYS_GETPEERNAME
 /*
- * Snapshot of the three getpeername input args read by the post oracle,
+ * Snapshot of the getpeername address buffers read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives in
  * rec->post_state, a slot the syscall ABI does not expose, so a sibling
  * syscall scribbling rec->aN between the syscall returning and the post
- * handler running cannot retarget the re-issue at a different fd or
- * redirect the source memcpy at a foreign user buffer.
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The fd the re-issue asks is read from the slot the kernel was
+ * handed instead.
  *
  * Even with the magic-cookie gate on snap, a heap-shaped redirect to a
  * foreign chunk could in principle carry the matching cookie by
@@ -46,7 +47,6 @@
 #define GETPEERNAME_POST_STATE_MAGIC	0x47504E4DUL	/* "GPNM" */
 struct getpeername_post_state {
 	unsigned long magic;
-	unsigned long fd;
 	unsigned long usockaddr;
 	unsigned long usockaddr_len;
 	struct valresult_buf vrb;
@@ -116,7 +116,6 @@ static void sanitise_getpeername(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic         = GETPEERNAME_POST_STATE_MAGIC;
-	snap->fd            = rec->a1;
 	snap->usockaddr     = rec->a2;
 	snap->usockaddr_len = rec->a3;
 	snap->vrb           = vrb;
@@ -147,11 +146,11 @@ static void sanitise_getpeername(struct syscallrecord *rec)
  *     addrlen word at rec->a3 between the original syscall return and our
  *     re-issue, via alloc_shared in another trinity child task.
  *
- * TOCTOU defeat: the three input args (fd, usockaddr, usockaddr_len)
- * are snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->aN between syscall return and post
- * entry cannot steer the re-issue against a different fd or redirect the
- * source memcpy at a foreign user buffer.  The addr and addrlen payloads
+ * TOCTOU defeat: the usockaddr and usockaddr_len pointers are snapshotted
+ * at sanitise time into a heap struct in rec->post_state, so a sibling
+ * that scribbles rec->aN between syscall return and post entry cannot
+ * redirect the source memcpy at a foreign user buffer, and the re-issue
+ * asks the fd the kernel was handed.  The addr and addrlen payloads
  * pointed to by the snapshot are then snapshotted into stack-locals
  * before re-issuing, with fresh private stack buffers handed to the
  * re-call (do NOT pass the snapshot's usockaddr/usockaddr_len -- a
@@ -338,7 +337,8 @@ static void getpeername_recheck(struct syscallrecord *rec,
 	if (snap->usockaddr == 0 || snap->usockaddr_len == 0)
 		return;
 
-	fd = (int) snap->fd;
+	/* The socket the kernel answered for. */
+	fd = (int) get_arg_snapshot(rec, 1);
 
 	{
 		void *len_p = (void *)(unsigned long) snap->usockaddr_len;
@@ -460,4 +460,8 @@ struct syscallentry syscall_getpeername = {
 #ifdef HAVE_SYS_GETPEERNAME
 	.post = post_getpeername,
 #endif
+	/* fd (a1): the re-call asks the socket the kernel did, which a
+	 * RedQueen pin may have rewritten after the sanitiser drew its
+	 * own. */
+	.arg_snapshot_mask = (1u << 0),
 };

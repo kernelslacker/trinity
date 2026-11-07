@@ -1,9 +1,9 @@
 /*
- * Self-check for the getsockname re-call oracle: it runs the sanitiser and
- * post handler as shipped on sockets of the test's own, handed the address
- * the fuzzed call answered, and counts the anomalies its sampled re-call
- * reports.  A RedQueen pin can hand the kernel another fd than the
- * sanitiser drew, and the re-call has to ask the socket the kernel
+ * Self-check for the getsockname and getpeername re-call oracles: each runs
+ * its sanitiser and post handler as shipped on sockets of the test's own,
+ * handed the address the fuzzed call answered, and counts the anomalies its
+ * sampled re-call reports.  A RedQueen pin can hand the kernel another fd
+ * than the sanitiser drew, and the re-call has to ask the socket the kernel
  * answered for.
  */
 
@@ -22,7 +22,7 @@
 #include "shm.h"
 #include "socketinfo.h"		/* struct socketinfo */
 #include "syscall.h"		/* struct syscallrecord */
-#include "syscalls/syscalls.h"	/* syscall_getsockname */
+#include "syscalls/syscalls.h"	/* syscall_getsockname, syscall_getpeername */
 #include "utils.h"		/* ARRAY_SIZE */
 
 extern bool fake_socketinfo_fds;		/* post_oracle_test.c */
@@ -96,13 +96,23 @@ static int bound_socket(const char *name, struct sockaddr_un *addr,
 	return fd;
 }
 
+/* A datagram socket connected to the one bound at @addr. */
+static int connected_socket(const struct sockaddr_un *addr, socklen_t addrlen)
+{
+	int fd = socket(AF_UNIX, SOCK_DGRAM, 0);
+
+	if (fd < 0 || connect(fd, (const struct sockaddr *) addr, addrlen) != 0)
+		BUG("sockname recall: cannot connect a socket");
+	return fd;
+}
+
 void sockname_recall_self_check(void);
 void sockname_recall_self_check(void)
 {
 	struct sockaddr_un addr_a, addr_b;
 	socklen_t len_a, len_b;
 	char name[32];
-	int a, b;
+	int a, b, to_a, to_b;
 
 	/* The pool is made once per process: take it as an earlier suite
 	 * left it. */
@@ -114,6 +124,8 @@ void sockname_recall_self_check(void)
 	a = bound_socket(name, &addr_a, &len_a);
 	snprintf(name, sizeof(name), "trinity-sockname-b-%d", (int) getpid());
 	b = bound_socket(name, &addr_b, &len_b);
+	to_a = connected_socket(&addr_a, len_a);
+	to_b = connected_socket(&addr_b, len_b);
 
 	fake_socketinfo_fds = true;
 	check("getsockname: a call pinned onto another socket was judged on the first",
@@ -124,8 +136,18 @@ void sockname_recall_self_check(void)
 	      sockname_anomalies(&syscall_getsockname,
 				 &shm->stats.oracle.getsockname_oracle_anomalies,
 				 a, b, &addr_a, len_a) > 0);
+	check("getpeername: a call pinned onto another socket was judged on the first",
+	      sockname_anomalies(&syscall_getpeername,
+				 &shm->stats.oracle.getpeername_oracle_anomalies,
+				 to_a, to_b, &addr_b, len_b) == 0);
+	check("getpeername: a pinned call answering the first socket's peer was not reported",
+	      sockname_anomalies(&syscall_getpeername,
+				 &shm->stats.oracle.getpeername_oracle_anomalies,
+				 to_a, to_b, &addr_a, len_a) > 0);
 	fake_socketinfo_fds = false;
 
+	close(to_a);
+	close(to_b);
 	close(a);
 	close(b);
 
