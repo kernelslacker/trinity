@@ -24,22 +24,22 @@
 
 #ifdef HAVE_SYS_GETRLIMIT
 /*
- * Snapshot of the two getrlimit input args plus the poison seed read by
- * the post oracle, captured at sanitise time and consumed by the post
+ * Snapshot of the getrlimit rlim buffer plus the poison seed read by the
+ * post oracle, captured at sanitise time and consumed by the post
  * handler.  Lives in rec->post_state, a slot the syscall ABI does not
  * expose, so a sibling syscall scribbling rec->aN between the syscall
- * returning and the post handler running cannot retarget the recheck at
- * a different RLIMIT_* resource, redirect the source memcpy at a foreign
- * user buffer, or smear the poison check against a heap page that
- * happens to still carry a residual pattern from an earlier call.  A
- * poison_seed of 0 means the sanitise-time writability check refused to
- * stamp poison for this call -- the field-recheck oracle still runs, the
- * poison check does not.
+ * returning and the post handler running cannot redirect the source
+ * memcpy at a foreign user buffer, or smear the poison check against a
+ * heap page that happens to still carry a residual pattern from an
+ * earlier call.  The resource is read from the slot the kernel was
+ * handed instead, which chain substitution or a RedQueen pin may have
+ * rewritten after the sanitiser drew its own.  A poison_seed of 0 means
+ * the sanitise-time writability check refused to stamp poison for this
+ * call -- the field-recheck oracle still runs, the poison check does not.
  */
 #define GETRLIMIT_POST_STATE_MAGIC	0x47524C4DUL	/* "GRLM" */
 struct getrlimit_post_state {
 	unsigned long magic;
-	unsigned int resource;
 	void *rlim;
 	uint64_t poison_seed;
 };
@@ -85,24 +85,22 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_GETRLIMIT
 	/*
-	 * Snapshot the two input args + the output-buffer poison seed for
-	 * the post oracle.  Without the a1/a2 snap the post handler reads
-	 * rec->aN at post-time, when a sibling syscall may have scribbled
-	 * the slots: looks_like_corrupted_ptr() cannot tell a real-but-
-	 * wrong heap address from the original rlim user-buffer pointer, so
-	 * the source memcpy would touch a foreign allocation, and a stomped
-	 * resource slot retargets the recheck at a wholly different
-	 * RLIMIT_* than the first call ran against.  The poison seed travels
-	 * with the pointer so a stomp cannot smear the seed against a heap
-	 * page that happens to still carry a residual pattern from an
-	 * earlier call.  post_state is private to the post handler.  Gated
-	 * on HAVE_SYS_GETRLIMIT to mirror the .post registration -- on
-	 * systems without SYS_getrlimit the post handler is not registered
-	 * and a snapshot only the post handler can free would leak.
+	 * Snapshot the rlim pointer + the output-buffer poison seed for
+	 * the post oracle.  Without the a2 snap the post handler reads
+	 * rec->a2 at post-time, when a sibling syscall may have scribbled
+	 * the slot: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original rlim user-buffer
+	 * pointer, so the source memcpy would touch a foreign allocation.
+	 * The poison seed travels with the pointer so a stomp cannot
+	 * smear the seed against a heap page that happens to still carry
+	 * a residual pattern from an earlier call.  post_state is private
+	 * to the post handler.  Gated on HAVE_SYS_GETRLIMIT to mirror the
+	 * .post registration -- on systems without SYS_getrlimit the post
+	 * handler is not registered and a snapshot only the post handler
+	 * can free would leak.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic       = GETRLIMIT_POST_STATE_MAGIC;
-	snap->resource    = (unsigned int) rec->a1;
 	snap->rlim        = (void *)(unsigned long) rec->a2;
 	snap->poison_seed = 0;
 
@@ -157,16 +155,18 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
  *      one in a hundred to stay in line with the rest of the oracle
  *      family.
  *
- * TOCTOU defeat: the two input args (resource, rlim) and the poison seed
- * are snapshotted at sanitise time into a heap struct in rec->post_state,
- * so a sibling that scribbles rec->aN between syscall return and post
- * entry cannot retarget the recheck at a different RLIMIT_* (the resource
- * scalar), redirect the source memcpy at a foreign user buffer (the rlim
- * pointer), or smear the poison check against an unrelated heap page
- * that happens to still carry a residual pattern.  The user buffer
- * payload is then snapshotted into a stack-local before the re-call
- * writes into a fresh private stack buffer -- a sibling could mutate the
- * user buffer itself mid-syscall and forge a clean compare.
+ * TOCTOU defeat: the rlim pointer and the poison seed are snapshotted at
+ * sanitise time into a heap struct in rec->post_state, so a sibling that
+ * scribbles rec->aN between syscall return and post entry cannot redirect
+ * the source memcpy at a foreign user buffer or smear the poison check
+ * against an unrelated heap page that happens to still carry a residual
+ * pattern.  The resource is read from the slot the kernel was handed:
+ * chain substitution or a RedQueen pin may have rewritten it after the
+ * sanitiser, and a recheck of the drawn resource would compare another
+ * RLIMIT_*'s limits.  The user buffer payload is then snapshotted into a
+ * stack-local before the re-call writes into a fresh private stack buffer
+ * -- a sibling could mutate the user buffer itself mid-syscall and forge
+ * a clean compare.
  *
  * Snap gating: the snap is registered in the ownership table at install
  * time and the post handler gates entry through post_state_claim_owned(),
@@ -174,7 +174,7 @@ static void sanitise_getrlimit(struct syscallrecord *rec)
  * inner-field deref -- a stale same-type snapshot still readable in the
  * deferred-free queue, or a sibling scribble of rec->post_state with a
  * heap-shaped pointer at a foreign allocation, is rejected before the
- * resource or rlim fields are touched.
+ * rlim field is touched.
  *
  * If the re-call returns -1 (the original syscall succeeded but the
  * re-call hit a transient failure), give up rather than report a false
@@ -191,6 +191,7 @@ static void post_getrlimit(struct syscallrecord *rec)
 		post_state_claim_owned(rec, GETRLIMIT_POST_STATE_MAGIC,
 				       __func__);
 	struct rlimit local, syscall_buf;
+	unsigned int resource;
 
 	if (snap == NULL)
 		return;
@@ -224,15 +225,16 @@ static void post_getrlimit(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
+	resource = (unsigned int) get_arg_snapshot(rec, 1);
 	memset(&local, 0, sizeof(local));
-	if (getrlimit(snap->resource, &local) == -1)
+	if (getrlimit(resource, &local) == -1)
 		goto out_free;
 
 	if (local.rlim_cur != syscall_buf.rlim_cur ||
 	    local.rlim_max != syscall_buf.rlim_max) {
 		output(0,
 		       "getrlimit oracle: resource=%u syscall={cur=%lu,max=%lu} recheck={cur=%lu,max=%lu}\n",
-		       snap->resource,
+		       resource,
 		       (unsigned long) syscall_buf.rlim_cur,
 		       (unsigned long) syscall_buf.rlim_max,
 		       (unsigned long) local.rlim_cur,
@@ -253,6 +255,8 @@ struct syscallentry syscall_getrlimit = {
 	.argname = { [0] = "resource", [1] = "rlim" },
 	.arg_params[0].list = ARGLIST(getrlimit_resources),
 	.sanitise = sanitise_getrlimit,
+	/* resource (a1): post_getrlimit re-calls on it. */
+	.arg_snapshot_mask = (1u << 0),
 	.group = GROUP_PROCESS,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
