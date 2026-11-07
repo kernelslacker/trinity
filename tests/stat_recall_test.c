@@ -457,6 +457,136 @@ static void statfs_recall_cases(void)
 }
 #endif
 
+/*
+ * @entry's calls the sanitiser built on the slots @built, which the kernel
+ * ran on @ran, each answering the @len bytes at @answer in the buffer in
+ * slot @buf_slot; *@counter counts their anomalies.
+ */
+static unsigned long rewritten_anomalies(struct syscallentry *entry,
+					 const unsigned long *counter,
+					 const unsigned long *built,
+					 const unsigned long *ran,
+					 unsigned int buf_slot,
+					 const void *answer, size_t len)
+{
+	unsigned long before = *counter;
+	static struct syscallrecord rec;
+	static struct statx buf;
+	unsigned long *slots[] = { &rec.a1, &rec.a2, &rec.a3, &rec.a4, &rec.a5, &rec.a6 };
+	unsigned int i, k;
+
+	if (len > sizeof(buf))
+		BUG("stat recall: an answer larger than the buffer");
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		for (k = 0; k < ARRAY_SIZE(slots); k++)
+			*slots[k] = built[k];
+		*slots[buf_slot - 1] = (unsigned long) &buf;
+		entry->sanitise(&rec);
+		memcpy((void *) *slots[buf_slot - 1], answer, len);
+		/* The shadow __do_syscall() takes of what the kernel was
+		 * handed. */
+		for (k = 0; k < ARRAY_SIZE(slots); k++) {
+			if (k != buf_slot - 1)
+				*slots[k] = ran[k];
+			rec.arg_shadow[k] = *slots[k];
+		}
+		rec.arg_snapshot_mask = entry->arg_snapshot_mask;
+		rec.retval = 0;
+		entry->post(&rec);
+	}
+	return *counter - before;
+}
+
+static char dirs[2][sizeof("/tmp/trinity-stat-recall-test.XXXXXX")];
+
+/* A scratch directory holding a "file" and a "link" to it, open. */
+static int scratch_dir(unsigned int n)
+{
+	int dfd, fd;
+
+	strcpy(dirs[n], "/tmp/trinity-stat-recall-test.XXXXXX");
+	if (mkdtemp(dirs[n]) == NULL)
+		BUG("stat recall: cannot make a scratch directory");
+	dfd = open(dirs[n], O_RDONLY | O_DIRECTORY);
+	if (dfd < 0)
+		BUG("stat recall: cannot open a scratch directory");
+	fd = openat(dfd, "file", O_CREAT | O_WRONLY, 0600);
+	if (fd < 0 || symlinkat("file", dfd, "link") != 0)
+		BUG("stat recall: cannot fill a scratch directory");
+	close(fd);
+	return dfd;
+}
+
+static void remove_scratch_dir(unsigned int n, int dfd)
+{
+	unlinkat(dfd, "link", 0);
+	unlinkat(dfd, "file", 0);
+	close(dfd);
+	rmdir(dirs[n]);
+}
+
+/*
+ * Chain substitution or a RedQueen pin can hand the kernel another fd, dfd
+ * or flag word than the sanitiser drew, and the re-call has to find the
+ * inode the kernel answered for: a torn copy of its attributes, a mode moved
+ * under a held ctime, is reported only there.
+ */
+static void rewritten_cases(void)
+{
+	static char file_name[] = "file", link_name[] = "link";
+	struct stat file_b, link_a;
+	int a, b, fd_a, fd_b;
+
+	a = scratch_dir(0);
+	b = scratch_dir(1);
+	fd_a = openat(a, "file", O_RDONLY);
+	fd_b = openat(b, "file", O_RDONLY);
+	if (fd_a < 0 || fd_b < 0 || fstat(fd_b, &file_b) != 0 ||
+	    fstatat(a, "link", &link_a, AT_SYMLINK_NOFOLLOW) != 0)
+		BUG("stat recall: cannot stat the scratch directories");
+	file_b.st_mode ^= S_IXUSR;
+	link_a.st_mode ^= S_IXUSR;
+	fake_ctime_rule = FAKE_CTIME_HOLDS;
+
+	{
+		const unsigned long built[6] = { fd_a }, ran[6] = { fd_b };
+
+		check("a torn copy from a call substituted onto another fd was not reported",
+		      "newfstat",
+		      rewritten_anomalies(&syscall_newfstat,
+					  &shm->stats.oracle.newfstat_oracle_anomalies,
+					  built, ran, 2, &file_b, sizeof(file_b)) > 0);
+	}
+	{
+		const unsigned long built[6] = { a, (unsigned long) file_name };
+		const unsigned long ran[6] = { b, (unsigned long) file_name };
+
+		check("a torn copy from a call substituted onto another dfd was not reported",
+		      "newfstatat",
+		      rewritten_anomalies(&syscall_newfstatat,
+					  &shm->stats.oracle.newfstatat_oracle_anomalies,
+					  built, ran, 3, &file_b, sizeof(file_b)) > 0);
+	}
+	{
+		const unsigned long built[6] = { a, (unsigned long) link_name, 0, 0 };
+		const unsigned long ran[6] = { a, (unsigned long) link_name, 0,
+					       AT_SYMLINK_NOFOLLOW };
+
+		check("a torn copy from a call whose flag was rewritten to not follow the link was not reported",
+		      "newfstatat",
+		      rewritten_anomalies(&syscall_newfstatat,
+					  &shm->stats.oracle.newfstatat_oracle_anomalies,
+					  built, ran, 3, &link_a, sizeof(link_a)) > 0);
+	}
+
+	fake_ctime_rule = FAKE_CTIME_REAL;
+	close(fd_a);
+	close(fd_b);
+	remove_scratch_dir(0, a);
+	remove_scratch_dir(1, b);
+}
+
 #ifdef SYS_statmount
 /*
  * Have the next ONE_IN(100) the post handler draws come up: the stream is a
@@ -597,6 +727,7 @@ void stat_recall_self_check(void)
 #if defined(SYS_statfs) || defined(__NR_statfs)
 	statfs_recall_cases();
 #endif
+	rewritten_cases();
 #ifdef SYS_statmount
 	statmount_recall_cases();
 #endif

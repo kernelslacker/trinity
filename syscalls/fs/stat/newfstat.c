@@ -16,19 +16,18 @@
 #include "utils.h"
 
 /*
- * Snapshot of the two newfstat input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot retarget the re-issue at a
- * different fd or redirect the source memcpy at a foreign user buffer.
- * before is the coarse clock read ahead of the call, which
- * stat_recall_diverged() judges the answer's ctime by.
+ * Snapshot of the newfstat statbuf read by the post oracle, captured at
+ * sanitise time and consumed by the post handler.  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose, so a sibling
+ * syscall scribbling rec->aN between the syscall returning and the post
+ * handler running cannot redirect the source memcpy at a foreign user
+ * buffer.  The fd the re-issue stats is read from the slot the kernel was
+ * handed instead.  before is the coarse clock read ahead of the call,
+ * which stat_recall_diverged() judges the answer's ctime by.
  */
 #define NEWFSTAT_POST_STATE_MAGIC	0x4E465354UL	/* "NFST" */
 struct newfstat_post_state {
 	unsigned long magic;
-	unsigned long fd;
 	unsigned long statbuf;
 	struct timespec before;
 	/*
@@ -51,18 +50,15 @@ static void sanitise_newfstat(struct syscallrecord *rec)
 	avoid_shared_buffer_out(&rec->a2, page_size);
 
 	/*
-	 * Snapshot the two input args for the post oracle.  Without this
-	 * the post handler reads rec->aN at post-time, when a sibling
-	 * syscall may have scribbled the slots: looks_like_corrupted_ptr()
-	 * cannot tell a real-but-wrong heap address from the original user
-	 * statbuf pointer, so the source memcpy would touch a foreign
-	 * allocation, and a stomped fd would silently steer the re-issue
-	 * against a different inode entirely.  post_state is private to
-	 * the post handler.
+	 * Snapshot the statbuf for the post oracle.  Without this the post
+	 * handler reads rec->a2 at post-time, when a sibling syscall may
+	 * have scribbled the slot: looks_like_corrupted_ptr() cannot tell a
+	 * real-but-wrong heap address from the original user statbuf
+	 * pointer, so the source memcpy would touch a foreign allocation.
+	 * post_state is private to the post handler.
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic   = NEWFSTAT_POST_STATE_MAGIC;
-	snap->fd      = rec->a1;
 	snap->statbuf = rec->a2;
 	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
 	/*
@@ -138,7 +134,8 @@ static void post_newfstat(struct syscallrecord *rec)
 	if (snap->statbuf == 0)
 		goto out_release;
 
-	fd = (int) snap->fd;
+	/* The fd the kernel stat'd. */
+	fd = (int) get_arg_snapshot(rec, 1);
 
 	/*
 	 * Untouched-buffer check: newfstat returned 0 (success) but the
@@ -200,6 +197,10 @@ struct syscallentry syscall_newfstat = {
 	.argname = { [0] = "fd", [1] = "statbuf" },
 	.sanitise = sanitise_newfstat,
 	.post = post_newfstat,
+	/* fd (a1): the re-call stats the file the kernel did, which chain
+	 * substitution or a RedQueen pin may have rewritten after the
+	 * sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
@@ -221,27 +222,25 @@ static unsigned long newfstatat_flags[] = {
 };
 
 /*
- * Snapshot of the four newfstatat input args read by the post oracle,
- * captured at sanitise time and consumed by the post handler.  Lives
- * in rec->post_state, a slot the syscall ABI does not expose, so a
- * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot redirect the oracle at a foreign
- * user buffer and cannot smear the dfd or the AT_* flag word that
- * steers lookup semantics on the re-issue.  The pathname is snapshotted
- * by VALUE into the embedded byte buffer below rather than by pointer
- * -- a stale heap-shaped pathname pointer that survived
- * looks_like_corrupted_ptr's shape-only gate would otherwise let the
- * .post strncpy walk off the end of an unrelated allocation, and a
- * sibling rewrite of the bytes between sanitise and post would forge
- * a clean-looking divergence.  before is the coarse clock read ahead of
- * the call, which stat_recall_diverged() judges the answer's ctime by.
+ * Snapshot of the newfstatat statbuf and pathname read by the post
+ * oracle, captured at sanitise time and consumed by the post handler.
+ * Lives in rec->post_state, a slot the syscall ABI does not expose, so a
+ * sibling syscall scribbling rec->aN between the syscall returning and
+ * the post handler running cannot redirect the oracle at a foreign user
+ * buffer.  The dfd and the AT_* flag word that steer the re-issue's
+ * lookup are read from the slots the kernel was handed instead.  The
+ * pathname is snapshotted by VALUE into the embedded byte buffer below
+ * rather than by pointer -- a stale heap-shaped pathname pointer that
+ * survived looks_like_corrupted_ptr's shape-only gate would otherwise let
+ * the .post strncpy walk off the end of an unrelated allocation, and a
+ * sibling rewrite of the bytes between sanitise and post would forge a
+ * clean-looking divergence.  before is the coarse clock read ahead of the
+ * call, which stat_recall_diverged() judges the answer's ctime by.
  */
 #define NEWFSTATAT_POST_STATE_MAGIC	0x4E465441UL	/* "NFTA" */
 struct newfstatat_post_state {
 	unsigned long magic;
-	unsigned long dfd;
 	unsigned long statbuf;
-	unsigned long at_flags;
 	struct timespec before;
 	char pathname[PATH_MAX];
 	/*
@@ -269,9 +268,9 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
 	 * may have scribbled the slots: looks_like_corrupted_ptr() cannot
 	 * tell a real-but-wrong heap address from the original user buffer
 	 * pointer, so the source memcpy would touch a foreign allocation,
-	 * and a stomped dfd, flag word, or rec->a2 / sibling-rewritten
-	 * pathname bytes would silently steer the re-call at a different
-	 * inode than the one the original syscall actually resolved.
+	 * and a stomped rec->a2 / sibling-rewritten pathname bytes would
+	 * silently steer the re-call at a different inode than the one the
+	 * original syscall actually resolved.
 	 * Snapshot the pathname BYTES via post_snapshot_str so the post
 	 * handler never re-derefs the user pointer; skip the post sample
 	 * when the snapshot source is not provably readable.  post_state
@@ -279,9 +278,7 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
 	 */
 	snap = zmalloc_tracked(sizeof(*snap));
 	snap->magic    = NEWFSTATAT_POST_STATE_MAGIC;
-	snap->dfd      = rec->a1;
 	snap->statbuf  = rec->a3;
-	snap->at_flags = rec->a4;
 	clock_gettime(CLOCK_REALTIME_COARSE, &snap->before);
 	if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 			       (const char *)(unsigned long) rec->a2))
@@ -308,8 +305,9 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
  * resolution semantics: AT_SYMLINK_NOFOLLOW gives lstat-equivalent
  * behavior on the final component, AT_EMPTY_PATH lets an empty pathname
  * stat the dfd itself, and AT_NO_AUTOMOUNT suppresses automounter
- * triggering.  All four args must be snapshotted before the re-issue
- * because each one steers the lookup to a different inode.
+ * triggering.  Each of the four args steers the lookup to a different
+ * inode, so the re-issue resolves the pathname from the dfd and with the
+ * flag the kernel was handed.
  *
  * A re-call of the same lookup finds the same attributes unless
  * something changed the inode in between, or put another one at the
@@ -326,14 +324,13 @@ static void sanitise_newfstatat(struct syscallrecord *rec)
  *   - sibling-thread scribble of the user receive buffer between the
  *     original syscall return and our post-hook re-read.
  *
- * TOCTOU defeat (three buffers worth of it): pathname, statbuf, and
- * flag are all reachable from sibling-scribbleable user memory or
- * shared bookkeeping.  Snapshot the dfd, the path (PATH_MAX stack
- * buffer), the flag word, and the original stat result before re-issue.
- * Switching the flag bits between calls would change lookup semantics
- * (NOFOLLOW vs follow on the last component) and produce a benign
- * "different inode" divergence that is purely an artifact of our own
- * race window — preserving the original flag eliminates that source.
+ * TOCTOU defeat: pathname and statbuf are reachable from
+ * sibling-scribbleable user memory.  Snapshot the path (PATH_MAX buffer)
+ * and the original stat result before re-issue.  Switching the flag bits
+ * between calls would change lookup semantics (NOFOLLOW vs follow on the
+ * last component) and land the re-call on another inode, where a torn
+ * copy goes unjudged -- the re-issue takes the flag the kernel was
+ * handed.
  *
  * If the recheck syscall itself fails, a sibling has closed the dfd,
  * unlinked the path, or scribbled the statbuf into an unmapped region;
@@ -373,9 +370,9 @@ static void post_newfstatat(struct syscallrecord *rec)
 	if (snap->pathname[0] == '\0')
 		goto out_release;
 
-	dfd = (int) snap->dfd;
-
-	flag = (int) snap->at_flags;
+	/* The lookup the kernel made. */
+	dfd = (int) get_arg_snapshot(rec, 1);
+	flag = (int) get_arg_snapshot(rec, 4);
 
 	/*
 	 * Untouched-buffer check: newfstatat returned 0 (success) but the
@@ -439,6 +436,10 @@ struct syscallentry syscall_newfstatat = {
 	.arg_params[3].list = ARGLIST(newfstatat_flags),
 	.sanitise = sanitise_newfstatat,
 	.post = post_newfstatat,
+	/* dfd (a1) and flag (a4): the re-call resolves the pathname as the
+	 * kernel did, which chain substitution or a RedQueen pin may have
+	 * rewritten after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 0) | (1u << 3),
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
