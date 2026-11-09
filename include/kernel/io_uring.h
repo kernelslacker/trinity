@@ -263,6 +263,42 @@ struct trinity_io_uring_clone_buffers {
 };
 
 /*
+ * IORING_REGISTER_BUFFERS_UPDATE's extended format (7.4): an update whose
+ * flags, the word older headers name resv, carry
+ * IORING_RSRC_UPDATE_EXTENDED reads data as an array of struct
+ * io_uring_regbuf_desc instead of iovecs, each typed by enum
+ * io_uring_regbuf_type.  The flag and the types are enums upstream and
+ * the word's name depends on the header, so both structs are mirrored.
+ */
+#define TRINITY_IORING_RSRC_UPDATE_EXTENDED	(1U << 1)
+
+#define TRINITY_IO_REGBUF_TYPE_EMPTY		0
+#define TRINITY_IO_REGBUF_TYPE_UADDR		1
+#define TRINITY_IO_REGBUF_TYPE_DMABUF		2
+#define TRINITY_IO_REGBUF_TYPE_MAX		3
+
+struct trinity_io_uring_rsrc_update2 {
+	__u32		offset;
+	__u32		flags;
+	__aligned_u64	data;
+	__aligned_u64	tags;
+	__u32		nr;
+	__u32		resv2;
+};
+
+struct trinity_io_uring_regbuf_desc {
+	__u32	type;
+	__u32	flags;
+	__u64	size;
+	__u64	uaddr;
+	__s32	dmabuf_fd;
+	__s32	target_fd;
+	__u64	__resv[6];
+};
+_Static_assert(sizeof(struct trinity_io_uring_regbuf_desc) == 80,
+	       "trinity_io_uring_regbuf_desc must match upstream struct io_uring_regbuf_desc");
+
+/*
  * Trinity-private mirrors for the blind-fd register opcode arg structs:
  * io_uring_restriction / io_uring_task_restriction (RESTRICTIONS task path)
  * and io_uring_bpf / io_uring_bpf_filter (BPF_FILTER task path).  Same

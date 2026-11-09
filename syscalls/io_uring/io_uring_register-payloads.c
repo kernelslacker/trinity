@@ -618,27 +618,98 @@ struct ioring_register_payload ioring_reg_rsrc_register_payload(unsigned int opc
 }
 
 /*
+ * The @nr descriptors an extended IORING_REGISTER_BUFFERS_UPDATE reads.
+ * io_sqe_buffer_register() refuses a type past the last, nonzero flags or
+ * __resv, an address or size on an EMPTY or DMABUF descriptor and an fd
+ * on an EMPTY or UADDR one, so seven in eight keep to that: five a UADDR
+ * buffer from the call's pool, one an EMPTY slot, which removes the
+ * buffer there, and one a DMABUF naming two pool fds, which dma_buf_get()
+ * refuses unless the first is a dma-buf.  The eighth breaks one rule.
+ */
+static struct trinity_io_uring_regbuf_desc *regbuf_descs(unsigned int nr)
+{
+	struct trinity_io_uring_regbuf_desc *descs;
+	unsigned long size;
+	unsigned int i;
+
+	descs = get_writable_struct(nr * sizeof(*descs));
+	if (descs == NULL)
+		return NULL;
+	memset(descs, 0, nr * sizeof(*descs));
+
+	for (i = 0; i < nr; i++) {
+		struct trinity_io_uring_regbuf_desc *d = &descs[i];
+
+		switch (rnd_modulo_u32(8)) {
+		case 0 ... 4:
+			size = RAND_BOOL() ? page_size :
+				1 + rnd_modulo_u32(4 * page_size);
+			d->type = TRINITY_IO_REGBUF_TYPE_UADDR;
+			d->uaddr = (unsigned long) get_writable_address(size);
+			if (d->uaddr != 0)
+				d->size = size;
+			break;
+		case 5:
+			d->type = TRINITY_IO_REGBUF_TYPE_EMPTY;
+			break;
+		case 6:
+			d->type = TRINITY_IO_REGBUF_TYPE_DMABUF;
+			d->dmabuf_fd = get_random_fd();
+			d->target_fd = get_random_fd();
+			break;
+		default:
+			d->type = rnd_modulo_u32(TRINITY_IO_REGBUF_TYPE_MAX);
+			switch (rnd_modulo_u32(4)) {
+			case 0:
+				d->type = TRINITY_IO_REGBUF_TYPE_MAX + rnd_modulo_u32(8);
+				break;
+			case 1:
+				d->flags = rnd_u32() | 1;
+				break;
+			case 2:
+				d->__resv[rnd_modulo_u32(ARRAY_SIZE(d->__resv))] =
+					rnd_u64() | 1;
+				break;
+			default:
+				d->type = TRINITY_IO_REGBUF_TYPE_EMPTY;
+				d->uaddr = (unsigned long) get_writable_address(page_size);
+				d->size = page_size;
+				break;
+			}
+			break;
+		}
+	}
+	return descs;
+}
+
+/*
  * IORING_REGISTER_FILES_UPDATE2 / IORING_REGISTER_BUFFERS_UPDATE:
  * arg = struct io_uring_rsrc_update2, nr_args = sizeof(struct).  Same
  * data/tags split as the *2 register pair; offset selects the slot to
- * start updating at, nr is the count.  resv / resv2 must be zero.
+ * start updating at, nr is the count.  resv2 must be zero, and so must
+ * flags but for BUFFERS_UPDATE's IORING_RSRC_UPDATE_EXTENDED, which half
+ * of its updates carry, with descriptors in data instead of iovecs.
  */
 struct ioring_register_payload ioring_reg_rsrc_update_payload(unsigned int opcode)
 {
 	struct ioring_register_payload p;
-	struct io_uring_rsrc_update2 *u;
+	struct trinity_io_uring_rsrc_update2 *u;
 	void *data_buf;
 	void *tags_buf;
 	size_t data_sz;
 	unsigned int nr = 1 + (rnd_modulo_u32(8));
+	bool extended = false;
 
-	u = (struct io_uring_rsrc_update2 *)
+	u = (struct trinity_io_uring_rsrc_update2 *)
 		get_writable_struct(sizeof(*u));
 	if (opcode == IORING_REGISTER_FILES_UPDATE2) {
 		data_sz = nr * sizeof(int);
 		data_buf = get_writable_struct(data_sz);
 		if (data_buf)
 			memset(data_buf, 0xff, data_sz);
+	} else if (RAND_BOOL()) {
+		data_buf = regbuf_descs(nr);
+		extended = true;
 	} else {
 		data_buf = alloc_iovec(nr, IOV_KERNEL_WRITE);
 	}
@@ -648,6 +719,8 @@ struct ioring_register_payload ioring_reg_rsrc_update_payload(unsigned int opcod
 	if (u) {
 		memset(u, 0, sizeof(*u));
 		u->offset = rnd_u32() & 0xf;
+		if (extended)
+			u->flags = TRINITY_IORING_RSRC_UPDATE_EXTENDED;
 		u->nr = nr;
 		u->data = (__u64)(uintptr_t) data_buf;
 		u->tags = (__u64)(uintptr_t) tags_buf;

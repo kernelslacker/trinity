@@ -342,7 +342,7 @@ static void sanitise_io_uring_register(struct syscallrecord *rec)
 	case IORING_REGISTER_BUFFERS_UPDATE:
 		p = ioring_reg_rsrc_update_payload(opcode);
 		if (p.arg != 0)
-			nr_update = ((struct io_uring_rsrc_update2 *) p.arg)->nr;
+			nr_update = ((struct trinity_io_uring_rsrc_update2 *) p.arg)->nr;
 		break;
 
 	case IORING_REGISTER_QUERY:
