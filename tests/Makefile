@@ -1132,6 +1132,12 @@ FAKE_SRCS	+= futex_wait_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/lsm/lsm_list_modules.c
 FAKE_SRCS	+= lsm_list_modules_test.c
 
+# syscalls/socket/getsockopt.c brings getsockopt's sanitiser, whose
+# buffers getsockopt_test.c checks on a compat call, with stand-ins for
+# the setsockopt helpers it draws the option from.
+PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockopt.c
+FAKE_SRCS	+= getsockopt_test.c
+
 # listmount_test.c runs syscall_listmount's sanitiser, linked above for
 # the recall test, with its id-buffer draw refused.
 FAKE_SRCS	+= listmount_test.c

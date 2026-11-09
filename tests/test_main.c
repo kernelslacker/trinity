@@ -112,6 +112,7 @@ void cmsg_build_self_check(void);
 void rxrpc_key_install_self_check(void);
 void futex_wait_self_check(void);
 void lsm_list_modules_self_check(void);
+void getsockopt_self_check(void);
 void listmount_self_check(void);
 void struct_fill_fd_self_check(void);
 void budgeted_self_check(void);
@@ -636,6 +637,11 @@ int main(int argc, char **argv)
 	printf("  lsm_list_modules_self_check ... ");
 	fflush(stdout);
 	lsm_list_modules_self_check();
+	printf("OK\n");
+
+	printf("  getsockopt_self_check ... ");
+	fflush(stdout);
+	getsockopt_self_check();
 	printf("OK\n");
 
 	printf("  listmount_self_check ... ");

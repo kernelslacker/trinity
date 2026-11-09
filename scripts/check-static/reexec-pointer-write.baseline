@@ -74,6 +74,7 @@ syscalls/signal/signalfd.c:syscall_signalfd
 syscalls/signal/signalfd.c:syscall_signalfd4
 syscalls/socket/getpeername.c:syscall_getpeername
 syscalls/socket/getsockname.c:syscall_getsockname
+syscalls/socket/getsockopt.c:syscall_getsockopt
 syscalls/socket/recv.c:syscall_recvfrom
 syscalls/socket/socketpair.c:syscall_socketpair
 syscalls/timer/timer_create.c:syscall_timer_create
