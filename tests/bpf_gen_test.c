@@ -272,15 +272,12 @@ static void valid_programs_draw_both_frames(void)
 
 /*
  * The prog_flags bpf_prog_load() checks against, less BPF_F_TOKEN_FD, which
- * the arm of its own sets.  Any other bit is -EINVAL.  BPF_F_ARENA_SCALAR is
- * -EOPNOTSUPP without bpf_jit_supports_arena_scalar(), which only the x86-64
- * and arm64 JITs have.
+ * the arm of its own sets.  Any other bit is -EINVAL.
  */
 #define KERNEL_PROG_FLAGS_MASK ( \
 	BPF_F_STRICT_ALIGNMENT | BPF_F_ANY_ALIGNMENT | BPF_F_TEST_RND_HI32 | \
 	BPF_F_TEST_STATE_FREQ | BPF_F_SLEEPABLE | BPF_F_XDP_HAS_FRAGS | \
 	BPF_F_XDP_DEV_BOUND_ONLY | BPF_F_TEST_REG_INVARIANTS)
-#define ARENA_SCALAR_FLAG	(LARGE_FRAMES ? BPF_F_ARENA_SCALAR : 0UL)
 
 /* The program types can_be_sleepable() takes without an attach target. */
 static bool can_be_sleepable(unsigned int type)
@@ -315,7 +312,7 @@ static void free_program(const union bpf_attr *attr, bool classic)
 static void prog_load_draws_flags_the_kernel_takes(void)
 {
 	enum { ROUNDS = 20000 };
-	const unsigned long takes = KERNEL_PROG_FLAGS_MASK | ARENA_SCALAR_FLAG;
+	const unsigned long takes = KERNEL_PROG_FLAGS_MASK;
 	static struct syscallrecord rec;
 	static union bpf_attr attr;
 	unsigned long seen = 0;

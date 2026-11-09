@@ -63,9 +63,7 @@ static const char license[] = "GPLv2";
  * The prog_flags bpf_prog_load() takes, from the mask it checks them
  * against, less BPF_F_TOKEN_FD, which has an arm of its own.  The verifier
  * takes these on a program of any type: how strict its alignment checks
- * are, the test modes, and BPF_F_ARENA_SCALAR, which matters only to a
- * program with an arena but is refused with -EOPNOTSUPP wherever the JIT
- * lacks bpf_jit_supports_arena_scalar(): x86-64 and arm64.
+ * are, and the test modes.
  */
 static const unsigned long bpf_prog_load_flags[] = {
 	BPF_F_STRICT_ALIGNMENT,
@@ -73,9 +71,6 @@ static const unsigned long bpf_prog_load_flags[] = {
 	BPF_F_TEST_RND_HI32,
 	BPF_F_TEST_STATE_FREQ,
 	BPF_F_TEST_REG_INVARIANTS,
-#if defined(__x86_64__) || defined(__aarch64__)
-	BPF_F_ARENA_SCALAR,
-#endif
 };
 
 /*

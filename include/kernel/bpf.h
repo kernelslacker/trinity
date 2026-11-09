@@ -270,9 +270,6 @@ struct bpf_common_attr {
 #ifndef BPF_F_TEST_REG_INVARIANTS
 # define BPF_F_TEST_REG_INVARIANTS	(1U << 7)
 #endif
-#ifndef BPF_F_ARENA_SCALAR
-# define BPF_F_ARENA_SCALAR		(1U << 8)
-#endif
 
 /* Flags referenced from the MAP_CREATE schema annotation. */
 #ifndef BPF_F_MMAPABLE
