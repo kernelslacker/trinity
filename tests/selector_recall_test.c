@@ -353,47 +353,83 @@ static void sysfs_cases(void)
 #endif
 
 #ifdef SYS_lsm_get_self_attr
-/* A fake lsm_get_self_attr() answering each attribute with its own number:
- * what the calling task holds depends on the LSMs a kernel runs.  A single
- * LSM's answer it refuses, as the kernel does for the zeroed lsm_ctx id
- * the re-call hands it. */
+/* The one LSM a fake kernel runs, which holds each attribute as its own
+ * number. */
+#define FAKE_LSM_ID	LSM_ID_APPARMOR
+
+/* The lsm_ctx that LSM answers with: the context is one word. */
+struct fake_lsm_ctx {
+	uint64_t id, flags, len, ctx_len;
+	uint64_t ctx;
+};
+
+/* What lsm_get_self_attr() does on the fake's kernel, answering with
+ * context @value: the number of LSMs that answered, or -errno.  A
+ * single-LSM request is answered only when its lsm_ctx names the fake's
+ * LSM, and refused when the id is zeroed (LSM_ID_UNDEF). */
+static long lsm_answer(struct fake_lsm_ctx *ctx, uint32_t *size,
+		       unsigned long flags, uint64_t value)
+{
+	uint32_t left;
+
+	if (size == NULL)
+		return -EINVAL;
+	left = *size;
+	if (flags != 0) {
+		if (flags != LSM_FLAG_SINGLE || ctx == NULL || ctx->id == 0)
+			return -EINVAL;
+		if (ctx->id != FAKE_LSM_ID)
+			return -EOPNOTSUPP;
+	}
+	*size = sizeof(*ctx);
+	if (left < sizeof(*ctx))
+		return -E2BIG;
+	if (ctx != NULL) {
+		ctx->id = FAKE_LSM_ID;
+		ctx->flags = 0;
+		ctx->len = sizeof(*ctx);
+		ctx->ctx_len = sizeof(ctx->ctx);
+		ctx->ctx = value;
+	}
+	return 1;
+}
+
 static bool fake_lsm_get_self_attr(long number, const unsigned long a[6],
 				   long *ret)
 {
 	if (number != SYS_lsm_get_self_attr)
 		return false;
-	*ret = -EINVAL;
-	if (a[3] == 0) {
-		memcpy((void *) a[1], &a[0], sizeof(a[0]));
-		*(uint32_t *) a[2] = sizeof(a[0]);
-		*ret = 0;
-	}
+	*ret = lsm_answer((struct fake_lsm_ctx *) a[1], (uint32_t *) a[2],
+			  a[3], a[0]);
 	return true;
 }
 
-/* lsm_get_self_attr calls the sanitiser built on attribute @built, which
- * the kernel ran on @ran, each answering as the fake does for @answer;
- * the anomalies the re-call reports. */
+/* lsm_get_self_attr calls with @flags the sanitiser built on attribute
+ * @built, which the kernel ran on @ran, each answering as the fake does
+ * for @answer; the anomalies the re-call reports. */
 static unsigned long lsm_anomalies(unsigned long built, unsigned long ran,
-				   unsigned long answer)
+				   unsigned long answer, unsigned long flags)
 {
 	unsigned long before = shm->stats.oracle.lsm_get_self_attr_oracle_anomalies;
+	struct fake_lsm_ctx *ctx;
 	unsigned int i;
+	long ret;
 
 	for (i = 0; i < RECALL_CALLS; i++) {
 		memset(&rec, 0, sizeof(rec));
 		rec.a1 = built;
+		rec.a4 = flags;
 		syscall_lsm_get_self_attr.sanitise(&rec);
 
-		/* The sanitiser's arms without a buffer or a size are ones
-		 * the post handler passes over. */
-		if (rec.a2 != 0 && rec.a3 != 0) {
-			memcpy((void *) rec.a2, &answer, sizeof(answer));
-			*(uint32_t *) rec.a3 = sizeof(answer);
-		}
+		/* A single-LSM request that names the fake's LSM. */
+		ctx = (struct fake_lsm_ctx *) rec.a2;
+		if (flags == LSM_FLAG_SINGLE && ctx != NULL)
+			ctx->id = FAKE_LSM_ID;
+		ret = lsm_answer(ctx, (uint32_t *) rec.a3, flags, answer);
 		rec.a1 = ran;
 		shadow_slots(&syscall_lsm_get_self_attr);
-		rec.retval = 0;
+		rec.retval = ret < 0 ? (unsigned long) -1L : (unsigned long) ret;
+		rec.errno_post = ret < 0 ? (int) -ret : 0;
 		syscall_lsm_get_self_attr.post(&rec);
 	}
 	return shm->stats.oracle.lsm_get_self_attr_oracle_anomalies - before;
@@ -403,9 +439,15 @@ static void lsm_cases(void)
 {
 	fake_syscall = fake_lsm_get_self_attr;
 	check("lsm_get_self_attr: a call rewritten onto another attribute was re-called on the first",
-	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_EXEC, LSM_ATTR_EXEC) == 0);
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_EXEC, LSM_ATTR_EXEC, 0) == 0);
 	check("lsm_get_self_attr: a call answering another attribute's context was not reported",
-	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_CURRENT, LSM_ATTR_EXEC) > 0);
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_CURRENT, LSM_ATTR_EXEC, 0) > 0);
+	check("lsm_get_self_attr: a single-LSM call answering as its re-call did was reported",
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_CURRENT, LSM_ATTR_CURRENT,
+			    LSM_FLAG_SINGLE) == 0);
+	check("lsm_get_self_attr: a single-LSM call answering another attribute's context was not reported",
+	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_CURRENT, LSM_ATTR_EXEC,
+			    LSM_FLAG_SINGLE) > 0);
 	fake_syscall = NULL;
 }
 #endif

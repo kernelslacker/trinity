@@ -84,8 +84,8 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 	 *   10% NULL size pointer (EFAULT before any copy)
 	 *    5% NULL ctx buffer (EFAULT at copy_to_user)
 	 *
-	 * The post oracle bails when snap->ctx or snap->size is 0 and when
-	 * rec->retval != 0, so the EFAULT / E2BIG branches don't trip the
+	 * The post oracle bails when snap->ctx or snap->size is 0 and on a
+	 * failed call, so the EFAULT / E2BIG branches don't trip the
 	 * comparison; the post oracle continues to work on the normal path.
 	 * Whenever the buffer is real we keep *size <= the allocation so
 	 * the kernel can't write past our allocation.
@@ -192,15 +192,21 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
  * ctx / size -- a sibling could scribble the user buffers themselves
  * mid-syscall and forge a clean compare).
  *
+ * A successful call returns the number of LSMs that answered, never 0
+ * (none answering is -EOPNOTSUPP), and the re-call must return the same
+ * count.  A single-LSM request (LSM_FLAG_SINGLE) names its LSM in the id
+ * of the lsm_ctx it hands in, and a zeroed id is -EINVAL; the answer's
+ * own lsm_ctx carries the id of the LSM that gave it, so the re-call
+ * hands that id back.
+ *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  Per-field bumps with no early-return so simultaneous size+ctx
  * corruption surfaces in a single sample.
  *
  * False-positive sources at ONE_IN(100):
- *   - Sibling lsm_set_self_attr(2) between the two reads: rc != 0 path
- *     swallows it (the second call may legitimately differ, but the
- *     swallow keeps it from bumping the counter).
- *   - LSM module load/unload race: extremely rare, rc != 0 path swallows.
+ *   - None from siblings: lsm_set_self_attr(2) and /proc/<pid>/attr
+ *     writes change only the caller's own attributes.
+ *   - The LSM stack is fixed at boot.
  *   - Defensive size cap above protects against future kernel surprises
  *     that grow the lsm_ctx output past a page.
  */
@@ -229,7 +235,7 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if ((long) rec->retval != 0)
+	if ((long) rec->retval < 0)
 		goto out_free;
 
 	if (snap->ctx == 0 || snap->size == 0)
@@ -267,10 +273,21 @@ static void post_lsm_get_self_attr(struct syscallrecord *rec)
 	flags = get_arg_snapshot(rec, 4);
 	size_recall = LSM_CTX_BUF_MAX;
 	memset(ctx_recall, 0, sizeof(ctx_recall));
+	/* The lsm_ctx id leads the record. */
+	if ((u32) flags == LSM_FLAG_SINGLE && size_first >= sizeof(u64))
+		memcpy(ctx_recall, ctx_first, sizeof(u64));
 	rc = syscall(SYS_lsm_get_self_attr, attr, ctx_recall,
 		     &size_recall, flags);
-	if (rc != 0)
+	if (rc < 0)
 		goto out_free;
+
+	if (rc != (long) rec->retval) {
+		output(0,
+		       "[oracle:lsm_get_self_attr] count %ld vs %ld (attr=%lu flags=0x%lx)\n",
+		       (long) rec->retval, rc, attr, flags);
+		__atomic_add_fetch(&shm->stats.oracle.lsm_get_self_attr_oracle_anomalies,
+				   1, __ATOMIC_RELAXED);
+	}
 
 	if (size_first != size_recall) {
 		output(0,
