@@ -435,8 +435,44 @@ static unsigned long lsm_anomalies(unsigned long built, unsigned long ran,
 	return shm->stats.oracle.lsm_get_self_attr_oracle_anomalies - before;
 }
 
+/* Of the sanitiser's calls that hand the kernel an lsm_ctx, how many name
+ * an LSM with a getselfattr hook, which a single-LSM request has to. */
+static void lsm_single_names_an_lsm(void)
+{
+	unsigned int calls = 0, named = 0, seen = 0, i;
+	uint64_t id;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = LSM_ATTR_CURRENT;
+		rec.a4 = LSM_FLAG_SINGLE;
+		syscall_lsm_get_self_attr.sanitise(&rec);
+		free((void *) rec.post_state);
+		if (rec.a2 == 0)
+			continue;
+		calls++;
+		memcpy(&id, (void *) rec.a2, sizeof(id));
+		if (id == LSM_ID_SELINUX)
+			seen |= 1;
+		else if (id == LSM_ID_SMACK)
+			seen |= 2;
+		else if (id == LSM_ID_APPARMOR)
+			seen |= 4;
+		else
+			continue;
+		named++;
+	}
+	check("lsm_get_self_attr: a single-LSM call seldom names an LSM with a getselfattr hook",
+	      named * 4 >= calls * 3);
+	check("lsm_get_self_attr: a single-LSM call never names some LSM with a getselfattr hook",
+	      seen == 7);
+	check("lsm_get_self_attr: a single-LSM call always names an LSM with a getselfattr hook",
+	      named < calls);
+}
+
 static void lsm_cases(void)
 {
+	lsm_single_names_an_lsm();
 	fake_syscall = fake_lsm_get_self_attr;
 	check("lsm_get_self_attr: a call rewritten onto another attribute was re-called on the first",
 	      lsm_anomalies(LSM_ATTR_CURRENT, LSM_ATTR_EXEC, LSM_ATTR_EXEC, 0) == 0);

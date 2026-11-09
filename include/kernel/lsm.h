@@ -22,6 +22,9 @@
 #endif
 
 /* LSM IDs from linux/lsm.h; guard in case system headers provide them. */
+#ifndef LSM_ID_UNDEF
+#define LSM_ID_UNDEF		0
+#endif
 #ifndef LSM_ID_CAPABILITY
 #define LSM_ID_CAPABILITY	100
 #endif

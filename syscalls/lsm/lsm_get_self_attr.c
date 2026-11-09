@@ -35,6 +35,11 @@ static unsigned long lsm_get_flags[] = {
 	LSM_FLAG_SINGLE,
 };
 
+/* The LSMs with a getselfattr hook, which a single-LSM request names. */
+static const u64 lsm_selfattr_ids[] = {
+	LSM_ID_SELINUX, LSM_ID_SMACK, LSM_ID_APPARMOR,
+};
+
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 /*
  * Snapshot of the two lsm_get_self_attr buffer args read by the post
@@ -139,6 +144,28 @@ static void sanitise_lsm_get_self_attr(struct syscallrecord *rec)
 		avoid_shared_buffer_out(&rec->a2, buf_len);
 	if (rec->a3 != 0)
 		avoid_shared_buffer_inout(&rec->a3, sizeof(u32));
+
+	/*
+	 * A single-LSM request (LSM_FLAG_SINGLE) names its LSM in the id of
+	 * the lsm_ctx it hands in, and security_getselfattr() asks only that
+	 * LSM's getselfattr hook: a zeroed id (LSM_ID_UNDEF) is -EINVAL, and
+	 * an LSM without the hook -EOPNOTSUPP.  The pool buffer holds what an
+	 * earlier call left there, so the id is drawn: an LSM with the hook
+	 * seven times in eight, any LSM's or none the eighth.  A request
+	 * without the flag only writes the buffer.
+	 */
+	if (rec->a2 != 0) {
+		u64 id;
+
+		if (!ONE_IN(8))
+			id = lsm_selfattr_ids[rnd_modulo_u32(ARRAY_SIZE(lsm_selfattr_ids))];
+		else if (RAND_BOOL())
+			id = LSM_ID_UNDEF;
+		else
+			id = LSM_ID_CAPABILITY +
+			     rnd_modulo_u32(LSM_ID_IPE - LSM_ID_CAPABILITY + 1);
+		memcpy((void *) rec->a2, &id, sizeof(id));
+	}
 
 #ifdef HAVE_SYS_LSM_GET_SELF_ATTR
 	/*
