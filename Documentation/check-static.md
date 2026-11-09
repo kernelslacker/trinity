@@ -173,6 +173,12 @@ update this section to match `ls scripts/check-static/*.sh`.)
   battery is the project's change detector; a check nobody can find in the
   docs is a check nobody knows they lost.
 
+- `ioctl-groups-fit`: the `REG_IOCTL_GROUP()` lines in the
+  comment-stripped sources number no more than `IOCTL_GROUPS_MAX`
+  (`include/ioctls.h`).  `register_ioctl_group()` drops a group past the
+  table's last slot at start-up with one stderr line, and its requests are
+  never issued.  A group its file compiles out still counts, so the gate
+  fails before the slots run out on any configuration.
 - `json-separator-adjacency`: detect missing `putchar(',')` separators
   between adjacent `stat_category_emit_json()` calls within a function
   in `stats/json/*.c`.  A missing comma produces a malformed-JSON
