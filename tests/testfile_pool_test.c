@@ -4,11 +4,13 @@
  * reach from any cwd, wherever init made them, each fd is mapped
  * page_size into the testfile mmap pool, and a root run hands every file
  * to nobody, whom its children run as.  A symlink planted under a name
- * between init's unlink and its create keeps that name out of the pool.
- * Init runs through the provider's hook, as a root run, against fake
- * object-pool hooks and an fchown() that only records.
+ * between init's unlink and its create keeps that name out of the pool,
+ * as does a file init cannot size.  Init runs through the provider's
+ * hook, as a root run, against fake object-pool hooks, an fchown() that
+ * only records and an ftruncate() that can be made to fail.
  */
 
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +45,7 @@ static struct objhead file_head, map_head;
 static ino_t chowned[32];
 static unsigned int nr_chowned;
 static bool fchown_armed, fchown_stranger;
+static bool ftruncate_refuse;
 
 /* Records the inode a root run's init hands to nobody, rather than ask a
  * kernel that refuses a non-root test; forwards while unarmed. */
@@ -59,6 +62,19 @@ int __wrap_fchown(int fd, uid_t owner, gid_t group)
 	if (fstat(fd, &st) == 0 && nr_chowned < ARRAY_SIZE(chowned))
 		chowned[nr_chowned++] = st.st_ino;
 	return 0;
+}
+
+/* Armed, the next ftruncate() fails as an EIO would and disarms.
+ * Unarmed, the real call. */
+int __real_ftruncate(int fd, off_t length);
+int __wrap_ftruncate(int fd, off_t length);
+int __wrap_ftruncate(int fd, off_t length)
+{
+	if (!ftruncate_refuse)
+		return __real_ftruncate(fd, length);
+	ftruncate_refuse = false;
+	errno = EIO;
+	return -1;
 }
 
 static bool inode_chowned(int fd)
@@ -206,6 +222,41 @@ static void check_planted_name(int (*init)(void))
 		BUG("testfile pool: cannot remove the planted directory");
 }
 
+/*
+ * A file init creates but cannot size, which mmap_fd() would keep no
+ * mapping of: its name is neither pooled nor left on disk, and the other
+ * names still fill the pool, every fd mapped.
+ */
+static void check_unsized_name(int (*init)(void))
+{
+	char base[] = "/tmp/trinity-testfile-unsized.XXXXXX";
+	struct stat st;
+	unsigned int i;
+
+	if (mkdtemp(base) == NULL || chdir(base) != 0)
+		BUG("testfile pool: cannot set up the unsized directory");
+
+	/* The first size init asks for is trinity-testfile1's. */
+	ftruncate_refuse = true;
+	run_init_as_root(init);
+	ftruncate_refuse = false;
+
+	if (nr_files == 0)
+		BUG("testfile pool: an unsized name kept every testfile out of the pool");
+	for (i = 0; i < nr_files; i++) {
+		if (strcmp(files[i]->testfileobj.filename, "trinity-testfile1") == 0)
+			BUG("testfile pool: init pooled a testfile it could not size");
+	}
+	if (nr_maps != nr_files)
+		BUG("testfile pool: not every testfile fd was mapped");
+	if (lstat("trinity-testfile1", &st) == 0)
+		BUG("testfile pool: init left a testfile it could not size on disk");
+
+	release_pool();
+	if (chdir("/") != 0 || rmdir(base) != 0)
+		BUG("testfile pool: cannot remove the unsized directory");
+}
+
 void testfile_pool_self_check(void);
 void testfile_pool_self_check(void)
 {
@@ -272,6 +323,7 @@ void testfile_pool_self_check(void)
 		BUG("testfile pool: cannot remove the test directory");
 
 	check_planted_name(init);
+	check_unsized_name(init);
 
 	if (fchdir(cwd) != 0)
 		BUG("testfile pool: cannot return to the starting directory");

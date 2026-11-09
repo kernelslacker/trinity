@@ -111,7 +111,8 @@ static int open_testfile_fds(void)
 	 * The cwd is tmp/ when there is one, which anyone can write to, so
 	 * the create is O_EXCL and a name something took in between stays
 	 * out of the pool; the opens after it are O_NOFOLLOW.  Sized here,
-	 * as mmap_fd() keeps no mapping of an empty file.
+	 * as mmap_fd() keeps no mapping of an empty file, so one that will
+	 * not size stays out as well.
 	 */
 	for (i = 1; i <= MAX_TESTFILES; i++) {
 		int fd;
@@ -121,7 +122,11 @@ static int open_testfile_fds(void)
 		fd = open(name, O_RDWR | O_CREAT | O_EXCL, 0666);
 		if (fd < 0)
 			continue;
-		(void) ftruncate(fd, page_size);
+		if (ftruncate(fd, page_size) < 0) {
+			close(fd);
+			(void) unlink(name);
+			continue;
+		}
 		close(fd);
 		made[nr_made++] = i;
 	}
@@ -188,12 +193,16 @@ static int open_testfile_fds(void)
 	 * A root run's children drop to nobody, who can neither open a
 	 * root-owned 0644 testfile for writing nor set a user.* xattr on it
 	 * (xattr_permission() wants write permission): hand the files to
-	 * nobody, as a non-root run's children own theirs.
+	 * nobody, as a non-root run's children own theirs.  What refuses
+	 * one (no CAP_CHOWN, nobody unmapped in the user namespace) refuses
+	 * them all.
 	 */
 	if (orig_uid == 0) {
-		for (i = 0; i < nr; i++)
-			(void) fchown(opened[i]->testfileobj.fd, nobody_uid,
-				      nobody_gid);
+		for (i = 0; i < nr; i++) {
+			if (fchown(opened[i]->testfileobj.fd, nobody_uid,
+				   nobody_gid) != 0)
+				break;
+		}
 	}
 
 	return true;

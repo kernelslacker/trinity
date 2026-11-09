@@ -139,6 +139,11 @@ LDFLAGS		+= -Wl,--wrap=set_object_fd
 # non-root test.  The wrapper forwards to the real fchown() unless armed.
 LDFLAGS		+= -Wl,--wrap=fchown
 
+# ftruncate() failure injection: testfile_pool_test.c wraps it to fail
+# the size testfile init gives a file it has just created.  The wrapper
+# forwards to the real call unless armed.
+LDFLAGS		+= -Wl,--wrap=ftruncate
+
 # get_testfile_path() stand-in: args/pools/pathnames.c is linked for the
 # pathname pool, and the sanitiser tests name the path a testfile pin
 # takes through arg_coupling_test.c's wrapper.
