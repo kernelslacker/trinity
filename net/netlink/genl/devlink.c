@@ -20,15 +20,37 @@
  * A doit's pre_doit answers -EINVAL without both names, PORT_GET's without
  * the port's index, and the handlers of SB_GET, PARAM_GET and REGION_GET
  * without the SB index, the param's name and the region's; a dump without
- * the names walks every instance.  Lengths follow the kernel's
- * NLA_NUL_STRING policy entries; 32 is well under the driver-side limits
- * and matches typical "pci/0000:01:00.0" payloads with room to spare.
- * DEVLINK_ATTR_INDEX, which every policy takes too, is an enum value only
- * the newest uapi headers have, so it is left out.
+ * the names walks every instance.  The lookup answers names no instance
+ * has -ENODEV (devlink_get_from_attrs_lock()), as it does a random
+ * string, but since v7.1 the bus "devlink_index" takes an instance's
+ * index, counted from 0, as the device name: seven draws in eight name
+ * that bus or netdevsim's, and an index below 4 or one of the first
+ * netdevsim devices.  The lookup sees only the requester's netns, so the
+ * names meet the host's instances where the children stay in init_net (a
+ * non-root run, or --no-startup-isolation), and none in a root run's
+ * fresh netns unless netdevsim made one there.  DEVLINK_ATTR_INDEX, which
+ * every policy takes too, is an enum value only the newest uapi headers
+ * have, so it is left out.
  */
+#ifndef DEVLINK_INDEX_BUS_NAME
+#define DEVLINK_INDEX_BUS_NAME	"devlink_index"
+#endif
+
+static const char *const devlink_bus_names[] = {
+	DEVLINK_INDEX_BUS_NAME, "netdevsim",
+};
+
+static const char *const devlink_dev_names[] = {
+	"0", "1", "2", "3", "netdevsim0", "netdevsim1",
+};
+
 #define DEVLINK_NAME_SPECS(...) \
-	{ DEVLINK_ATTR_BUS_NAME,	NLA_KIND_STRING, 32, 1, ##__VA_ARGS__ }, \
-	{ DEVLINK_ATTR_DEV_NAME,	NLA_KIND_STRING, 32, 1, ##__VA_ARGS__ }
+	{ DEVLINK_ATTR_BUS_NAME,	NLA_KIND_STRING_ONEOF, 0, 0, \
+	  .words = devlink_bus_names, \
+	  .n_words = ARRAY_SIZE(devlink_bus_names), ##__VA_ARGS__ }, \
+	{ DEVLINK_ATTR_DEV_NAME,	NLA_KIND_STRING_ONEOF, 0, 0, \
+	  .words = devlink_dev_names, \
+	  .n_words = ARRAY_SIZE(devlink_dev_names), ##__VA_ARGS__ }
 
 static const struct nla_attr_spec devlink_get_attrs[] = {
 	DEVLINK_NAME_SPECS(.required = true),
