@@ -37,3 +37,6 @@
 #if !defined(SYS_lsm_get_self_attr) && defined(__NR_lsm_get_self_attr)
 #define SYS_lsm_get_self_attr	__NR_lsm_get_self_attr
 #endif
+#if !defined(SYS_lsm_list_modules) && defined(__NR_lsm_list_modules)
+#define SYS_lsm_list_modules	__NR_lsm_list_modules
+#endif

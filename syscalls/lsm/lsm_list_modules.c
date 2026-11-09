@@ -4,9 +4,7 @@
  */
 #include <stdbool.h>
 #include <stdint.h>
-#include <sys/syscall.h>
 #include <unistd.h>
-#include <asm/unistd.h>
 #include <string.h>
 #include "arch.h"
 #include "deferred-free.h"
@@ -17,10 +15,9 @@
 #include "utils.h"
 #include "valresult.h"
 
-#if defined(SYS_lsm_list_modules) || defined(__NR_lsm_list_modules)
-#ifndef SYS_lsm_list_modules
-#define SYS_lsm_list_modules __NR_lsm_list_modules
-#endif
+#include "kernel/unistd.h"
+
+#ifdef SYS_lsm_list_modules
 #define HAVE_SYS_LSM_LIST_MODULES 1
 #endif
 
@@ -77,8 +74,7 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
 	 * AXIS B fraction) keeps the post oracle's stable-equality
 	 * comparison firing on the happy path; the other four shapes are
 	 * new fuzz coverage for the addrlen-style bounds and short-write
-	 * paths and the oracle short-circuits cleanly on them via the
-	 * rec->retval != 0 gate.
+	 * paths, and the oracle stands down on the -E2BIG they draw.
 	 */
 	rec->a3 = 0;	/* flags must be zero */
 
@@ -180,6 +176,9 @@ static void sanitise_lsm_list_modules(struct syscallrecord *rec)
  *
  * Comparison rules (no early return on first mismatch -- multi-field
  * corruption surfaces in a single sample):
+ *   - the count each call returns must match: a success returns the
+ *     number of LSMs listed, never 0, since the capability LSM is always
+ *     active.
  *   - size word must match byte-for-byte across the two calls.
  *   - the u64 IDs payload, of length first_size bytes, must match
  *     byte-for-byte across the two calls.
@@ -199,9 +198,10 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	u32 recheck_size = sizeof(recheck_ids);
 	size_t recheck_count;
 	size_t cmp_count;
+	bool count_diverged;
 	bool size_diverged;
 	bool ids_diverged;
-	int rc;
+	long rc;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -217,7 +217,7 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if (rec->retval != 0)
+	if ((long) rec->retval < 0)
 		goto out_free;
 
 	if (snap->ids == 0 || snap->size == 0)
@@ -261,7 +261,7 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 		goto out_free;
 
 	rc = syscall(SYS_lsm_list_modules, recheck_ids, &recheck_size, 0);
-	if (rc != 0)
+	if (rc < 0)
 		goto out_free;
 
 	recheck_count = recheck_size / sizeof(u64);
@@ -270,11 +270,12 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 
 	cmp_count = first_count < recheck_count ? first_count : recheck_count;
 
+	count_diverged = (rc != (long) rec->retval);
 	size_diverged = (first_size != recheck_size);
 	ids_diverged = (memcmp(first_ids, recheck_ids,
 			       cmp_count * sizeof(u64)) != 0);
 
-	if (size_diverged || ids_diverged) {
+	if (count_diverged || size_diverged || ids_diverged) {
 		size_t i;
 		char first_hex[64 * 17 + 1];
 		char recheck_hex[64 * 17 + 1];
@@ -296,6 +297,10 @@ static void post_lsm_list_modules(struct syscallrecord *rec)
 					(unsigned long) recheck_ids[i]);
 		recheck_hex[off > 0 ? off - 1 : 0] = '\0';
 
+		if (count_diverged)
+			output(0,
+			       "[oracle:lsm_list_modules] count divergence %ld vs %ld\n",
+			       (long) rec->retval, rc);
 		if (size_diverged)
 			output(0,
 			       "[oracle:lsm_list_modules] size divergence %u vs %u\n",
