@@ -53,7 +53,7 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 #include "kernel/fcntl.h"	/* F_DUPFD_CLOEXEC */
-#include "kernel/keyctl.h"	/* KEY_SPEC_BPF_KEYRING */
+#include "kernel/keyctl.h"	/* KEY_SPEC_BPF_KEYRING, ... */
 #include "kernel/nsfs.h"	/* NS_GET_NSTYPE */
 #include "kernel/socket.h"	/* SOCK_NONBLOCK */
 
@@ -3340,9 +3340,10 @@ static void epoll_create_pools_an_epoll_object(void)
 /* The pool's destructor invalidates what it holds, so keyctl pools only
  * the keyrings a child owns: GET_KEYRING_ID's thread and process
  * keyrings, never the session, user or requestor keyrings it shares,
- * nor the kernel's own .bpf keyring.  SEARCH pools the key it finds
- * unless it searched .bpf.  The kernel reads the id as a key_serial_t,
- * so bits above the low 32 do not hide it. */
+ * nor the kernel's own .bpf, .dm-verity and .fs-verity keyrings.
+ * SEARCH pools the key it finds unless it searched one of the kernel's.
+ * The kernel reads the id as a key_serial_t, so bits above the low 32
+ * do not hide it. */
 static void keyctl_pools_only_owned_keyrings(void)
 {
 	static const struct {
@@ -3365,6 +3366,10 @@ static void keyctl_pools_only_owned_keyrings(void)
 		  (unsigned long) KEY_SPEC_REQUESTOR_KEYRING, false },
 		{ "GET_KEYRING_ID(bpf)", KEYCTL_GET_KEYRING_ID,
 		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
+		{ "GET_KEYRING_ID(dm-verity)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_DM_VERITY_KEYRING, false },
+		{ "GET_KEYRING_ID(fs-verity)", KEYCTL_GET_KEYRING_ID,
+		  (unsigned long) KEY_SPEC_FS_VERITY_KEYRING, false },
 		{ "GET_KEYRING_ID(process), high bits", KEYCTL_GET_KEYRING_ID,
 		  0x1fffffffeUL, true },
 		{ "SEARCH(session)", KEYCTL_SEARCH,
@@ -3373,6 +3378,10 @@ static void keyctl_pools_only_owned_keyrings(void)
 		  (unsigned long) KEY_SPEC_BPF_KEYRING, false },
 		{ "SEARCH(bpf), high bits", KEYCTL_SEARCH,
 		  0x1fffffff7UL, false },
+		{ "SEARCH(dm-verity)", KEYCTL_SEARCH,
+		  (unsigned long) KEY_SPEC_DM_VERITY_KEYRING, false },
+		{ "SEARCH(fs-verity)", KEYCTL_SEARCH,
+		  (unsigned long) KEY_SPEC_FS_VERITY_KEYRING, false },
 	};
 	const int serial = 4242;
 	unsigned int i;

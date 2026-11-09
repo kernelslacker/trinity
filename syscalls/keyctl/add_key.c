@@ -439,6 +439,8 @@ static unsigned long addkey_ringids[] = {
 	KEY_SPEC_REQKEY_AUTH_KEY,
 	KEY_SPEC_REQUESTOR_KEYRING,
 	KEY_SPEC_BPF_KEYRING,
+	KEY_SPEC_DM_VERITY_KEYRING,
+	KEY_SPEC_FS_VERITY_KEYRING,
 };
 
 struct syscallentry syscall_add_key = {
