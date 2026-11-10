@@ -26,6 +26,7 @@
 #include <linux/netlink.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/in.h"		/* IPPROTO_L2TP */
 #include "kernel/netlabel.h"	/* NLBL_MGMT_A_PROTOCOL */
 #include "netlink-genl-families.h"
 #include "random.h"		/* rand16, generate_rand_bytes, set_rand_bitmask */
@@ -35,6 +36,12 @@
 #include "utils.h"		/* ARRAY_SIZE */
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
+
+extern int fake_socket_fd;	/* fake_fds.c: the socket picker's answer */
+
+/* The socket the picker hands an NLA_KIND_SOCKET_FD draw while the checks
+ * run. */
+#define FAKE_SOCKET_FD	77
 
 extern struct genl_family_grammar fam_taskstats;
 extern struct genl_family_grammar fam_nlbl_calipso;
@@ -362,9 +369,11 @@ enum slot_kind { SK_BYTES, SK_SINT, SK_STRING, SK_NEST, SK_ARRAY };
  * lo to hi, both inclusive; MAX and MIN are ranges that start at 0 and end
  * at the top of the type.  An array's range is of its elements, a nest's of
  * its children, from 1.  SB_ONEOF is the values a handler, not its
- * policy, accepts, listed in oneof, and SB_IN6 an IPv6 address it binds a
- * socket to, :: or ::1. */
-enum slot_bound { SB_NONE, SB_MASK, SB_RANGE, SB_ONEOF, SB_IN6 };
+ * policy, accepts, listed in oneof, SB_IN6 an IPv6 address it binds a
+ * socket to, :: or ::1, and SB_SOCK the fd of a socket of one of the
+ * shapes in socks, which fake_fds.c's picker hands out as FAKE_SOCKET_FD,
+ * so it is otherwise a range of that one number. */
+enum slot_bound { SB_NONE, SB_MASK, SB_RANGE, SB_ONEOF, SB_IN6, SB_SOCK };
 
 struct slot {
 	unsigned short id;
@@ -382,6 +391,8 @@ struct slot {
 	unsigned int oneof_seen;	/* one bit per listed value drawn, or
 					 * for SB_IN6 one each for :: and ::1 */
 	bool be;			/* SB_ONEOF: a big-endian u32 */
+	const struct socket_triplet *socks;	/* SB_SOCK: the shapes taken */
+	unsigned int n_socks;
 	unsigned int in_bound;		/* draws inside it, and what they span: */
 	uint64_t or_all, and_all, min_v, max_v;
 	bool required;			/* its handler needs it */
@@ -426,6 +437,12 @@ struct slot {
  * NLA_BINARY of up to 16 bytes. */
 #define S_IN6_LOCAL(id, ...) \
 	{ id, SK_BYTES, 0, 16, .bound = SB_IN6, ##__VA_ARGS__ }
+/* A socket fd a handler looks up and checks the family, type and protocol
+ * of, whose policy types it a plain NLA_U32. */
+#define S_SOCKET_FD(id, shapes, ...) \
+	{ id, SK_BYTES, 4, 4, .bound = SB_SOCK, .lo = FAKE_SOCKET_FD, \
+	  .hi = FAKE_SOCKET_FD, .socks = shapes, .n_socks = ARRAY_SIZE(shapes), \
+	  ##__VA_ARGS__ }
 #define S_U16_RANGE(id, from, to, ...) \
 	{ id, SK_BYTES, 2, 2, .bound = SB_RANGE, .lo = from, .hi = to, ##__VA_ARGS__ }
 #define S_U16_ONEOF(id, vals, ...) \
@@ -2206,12 +2223,20 @@ extern struct genl_family_grammar fam_l2tp;
  * register, and an L2TPv3 session's L2SPEC_TYPE is NONE or DEFAULT.  The
  * other ops find a tunnel by its conn id, a session by its IFNAME or else
  * by the conn and session ids, which are marked.  The ids are 1 to 8, so
- * that they name what a create made.  An unmanaged tunnel's socket binds
- * to its source address, the IPv6 one before the IPv4 one, which has to
- * be the host's or any, and connects to its destination.  NOOP reads
- * nothing.
+ * that they name what a create made.  A managed tunnel's FD names its
+ * socket, which l2tp_validate_socket() wants an AF_INET or AF_INET6
+ * datagram socket, of IPPROTO_UDP for the UDP encap and IPPROTO_L2TP for
+ * the IP one.  An unmanaged tunnel's socket binds to its source address,
+ * the IPv6 one before the IPv4 one, which has to be the host's or any,
+ * and connects to its destination.  NOOP reads nothing.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
+static const struct socket_triplet l2tp_socks[] = {
+	{ PF_INET, SOCK_DGRAM, IPPROTO_UDP },
+	{ PF_INET6, SOCK_DGRAM, IPPROTO_UDP },
+	{ PF_INET, SOCK_DGRAM, IPPROTO_L2TP },
+	{ PF_INET6, SOCK_DGRAM, IPPROTO_L2TP },
+};
 static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
 static const unsigned int l2tp_pwtypes[] = { L2TP_PWTYPE_ETH, L2TP_PWTYPE_PPP };
 
@@ -2220,7 +2245,7 @@ static struct slot l2tp_tunnel_create[] = {
 	S_U32_RANGE(L2TP_ATTR_PEER_CONN_ID, 1, 8, .required = true),
 	S_U8_ONEOF(L2TP_ATTR_PROTO_VERSION, l2tp_versions, .required = true),
 	S_U16_RANGE(L2TP_ATTR_ENCAP_TYPE, 0, 1, .required = true),
-	S_U32(L2TP_ATTR_FD),
+	S_SOCKET_FD(L2TP_ATTR_FD, l2tp_socks),
 	S_BE32_ONEOF(L2TP_ATTR_IP_SADDR, l2tp_inaddrs),
 	S_BE32_ONEOF(L2TP_ATTR_IP_DADDR, l2tp_inaddrs),
 	S_IN6_LOCAL(L2TP_ATTR_IP6_SADDR),
@@ -3734,11 +3759,14 @@ static void check_bounded_draws(const struct nla_attr_spec *table, size_t n_tabl
  * host order; a byte's range, one of them pinned to one number; an
  * NLA_UINT's range and two of its masks, at 4 or 8 bytes; a u32 oneof and
  * a u16 oneof of three values, in host order, a byte's, and a big-endian
- * u32's; an IPv6 address of up to 16 bytes; an array of two elements at
- * most; and a nest of two children at most.
+ * u32's; an IPv6 address of up to 16 bytes; a socket fd; an array of two
+ * elements at most; and a nest of two children at most.
  */
 static void check_bounded_tables(void)
 {
+	static const struct socket_triplet socks[] = {
+		{ PF_INET6, SOCK_STREAM, IPPROTO_TCP },
+	};
 	static const unsigned int oneof_values[] = { 2, 17, 300 };
 	static const unsigned int u16_oneof_values[] = { 2, 10, 40000 };
 	static const unsigned int u8_oneof_values[] = { 2, 3, 200 };
@@ -3771,6 +3799,8 @@ static void check_bounded_tables(void)
 		{ 19, NLA_KIND_BE32_ONEOF, 0, 0, .oneof = be32_oneof_values,
 		  .n_oneof = ARRAY_SIZE(be32_oneof_values) },
 		{ 20, NLA_KIND_IN6_LOCAL, 16 },
+		{ 21, NLA_KIND_SOCKET_FD, 0, 0, .socks = socks,
+		  .n_socks = ARRAY_SIZE(socks) },
 	};
 	static struct slot leaf_mirror[] = { S_U32(1) };
 	static struct slot mirror[] = {
@@ -3794,6 +3824,7 @@ static void check_bounded_tables(void)
 		S_U8_ONEOF(18, u8_oneof_values),
 		S_BE32_ONEOF(19, be32_oneof_values),
 		S_IN6_LOCAL(20),
+		S_SOCKET_FD(21, socks),
 	};
 
 	check_bounded_draws(specs, ARRAY_SIZE(specs), mirror, ARRAY_SIZE(mirror),
@@ -3860,9 +3891,9 @@ static void check_sockaddr_kind(void)
  * Whether spec declares slot's bound: a mask or range kind at the slot's
  * width, with the bound's ends, a oneof kind at the slot's width and byte
  * order, a byte, u16, u32 or big-endian u32, with the same values, the
- * IPv6 address kind at the slot's lengths, or a nest or array capped where
- * its handler caps it.  A byte's range
- * is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
+ * IPv6 address kind at the slot's lengths, the socket kind with the same
+ * shapes, or a nest or array capped where its handler caps it.  A byte's
+ * range is NLA_KIND_U8_RANGE, a u16's NLA_KIND_U16_RANGE, a u32's
  * NLA_KIND_U32_MASK or NLA_KIND_U32_RANGE, and an NLA_UINT's, at 4 or
  * 8 bytes, NLA_KIND_UINT_MASK or NLA_KIND_UINT_RANGE.
  */
@@ -3880,6 +3911,23 @@ static bool spec_declares_bound(const struct nla_attr_spec *spec,
 	if (slot->bound == SB_IN6)
 		return spec->kind == NLA_KIND_IN6_LOCAL &&
 		       spec->min_len == slot->min && spec->max_len == slot->max;
+	if (slot->bound == SB_SOCK) {
+		unsigned int i, j;
+
+		if (spec->kind != NLA_KIND_SOCKET_FD ||
+		    spec->n_socks != slot->n_socks)
+			return false;
+		for (i = 0; i < slot->n_socks; i++) {
+			for (j = 0; j < spec->n_socks; j++) {
+				if (memcmp(&spec->socks[j], &slot->socks[i],
+					   sizeof(slot->socks[i])) == 0)
+					break;
+			}
+			if (j == spec->n_socks)
+				return false;
+		}
+		return true;
+	}
 	if (slot->bound == SB_ONEOF) {
 		unsigned short kind = slot->be ? NLA_KIND_BE32_ONEOF :
 				      slot->max == 1 ? NLA_KIND_U8_ONEOF :
@@ -3976,6 +4024,7 @@ static void expect_specs_declared(const struct nla_attr_spec *specs, size_t n_sp
 			  spec->kind == NLA_KIND_U8_ONEOF ||
 			  spec->kind == NLA_KIND_BE32_ONEOF ||
 			  spec->kind == NLA_KIND_IN6_LOCAL ||
+			  spec->kind == NLA_KIND_SOCKET_FD ||
 			  spec->kind == NLA_KIND_U16_RANGE ||
 			  spec->kind == NLA_KIND_U8_RANGE ||
 			  spec->kind == NLA_KIND_UINT_MASK ||
@@ -4402,6 +4451,7 @@ static void check_cmd_attr_tables(void)
 void genl_ops_self_check(void);
 void genl_ops_self_check(void)
 {
+	fake_socket_fd = FAKE_SOCKET_FD;
 	build_reply(&canned);
 	serve = &canned;
 	fake_netlink_socket = genl_socket;
@@ -4426,4 +4476,5 @@ void genl_ops_self_check(void)
 	check_policy_required();
 	check_policy_values();
 	close(peer_fd);
+	fake_socket_fd = -1;
 }

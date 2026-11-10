@@ -2,6 +2,8 @@
 
 #include <stdbool.h>
 
+struct socket_triplet;
+
 /*
  * Per-attribute kind metadata used by the netlink message generator's
  * spec-driven attribute path.  Lives in its own header so per-genetlink
@@ -123,6 +125,13 @@ enum nla_kind {
 	 * 0.  A handler that counts the elements against a cap has it in
 	 * max_len, and one draw in eight goes one or two past it. */
 	NLA_KIND_NESTED_ARRAY,
+	/* A u32 naming a socket, for an attribute the kernel hands to
+	 * sockfd_lookup() and then checks the socket of: the fd of a pooled
+	 * socket of one of the spec's socks (get_rand_socket_fd_of_triplet()),
+	 * the child's own before the parent's, seven draws in eight.  The
+	 * eighth, and a draw no pool holds such a socket for, is random
+	 * bytes. */
+	NLA_KIND_SOCKET_FD,
 };
 
 struct nla_attr_spec {
@@ -162,6 +171,11 @@ struct nla_attr_spec {
 	const char *word;
 	const char *const *words;
 	unsigned int n_words;
+
+	/* NLA_KIND_SOCKET_FD: the n_socks shapes of socket the handler takes,
+	 * each a family, a type and the protocol the kernel gives it. */
+	const struct socket_triplet *socks;
+	unsigned int n_socks;
 
 	/* Set when the attribute's handler returns early, or skips the nest
 	 * that holds it, unless it is there: a GENL_REQ_ATTR_CHECK() or an

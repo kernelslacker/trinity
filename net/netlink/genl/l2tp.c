@@ -16,8 +16,10 @@
 #include <linux/l2tp.h>
 
 #include "netlink-genl-families.h"
+#include "socketinfo.h"
 #include "utils.h"
 
+#include "kernel/in.h"
 #include "kernel/l2tp.h"
 
 /*
@@ -33,15 +35,24 @@
  * l2tp_nl_cmd_tunnel_create() answers -EINVAL without the two conn ids,
  * PROTO_VERSION and ENCAP_TYPE, which has to be UDP or IP, and then wants
  * FD, the socket of a managed tunnel, or an address pair, IPv6 before
- * IPv4, for the socket it makes itself, which a mark cannot say.  That
- * socket binds to the source address, which has to be the host's or any
- * for the bind to succeed, so each pair is any or loopback, the IPv4 one
- * read with nla_get_in_addr() in network order.  The IPv6 pair, which the
- * handler takes first, is NLA_BINARYs of up to 16 bytes that it reads as
- * 16, past the end of a shorter one.  The version is 2 or 3, and UDP_CSUM
- * is read as a flag.
+ * IPv4, for the socket it makes itself, which a mark cannot say.
+ * l2tp_validate_socket() takes FD's socket only as an AF_INET or AF_INET6
+ * datagram socket in the request's netns, of IPPROTO_UDP for the UDP
+ * encap and IPPROTO_L2TP for the IP one.  The socket the handler makes
+ * binds to the source address, which has to be the host's or any for the
+ * bind to succeed, so each pair is any or loopback, the IPv4 one read with
+ * nla_get_in_addr() in network order.  The IPv6 pair, which the handler
+ * takes first, is NLA_BINARYs of up to 16 bytes that it reads as 16, past
+ * the end of a shorter one.  The version is 2 or 3, and UDP_CSUM is read
+ * as a flag.
  */
 static const unsigned int l2tp_versions[] = { 2, 3 };
+static const struct socket_triplet l2tp_tunnel_socks[] = {
+	{ .family = PF_INET, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+	{ .family = PF_INET6, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+	{ .family = PF_INET, .type = SOCK_DGRAM, .protocol = IPPROTO_L2TP },
+	{ .family = PF_INET6, .type = SOCK_DGRAM, .protocol = IPPROTO_L2TP },
+};
 static const unsigned int l2tp_inaddrs[] = { INADDR_ANY, INADDR_LOOPBACK };
 
 static const struct nla_attr_spec l2tp_tunnel_create_attrs[] = {
@@ -54,7 +65,8 @@ static const struct nla_attr_spec l2tp_tunnel_create_attrs[] = {
 	  .required = true },
 	{ L2TP_ATTR_ENCAP_TYPE,		NLA_KIND_U16_RANGE, L2TP_ENCAPTYPE_IP,
 	  L2TP_ENCAPTYPE_UDP, .required = true },
-	{ L2TP_ATTR_FD,			NLA_KIND_U32,    4 },
+	{ L2TP_ATTR_FD,			NLA_KIND_SOCKET_FD, 0, 0,
+	  .socks = l2tp_tunnel_socks, .n_socks = ARRAY_SIZE(l2tp_tunnel_socks) },
 	{ L2TP_ATTR_IP_SADDR,		NLA_KIND_BE32_ONEOF, 0, 0,
 	  .oneof = l2tp_inaddrs, .n_oneof = ARRAY_SIZE(l2tp_inaddrs) },
 	{ L2TP_ATTR_IP_DADDR,		NLA_KIND_BE32_ONEOF, 0, 0,

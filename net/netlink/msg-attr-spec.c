@@ -13,6 +13,7 @@
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
 #include "msg-internal.h"
+#include "net.h"
 #include "netlink-genl-families.h"
 #include "netlink-nfnl-subsystems.h"
 #include "random.h"
@@ -56,6 +57,7 @@ static size_t spec_payload_len(const struct nla_attr_spec *spec)
 	case NLA_KIND_U32_MASK:
 	case NLA_KIND_U32_RANGE:
 	case NLA_KIND_U32_ONEOF:
+	case NLA_KIND_SOCKET_FD:
 		return 4;
 	case NLA_KIND_FLAG:	return 0;
 	case NLA_KIND_STRING_WORD:
@@ -241,8 +243,8 @@ static void spec_fill_sockaddr(unsigned char *p, size_t len)
  * Fill a payload buffer per spec kind: STRING gets NUL-terminated random
  * lowercase ASCII (the typical shape of names like NFTA_TABLE_NAME or
  * IFLA_INFO_KIND), a WORD its word and a word list one of its words, the
- * bounded scalars a value their policy or handler accepts, and everything
- * else gets random bytes.
+ * bounded scalars a value their policy or handler accepts, a socket fd one
+ * of the sockets it names, and everything else gets random bytes.
  */
 static void spec_fill_payload(unsigned char *p, size_t len,
 			      const struct nla_attr_spec *spec)
@@ -305,6 +307,19 @@ static void spec_fill_payload(unsigned char *p, size_t len,
 		else
 			generate_rand_bytes(p, len);
 		break;
+	case NLA_KIND_SOCKET_FD: {
+		int fd = -1;
+
+		/* A payload a full buffer cut short stays random bytes. */
+		if (len == sizeof(fd) && !ONE_IN(8))
+			fd = get_rand_socket_fd_of_triplet(spec->socks,
+							   spec->n_socks);
+		if (fd >= 0)
+			memcpy(p, &fd, sizeof(fd));
+		else
+			generate_rand_bytes(p, len);
+		break;
+	}
 	default:
 		generate_rand_bytes(p, len);
 	}
