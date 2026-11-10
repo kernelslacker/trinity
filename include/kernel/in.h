@@ -45,3 +45,6 @@
 #ifndef IPPROTO_ETHERNET
 #define IPPROTO_ETHERNET        143
 #endif
+#ifndef IPPROTO_L2TP
+#define IPPROTO_L2TP            115
+#endif

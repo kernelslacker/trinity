@@ -474,6 +474,8 @@ static struct socket_triplet ipv4_triplets[] = {
 	{ .family = PF_INET, .protocol = IPPROTO_SCTP, .type = SOCK_STREAM },
 
 	{ .family = PF_INET, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM },
+
+	{ .family = PF_INET, .protocol = IPPROTO_L2TP, .type = SOCK_DGRAM },
 };
 
 static struct socket_triplet ipv4_privileged_triplets[] = {

@@ -334,6 +334,8 @@ static struct socket_triplet ipv6_triplets[] = {
 	{ .family = PF_INET6, .protocol = IPPROTO_SCTP, .type = SOCK_SEQPACKET },
 
 	{ .family = PF_INET6, .protocol = IPPROTO_UDPLITE, .type = SOCK_DGRAM},
+
+	{ .family = PF_INET6, .protocol = IPPROTO_L2TP, .type = SOCK_DGRAM },
 };
 
 static struct socket_triplet ipv6_privileged_triplets[] = {
