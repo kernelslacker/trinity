@@ -2,7 +2,8 @@
  * Self-check for the args the ioctl group sanitisers build: what they draw
  * has to be what the kernel's own checks take, and the draw has to reach all
  * of it.  The drm group's client caps and object types, the ext group's new
- * requests, and the userfaultfd group's handshake are covered.
+ * requests, the userfaultfd group's handshake and the socket group's tunnel
+ * requests are covered.
  */
 
 #include <stdbool.h>
@@ -11,7 +12,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <net/if.h>
 #include <netinet/in.h>
+#include <linux/if_tunnel.h>
+#include <linux/ip6_tunnel.h>
 #include <linux/sockios.h>
 
 #ifdef USE_DRM
@@ -510,6 +514,201 @@ static void userfaultfd_api_always_asks_sigbus(void)
 		BUG("ioctl args: UFFDIO_API never asks for a feature past SIGBUS");
 }
 
+/*
+ * The fallback device each tunnel module makes in every netns, the parm its
+ * handler reads (ip_tunnel_siocdevprivate(), ip6_tnl_siocdevprivate(),
+ * ip6gre_tunnel_siocdevprivate(), vti6_siocdevprivate()), and what its add
+ * and change take: the protocols ipip_tunnel_ioctl_verify_protocol(),
+ * ipgre_tunnel_ctl(), vti_tunnel_ctl() and ipip6_valid_ip_proto() allow, or
+ * the IPv6 protos (MPLS left out); ip6gre reads none.  vti alone does not
+ * refuse fragment bits, and the GRE kinds refuse GRE_VERSION and
+ * GRE_ROUTING.
+ */
+enum tunnel_parm_model { MODEL_IP, MODEL_IP6, MODEL_IP6_2 };
+
+static const struct {
+	const char *fallback;
+	enum tunnel_parm_model parm;
+	unsigned char protos[3];
+	unsigned int n_protos;	/* 0: any */
+	bool frag_checked;
+	bool gre;
+} tunnel_models[] = {
+	{ "tunl0",	MODEL_IP,	{ 0, IPPROTO_IPIP }, 2, true, false },
+	{ "gre0",	MODEL_IP,	{ IPPROTO_GRE }, 1, true, true },
+	{ "ip_vti0",	MODEL_IP,	{ IPPROTO_IPIP }, 1, false, false },
+	{ "sit0",	MODEL_IP,	{ 0, IPPROTO_IPIP, IPPROTO_IPV6 }, 3, true, false },
+	{ "ip6tnl0",	MODEL_IP6,	{ 0, IPPROTO_IPIP, IPPROTO_IPV6 }, 3, false, false },
+	{ "ip6gre0",	MODEL_IP6_2,	{ 0 }, 0, false, true },
+	{ "ip6_vti0",	MODEL_IP6_2,	{ 0, IPPROTO_IPV6 }, 2, false, false },
+};
+
+#define TUNNEL_ROUNDS	2000
+
+/* The name a tunnel cmd's add makes on each kind's fallback, learned. */
+static char tunnel_names[ARRAY_SIZE(tunnel_models)][IFNAMSIZ];
+
+/* The tunnel model whose fallback, or whose learned tunnel, is @name. */
+static int tunnel_model(const char *name)
+{
+	unsigned int m;
+
+	for (m = 0; m < ARRAY_SIZE(tunnel_models); m++)
+		if (strcmp(name, tunnel_models[m].fallback) == 0 ||
+		    (tunnel_names[m][0] != '\0' &&
+		     strcmp(name, tunnel_names[m]) == 0))
+			return m;
+	return -1;
+}
+
+static bool tunnel_proto_taken(unsigned int m, unsigned char proto)
+{
+	unsigned int i;
+
+	if (tunnel_models[m].n_protos == 0)
+		return true;
+	for (i = 0; i < tunnel_models[m].n_protos; i++)
+		if (tunnel_models[m].protos[i] == proto)
+			return true;
+	return false;
+}
+
+/* The parm's name, or NULL when it runs past IFNAMSIZ. */
+static const char *tunnel_parm_name(unsigned int m, const void *data)
+{
+	const char *name = data;	/* each parm opens with it */
+
+	(void) m;
+	return memchr(name, '\0', IFNAMSIZ) != NULL ? name : NULL;
+}
+
+/* Whether model @m's add and change take the parm at @data. */
+static bool tunnel_parm_taken(unsigned int m, const void *data)
+{
+	const struct ip6_tnl_parm2 *p62 = data;
+	const struct ip6_tnl_parm *p6 = data;
+	const struct ip_tunnel_parm *p = data;
+
+	if (tunnel_parm_name(m, data) == NULL)
+		return false;
+	switch (tunnel_models[m].parm) {
+	case MODEL_IP:
+		if (p->iph.version != 4 || p->iph.ihl != 5 ||
+		    !tunnel_proto_taken(m, p->iph.protocol))
+			return false;
+		if (tunnel_models[m].frag_checked &&
+		    (p->iph.frag_off & htons(~0x4000)))
+			return false;
+		return !tunnel_models[m].gre ||
+		       !((p->i_flags | p->o_flags) & (GRE_VERSION | GRE_ROUTING));
+	case MODEL_IP6:
+		return tunnel_proto_taken(m, p6->proto);
+	case MODEL_IP6_2:
+		if (!tunnel_proto_taken(m, p62->proto))
+			return false;
+		return !tunnel_models[m].gre ||
+		       !((p62->i_flags | p62->o_flags) & (GRE_VERSION | GRE_ROUTING));
+	}
+	return false;
+}
+
+/* Draw one request of @cmd from the socket group; NULL when it kept the
+ * picker's arg. */
+static const struct ifreq *tunnel_request(const struct ioctl_group *grp,
+					  unsigned long cmd)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	fake_ioctl_request = cmd;
+	grp->sanitise(grp, &rec);
+	if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+		return NULL;
+	return (const struct ifreq *) rec.a3;
+}
+
+/*
+ * dev_ioctl() finds the device a tunnel cmd acts on by ifr_name, and its
+ * handler reads the parm of its kind behind ifr_data.  The group builds
+ * the request seven times in eight, naming a fallback device half the time
+ * and the tunnel an add on that kind's fallback names the rest, so that
+ * the add, the change and the delete meet one device; the parm takes the
+ * kind's add and change seven times in eight, and names that tunnel 15
+ * times in 16 of those.  Over thousands of requests the bounds are many
+ * standard deviations out.
+ */
+static void socket_tunnel_requests_name_their_device(void)
+{
+	static const unsigned long cmds[] = {
+		SIOCGETTUNNEL, SIOCADDTUNNEL, SIOCDELTUNNEL, SIOCCHGTUNNEL,
+	};
+	const struct ioctl_group *grp = fake_ioctl_group("[socket]");
+	unsigned int built = 0, drawn = 0, fallbacks = 0;
+	unsigned int changes = 0, taken = 0, named = 0;
+	unsigned int c, i;
+
+	if (grp == NULL)
+		BUG("ioctl args: the socket group is not linked");
+
+	/* Learn the tunnel each kind's add makes from its fallback's adds. */
+	for (i = 0; i < TUNNEL_ROUNDS; i++) {
+		const struct ifreq *ifr = tunnel_request(grp, SIOCADDTUNNEL);
+		const char *name;
+		int m;
+
+		if (ifr == NULL || memchr(ifr->ifr_name, '\0', IFNAMSIZ) == NULL)
+			continue;
+		for (m = 0; m < (int) ARRAY_SIZE(tunnel_models); m++)
+			if (strcmp(ifr->ifr_name, tunnel_models[m].fallback) == 0)
+				break;
+		if (m == (int) ARRAY_SIZE(tunnel_models) ||
+		    !tunnel_parm_taken(m, ifr->ifr_data))
+			continue;
+		name = tunnel_parm_name(m, ifr->ifr_data);
+		if (name[0] != '\0' && tunnel_names[m][0] == '\0')
+			strcpy(tunnel_names[m], name);
+	}
+
+	for (c = 0; c < ARRAY_SIZE(cmds); c++) {
+		for (i = 0; i < TUNNEL_ROUNDS; i++) {
+			const struct ifreq *ifr = tunnel_request(grp, cmds[c]);
+			const char *name;
+			int m;
+
+			drawn++;
+			if (ifr == NULL)
+				continue;
+			built++;
+			if (memchr(ifr->ifr_name, '\0', IFNAMSIZ) == NULL ||
+			    (m = tunnel_model(ifr->ifr_name)) < 0) {
+				fprintf(stderr, "ifr_name %.16s\n", ifr->ifr_name);
+				BUG("ioctl args: a tunnel request names no tunnel device");
+			}
+			if (ifr->ifr_data == NULL)
+				BUG("ioctl args: a tunnel request carries no parm");
+			fallbacks += strcmp(ifr->ifr_name,
+					    tunnel_models[m].fallback) == 0;
+			if (cmds[c] != SIOCADDTUNNEL && cmds[c] != SIOCCHGTUNNEL)
+				continue;
+			changes++;
+			if (!tunnel_parm_taken(m, ifr->ifr_data))
+				continue;
+			taken++;
+			name = tunnel_parm_name(m, ifr->ifr_data);
+			named += strcmp(name, tunnel_names[m]) == 0;
+		}
+	}
+
+	if (built < drawn * 0.80 || built > drawn * 0.95 ||
+	    fallbacks < built * 0.40 || fallbacks > built * 0.60 ||
+	    taken < changes * 0.80 || named < taken * 0.85) {
+		fprintf(stderr, "tunnel cmds: %u of %u built, %u name a fallback, "
+			"%u of %u adds and changes taken, %u of those name the tunnel\n",
+			built, drawn, fallbacks, taken, changes, named);
+		BUG("ioctl args: the tunnel requests are not ones the tunnel handlers take");
+	}
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -527,4 +726,5 @@ void ioctl_args_self_check(void)
 	size_rewrites_rebuild_the_arg();
 	size0_pointer_requests_get_a_buffer();
 	userfaultfd_api_always_asks_sigbus();
+	socket_tunnel_requests_name_their_device();
 }

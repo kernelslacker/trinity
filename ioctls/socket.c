@@ -1,8 +1,23 @@
+#include <string.h>
+#include <net/if.h>
+#include <netinet/in.h>
+#include <linux/if_tunnel.h>
+#include <linux/ip6_tunnel.h>
+
 #include "ioctls.h"
 #include "net.h"
 #include "objects.h"
+#include "random.h"
+#include "rnd.h"
+#include "sanitise.h"
 #include "shm.h"
 #include "utils.h"
+
+/* include/net/ip.h; the uapi has none, and <netinet/ip.h> clashes with
+ * the <linux/ip.h> the tunnel headers pull in. */
+#ifndef IP_DF
+#define IP_DF		0x4000
+#endif
 
 static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 {
@@ -24,6 +39,161 @@ static int socket_fd_test(int fd, const struct stat *st __attribute__((unused)))
 		return 0;
 
 	return -1;
+}
+
+/*
+ * The tunnel ioctls, SIOCGETTUNNEL, SIOCADDTUNNEL, SIOCDELTUNNEL and
+ * SIOCCHGTUNNEL (SIOCDEVPRIVATE + 0 to 3), take an ifreq naming a tunnel
+ * device, with the parm struct of its kind behind ifr_data.  Each tunnel
+ * module makes a fallback device of its kind in every netns, so a request
+ * names one of those or the one tunnel of that kind its add makes, and the
+ * parm names that tunnel, so an add, a change and a delete meet one device.
+ * dev_ioctl() wants CAP_NET_ADMIN over the netns for any SIOCDEVPRIVATE
+ * cmd, which only a lane child holds, in a netns of its own.
+ */
+enum tunnel_parm_type { PARM_IP, PARM_IP6, PARM_IP6_2 };
+
+static const struct tunnel_kind {
+	const char *fallback;
+	const char *tunnel;
+	enum tunnel_parm_type parm;
+	unsigned char proto;	/* one the kind's add and change take */
+} tunnel_kinds[] = {
+	{ "tunl0",	"trinity-ipip",		PARM_IP,	IPPROTO_IPIP },
+	{ "gre0",	"trinity-gre",		PARM_IP,	IPPROTO_GRE },
+	{ "ip_vti0",	"trinity-vti",		PARM_IP,	IPPROTO_IPIP },
+	{ "sit0",	"trinity-sit",		PARM_IP,	IPPROTO_IPV6 },
+	{ "ip6tnl0",	"trinity-ip6tnl",	PARM_IP6,	IPPROTO_IPV6 },
+	{ "ip6gre0",	"trinity-ip6gre",	PARM_IP6_2,	IPPROTO_GRE },
+	{ "ip6_vti0",	"trinity-vti6",		PARM_IP6_2,	IPPROTO_IPV6 },
+};
+
+union tunnel_parm {
+	struct ip_tunnel_parm ip;
+	struct ip6_tnl_parm ip6;
+	struct ip6_tnl_parm2 ip6_2;
+};
+
+/* GRE_VERSION and GRE_ROUTING, which ipgre_tunnel_ctl() and ip6gre refuse,
+ * stay out, as do the keys but for two, so a change can match an add. */
+static __be16 tunnel_gre_flags(void)
+{
+	static const __be16 flags[] = { 0, GRE_KEY, GRE_CSUM, GRE_SEQ,
+					GRE_KEY | GRE_CSUM };
+
+	return RAND_ARRAY(flags);
+}
+
+static void fill_tunnel_addr6(struct in6_addr *addr, unsigned char last)
+{
+	memset(addr, 0, sizeof(*addr));
+	if (RAND_BOOL()) {
+		addr->s6_addr[0] = 0xfd;
+		addr->s6_addr[15] = last;
+	}
+}
+
+/*
+ * The parm a kind's add and change take: IPv4 with a 20-byte header, no
+ * fragment bits but DF and a protocol of the kind's (ipip_tunnel_ctl(),
+ * ipgre_tunnel_ctl(), vti_tunnel_ctl(), __ipip6_tunnel_ioctl_validate()),
+ * or for an IPv6 kind a proto of the kind's (ip6_tnl_siocdevprivate(),
+ * vti6_siocdevprivate()).  The addresses are 0 or one of two, so a change
+ * on a tunnel whose remote end its add set matches it half the time, and
+ * a delete or a get on a fallback, which looks a tunnel up by its addresses
+ * and keys, finds the one an add made.  The fields stay random one time in
+ * eight.
+ */
+static void fill_tunnel_parm(union tunnel_parm *parm,
+			     const struct tunnel_kind *kind)
+{
+	const char *name = ONE_IN(16) ? "" : kind->tunnel;
+
+	generate_rand_bytes((unsigned char *) parm, sizeof(*parm));
+	if (ONE_IN(8))
+		return;
+
+	memset(parm, 0, sizeof(*parm));
+	switch (kind->parm) {
+	case PARM_IP:
+		strncpy(parm->ip.name, name, IFNAMSIZ - 1);
+		parm->ip.iph.version = 4;
+		parm->ip.iph.ihl = 5;
+		parm->ip.iph.protocol = kind->proto;
+		parm->ip.iph.ttl = RAND_BOOL() ? 64 : 0;
+		parm->ip.iph.tos = rnd_modulo_u32(256);
+		parm->ip.iph.frag_off = RAND_BOOL() ? htons(IP_DF) : 0;
+		parm->ip.iph.saddr = RAND_BOOL() ? htonl(0x0a000001) : 0;
+		parm->ip.iph.daddr = RAND_BOOL() ? htonl(0x0a000002) : 0;
+		if (kind->proto == IPPROTO_GRE) {
+			parm->ip.i_flags = tunnel_gre_flags();
+			parm->ip.o_flags = tunnel_gre_flags();
+			parm->ip.i_key = htonl(RAND_RANGE(1, 2));
+			parm->ip.o_key = htonl(RAND_RANGE(1, 2));
+		}
+		break;
+	case PARM_IP6:
+		strncpy(parm->ip6.name, name, IFNAMSIZ - 1);
+		parm->ip6.proto = kind->proto;
+		parm->ip6.encap_limit = rnd_modulo_u32(8);
+		parm->ip6.hop_limit = RAND_BOOL() ? 64 : 0;
+		parm->ip6.flags = rnd_u32() & (IP6_TNL_F_IGN_ENCAP_LIMIT |
+					       IP6_TNL_F_USE_ORIG_TCLASS |
+					       IP6_TNL_F_USE_ORIG_FLOWLABEL |
+					       IP6_TNL_F_RCV_DSCP_COPY |
+					       IP6_TNL_F_ALLOW_LOCAL_REMOTE);
+		fill_tunnel_addr6(&parm->ip6.laddr, 1);
+		fill_tunnel_addr6(&parm->ip6.raddr, 2);
+		break;
+	case PARM_IP6_2:
+		strncpy(parm->ip6_2.name, name, IFNAMSIZ - 1);
+		parm->ip6_2.proto = kind->proto;
+		parm->ip6_2.encap_limit = rnd_modulo_u32(8);
+		parm->ip6_2.hop_limit = RAND_BOOL() ? 64 : 0;
+		parm->ip6_2.flags = rnd_u32() & (IP6_TNL_F_IGN_ENCAP_LIMIT |
+						 IP6_TNL_F_USE_ORIG_TCLASS |
+						 IP6_TNL_F_USE_ORIG_FLOWLABEL |
+						 IP6_TNL_F_RCV_DSCP_COPY |
+						 IP6_TNL_F_ALLOW_LOCAL_REMOTE);
+		fill_tunnel_addr6(&parm->ip6_2.laddr, 1);
+		fill_tunnel_addr6(&parm->ip6_2.raddr, 2);
+		if (kind->proto == IPPROTO_GRE) {
+			parm->ip6_2.i_flags = tunnel_gre_flags();
+			parm->ip6_2.o_flags = tunnel_gre_flags();
+			parm->ip6_2.i_key = htonl(RAND_RANGE(1, 2));
+			parm->ip6_2.o_key = htonl(RAND_RANGE(1, 2));
+		}
+		break;
+	}
+}
+
+/*
+ * The picker's arg for every cmd, but seven tunnel cmds in eight, which get
+ * an ifreq naming a fallback device or its kind's tunnel, half and half.
+ */
+static void sanitise_socket_ioctl(const struct ioctl_group *grp,
+				  struct syscallrecord *rec)
+{
+	const struct tunnel_kind *kind;
+	union tunnel_parm *parm;
+	struct ifreq *ifr;
+
+	pick_random_ioctl(grp, rec);
+	if (rec->a2 < SIOCGETTUNNEL || rec->a2 > SIOCCHGTUNNEL || ONE_IN(8))
+		return;
+
+	ifr = (struct ifreq *) get_writable_struct(sizeof(*ifr));
+	parm = (union tunnel_parm *) get_writable_struct(sizeof(*parm));
+	if (ifr == NULL || parm == NULL)
+		return;
+
+	kind = &tunnel_kinds[rnd_modulo_u32(ARRAY_SIZE(tunnel_kinds))];
+	fill_tunnel_parm(parm, kind);
+	memset(ifr, 0, sizeof(*ifr));
+	strncpy(ifr->ifr_name, RAND_BOOL() ? kind->fallback : kind->tunnel,
+		IFNAMSIZ - 1);
+	ifr->ifr_data = (void *) parm;
+	rec->a3 = (unsigned long) ifr;
 }
 
 static const struct ioctl socket_ioctls[] = {
@@ -211,7 +381,7 @@ static const struct ioctl_group socket_grp = {
 	.name = "[socket]",
 	.fd_test = socket_fd_test,
 	.fd_class = ARG_FD_SOCKET,
-	.sanitise = pick_random_ioctl,
+	.sanitise = sanitise_socket_ioctl,
 	.ioctls = socket_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(socket_ioctls),
 };
