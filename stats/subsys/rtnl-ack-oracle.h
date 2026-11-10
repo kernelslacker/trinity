@@ -40,7 +40,7 @@ struct rtnl_ack_oracle_stats {
 				  /* before the NLMSG_OK walk; walk still attempts the received bytes */
 	unsigned long stale_unparsed;    /* recv() succeeded but first NLMSG_OK failed; budget slot      */
 				  /* consumed without any stale_* inner-loop counter firing          */
-	unsigned long dump_skipped;  /* NLM_F_DUMP set; sampling skipped, slot returned to next eligible message */
+	unsigned long dump_skipped;  /* a GET with a dump bit; sampling skipped, slot returned to next eligible message */
 	unsigned long recv_enobufs; /* recv() returned ENOBUFS (rx-queue overflow); not counted as no_reply_clean */
 	unsigned long recv_eintr;   /* recv() interrupted by signal; budget slot not consumed, retried             */
 	unsigned long recv_error;   /* recv() failed with an unexpected errno; probe aborted                       */

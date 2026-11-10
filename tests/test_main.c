@@ -66,6 +66,7 @@ void nsfs_self_check(void);
 void genl_ops_self_check(void);
 void nfnl_gen_self_check(void);
 void rtnl_gen_self_check(void);
+void rtnl_ack_oracle_self_check(void);
 void rdma_nldev_self_check(void);
 void kcov_persist_self_check(void);
 void stats_render_self_check(void);
@@ -408,6 +409,11 @@ int main(int argc, char **argv)
 	printf("  rtnl_gen_self_check ... ");
 	fflush(stdout);
 	rtnl_gen_self_check();
+	printf("OK\n");
+
+	printf("  rtnl_ack_oracle_self_check ... ");
+	fflush(stdout);
+	rtnl_ack_oracle_self_check();
 	printf("OK\n");
 
 	printf("  rdma_nldev_self_check ... ");

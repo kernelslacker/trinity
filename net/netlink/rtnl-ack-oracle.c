@@ -87,11 +87,18 @@ void rtnl_oracle_sample(unsigned short nlmsg_type, unsigned char *msg)
 	 * wasted: counter-- leaves it at (SAMPLE_RATE-1) mod SAMPLE_RATE,
 	 * and the next non-dump increment brings it to 0 mod SAMPLE_RATE,
 	 * firing the gate for the next eligible message.  gen_nlmsg_flags()
-	 * sets NLM_F_DUMP on a bare RAND_BOOL(), so without the rollback
-	 * about half the slots would be lost and the effective rate would
-	 * halve to ~1-in-64.
+	 * sends more than half the GETs to their dumpit, so without the
+	 * rollback those slots would be lost and the effective rate would
+	 * fall below 1-in-32.
+	 *
+	 * rtnetlink_rcv_msg() routes only a GET, the third type of each
+	 * group of four, to a dumpit, on either dump bit.  On the other kinds
+	 * the two bits are the REPLACE/NONREC and EXCL/BULK modifiers, and
+	 * the request is ACKed like any other, as is a type past RTM_MAX.
 	 */
-	if (nlh->nlmsg_flags & NLM_F_DUMP) {
+	if (nlmsg_type >= RTM_BASE && nlmsg_type <= RTM_MAX &&
+	    (nlmsg_type - RTM_BASE) % 4 == 2 &&
+	    (nlh->nlmsg_flags & NLM_F_DUMP)) {
 		oracle_state.counter--;
 		__atomic_add_fetch(&shm->stats.rtnl_ack_oracle.dump_skipped,
 				   1, __ATOMIC_RELAXED);
