@@ -452,15 +452,13 @@ static void post_bpf_token_create(int fd)
 		publish_resource(OBJ_FD_BPF_TOKEN, fd, NULL);
 }
 
-/* Close fds returned by commands not tracked above.  The
- * remaining commands that can return an fd are OBJ_GET,
- * RAW_TRACEPOINT_OPEN, ENABLE_STATS, and ITER_CREATE — none of
- * them produce a kind of fd that fits one of our pools, so they
- * get closed immediately to avoid leaking.  We can't blindly
- * close on all commands because non-fd commands return 0 for
- * success, and closing fd 0 would destroy stdin.  A call the
- * switch above did not take (@tracked false) is tracked nowhere. */
-static void post_bpf_close_orphan_fd(int fd, unsigned int cmd, bool tracked)
+/* Close an fd that no pool took: one returned by OBJ_GET,
+ * RAW_TRACEPOINT_OPEN, ENABLE_STATS or ITER_CREATE, none of which
+ * produce a kind of fd that fits one of our pools, or by a cmd that
+ * pools its fds when it ran for an attr built for another cmd.  We
+ * can't blindly close on all commands because non-fd commands return
+ * 0 for success, and closing fd 0 would destroy stdin. */
+static void post_bpf_close_orphan_fd(int fd, unsigned int cmd)
 {
 	switch (cmd) {
 	case BPF_MAP_CREATE:
@@ -473,10 +471,6 @@ static void post_bpf_close_orphan_fd(int fd, unsigned int cmd, bool tracked)
 	case BPF_BTF_GET_FD_BY_ID:
 	case BPF_TOKEN_CREATE:
 	case BPF_PROG_STREAM_OPEN:
-		/* Already tracked above, if the switch took the call. */
-		if (!tracked)
-			close(fd);
-		break;
 	case BPF_OBJ_GET:
 	case BPF_RAW_TRACEPOINT_OPEN:
 	case BPF_ENABLE_STATS:
@@ -583,7 +577,7 @@ static void post_bpf(struct syscallrecord *rec)
 	 */
 	if (ran_cmd != cmd) {
 		if (fd >= 0)
-			post_bpf_close_orphan_fd(fd, ran_cmd, false);
+			post_bpf_close_orphan_fd(fd, ran_cmd);
 		goto release;
 	}
 
@@ -620,11 +614,10 @@ static void post_bpf(struct syscallrecord *rec)
 		post_bpf_prog_attach(ret, attr_readable, attr);
 		break;
 	default:
+		if (fd >= 0)
+			post_bpf_close_orphan_fd(fd, cmd);
 		break;
 	}
-
-	if (fd >= 0)
-		post_bpf_close_orphan_fd(fd, cmd, true);
 
 release:
 	bpf_release_held(snap, attr_readable);
