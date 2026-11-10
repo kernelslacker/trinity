@@ -547,6 +547,35 @@ static void epoll_wait_events_held(void)
 	}
 }
 
+/* pselect6 refuses a NULL timeout, with which it would sleep until the
+ * alarm, and leaves any other to the kernel.  A compat call hands over the
+ * low 32 bits of the slot, so one whose low 32 bits are 0 is no timeout. */
+static void pselect6_timeout_held(void)
+{
+	static const struct {
+		unsigned long tsp;
+		bool compat;
+		int verdict;
+	} cases[] = {
+		{ 0, false, -1 },
+		{ REGION, false, 0 },
+		{ 1UL << 32, false, 0 },
+		{ 1UL << 32, true, -1 },
+		{ REGION + 0x1000, true, 0 },
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_pselect6;
+		rec.do32bit = cases[i].compat;
+		rec.a1 = 1;
+		rec.a5 = cases[i].tsp;
+		if (validate_arg_coupling(&rec, rec.entry) != cases[i].verdict)
+			BUG("pselect6: a timeout was judged wrongly");
+	}
+}
+
 /* A pool mapping for the mm sanitisers to pick, away from every region a
  * test tracks; ARG_MMAP leaves its struct map in a1.
  * common_set_mmap_ptr_len() works on this_child()'s record, so the calls
@@ -6087,6 +6116,7 @@ void arg_coupling_self_check(void)
 	vet_final_asked_first();
 	vet_final_from_the_dispatched_entry();
 	epoll_wait_events_held();
+	pselect6_timeout_held();
 	pkey_mprotect_known_through_its_copy();
 	keyed_range_drops_cached_prot();
 	keyed_range_known_through_the_dispatched_entry();

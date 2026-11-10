@@ -149,7 +149,7 @@ static void sanitise_pselect6(struct syscallrecord *rec)
 	/* Set a really short timeout */
 	ts = get_writable_address(sizeof(struct timespec));
 	if (ts == NULL) {
-		rec->a5 = 0;
+		rec->a5 = 0;	/* refused: vet_final_pselect6() */
 	} else {
 		ts->tv_sec = 0;
 		ts->tv_nsec = 10000;
@@ -251,18 +251,36 @@ static void post_pselect6(struct syscallrecord *rec)
 	post_state_release(rec, snap);
 }
 
+/*
+ * With no timeout the call sleeps until a selected fd is ready, which
+ * leaves it to the alarm: a NULL tsp is refused, whether the pool gave
+ * the sanitiser no timespec or a rewrite after it (a RedQueen pin, a
+ * chain splice) cleared the slot.  A compat call hands over the slot's
+ * low 32 bits.
+ */
+static int vet_final_pselect6(struct syscallrecord *rec,
+			      const struct syscallentry *entry)
+{
+	unsigned long tsp = rec->do32bit ? (unsigned int) rec->a5 : rec->a5;
+
+	if (tsp == 0) {
+		outputerr("arg-coupling: %s rejected: no timeout\n", entry->name);
+		return -1;
+	}
+	return 0;
+}
+
 struct syscallentry syscall_pselect6 = {
 	.name = "pselect6",
 	.num_args = 6,
-	/* Can cause the fuzzer to hang without timeout firing (AVOID_SYSCALL|
-	 * NEED_ALARM).  sanitise_pselect6 is re-exec clean (fd-set population
-	 * + zmalloc_tracked snap; stats counter increments are benign): keep
-	 * REEXEC_SANITISE_OK.  AVOID_REEXEC belt-and-braces alongside
-	 * AVOID_SYSCALL. */
-	.flags = AVOID_SYSCALL | NEED_ALARM | AVOID_REEXEC | REEXEC_SANITISE_OK,
+	/* sanitise_pselect6 is re-exec clean (fd-set population +
+	 * zmalloc_tracked snap; stats counter increments are benign):
+	 * REEXEC_SANITISE_OK. */
+	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.argtype = { [0] = ARG_LEN, [1] = ARG_ADDRESS, [2] = ARG_ADDRESS, [3] = ARG_ADDRESS, [4] = ARG_ADDRESS, [5] = ARG_ADDRESS },
 	.argname = { [0] = "n", [1] = "inp", [2] = "outp", [3] = "exp", [4] = "tsp", [5] = "sig" },
 	.sanitise = sanitise_pselect6,
+	.vet_final = vet_final_pselect6,
 	.post = post_pselect6,
 	.group = GROUP_VFS_IO,
 	.rettype = RET_BORING,
