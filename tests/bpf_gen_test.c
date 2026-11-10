@@ -44,6 +44,7 @@ extern int fake_perf_fd;		/* fake_fds.c */
 extern int fake_cgroup_fd;		/* fake_fds.c */
 extern int (*fake_get_rand_bpf_map_fd_of_types)(const unsigned int *map_types,
 						unsigned int n_types);	/* fake_fds.c */
+extern int fake_socket_fd;		/* fake_fds.c */
 int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
@@ -806,6 +807,8 @@ static const struct fake_map fake_maps[] = {
 	{ BPF_MAP_TYPE_QUEUE, 0, 8, true },
 	{ BPF_MAP_TYPE_BLOOM_FILTER, 0, 4, true },
 	{ BPF_MAP_TYPE_RINGBUF, 0, 0, true },
+	{ BPF_MAP_TYPE_SOCKMAP, 4, 8, true },
+	{ BPF_MAP_TYPE_SOCKHASH, 4, 4, true },
 	{ BPF_MAP_TYPE_HASH, 512, 30000, false },
 	{ BPF_MAP_TYPE_PERCPU_HASH, 16, 8, false },
 };
@@ -994,8 +997,33 @@ struct elem_tally {
 	unsigned int rounds, reached, efault, einval, erange, value_faults;
 	unsigned int exist_conflicts, cpu, cpu_valid, all_cpus, cpu_off_percpu;
 	unsigned int undersized, big_rows;
+	unsigned int sock_updates, sock_named;
 	uint64_t cpus_seen;	/* bit n: BPF_F_CPU named cpu n, for n below 64 */
 };
+
+/* The pooled socket the socket picker's stand-in hands out. */
+#define ELEM_SOCKET_FD	93
+
+/*
+ * sock_map_update_elem_sys() (net/core/sock_map.c) reads an update's value
+ * as the fd of the socket to put in the sockmap or sockhash, a u64 or a
+ * u32 by the map's value size: whether the update names the pooled one.
+ */
+static bool names_pooled_socket(const struct fake_map *m, unsigned long value)
+{
+	uint64_t fd = 0;
+	uint32_t fd32;
+
+	if (!range_in_writable_pool(value, m->value_size))
+		return false;
+	if (m->value_size == sizeof(fd)) {
+		memcpy(&fd, (const void *) value, sizeof(fd));
+	} else {
+		memcpy(&fd32, (const void *) value, sizeof(fd32));
+		fd = fd32;
+	}
+	return fd == ELEM_SOCKET_FD;
+}
 
 static void tally_elem(struct elem_tally *t, unsigned int cmd,
 		       const union bpf_attr *attr, unsigned long size,
@@ -1019,6 +1047,11 @@ static void tally_elem(struct elem_tally *t, unsigned int cmd,
 		      "map elem", false);
 	if (v.exist_conflict)
 		t->exist_conflicts++;
+	if (cmd == BPF_MAP_UPDATE_ELEM &&
+	    (m->type == BPF_MAP_TYPE_SOCKMAP || m->type == BPF_MAP_TYPE_SOCKHASH)) {
+		t->sock_updates++;
+		t->sock_named += names_pooled_socket(m, attr->value);
+	}
 
 	/* A row of every cpu's value that no buffer the arms make holds is
 	 * sent only by the call that cannot name one value instead: it is not
@@ -1101,6 +1134,7 @@ static void map_elem_draws_reach_the_maps_code(void)
 		writable_pool_init();
 	fake_get_rand_bpf_map = pick_fake_map;
 	fake_rand_bitmask_draws = true;
+	fake_socket_fd = ELEM_SOCKET_FD;
 
 	for (c = 0; c < ARRAY_SIZE(cmds); c++) {
 		struct elem_tally t = { 0 };
@@ -1145,6 +1179,10 @@ static void map_elem_draws_reach_the_maps_code(void)
 			      t.all_cpus > 0);
 			check("over 10% of the updates set both existence flags",
 			      "map elem", t.exist_conflicts * 100 <= t.rounds * 10);
+			check("under 75% of the sockmap updates name a pooled socket",
+			      "map elem", t.sock_named * 100 >= t.sock_updates * 75);
+			check("every sockmap update names a pooled socket",
+			      "map elem", t.sock_named < t.sock_updates);
 		}
 		/* Takes no flag but BPF_F_LOCK, which a map with no BTF spin
 		 * lock refuses too: the odd draw of the update flags is all
@@ -1154,6 +1192,7 @@ static void map_elem_draws_reach_the_maps_code(void)
 			      "map elem", t.cpu * 100 <= t.rounds * 5);
 	}
 
+	fake_socket_fd = -1;
 	fake_rand_bitmask_draws = false;
 	fake_get_rand_bpf_map = NULL;
 }

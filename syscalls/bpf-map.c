@@ -7,18 +7,22 @@
 #ifdef USE_BPF
 
 #include <linux/bpf.h>
+#include <netinet/in.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <sys/socket.h>
 
 #include "arch.h"
 #include "bpf.h"
 #include "bpf-internal.h"
+#include "net.h"
 #include "objects.h"
 #include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
+#include "socketinfo.h"
 #include "syscall-gate.h"
 #include "trinity.h"		/* num_possible_cpus */
 #include "utils.h"
@@ -199,6 +203,54 @@ static u64 draw_value(const struct bpfobj *map, bool known, u64 flags)
 }
 
 /*
+ * The sockets a sockmap or sockhash takes, those whose proto can switch to
+ * a psock's (sock_map_sk_is_suitable()); sock_map_sk_state_allowed() holds a
+ * TCP one to listening or established, a UDP one to bound, and a unix or
+ * vsock stream or seqpacket one to established.
+ */
+static const struct socket_triplet sockmap_socks[] = {
+	{ .family = PF_INET, .type = SOCK_STREAM, .protocol = IPPROTO_TCP },
+	{ .family = PF_INET6, .type = SOCK_STREAM, .protocol = IPPROTO_TCP },
+	{ .family = PF_INET, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+	{ .family = PF_INET6, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+	{ .family = PF_UNIX, .type = SOCK_STREAM, .protocol = 0 },
+	{ .family = PF_UNIX, .type = SOCK_DGRAM, .protocol = 0 },
+	{ .family = PF_UNIX, .type = SOCK_SEQPACKET, .protocol = 0 },
+	{ .family = PF_VSOCK, .type = SOCK_STREAM, .protocol = 0 },
+	{ .family = PF_VSOCK, .type = SOCK_DGRAM, .protocol = 0 },
+	{ .family = PF_VSOCK, .type = SOCK_SEQPACKET, .protocol = 0 },
+};
+
+/*
+ * A sockmap or sockhash reads an update's value as the fd of the socket to
+ * put in (sock_map_update_elem_sys()), a u64 or a u32 by the map's value
+ * size, so seven of its updates in eight name a pooled socket it takes,
+ * and the rest send the value's junk, nearly never an fd.
+ */
+static void name_pooled_socket(const struct bpfobj *map, u64 value)
+{
+	u64 fd64;
+	u32 fd32;
+	int fd;
+
+	if ((map->map_type != BPF_MAP_TYPE_SOCKMAP &&
+	     map->map_type != BPF_MAP_TYPE_SOCKHASH) ||
+	    !range_in_writable_pool(value, map->value_size) || ONE_IN(8))
+		return;
+	fd = get_rand_socket_fd_of_triplet(sockmap_socks,
+					   ARRAY_SIZE(sockmap_socks));
+	if (fd < 0)
+		return;
+	if (map->value_size == sizeof(fd64)) {
+		fd64 = (u64) fd;
+		memcpy((void *)(unsigned long) value, &fd64, sizeof(fd64));
+	} else if (map->value_size == sizeof(fd32)) {
+		fd32 = (u32) fd;
+		memcpy((void *)(unsigned long) value, &fd32, sizeof(fd32));
+	}
+}
+
+/*
  * BPF_MAP_UPDATE_ELEM flags, from the table.  One draw in sixteen is sent as
  * drawn, to reach what the kernel refuses: both existence flags, a lock on a
  * map whose BTF has no spin lock, a cpu flag on a map that is not per-cpu,
@@ -277,6 +329,8 @@ void sanitise_bpf_map_update(union bpf_attr *attr, struct syscallrecord *rec)
 	attr->flags = draw_update_flags(&map, known);
 	attr->key = draw_key(&map, known, false);
 	attr->value = draw_value(&map, known, attr->flags);
+	if (known)
+		name_pooled_socket(&map, attr->value);
 	rec->a3 = 32;
 }
 
