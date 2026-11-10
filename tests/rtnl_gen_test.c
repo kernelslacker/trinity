@@ -41,6 +41,7 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type, unsigned char family);
+void mask_route_dst(struct nlmsghdr *nlh, size_t len);
 
 #define ROUNDS		800000
 
@@ -1545,6 +1546,117 @@ static void expect_route_header(const struct route_header *t)
 			"rtnl: an IPv6 route does not leave out the source prefix a kernel without subtrees refuses about half the time");
 }
 
+/* ---------- An IPv4 route's RTA_DST under its rtm_dst_len -------------- */
+
+struct route_dst {
+	unsigned int prefixed;	/* IPv4, a prefix under 32 bits, an RTA_DST */
+	unsigned int held;	/* ... every RTA_DST inside the prefix */
+};
+
+static void tally_route_dst(struct route_dst *t, const struct nlmsghdr *nlh)
+{
+	const struct rtmsg *rtm = NLMSG_DATA(nlh);
+	const struct rtattr *rta;
+	unsigned int dsts = 0, inside = 0;
+	int len;
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*rtm)) ||
+	    rtm->rtm_family != AF_INET || rtm->rtm_dst_len >= 32)
+		return;
+	len = (int) (nlh->nlmsg_len - NLMSG_LENGTH(sizeof(*rtm)));
+	for (rta = RTM_RTA(rtm); RTA_OK(rta, len); rta = RTA_NEXT(rta, len)) {
+		uint32_t dst;
+
+		if ((rta->rta_type & NLA_TYPE_MASK) != RTA_DST ||
+		    RTA_PAYLOAD(rta) < sizeof(dst))
+			continue;
+		memcpy(&dst, RTA_DATA(rta), sizeof(dst));
+		dsts++;
+		inside += (uint32_t) (ntohl(dst) << rtm->rtm_dst_len) == 0;
+	}
+	if (dsts == 0)
+		return;
+	t->prefixed++;
+	t->held += inside == dsts;
+}
+
+/*
+ * rtm_to_fib_config() refuses an IPv4 route add or delete whose RTA_DST has
+ * a bit set past rtm_dst_len, which a random address under a short prefix
+ * nearly always has.  Once the attributes are in, the builder cuts each
+ * RTA_DST of such a route to its prefix seven times in eight
+ * (cuts_route_dsts_to_their_prefix() holds it to the rate); the rounds draw
+ * a few hundred of them, enough to show the cut is made.
+ */
+static void expect_route_dst(const struct route_dst *t)
+{
+	if (t->prefixed < 100 || t->held * 2 < t->prefixed) {
+		fprintf(stderr, "IPv4 route RTA_DST: %u of %u inside the prefix\n",
+			t->held, t->prefixed);
+		BUG("rtnl: a built IPv4 route's RTA_DST is mostly outside its prefix");
+	}
+}
+
+/* Two RTA_DSTs of all ones in a route message of @type, @family and
+ * @dst_len, through mask_route_dst(): 1 when both come back cut to the
+ * prefix with its bits kept, 0 when both come back whole, -1 otherwise. */
+static int cut_route(unsigned short type, unsigned char family,
+		     unsigned int dst_len)
+{
+	static unsigned char buf[NLMSG_SPACE(sizeof(struct rtmsg)) + 2 * RTA_SPACE(4)];
+	struct nlmsghdr *nlh = (struct nlmsghdr *) buf;
+	struct rtmsg *rtm = NLMSG_DATA(nlh);
+	const uint32_t ones = 0xffffffffU;
+	uint32_t prefix, dst;
+	unsigned int cut = 0, whole = 0, i;
+	struct rtattr *rta;
+	int len;
+
+	memset(buf, 0, sizeof(buf));
+	nlh->nlmsg_type = type;
+	nlh->nlmsg_len = sizeof(buf);
+	rtm->rtm_family = family;
+	rtm->rtm_dst_len = dst_len;
+	for (i = 0; i < 2; i++) {
+		rta = (struct rtattr *) ((char *) RTM_RTA(rtm) + i * RTA_SPACE(sizeof(ones)));
+		rta->rta_type = RTA_DST;
+		rta->rta_len = RTA_LENGTH(sizeof(ones));
+		memcpy(RTA_DATA(rta), &ones, sizeof(ones));
+	}
+	mask_route_dst(nlh, sizeof(buf));
+
+	prefix = dst_len < 32 ? htonl(~(0xffffffffU >> dst_len)) : ones;
+	len = (int) (sizeof(buf) - NLMSG_LENGTH(sizeof(*rtm)));
+	for (rta = RTM_RTA(rtm); RTA_OK(rta, len); rta = RTA_NEXT(rta, len)) {
+		memcpy(&dst, RTA_DATA(rta), sizeof(dst));
+		whole += dst == ones;
+		cut += dst != ones && dst == prefix;
+	}
+	return cut == 2 ? 1 : whole == 2 ? 0 : -1;
+}
+
+/* mask_route_dst() cuts both RTA_DSTs of an IPv4 add or delete with a
+ * prefix under 32 bits seven times in eight, and no RTA_DST of a route the
+ * kernel takes whole: a GET, an IPv6 one, one with a 32-bit prefix. */
+static void cuts_route_dsts_to_their_prefix(void)
+{
+	unsigned int i, cut = 0;
+	int r;
+
+	for (i = 0; i < ENTRIES; i++) {
+		r = cut_route(i % 2 ? RTM_NEWROUTE : RTM_DELROUTE, AF_INET, i % 32);
+		if (r < 0)
+			BUG("rtnl: an IPv4 route's RTA_DSTs were cut apart, or past the prefix");
+		cut += r;
+		if (cut_route(RTM_GETROUTE, AF_INET, i % 32) != 0 ||
+		    cut_route(RTM_NEWROUTE, AF_INET6, i % 32) != 0 ||
+		    cut_route(RTM_NEWROUTE, AF_INET, 32) != 0)
+			BUG("rtnl: an RTA_DST was cut where the kernel takes it whole");
+	}
+	expect_fraction(cut, ENTRIES, 0.84, 0.91, "IPv4 route RTA_DST cuts",
+			"rtnl: an IPv4 route's RTA_DSTs are not cut to its prefix seven times in eight");
+}
+
 /* ---------- RTA_FLOWLABEL ---------------------------------------------- */
 
 struct route_flowlabel {
@@ -2046,6 +2158,7 @@ struct tallies {
 	struct limit limits[ARRAY_SIZE(limit_types)];
 	struct probe_interval probe_interval;
 	struct route_header route_header;
+	struct route_dst route_dst;
 	struct route_encap route_encap;
 	struct lwt_encap lwt_encap;
 	struct route_flowlabel route_flowlabel;
@@ -2182,6 +2295,7 @@ static void run_rounds(struct tallies *t)
 		case RTM_NEWROUTE:
 		case RTM_DELROUTE:
 			tally_route_header(&t->route_header, nlh);
+			tally_route_dst(&t->route_dst, nlh);
 			tally_route_encap(&t->route_encap, nlh);
 			tally_lwt_encap(&t->lwt_encap, nlh);
 			tally_route_flowlabel(&t->route_flowlabel, nlh);
@@ -2231,6 +2345,8 @@ void rtnl_gen_self_check(void)
 	expect_link_limits(t.limits);
 	expect_probe_interval(&t.probe_interval);
 	expect_route_header(&t.route_header);
+	expect_route_dst(&t.route_dst);
+	cuts_route_dsts_to_their_prefix();
 	expect_route_encap(&t.route_encap);
 	expect_lwt_encap(&t.lwt_encap);
 	expect_route_flowlabel(&t.route_flowlabel);

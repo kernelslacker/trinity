@@ -451,6 +451,10 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		offset = new_off;
 	}
 
+	/* Only now are the header and the attributes both in the message. */
+	if (rtnl_group >= 0)
+		mask_route_dst(nlh, offset - msg_start);
+
 	/* Set nlmsg_len — usually correct, sometimes corrupted */
 	if (ONE_IN(10)) {
 		switch (rnd_modulo_u32(5)) {

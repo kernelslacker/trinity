@@ -168,6 +168,42 @@ static size_t build_lwt_bpf_encap(unsigned char *p, size_t cap)
 }
 
 /*
+ * rtm_to_fib_config() refuses an IPv4 route add or delete whose RTA_DST has
+ * a bit set past rtm_dst_len, which a random address under a short prefix
+ * nearly always has, and the address is drawn with the header out of
+ * sight.  So once both are in the message, each RTA_DST of such a route is
+ * cut to its prefix seven times in eight.  IPv6 masks the host bits itself
+ * (ipv6_addr_prefix() in ip6_route_info_create()).
+ */
+void mask_route_dst(struct nlmsghdr *nlh, size_t len)
+{
+	const struct rtmsg *rtm = NLMSG_DATA(nlh);
+	unsigned char *msg = (unsigned char *) nlh;
+	size_t off = NLMSG_LENGTH(sizeof(*rtm));
+	struct nlattr nla;
+	uint32_t dst, mask;
+
+	if (nlh->nlmsg_type != RTM_NEWROUTE && nlh->nlmsg_type != RTM_DELROUTE)
+		return;
+	if (len < off || rtm->rtm_family != AF_INET || rtm->rtm_dst_len >= 32 ||
+	    ONE_IN(8))
+		return;
+	mask = htonl(~(0xffffffffU >> rtm->rtm_dst_len));
+	for (off = NLMSG_ALIGN(off); off + NLA_HDRLEN <= len;
+	     off += NLA_ALIGN(nla.nla_len)) {
+		memcpy(&nla, msg + off, sizeof(nla));
+		if (nla.nla_len < NLA_HDRLEN || nla.nla_len > len - off)
+			return;
+		if ((nla.nla_type & NLA_TYPE_MASK) != RTA_DST ||
+		    nla.nla_len < NLA_HDRLEN + sizeof(dst))
+			continue;
+		memcpy(&dst, msg + off + NLA_HDRLEN, sizeof(dst));
+		dst &= mask;
+		memcpy(msg + off + NLA_HDRLEN, &dst, sizeof(dst));
+	}
+}
+
+/*
  * lwtunnel_build_state() hands a route's RTA_ENCAP to the build_state() of
  * the kind its RTA_ENCAP_TYPE names, so a nest means something only beside
  * its type, and the two go out together.  The kind is LWTUNNEL_ENCAP_BPF

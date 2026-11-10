@@ -193,6 +193,14 @@ size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
 size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen);
 
 /*
+ * Cut each RTA_DST of an IPv4 route add or delete to its rtm_dst_len, the
+ * message's first len bytes holding its header and attributes.  Defined in
+ * msg-rtnl-route.c, called from build_one_nlmsg() once the attributes are
+ * in.
+ */
+void mask_route_dst(struct nlmsghdr *nlh, size_t len);
+
+/*
  * Address-family picker shared by the rtnetlink body builders and the
  * sock_diag body builder.  Defined in msg-rtnl-body.c; the widened
  * linkage mirrors the descriptor-table pattern above so both TUs can
