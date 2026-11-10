@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <netinet/in.h>
 #include <linux/bpf.h>
 #include <linux/unistd.h>
 #include <linux/perf_event.h>
@@ -227,6 +228,10 @@ REG_FD_PROV(bpf_map_fd_provider);
  * Loading one template per multi attach type gives each arm a prog
  * whose expected attach type names it.
  *
+ * Every template is r0 = 0; exit but one, a second LWT_XMIT program
+ * that pushes a tunnel header first, without which no skb leaves an
+ * LWT route encapsulated.
+ *
  * Capability gates reject most program types when trinity runs
  * unprivileged; the init loop tries each template and keeps whichever
  * successfully loaded.  ENOSYS on any attempt latches the whole
@@ -239,7 +244,47 @@ struct bpf_prog_template {
 	u32 prog_type;
 	u32 expected_attach_type;
 	const char *name;
+	/* Writes the program to insns and returns its length; NULL for
+	 * r0 = 0; exit. */
+	unsigned int (*build)(struct bpf_insn *insns);
 };
+
+/*
+ * Push a GRE-in-IPv4 header with bpf_lwt_push_encap(BPF_LWT_ENCAP_IP) and
+ * go on (BPF_OK).  bpf_lwt_push_ip_encap() fills in the checksum left 0,
+ * and marks a TCP GSO skb SKB_GSO_GRE (handle_gso_encap()), so the
+ * segmentation that skb meets carries a tunnel header.  The header goes
+ * onto the stack a word at a time, each word read from the bytes in host
+ * order.
+ */
+static unsigned int build_lwt_push_encap(struct bpf_insn *insns)
+{
+	static const unsigned char hdr[24] = {
+		0x45, 0, 0, 0,			/* IPv4, ihl 5 */
+		0, 0, 0, 0,
+		64, IPPROTO_GRE, 0, 0,		/* ttl, protocol, check */
+		127, 0, 0, 1,
+		127, 0, 0, 1,
+		0, 0, 0x08, 0x00,		/* GRE: no flags, ETH_P_IP */
+	};
+	unsigned int i, n = 0;
+
+	for (i = 0; i < sizeof(hdr); i += sizeof(__s32)) {
+		__s32 word;
+
+		memcpy(&word, hdr + i, sizeof(word));
+		insns[n++] = EBPF_ST_MEM(BPF_W, BPF_REG_10,
+					 (int) i - (int) sizeof(hdr), word);
+	}
+	insns[n++] = EBPF_MOV64_IMM(BPF_REG_2, BPF_LWT_ENCAP_IP);
+	insns[n++] = EBPF_MOV64_REG(BPF_REG_3, BPF_REG_10);
+	insns[n++] = EBPF_ALU64_IMM(BPF_ADD, BPF_REG_3, -(int) sizeof(hdr));
+	insns[n++] = EBPF_MOV64_IMM(BPF_REG_4, sizeof(hdr));
+	insns[n++] = EBPF_CALL(BPF_FUNC_lwt_push_encap);
+	insns[n++] = EBPF_MOV64_IMM(BPF_REG_0, BPF_OK);
+	insns[n++] = EBPF_EXIT();
+	return n;
+}
 
 static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_SOCKET_FILTER,	0,				"socket_filter" },
@@ -255,6 +300,8 @@ static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_LWT_IN,		0,				"lwt_in" },
 	{ BPF_PROG_TYPE_LWT_OUT,	0,				"lwt_out" },
 	{ BPF_PROG_TYPE_LWT_XMIT,	0,				"lwt_xmit" },
+	{ BPF_PROG_TYPE_LWT_XMIT,	0,				"lwt_xmit_encap",
+	  build_lwt_push_encap },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_MULTI,		"kprobe_multi" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_SESSION,	"kprobe_session" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_UPROBE_MULTI,		"uprobe_multi" },
@@ -266,26 +313,30 @@ static struct bpf_prog_template bpf_prog_templates[] = {
 
 static const char bpf_prog_license[] = "GPL";
 
-static int bpf_load_template_prog(unsigned int prog_type,
-				  unsigned int expected_attach_type)
+static int bpf_load_template_prog(const struct bpf_prog_template *t)
 {
-	/*
-	 * The minimal verifier-clean program: r0 = 0; exit.
-	 * Two instructions, no helper calls, no map references — passes
-	 * every prog type that doesn't require a BTF attach target,
-	 * including the multi attach types, which need vmlinux BTF
-	 * only for the tracing-multi trio.
-	 */
-	struct bpf_insn insns[] = {
-		EBPF_MOV64_IMM(BPF_REG_0, 0),
-		EBPF_EXIT(),
-	};
+	struct bpf_insn insns[16];
+	unsigned int n = 0;
 	union bpf_attr attr;
 
+	if (t->build != NULL) {
+		n = t->build(insns);
+	} else {
+		/*
+		 * The minimal verifier-clean program: r0 = 0; exit.
+		 * Two instructions, no helper calls, no map references —
+		 * passes every prog type that doesn't require a BTF attach
+		 * target, including the multi attach types, which need
+		 * vmlinux BTF only for the tracing-multi trio.
+		 */
+		insns[n++] = EBPF_MOV64_IMM(BPF_REG_0, 0);
+		insns[n++] = EBPF_EXIT();
+	}
+
 	memset(&attr, 0, sizeof(attr));
-	attr.prog_type = prog_type;
-	attr.expected_attach_type = expected_attach_type;
-	attr.insn_cnt = ARRAY_SIZE(insns);
+	attr.prog_type = t->prog_type;
+	attr.expected_attach_type = t->expected_attach_type;
+	attr.insn_cnt = n;
 	attr.insns = (u64)(uintptr_t)insns;
 	attr.license = (u64)(uintptr_t)bpf_prog_license;
 
@@ -334,8 +385,7 @@ static int init_bpf_prog_fds(void)
 		struct object *obj;
 		int fd;
 
-		fd = bpf_load_template_prog(bpf_prog_templates[i].prog_type,
-					bpf_prog_templates[i].expected_attach_type);
+		fd = bpf_load_template_prog(&bpf_prog_templates[i]);
 		if (fd < 0) {
 			/*
 			 * ENOSYS = no BPF in this kernel; fail the whole
