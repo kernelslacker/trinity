@@ -1345,7 +1345,7 @@ static void expect_handled_types(unsigned int unhandled_msgs, unsigned int msgs)
 			"rtnl: a type no kernel handler takes is drawn from the table");
 }
 
-/* ---------- The dump bits of a GET with one kind of handler ------------- */
+/* ---------- The dump bits of a GET -------------------------------------- */
 
 /*
  * rtnetlink_rcv_msg() routes a GET to its dumpit on either dump bit and
@@ -1370,33 +1370,37 @@ static bool dumpit_only(unsigned short type)
 
 struct dump_bits {
 	unsigned int msgs;
-	unsigned int misrouted;	/* routed to the handler the type lacks */
+	unsigned int dumps;	/* routed to the dumpit */
 };
 
-static void tally_dump_bits(struct dump_bits *t, const struct nlmsghdr *nlh,
-			    bool dumpit)
+static void tally_dump_bits(struct dump_bits *t, const struct nlmsghdr *nlh)
 {
-	bool dump = nlh->nlmsg_flags & NLM_F_DUMP;
-
 	t->msgs++;
-	t->misrouted += dump != dumpit;
+	t->dumps += (nlh->nlmsg_flags & NLM_F_DUMP) != 0;
 }
 
 /*
  * Only the chaos message in ten keeps a random flags word, which holds
  * neither dump bit a quarter of the time and one or both the rest, so
  * 0.025 of the dumpit-only GETs' requests and 0.075 of RTM_GETDCB's are
- * routed to the handler the type lacks.  Over thousands of requests the
+ * routed to the handler the type lacks.  The other GETs have both handlers,
+ * under some family at least, and are left to the draw: NLM_F_DUMP half the
+ * time, and the NEW and DELETE modifiers, which no GET's doit reads and
+ * which set one dump bit or both 27 times in 32, one time in eight, so 0.57
+ * of their requests go to the dumpit.  Over thousands of requests the
  * bounds are many standard deviations out.
  */
 static void expect_dump_bits(const struct dump_bits *dumps,
-			     const struct dump_bits *dcb)
+			     const struct dump_bits *dcb,
+			     const struct dump_bits *both)
 {
-	expect_fraction(dumps->misrouted, dumps->msgs, 0.0, 0.04,
+	expect_fraction(dumps->dumps, dumps->msgs, 0.96, 1.0,
 			"the dumpit-only GETs",
 			"rtnl: a GET with only a dumpit is sent without NLM_F_DUMP");
-	expect_fraction(dcb->misrouted, dcb->msgs, 0.0, 0.12, "RTM_GETDCB",
+	expect_fraction(dcb->dumps, dcb->msgs, 0.0, 0.12, "RTM_GETDCB",
 			"rtnl: RTM_GETDCB, which has only a doit, is sent a dump bit");
+	expect_fraction(both->dumps, both->msgs, 0.50, 0.65, "the other GETs",
+			"rtnl: a GET with both handlers seldom reaches its doit");
 }
 
 /* ---------- The rtmsg of RTM_NEWROUTE and RTM_DELROUTE ------------------ */
@@ -1823,7 +1827,7 @@ static void expect_action_attrs(const struct action_attrs *t)
 
 struct tallies {
 	unsigned int msgs, unhandled;
-	struct dump_bits dumps, dcb;
+	struct dump_bits dumps, dcb, both;
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
 	struct getneigh_attrs getneigh_attrs;
@@ -1869,9 +1873,13 @@ static void run_rounds(struct tallies *t)
 		t->msgs++;
 		t->unhandled += unhandled(nlh->nlmsg_type);
 		if (dumpit_only(nlh->nlmsg_type))
-			tally_dump_bits(&t->dumps, nlh, true);
+			tally_dump_bits(&t->dumps, nlh);
 		else if (nlh->nlmsg_type == RTM_GETDCB)
-			tally_dump_bits(&t->dcb, nlh, false);
+			tally_dump_bits(&t->dcb, nlh);
+		else if (nlh->nlmsg_type >= RTM_BASE &&
+			 nlh->nlmsg_type < RTM_MAX &&
+			 (nlh->nlmsg_type - RTM_BASE) % 4 == 2)	/* a GET */
+			tally_dump_bits(&t->both, nlh);
 
 		switch (nlh->nlmsg_type) {
 		case RTM_GETADDR:
@@ -1990,7 +1998,7 @@ void rtnl_gen_self_check(void)
 
 	run_rounds(&t);
 	expect_handled_types(t.unhandled, t.msgs);
-	expect_dump_bits(&t.dumps, &t.dcb);
+	expect_dump_bits(&t.dumps, &t.dcb, &t.both);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_getneigh_attrs(&t.getneigh_attrs);

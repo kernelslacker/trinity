@@ -84,17 +84,19 @@ static unsigned short gen_nlmsg_modifiers(void)
  * chaos is the message in ten whose flags are a random word, returned
  * unpinned so the kernel's flag rejects keep seeing traffic.
  *
- * For every cmd at or past its family's resv_start_op, the genl core
- * turns away any flag outside REQUEST, ACK, ECHO and the dump pair, and
- * does so before it looks the op up.  A genl message therefore draws the
- * modifiers one time in 8 rather than every time.  That leaves about
- * nine in ten of the rest clear of the check, while the older families,
- * which skip it, and the handlers that read the modifiers (gtp tests EXCL
- * and REPLACE) still get them.  An nldev request draws them as rarely: no
- * nldev handler reads one, and REPLACE/NONREC and EXCL/BULK are the dump
- * bits, on either of which rdma_nl_rcv_msg() routes, so drawing them every
- * time would send more than nine in ten requests for an op with both
- * handlers to its dumpit.
+ * rare_modifiers has the message draw the modifiers one time in 8 rather
+ * than every time.  For every cmd at or past its family's resv_start_op,
+ * the genl core turns away any flag outside REQUEST, ACK, ECHO and the
+ * dump pair, and does so before it looks the op up, so a genl message
+ * draws them that rarely.  That leaves about nine in ten of the rest clear
+ * of the check, while the older families, which skip it, and the handlers
+ * that read the modifiers (gtp tests EXCL and REPLACE) still get them.  An
+ * nldev request and an rtnl GET draw them as rarely: no nldev handler or
+ * GET doit reads one, and REPLACE/NONREC and EXCL/BULK are the dump bits,
+ * on either of which rdma_nl_rcv_msg() routes a request and
+ * rtnetlink_rcv_msg() a GET, so drawing them every time would send more
+ * than nine in ten requests for an op or GET with both handlers to its
+ * dumpit.
  *
  * caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the handlers
  * the message's genl cmd, rtnl GET type or nldev op has: one bit pins the
@@ -106,7 +108,7 @@ static unsigned short gen_nlmsg_modifiers(void)
  * a doit gets neither.  The NEW and DELETE modifiers share those two bits
  * (REPLACE/NONREC, EXCL/BULK), so the pin comes after them.
  */
-static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
+static unsigned short gen_nlmsg_flags(bool chaos, bool rare_modifiers,
 				      unsigned char caps)
 {
 	unsigned short flags = NLM_F_REQUEST; /* almost always set */
@@ -124,8 +126,7 @@ static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
 	if (RAND_BOOL())
 		flags |= NLM_F_DUMP;
 
-	if ((protocol != NETLINK_GENERIC && protocol != NETLINK_RDMA) ||
-	    ONE_IN(8))
+	if (!rare_modifiers || ONE_IN(8))
 		flags |= gen_nlmsg_modifiers();
 
 	if (caps == GENL_CMD_CAP_DUMP)
@@ -349,6 +350,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	size_t msg_start = offset;
 	unsigned char body_family = AF_UNSPEC;
 	unsigned char caps = 0;
+	bool rare_modifiers = false;
 	bool chaos;
 	int rtnl_group = -1;
 	int num_attrs;
@@ -379,9 +381,12 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 					 buflen - offset, &body_family);
 		rtnl_group = (nlmsg_type - RTM_BASE) / 4;
 		caps = rtnl_get_caps(nlmsg_type);
+		/* A GET is the third type of each group of four. */
+		rare_modifiers = (nlmsg_type - RTM_BASE) % 4 == 2;
 	} else if (triplet->protocol == NETLINK_GENERIC) {
 		body_len = gen_genl_body(msg + offset, nlmsg_type,
 					 buflen - offset, chaos, &caps);
+		rare_modifiers = true;
 	} else if (triplet->protocol == NETLINK_NETFILTER) {
 		/* A lone message names one of its subsystem's families, as
 		 * the commands of a batch do. */
@@ -405,6 +410,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 		/* nldev parses its attributes straight after the nlmsghdr. */
 		body_len = 0;
 		caps = op != NULL ? op->caps : 0;
+		rare_modifiers = true;
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
@@ -415,7 +421,7 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 
 	/* After the body: the handlers of a genl cmd or an rtnl GET decide
 	 * the dump bits. */
-	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, triplet->protocol, caps);
+	nlh->nlmsg_flags = gen_nlmsg_flags(chaos, rare_modifiers, caps);
 
 	/* Append nlattr TLVs with protocol-appropriate types.  A genl
 	 * cmd's table depends on its cmd and dump flag, both set above.
