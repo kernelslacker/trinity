@@ -18,7 +18,6 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch */
-#include "blob_corpus.h"	/* blob_corpus_clear_pending */
 #include "cmp_hints.h"		/* cmp_hints_feedback_reset_stash */
 #include "debug.h"		/* BUG */
 #include "objects.h"		/* enum obj_scope, struct objhead */
@@ -45,11 +44,7 @@ unsigned long __wrap_fill_arg(struct syscallentry *entry,
 	return 0x1000 + argnum;
 }
 
-/* generate_syscall_args() reaches these. */
-void blob_corpus_clear_pending(void)
-{
-}
-
+/* generate_syscall_args() reaches this. */
 void cmp_hints_feedback_reset_stash(void)
 {
 }

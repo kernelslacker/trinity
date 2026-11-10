@@ -14,7 +14,6 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch, ARCH_IS_BIARCH */
-#include "blob_corpus.h"
 #include "debug.h"		/* BUG */
 #include "minicorpus.h"
 #include "persist-envelope.h"
@@ -148,11 +147,6 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 {
 	(void) nr;
 	return fake_cold_skip_pct;
-}
-
-/* args/pools/blob_corpus.c is not linked; no blob stash is pending. */
-void blob_corpus_promote_pending(void)
-{
 }
 
 /* utils/persist-envelope.c is not linked: it would consult the

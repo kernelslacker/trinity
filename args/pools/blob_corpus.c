@@ -64,16 +64,16 @@ void blob_corpus_init(void)
 	       BLOB_CORPUS_SLOTS, BLOB_CORPUS_MAX_LEN);
 }
 
-bool blob_corpus_try_get_base(unsigned int nr, bool do32,
-			      unsigned char *buf, size_t len)
+size_t blob_corpus_try_get_base(unsigned int nr, bool do32,
+				unsigned char *buf, size_t len)
 {
 	unsigned int i;
-	bool hit = false;
+	size_t copied = 0;
 
 	if (blob_corpus_shm == NULL || buf == NULL || len == 0)
-		return false;
+		return 0;
 	if (nr >= MAX_NR_SYSCALL)
-		return false;
+		return 0;
 
 	lock(&blob_corpus_shm->lock);
 	for (i = 0; i < BLOB_CORPUS_SLOTS; i++) {
@@ -93,18 +93,18 @@ bool blob_corpus_try_get_base(unsigned int nr, bool do32,
 		if (copy > len)
 			copy = len;
 		memcpy(buf, e->bytes, copy);
-		hit = true;
+		copied = copy;
 		break;
 	}
 	unlock(&blob_corpus_shm->lock);
 
-	if (hit)
+	if (copied != 0)
 		__atomic_fetch_add(&shm->stats.blob.base_from_corpus, 1UL,
 				   __ATOMIC_RELAXED);
 	else
 		__atomic_fetch_add(&shm->stats.blob.base_from_random, 1UL,
 				   __ATOMIC_RELAXED);
-	return hit;
+	return copied;
 }
 
 void blob_corpus_stash_pending(unsigned int nr, bool do32,
@@ -231,7 +231,7 @@ void blob_corpus_self_check(void)
 	/*
 	 * Invariant 2: BLOB_CORPUS_SLOTS non-zero and BLOB_CORPUS_MAX_LEN
 	 * non-zero.  Either at zero would silently disable the whole
-	 * corpus (all try_get returns false, all stash writes clamp to 0).
+	 * corpus (every try_get returns 0, all stash writes clamp to 0).
 	 */
 	if (BLOB_CORPUS_SLOTS == 0u || BLOB_CORPUS_MAX_LEN == 0u)
 		BUG("blob_corpus capacity constants must be non-zero");

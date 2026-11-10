@@ -1134,6 +1134,11 @@ PARENT_SRCS	+= $(TOP)/rand/random-page.c \
 		   $(TOP)/rand/random-length.c
 FAKE_SRCS	+= rand_bytes_test.c
 
+# args/pools/blob_corpus.c brings the blob corpus, whose lookup
+# blob_corpus_test.c holds to saying how many bytes of a base it copied.
+PARENT_SRCS	+= $(TOP)/args/pools/blob_corpus.c
+FAKE_SRCS	+= blob_corpus_test.c
+
 # syscalls/concurrency/futex.c brings futex's sanitiser, which
 # futex_test.c runs with every futex word pool empty.
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex.c

@@ -25,10 +25,9 @@
  * The table is a small fixed-capacity flat array (BLOB_CORPUS_SLOTS
  * entries).  Lookup and eviction are bounded linear scans; there are
  * no per-syscall rings, no persistence, no growth.  A hit contract:
- * copy min(cap, entry_len) bytes into the caller's buffer -- callers
- * always pass a fresh writable buffer, so a partial fill overlaid with
- * HAVOC/CMPDICT is still a strict improvement over the all-random
- * baseline.
+ * copy min(cap, entry_len) bytes into the caller's buffer and say how
+ * many, so blob_fill() can fill the rest of a longer request with
+ * random bytes rather than leave the previous call's there.
  *
  * OFF-mode reproducibility: nothing on this path runs when
  * blob_mutator_mode == BLOB_MUTATOR_OFF (blob_fill short-circuits
@@ -62,17 +61,16 @@ void blob_corpus_init(void);
 
 /* Try to seed @buf with a productive blob base for (nr, do32).
  *
- * Returns true iff a stored entry was found; on hit, up to @len bytes
- * of the entry are copied into @buf (the tail is left untouched --
- * the caller has just handed us a writable pool slot whose residue
- * gets overlaid by HAVOC/CMPDICT anyway).  Bounded work: a single
- * linear scan of at most BLOB_CORPUS_SLOTS entries plus one memcpy
- * capped at BLOB_CORPUS_MAX_LEN.
+ * Returns how many bytes of a stored entry it copied into @buf, at
+ * most @len, or 0 when it found none; the bytes past those are left
+ * for the caller to fill.  Bounded work: a single linear scan of at
+ * most BLOB_CORPUS_SLOTS entries plus one memcpy capped at
+ * BLOB_CORPUS_MAX_LEN.
  *
- * Safe to call from any context; returns false immediately when
- * the table is not yet initialised. */
-bool blob_corpus_try_get_base(unsigned int nr, bool do32,
-			      unsigned char *buf, size_t len);
+ * Safe to call from any context; returns 0 immediately when the table
+ * is not yet initialised. */
+size_t blob_corpus_try_get_base(unsigned int nr, bool do32,
+				unsigned char *buf, size_t len);
 
 /* Stash the just-authored buffer as a pending candidate for the next
  * minicorpus_save_with_reason promotion.  Truncates to

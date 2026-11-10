@@ -123,6 +123,7 @@ void budgeted_self_check(void);
 void unblocker_self_check(void);
 void arg_list_self_check(void);
 void rand_bytes_self_check(void);
+void blob_corpus_test_self_check(void);
 void modify_ldt_self_check(void);
 void seccomp_notif_self_check(void);
 void cred_class_self_check(void);
@@ -698,6 +699,11 @@ int main(int argc, char **argv)
 	printf("  rand_bytes_self_check ... ");
 	fflush(stdout);
 	rand_bytes_self_check();
+	printf("OK\n");
+
+	printf("  blob_corpus_test_self_check ... ");
+	fflush(stdout);
+	blob_corpus_test_self_check();
 	printf("OK\n");
 
 	printf("  modify_ldt_self_check ... ");

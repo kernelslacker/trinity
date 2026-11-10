@@ -275,6 +275,7 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 {
 	enum blob_mutator_mode mode;
 	unsigned int n;
+	size_t copied;
 	bool ab;
 	uint64_t saved_rnd_state = 0;
 
@@ -334,14 +335,15 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	/* Prefer a productive base from the per-(nr, do32) blob corpus
 	 * when one exists so HAVOC/CMPDICT lay their bounded pass on top
 	 * of a known-productive byte pattern instead of on top of fresh
-	 * random noise.  On a miss (empty pool, no key match), fall back
-	 * to the original generate_rand_bytes() floor so the FILL contract
-	 * is preserved.  The try_get_base call bumps
+	 * random noise.  What the base does not cover (all of it on a
+	 * miss: empty pool, no key match) takes the generate_rand_bytes()
+	 * floor, so the FILL contract holds.  The try_get_base call bumps
 	 * blob_base_from_corpus on hit / blob_base_from_random on miss;
 	 * the ratio is the observable "how often did we get a productive
 	 * base?" gauge without disturbing any existing counter. */
-	if (!blob_corpus_try_get_base(nr, do32, buf, (size_t) n))
-		generate_rand_bytes(buf, n);
+	copied = blob_corpus_try_get_base(nr, do32, buf, (size_t) n);
+	if (copied < n)
+		generate_rand_bytes(buf + copied, n - (unsigned int) copied);
 
 	/* Attribute one fill invocation regardless of which non-OFF mode
 	 * we resolved to -- this is the gate the stat-category emitter
