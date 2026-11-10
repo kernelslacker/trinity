@@ -902,7 +902,13 @@ extern struct genl_family_grammar fam_psp;
  * -EINVAL without the DEV_ID or the SOCK_FD they look up, and an assoc
  * whose socket has no device yet without ASSOC_DEV_ID; the doits do the
  * same without ASSOC_VERSION, TX_KEY and the KEY and SPI in it, and the
- * DEV_IFINDEX a device is (dis)associated with. */
+ * DEV_IFINDEX a device is (dis)associated with.  An assoc's SOCK_FD names
+ * a socket that sk_is_tcp() takes, an AF_INET or AF_INET6 stream socket of
+ * IPPROTO_TCP, or psp_assoc_device_get_locked() answers -EOPNOTSUPP. */
+static const struct socket_triplet psp_socks[] = {
+	{ PF_INET, SOCK_STREAM, IPPROTO_TCP },
+	{ PF_INET6, SOCK_STREAM, IPPROTO_TCP },
+};
 static struct slot psp_keys[] = {
 	S_BLOB(PSP_A_KEYS_KEY, 0, 0xffff, .required = true),
 	S_U32(PSP_A_KEYS_SPI, .required = true),
@@ -920,13 +926,13 @@ static struct slot psp_key_rotate[] = {
 static struct slot psp_rx_assoc[] = {
 	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX, .required = true),
 	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3, .required = true),
-	S_U32(PSP_A_ASSOC_SOCK_FD, .required = true),
+	S_SOCKET_FD(PSP_A_ASSOC_SOCK_FD, psp_socks, .required = true),
 };
 static struct slot psp_tx_assoc[] = {
 	S_U32_RANGE(PSP_A_ASSOC_DEV_ID, 1, UINT32_MAX, .required = true),
 	S_U32_RANGE(PSP_A_ASSOC_VERSION, 0, 3, .required = true),
 	S_NEST(PSP_A_ASSOC_TX_KEY, psp_keys, .required = true),
-	S_U32(PSP_A_ASSOC_SOCK_FD, .required = true),
+	S_SOCKET_FD(PSP_A_ASSOC_SOCK_FD, psp_socks, .required = true),
 };
 static struct slot psp_get_stats[] = {
 	S_U32_RANGE(PSP_A_STATS_DEV_ID, 1, UINT32_MAX),

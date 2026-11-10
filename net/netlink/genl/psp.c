@@ -5,8 +5,11 @@
  * a policy has a table of its own.
  */
 
+#include <netinet/in.h>
+
 #include "kernel/psp.h"
 #include "netlink-genl-families.h"
+#include "socketinfo.h"
 #include "utils.h"
 
 /*
@@ -30,8 +33,15 @@ static const struct nla_attr_spec psp_keys_attrs[] = {
  * pre_doits answer -EINVAL without the DEV_ID or SOCK_FD they look up, and
  * an assoc whose socket has no device yet without ASSOC_DEV_ID; the doits
  * do without VERSION, TX_KEY and the KEY and SPI in it, or the DEV_IFINDEX
- * a device is associated with, so those are marked required.
+ * a device is associated with, so those are marked required.  An assoc's
+ * SOCK_FD has to name a TCP socket (sk_is_tcp()), or the pre_doit answers
+ * -EOPNOTSUPP.
  */
+static const struct socket_triplet psp_assoc_socks[] = {
+	{ .family = PF_INET, .type = SOCK_STREAM, .protocol = IPPROTO_TCP },
+	{ .family = PF_INET6, .type = SOCK_STREAM, .protocol = IPPROTO_TCP },
+};
+
 static const struct nla_attr_spec psp_dev_id_attrs[] = {
 	{ PSP_A_DEV_ID,			NLA_KIND_U32_RANGE, UINT32_MAX, 1 },
 };
@@ -47,7 +57,9 @@ static const struct nla_attr_spec psp_rx_assoc_attrs[] = {
 	  .required = true },
 	{ PSP_A_ASSOC_VERSION,		NLA_KIND_U32_RANGE, 3, 0,
 	  .required = true },
-	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4, .required = true },
+	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_SOCKET_FD, 0, 0,
+	  .socks = psp_assoc_socks, .n_socks = ARRAY_SIZE(psp_assoc_socks),
+	  .required = true },
 };
 
 static const struct nla_attr_spec psp_tx_assoc_attrs[] = {
@@ -57,7 +69,9 @@ static const struct nla_attr_spec psp_tx_assoc_attrs[] = {
 	  .required = true },
 	{ PSP_A_ASSOC_TX_KEY,		NLA_KIND_NESTED, 0, 0,
 	  psp_keys_attrs, ARRAY_SIZE(psp_keys_attrs), .required = true },
-	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_U32,    4, .required = true },
+	{ PSP_A_ASSOC_SOCK_FD,		NLA_KIND_SOCKET_FD, 0, 0,
+	  .socks = psp_assoc_socks, .n_socks = ARRAY_SIZE(psp_assoc_socks),
+	  .required = true },
 };
 
 static const struct nla_attr_spec psp_get_stats_attrs[] = {
