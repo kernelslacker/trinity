@@ -233,9 +233,9 @@ REG_FD_PROV(bpf_map_fd_provider);
  * Loading one template per multi attach type gives each arm a prog
  * whose expected attach type names it.
  *
- * Every template is r0 = 0; exit but one, a second LWT_XMIT program
+ * Every template is r0 = 0; exit but three: a second LWT_XMIT program
  * that pushes a tunnel header first, without which no skb leaves an
- * LWT route encapsulated.
+ * LWT route encapsulated, and the sockmap programs, which pass.
  *
  * Capability gates reject most program types when trinity runs
  * unprivileged; the init loop tries each template and keeps whichever
@@ -291,6 +291,21 @@ static unsigned int build_lwt_push_encap(struct bpf_insn *insns)
 	return n;
 }
 
+/*
+ * r0 = SK_PASS; exit, for the sockmap programs.  0 is SK_DROP to a
+ * verdict, which would drop everything a socket in the map receives or
+ * sends, and "no whole message yet" to a stream parser, which would hold
+ * back all the socket receives (sk_psock_strp_parse()).  SK_PASS keeps
+ * the data moving through the psock, and a parser cuts the stream into
+ * one-byte messages.
+ */
+static unsigned int build_sk_pass(struct bpf_insn *insns)
+{
+	insns[0] = EBPF_MOV64_IMM(BPF_REG_0, SK_PASS);
+	insns[1] = EBPF_EXIT();
+	return 2;
+}
+
 static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_SOCKET_FILTER,	0,				"socket_filter" },
 	{ BPF_PROG_TYPE_KPROBE,		0,				"kprobe" },
@@ -307,6 +322,10 @@ static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_LWT_XMIT,	0,				"lwt_xmit" },
 	{ BPF_PROG_TYPE_LWT_XMIT,	0,				"lwt_xmit_encap",
 	  build_lwt_push_encap },
+	{ BPF_PROG_TYPE_SK_SKB,		0,				"sk_skb",
+	  build_sk_pass },
+	{ BPF_PROG_TYPE_SK_MSG,		0,				"sk_msg",
+	  build_sk_pass },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_MULTI,		"kprobe_multi" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_SESSION,	"kprobe_session" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_UPROBE_MULTI,		"uprobe_multi" },
