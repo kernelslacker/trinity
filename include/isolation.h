@@ -23,7 +23,7 @@ void setup_startup_isolation(void);
 /*
  * Bring lo up in the caller's netns and give it 127.0.0.1/8 and ::1/128.
  * Wants CAP_NET_ADMIN over the netns: the parent holds it as root at
- * startup, a userns-admin lane child in the user namespace it unshared
- * the netns with.  0 on success, -1 with errno set.
+ * startup, and a child in the user namespace owning a netns it unshared,
+ * as the lane or through a fuzzed call.  0 on success, -1 with errno set.
  */
 int setup_private_net(void);

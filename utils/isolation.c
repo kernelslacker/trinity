@@ -203,8 +203,9 @@ static int privnet_add_loopback_addr(int fd, int ifindex, int family,
 }
 
 /*
- * Provision a freshly-private netns: the parent's at startup, and a
- * userns-admin lane child's after its unshare.  Conservative
+ * Provision a freshly-private netns: the parent's at startup, a
+ * userns-admin lane child's after its unshare, and one a child's fuzzed
+ * unshare(CLONE_NEWNET) made.  Conservative
  * day-1 default: bring `lo` UP and assign 127.0.0.1/8 + ::1/128 so
  * the netns has a usable single-endpoint loopback for the
  * socket/bind/listen/netlink/route/sock_diag childops to drive

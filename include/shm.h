@@ -679,16 +679,18 @@ static inline bool try_admit_newnet(void)
 /* Single-RMW ticket release for the CLONE_NEWNET throttle.  Atomically
  * clears NEWNET_INFLIGHT_TICKET on rec->post_state and decrements
  * shm->newnet_in_flight iff the bit was set on entry (idempotent).
+ * Returns whether it was, that is whether CLONE_NEWNET went in.
  * See Documentation/shm-state.md (CLONE_NEWNET throttle). */
-static inline void release_newnet_ticket(struct syscallrecord *rec)
+static inline bool release_newnet_ticket(struct syscallrecord *rec)
 {
 	unsigned long old = __atomic_fetch_and(&rec->post_state,
 					       ~NEWNET_INFLIGHT_TICKET,
 					       __ATOMIC_RELAXED);
 
-	if (old & NEWNET_INFLIGHT_TICKET)
-		__atomic_fetch_sub(&shm->newnet_in_flight, 1,
-				   __ATOMIC_RELAXED);
+	if (!(old & NEWNET_INFLIGHT_TICKET))
+		return false;
+	__atomic_fetch_sub(&shm->newnet_in_flight, 1, __ATOMIC_RELAXED);
+	return true;
 }
 
 /* Data-segment externs paired with shm state.  These live OUTSIDE the

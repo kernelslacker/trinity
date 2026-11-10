@@ -3,7 +3,7 @@
  * entry in any of its tables wants it, and a lane child maps its uid to 0
  * in a user namespace of its own, which check_uid() has to take for what
  * it is, not for a root escalation, and brings lo up in the network
- * namespace it unshares with it.
+ * namespace it unshares with it, and in any it unshares later.
  */
 
 #include <fcntl.h>
@@ -24,6 +24,7 @@
 #include "exit.h"		/* EXIT_UID_CHANGED */
 #include "isolation.h"		/* setup_private_net */
 #include "syscall.h"
+#include "syscalls/syscalls.h"	/* syscall_unshare */
 #include "tables.h"		/* userns_lane_requested */
 #include "uid.h"		/* check_uid, orig_uid, nobody_uid */
 #include "utils.h"		/* waitpid_eintr */
@@ -37,11 +38,12 @@ int __real_socket(int domain, int type, int protocol);
  * unshare the namespaces. */
 #define NO_USERNS	77
 
-/* How the loopback helper exits when the lane's netns is not as the
- * check takes it to be. */
+/* How the loopback helpers exit when the lane's netns is not as the
+ * checks take it to be. */
 #define LO_STARTED_UP	1
 #define LO_SETUP_FAILED	2
 #define LO_UNREACHABLE	3
+#define LO_THROTTLED	4
 
 /*
  * Map the caller's uid to 0 in a new user namespace, as
@@ -167,6 +169,48 @@ static int lane_loopback_status(void)
 }
 
 /*
+ * A lane child holds CAP_SYS_ADMIN in its own user namespace, so a fuzzed
+ * unshare(CLONE_NEWNET) succeeds there and moves it into another netns,
+ * whose lo starts down.  The helper runs the unshare syscall's sanitiser
+ * and post handler around a real call, as the dispatcher does, telling the
+ * post handler the call returned @retval.  Returns the helper's exit
+ * status: 0 if a connect to 127.0.0.1 reaches a listener afterwards,
+ * LO_UNREACHABLE if not.
+ */
+static int reunshare_loopback_status(unsigned long retval)
+{
+	pid_t pid = fork();
+	int status;
+
+	if (pid < 0)
+		BUG("userns lane: fork failed");
+	if (pid == 0) {
+		struct syscallrecord rec;
+
+		/* Don't outlive the test binary if the check aborts. */
+		prctl(PR_SET_PDEATHSIG, SIGKILL);
+		if (unshare(CLONE_NEWUSER) != 0)
+			_exit(NO_USERNS);
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = CLONE_NEWNET;
+		syscall_unshare.sanitise(&rec);
+		if (rec.a1 != CLONE_NEWNET)
+			_exit(LO_THROTTLED);
+		if (unshare(rec.a1) != 0)
+			_exit(NO_USERNS);
+		rec.retval = retval;
+		fake_netlink_socket = real_netlink_socket;
+		syscall_unshare.post(&rec);
+		_exit(loopback_connects(AF_INET) ? 0 : LO_UNREACHABLE);
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid)
+		BUG("userns lane: cannot reap the unshare helper");
+	if (!WIFEXITED(status))
+		BUG("userns lane: the unshare helper died");
+	return WEXITSTATUS(status);
+}
+
+/*
  * Each table as sendmsg sits in it: the entry that asks for the lane, one
  * above an entry that does not.  Activation stamps an entry's
  * active_number, which is all the lookup reads.
@@ -254,4 +298,12 @@ void userns_lane_self_check(void)
 		BUG("userns lane: setup_private_net() failed");
 	if (status != 0)
 		BUG("userns lane: no loopback after setup_private_net()");
+
+	status = reunshare_loopback_status(0);
+	if (status == NO_USERNS || status == LO_THROTTLED)
+		BUG("userns lane: the unshare helper could not unshare a netns");
+	if (status != 0)
+		BUG("userns lane: lo down after unshare(CLONE_NEWNET) succeeded");
+	if (reunshare_loopback_status(-1UL) != LO_UNREACHABLE)
+		BUG("userns lane: post_unshare() brought lo up after a failed call");
 }

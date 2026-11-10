@@ -3,6 +3,7 @@
  */
 #include <linux/sched.h>
 #include "child.h"
+#include "isolation.h"
 #include "sanitise.h"
 #include "shm.h"
 #include "stats_ring.h"
@@ -63,9 +64,20 @@ static void sanitise_unshare(struct syscallrecord *rec)
 	}
 }
 
+/*
+ * A new netns starts with lo down, which leaves every socket the child
+ * opens afterwards no loopback to meet over.  Bring it up, as the lane
+ * does for the one it unshares.  The user namespace owning the new netns
+ * is the child's own, where the call needed CAP_SYS_ADMIN, or one the
+ * call made, which grants the full set: the child holds CAP_NET_ADMIN
+ * there unless a fuzzed capset() took it.  The ticket, not rec->a1, says
+ * CLONE_NEWNET went in; a failure, --dry-run's synthesized one among
+ * them, made no netns.
+ */
 static void post_unshare(struct syscallrecord *rec)
 {
-	release_newnet_ticket(rec);
+	if (release_newnet_ticket(rec) && rec->retval == 0)
+		(void) setup_private_net();
 }
 
 struct syscallentry syscall_unshare = {

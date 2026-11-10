@@ -275,7 +275,9 @@ cap exists to prevent.
 Atomically clears `NEWNET_INFLIGHT_TICKET` on `rec->post_state` and
 decrements `shm->newnet_in_flight` iff the bit was set on entry.
 Idempotent: a second caller racing in observes the bit already cleared
-and skips the decrement.
+and skips the decrement.  Returns whether the bit was set, which is how
+`post_unshare()` knows `CLONE_NEWNET` went in before it brings lo up in
+the new netns.
 
 The race this guards against is raw `clone()` / `clone3()`: the kernel
 returns in both the calling task and the newly created one, the

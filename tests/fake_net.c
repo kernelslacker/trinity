@@ -26,8 +26,8 @@ const struct protoptr net_protocols[TRINITY_PF_MAX];
  * What a netlink socket() returns.  A test that opens one sets this for
  * its call and clears it after; unset, AF_NETLINK fails, so nothing here
  * can reach a real netlink socket.  The one test that hands it the real
- * call, userns_lane_test.c, does so in a helper that has unshared a netns
- * of its own.  Every other domain goes to the real call.
+ * call, userns_lane_test.c, does so only in helpers that have unshared a
+ * netns of their own.  Every other domain goes to the real call.
  */
 int (*fake_netlink_socket)(int type, int protocol);
 

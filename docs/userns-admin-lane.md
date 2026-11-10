@@ -74,7 +74,9 @@ it up and gives it 127.0.0.1/8 and ::1/128 (`setup_private_net()`, the
 parent's own provisioning at startup), with the capabilities the new user
 namespace grants.  The sockets the child opens afterwards have a loopback to
 meet over; the parent's pooled sockets, in the parent's netns, are still out
-of their reach.
+of their reach.  Those capabilities also let a fuzzed `unshare(CLONE_NEWNET)`
+succeed with that flag alone, moving the child into yet another netns with lo
+down; `post_unshare()` brings that one up too.
 
 ### Mount-namespace surfaces (FIFREEZE / FITHAW)
 
