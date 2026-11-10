@@ -91,6 +91,13 @@ struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 	 * is gone. */
 	remove_local_objects_by_fd(fd);
 	add_object(obj, OBJ_LOCAL, OBJ_FD_SOCKET);
+
+	/* add_object() can give obj back rather than pool it, and the prune
+	 * that follows a publish can destroy it, so what was kept is looked
+	 * up again. */
+	obj = find_local_object_by_fd(OBJ_FD_SOCKET, fd);
+	if (obj == NULL)
+		return si;
 	own_version[protocol] = obj->slot_version;
 	return &obj->sockinfo;
 }

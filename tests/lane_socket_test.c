@@ -2,9 +2,10 @@
  * Self-check for lane_netlink_socketinfo(): a child in the userns-admin
  * lane sends netlink, seven draws in eight, on a socket of the drawn
  * protocol that it opened itself and keeps in its OBJ_LOCAL pool, and
- * opens another once that one is retired.  Outside the lane, for another
- * family, for a protocol whose kernel side lives in init_net alone, or for
- * one socket() has refused for good, the drawn socket stays.
+ * opens another once that one is retired or the pool does not keep it.
+ * Outside the lane, for another family, for a protocol whose kernel side
+ * lives in init_net alone, or for one socket() has refused for good, the
+ * drawn socket stays.
  */
 
 #include <errno.h>
@@ -24,6 +25,8 @@
 
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);
+extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
+						       int fd);	/* fake_objects.c */
 extern int (*fake_netlink_socket)(int type, int protocol);	/* fake_net.c */
 
 /* Enough draws that a swap and a keep both turn up: that none of them
@@ -79,6 +82,31 @@ static void pool_add_object(struct object *obj, enum obj_scope scope,
 	obj->obj_type = type;
 	obj->slot_version = ++last_slot_version;
 	local_sockets.array[local_sockets.num_entries++] = obj;
+}
+
+/* What find_local_object_by_fd() finds: the pooled socket under @fd. */
+static struct object *pool_find_by_fd(enum objecttype type, int fd)
+{
+	unsigned int i;
+
+	if (type != OBJ_FD_SOCKET)
+		return NULL;
+	for (i = 0; i < local_sockets.num_entries; i++) {
+		if (local_sockets.array[i]->sockinfo.fd == fd)
+			return local_sockets.array[i];
+	}
+	return NULL;
+}
+
+/* An add_object() whose prune destroys the object it has just filed: the
+ * destructor closes the socket, and the object goes back zeroed. */
+static void dropping_add_object(struct object *obj, enum obj_scope scope,
+				enum objecttype type)
+{
+	if (scope != OBJ_LOCAL || type != OBJ_FD_SOCKET)
+		BUG("lane socket: a socket went to another pool");
+	close(obj->sockinfo.fd);
+	free(obj);
 }
 
 /* A netlink socket already in the child's pool that it did not open in
@@ -360,6 +388,28 @@ static void a_socket_with_no_object_is_closed(void)
 	socket_fd = -1;
 }
 
+/* A socket the pool did not keep is not sent on, and the next swap opens
+ * another. */
+static void a_socket_the_pool_drops_is_not_sent_on(void)
+{
+	struct socketinfo si = {
+		.triplet = { PF_NETLINK, SOCK_DGRAM, NETLINK_RDMA }, .fd = 100,
+	};
+	unsigned int i;
+
+	reset();
+	fake_add_object = dropping_add_object;
+	for (i = 0; i < DRAWS && socket_calls < 2; i++) {
+		if (lane_netlink_socketinfo(&si) != &si)
+			BUG("lane socket: swapped to a socket the pool dropped");
+	}
+	fake_add_object = pool_add_object;
+	if (socket_calls < 2)
+		BUG("lane socket: a dropped socket was not opened again");
+	socket_fd = -1;
+	first_swap(&si);
+}
+
 void lane_socket_self_check(void);
 void lane_socket_self_check(void)
 {
@@ -370,6 +420,7 @@ void lane_socket_self_check(void)
 	fake_get_objhead = pool_head;
 	fake_alloc_object = pool_alloc_object;
 	fake_add_object = pool_add_object;
+	fake_find_local_object_by_fd = pool_find_by_fd;
 	fake_netlink_socket = lane_socket;
 
 	/* The helper's state lasts the process, so each case that can
@@ -384,9 +435,11 @@ void lane_socket_self_check(void)
 	an_init_net_only_protocol_stays();
 	an_out_of_range_protocol_stays();
 	a_socket_with_no_object_is_closed();
+	a_socket_the_pool_drops_is_not_sent_on();
 	reset();
 
 	fake_netlink_socket = NULL;
+	fake_find_local_object_by_fd = NULL;
 	fake_add_object = NULL;
 	fake_alloc_object = NULL;
 	fake_get_objhead = saved_hook;
