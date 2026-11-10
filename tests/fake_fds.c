@@ -17,6 +17,7 @@
 
 #include "bpf.h"
 #include "cgroup.h"
+#include "dmabuf.h"
 #include "perf.h"
 #include "list.h"
 #include "objects.h"
@@ -185,10 +186,11 @@ int __wrap_get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
 	return fake_socket_fd;
 }
 
-/* The pickers of fds/perf.c and fds/cgroup.c, which answer with the fd a
- * test sets, -1 from an empty pool. */
+/* The pickers of fds/perf.c, fds/cgroup.c and fds/dmabuf.c, which answer
+ * with the fd a test sets, -1 from an empty pool. */
 int fake_perf_fd = -1;
 int fake_cgroup_fd = -1;
+int fake_dmabuf_fd = -1;
 
 int get_rand_perf_fd(void)
 {
@@ -198,6 +200,10 @@ int get_rand_perf_fd(void)
 int get_rand_cgroup_fd(void)
 {
 	return fake_cgroup_fd;
+}
+int get_rand_dmabuf_fd(void)
+{
+	return fake_dmabuf_fd;
 }
 
 /* No ring is set up here, so the pool is empty. */

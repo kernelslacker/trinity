@@ -242,7 +242,7 @@ struct trinity_io_uring_zcrx_area_reg {
 	__u64	addr;
 	__u64	len;
 	__u64	rq_area_token;
-	__u32	flags;		/* see enum zcrx_reg_flags: ZCRX_REG_IMPORT=1 */
+	__u32	flags;		/* enum io_uring_zcrx_area_flags: IORING_ZCRX_AREA_DMABUF=1 */
 	__u32	dmabuf_fd;
 	__u64	__resv2[2];
 };

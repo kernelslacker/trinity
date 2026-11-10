@@ -7,6 +7,7 @@
 #include <sched.h>
 #include <string.h>
 #include "arch.h"
+#include "dmabuf.h"
 #include "fd.h"
 #include "kernel/io_uring.h"
 #include "objects.h"
@@ -623,8 +624,10 @@ struct ioring_register_payload ioring_reg_rsrc_register_payload(unsigned int opc
  * __resv, an address or size on an EMPTY or DMABUF descriptor and an fd
  * on an EMPTY or UADDR one, so seven in eight keep to that: five a UADDR
  * buffer from the call's pool, one an EMPTY slot, which removes the
- * buffer there, and one a DMABUF naming two pool fds, which dma_buf_get()
- * refuses unless the first is a dma-buf.  The eighth breaks one rule.
+ * buffer there, and one a DMABUF naming a pooled dma-buf, or a pool fd,
+ * which dma_buf_get() refuses, when init made none, and a pool fd as its
+ * target, which dma_buf_io_ctx_create() wants to be a block device whose
+ * driver takes dma-bufs (NVMe PCI).  The eighth breaks one rule.
  */
 static struct trinity_io_uring_regbuf_desc *regbuf_descs(unsigned int nr)
 {
@@ -654,7 +657,9 @@ static struct trinity_io_uring_regbuf_desc *regbuf_descs(unsigned int nr)
 			break;
 		case 6:
 			d->type = TRINITY_IO_REGBUF_TYPE_DMABUF;
-			d->dmabuf_fd = get_random_fd();
+			d->dmabuf_fd = get_rand_dmabuf_fd();
+			if (d->dmabuf_fd < 0)
+				d->dmabuf_fd = get_random_fd();
 			d->target_fd = get_random_fd();
 			break;
 		default:
@@ -823,9 +828,12 @@ struct ioring_register_payload ioring_reg_zcrx_ctrl_payload(void)
 				get_writable_struct(sizeof(*a));
 			if (a) {
 				memset(a, 0, sizeof(*a));
-				a->flags = ONE_IN(4) ? rnd_u32() : 1; /* ZCRX_REG_IMPORT */
+				a->flags = ONE_IN(4) ? rnd_u32() : 1; /* IORING_ZCRX_AREA_DMABUF */
 				if (ONE_IN(2)) {
-					int dfd = get_random_fd();
+					int dfd = get_rand_dmabuf_fd();
+
+					if (dfd < 0)
+						dfd = get_random_fd();
 					a->dmabuf_fd = (dfd >= 0) ?
 						(__u32) dfd : (__u32) rnd_u32();
 				}

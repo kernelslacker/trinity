@@ -21,6 +21,11 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
+extern int fake_dmabuf_fd;		/* fake_fds.c */
+
+/* The dma-buf the test's picker hands out, as the pool fds/dmabuf.c makes
+ * at init would. */
+#define FAKE_DMABUF_FD	66
 
 /* Draws, all of which miss a 1-in-160 opcode one time in about 10^11. */
 #define DRAWS	4096
@@ -71,13 +76,15 @@ static bool desc_registers(const struct trinity_io_uring_regbuf_desc *d)
 
 /* BUFFERS_UPDATE sends iovecs, or with IORING_RSRC_UPDATE_EXTENDED in the
  * update's flags descriptors, nearly all of which the kernel takes, of
- * every type; FILES_UPDATE2 refuses any flag. */
+ * every type, each DMABUF one naming a pooled dma-buf; FILES_UPDATE2
+ * refuses any flag. */
 static void rsrc_update_cases(void)
 {
 	const struct trinity_io_uring_regbuf_desc *descs;
 	const struct trinity_io_uring_rsrc_update2 *up;
 	unsigned int iovecs = 0, extended = 0, n_descs = 0, taken = 0;
 	unsigned int types = 0, i, j;
+	bool dmabuf_seen = false;
 	struct syscallrecord rec;
 
 	for (i = 0; i < UPDATE_DRAWS; i++) {
@@ -98,17 +105,22 @@ static void rsrc_update_cases(void)
 			(unsigned long) up->data;
 		for (j = 0; j < up->nr; j++) {
 			n_descs++;
-			if (desc_registers(&descs[j])) {
-				taken++;
-				types |= 1U << descs[j].type;
-			}
+			if (!desc_registers(&descs[j]))
+				continue;
+			taken++;
+			types |= 1U << descs[j].type;
+			if (descs[j].type != TRINITY_IO_REGBUF_TYPE_DMABUF)
+				continue;
+			if (descs[j].dmabuf_fd != FAKE_DMABUF_FD)
+				BUG("io_uring_register: a DMABUF descriptor names another fd than the pooled dma-buf");
+			dmabuf_seen = true;
 		}
 	}
 	if (iovecs == 0 || extended == 0)
 		BUG("io_uring_register: BUFFERS_UPDATE sends iovecs or descriptors, not both");
 	if (taken * 10 < n_descs * 8 || taken == n_descs)
 		BUG("io_uring_register: BUFFERS_UPDATE's descriptors are not mostly ones the kernel takes");
-	if (types != (1U << TRINITY_IO_REGBUF_TYPE_MAX) - 1)
+	if (types != (1U << TRINITY_IO_REGBUF_TYPE_MAX) - 1 || !dmabuf_seen)
 		BUG("io_uring_register: BUFFERS_UPDATE leaves out a descriptor type");
 
 	for (i = 0; i < UPDATE_DRAWS / 8; i++) {
@@ -119,6 +131,37 @@ static void rsrc_update_cases(void)
 		if (up != NULL && up->flags != 0)
 			BUG("io_uring_register: FILES_UPDATE2 carries a flag");
 	}
+}
+
+/* ZCRX_CTRL draws, about three in sixteen of them ADD_AREA, half of whose
+ * areas name a dma-buf. */
+#define ZCRX_DRAWS	256
+
+/* A zcrx area that names a dma-buf names a pooled one. */
+static void zcrx_area_cases(void)
+{
+	const struct trinity_io_uring_zcrx_area_reg *a;
+	const struct trinity_io_uring_zcrx_ctrl *z;
+	struct syscallrecord rec;
+	unsigned int i, named = 0;
+
+	for (i = 0; i < ZCRX_DRAWS; i++) {
+		if (!draw(&rec, IORING_REGISTER_ZCRX_CTRL))
+			BUG("io_uring_register: ZCRX_CTRL was never drawn");
+		free((void *) rec.post_state);
+		z = (const struct trinity_io_uring_zcrx_ctrl *) rec.a3;
+		if (z == NULL || z->op != TRINITY_ZCRX_CTRL_ADD_AREA)
+			continue;
+		a = (const struct trinity_io_uring_zcrx_area_reg *)
+			(unsigned long) z->body.zc_area.area_ptr;
+		if (a == NULL || a->dmabuf_fd == 0)
+			continue;
+		if (a->dmabuf_fd != FAKE_DMABUF_FD)
+			BUG("io_uring_register: a zcrx area names another fd than the pooled dma-buf");
+		named++;
+	}
+	if (named == 0)
+		BUG("io_uring_register: no zcrx area names a dma-buf");
 }
 
 /* The nr_args __io_uring_register() insists on for each, or io_query()
@@ -188,7 +231,10 @@ void io_uring_register_self_check(void)
 		free((void *) rec.post_state);
 	}
 
+	fake_dmabuf_fd = FAKE_DMABUF_FD;
 	rsrc_update_cases();
+	zcrx_area_cases();
+	fake_dmabuf_fd = -1;
 
 	for (i = 0; i < ARRAY_SIZE(counts); i++) {
 		if (!draw(&rec, counts[i].opcode))
