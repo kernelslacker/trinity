@@ -91,7 +91,6 @@ static int open_testfile_fds(void)
 {
 	struct objhead *head;
 	struct object *obj = NULL;
-	struct object *opened[MAX_TESTFILE_FDS];
 	unsigned int made[MAX_TESTFILES];
 	char name[32];
 	unsigned int i, nr = 0, nr_made = 0;
@@ -166,7 +165,7 @@ static int open_testfile_fds(void)
 			add_object(obj, OBJ_GLOBAL, OBJ_FD_TESTFILE);
 
 			i = (i + 1) % nr_made;
-			opened[nr++] = obj;
+			nr++;
 
 			fails = 0;
 
@@ -185,8 +184,10 @@ static int open_testfile_fds(void)
 	if (obj != NULL)
 		tracked_free_now(obj);
 
-	for (i = 0; i < nr; i++)
-		mmap_fd(opened[i]->testfileobj.fd, opened[i]->testfileobj.filename,
+	/* add_object() can give an object back rather than pool it, so what
+	 * is mapped and handed over below is the pool's. */
+	for_each_obj(head, obj, i)
+		mmap_fd(obj->testfileobj.fd, obj->testfileobj.filename,
 			page_size, PROT_READ|PROT_WRITE, OBJ_MMAP_TESTFILE);
 
 	/*
@@ -198,8 +199,8 @@ static int open_testfile_fds(void)
 	 * them all.
 	 */
 	if (orig_uid == 0) {
-		for (i = 0; i < nr; i++) {
-			if (fchown(opened[i]->testfileobj.fd, nobody_uid,
+		for_each_obj(head, obj, i) {
+			if (fchown(obj->testfileobj.fd, nobody_uid,
 				   nobody_gid) != 0)
 				break;
 		}

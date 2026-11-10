@@ -5,9 +5,10 @@
  * page_size into the testfile mmap pool, and a root run hands every file
  * to nobody, whom its children run as.  A symlink planted under a name
  * between init's unlink and its create keeps that name out of the pool,
- * as does a file init cannot size.  Init runs through the provider's
- * hook, as a root run, against fake object-pool hooks, an fchown() that
- * only records and an ftruncate() that can be made to fail.
+ * as does a file init cannot size, and an object the pool gives back is
+ * neither mapped nor handed over.  Init runs through the provider's hook,
+ * as a root run, against fake object-pool hooks, an fchown() that only
+ * records and an ftruncate() that can be made to fail.
  */
 
 #include <errno.h>
@@ -41,11 +42,15 @@ static struct object objs[64];
 static unsigned int nr_objs;
 static struct object *files[32], *maps[32];
 static unsigned int nr_files, nr_maps;
-static struct objhead file_head, map_head;
+static struct objhead file_head = { .array = files }, map_head;
 static ino_t chowned[32];
 static unsigned int nr_chowned;
 static bool fchown_armed, fchown_stranger;
 static bool ftruncate_refuse;
+/* Set, add_object() gives back the next testfile object it is handed. */
+static bool give_back_next;
+static int stranger_fd = -1;
+static char *stranger_name;
 
 /* Records the inode a root run's init hands to nobody, rather than ask a
  * kernel that refuses a non-root test; forwards while unarmed. */
@@ -124,13 +129,31 @@ static struct object *alloc_hook(void)
 	return &objs[nr_objs++];
 }
 
+/* add_object() giving an object back rather than pooling it: the file it
+ * held is closed here, and its storage, as a slot handed out again would,
+ * goes on to name the stranger, a file the pool never took. */
+static void give_back(struct object *obj)
+{
+	close(obj->testfileobj.fd);
+	free_shared_str((void *) obj->testfileobj.filename);
+	memset(obj, 0, sizeof(*obj));
+	obj->testfileobj.fd = stranger_fd;
+	obj->testfileobj.filename = stranger_name;
+}
+
+/* Pools a testfile in file_head, as add_object() does, unless it is the
+ * one to give back. */
 static void add_hook(struct object *obj, enum obj_scope scope,
 		     enum objecttype type)
 {
 	(void)scope;
-	if (type == OBJ_FD_TESTFILE && nr_files < ARRAY_SIZE(files))
+	if (type == OBJ_FD_TESTFILE && give_back_next) {
+		give_back_next = false;
+		give_back(obj);
+	} else if (type == OBJ_FD_TESTFILE && nr_files < ARRAY_SIZE(files)) {
 		files[nr_files++] = obj;
-	else if (type == OBJ_MMAP_TESTFILE && nr_maps < ARRAY_SIZE(maps))
+		file_head.num_entries = nr_files;
+	} else if (type == OBJ_MMAP_TESTFILE && nr_maps < ARRAY_SIZE(maps))
 		maps[nr_maps++] = obj;
 	else
 		BUG("testfile pool: init added an unexpected object");
@@ -175,6 +198,7 @@ static void release_pool(void)
 		free_shared_str((void *) files[i]->testfileobj.filename);
 	}
 	nr_objs = nr_files = nr_maps = nr_chowned = 0;
+	file_head.num_entries = 0;
 }
 
 /*
@@ -257,6 +281,50 @@ static void check_unsized_name(int (*init)(void))
 		BUG("testfile pool: cannot remove the unsized directory");
 }
 
+/*
+ * An object add_object() gives back rather than pools, which it does when
+ * the pool cannot grow: init neither maps nor hands nobody the file its
+ * storage names afterwards, and the files the pool kept are mapped and
+ * handed over as ever.
+ */
+static void check_given_back_object(int (*init)(void))
+{
+	char base[] = "/tmp/trinity-testfile-given-back.XXXXXX";
+	struct stat stranger;
+	unsigned int i;
+
+	if (mkdtemp(base) == NULL || chdir(base) != 0)
+		BUG("testfile pool: cannot set up the given-back directory");
+	stranger_fd = open("stranger", O_RDWR | O_CREAT | O_EXCL, 0600);
+	stranger_name = alloc_shared_strdup("stranger");
+	if (stranger_fd < 0 || stranger_name == NULL ||
+	    ftruncate(stranger_fd, page_size) != 0 ||
+	    fstat(stranger_fd, &stranger) != 0)
+		BUG("testfile pool: cannot make the stranger file");
+
+	give_back_next = true;
+	run_init_as_root(init);
+
+	if (give_back_next)
+		BUG("testfile pool: init pooled no testfile to give back");
+	if (nr_files == 0)
+		BUG("testfile pool: a given-back object kept every testfile out of the pool");
+	for (i = 0; i < nr_chowned; i++) {
+		if (chowned[i] == stranger.st_ino)
+			BUG("testfile pool: init gave nobody a file the pool did not keep");
+	}
+	if (nr_maps != nr_files || nr_chowned != nr_files)
+		BUG("testfile pool: init mapped or handed over other than the pool's files");
+
+	release_pool();
+	close(stranger_fd);
+	stranger_fd = -1;
+	free_shared_str(stranger_name);
+	stranger_name = NULL;
+	if (unlink("stranger") != 0 || chdir("/") != 0 || rmdir(base) != 0)
+		BUG("testfile pool: cannot remove the given-back directory");
+}
+
 void testfile_pool_self_check(void);
 void testfile_pool_self_check(void)
 {
@@ -324,6 +392,7 @@ void testfile_pool_self_check(void)
 
 	check_planted_name(init);
 	check_unsized_name(init);
+	check_given_back_object(init);
 
 	if (fchdir(cwd) != 0)
 		BUG("testfile pool: cannot return to the starting directory");
