@@ -12,6 +12,7 @@
 #include <string.h>
 #include "deferred-free.h"
 #include "net.h"
+#include "objects.h"
 #include "random.h"
 #include "sanitise.h"
 #include "sockname-recall.h"
@@ -140,7 +141,8 @@ void sockname_recall_sanitise(struct syscallrecord *rec)
  *
  * Family-aware compare: AF_UNIX compares the whole sockaddr, AF_INET and
  * AF_INET6 the family and the address with the port left out, and every
- * other family is skipped.
+ * other family is skipped.  So is a socket outside the child's own pool
+ * (see sockname_recheck()).
  *
  * Sample one in a hundred to stay in line with the rest of the oracle
  * family.  rc != 0 on the re-call (fd closed by sibling between return
@@ -309,6 +311,16 @@ static void sockname_recheck(struct syscallrecord *rec,
 
 	/* The socket the kernel answered for. */
 	fd = (int) get_arg_snapshot(rec, 1);
+
+	/*
+	 * A sibling holding the socket can bind, connect or disconnect it
+	 * between the two calls, which moves the name or the peer, so only
+	 * a socket of this child's own pool is judged.  ARG_SOCKETINFO hands
+	 * out the parent's, which every child inherited, so most calls are
+	 * not; a dup of one joins the pool too, the rare shared case left.
+	 */
+	if (find_local_object_by_fd(OBJ_FD_SOCKET, fd) == NULL)
+		return;
 
 	{
 		void *len_p = (void *)(unsigned long) snap->usockaddr_len;

@@ -9,12 +9,12 @@
 /*
  * Oracle: getpeername(fd, addr, addrlen) writes the connected peer's
  * sockaddr for fd into *addr and the resulting length into *addrlen.
- * The fd table is per-process, so no sibling trinity child can rebind or
- * reconnect the underlying socket beneath us within the sample window --
- * for any already-connected socket two back-to-back calls for the same
- * fd must produce a byte-identical peer address (modulo families with
- * intentionally-volatile fields, see below).  sockname-recall.c
- * snapshots the result, re-issues the call and compares.
+ * Only a call on the socket reconnects it, so for an already-connected
+ * socket no sibling trinity child holds, two back-to-back calls for the
+ * same fd must produce a byte-identical peer address (modulo families
+ * with intentionally-volatile fields, see below).  sockname-recall.c
+ * snapshots the result, re-issues the call and compares, for a socket of
+ * the child's own pool only.
  *
  * Family-aware compare:
  *   - AF_UNIX: full sockaddr bytes (sun_family + sun_path) are stable, so

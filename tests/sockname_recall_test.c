@@ -4,7 +4,8 @@
  * handed the address the fuzzed call answered, and counts the anomalies its
  * sampled re-call reports.  A RedQueen pin can hand the kernel another fd
  * than the sanitiser drew, and the re-call has to ask the socket the kernel
- * answered for.  An IPv6 socket's address is compared, its port not.
+ * answered for.  An IPv6 socket's address is compared, its port not.  Only
+ * a socket of the child's own pool is judged.
  */
 
 #include <netinet/in.h>
@@ -19,6 +20,7 @@
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
 #include "deferred-free.h"	/* deferred_free_flush */
+#include "objects.h"		/* struct object */
 #include "sanitise.h"		/* get_writable_address */
 #include "shm.h"
 #include "socketinfo.h"		/* struct socketinfo */
@@ -27,6 +29,8 @@
 #include "utils.h"		/* ARRAY_SIZE */
 
 extern bool fake_socketinfo_fds;		/* post_oracle_test.c */
+extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
+						      int fd);	/* fake_objects.c */
 
 static unsigned int failed;
 
@@ -74,6 +78,19 @@ static unsigned long sockname_anomalies(struct syscallentry *entry,
 		deferred_free_flush();
 	}
 	return *counter - before;
+}
+
+/* The child's own pool, as find_local_object_by_fd() answers: every socket
+ * of the test's but @shared_fd, which stands for one of the parent's. */
+static int shared_fd = -1;
+
+static struct object *own_socket(enum objecttype type, int fd)
+{
+	static struct object obj;
+
+	if (type != OBJ_FD_SOCKET || fd == shared_fd)
+		return NULL;
+	return &obj;
 }
 
 /* A datagram socket bound to the abstract name @name, its address as
@@ -151,6 +168,7 @@ void sockname_recall_self_check(void)
 	v6 = bound_inet6_socket(&addr6, &len6);
 
 	fake_socketinfo_fds = true;
+	fake_find_local_object_by_fd = own_socket;
 	check("getsockname: a call pinned onto another socket was judged on the first",
 	      sockname_anomalies(&syscall_getsockname,
 				 &shm->stats.oracle.getsockname_oracle_anomalies,
@@ -167,6 +185,14 @@ void sockname_recall_self_check(void)
 	      sockname_anomalies(&syscall_getpeername,
 				 &shm->stats.oracle.getpeername_oracle_anomalies,
 				 to_a, to_b, &addr_a, len_a) > 0);
+	/* Every child holds a socket of the parent's, and a sibling can
+	 * rename one between the two calls. */
+	shared_fd = b;
+	check("getsockname: a call on a socket siblings share was judged",
+	      sockname_anomalies(&syscall_getsockname,
+				 &shm->stats.oracle.getsockname_oracle_anomalies,
+				 a, b, &addr_a, len_a) == 0);
+	shared_fd = -1;
 	/* The local name of an IPv6 socket holds still between two calls
 	 * too; its address, not its port, is what the oracle compares. */
 	if (v6 >= 0) {
@@ -182,6 +208,7 @@ void sockname_recall_self_check(void)
 					 v6, v6, &other6, len6) > 0);
 		close(v6);
 	}
+	fake_find_local_object_by_fd = NULL;
 	fake_socketinfo_fds = false;
 
 	close(to_a);
