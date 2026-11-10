@@ -201,6 +201,11 @@ struct watch_queueobj {
 	int peer_fd;	/* held write end; closed in destructor to avoid leak */
 };
 
+struct dmabufobj {
+	int fd;
+	unsigned int size;	/* bytes, a whole number of pages */
+};
+
 struct io_uringobj {
 	int fd;
 	unsigned int setup_flags;
@@ -347,6 +352,8 @@ struct object {
 		struct cgroupfdobj cgroupfdobj;
 
 		struct watch_queueobj watch_queueobj;
+
+		struct dmabufobj dmabufobj;
 
 		struct iommufdobj iommufdobj;
 

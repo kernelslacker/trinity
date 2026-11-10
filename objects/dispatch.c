@@ -53,6 +53,7 @@ void invalidate_object_fd(struct object *obj, enum objecttype type)
 	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = -1; break;
 	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = -1; break;
 	case OBJ_FD_WATCH_QUEUE: obj->watch_queueobj.fd = -1; break;
+	case OBJ_FD_DMABUF:	obj->dmabufobj.fd = -1; break;
 	case OBJ_FD_SCRATCH_BLOCK: obj->fileobj.fd = -1; break;
 	default:		break;
 	}
@@ -104,6 +105,7 @@ void set_object_fd(struct object *obj, enum objecttype type, int fd)
 	case OBJ_FD_MOUNT:	obj->mountfdobj.fd = fd; break;
 	case OBJ_FD_CGROUP:	obj->cgroupfdobj.fd = fd; break;
 	case OBJ_FD_WATCH_QUEUE: obj->watch_queueobj.fd = fd; break;
+	case OBJ_FD_DMABUF:	obj->dmabufobj.fd = fd; break;
 	default:		break;
 	}
 }
@@ -183,6 +185,7 @@ int fd_from_object(struct object *obj, enum objecttype type)
 	case OBJ_FD_MOUNT:	return obj->mountfdobj.fd;
 	case OBJ_FD_CGROUP:	return obj->cgroupfdobj.fd;
 	case OBJ_FD_WATCH_QUEUE: return obj->watch_queueobj.fd;
+	case OBJ_FD_DMABUF:	return obj->dmabufobj.fd;
 	default:		return -1;
 	}
 }

@@ -394,6 +394,7 @@ const char *type_graph_obj_type_name(uint8_t type)
 	case OBJ_FD_MOUNT:		return "FD_MOUNT";
 	case OBJ_FD_CGROUP:		return "FD_CGROUP";
 	case OBJ_FD_WATCH_QUEUE:	return "FD_WATCH_QUEUE";
+	case OBJ_FD_DMABUF:		return "FD_DMABUF";
 	case OBJ_FD_SCRATCH_BLOCK:	return "FD_SCRATCH_BLOCK";
 	case OBJ_AIO_CTX:		return "AIO_CTX";
 	case OBJ_AIO_IOCB:		return "AIO_IOCB";
