@@ -40,6 +40,13 @@ CFLAGS += -fsigned-char
 # BPF/UAPI-style initializers.
 CFLAGS += -Wno-missing-field-initializers
 
+# A compat call's kernel reads each pointer slot as its low 32 bits, and
+# a pathname slot holds a libc-heap string, which only a non-PIE link
+# keeps below 4 GiB: the brk heap starts within 1 GiB of the image's end.
+# Pin it, as a gcc built with --enable-default-pie links PIE.
+CFLAGS += -fno-pie
+LDFLAGS += -no-pie
+
 # needed for show_backtrace() to work correctly.
 LDFLAGS += -rdynamic
 
