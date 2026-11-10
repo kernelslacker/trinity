@@ -10,6 +10,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <linux/netlink.h>
 
 #include "child-api.h"
@@ -25,7 +26,9 @@
  * the eighth keeps the parent's, for the refused path and the parent
  * netns's devices (the lane's has only lo).  The pool is the record of
  * what is open: a fuzzed close() retires the object, and the next swap
- * opens another.
+ * opens another.  A number something else frees (an io_uring close, a
+ * BPF program's) leaves the object pooled, so a swap checks that the
+ * number still names the socket it opened.
  */
 struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 {
@@ -48,9 +51,13 @@ struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 	 * in the parent's netns.
 	 */
 	static unsigned int own_version[MAX_LINKS];
+	/* What fstat() said of each protocol's socket when it was opened. */
+	static dev_t own_dev[MAX_LINKS];
+	static ino_t own_ino[MAX_LINKS];
 	unsigned int protocol = si->triplet.protocol;
 	struct objhead *head;
 	struct object *obj;
+	struct stat st;
 	unsigned int idx;
 	int fd;
 
@@ -62,9 +69,17 @@ struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 	if (own_version[protocol] != 0) {
 		head = get_objhead(OBJ_LOCAL, OBJ_FD_SOCKET);
 		for_each_obj(head, obj, idx) {
-			if (objpool_check(obj, OBJ_FD_SOCKET) &&
-			    obj->slot_version == own_version[protocol])
+			if (!objpool_check(obj, OBJ_FD_SOCKET) ||
+			    obj->slot_version != own_version[protocol])
+				continue;
+			fd = obj->sockinfo.fd;
+			if (fstat(fd, &st) == 0 && st.st_dev == own_dev[protocol] &&
+			    st.st_ino == own_ino[protocol])
 				return &obj->sockinfo;
+			/* The number is free, or another file's: retire the
+			 * object without closing it, and open another. */
+			remove_local_objects_by_fd(fd);
+			break;
 		}
 	}
 
@@ -74,6 +89,10 @@ struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 		 * the protocol. */
 		if (errno == EPROTONOSUPPORT)
 			no_lane_socket[protocol] = true;
+		return si;
+	}
+	if (fstat(fd, &st) != 0) {
+		close(fd);
 		return si;
 	}
 
@@ -99,5 +118,7 @@ struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si)
 	if (obj == NULL)
 		return si;
 	own_version[protocol] = obj->slot_version;
+	own_dev[protocol] = st.st_dev;
+	own_ino[protocol] = st.st_ino;
 	return &obj->sockinfo;
 }

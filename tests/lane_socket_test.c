@@ -2,7 +2,8 @@
  * Self-check for lane_netlink_socketinfo(): a child in the userns-admin
  * lane sends netlink, seven draws in eight, on a socket of the drawn
  * protocol that it opened itself and keeps in its OBJ_LOCAL pool, and
- * opens another once that one is retired or the pool does not keep it.
+ * opens another once that one is retired, freed behind the pool, or not
+ * kept by it.
  * Outside the lane, for another family, for a protocol whose kernel side
  * lives in init_net alone, or for one socket() has refused for good, the
  * drawn socket stays.
@@ -28,6 +29,7 @@ extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
 extern int (*fake_netlink_socket)(int type, int protocol);	/* fake_net.c */
+extern void (*fake_remove_local_objects_by_fd)(int fd);	/* dup_pool_test.c */
 
 /* Enough draws that a swap and a keep both turn up: that none of them
  * keeps the drawn socket has odds of (7/8)^256, about 1e-15, and that a
@@ -96,6 +98,27 @@ static struct object *pool_find_by_fd(enum objecttype type, int fd)
 			return local_sockets.array[i];
 	}
 	return NULL;
+}
+
+static unsigned int retires;
+
+/* What remove_local_objects_by_fd() does: drops the pooled sockets under
+ * @fd and leaves the number open. */
+static void pool_retire_by_fd(int fd)
+{
+	unsigned int i = 0;
+
+	retires++;
+	while (i < local_sockets.num_entries) {
+		struct object *obj = local_sockets.array[i];
+
+		if (obj->sockinfo.fd != fd) {
+			i++;
+			continue;
+		}
+		free(obj);
+		local_sockets.array[i] = local_sockets.array[--local_sockets.num_entries];
+	}
 }
 
 /* An add_object() whose prune destroys the object it has just filed: the
@@ -304,6 +327,60 @@ static void a_retired_socket_is_replaced(void)
 		BUG("lane socket: a retired socket was not replaced once");
 }
 
+/* A number that something other than close(), dup2/dup3 or close_range()
+ * freed (an io_uring close, a BPF program's), and that another file has
+ * taken since, no longer names the child's socket: the next swap retires
+ * the object, leaves the number open on its new file and opens another
+ * socket. */
+static void a_socket_freed_behind_the_pool_is_replaced(void)
+{
+	struct socketinfo si = {
+		.triplet = { PF_NETLINK, SOCK_DGRAM, NETLINK_AUDIT }, .fd = 100,
+	};
+	struct socketinfo *own;
+	int stale, other;
+
+	reset();
+	own = first_swap(&si);
+	stale = own->fd;
+	other = open("/dev/zero", O_RDONLY);
+	if (other < 0 || dup2(other, stale) != stale)
+		BUG("lane socket: cannot put another file under the socket's number");
+	close(other);
+	retires = 0;
+	own = first_swap(&si);
+	if (socket_calls != 2 || retires == 0 || own->fd == stale)
+		BUG("lane socket: a socket freed behind the pool was sent on");
+	if (pool_find_by_fd(OBJ_FD_SOCKET, stale) != NULL)
+		BUG("lane socket: the object of a socket freed behind the pool stayed");
+	if (fcntl(stale, F_GETFD) < 0)
+		BUG("lane socket: the file that took the number was closed");
+	close(stale);
+}
+
+/* A local object still under the number socket() hands back names a file
+ * that is gone: it is retired before the new socket is pooled, or the new
+ * socket would go with it. */
+static void a_stale_object_under_the_new_number_goes_first(void)
+{
+	struct socketinfo si = {
+		.triplet = { PF_NETLINK, SOCK_DGRAM, NETLINK_CRYPTO }, .fd = 100,
+	};
+	struct socketinfo *own;
+	int next;
+
+	reset();
+	/* The number the stand-in socket() takes next. */
+	next = open("/dev/null", O_RDONLY);
+	if (next < 0)
+		BUG("lane socket: cannot open /dev/null");
+	close(next);
+	pooled(NETLINK_XFRM, next);
+	own = first_swap(&si);
+	if (own->fd != next || local_sockets.num_entries != 1)
+		BUG("lane socket: a stale object under the new number was not retired first");
+}
+
 /* A protocol the kernel lacks costs one socket() per child, not one per
  * draw. */
 static void a_missing_protocol_is_not_retried(void)
@@ -421,6 +498,7 @@ void lane_socket_self_check(void)
 	fake_alloc_object = pool_alloc_object;
 	fake_add_object = pool_add_object;
 	fake_find_local_object_by_fd = pool_find_by_fd;
+	fake_remove_local_objects_by_fd = pool_retire_by_fd;
 	fake_netlink_socket = lane_socket;
 
 	/* The helper's state lasts the process, so each case that can
@@ -430,6 +508,8 @@ void lane_socket_self_check(void)
 	opens_one_socket_then_reuses_it();
 	takes_no_pooled_copy_of_a_parent_socket();
 	a_retired_socket_is_replaced();
+	a_socket_freed_behind_the_pool_is_replaced();
+	a_stale_object_under_the_new_number_goes_first();
 	a_missing_protocol_is_not_retried();
 	a_transient_failure_is_retried();
 	an_init_net_only_protocol_stays();
@@ -439,6 +519,7 @@ void lane_socket_self_check(void)
 	reset();
 
 	fake_netlink_socket = NULL;
+	fake_remove_local_objects_by_fd = NULL;
 	fake_find_local_object_by_fd = NULL;
 	fake_add_object = NULL;
 	fake_alloc_object = NULL;

@@ -267,11 +267,18 @@ struct fd_hash_entry *fd_hash_lookup(int fd)
 }
 
 /* Drops every local object at @fd, as the real one does, so a handler
- * that retires after it publishes loses the object it just made. */
+ * that retires after it publishes loses the object it just made.  A test
+ * with a pool of its own takes the call through the hook instead. */
+void (*fake_remove_local_objects_by_fd)(int fd);
+
 void remove_local_objects_by_fd(int fd)
 {
 	unsigned int i;
 
+	if (fake_remove_local_objects_by_fd != NULL) {
+		fake_remove_local_objects_by_fd(fd);
+		return;
+	}
 	retires++;
 	retired_fd = fd;
 	for (i = 0; i < POOL_MAX; i++) {
