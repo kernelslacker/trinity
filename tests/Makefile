@@ -624,11 +624,14 @@ FAKE_SRCS	:= \
 
 # The periodic KCOV CMP dump and the core --stats-json emitters, linked for
 # kcov_cmp_stats_periodic_dump() and dump_stats_json_*(), with the render
-# siblings the dump fans out to and the descriptor tables the JSON walks.
-# They join PARENT_SRCS, so they get the same section-per-function
-# treatment and --gc-sections; stats_render_test.c fakes the log sink and
-# the few helpers the siblings reach.
+# siblings the dump fans out to and the descriptor tables the JSON walks,
+# and the end-of-run KCOV block's re-exec rows with the stat_row() they
+# print through.  They join PARENT_SRCS, so they get the same
+# section-per-function treatment and --gc-sections; stats_render_test.c
+# fakes the log sink and the few helpers the siblings reach.
 PARENT_SRCS	+= $(wildcard $(TOP)/stats/kcov/cmp/*.c) \
+		   $(TOP)/stats/kcov/dump-reexec.c \
+		   $(TOP)/stats/common.c \
 		   $(TOP)/stats/json/common.c \
 		   $(TOP)/stats/json/core.c \
 		   $(TOP)/stats/category.c \

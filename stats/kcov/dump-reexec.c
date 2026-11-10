@@ -73,6 +73,8 @@ void dump_stats_render_kcov_reexec(void)
 		unsigned long rx_skipped_destructive = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_destructive, __ATOMIC_RELAXED);
 		unsigned long rx_skipped_validate_silent = __atomic_load_n(&kcov_shm->reexec_flat.reexec_skipped_validate_silent, __ATOMIC_RELAXED);
 		unsigned long rx_window_cap_hit = __atomic_load_n(&kcov_shm->reexec_flat.reexec_window_cap_hit, __ATOMIC_RELAXED);
+		unsigned long rx_step_skip_entry_null = __atomic_load_n(&kcov_shm->reexec_step.reexec_step_skip_entry_null, __ATOMIC_RELAXED);
+		unsigned long rx_step_skip_bad_slot = __atomic_load_n(&kcov_shm->reexec_step.reexec_step_skip_bad_slot, __ATOMIC_RELAXED);
 		unsigned long rx_parent_calls_enabled = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_enabled, __ATOMIC_RELAXED);
 		unsigned long rx_parent_calls_control = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_calls_control, __ATOMIC_RELAXED);
 		unsigned long rx_parent_new_cmps_enabled = __atomic_load_n(&kcov_shm->cmp_parent.cmp_parent_new_cmps_enabled, __ATOMIC_RELAXED);
@@ -102,6 +104,10 @@ void dump_stats_render_kcov_reexec(void)
 			stat_row("kcov_coverage", "reexec_skipped_validate_silent", rx_skipped_validate_silent);
 		if (rx_window_cap_hit > 0)
 			stat_row("kcov_coverage", "reexec_window_cap_hit", rx_window_cap_hit);
+		if (rx_step_skip_entry_null > 0)
+			stat_row("kcov_coverage", "reexec_step_skip_entry_null", rx_step_skip_entry_null);
+		if (rx_step_skip_bad_slot > 0)
+			stat_row("kcov_coverage", "reexec_step_skip_bad_slot", rx_step_skip_bad_slot);
 		if (rx_parent_calls_enabled > 0)
 			stat_row("kcov_coverage", "cmp_parent_calls_enabled", rx_parent_calls_enabled);
 		if (rx_parent_calls_control > 0)

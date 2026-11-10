@@ -34,5 +34,8 @@ extern const char stats_golden_cmp_edge_back[];
 extern const char stats_golden_cmp_edge_divergence[];
 extern const char stats_golden_cmp_edge_no_minicorpus[];
 
+/* End-of-run KCOV block: the re-exec step's early-FAIL skip rows. */
+extern const char stats_golden_kcov_reexec_step[];
+
 /* The core sections of the --stats-json "stats" object. */
 extern const char stats_golden_json_core[];

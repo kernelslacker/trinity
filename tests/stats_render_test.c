@@ -1,9 +1,9 @@
 /*
- * Golden check for the periodic KCOV CMP dump and the core --stats-json
- * emitters: every counter gets a value of its own, the renderers run, and
- * their text must match stats_render_golden.c byte for byte.  Scenarios
- * run in forked children because the renderers keep their window state in
- * function statics.
+ * Golden check for the periodic KCOV CMP dump, the end-of-run KCOV
+ * block's re-exec rows and the core --stats-json emitters: every counter
+ * gets a value of its own, the renderers run, and their text must match
+ * stats_render_golden.c byte for byte.  Scenarios run in forked children
+ * because the renderers keep their window state in function statics.
  */
 
 #include <stdarg.h>
@@ -30,6 +30,7 @@
 #include "utils.h"		/* waitpid_eintr */
 
 #include "stats/json/internal.h"
+#include "stats/kcov/dump-internal.h"
 
 #include "fake_parent.h"
 #include "stats_render_golden.h"
@@ -436,6 +437,34 @@ static void scenario_cmp_edges(void)
 	DUMP(600, "no minicorpus region", stats_golden_cmp_edge_no_minicorpus);
 }
 
+/* ---------- End-of-run KCOV block ------------------------------------ */
+
+/* Run the re-exec rows once and compare what they printed with @golden. */
+static void reexec_rows(const char *what, const char *golden_name,
+			const char *golden)
+{
+	capture_len = 0;
+	capture[0] = '\0';
+	fake_output_log[0] = '\0';
+	dump_stats_render_kcov_reexec();
+	capture_drain_output();
+	golden_expect(what, golden_name, golden, capture, '\n');
+}
+
+#define REEXEC_ROWS(what, golden) \
+	reexec_rows(what, #golden, golden)
+
+/* A row prints once its counter moves, the step's early-FAIL skips too. */
+static void scenario_kcov_reexec(void)
+{
+	scenario_setup();
+
+	REEXEC_ROWS("the re-exec rows with nothing counted", "");
+	kcov_shm->reexec_step.reexec_step_skip_entry_null += 3;
+	kcov_shm->reexec_step.reexec_step_skip_bad_slot += 5;
+	REEXEC_ROWS("the re-exec step's skips", stats_golden_kcov_reexec_step);
+}
+
 /* ---------- Core --stats-json sections ------------------------------- */
 
 /*
@@ -514,6 +543,7 @@ void stats_render_self_check(void)
 	run_scenario(scenario_cmp_gates_c);
 	run_scenario(scenario_cmp_totals);
 	run_scenario(scenario_cmp_edges);
+	run_scenario(scenario_kcov_reexec);
 	run_scenario(scenario_json_core);
 
 	/* Every scenario runs, so one pass prints each golden to bless. */

@@ -1429,3 +1429,7 @@ const char stats_golden_cmp_edge_no_minicorpus[] =
 	"  (conversion outcomes: see cmp_hyp_pc_wins / cmp_hyp_misses in cmp_hyp shadow stats above)\n"
 	"cmp_hints_chaos_suppressed_cumulative=0\n"
 	"propagation_injected_cumulative=0\n";
+
+const char stats_golden_kcov_reexec_step[] =
+	"kcov_coverage           reexec_step_skip_entry_null       3\n"
+	"kcov_coverage           reexec_step_skip_bad_slot         5\n";
