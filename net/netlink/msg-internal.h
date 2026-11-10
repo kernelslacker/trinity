@@ -134,6 +134,27 @@ extern const struct nla_attr_spec inet_diag_specs[];
 extern const size_t inet_diag_specs_n;
 
 /*
+ * An RDMA nldev op with a handler, defined in msg-rdma.c: caps holds the
+ * GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP bits of the handlers it has, and attrs
+ * and dump_attrs the tables a request routed to each draws from, NULL for a
+ * handler it lacks.  rdma_nldev_lookup() finds the op an nlmsg_type names,
+ * or NULL for one that is no nldev op with a handler.
+ */
+struct rdma_nldev_op {
+	unsigned short op;
+	unsigned char caps;
+	const struct nla_attr_spec *attrs;
+	unsigned int n_attrs;
+	const struct nla_attr_spec *dump_attrs;
+	unsigned int n_dump_attrs;
+};
+
+extern const struct rdma_nldev_op rdma_nldev_ops[];
+extern const size_t rdma_nldev_ops_n;
+
+const struct rdma_nldev_op *rdma_nldev_lookup(unsigned short nlmsg_type);
+
+/*
  * Per-rtnetlink-group attribute payload builders.  Defined in
  * msg-rtnl-{route,link,neigh,tc,payloads}.c, dispatched from the
  * gen_rta_payload switch in msg-attr-random.c.  Each generator returns

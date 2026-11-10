@@ -718,6 +718,17 @@ check_enum_member linux/ethtool.h ETH_SS_PHY_INTERFACES
 # of the wgallowedip_attr and wgallowedip_flags enums.
 check_enum_member linux/wireguard.h WGALLOWEDIP_A_FLAGS WGALLOWEDIP_F_REMOVE_ME
 
+# The RDMA device interface's (nldev) memory-region pool ops and attributes
+# and its op-counter switch, added since v6.12.
+check_enum_member rdma/rdma_netlink.h RDMA_NLDEV_CMD_FRMR_POOLS_GET \
+	RDMA_NLDEV_CMD_FRMR_POOLS_SET RDMA_NLDEV_ATTR_STAT_OPCOUNTER_ENABLED \
+	RDMA_NLDEV_ATTR_FRMR_POOL_KEY RDMA_NLDEV_ATTR_FRMR_POOL_KEY_ATS \
+	RDMA_NLDEV_ATTR_FRMR_POOL_KEY_ACCESS_FLAGS \
+	RDMA_NLDEV_ATTR_FRMR_POOL_KEY_VENDOR_KEY \
+	RDMA_NLDEV_ATTR_FRMR_POOL_KEY_NUM_DMA_BLOCKS \
+	RDMA_NLDEV_ATTR_FRMR_POOLS_AGING_PERIOD \
+	RDMA_NLDEV_ATTR_FRMR_POOL_PINNED_HANDLES
+
 #############################################################################################
 
 check_header linux/fsmap.h USE_FSMAP

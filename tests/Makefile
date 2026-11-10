@@ -528,8 +528,9 @@ KCOV_PERSIST_SRCS := \
 # grammar in their directories, so each directory is linked whole.  Same
 # section-per-function treatment; genl_ops_test.c fakes the RNG helpers
 # these reach and feeds the resolver a canned controller reply,
-# nfnl_gen_test.c runs the nfnl grammars through the generator and
-# rtnl_gen_test.c the rtnetlink message builders.
+# nfnl_gen_test.c runs the nfnl grammars through the generator,
+# rtnl_gen_test.c the rtnetlink message builders and rdma_nldev_test.c the
+# RDMA nldev requests.
 NETLINK_SRCS	:= $(wildcard $(TOP)/net/netlink/*.c \
 			      $(TOP)/net/netlink/genl/*.c \
 			      $(TOP)/net/netlink/nfnl/*.c)
@@ -590,6 +591,7 @@ FAKE_SRCS	:= \
 	genl_ops_test.c \
 	nfnl_gen_test.c \
 	rtnl_gen_test.c \
+	rdma_nldev_test.c \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \
 	reap_fault_beacon_test.c \

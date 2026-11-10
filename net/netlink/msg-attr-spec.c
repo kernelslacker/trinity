@@ -1,8 +1,8 @@
 /*
  * Spec-driven attribute emission for families with a curated nla_attr_spec
- * table (genl, nfnl, XFRM, sock_diag): each payload is sized by the spec's
- * kind so the family's policy lets the message reach its handler.  Families
- * without a table use the random emitter in msg-attr-random.c.
+ * table (genl, nfnl, XFRM, sock_diag, RDMA): each payload is sized by the
+ * spec's kind so the family's policy lets the message reach its handler.
+ * Families without a table use the random emitter in msg-attr-random.c.
  */
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -671,8 +671,9 @@ size_t append_required_attrs(unsigned char *buf, size_t offset, size_t buflen,
  * NFNL_SUBSYS_x byte of nlmsg_type via the per-subsys grammar registry, and
  * then by the cmd byte; generic netlink dispatches by runtime-resolved
  * family_id via the genl registry, and then by the cmd and dump flag the
- * message carries; the controller, which the registry lacks, by its cmd.
- * All do so because the policies are the cmd's.
+ * message carries; the controller, which the registry lacks, by its cmd;
+ * RDMA by the nldev op in nlmsg_type and the handler the dump bits route
+ * the request to.  All do so because the policies are the cmd's.
  */
 const struct nla_attr_spec *pick_spec_table(int protocol,
 					    const struct nlmsghdr *nlh,
@@ -703,6 +704,18 @@ const struct nla_attr_spec *pick_spec_table(int protocol,
 	case NETLINK_SOCK_DIAG:
 		*nr_out = inet_diag_specs_n;
 		return inet_diag_specs;
+	case NETLINK_RDMA: {
+		const struct rdma_nldev_op *op = rdma_nldev_lookup(nlmsg_type);
+
+		if (op == NULL)
+			return NULL;
+		if (nlh->nlmsg_flags & NLM_F_DUMP) {
+			*nr_out = op->n_dump_attrs;
+			return op->dump_attrs;
+		}
+		*nr_out = op->n_attrs;
+		return op->attrs;
+	}
 	default:
 		return NULL;
 	}

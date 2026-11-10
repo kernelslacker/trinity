@@ -42,6 +42,7 @@
 
 #include "kernel/netlink.h"
 #include "kernel/nfnetlink.h"
+#include "kernel/rdma_netlink.h"
 #include "kernel/socket.h"
 /* Forward declaration — called via gen_msg hook from net/proto/netlink.c */
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
@@ -89,16 +90,21 @@ static unsigned short gen_nlmsg_modifiers(void)
  * modifiers one time in 8 rather than every time.  That leaves about
  * nine in ten of the rest clear of the check, while the older families,
  * which skip it, and the handlers that read the modifiers (gtp tests EXCL
- * and REPLACE) still get them.
+ * and REPLACE) still get them.  An nldev request draws them as rarely: no
+ * nldev handler reads one, and REPLACE/NONREC and EXCL/BULK are the dump
+ * bits, on either of which rdma_nl_rcv_msg() routes, so drawing them every
+ * time would send more than nine in ten requests for an op with both
+ * handlers to its dumpit.
  *
  * caps is the GENL_CMD_CAP_DO / GENL_CMD_CAP_DUMP shape of the handlers
- * the message's genl cmd or rtnl GET type has, 0 when unknown or both.  The
- * genl core routes on (flags & NLM_F_DUMP) == NLM_F_DUMP and
- * rtnetlink_rcv_msg() routes a GET on either dump bit, and both turn away a
- * request whose routed handler is missing, so a cmd or type with only a
- * dumpit gets both dump bits and one with only a doit gets neither.  The NEW
- * and DELETE modifiers share those two bits (REPLACE/NONREC, EXCL/BULK), so
- * the pin comes after them.
+ * the message's genl cmd, rtnl GET type or nldev op has: one bit pins the
+ * dump bits, and both, or 0 for one that is unknown, leave them to the
+ * draw.  The genl core routes on (flags & NLM_F_DUMP) == NLM_F_DUMP, and
+ * rtnetlink_rcv_msg() routes a GET, and rdma_nl_rcv_msg() any request, on
+ * either dump bit; all turn away a request whose routed handler is missing,
+ * so a cmd or type with only a dumpit gets both dump bits and one with only
+ * a doit gets neither.  The NEW and DELETE modifiers share those two bits
+ * (REPLACE/NONREC, EXCL/BULK), so the pin comes after them.
  */
 static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
 				      unsigned char caps)
@@ -118,7 +124,8 @@ static unsigned short gen_nlmsg_flags(bool chaos, int protocol,
 	if (RAND_BOOL())
 		flags |= NLM_F_DUMP;
 
-	if (protocol != NETLINK_GENERIC || ONE_IN(8))
+	if ((protocol != NETLINK_GENERIC && protocol != NETLINK_RDMA) ||
+	    ONE_IN(8))
 		flags |= gen_nlmsg_modifiers();
 
 	if (caps == GENL_CMD_CAP_DUMP)
@@ -223,6 +230,9 @@ static unsigned short pick_nlmsg_type(int protocol)
 		return RAND_RANGE(NLMSG_MIN_TYPE, INET_DIAG_GETSOCK_MAX);
 	case NETLINK_CONNECTOR:
 		return RAND_RANGE(0, 4);
+	case NETLINK_RDMA:
+		return RDMA_NL_GET_TYPE(RDMA_NL_NLDEV,
+			rdma_nldev_ops[rnd_modulo_u32(rdma_nldev_ops_n)].op);
 	default:
 		/* Unknown protocol: use NLMSG_MIN_TYPE or random */
 		if (RAND_BOOL())
@@ -239,8 +249,8 @@ static unsigned short pick_nlmsg_type(int protocol)
  * Protocol bodies are generated per-family: rtnetlink uses the correct
  * struct (ifinfomsg, rtmsg, etc.), genl uses genlmsghdr, nfnetlink uses
  * nfgenmsg, xfrm uses per-type structs, audit uses binary structs or
- * text, and sock_diag uses inet_diag_req_v2. Unknown protocols fall
- * back to random bytes.
+ * text, sock_diag uses inet_diag_req_v2, and RDMA has none. Unknown
+ * protocols fall back to random bytes.
  *
  * ~1 in 4 messages are multi-message batches (2-4 nlmsghdr chained
  * together) to exercise the kernel's NLMSG_NEXT iteration path.  A
@@ -389,6 +399,12 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	} else if (triplet->protocol == NETLINK_SOCK_DIAG) {
 		body_len = gen_sockdiag_body(msg + offset, nlmsg_type,
 					     buflen - offset);
+	} else if (triplet->protocol == NETLINK_RDMA) {
+		const struct rdma_nldev_op *op = rdma_nldev_lookup(nlmsg_type);
+
+		/* nldev parses its attributes straight after the nlmsghdr. */
+		body_len = 0;
+		caps = op != NULL ? op->caps : 0;
 	} else {
 		body_len = RAND_RANGE(4, 64);
 		if (offset + body_len > buflen)
