@@ -55,8 +55,11 @@ struct bpf_fd_types {
 /*
  * Each row has to pass its map type's allocation check, or the create
  * fails with -EINVAL and nothing is pooled: an arena takes no key or value,
- * a page count in max_entries and BPF_F_MMAPABLE (arena_map_alloc()), and
- * an LPM trie BPF_F_NO_PREALLOC (trie_alloc()).
+ * a page count in max_entries and BPF_F_MMAPABLE (arena_map_alloc()), an
+ * LPM trie BPF_F_NO_PREALLOC (trie_alloc()), and a sockmap a 4-byte key
+ * (sock_map_alloc()).  A sockmap's or sockhash's value is a socket's fd,
+ * of 4 or 8 bytes, and only 8 hold the cookie a lookup copies out
+ * (sock_map_lookup_sys(), -ENOSPC otherwise).
  */
 static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_HASH, sizeof(long long), sizeof(long long), 1024, 0, "hash" },
@@ -75,6 +78,8 @@ static struct bpf_fd_types bpf_fds[] = {
 	{ BPF_MAP_TYPE_BLOOM_FILTER, 0, sizeof(u32), 100, 0, "bloom filter" },
 	{ BPF_MAP_TYPE_USER_RINGBUF, 0, 0, 4096, 0, "user ringbuf" },
 	{ BPF_MAP_TYPE_ARENA, 0, 0, 4096, BPF_F_MMAPABLE, "arena" },
+	{ BPF_MAP_TYPE_SOCKMAP, sizeof(u32), sizeof(u64), 16, 0, "sockmap" },
+	{ BPF_MAP_TYPE_SOCKHASH, sizeof(u32), sizeof(u64), 16, 0, "sockhash" },
 };
 
 static void bpf_map_dump(struct object *obj, enum obj_scope scope)
