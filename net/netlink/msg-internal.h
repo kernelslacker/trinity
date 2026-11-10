@@ -185,6 +185,14 @@ size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /*
+ * A route's RTA_ENCAP_TYPE and the RTA_ENCAP nest of the kind it names,
+ * appended at buf+offset; returns the new offset.  Defined in
+ * msg-rtnl-route.c, called from the attribute loop in msg-core.c in place
+ * of a lone RTA_ENCAP.
+ */
+size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen);
+
+/*
  * Address-family picker shared by the rtnetlink body builders and the
  * sock_diag body builder.  Defined in msg-rtnl-body.c; the widened
  * linkage mirrors the descriptor-table pattern above so both TUs can

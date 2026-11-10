@@ -2,8 +2,9 @@
  * Self-check for the rtnetlink message builders.  netlink_gen_msg() runs for
  * NETLINK_ROUTE, and the messages of each type a check names are held to a
  * model of what the kernel's handler for that type takes, written from the
- * kernel.  The RNG helpers it reaches are the fakes in genl_ops_test.c; no
- * netlink socket is opened.
+ * kernel.  The RNG helpers it reaches are the fakes in genl_ops_test.c, and
+ * the pick of a BPF program by type is fake_fds.c's, hooked to answer an fd
+ * per type; no netlink socket is opened.
  */
 
 #include <stdbool.h>
@@ -16,6 +17,7 @@
 #include <netinet/ip.h>
 #include <linux/fib_rules.h>
 #include <linux/if_addrlabel.h>
+#include <linux/bpf.h>
 #include <linux/if_bridge.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
@@ -34,6 +36,7 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
+extern int (*fake_get_rand_bpf_prog_fd_of_type)(unsigned int prog_type);	/* fake_fds.c */
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
@@ -1650,6 +1653,152 @@ static void expect_route_encap(const struct route_encap *t)
 			"rtnl: a route's RTA_IP_PROTO is mostly one rtm_getroute_parse_ip_proto() refuses");
 }
 
+/* ---------- The RTA_ENCAP of RTM_NEWROUTE, DELROUTE and GETROUTE -------- */
+
+/* The fd the stand-in typed pick answers for a program of each type. */
+static int lwt_prog_fd(unsigned int prog_type)
+{
+	return 100 + prog_type;
+}
+
+/* The last attribute of type in the chain at p, the one a parse keeps. */
+static const struct nlattr *last_attr(const unsigned char *p, size_t len,
+				      unsigned short type)
+{
+	const struct nlattr *nla, *last = NULL;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == type)
+			last = nla;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return last;
+}
+
+/*
+ * bpf_parse_prog(): an LWT_BPF_PROG_FD naming a program of the hook's type
+ * and an LWT_BPF_PROG_NAME, an NLA_NUL_STRING of up to MAX_PROG_NAME (256)
+ * bytes.
+ */
+static bool lwt_prog_taken(const struct nlattr *hook, unsigned int prog_type)
+{
+	const unsigned char *p = (const unsigned char *) hook + NLA_HDRLEN;
+	size_t len = hook->nla_len - NLA_HDRLEN;
+	const struct nlattr *fd = last_attr(p, len, LWT_BPF_PROG_FD);
+	const struct nlattr *name = last_attr(p, len, LWT_BPF_PROG_NAME);
+	const char *str;
+	size_t slen;
+	uint32_t val;
+
+	if (fd == NULL || name == NULL || fd->nla_len < NLA_HDRLEN + sizeof(val))
+		return false;
+	str = (const char *) name + NLA_HDRLEN;
+	slen = name->nla_len - NLA_HDRLEN;
+	if (slen == 0 || memchr(str, '\0', slen < 257 ? slen : 257) == NULL ||
+	    slen - (str[slen - 1] == '\0') > 256)
+		return false;
+	memcpy(&val, (const char *) fd + NLA_HDRLEN, sizeof(val));
+	return val == (uint32_t) lwt_prog_fd(prog_type);
+}
+
+/*
+ * bpf_build_state(): one or more of LWT_BPF_IN, OUT and XMIT, each taken by
+ * bpf_parse_prog() for a program of BPF_PROG_TYPE_LWT_IN, _OUT or _XMIT,
+ * and an XMIT_HEADROOM of at most LWT_BPF_MAX_HEADROOM.
+ */
+static bool lwt_bpf_encap_taken(const struct nlattr *encap)
+{
+	static const struct {
+		unsigned short attr;
+		unsigned int prog_type;
+	} hooks[] = {
+		{ LWT_BPF_IN, BPF_PROG_TYPE_LWT_IN },
+		{ LWT_BPF_OUT, BPF_PROG_TYPE_LWT_OUT },
+		{ LWT_BPF_XMIT, BPF_PROG_TYPE_LWT_XMIT },
+	};
+	const unsigned char *p = (const unsigned char *) encap + NLA_HDRLEN;
+	size_t len = encap->nla_len - NLA_HDRLEN;
+	const struct nlattr *headroom;
+	unsigned int i, hooked = 0;
+	uint32_t room;
+
+	for (i = 0; i < ARRAY_SIZE(hooks); i++) {
+		const struct nlattr *hook = last_attr(p, len, hooks[i].attr);
+
+		if (hook == NULL)
+			continue;
+		if (!lwt_prog_taken(hook, hooks[i].prog_type))
+			return false;
+		hooked++;
+	}
+	headroom = last_attr(p, len, LWT_BPF_XMIT_HEADROOM);
+	if (headroom != NULL) {
+		if (headroom->nla_len < NLA_HDRLEN + sizeof(room))
+			return false;
+		memcpy(&room, (const char *) headroom + NLA_HDRLEN, sizeof(room));
+		if (room > LWT_BPF_MAX_HEADROOM)
+			return false;
+	}
+	return hooked > 0;
+}
+
+struct lwt_encap {
+	unsigned int encaps;	/* routes with an RTA_ENCAP */
+	unsigned int bpf;	/* ... and LWTUNNEL_ENCAP_BPF the type in force */
+	unsigned int taken;	/* ... whose nest bpf_build_state() takes */
+};
+
+static void tally_lwt_encap(struct lwt_encap *t, const struct nlmsghdr *nlh)
+{
+	const struct nlattr *encap, *type;
+	const unsigned char *p;
+	uint16_t kind;
+	size_t len;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct rtmsg)))
+		return;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct rtmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct rtmsg));
+	encap = last_attr(p, len, RTA_ENCAP);
+	if (encap == NULL)
+		return;
+	t->encaps++;
+	type = last_attr(p, len, RTA_ENCAP_TYPE);
+	if (type == NULL || type->nla_len < NLA_HDRLEN + sizeof(kind))
+		return;
+	memcpy(&kind, (const char *) type + NLA_HDRLEN, sizeof(kind));
+	if (kind != LWTUNNEL_ENCAP_BPF)
+		return;
+	t->bpf++;
+	t->taken += lwt_bpf_encap_taken(encap);
+}
+
+/*
+ * lwtunnel_build_state() hands a route's RTA_ENCAP to the build_state() of
+ * the kind RTA_ENCAP_TYPE names, a parse keeping the last of each, so the
+ * builder sends the two together, the kind LWTUNNEL_ENCAP_BPF seven times
+ * in eight.  A lone RTA_ENCAP_TYPE drawn later in the request now and then
+ * names another kind, so about 0.86 of the routes with an encap have BPF in
+ * force.  bpf_build_state() wants one or more of the three hooks, each
+ * naming a program of its own type, which the builder does seven times in
+ * eight with the fd the stand-in typed pick answers, and any program the
+ * eighth (none here); it adds an XMIT_HEADROOM half the time, past
+ * LWT_BPF_MAX_HEADROOM one time in eight, so about 0.75 of the BPF nests
+ * are taken.  Random bytes in RTA_ENCAP never were.
+ */
+static void expect_lwt_encap(const struct lwt_encap *t)
+{
+	expect_fraction(t->bpf, t->encaps, 0.75, 0.95, "RTA_ENCAP",
+			"rtnl: a route's RTA_ENCAP is seldom beside an LWTUNNEL_ENCAP_BPF type");
+	expect_fraction(t->taken, t->bpf, 0.65, 0.85, "LWTUNNEL_ENCAP_BPF nests",
+			"rtnl: a route's BPF encap is seldom one bpf_build_state() takes");
+}
+
 /* ---------- The attributes of RTM_NEWACTION, DELACTION and GETACTION ---- */
 
 struct action_attrs {
@@ -1846,6 +1995,7 @@ struct tallies {
 	struct probe_interval probe_interval;
 	struct route_header route_header;
 	struct route_encap route_encap;
+	struct lwt_encap lwt_encap;
 	struct route_flowlabel route_flowlabel;
 	struct action_attrs action;
 };
@@ -1975,10 +2125,12 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELROUTE:
 			tally_route_header(&t->route_header, nlh);
 			tally_route_encap(&t->route_encap, nlh);
+			tally_lwt_encap(&t->lwt_encap, nlh);
 			tally_route_flowlabel(&t->route_flowlabel, nlh);
 			break;
 		case RTM_GETROUTE:
 			tally_route_encap(&t->route_encap, nlh);
+			tally_lwt_encap(&t->lwt_encap, nlh);
 			break;
 		case RTM_NEWACTION:
 		case RTM_DELACTION:
@@ -1996,7 +2148,9 @@ void rtnl_gen_self_check(void)
 {
 	static struct tallies t;
 
+	fake_get_rand_bpf_prog_fd_of_type = lwt_prog_fd;
 	run_rounds(&t);
+	fake_get_rand_bpf_prog_fd_of_type = NULL;
 	expect_handled_types(t.unhandled, t.msgs);
 	expect_dump_bits(&t.dumps, &t.dcb, &t.both);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
@@ -2019,6 +2173,7 @@ void rtnl_gen_self_check(void)
 	expect_probe_interval(&t.probe_interval);
 	expect_route_header(&t.route_header);
 	expect_route_encap(&t.route_encap);
+	expect_lwt_encap(&t.lwt_encap);
 	expect_route_flowlabel(&t.route_flowlabel);
 	draws_flowlabels_inside_the_mask();
 	expect_action_attrs(&t.action);

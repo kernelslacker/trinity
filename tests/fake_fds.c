@@ -99,9 +99,10 @@ struct object *find_object_by_fd(int fd)
  * through __real_: every other caller, the sanitisers of syscalls/bpf*.c
  * and the perf ioctl group among them, gets these, which read no pool.
  * Each answers -1, as an empty pool does, but for the map picker, which
- * answers with the map a test installs a hook to name, and the program
- * picker, which answers with the program a test's hook names or, unhooked,
- * a program of no particular type at the fd a test sets.
+ * answers with the map a test installs a hook to name, the program picker,
+ * which answers with the program a test's hook names or, unhooked, a
+ * program of no particular type at the fd a test sets, and the pick of a
+ * program by type, which answers with the fd a test's hook gives the type.
  */
 bool (*fake_get_rand_bpf_map)(struct bpfobj *map);
 bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);
@@ -139,10 +140,13 @@ int __wrap_get_rand_bpf_prog_fd(void)
 	return __wrap_get_rand_bpf_prog(&prog) ? prog.fd : -1;
 }
 
+int (*fake_get_rand_bpf_prog_fd_of_type)(unsigned int prog_type);
+
 int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type);
 int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
 {
-	(void)prog_type;
+	if (fake_get_rand_bpf_prog_fd_of_type != NULL)
+		return fake_get_rand_bpf_prog_fd_of_type(prog_type);
 	return -1;
 }
 

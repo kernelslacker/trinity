@@ -6,6 +6,7 @@
 #include <stddef.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <linux/bpf.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/fib_rules.h>
@@ -15,6 +16,7 @@
 #include <linux/net_namespace.h>
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
+#include "bpf.h"
 #include "netlink-attrs.h"
 #include "msg-internal.h"
 #include "msg-rtnl-common.h"
@@ -87,6 +89,117 @@ static size_t gen_route_multipath(unsigned char *p, size_t avail)
 		memcpy(p + nh_start, &nh, sizeof(nh.rtnh_len));
 	}
 	return written;
+}
+
+/*
+ * An LWT BPF hook's program: an fd and a name, bpf_parse_prog() wanting
+ * both.  The fd is a program of the hook's type, which bpf_prog_get_type()
+ * insists on, but one time in eight, when it is any program.
+ */
+static size_t build_lwt_bpf_prog(unsigned char *p, size_t cap,
+				 unsigned int prog_type, const char *name)
+{
+	size_t nlen = strlen(name) + 1;
+	size_t off = 0;
+	__u32 val;
+	int fd;
+
+	fd = get_rand_bpf_prog_fd_of_type(prog_type);
+	if (fd < 0 || ONE_IN(8))
+		fd = get_rand_bpf_prog_fd();
+	val = (__u32) fd;
+	if (!start_nlattr(p, off, cap, LWT_BPF_PROG_FD, sizeof(val)))
+		return 0;
+	memcpy(p + off + NLA_HDRLEN, &val, sizeof(val));
+	off += NLA_ALIGN(NLA_HDRLEN + sizeof(val));
+
+	if (!start_nlattr(p, off, cap, LWT_BPF_PROG_NAME, nlen))
+		return 0;
+	memcpy(p + off + NLA_HDRLEN, name, nlen);
+	return off + NLA_ALIGN(NLA_HDRLEN + nlen);
+}
+
+/*
+ * The nest bpf_build_state() takes: one or more of LWT_BPF_IN, OUT and
+ * XMIT, each naming a program of BPF_PROG_TYPE_LWT_IN, _OUT or _XMIT, and
+ * half the time an XMIT_HEADROOM, past LWT_BPF_MAX_HEADROOM (-ERANGE) one
+ * time in eight of those.
+ */
+static size_t build_lwt_bpf_encap(unsigned char *p, size_t cap)
+{
+	static const struct {
+		unsigned short attr;
+		unsigned int prog_type;
+		const char *name;
+	} hooks[] = {
+		{ LWT_BPF_IN,	BPF_PROG_TYPE_LWT_IN,	"lwt_in" },
+		{ LWT_BPF_OUT,	BPF_PROG_TYPE_LWT_OUT,	"lwt_out" },
+		{ LWT_BPF_XMIT,	BPF_PROG_TYPE_LWT_XMIT,	"lwt_xmit" },
+	};
+	unsigned int mask = RAND_RANGE(1, 7);
+	size_t off = 0;
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(hooks); i++) {
+		size_t len;
+
+		if (!(mask & (1U << i)) || off + NLA_HDRLEN > cap)
+			continue;
+		len = build_lwt_bpf_prog(p + off + NLA_HDRLEN,
+					 cap - off - NLA_HDRLEN,
+					 hooks[i].prog_type, hooks[i].name);
+		if (len == 0 ||
+		    !start_nlattr(p, off, cap, hooks[i].attr | NLA_F_NESTED, len))
+			return off;
+		off += NLA_ALIGN(NLA_HDRLEN + len);
+	}
+
+	if (RAND_BOOL()) {
+		__u32 room = ONE_IN(8) ?
+			RAND_RANGE(LWT_BPF_MAX_HEADROOM + 1, 65535) :
+			RAND_RANGE(0, LWT_BPF_MAX_HEADROOM);
+
+		if (start_nlattr(p, off, cap, LWT_BPF_XMIT_HEADROOM, sizeof(room))) {
+			memcpy(p + off + NLA_HDRLEN, &room, sizeof(room));
+			off += NLA_ALIGN(NLA_HDRLEN + sizeof(room));
+		}
+	}
+	return off;
+}
+
+/*
+ * lwtunnel_build_state() hands a route's RTA_ENCAP to the build_state() of
+ * the kind its RTA_ENCAP_TYPE names, so a nest means something only beside
+ * its type, and the two go out together.  The kind is LWTUNNEL_ENCAP_BPF
+ * seven times in eight; the eighth names any kind, NONE included, over
+ * random bytes.
+ */
+size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen)
+{
+	unsigned short kind = LWTUNNEL_ENCAP_BPF;
+	size_t cap, len;
+
+	if (ONE_IN(8))
+		kind = rnd_modulo_u32(LWTUNNEL_ENCAP_MAX + 1);
+	if (!start_nlattr(buf, offset, buflen, RTA_ENCAP_TYPE, sizeof(kind)))
+		return offset;
+	memcpy(buf + offset + NLA_HDRLEN, &kind, sizeof(kind));
+	offset += NLA_ALIGN(NLA_HDRLEN + sizeof(kind));
+
+	if (offset + NLA_HDRLEN > buflen)
+		return offset;
+	cap = buflen - offset - NLA_HDRLEN;
+	if (kind == LWTUNNEL_ENCAP_BPF) {
+		len = build_lwt_bpf_encap(buf + offset + NLA_HDRLEN, cap);
+	} else {
+		len = RAND_RANGE(4, 32);
+		if (len > cap)
+			len = cap;
+		generate_rand_bytes(buf + offset + NLA_HDRLEN, len);
+	}
+	if (!start_nlattr(buf, offset, buflen, RTA_ENCAP | NLA_F_NESTED, len))
+		return offset;
+	return offset + NLA_ALIGN(NLA_HDRLEN + len);
 }
 
 /*

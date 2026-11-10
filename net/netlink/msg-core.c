@@ -323,6 +323,11 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 	 * payload generators) and unknown families. */
 	attr_hint = pick_attr_hint(triplet->protocol, nlh);
 
+	/* A route's (group 2's) encap nest goes out beside the
+	 * RTA_ENCAP_TYPE that names its kind. */
+	if (rtnl_group == 2 && attr_hint == RTA_ENCAP)
+		return append_route_encap(msg, offset, buflen);
+
 	if (ONE_IN(7)) {
 		unsigned short outer = attr_hint ? attr_hint : rand16();
 
