@@ -14,6 +14,7 @@
 struct accept_unblocker_stats {
 	unsigned long connects_fired;		/* fire-and-forget connect() issued at a listener (SYN sent or EINPROGRESS) */
 	unsigned long loopback_only_skipped;	/* listener bound to non-loopback addr; refused to connect */
+	unsigned long other_netns_skipped;	/* inet or abstract unix listener in another netns than the connector's; out of its reach */
 	unsigned long probe_failed;		/* getsockopt(SO_ACCEPTCONN) / getsockname / socket() / connect() returned an unexpected error */
 };
 

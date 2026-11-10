@@ -7,6 +7,8 @@
  */
 
 #include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <sys/socket.h>
 #include <sys/uio.h>
@@ -137,6 +139,23 @@ static bool probe_listener(int fd, struct sockaddr_storage *out,
 }
 
 /*
+ * Whether sockets @a and @b sit in different netns.  False when the
+ * kernel cannot say: SO_NETNS_COOKIE arrived in 5.14.
+ */
+static bool netns_differ(int a, int b)
+{
+	uint64_t ca, cb;
+	socklen_t len = sizeof(ca);
+
+	if (getsockopt(a, SOL_SOCKET, SO_NETNS_COOKIE, &ca, &len) != 0)
+		return false;
+	len = sizeof(cb);
+	if (getsockopt(b, SOL_SOCKET, SO_NETNS_COOKIE, &cb, &len) != 0)
+		return false;
+	return ca != cb;
+}
+
+/*
  * Pick the family of the socket() the connector opens to fire at the
  * captured addr.  Must match the addr's family — connecting an
  * AF_INET socket to an AF_INET6 addr (or vice-versa) is -EAFNOSUPPORT
@@ -161,6 +180,7 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	struct sockaddr_storage ss;
 	socklen_t slen, olen;
 	struct sockaddr *sa;
+	const struct sockaddr_un *sun;
 	int family, type, protocol, cfd, r;
 
 	if (fd < 0)
@@ -237,6 +257,26 @@ void accept_unblocker_fire(int fd, const struct socketinfo *si)
 	if (cfd < 0) {
 		__atomic_add_fetch(&shm->stats.accept_unblocker.probe_failed,
 				   1, __ATOMIC_RELAXED);
+		return;
+	}
+
+	/*
+	 * A connect from this netns cannot reach an inet or abstract unix
+	 * listener in another: a SYN finds nothing listening on the port
+	 * here, though its EINPROGRESS would count as a fire, and an
+	 * abstract name is looked up in the connector's netns alone.  A
+	 * lane child's connects come from its own netns, while the pooled
+	 * listeners sit in the parent's.  A pathname is found through the
+	 * filesystem, from any netns.
+	 */
+	sun = (const struct sockaddr_un *) sa;
+	if (!(family == AF_UNIX &&
+	      slen > offsetof(struct sockaddr_un, sun_path) &&
+	      sun->sun_path[0] != '\0') &&
+	    netns_differ(fd, cfd)) {
+		__atomic_add_fetch(&shm->stats.accept_unblocker.other_netns_skipped,
+				   1, __ATOMIC_RELAXED);
+		close(cfd);
 		return;
 	}
 
