@@ -62,6 +62,15 @@ struct socketinfo * get_rand_socketinfo(void) __must_check;
 struct socketinfo *lane_netlink_socketinfo(struct socketinfo *si);
 int fd_from_socketinfo(struct socketinfo *si);
 
+/*
+ * A pooled socket of one of the n_triplets shapes, from the child's pool
+ * or failing that the global one, or -1 when neither holds one: for a
+ * taker that checks the family, type and protocol of the socket an fd
+ * names, as l2tp's managed tunnels do.
+ */
+int get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
+				  unsigned int n_triplets);
+
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
 unsigned int sockoptlen(unsigned int len);

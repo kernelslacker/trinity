@@ -130,6 +130,11 @@ LDFLAGS		+= -Wl,--wrap=get_rand_bpf_map -Wl,--wrap=get_rand_bpf_fd \
 		   -Wl,--wrap=get_rand_bpf_link_fd -Wl,--wrap=get_rand_bpf_btf_fd \
 		   -Wl,--wrap=get_rand_bpf_token_fd
 
+# The socket picker's stand-in: fds/sockets-pick.c is linked for
+# socket_pick_test.c, which runs the picker through __real_, and every
+# other caller gets fake_fds.c's wrapper, which reads no pool.
+LDFLAGS		+= -Wl,--wrap=get_rand_socket_fd_of_triplet
+
 # set_object_fd() stand-in: objects/dispatch.c is linked for
 # fd_from_object(), and no test is meant to reach its set_object_fd(),
 # which fake_objects.c wraps with one that aborts.
@@ -905,6 +910,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 PARENT_SRCS	+= $(TOP)/fds/sockets-lane.c
 FAKE_SRCS	+= lane_socket_test.c \
 		   userns_lane_test.c
+
+# fds/sockets-pick.c brings get_rand_socket_fd_of_triplet(), which
+# socket_pick_test.c runs over the socket pools it installs through the
+# get_objhead() stand-in.
+PARENT_SRCS	+= $(TOP)/fds/sockets-pick.c
+FAKE_SRCS	+= socket_pick_test.c
 
 # syscalls/process/seccomp.c and syscalls/concurrency/set_robust_list.c
 # bring seccomp, whose GET_ACTION_AVAIL word, and set_robust_list, whose

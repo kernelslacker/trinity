@@ -4,9 +4,10 @@
  * for the object-pool lookup the fd-to-provider walk reaches.  The stub
  * aborts unless a test has installed a pool, so a test that wanders into
  * that walk fails loudly instead of quietly seeing an untracked fd.  Also
- * the pickers of fds/bpf.c, which the bpf sanitisers draw from, the ring
- * picker of fds/io_uring.c, which io_uring_register's draws from, and an
- * unlink() that can plant a symlink under the name it removes.
+ * the pickers of fds/bpf.c, which the bpf sanitisers draw from, the socket
+ * picker of fds/sockets-pick.c, the ring picker of fds/io_uring.c, which
+ * io_uring_register's draws from, and an unlink() that can plant a symlink
+ * under the name it removes.
  */
 
 #include <stdio.h>
@@ -166,6 +167,22 @@ int __wrap_get_rand_bpf_token_fd(void);
 int __wrap_get_rand_bpf_token_fd(void)
 {
 	return -1;
+}
+
+/* The stand-in for fds/sockets-pick.c's picker, which socket_pick_test.c
+ * runs through __real_: every other caller, the netlink attributes that
+ * name a socket among them, gets the fd a test sets, -1 from an empty
+ * pool, whatever the shapes. */
+int fake_socket_fd = -1;
+
+int __wrap_get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
+					 unsigned int n_triplets);
+int __wrap_get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
+					 unsigned int n_triplets)
+{
+	(void)triplets;
+	(void)n_triplets;
+	return fake_socket_fd;
 }
 
 /* The pickers of fds/perf.c and fds/cgroup.c, which answer with the fd a
