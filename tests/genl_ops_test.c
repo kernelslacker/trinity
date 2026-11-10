@@ -145,7 +145,8 @@ unsigned short rand16(void)
 	return rnd_u32() & 0xffff;
 }
 
-void generate_rand_bytes(unsigned char *ptr, unsigned int len)
+void __wrap_generate_rand_bytes(unsigned char *ptr, unsigned int len);
+void __wrap_generate_rand_bytes(unsigned char *ptr, unsigned int len)
 {
 	unsigned int i;
 

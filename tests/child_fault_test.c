@@ -366,7 +366,8 @@ void log_mprotect_failure(void *addr, size_t len, int prot, void *caller,
 
 /* Only dirty_first_page() calls it, once an mprotect() has worked, which
  * one on an unaligned page does not. */
-void generate_random_page(char *page)
+void __wrap_generate_random_page(char *page);
+void __wrap_generate_random_page(char *page)
 {
 	(void)page;
 }

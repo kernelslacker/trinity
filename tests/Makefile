@@ -169,6 +169,13 @@ LDFLAGS		+= -Wl,--wrap=get_objhead
 # calls go to the real alloc_object() and to the fake add_object().
 LDFLAGS		+= -Wl,--wrap=alloc_object -Wl,--wrap=add_object
 
+# The byte generators of rand/random-page.c: the netlink builders and the
+# sanitisers other tests run take genl_ops_test.c's generate_rand_bytes(),
+# and child_fault_test.c's generate_random_page() leaves its page alone.
+# rand_bytes_test.c reaches the real generator as
+# __real_generate_rand_bytes().
+LDFLAGS		+= -Wl,--wrap=generate_rand_bytes -Wl,--wrap=generate_random_page
+
 # munmap() refusal injection: arg_coupling_test.c wraps munmap so a test
 # can have it refuse a range with EPERM, unmapping nothing, as the kernel
 # refuses one that holds a sealed VMA.  The wrapper forwards to the real
@@ -1119,6 +1126,13 @@ FAKE_SRCS	+= gen_arg_time_test.c
 PARENT_SRCS	+= $(TOP)/args/handle_arg.c \
 		   $(TOP)/rand/mutate.c
 FAKE_SRCS	+= arg_list_test.c
+
+# rand/random-page.c brings generate_rand_bytes(), whose arms
+# rand_bytes_test.c holds to writing every byte they are handed, and
+# rand/random-length.c the get_len() its struct arm draws.
+PARENT_SRCS	+= $(TOP)/rand/random-page.c \
+		   $(TOP)/rand/random-length.c
+FAKE_SRCS	+= rand_bytes_test.c
 
 # syscalls/concurrency/futex.c brings futex's sanitiser, which
 # futex_test.c runs with every futex word pool empty.

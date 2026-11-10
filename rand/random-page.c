@@ -20,12 +20,11 @@ static void fabricate_struct(char *p, unsigned int len)
 
 		switch (rnd_modulo_u32(3)) {
 		case 0:
-			if (!IS_ALIGNED(i, sizeof(unsigned long)))
+			if (!IS_ALIGNED(i, sizeof(unsigned long)) ||
+			    len - i < sizeof(unsigned long))
 				break;
 
 			i += sizeof(unsigned long);
-			if (i > len)
-				return;
 
 			switch (rnd_modulo_u32(4)) {
 			case 0:	val = rand64();
@@ -42,12 +41,10 @@ static void fabricate_struct(char *p, unsigned int len)
 			break;
 
 		case 1:
-			if (!IS_ALIGNED(i, 4))
+			if (!IS_ALIGNED(i, 4) || len - i < sizeof(unsigned int))
 				break;
 
 			i += sizeof(unsigned int);
-			if (i > len)
-				return;
 
 			{
 				unsigned int val32 = rand32();
@@ -56,7 +53,7 @@ static void fabricate_struct(char *p, unsigned int len)
 			break;
 
 		case 2:
-			if (!IS_ALIGNED(i, 2))
+			if (!IS_ALIGNED(i, 2) || len - i < 2)
 				break;
 
 			if (RAND_BOOL()) {
@@ -64,23 +61,19 @@ static void fabricate_struct(char *p, unsigned int len)
 				unsigned short val16;
 
 				i += sizeof(unsigned short);
-				if (i > len)
-					return;
-
 				val16 = rand16();
 				memcpy(&p[old_i], &val16, sizeof(val16));
 			} else {
 				/* two u8's */
 				i += 2;
-				if (i > len)
-					return;
 				*(unsigned char *)ptr = RAND_BYTE();
 				*((unsigned char *)ptr + 1) = RAND_BYTE();
 			}
 			break;
 		}
 
-		/* If no case advanced i (misaligned), write one byte to guarantee progress. */
+		/* If no case advanced i (misaligned, or too near the end for
+		 * its width), write one byte to guarantee progress. */
 		if (old_i == i) {
 			p[i] = RAND_BYTE();
 			i++;
@@ -104,11 +97,6 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 	 * the longer generators. */
 	if (len < 24)
 		randrange = 6;
-	else {
-		/* Make sure we're always dealing with an even number */
-		if (len & 1)
-			len--;
-	}
 
 	switch (rnd_modulo_u32(randrange)) {
 	case 0:
@@ -244,6 +232,9 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 				break;
 			}
 		}
+		/* The pairs can stop a byte short of the end. */
+		if (i < len)
+			ptr[i] = '%';
 		ptr[rnd_modulo_u32(len)] = 0;
 		return;
 
