@@ -188,6 +188,45 @@ static struct object *pick_bpf_object(enum objecttype type)
 	return NULL;
 }
 
+/*
+ * The fd of a pooled @type object, from either pool, whose kind (a map's
+ * map type, a program's program type) is one of the @n_kinds in @kinds,
+ * or -1 when neither pool holds one.
+ */
+static int pick_bpf_fd_of_kind(enum objecttype type, const unsigned int *kinds,
+			       unsigned int n_kinds)
+{
+	static const enum obj_scope scopes[] = { OBJ_LOCAL, OBJ_GLOBAL };
+	unsigned int matches = 0;
+	unsigned int i, idx;
+	int fd = -1;
+
+	for (i = 0; i < ARRAY_SIZE(scopes); i++) {
+		struct objhead *head = get_objhead(scopes[i], type);
+		struct object *obj;
+
+		for_each_obj(head, obj, idx) {
+			unsigned int kind, k;
+
+			if (!objpool_check(obj, type) ||
+			    fd_from_object(obj, type) < 0)
+				continue;
+			kind = type == OBJ_FD_BPF_MAP ? obj->bpfobj.map_type :
+							obj->bpfprogobj.prog_type;
+			for (k = 0; k < n_kinds; k++)
+				if (kinds[k] == kind)
+					break;
+			if (k == n_kinds)
+				continue;
+			/* The nth match takes the pick one time in n, so
+			 * each is as likely as another. */
+			if (rnd_modulo_u32(++matches) == 0)
+				fd = fd_from_object(obj, type);
+		}
+	}
+	return fd;
+}
+
 bool get_rand_bpf_map(struct bpfobj *map)
 {
 	struct object *obj = pick_bpf_object(OBJ_FD_BPF_MAP);
@@ -203,6 +242,12 @@ int get_rand_bpf_fd(void)
 	struct bpfobj map;
 
 	return get_rand_bpf_map(&map) ? map.map_fd : -1;
+}
+
+int get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
+				 unsigned int n_types)
+{
+	return pick_bpf_fd_of_kind(OBJ_FD_BPF_MAP, map_types, n_types);
 }
 
 static const struct fd_provider bpf_map_fd_provider = {
@@ -459,27 +504,7 @@ int get_rand_bpf_prog_fd(void)
 
 int get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
 {
-	static const enum obj_scope scopes[] = { OBJ_LOCAL, OBJ_GLOBAL };
-	unsigned int matches = 0;
-	unsigned int i, idx;
-	int fd = -1;
-
-	for (i = 0; i < ARRAY_SIZE(scopes); i++) {
-		struct objhead *head = get_objhead(scopes[i], OBJ_FD_BPF_PROG);
-		struct object *obj;
-
-		for_each_obj(head, obj, idx) {
-			if (!objpool_check(obj, OBJ_FD_BPF_PROG) ||
-			    obj->bpfprogobj.prog_type != prog_type ||
-			    fd_from_object(obj, OBJ_FD_BPF_PROG) < 0)
-				continue;
-			/* The nth match takes the pick one time in n, so
-			 * each is as likely as another. */
-			if (rnd_modulo_u32(++matches) == 0)
-				fd = obj->bpfprogobj.fd;
-		}
-	}
-	return fd;
+	return pick_bpf_fd_of_kind(OBJ_FD_BPF_PROG, &prog_type, 1);
 }
 
 static const struct fd_provider bpf_prog_fd_provider = {

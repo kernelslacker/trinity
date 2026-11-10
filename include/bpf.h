@@ -16,6 +16,14 @@ bool get_rand_bpf_map(struct bpfobj *map);
 int get_rand_bpf_fd(void);
 
 /*
+ * A map of one of the @n_types types in @map_types, from the child's pool
+ * or the global one, or -1 when neither holds one: for a taker that
+ * refuses a map of any other type, as a sockmap link does.
+ */
+int get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
+				 unsigned int n_types);
+
+/*
  * Draw a program from the pool: get_rand_bpf_prog() hands back its type and
  * the attach type it was loaded for, get_rand_bpf_prog_fd() its fd, or -1
  * from an empty pool.

@@ -152,6 +152,16 @@ int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
 	return -1;
 }
 
+int __wrap_get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
+					unsigned int n_types);
+int __wrap_get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
+					unsigned int n_types)
+{
+	(void)map_types;
+	(void)n_types;
+	return -1;
+}
+
 int __wrap_get_rand_bpf_link_fd(void);
 int __wrap_get_rand_bpf_link_fd(void)
 {
