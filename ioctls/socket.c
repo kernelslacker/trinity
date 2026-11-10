@@ -1,8 +1,10 @@
 #include <string.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <linux/if_bridge.h>
 #include <linux/if_tunnel.h>
 #include <linux/ip6_tunnel.h>
+#include <linux/sockios.h>
 
 #include "ioctls.h"
 #include "net.h"
@@ -168,32 +170,138 @@ static void fill_tunnel_parm(union tunnel_parm *parm,
 }
 
 /*
- * The picker's arg for every cmd, but seven tunnel cmds in eight, which get
- * an ifreq naming a fallback device or its kind's tunnel, half and half.
+ * The bridge the group's SIOCBRADDBR makes, which br_ioctl_stub() lets a
+ * lane child do in its own netns, and that SIOCBRADDIF, SIOCBRDELIF and
+ * the old bridge ioctls name.
+ */
+#define BRIDGE_NAME	"trinity-br"
+
+/*
+ * The args br_dev_siocdevprivate() reads behind ifr_data, through any
+ * SIOCDEVPRIVATE cmd: a BRCTL_ cmd and its args.  A SET it takes ends in
+ * netdev_state_change() inside dev_siocdevprivate()'s netdev_lock_ops()
+ * section.  The values sit in the ranges br_set_forward_delay(),
+ * br_set_hello_time() and br_set_max_age() take, in clock ticks of USER_HZ
+ * (100), and a port is a small ifindex.  BRCTL_GET_BRIDGE_INFO copies the
+ * bridge's state out to args[1].
+ */
+static void fill_bridge_args(unsigned long *args)
+{
+	static const struct {
+		unsigned long cmd, lo, hi;
+	} cmds[] = {
+		{ BRCTL_SET_BRIDGE_FORWARD_DELAY,	200,	3000 },
+		{ BRCTL_SET_BRIDGE_HELLO_TIME,		100,	1000 },
+		{ BRCTL_SET_BRIDGE_MAX_AGE,		600,	4000 },
+		{ BRCTL_SET_AGEING_TIME,		0,	100000 },
+		{ BRCTL_SET_BRIDGE_STP_STATE,		0,	1 },
+		{ BRCTL_SET_BRIDGE_PRIORITY,		0,	65535 },
+		{ BRCTL_ADD_IF,				1,	16 },
+		{ BRCTL_DEL_IF,				1,	16 },
+	};
+	unsigned int i = rnd_modulo_u32(ARRAY_SIZE(cmds) + 1);
+
+	memset(args, 0, 4 * sizeof(*args));
+	if (i == ARRAY_SIZE(cmds)) {
+		args[0] = BRCTL_GET_BRIDGE_INFO;
+		args[1] = (unsigned long)
+			get_writable_struct(sizeof(struct __bridge_info));
+		return;
+	}
+	args[0] = cmds[i].cmd;
+	args[1] = RAND_RANGE(cmds[i].lo, cmds[i].hi);
+}
+
+/* A zeroed ifreq naming @name, or NULL. */
+static struct ifreq *new_ifreq(const char *name)
+{
+	struct ifreq *ifr = (struct ifreq *) get_writable_struct(sizeof(*ifr));
+
+	if (ifr != NULL) {
+		memset(ifr, 0, sizeof(*ifr));
+		strncpy(ifr->ifr_name, name, IFNAMSIZ - 1);
+	}
+	return ifr;
+}
+
+/*
+ * A tunnel cmd's ifreq, which names the bridge one time in eight, with the
+ * old bridge ioctls' args, and otherwise a fallback device or its kind's
+ * tunnel, half and half, with that kind's parm.
+ */
+static struct ifreq *devprivate_ifreq(void)
+{
+	const struct tunnel_kind *kind;
+	union tunnel_parm *parm;
+	unsigned long *args;
+	struct ifreq *ifr;
+
+	if (ONE_IN(8)) {
+		args = (unsigned long *) get_writable_struct(4 * sizeof(*args));
+		ifr = new_ifreq(BRIDGE_NAME);
+		if (args == NULL || ifr == NULL)
+			return NULL;
+		fill_bridge_args(args);
+		ifr->ifr_data = (void *) args;
+		return ifr;
+	}
+
+	kind = &tunnel_kinds[rnd_modulo_u32(ARRAY_SIZE(tunnel_kinds))];
+	parm = (union tunnel_parm *) get_writable_struct(sizeof(*parm));
+	ifr = new_ifreq(RAND_BOOL() ? kind->fallback : kind->tunnel);
+	if (parm == NULL || ifr == NULL)
+		return NULL;
+	fill_tunnel_parm(parm, kind);
+	ifr->ifr_data = (void *) parm;
+	return ifr;
+}
+
+/*
+ * The picker's arg for every cmd but the tunnel and bridge ones, which get
+ * theirs built seven times in eight: br_ioctl_stub() reads IFNAMSIZ bytes
+ * of name for SIOCBRADDBR and SIOCBRDELBR, and an ifreq naming the bridge
+ * and the port's ifindex for SIOCBRADDIF and SIOCBRDELIF.
  */
 static void sanitise_socket_ioctl(const struct ioctl_group *grp,
 				  struct syscallrecord *rec)
 {
-	const struct tunnel_kind *kind;
-	union tunnel_parm *parm;
-	struct ifreq *ifr;
+	struct ifreq *ifr = NULL;
+	char *name;
 
 	pick_random_ioctl(grp, rec);
-	if (rec->a2 < SIOCGETTUNNEL || rec->a2 > SIOCCHGTUNNEL || ONE_IN(8))
+	switch (rec->a2) {
+	case SIOCBRADDBR:
+	case SIOCBRDELBR:
+		if (ONE_IN(8))
+			return;
+		name = (char *) get_writable_address(IFNAMSIZ);
+		if (name == NULL)
+			return;
+		memset(name, 0, IFNAMSIZ);
+		strncpy(name, BRIDGE_NAME, IFNAMSIZ - 1);
+		rec->a3 = (unsigned long) name;
 		return;
-
-	ifr = (struct ifreq *) get_writable_struct(sizeof(*ifr));
-	parm = (union tunnel_parm *) get_writable_struct(sizeof(*parm));
-	if (ifr == NULL || parm == NULL)
+	case SIOCBRADDIF:
+	case SIOCBRDELIF:
+		if (ONE_IN(8))
+			return;
+		ifr = new_ifreq(BRIDGE_NAME);
+		if (ifr != NULL)
+			ifr->ifr_ifindex = RAND_RANGE(1, 16);
+		break;
+	case SIOCGETTUNNEL:
+	case SIOCADDTUNNEL:
+	case SIOCDELTUNNEL:
+	case SIOCCHGTUNNEL:
+		if (ONE_IN(8))
+			return;
+		ifr = devprivate_ifreq();
+		break;
+	default:
 		return;
-
-	kind = &tunnel_kinds[rnd_modulo_u32(ARRAY_SIZE(tunnel_kinds))];
-	fill_tunnel_parm(parm, kind);
-	memset(ifr, 0, sizeof(*ifr));
-	strncpy(ifr->ifr_name, RAND_BOOL() ? kind->fallback : kind->tunnel,
-		IFNAMSIZ - 1);
-	ifr->ifr_data = (void *) parm;
-	rec->a3 = (unsigned long) ifr;
+	}
+	if (ifr != NULL)
+		rec->a3 = (unsigned long) ifr;
 }
 
 static const struct ioctl socket_ioctls[] = {

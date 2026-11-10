@@ -3,7 +3,7 @@
  * has to be what the kernel's own checks take, and the draw has to reach all
  * of it.  The drm group's client caps and object types, the ext group's new
  * requests, the userfaultfd group's handshake and the socket group's tunnel
- * requests are covered.
+ * and bridge requests are covered.
  */
 
 #include <stdbool.h>
@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <net/if.h>
 #include <netinet/in.h>
+#include <linux/if_bridge.h>
 #include <linux/if_tunnel.h>
 #include <linux/ip6_tunnel.h>
 #include <linux/sockios.h>
@@ -612,10 +613,10 @@ static bool tunnel_parm_taken(unsigned int m, const void *data)
 	return false;
 }
 
-/* Draw one request of @cmd from the socket group; NULL when it kept the
- * picker's arg. */
-static const struct ifreq *tunnel_request(const struct ioctl_group *grp,
-					  unsigned long cmd)
+/* Draw one arg of @cmd from the socket group; NULL when it kept the
+ * picker's. */
+static const void *socket_request(const struct ioctl_group *grp,
+				  unsigned long cmd)
 {
 	static struct syscallrecord rec;
 
@@ -624,15 +625,97 @@ static const struct ifreq *tunnel_request(const struct ioctl_group *grp,
 	grp->sanitise(grp, &rec);
 	if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
 		return NULL;
-	return (const struct ifreq *) rec.a3;
+	return (const void *) rec.a3;
+}
+
+/* The bridge the socket group's SIOCBRADDBR makes, learned. */
+static char bridge_name[IFNAMSIZ];
+
+/*
+ * br_dev_siocdevprivate(): a BRCTL_ cmd it handles, a timer inside what
+ * br_set_hello_time(), br_set_max_age() and, with STP on,
+ * br_set_forward_delay() take (1 to 10, 6 to 40 and 2 to 30 seconds, in
+ * clock ticks of USER_HZ, 100), a port that is an ifindex, and somewhere for
+ * BRCTL_GET_BRIDGE_INFO to copy to.
+ */
+static bool bridge_args_taken(const unsigned long *args)
+{
+	switch (args[0]) {
+	case BRCTL_SET_BRIDGE_FORWARD_DELAY:
+		return args[1] >= 200 && args[1] <= 3000;
+	case BRCTL_SET_BRIDGE_HELLO_TIME:
+		return args[1] >= 100 && args[1] <= 1000;
+	case BRCTL_SET_BRIDGE_MAX_AGE:
+		return args[1] >= 600 && args[1] <= 4000;
+	case BRCTL_SET_AGEING_TIME:
+	case BRCTL_SET_BRIDGE_STP_STATE:
+	case BRCTL_SET_BRIDGE_PRIORITY:
+		return true;
+	case BRCTL_ADD_IF:
+	case BRCTL_DEL_IF:
+	case BRCTL_GET_BRIDGE_INFO:
+		return args[1] != 0;
+	}
+	return false;
+}
+
+/*
+ * br_ioctl_stub() reads IFNAMSIZ bytes of name for SIOCBRADDBR and
+ * SIOCBRDELBR, and an ifreq naming a bridge, with the port's ifindex, for
+ * SIOCBRADDIF and SIOCBRDELIF.  The group builds each seven times in eight,
+ * and every one names the bridge its add makes, so the add, the ports and
+ * the delete meet one device.
+ */
+static void socket_bridge_requests_name_one_bridge(void)
+{
+	static const unsigned long cmds[] = {
+		SIOCBRADDBR, SIOCBRDELBR, SIOCBRADDIF, SIOCBRDELIF,
+	};
+	const struct ioctl_group *grp = fake_ioctl_group("[socket]");
+	unsigned int built = 0, drawn = 0;
+	unsigned int c, i;
+
+	if (grp == NULL)
+		BUG("ioctl args: the socket group is not linked");
+
+	for (c = 0; c < ARRAY_SIZE(cmds); c++) {
+		for (i = 0; i < TUNNEL_ROUNDS; i++) {
+			const char *arg = socket_request(grp, cmds[c]);
+			const char *name = arg;
+
+			drawn++;
+			if (arg == NULL)
+				continue;
+			built++;
+			if (cmds[c] == SIOCBRADDIF || cmds[c] == SIOCBRDELIF) {
+				const struct ifreq *ifr = (const void *) arg;
+
+				name = ifr->ifr_name;
+				if (ifr->ifr_ifindex <= 0)
+					BUG("ioctl args: a bridge port is no ifindex");
+			}
+			if (memchr(name, '\0', IFNAMSIZ) == NULL || name[0] == '\0')
+				BUG("ioctl args: a bridge request names no bridge");
+			if (bridge_name[0] == '\0')
+				strcpy(bridge_name, name);
+			else if (strcmp(name, bridge_name) != 0)
+				BUG("ioctl args: two bridge requests name two bridges");
+		}
+	}
+	if (built < drawn * 0.80 || built > drawn * 0.95) {
+		fprintf(stderr, "bridge cmds: %u of %u built\n", built, drawn);
+		BUG("ioctl args: the bridge cmds are not mostly built");
+	}
 }
 
 /*
  * dev_ioctl() finds the device a tunnel cmd acts on by ifr_name, and its
  * handler reads the parm of its kind behind ifr_data.  The group builds
- * the request seven times in eight, naming a fallback device half the time
- * and the tunnel an add on that kind's fallback names the rest, so that
- * the add, the change and the delete meet one device; the parm takes the
+ * the request seven times in eight.  One in eight of those names the
+ * bridge, whose handler takes the old bridge ioctls through any
+ * SIOCDEVPRIVATE cmd; the rest name a fallback device half the time and
+ * the tunnel an add on that kind's fallback names the rest, so that the
+ * add, the change and the delete meet one device.  The parm takes the
  * kind's add and change seven times in eight, and names that tunnel 15
  * times in 16 of those.  Over thousands of requests the bounds are many
  * standard deviations out.
@@ -643,7 +726,7 @@ static void socket_tunnel_requests_name_their_device(void)
 		SIOCGETTUNNEL, SIOCADDTUNNEL, SIOCDELTUNNEL, SIOCCHGTUNNEL,
 	};
 	const struct ioctl_group *grp = fake_ioctl_group("[socket]");
-	unsigned int built = 0, drawn = 0, fallbacks = 0;
+	unsigned int built = 0, drawn = 0, fallbacks = 0, bridged = 0;
 	unsigned int changes = 0, taken = 0, named = 0;
 	unsigned int c, i;
 
@@ -652,7 +735,7 @@ static void socket_tunnel_requests_name_their_device(void)
 
 	/* Learn the tunnel each kind's add makes from its fallback's adds. */
 	for (i = 0; i < TUNNEL_ROUNDS; i++) {
-		const struct ifreq *ifr = tunnel_request(grp, SIOCADDTUNNEL);
+		const struct ifreq *ifr = socket_request(grp, SIOCADDTUNNEL);
 		const char *name;
 		int m;
 
@@ -671,7 +754,7 @@ static void socket_tunnel_requests_name_their_device(void)
 
 	for (c = 0; c < ARRAY_SIZE(cmds); c++) {
 		for (i = 0; i < TUNNEL_ROUNDS; i++) {
-			const struct ifreq *ifr = tunnel_request(grp, cmds[c]);
+			const struct ifreq *ifr = socket_request(grp, cmds[c]);
 			const char *name;
 			int m;
 
@@ -679,6 +762,13 @@ static void socket_tunnel_requests_name_their_device(void)
 			if (ifr == NULL)
 				continue;
 			built++;
+			if (strncmp(ifr->ifr_name, bridge_name, IFNAMSIZ) == 0) {
+				bridged++;
+				if (ifr->ifr_data == NULL ||
+				    !bridge_args_taken((const void *) ifr->ifr_data))
+					BUG("ioctl args: an old bridge ioctl the bridge refuses");
+				continue;
+			}
 			if (memchr(ifr->ifr_name, '\0', IFNAMSIZ) == NULL ||
 			    (m = tunnel_model(ifr->ifr_name)) < 0) {
 				fprintf(stderr, "ifr_name %.16s\n", ifr->ifr_name);
@@ -700,11 +790,14 @@ static void socket_tunnel_requests_name_their_device(void)
 	}
 
 	if (built < drawn * 0.80 || built > drawn * 0.95 ||
-	    fallbacks < built * 0.40 || fallbacks > built * 0.60 ||
+	    bridged < built * 0.08 || bridged > built * 0.18 ||
+	    fallbacks < (built - bridged) * 0.40 ||
+	    fallbacks > (built - bridged) * 0.60 ||
 	    taken < changes * 0.80 || named < taken * 0.85) {
-		fprintf(stderr, "tunnel cmds: %u of %u built, %u name a fallback, "
-			"%u of %u adds and changes taken, %u of those name the tunnel\n",
-			built, drawn, fallbacks, taken, changes, named);
+		fprintf(stderr, "tunnel cmds: %u of %u built, %u name the bridge, "
+			"%u a fallback, %u of %u adds and changes taken, "
+			"%u of those name the tunnel\n", built, drawn, bridged,
+			fallbacks, taken, changes, named);
 		BUG("ioctl args: the tunnel requests are not ones the tunnel handlers take");
 	}
 }
@@ -726,5 +819,6 @@ void ioctl_args_self_check(void)
 	size_rewrites_rebuild_the_arg();
 	size0_pointer_requests_get_a_buffer();
 	userfaultfd_api_always_asks_sigbus();
+	socket_bridge_requests_name_one_bridge();
 	socket_tunnel_requests_name_their_device();
 }
