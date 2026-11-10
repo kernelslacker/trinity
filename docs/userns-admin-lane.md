@@ -69,6 +69,13 @@ Protocols whose kernel socket exists in `init_net` alone (connector, iSCSI,
 SCSI transport, SELinux) keep it always: a socket in the lane's netns has no
 kernel peer to send to.
 
+The new netns starts with lo down, so right after the unshare the lane brings
+it up and gives it 127.0.0.1/8 and ::1/128 (`setup_private_net()`, the
+parent's own provisioning at startup), with the capabilities the new user
+namespace grants.  The sockets the child opens afterwards have a loopback to
+meet over; the parent's pooled sockets, in the parent's netns, are still out
+of their reach.
+
 ### Mount-namespace surfaces (FIFREEZE / FITHAW)
 
 `FIFREEZE` and `FITHAW` call `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` where
@@ -129,6 +136,7 @@ The mechanism, in the order `init_child_setup_sandbox()` runs it:
 capset(empty)                         /* no caps left in init_user_ns */
 capture cap-drop oracle ns anchors    /* names the pre-lane namespaces */
 unshare(CLONE_NEWUSER|CLONE_NEWNET|CLONE_NEWNS)   /* new userns + new netns + new mount ns */
+bring lo up                           /* setup_private_net() */
 write uid_map / setgroups / gid_map   /* identity map */
 ```
 
@@ -200,9 +208,9 @@ The two privilege lanes must not interfere:
   the run's whole active set, so the flag engages the lane for every
   child of a run with `sendmsg` active.  Keeping host-netns children
   alongside lane children (a per-child coin) was decided against: every
-  child runs in the private netns, which holds only lo.  No childop sets
-  the flag until it has been audited to confirm it does not leak userns
-  credentials back into host-scoped objects.
+  child runs in the private netns, which holds only lo, brought up by the
+  lane.  No childop sets the flag until it has been audited to confirm it
+  does not leak userns credentials back into host-scoped objects.
 
 ---
 

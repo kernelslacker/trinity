@@ -203,7 +203,8 @@ static int privnet_add_loopback_addr(int fd, int ifindex, int family,
 }
 
 /*
- * Provision the parent's freshly-private netns.  Conservative
+ * Provision a freshly-private netns: the parent's at startup, and a
+ * userns-admin lane child's after its unshare.  Conservative
  * day-1 default: bring `lo` UP and assign 127.0.0.1/8 + ::1/128 so
  * the netns has a usable single-endpoint loopback for the
  * socket/bind/listen/netlink/route/sock_diag childops to drive
@@ -211,11 +212,11 @@ static int privnet_add_loopback_addr(int fd, int ifindex, int family,
  * veth+peer two-endpoint datapath arrives in a follow-up.
  *
  * Returns 0 on success, -1 on any failure with errno preserved.
- * The caller's failure envelope is the same degrade-to-host path
+ * The parent's failure envelope is the same degrade-to-host path
  * the bare unshare uses: leave shm->isolation.net_ready=false and
  * children fall back to today's per-child unshare path.
  */
-static int setup_private_net(void)
+int setup_private_net(void)
 {
 	struct in_addr  v4_loop = { .s_addr = htonl(INADDR_LOOPBACK) };
 	struct in6_addr v6_loop = IN6ADDR_LOOPBACK_INIT;

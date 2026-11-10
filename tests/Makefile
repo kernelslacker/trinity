@@ -910,8 +910,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/mm/numa/get_mempolicy.c \
 # sanitiser of the send.c linked above calls, and which lane_socket_test.c
 # runs over a socket pool it installs through the get_objhead() stand-in,
 # with the netlink sockets of the fake_net.c seam.  userns_lane_test.c runs
-# check_uid() in a lane child, with lane_socket_test.c's lane flag.
-PARENT_SRCS	+= $(TOP)/fds/sockets-lane.c
+# check_uid() in a lane child, with lane_socket_test.c's lane flag, and
+# utils/isolation.c's setup_private_net() in a netns unshared as the
+# lane's is.
+PARENT_SRCS	+= $(TOP)/fds/sockets-lane.c \
+		   $(TOP)/utils/isolation.c
 FAKE_SRCS	+= lane_socket_test.c \
 		   userns_lane_test.c
 

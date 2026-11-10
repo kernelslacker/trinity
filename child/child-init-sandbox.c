@@ -29,6 +29,7 @@
 #include "fd.h"
 #include "futex.h"
 #include "fd-event.h"
+#include "isolation.h"
 #include "kcov.h"
 #include "maps.h"
 #include "minicorpus.h"
@@ -116,7 +117,12 @@ static bool child_userns_lane_active;
  *      child stranding itself with a fuzzed chroot/remount; the
  *      per-pid bug log survives that through the parked tmpdir fd,
  *      other absolute-path state does not.
- *   4. Write uid_map, setgroups=deny, gid_map.
+ *   4. Bring lo up in the new netns (setup_private_net()).  It starts
+ *      down, which leaves every socket the child opens afterwards no
+ *      loopback to meet over.  That needs only the capabilities the new
+ *      user namespace grants at the unshare, not the maps below, so a
+ *      child whose map write fails still has it.  Failure is logged.
+ *   5. Write uid_map, setgroups=deny, gid_map.
  *      Failure here is logged but does not latch; the cap-drop has already
  *      run and the child fuzz loop runs without userns-lane caps.
  *
@@ -203,6 +209,11 @@ static void maybe_enter_userns_admin_lane(int childno)
 		}
 		return;
 	}
+
+	if (setup_private_net() != 0)
+		outputerr("child %d: userns-admin lane: bringing lo up "
+			  "failed (errno=%d)\n",
+			  childno, errno);
 
 	/*
 	 * Write identity uid/gid maps.  uid_map first, then setgroups=deny

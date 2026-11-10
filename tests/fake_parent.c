@@ -66,6 +66,7 @@ char *warm_start_path;
 bool no_kcov_warm_start;
 bool no_cmp_hints_warm_start;
 bool no_chain_warm_start;
+bool no_startup_isolation;
 
 /* Owned by tables/tables-uniarch.c and tables-biarch.c in production.
  * Empty, so get_syscall_entry() finds no entry. */
