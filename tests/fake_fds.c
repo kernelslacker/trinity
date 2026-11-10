@@ -103,8 +103,9 @@ struct object *find_object_by_fd(int fd)
  * Each answers -1, as an empty pool does, but for the map picker, which
  * answers with the map a test installs a hook to name, the program picker,
  * which answers with the program a test's hook names or, unhooked, a
- * program of no particular type at the fd a test sets, and the pick of a
- * program by type, which answers with the fd a test's hook gives the type.
+ * program of no particular type at the fd a test sets, and the picks of a
+ * program or a map by type, which answer with the fd a test's hook gives
+ * the type or types.
  */
 bool (*fake_get_rand_bpf_map)(struct bpfobj *map);
 bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);
@@ -152,13 +153,16 @@ int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
 	return -1;
 }
 
+int (*fake_get_rand_bpf_map_fd_of_types)(const unsigned int *map_types,
+					 unsigned int n_types);
+
 int __wrap_get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
 					unsigned int n_types);
 int __wrap_get_rand_bpf_map_fd_of_types(const unsigned int *map_types,
 					unsigned int n_types)
 {
-	(void)map_types;
-	(void)n_types;
+	if (fake_get_rand_bpf_map_fd_of_types != NULL)
+		return fake_get_rand_bpf_map_fd_of_types(map_types, n_types);
 	return -1;
 }
 

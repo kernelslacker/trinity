@@ -42,6 +42,8 @@ extern int fake_bpf_prog_fd;		/* fake_fds.c */
 extern bool (*fake_get_rand_bpf_prog)(struct bpfprogobj *prog);	/* fake_fds.c */
 extern int fake_perf_fd;		/* fake_fds.c */
 extern int fake_cgroup_fd;		/* fake_fds.c */
+extern int (*fake_get_rand_bpf_map_fd_of_types)(const unsigned int *map_types,
+						unsigned int n_types);	/* fake_fds.c */
 int entry_check_status(struct syscallentry *entry);	/* sanitiser_owned_mask_test.c */
 
 #ifdef USE_BPF
@@ -1262,20 +1264,30 @@ static bool kernel_gets_its_tail(const union bpf_attr *attr)
 #define LINK_MAP_FD	100
 #define LINK_PERF_FD	120
 #define LINK_CGROUP_FD	130
+#define LINK_SOCKMAP_FD	140
 
-enum link_target_kind { TARGET_MAP, TARGET_PERF, TARGET_CGROUP, TARGET_IFINDEX };
+enum link_target_kind {
+	TARGET_MAP, TARGET_PERF, TARGET_CGROUP, TARGET_IFINDEX, TARGET_SOCKMAP,
+};
 
 /*
  * What the taker of @type reads target_fd as: a perf event for
  * bpf_perf_link_attach(), a cgroup for cgroup_bpf_link_attach(), the union's
  * target_ifindex for bpf_xdp_link_attach(), tcx_link_attach() and
- * netkit_link_attach().  The rest are handed a map.
+ * netkit_link_attach(), and a sockmap or a sockhash for
+ * sock_map_link_create(), which refuses any other map.  The rest are handed
+ * a map.
  */
 static enum link_target_kind kernel_target_kind(unsigned long type)
 {
 	switch (type) {
 	case BPF_PERF_EVENT:
 		return TARGET_PERF;
+	case BPF_SK_MSG_VERDICT:
+	case BPF_SK_SKB_STREAM_PARSER:
+	case BPF_SK_SKB_STREAM_VERDICT:
+	case BPF_SK_SKB_VERDICT:
+		return TARGET_SOCKMAP;
 	case BPF_XDP:
 	case BPF_TCX_INGRESS:
 	case BPF_TCX_EGRESS:
@@ -1325,10 +1337,25 @@ static bool pick_link_map(struct bpfobj *map)
 	return true;
 }
 
+/* A pooled sockmap, for a pick that asks for no map type but the two
+ * sock_map_link_create() takes. */
+static int pick_link_sockmap(const unsigned int *map_types,
+			     unsigned int n_types)
+{
+	unsigned int i;
+
+	for (i = 0; i < n_types; i++) {
+		if (map_types[i] != BPF_MAP_TYPE_SOCKMAP &&
+		    map_types[i] != BPF_MAP_TYPE_SOCKHASH)
+			return -1;
+	}
+	return n_types > 0 ? LINK_SOCKMAP_FD : -1;
+}
+
 struct link_tally {
 	unsigned int draws, refused, flags_set, pool_target, prog_target;
 	unsigned int perf_target, cgroup_target, ifindex_target, ifindex_lo;
-	unsigned int generic_prog;
+	unsigned int sockmap_target, generic_prog;
 	unsigned int tail_set, no_tail, tail_uncovered;
 	unsigned int both_syms_addrs, negative_pid;
 	unsigned int bad_ids;
@@ -1381,6 +1408,7 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 	fake_perf_fd = LINK_PERF_FD;
 	fake_cgroup_fd = LINK_CGROUP_FD;
 	fake_get_rand_bpf_map = pick_link_map;
+	fake_get_rand_bpf_map_fd_of_types = pick_link_sockmap;
 
 	for (round = 0; round < ROUNDS; round++) {
 		const union bpf_attr *attr;
@@ -1422,6 +1450,7 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 			t->prog_target += (int) attr->link_create.target_fd == LINK_PROG_FD;
 			t->perf_target += (int) attr->link_create.target_fd == LINK_PERF_FD;
 			t->cgroup_target += (int) attr->link_create.target_fd == LINK_CGROUP_FD;
+			t->sockmap_target += (int) attr->link_create.target_fd == LINK_SOCKMAP_FD;
 			t->ifindex_target += attr->link_create.target_ifindex < 64;
 			t->ifindex_lo += attr->link_create.target_ifindex == 1;
 			t->generic_prog += (int) attr->link_create.prog_fd != LINK_PROG_FD;
@@ -1655,6 +1684,7 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 	}
 
 	fake_get_rand_bpf_map = NULL;
+	fake_get_rand_bpf_map_fd_of_types = NULL;
 	fake_bpf_prog_fd = -1;
 	fake_perf_fd = -1;
 	fake_cgroup_fd = -1;
@@ -1739,6 +1769,9 @@ static void link_create_takes_its_arm_and_the_head_its_taker_wants(void)
 		} else if (kernel_target_kind(type) == TARGET_CGROUP) {
 			check("a cgroup link's target is not a cgroup", name,
 			      t->cgroup_target == t->draws);
+		} else if (kernel_target_kind(type) == TARGET_SOCKMAP) {
+			check("a sockmap link's target is not a sockmap", name,
+			      t->sockmap_target == t->draws);
 		} else if (kernel_target_kind(type) == TARGET_IFINDEX) {
 			check("a device link's target is not a small ifindex", name,
 			      t->ifindex_target == t->draws);

@@ -108,17 +108,29 @@ static bool pick_link_attach_type(const struct bpfprogobj *prog,
 
 /*
  * What the taker of @type reads link_create.target_fd as: a cgroup for
- * cgroup_bpf_link_attach(), a perf event for bpf_perf_link_attach(), and the
- * union's target_ifindex for bpf_xdp_link_attach(), tcx_link_attach() and
- * netkit_link_attach(), which lo, in every netns, answers half the time.  The
- * netns and sockmap takers want a netns fd and a sockmap or sockhash, which no
- * pool holds, and like the rest get a map.
+ * cgroup_bpf_link_attach(), a perf event for bpf_perf_link_attach(), a
+ * sockmap or a sockhash for sock_map_link_create(), which a root run pools,
+ * and the union's target_ifindex for bpf_xdp_link_attach(), tcx_link_attach()
+ * and netkit_link_attach(), which lo, in every netns, answers half the time.
+ * The netns takers want a netns fd, which no pool holds, and like the rest
+ * get a map, as does a sockmap taker when the pools hold no sockmap.
  */
 static unsigned int link_target(unsigned int type)
 {
+	static const unsigned int sockmaps[] = {
+		BPF_MAP_TYPE_SOCKMAP, BPF_MAP_TYPE_SOCKHASH,
+	};
+	int fd;
+
 	switch (type) {
 	case BPF_PERF_EVENT:
 		return get_rand_perf_fd();
+	case BPF_SK_MSG_VERDICT:
+	case BPF_SK_SKB_STREAM_PARSER:
+	case BPF_SK_SKB_STREAM_VERDICT:
+	case BPF_SK_SKB_VERDICT:
+		fd = get_rand_bpf_map_fd_of_types(sockmaps, ARRAY_SIZE(sockmaps));
+		return fd >= 0 ? (unsigned int) fd : (unsigned int) get_rand_bpf_fd();
 	case BPF_XDP:
 	case BPF_TCX_INGRESS:
 	case BPF_TCX_EGRESS:
