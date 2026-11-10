@@ -128,10 +128,11 @@ static unsigned long map_value_len(const struct bpfobj *map, u64 flags)
 }
 
 /*
- * Draw a map from the pool, naming it in attr->map_fd.  Of a map the pool
- * has no type for, one the kernel would not describe when it was met by id,
- * the pool knows no size either: its buffers are made generously.  Returns
- * whether the map is a known one.
+ * Draw a map from the pool, naming it in attr->map_fd, or -1, which no fd
+ * is, when the pool has none.  Of a map the pool has no type for, one the
+ * kernel would not describe when it was met by id, the pool knows no size
+ * either: its buffers are made generously.  Returns whether the map is a
+ * known one.
  */
 static bool pick_map(union bpf_attr *attr, struct bpfobj *map)
 {
@@ -139,7 +140,7 @@ static bool pick_map(union bpf_attr *attr, struct bpfobj *map)
 		memset(map, 0, sizeof(*map));
 		map->map_fd = -1;
 	}
-	attr->map_fd = map->map_fd;
+	attr->map_fd = (unsigned int) map->map_fd;
 	return map->map_type != BPF_MAP_TYPE_UNSPEC;
 }
 

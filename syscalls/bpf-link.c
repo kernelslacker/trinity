@@ -226,7 +226,7 @@ int sanitise_bpf_link_create(union bpf_attr *attr, struct syscallrecord *rec)
 	 * sizes the call; target_fd comes from the pool its taker reads.
 	 */
 	have_prog = get_rand_bpf_prog(&prog);
-	attr->link_create.prog_fd = have_prog ? prog.fd : -1;
+	attr->link_create.prog_fd = (unsigned int) (have_prog ? prog.fd : -1);
 	if (have_prog && !ONE_IN(8) && pick_link_attach_type(&prog, &type))
 		attr->link_create.attach_type = type;
 	else
