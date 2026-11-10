@@ -23,6 +23,13 @@ int get_rand_bpf_fd(void);
 bool get_rand_bpf_prog(struct bpfprogobj *prog);
 int get_rand_bpf_prog_fd(void);
 
+/*
+ * A program of @prog_type, from the child's pool or the global one, or -1
+ * when neither holds one: for a taker that refuses a program of any other
+ * type, as a route's LWT encap does.
+ */
+int get_rand_bpf_prog_fd_of_type(unsigned int prog_type);
+
 /* The expected attach type the kernel holds a program of @prog_type loaded
  * with @requested to. */
 unsigned int bpf_prog_loaded_attach_type(unsigned int prog_type,

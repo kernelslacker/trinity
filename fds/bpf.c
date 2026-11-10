@@ -252,6 +252,9 @@ static struct bpf_prog_template bpf_prog_templates[] = {
 	{ BPF_PROG_TYPE_RAW_TRACEPOINT,	0,				"raw_tracepoint" },
 	{ BPF_PROG_TYPE_SCHED_CLS,	0,				"sched_cls" },
 	{ BPF_PROG_TYPE_SCHED_ACT,	0,				"sched_act" },
+	{ BPF_PROG_TYPE_LWT_IN,		0,				"lwt_in" },
+	{ BPF_PROG_TYPE_LWT_OUT,	0,				"lwt_out" },
+	{ BPF_PROG_TYPE_LWT_XMIT,	0,				"lwt_xmit" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_MULTI,		"kprobe_multi" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_KPROBE_SESSION,	"kprobe_session" },
 	{ BPF_PROG_TYPE_KPROBE,		BPF_TRACE_UPROBE_MULTI,		"uprobe_multi" },
@@ -378,6 +381,31 @@ int get_rand_bpf_prog_fd(void)
 	struct bpfprogobj prog;
 
 	return get_rand_bpf_prog(&prog) ? prog.fd : -1;
+}
+
+int get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
+{
+	static const enum obj_scope scopes[] = { OBJ_LOCAL, OBJ_GLOBAL };
+	unsigned int matches = 0;
+	unsigned int i, idx;
+	int fd = -1;
+
+	for (i = 0; i < ARRAY_SIZE(scopes); i++) {
+		struct objhead *head = get_objhead(scopes[i], OBJ_FD_BPF_PROG);
+		struct object *obj;
+
+		for_each_obj(head, obj, idx) {
+			if (!objpool_check(obj, OBJ_FD_BPF_PROG) ||
+			    obj->bpfprogobj.prog_type != prog_type ||
+			    fd_from_object(obj, OBJ_FD_BPF_PROG) < 0)
+				continue;
+			/* The nth match takes the pick one time in n, so
+			 * each is as likely as another. */
+			if (rnd_modulo_u32(++matches) == 0)
+				fd = obj->bpfprogobj.fd;
+		}
+	}
+	return fd;
 }
 
 static const struct fd_provider bpf_prog_fd_provider = {

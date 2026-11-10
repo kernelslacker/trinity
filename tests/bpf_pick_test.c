@@ -4,9 +4,10 @@
  * no-op, so their fds live only in the pool of the child whose syscall
  * post made them, and a picker hands one out on every call while the
  * global pool is empty, as the map and program pickers do when init
- * seeded none; an object whose fd is gone is never handed out.  The
- * pools come through fake_objects.c's get_objhead() hook, and the
- * pickers are reached through __real_, past the fake_fds.c stand-ins.
+ * seeded none; an object whose fd is gone is never handed out.  A pick of
+ * a program by type draws from both pools.  The pools come through
+ * fake_objects.c's get_objhead() hook, and the pickers are reached through
+ * __real_, past the fake_fds.c stand-ins.
  */
 
 #include <stdio.h>
@@ -25,6 +26,7 @@ bool __real_get_rand_bpf_map(struct bpfobj *map);
 int __real_get_rand_bpf_fd(void);
 bool __real_get_rand_bpf_prog(struct bpfprogobj *prog);
 int __real_get_rand_bpf_prog_fd(void);
+int __real_get_rand_bpf_prog_fd_of_type(unsigned int prog_type);
 int __real_get_rand_bpf_link_fd(void);
 int __real_get_rand_bpf_btf_fd(void);
 int __real_get_rand_bpf_token_fd(void);
@@ -40,6 +42,54 @@ static struct objhead *head_hook(enum obj_scope scope, enum objecttype type)
 {
 	(void)type;
 	return scope == OBJ_LOCAL ? &local_head : &global_head;
+}
+
+/*
+ * The child's LWT_XMIT program and the global one each come back from a
+ * pick of that type, and neither the global program of another type nor a
+ * matching one whose fd is gone ever does.  A type no pool holds is -1.
+ */
+static void typed_prog_pick_check(void)
+{
+	static struct object progs[4];
+	static struct object *global_array[3];
+	bool seen_local = false, seen_global = false;
+	unsigned int k;
+
+	memset(progs, 0, sizeof(progs));
+	for (k = 0; k < ARRAY_SIZE(progs); k++) {
+		progs[k].obj_type = OBJ_FD_BPF_PROG;
+		progs[k].bpfprogobj.prog_type = BPF_PROG_TYPE_LWT_XMIT;
+		progs[k].bpfprogobj.fd = 42 + k;
+	}
+	progs[1].bpfprogobj.prog_type = BPF_PROG_TYPE_SOCKET_FILTER;
+	progs[3].bpfprogobj.fd = -1;
+	local_array[0] = &progs[0];
+	local_head.array = local_array;
+	local_head.num_entries = 1;
+	global_array[0] = &progs[1];
+	global_array[1] = &progs[2];
+	global_array[2] = &progs[3];
+	global_head.array = global_array;
+	global_head.num_entries = ARRAY_SIZE(global_array);
+
+	for (k = 0; k < PICKS; k++) {
+		int fd = __real_get_rand_bpf_prog_fd_of_type(BPF_PROG_TYPE_LWT_XMIT);
+
+		if (fd == 42) {
+			seen_local = true;
+		} else if (fd == 44) {
+			seen_global = true;
+		} else {
+			fprintf(stderr, "bpf typed pick: pick %u gave fd %d\n", k, fd);
+			BUG("bpf pick: a typed pick gave a program of another type or a closed one");
+		}
+	}
+	if (!seen_local || !seen_global)
+		BUG("bpf pick: a typed pick passed over one of the pools");
+	if (__real_get_rand_bpf_prog_fd_of_type(BPF_PROG_TYPE_LWT_IN) != -1)
+		BUG("bpf pick: a typed pick found a type no pool holds");
+	memset(&global_head, 0, sizeof(global_head));
 }
 #endif
 
@@ -99,6 +149,7 @@ void bpf_pick_self_check(void)
 		if (__real_get_rand_bpf_prog(&prog))
 			BUG("bpf pick: a program whose fd is gone was handed out");
 	}
+	typed_prog_pick_check();
 	fake_get_objhead = NULL;
 	memset(&local_head, 0, sizeof(local_head));
 #endif

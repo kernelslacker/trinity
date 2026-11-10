@@ -139,6 +139,13 @@ int __wrap_get_rand_bpf_prog_fd(void)
 	return __wrap_get_rand_bpf_prog(&prog) ? prog.fd : -1;
 }
 
+int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type);
+int __wrap_get_rand_bpf_prog_fd_of_type(unsigned int prog_type)
+{
+	(void)prog_type;
+	return -1;
+}
+
 int __wrap_get_rand_bpf_link_fd(void);
 int __wrap_get_rand_bpf_link_fd(void)
 {

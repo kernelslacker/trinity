@@ -126,6 +126,7 @@ LDFLAGS		+= -Wl,--wrap=get_rand_pagecache_fd \
 # fake_fds.c's wrappers, which read no pool.
 LDFLAGS		+= -Wl,--wrap=get_rand_bpf_map -Wl,--wrap=get_rand_bpf_fd \
 		   -Wl,--wrap=get_rand_bpf_prog -Wl,--wrap=get_rand_bpf_prog_fd \
+		   -Wl,--wrap=get_rand_bpf_prog_fd_of_type \
 		   -Wl,--wrap=get_rand_bpf_link_fd -Wl,--wrap=get_rand_bpf_btf_fd \
 		   -Wl,--wrap=get_rand_bpf_token_fd
 
