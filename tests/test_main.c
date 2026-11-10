@@ -113,6 +113,7 @@ void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
 void cmsg_build_self_check(void);
 void rxrpc_key_install_self_check(void);
+void sockmap_fin_self_check(void);
 void futex_wait_self_check(void);
 void lsm_list_modules_self_check(void);
 void getsockopt_self_check(void);
@@ -645,6 +646,11 @@ int main(int argc, char **argv)
 	printf("  rxrpc_key_install_self_check ... ");
 	fflush(stdout);
 	rxrpc_key_install_self_check();
+	printf("OK\n");
+
+	printf("  sockmap_fin_self_check ... ");
+	fflush(stdout);
+	sockmap_fin_self_check();
 	printf("OK\n");
 
 	printf("  futex_wait_self_check ... ");

@@ -1146,6 +1146,13 @@ FAKE_SRCS	+= cmsg_build_test.c
 PARENT_SRCS	+= $(TOP)/childops/net/rxrpc-key-install.c
 FAKE_SRCS	+= rxrpc_key_install_test.c
 
+# childops/net/sockmap-fin.c brings the sockmap_fin childop, whose bpf()
+# calls sockmap_fin_test.c answers through landlock_test.c's syscall()
+# hook over a real TCP pair, with the pooled map and program coming from
+# fake_fds.c's hooks.
+PARENT_SRCS	+= $(TOP)/childops/net/sockmap-fin.c
+FAKE_SRCS	+= sockmap_fin_test.c
+
 # syscalls/concurrency/futex_wait.c brings futex_wait's sanitiser, whose
 # futex word and timeout futex_wait_test.c checks on a compat call.
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex_wait.c
