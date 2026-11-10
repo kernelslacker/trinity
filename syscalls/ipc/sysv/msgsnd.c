@@ -3,7 +3,6 @@
  */
 #include <stddef.h>
 #include <linux/msg.h>
-#include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "deferred-free.h"
@@ -54,14 +53,6 @@ static void sanitise_msgsnd(struct syscallrecord *rec)
 	rec->a2 = (unsigned long) msgp;
 	avoid_shared_buffer_inout(&rec->a2, sizeof(struct msgbuf) + msgsz);
 	rec->a3 = msgsz;
-
-	/*
-	 * The ARG_LIST generator picks at least one bit from the values
-	 * array, which with a single-element {IPC_NOWAIT} means a send to a
-	 * full queue would never sleep: clear it half the time.
-	 */
-	if (RAND_BOOL())
-		rec->a4 &= ~IPC_NOWAIT;
 
 	/* Capture the genuine tracked pointer now: a2 may be scribbled by a
 	 * sibling syscall before the owned-list drain runs. */

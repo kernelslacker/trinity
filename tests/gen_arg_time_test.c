@@ -45,17 +45,6 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 	BUG("gen_arg_time: blob_fill() reached");
 }
 
-void publish_paired_length(struct syscallentry *entry,
-			   struct syscallrecord *rec,
-			   unsigned int argnum, unsigned long len)
-{
-	(void) entry;
-	(void) rec;
-	(void) argnum;
-	(void) len;
-	BUG("gen_arg_time: publish_paired_length() reached");
-}
-
 /* timer_settime's sanitiser seeds a timer when the pool has none; the
  * pool stays empty here. */
 int32_t seed_timerid_if_empty(void)

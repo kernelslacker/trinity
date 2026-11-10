@@ -5658,14 +5658,12 @@ static void ipc_stat_any_gets_a_buffer(void)
 }
 
 /* do_msgsnd() reads only IPC_NOWAIT from msgflg, so the list draws no
- * other flag, and the sanitiser clears that one on some calls: a send to
- * a full queue sleeps only without it, the case NEED_ALARM is there for.
- * The draws are the list's own values, which a one-flag list hands the
- * sanitiser every time. */
+ * other flag, and the sanitiser adds none.  The draws are the list's own
+ * values. */
 static void msgsnd_draws_only_ipc_nowait(void)
 {
 	const struct arglist *flags = &syscall_msgsnd.arg_params[3].list;
-	unsigned int i, nowait = 0;
+	unsigned int i;
 
 	for (i = 0; i < SANITISER_DRAWS; i++) {
 		struct syscallrecord *r = child_call(&syscall_msgsnd, false);
@@ -5674,13 +5672,9 @@ static void msgsnd_draws_only_ipc_nowait(void)
 		syscall_msgsnd.sanitise(r);
 		if (r->a4 & ~(unsigned long) IPC_NOWAIT)
 			BUG("msgsnd: a send draws a flag do_msgsnd() ignores");
-		if (r->a4 & IPC_NOWAIT)
-			nowait++;
 		while (r->owned_count > 0)
 			free(r->owned[--r->owned_count]);
 	}
-	if (nowait == 0 || nowait == SANITISER_DRAWS)
-		BUG("msgsnd: every send is blocking, or none is");
 	fake_this_child = NULL;
 }
 

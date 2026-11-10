@@ -156,14 +156,19 @@ void generate_rand_bytes(unsigned char *ptr, unsigned int len)
 /* Asked by the rtnetlink link builder, which this test builds none of,
  * and by sanitisers other tests run: the pidfd group's info sanitiser,
  * content with no bits, and mmap's flags draw, whose test sets
- * fake_rand_bitmask_draws for a random subset of the values. */
+ * fake_rand_bitmask_draws for a random subset of the values.  A test
+ * that needs the real draw's shape sets fake_rand_bitmask_hook. */
 bool fake_rand_bitmask_draws;
+unsigned long (*fake_rand_bitmask_hook)(unsigned int num,
+					const unsigned long *values);
 
 unsigned long set_rand_bitmask(unsigned int num, const unsigned long *values)
 {
 	unsigned long mask = 0;
 	unsigned int i;
 
+	if (fake_rand_bitmask_hook != NULL)
+		return fake_rand_bitmask_hook(num, values);
 	if (!fake_rand_bitmask_draws)
 		return 0;
 	for (i = 0; i < num; i++) {

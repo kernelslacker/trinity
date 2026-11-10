@@ -121,6 +121,7 @@ void listmount_self_check(void);
 void struct_fill_fd_self_check(void);
 void budgeted_self_check(void);
 void unblocker_self_check(void);
+void arg_list_self_check(void);
 void modify_ldt_self_check(void);
 void seccomp_notif_self_check(void);
 void cred_class_self_check(void);
@@ -686,6 +687,11 @@ int main(int argc, char **argv)
 	printf("  unblocker_self_check ... ");
 	fflush(stdout);
 	unblocker_self_check();
+	printf("OK\n");
+
+	printf("  arg_list_self_check ... ");
+	fflush(stdout);
+	arg_list_self_check();
 	printf("OK\n");
 
 	printf("  modify_ldt_self_check ... ");

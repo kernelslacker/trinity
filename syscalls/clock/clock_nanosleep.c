@@ -6,7 +6,6 @@
 
 #include <time.h>
 #include "pids.h"
-#include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
 #include "trinity.h"
@@ -27,14 +26,6 @@ static unsigned long clock_nanosleep_flags[] = {
 static void sanitise_clock_nanosleep(struct syscallrecord *rec)
 {
 	rec->a1 = pick_clockid();
-
-	/*
-	 * Force a 50/50 flags bucket: relative (0) or absolute
-	 * (TIMER_ABSTIME).  The ARG_LIST generator picks at least one bit
-	 * from the values array, which with a single-element {TIMER_ABSTIME}
-	 * means the relative path never ran from random fuzz.
-	 */
-	rec->a2 = RAND_BOOL() ? TIMER_ABSTIME : 0;
 
 	/*
 	 * a3 (rqtp) is typed ARG_TIMESPEC; the generator publishes a

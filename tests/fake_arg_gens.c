@@ -1,7 +1,7 @@
 /*
- * Stand-ins for the generators args/argtype_table.c names in its rows.
- * The table is linked for the replay class on each row, and no test
- * generates an argument, so a call to any of these is a test bug.
+ * Stand-ins for the generators args/argtype_table.c names in its rows
+ * whose files the tests do not link.  The table is linked for the replay
+ * class on each row, so a call to any of these is a test bug.
  */
 
 #include <stdio.h>
@@ -47,11 +47,3 @@ FAKE_GENERATOR(gen_arg_struct_ptr_in)
 FAKE_GENERATOR(gen_arg_struct_ptr_out)
 FAKE_GENERATOR(gen_arg_struct_ptr_inout)
 FAKE_GENERATOR(gen_arg_struct_size)
-FAKE_GENERATOR(handle_arg_address)
-FAKE_GENERATOR(handle_arg_mode_t)
-FAKE_GENERATOR(handle_arg_range)
-FAKE_GENERATOR(handle_arg_op)
-FAKE_GENERATOR(handle_arg_list)
-FAKE_GENERATOR(handle_arg_iovec)
-FAKE_GENERATOR(handle_arg_iovec_in)
-FAKE_GENERATOR(handle_arg_sockaddr)

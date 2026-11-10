@@ -1111,6 +1111,15 @@ PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
 		   $(TOP)/syscalls/clock/clock_adjtime.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
+# args/handle_arg.c brings the generators argtype_table.c's rows name
+# from it, and publish_paired_length(): arg_list_test.c draws
+# handle_arg_list() masks, with the cmp-hint and prop_ring draws stood
+# in for as never firing.  rand/mutate.c brings shift_flag_bit(), which
+# the list's one-in-eight probe arm ORs in.
+PARENT_SRCS	+= $(TOP)/args/handle_arg.c \
+		   $(TOP)/rand/mutate.c
+FAKE_SRCS	+= arg_list_test.c
+
 # syscalls/concurrency/futex.c brings futex's sanitiser, which
 # futex_test.c runs with every futex word pool empty.
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex.c

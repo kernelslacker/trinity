@@ -268,6 +268,15 @@ unsigned long handle_arg_list(struct syscallentry *entry,
 		}
 	}
 
+	/*
+	 * set_rand_bitmask() always sets a bit, so a list of one flag would
+	 * carry it on every call, and a call whose flags == 0 path differs
+	 * (security_getselfattr()'s walk over every LSM, remap_file_pages()
+	 * populating without MAP_NONBLOCK) would never take that path.
+	 */
+	if (num == 1 && RAND_BOOL())
+		return 0;
+
 	if (RAND_BOOL())
 		num = min(num, 3U);
 
