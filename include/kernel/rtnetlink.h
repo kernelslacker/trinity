@@ -18,3 +18,8 @@
 #ifndef HAVE_RTA_DEL_REASON
 #define RTA_DEL_REASON			32
 #endif
+
+/* The RTM_* message types are macros as well as enum members. */
+#ifndef RTM_DELLINKPROP
+#define RTM_DELLINKPROP			109
+#endif

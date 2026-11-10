@@ -238,6 +238,57 @@ static void expect_addr_dump(const struct addr_dump *t, bool multicast,
 			"rtnl: an IFA_TARGET_NETNSID is not a small id");
 }
 
+/* ---------- The ifinfomsg of the link and linkprop types ---------------- */
+
+struct link_header {
+	unsigned int msgs;
+	unsigned int zero;	/* ifi_type, ifi_flags and ifi_change all 0 */
+	unsigned int index_all, index_lo;
+};
+
+static void tally_link_header(struct link_header *t, const struct nlmsghdr *nlh)
+{
+	const struct ifinfomsg *ifi = NLMSG_DATA(nlh);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*ifi)))
+		return;
+	t->msgs++;
+	t->zero += !ifi->ifi_type && !ifi->ifi_flags && !ifi->ifi_change;
+	t->index_all += ifi->ifi_index == 0;
+	t->index_lo += ifi->ifi_index == LOOPBACK_IFINDEX;
+}
+
+/*
+ * rtnl_getlink() and rtnl_linkprop() answer an index that names no device
+ * -ENODEV, and a lane child's netns holds lo alone, so the builder names lo
+ * half the time for RTM_GETLINK and the linkprop types.  On a socket that
+ * asks for strict checking, rtnl_valid_getlink_req() refuses a GET with a
+ * nonzero ifi_type, ifi_flags or ifi_change, and the dump's check any index
+ * but 0 as well: a GET has the three 0 seven times in eight and asks for
+ * every device a quarter of the time.  RTM_NEWLINK and RTM_SETLINK hand
+ * their flags to whatever device the index names, so the other link types
+ * keep a random small index, lo's one time in 64, and random flags.
+ */
+static void expect_link_header(const struct link_header *get,
+			       const struct link_header *prop,
+			       const struct link_header *other)
+{
+	expect_fraction(get->index_lo, get->msgs, 0.45, 0.56, "RTM_GETLINK",
+			"rtnl: RTM_GETLINK does not name lo half the time");
+	expect_fraction(get->index_all, get->msgs, 0.20, 0.31, "RTM_GETLINK",
+			"rtnl: RTM_GETLINK does not ask for every device a quarter of the time");
+	expect_fraction(get->zero, get->msgs, 0.84, 0.91, "RTM_GETLINK",
+			"rtnl: RTM_GETLINK's type, flags and change are not 0 seven times in eight");
+	expect_fraction(prop->index_lo, prop->msgs, 0.45, 0.56, "the linkprop types",
+			"rtnl: the linkprop types do not name lo half the time");
+	expect_fraction(other->index_lo, other->msgs, 0.0, 0.03,
+			"RTM_NEWLINK, RTM_DELLINK and RTM_SETLINK",
+			"rtnl: RTM_NEWLINK, RTM_DELLINK or RTM_SETLINK names lo more often than a random small index does");
+	expect_fraction(other->zero, other->msgs, 0.0, 0.001,
+			"RTM_NEWLINK, RTM_DELLINK and RTM_SETLINK",
+			"rtnl: RTM_NEWLINK, RTM_DELLINK and RTM_SETLINK lose their random type, flags and change");
+}
+
 /* ---------- The ifaddrmsg of RTM_NEWADDR, RTM_DELADDR and RTM_GETADDR ---- */
 
 struct addr_header {
@@ -1977,6 +2028,7 @@ static void expect_action_attrs(const struct action_attrs *t)
 struct tallies {
 	unsigned int msgs, unhandled;
 	struct dump_bits dumps, dcb, both;
+	struct link_header getlink, linkprop, link;
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
 	struct getneigh_attrs getneigh_attrs;
@@ -2113,7 +2165,13 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELLINK:
 		case RTM_GETLINK:
 		case RTM_SETLINK:
+			tally_link_header(nlh->nlmsg_type == RTM_GETLINK ?
+					  &t->getlink : &t->link, nlh);
 			tally_link_limits(t->limits, nlh);
+			break;
+		case RTM_NEWLINKPROP:
+		case RTM_DELLINKPROP:
+			tally_link_header(&t->linkprop, nlh);
 			break;
 		case RTM_GETNEIGHTBL:
 		case RTM_SETNEIGHTBL:
@@ -2153,6 +2211,7 @@ void rtnl_gen_self_check(void)
 	fake_get_rand_bpf_prog_fd_of_type = NULL;
 	expect_handled_types(t.unhandled, t.msgs);
 	expect_dump_bits(&t.dumps, &t.dcb, &t.both);
+	expect_link_header(&t.getlink, &t.linkprop, &t.link);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_getneigh_attrs(&t.getneigh_attrs);

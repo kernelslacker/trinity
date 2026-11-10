@@ -36,8 +36,22 @@ unsigned char rand_family(void)
 	return RAND_ARRAY(families);
 }
 
-/* RTM_*LINK: struct ifinfomsg */
-static size_t gen_rtnl_body_link(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * RTM_*LINK and RTM_*LINKPROP: struct ifinfomsg.  rtnl_getlink() and
+ * rtnl_linkprop() answer an index that names no device -ENODEV, and a lane
+ * child, the one kind with CAP_NET_ADMIN, has a netns whose one device is
+ * lo, so a GET and the linkprop types, which change no flags, name lo half
+ * the time.  NEWLINK and SETLINK hand ifi_flags and ifi_change to
+ * netif_change_flags() for the device the index names, where an ifi_change
+ * of 0 replaces every flag and would take lo down, so the rest keep a
+ * random small index.  On a socket that asks for strict checking,
+ * rtnl_valid_getlink_req() refuses a GET with a nonzero ifi_type,
+ * ifi_flags or ifi_change, and the dump's check any index but 0 too: a GET
+ * has the three 0 seven times in eight and asks for every device a quarter
+ * of the time.
+ */
+static size_t gen_rtnl_body_link(unsigned char *body, size_t buflen, bool get,
+				 bool prop, unsigned char *out_family)
 {
 	struct ifinfomsg ifi;
 
@@ -49,6 +63,15 @@ static size_t gen_rtnl_body_link(unsigned char *body, size_t buflen, unsigned ch
 	ifi.ifi_index = rnd_modulo_u32(64); /* small interface indices */
 	ifi.ifi_flags = rand32();    /* IFF_* */
 	ifi.ifi_change = rand32();
+	if ((get || prop) && RAND_BOOL())
+		ifi.ifi_index = 1;	/* lo, which every netns has */
+	else if (get && RAND_BOOL())
+		ifi.ifi_index = 0;
+	if (get && !ONE_IN(8)) {
+		ifi.ifi_type = 0;
+		ifi.ifi_flags = 0;
+		ifi.ifi_change = 0;
+	}
 	*out_family = ifi.ifi_family;
 	memcpy(body, &ifi, sizeof(ifi));
 	return sizeof(ifi);
@@ -559,8 +582,10 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 
 	switch (group) {
 	case 0:  /* RTM_*LINK */
+		return gen_rtnl_body_link(body, buflen, nlmsg_type == RTM_GETLINK,
+					  false, out_family);
 	case 23: /* RTM_*LINKPROP -- rtnl_linkprop shares struct ifinfomsg */
-		return gen_rtnl_body_link(body, buflen, out_family);
+		return gen_rtnl_body_link(body, buflen, false, true, out_family);
 	case 1:
 		return gen_rtnl_body_addr(body, buflen, nlmsg_type == RTM_GETADDR,
 					  out_family);

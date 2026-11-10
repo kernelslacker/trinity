@@ -30,11 +30,6 @@
 #include "kernel/nexthop.h"
 #include "kernel/rtnetlink.h"
 
-/* Newer RTM_* types may be missing from older system headers. */
-#ifndef RTM_DELLINKPROP
-#define RTM_DELLINKPROP		109
-#endif
-
 /*
  * The rtnetlink types the kernel registers a handler for.  The ones it only
  * sends, as replies or notifications (RTM_NEWPREFIX, RTM_NEWNDUSEROPT,
