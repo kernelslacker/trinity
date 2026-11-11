@@ -91,6 +91,8 @@ static int open_perf_fd(void)
 {
 	struct syscallrecord rec;
 	struct object *obj;
+	int saved_errno;
+	int ret = false;
 	int fd;
 
 	memset(&rec, 0, sizeof(rec));
@@ -100,10 +102,8 @@ static int open_perf_fd(void)
 	if (fd < 0) {
 		/* No log here: failure-classification is handled by the
 		 * init_perf_fds caller, which inspects errno across many
-		 * attempts. Logging per call would flood.  rec.a1's attr
-		 * buffer is owned by the deferred-free queue (sanitise
-		 * registered it via deferred_free_enqueue). */
-		return false;
+		 * attempts. Logging per call would flood. */
+		goto out;
 	}
 
 	obj = alloc_object();
@@ -111,7 +111,7 @@ static int open_perf_fd(void)
 		outputerr("open_perf_fd: alloc_object failed\n");
 		close(fd);
 		errno = 0;
-		return false;
+		goto out;
 	}
 	obj->perfobj.fd = fd;
 	obj->perfobj.eventattr = alloc_shared_str(sizeof(struct perf_event_attr));
@@ -120,11 +120,11 @@ static int open_perf_fd(void)
 		tracked_free_now(obj);
 		close(fd);
 		errno = 0;
-		return false;
+		goto out;
 	}
-	/* rec.a1 carries the PAGE_SIZE attr buffer sanitise_perf_event_open
+	/* rec.a1 carries the attr buffer sanitise_perf_event_open
 	 * allocated; on startup, if the underlying zmalloc_tracked ever
-	 * comes back NULL (page-size alloc pressure during init, or a
+	 * comes back NULL (alloc pressure during init, or a
 	 * future softer-failure variant of the allocator) rec.a1 stays
 	 * unset and copying from it would deref NULL.  Bail with the
 	 * already-opened fd and the obj's freshly-allocated eventattr
@@ -137,7 +137,7 @@ static int open_perf_fd(void)
 		tracked_free_now(obj);
 		close(fd);
 		errno = 0;
-		return false;
+		goto out;
 	}
 	memcpy(obj->perfobj.eventattr, (void *) rec.a1, sizeof(struct perf_event_attr));
 	obj->perfobj.pid = rec.a2;
@@ -145,7 +145,15 @@ static int open_perf_fd(void)
 	obj->perfobj.group_fd = rec.a4;
 	obj->perfobj.flags = rec.a5;
 	add_object(obj, OBJ_GLOBAL, OBJ_FD_PERF);
-	return true;
+	ret = true;
+out:
+	/* The sanitiser parks its attr buffer in post_state for the
+	 * syscall's .cleanup hook, which a call made from here has to run
+	 * too.  init_perf_fds() classifies a failure by errno. */
+	saved_errno = errno;
+	cleanup_release_post_state(&rec);
+	errno = saved_errno;
+	return ret;
 }
 
 static int init_perf_fds(void)
@@ -160,9 +168,9 @@ static int init_perf_fds(void)
 	head->dump = &perffd_dump;
 	/*
 	 * The perfobj's eventattr buffer is the persistent obj-attached
-	 * copy (sizeof(struct perf_event_attr)); the larger PAGE_SIZE
-	 * syscall buffer in sanitise_perf_event_open is transient — freed
-	 * in the same call after memcpy — and stays on the private heap.
+	 * copy (sizeof(struct perf_event_attr)); the larger syscall
+	 * buffer in sanitise_perf_event_open is transient — freed in the
+	 * same call after memcpy — and stays on the private heap.
 	 */
 
 	while (i < MAX_PERF_FDS) {
