@@ -21,6 +21,7 @@
 #include "cmp_hints.h"		/* cmp_hints_feedback_reset_stash */
 #include "debug.h"		/* BUG */
 #include "objects.h"		/* enum obj_scope, struct objhead */
+#include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
 #include "sanitise.h"		/* generic_sanitise, generate_syscall_args */
 #include "syscall.h"		/* arg_meta_init */
 #include "syscalls/syscalls.h"	/* syscall_prctl, syscall_keyctl, ... */
@@ -265,6 +266,8 @@ static void real_entries_own_what_they_write(void)
 			}
 			if (entry->cleanup != NULL)
 				entry->cleanup(&rec);
+			if (entry == &syscall_prctl)
+				free_prctl_seccomp_program(&rec);
 			free((void *) rec.post_state);
 			/* This binary's alloc-track holds nothing, so the
 			 * drain would leave what a sanitiser handed it. */

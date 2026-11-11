@@ -174,6 +174,10 @@ static struct sock_fprog *do_set_seccomp(struct syscallrecord *rec)
 {
 	unsigned long *optval = NULL, __unused__ optlen = 0;
 
+#ifdef USE_BPF
+	bpf_gen_seccomp(&optval, &optlen);
+#endif
+
 	/*
 	 * Pin mode to SECCOMP_MODE_FILTER (2), never SECCOMP_MODE_STRICT (1).
 	 * Strict mode restricts the task to exactly four syscalls:

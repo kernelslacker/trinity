@@ -48,6 +48,7 @@
 #include "objects.h"			/* struct object */
 #include "pathnames.h"		/* get_testfile_path */
 #include "pids.h"			/* cached_pid */
+#include "prctl_seccomp.h"		/* free_prctl_seccomp_program */
 #include "rnd.h"			/* rnd_state */
 #include "sanitise.h"			/* writable pool, get_random_pkey_id */
 #include "shm.h"			/* shm->stats */
@@ -6024,6 +6025,7 @@ static void prctl_drawn(struct syscallrecord *r, int option, bool zero_slots)
 		     (r->a2 == PR_FUTEX_HASH_SET_SLOTS &&
 		      ((unsigned int) r->a3 == 0) == zero_slots)))
 			return;
+		free_prctl_seccomp_program(r);
 		free((void *) r->post_state);
 	}
 	BUG("prctl: the sanitiser never drew the call");
@@ -6046,6 +6048,7 @@ static void prctl_irreversible_states_held(void)
 		syscall_prctl.sanitise(&call);
 		if (validate_arg_coupling(&call, call.entry) != 0)
 			BUG("prctl: a call the sanitiser drew was refused");
+		free_prctl_seccomp_program(&call);
 		free((void *) call.post_state);
 	}
 

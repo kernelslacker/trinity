@@ -47,6 +47,7 @@
 #include "kernel/timerfd.h"	/* TFD_CLOEXEC */
 #include "maps.h"		/* get_map */
 #include "net.h"		/* fd_from_socketinfo */
+#include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
 #include "publish_resource.h"	/* struct resource_meta */
 #include "sanitise.h"		/* writable pool */
 #include "shm.h"
@@ -207,6 +208,7 @@ static struct syscallrecord *prctl_rec(int option, unsigned long arg2)
 		syscall_prctl.sanitise(&rec);
 		if (rec.a1 == (unsigned long) option)
 			return &rec;
+		free_prctl_seccomp_program(&rec);
 		free((void *) rec.post_state);
 	}
 	BUG("prctl sanitiser never drew the option");

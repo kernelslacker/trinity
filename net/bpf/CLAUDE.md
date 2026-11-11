@@ -14,5 +14,5 @@
 - **A program draws its stack offsets from one frame.** `reg_init()` picks `reg_state.stack_size` once: 512 bytes, or one program in four on x86-64 and arm64, 2 KiB (`EBPF_STACK_SIZE_JIT`, the kernel's `MAX_BPF_STACK_JIT`). `rand_stack_offset()` and every tier-1/2 stack access draw through it, so one program never mixes the two. A kernel that does not grant the JIT budget (interpreter, JIT off) refuses a program that reaches past 512 bytes; `ebpf-internal.h` lists what grants it.
 
 ## Interactions
-- Consumers, all by symbol (link-safe): `syscalls/bpf-prog.c` (`bpf_gen_filter`, `ebpf_gen_program`), `syscalls/process/seccomp.c` (`bpf_gen_seccomp`), `syscalls/socket/setsockopt.c` (`bpf_gen_filter`), and the struct-mutation path through `struct_catalog/bpf-prog.c` and `args/struct_fill.c` (`ebpf_gen_program_into`).
+- Consumers, all by symbol (link-safe): `syscalls/bpf-prog.c` (`bpf_gen_filter`, `ebpf_gen_program`), `syscalls/process/seccomp.c` and `syscalls/process/prctl.c` (`bpf_gen_seccomp`), `syscalls/socket/setsockopt.c` (`bpf_gen_filter`), and the struct-mutation path through `struct_catalog/bpf-prog.c` and `args/struct_fill.c` (`ebpf_gen_program_into`).
 - `net/proto/xdp.c` uses `xdp-umem-track.c`.

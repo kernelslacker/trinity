@@ -14,6 +14,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/prctl.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -25,6 +26,7 @@
 #include "net.h"		/* bpf_gen_seccomp */
 #include "deferred-free.h"	/* deferred_alloc_track, alloc_track_lookup */
 #include "objects.h"		/* struct bpfobj */
+#include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
 #include "rnd.h"
 #include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
 #include "struct_catalog.h"	/* struct union_variant */
@@ -2153,6 +2155,34 @@ static void seccomp_programs_refuse_only_calls_they_name(void)
 	      "seccomp program", fatal * 64 < matched);
 }
 
+#ifdef USE_SECCOMP
+/* prctl(PR_SET_SECCOMP, SECCOMP_MODE_FILTER) takes its program in arg3,
+ * which the sanitiser builds as seccomp() does. */
+static void prctl_set_seccomp_hands_a_program(void)
+{
+	static struct syscallrecord rec;
+	const struct sock_fprog *prog;
+	unsigned int tries;
+
+	for (tries = 0; tries < 4096; tries++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.entry = &syscall_prctl;
+		syscall_prctl.sanitise(&rec);
+		if (rec.a1 == PR_SET_SECCOMP)
+			break;
+		free((void *) rec.post_state);
+	}
+	check("the sanitiser never drew PR_SET_SECCOMP", "prctl seccomp",
+	      rec.a1 == PR_SET_SECCOMP);
+	prog = (const struct sock_fprog *) rec.a3;
+	check("PR_SET_SECCOMP was handed no program", "prctl seccomp",
+	      prog != NULL && prog->len > 0 &&
+	      BPF_CLASS(prog->filter[prog->len - 1].code) == BPF_RET);
+	free_prctl_seccomp_program(&rec);
+	free((void *) rec.post_state);
+}
+#endif
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -2172,6 +2202,9 @@ void bpf_gen_self_check(void)
 	link_create_draws_an_attach_type_its_program_takes();
 	seccomp_arch_checks_compare_the_arch();
 	seccomp_programs_refuse_only_calls_they_name();
+#ifdef USE_SECCOMP
+	prctl_set_seccomp_hands_a_program();
+#endif
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif
