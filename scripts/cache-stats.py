@@ -1018,7 +1018,7 @@ def effective_kernel_label(b: CacheBundle) -> str:
             # Strip the redundant '<arch>-' prefix that find_artifact
             # already accounts for separately in the JSON filename.
             if b.arch and base.startswith(b.arch + "-"):
-                base = base[len(b.arch) + 1:]
+                base = base[len(b.arch) + 1 :]
             return base
     return b.kernel_label
 
@@ -1052,7 +1052,7 @@ def build_per_syscall_json(b: CacheBundle) -> dict:
     # compare without being misled into thinking the table is smaller
     # than it is.
     syscall_names_known = len(b.syscall_names)
-    max_known_nr = (max(b.syscall_names) if b.syscall_names else -1)
+    max_known_nr = max(b.syscall_names) if b.syscall_names else -1
     k = b.kcov
     if k is None:
         return {
