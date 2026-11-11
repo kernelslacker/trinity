@@ -6,9 +6,6 @@ Lower layer of Trinity's coverage-guided fuzzing: per-child KCOV fd lifecycle, P
 
 kcov/ owns the KCOV kernel interface end-to-end: opening `/sys/kernel/debug/kcov`, both fd modes (`KCOV_TRACE_PC` and `KCOV_TRACE_CMP`), mmap'd trace buffers, ioctl enable/disable, and the raw PC-edge bitmap (`kcov_shm->bucket_seen[]`) with its own persistence format. `cmp_hints/` never touches an fd or ioctl — it only ever receives an already-mmap'd `unsigned long *cmp_trace_buf` pointer plus `(nr, do32)` from kcov/ and mines it for kernel comparison constants.
 
-Two pieces of shared machinery cross the boundary explicitly:
-- **KASLR canonicalisation**: `kcov_kaslr_base` is resolved once in kcov/lifecycle.c and exposed both as a direct extern (used by kcov/collect.c's `kcov_canon_pc`) and via the accessor `kcov_kaslr_base_value()` (used by cmp_hints/persist.c to stamp/validate its own on-disk header). `kcov_canon_cmp_ip()` is the single canonicalisation entry point for CMP-instruction addresses; cmp_hints/collect.c calls it before every pool insert.
-
 ## Key design decisions
 
 4. **Two-fd-per-child model** — each child opens both a PC fd and a dedicated CMP fd at init, probes CMP support, then commits to exactly one mode (`KCOV_MODE_PC` or `KCOV_MODE_CMP`) for its lifetime (`kcov_init_child_select_mode`, ratio-gated by `KCOV_CMP_CHILD_RECIPROCAL`). The kernel enforces one enabled fd per task (`-EBUSY` on double-enable), so this is a hard constraint, not just an optimisation.
@@ -27,7 +24,7 @@ Two pieces of shared machinery cross the boundary explicitly:
 - `child/child-altop-*.c`, `child/child-canary-*.c` — childop callers of the PC/CMP bracket API for non-syscall child operations
 - `health/signals-fault-handler.c` — `child_fault_handler` siglongjmp target for the `CONFIG_GUARD_SHARED` protection-strip fault detector in `kcov_enable_trace`
 - `utils/range_overlap.c` — mm-syscall sanitiser (`range_overlaps_shared`) consults the shared-region tracker that kcov/lifecycle.c registers trace buffers into, so fuzzed `munmap`/`mprotect`/`madvise` can't corrupt kcov's own mmaps
-- `cmp_hints/collect.c`, `cmp_hints/persist.c`, `cmp_hints/cmp_hints.c` — consumers of `kcov_canon_cmp_ip()` and `kcov_kaslr_base_value()`; see Boundary section above
+- `cmp_hints/collect.c`, `cmp_hints/persist.c`, `cmp_hints/cmp_hints.c` — read and bump `kcov_shm` counters; persist.c keys its file to `kcov_get_kernel_fp()`, the same kernel fingerprint the bitmap uses; see Boundary section above
 - `strategy/strategy.c`, `strategy/strategy-plateau.c`, `strategy/strategy-frontier.c` — `strategy_plateau_response()` invoked from `kcov_plateau_check`; frontier scoring reads `frontier_record_new_edge()`/transition deltas that kcov/collect.c feeds
 - `main/trinity-warmstart.c` — warm-start `kcov_bitmap_load_file`/`save_file` at boot/shutdown, `kcov_bitmap_enable_snapshots` setup
 - `stats/kcov/cmp/diag.c`, `stats/json/kcov.c` — periodic stats dump splices in `kcov_pc_diag_format`/`kcov_cmp_diag_format` output and per-syscall call/edge counters

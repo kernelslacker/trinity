@@ -537,9 +537,8 @@ CHAIN_SRCS	:= \
 # The kcov bitmap warm-start save and load paths, linked for
 # kcov_bitmap_save_file() and kcov_bitmap_load_file(), with the fd and
 # stale-tmp helpers they use from MINICORPUS_SRCS.  Same
-# section-per-function treatment; kcov_persist_test.c owns
-# kcov_kaslr_base, while kcov_shm and the persist envelope come from
-# cmp_collect_test.c and minicorpus_abi_test.c.
+# section-per-function treatment; kcov_shm and the persist envelope
+# come from cmp_collect_test.c and minicorpus_abi_test.c.
 KCOV_PERSIST_SRCS := \
 	$(TOP)/kcov/persist.c
 

@@ -18,7 +18,7 @@
 
 #include "exit.h"		/* EXIT_SHM_CORRUPTION, STILL_RUNNING */
 #include "fd.h"			/* read_all, write_all */
-#include "kcov-internal.h"	/* kcov_kaslr_base, public kcov API */
+#include "kcov-internal.h"	/* public kcov API */
 #include "persist-envelope.h"
 #include "persist-util.h"	/* persist_sweep_stale_tmp, persist_default_path */
 #include "pids.h"		/* mypid */
@@ -80,15 +80,13 @@ struct kcov_bitmap_file_header {
 	uint8_t  kallsyms_sha256[32];
 	uint32_t max_nr_syscall;   /* MAX_NR_SYSCALL at save time */
 	uint32_t priors_crc32;     /* CRC over both prior arrays */
-	uint64_t kaslr_base;       /* Runtime _text base at save time.
-				    * Zero means the writer could not
-				    * resolve the base and the payload
-				    * is hashed from raw PCs.  The load
-				    * path rejects when (hdr.kaslr_base
-				    * != 0) XOR (current kcov_kaslr_base
-				    * != 0) -- a canonical-vs-raw mix
-				    * would silently corrupt bucket
-				    * lookups. */
+	uint64_t kaslr_base;       /* Zero: the payload is hashed from
+				    * PCs as KCOV reports them, the
+				    * same on every boot.  Anything else
+				    * is a kernel-text base the writer
+				    * took off those PCs as well, which
+				    * keyed every edge to its boot: the
+				    * load path refuses it. */
 	uint32_t strat_crc32;      /* v7: CRC over the appended strat
 				    * block.  v5/v6 files lack this
 				    * trailer; the loader leaves it
@@ -836,14 +834,8 @@ bool kcov_bitmap_save_file(const char *path)
 	hdr.priors_crc32 = crc32(blobs.priors, blobs.priors_size);
 	hdr.diag_crc32 = crc32(blobs.diag, blobs.diag_size);
 	hdr.strat_crc32 = crc32(&blobs.strat, sizeof(blobs.strat));
-	/* Stamp the canonicalisation mode so the loader can refuse a
-	 * canonical-vs-raw mismatch.  Zero means the writer hashed PCs
-	 * raw (kallsyms unreadable, _text absent); non-zero is the
-	 * writer's runtime _text address and is informational past the
-	 * non-zero check -- the loader only cares about the mode bit,
-	 * not the specific base, because both sides canonicalise against
-	 * their own local base before comparing bucket indices. */
-	hdr.kaslr_base = kcov_kaslr_base;
+	/* PCs as KCOV reports them: see the header field. */
+	hdr.kaslr_base = 0;
 
 	if (!kcov_bitmap_write_file(path, &hdr, &blobs))
 		goto out;
@@ -962,21 +954,10 @@ static bool kcov_bitmap_load_header(int fd, const char *path,
 		       path);
 		return false;
 	}
-	/* The on-disk buckets are indexed by canonical PC (raw PC minus
-	 * the writer's KASLR base) when hdr.kaslr_base != 0, and by raw
-	 * PC otherwise.  This run's hot path applies the same transform
-	 * against the local kcov_kaslr_base, so the two must agree on
-	 * whether canonicalisation is in effect at all -- any XOR
-	 * mismatch means one side is canonical and the other raw, and
-	 * the bucket indices would silently disagree.  Both-canonical
-	 * (regardless of which base each used) and both-raw are
-	 * accepted; the indices line up because each side strips its
-	 * own local base. */
-	if ((hdr.kaslr_base != 0) != (kcov_kaslr_base != 0)) {
-		output(0, "kcov-bitmap: canonicalisation mismatch at %s (file kaslr_base=0x%llx, current=0x%llx) -- refusing stale bitmap, cold start\n",
-		       path,
-		       (unsigned long long)hdr.kaslr_base,
-		       (unsigned long long)kcov_kaslr_base);
+	/* A nonzero kaslr_base keyed the buckets to the writer's boot. */
+	if (hdr.kaslr_base != 0) {
+		output(0, "kcov-bitmap: PCs at %s keyed to a kernel-text base (0x%llx) -- refusing stale bitmap, cold start\n",
+		       path, (unsigned long long)hdr.kaslr_base);
 		return false;
 	}
 

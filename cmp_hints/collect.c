@@ -402,21 +402,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32)
 		unsigned long type = rec[0];
 		unsigned long arg1 = rec[1];
 		unsigned long arg2 = rec[2];
-		/* Canonicalise the kernel comparison-instruction address
-		 * against the runtime KASLR base before any downstream
-		 * consumer (bloom, pool insert, RedQueen pending stamp,
-		 * persisted file) sees it.  Single point of canonicalisation
-		 * for cmp_ip in this file -- the bloom hash, the pool dedup
-		 * key, and the on-disk record all index by the canonical
-		 * value, so a KASLR reroll between save and warm-load no
-		 * longer aliases every learned constant to a fresh
-		 * (cmp_ip, value, size) tuple.  When kcov_kaslr_base
-		 * stayed zero (kallsyms unreadable), kcov_canon_cmp_ip is
-		 * the identity transform and this matches the prior
-		 * raw-PC behaviour for that one run; the load path's
-		 * canonical-vs-raw mismatch guard catches any cross-run
-		 * mode change. */
-		unsigned long ip   = kcov_canon_cmp_ip(rec[3]);
+		/* KCOV reports the comparison site with the KASLR offset
+		 * already taken off (canonicalize_ip() in kernel/kcov.c), so
+		 * the bloom hash, the pool dedup key and the on-disk record
+		 * index a site the same on every boot of one build. */
+		unsigned long ip   = rec[3];
 		unsigned int size  = 1U << ((type >> KCOV_CMP_SIZE_SHIFT)
 					    & KCOV_CMP_SIZE_MASK);
 

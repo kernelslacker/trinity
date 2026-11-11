@@ -52,17 +52,6 @@ struct kcov_remote_arg {
 #define KCOV_LOCAL_STATS_FLUSH_SYSCALLS 4096u
 
 /*
- * Cached KASLR base of the running kernel (_text address as reported by
- * /proc/kallsyms).  Zero when the writer could not resolve it, so callers
- * that stamp or compare the value only need the "!= 0" bit to know
- * whether canonicalisation is in effect.  Defined in kcov.c alongside
- * the KASLR lookup helpers; the persist and (later) collection clusters
- * read the value directly so the on-disk header records the same base
- * the hot path canonicalises against.
- */
-extern uint64_t kcov_kaslr_base;
-
-/*
  * Record a KCOV PC or remote enable/disable failure into the parent-
  * visible pc_diag / cmp_diag slots.  Lives in kcov/diag.c alongside
  * the other diag helpers; the enable / lifecycle clusters call it

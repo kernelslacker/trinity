@@ -1,8 +1,7 @@
 /*
- * KCOV fd lifetime and per-child setup: the KASLR-base lookup that makes edge
- * indices build-invariant, kcov_init_global, the kcov_init_child coordinator
- * and its helpers, kcov_child_flush_stats, kcov_cleanup_child, and the
- * kcov_recover_fd EBADF re-open path.
+ * KCOV fd lifetime and per-child setup: kcov_init_global, the kcov_init_child
+ * coordinator and its helpers, kcov_child_flush_stats, kcov_cleanup_child, and
+ * the kcov_recover_fd EBADF re-open path.
  */
 
 #include <errno.h>
@@ -10,7 +9,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
@@ -26,86 +24,6 @@
 #include "shm.h"
 #include "stats_ring.h"		/* stats_ring_enqueue, STATS_FIELD_* */
 #include "trinity.h"		/* output, outputerr */
-
-/*
- * Runtime base of the kernel text segment, read once from /proc/kallsyms
- * (address of "_text"; "_stext" as a fallback).  Subtracted from every PC
- * before it hits the bucket_seen[] hash so the bucket index for a given
- * instruction is invariant across KASLR reboots of the same kernel build
- * -- the warm-start cache stays useful across reboots that the kallsyms
- * fingerprint already considers identical.
- *
- * Zero means "base unavailable" (kallsyms unreadable, _text/_stext
- * absent, or kptr_restrict zeroed every address).  PCs are then hashed
- * raw; warm-start save / load is mutually compatible only across runs
- * where the base is also zero on the other side -- the load path
- * rejects a canonical-vs-raw mismatch.
- *
- * Populated by kcov_init_global before any child forks so the value
- * propagates by COW; callers in hot paths read kcov_kaslr_base
- * directly without re-entering this lookup.
- */
-uint64_t kcov_kaslr_base;
-static bool     kcov_kaslr_base_valid;
-
-/*
- * Read accessor for kcov_kaslr_base, exposed so cross-run-state writers
- * outside kcov.c (e.g. the cmp-hints pool persistence path) can stamp
- * the same value into their on-disk headers and reject a canonical-vs-
- * raw mismatch on load, the way kcov_bitmap_file_header.kaslr_base does
- * for the bitmap.  Returns zero if kcov_init_global has not run or the
- * KASLR base lookup failed -- the "raw PCs this run" sentinel.
- */
-uint64_t kcov_kaslr_base_value(void)
-{
-	return kcov_kaslr_base;
-}
-
-static uint64_t kcov_get_kaslr_base(void)
-{
-	FILE *f;
-	char line[4096];
-	uint64_t text_addr = 0;
-	uint64_t stext_addr = 0;
-
-	if (kcov_kaslr_base_valid)
-		return kcov_kaslr_base;
-
-	f = fopen("/proc/kallsyms", "r");
-	if (f == NULL) {
-		output(0, "kcov-bitmap: open(/proc/kallsyms) failed: %s -- KASLR base unavailable, PCs hashed raw this run\n",
-		       strerror(errno));
-		kcov_kaslr_base_valid = true;
-		return 0;
-	}
-	while (fgets(line, sizeof(line), f) != NULL) {
-		unsigned long long addr;
-		char type;
-		char name[256];
-
-		if (sscanf(line, "%llx %c %255s", &addr, &type, name) != 3)
-			continue;
-		if (strcmp(name, "_text") == 0) {
-			text_addr = addr;
-			/* Prefer _text; no point scanning further. */
-			break;
-		}
-		if (strcmp(name, "_stext") == 0)
-			stext_addr = addr;
-	}
-	if (ferror(f))
-		output(0, "kcov-bitmap: read error on /proc/kallsyms -- KASLR base may be incomplete\n");
-	(void)fclose(f);
-
-	if (text_addr == 0)
-		text_addr = stext_addr;
-	if (text_addr == 0)
-		output(0, "kcov-bitmap: _text/_stext not in kallsyms (kptr_restrict zeroed addresses?) -- KASLR base unavailable, PCs hashed raw this run\n");
-
-	kcov_kaslr_base = text_addr;
-	kcov_kaslr_base_valid = true;
-	return kcov_kaslr_base;
-}
 
 void kcov_init_global(void)
 {
@@ -136,12 +54,6 @@ void kcov_init_global(void)
 			? "shadow" : "off",
 		(unsigned long)KCOV_NUM_TRANSITIONS / (1024 * 1024),
 		(unsigned long)KCOV_NUM_TRANSITIONS);
-
-	/* Resolve the kernel-text base now -- pre-fork, so every child
-	 * inherits the populated cache via COW and the hot-path PC hash
-	 * just reads the static.  See kcov_canon_pc / kcov_get_kaslr_base
-	 * for what zero (lookup failed) means downstream. */
-	(void)kcov_get_kaslr_base();
 }
 
 /*

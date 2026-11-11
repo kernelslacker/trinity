@@ -666,7 +666,7 @@ void childop_cmp_collect(struct kcov_child *kc, unsigned int nr)
 		/* rec[2] is the runtime operand; feeding it back would
 		 * recycle trinity's own inputs.  rec[3] is the comparison
 		 * site PC. */
-		ip   = kcov_canon_cmp_ip(rec[3]);
+		ip   = rec[3];
 		size = 1U << ((type >> KCOV_CMP_REC_SIZE_SHIFT) &
 			      KCOV_CMP_REC_SIZE_MASK);
 

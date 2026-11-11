@@ -43,11 +43,6 @@ bool range_readable_user(const void *addr, size_t len)
 	return true;
 }
 
-unsigned long kcov_canon_cmp_ip(unsigned long ip)
-{
-	return ip;
-}
-
 void lock(lock_t *lk)
 {
 	(void) lk;

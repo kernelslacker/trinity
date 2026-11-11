@@ -33,9 +33,6 @@
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 #include "utils.h"		/* ARRAY_SIZE */
 
-/* Owned by kcov/lifecycle.c in production. */
-uint64_t kcov_kaslr_base;
-
 /* The on-disk header, as kcov/persist.c writes it: the layout is the
  * contract for the external cache-stats reader.  v5 and v6 files stop
  * at 88 B, before strat_crc32. */
@@ -100,6 +97,7 @@ struct scenario {
 	bool corrupt_strat;	/* damage the strat block's bytes */
 	size_t cut;		/* keep only this many bytes of the file; 0: all */
 	size_t flip;		/* damage the byte at this offset; 0: none */
+	uint64_t kaslr_base;	/* kernel-text base the header names; 0: as saved */
 	bool refused;		/* the load returns false and publishes nothing */
 	size_t fail_malloc;	/* scratch size whose malloc fails; 0: none */
 	unsigned int fail_lseek;	/* the Nth lseek of the load fails; 0: none */
@@ -174,6 +172,13 @@ static const struct scenario scenarios[] = {
 	  .refused = true,
 	  .flip = ENVELOPE_SIZE + offsetof(struct file_header, kallsyms_sha256) + 31,
 	  .log_has = "kernel fingerprint mismatch" },
+	/* KCOV reports PCs with the KASLR offset already taken off, so a
+	 * file whose writer took its runtime _text off as well keyed every
+	 * edge to that boot. */
+	{ .name = "PCs keyed to a boot's _text", .version = 7,
+	  .file_max = MAX_NR_SYSCALL, .refused = true,
+	  .kaslr_base = 0xffffffff81000000ULL,
+	  .log_has = "keyed to a kernel-text base" },
 	{ .name = "payload CRC mismatch", .version = 7, .file_max = MAX_NR_SYSCALL,
 	  .refused = true, .flip = BITMAP_OFF + 100,
 	  .log_has = "CRC mismatch" },
@@ -378,6 +383,8 @@ static void write_variant(const char *path, const unsigned char *img,
 	memcpy(&hdr, img + ENVELOPE_SIZE, sizeof(hdr));
 	hdr.version = sc->version;
 	hdr.max_nr_syscall = sc->file_max;
+	if (sc->kaslr_base != 0)
+		hdr.kaslr_base = sc->kaslr_base;
 	if (sc->version < 6)
 		hdr.diag_crc32 = 0;
 

@@ -1,8 +1,8 @@
 /*
  * KCOV hot-path collection: kcov_collect() PC-walk, per-child dedup,
  * AFL-style hit-count bucketing, shadow transition-pair hashing, and
- * per-syscall/mode/childop counter fan-out.  The canonicalisation and hash
- * helpers are inline in collect-internal.h; the CMP path is collect-fanout.c.
+ * per-syscall/mode/childop counter fan-out.  The hash helpers are inline
+ * in collect-internal.h; the CMP path is collect-fanout.c.
  */
 
 #include <errno.h>
@@ -697,14 +697,13 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	unsigned int prev_bucket = 0;
 
 	for (idx = 0; idx < count; idx++) {
-		unsigned long pc_val = __atomic_load_n(&kc->trace_buf[idx + 1],
+		/* KCOV reports the PC with the KASLR offset already taken
+		 * off (canonicalize_ip() in kernel/kcov.c), so it is the same
+		 * for an instruction on every boot of one build, and both
+		 * pc_canon_to_edge (the PC bitmap) and pair_to_transition (the
+		 * shadow transition map) take it as it comes. */
+		unsigned long canon_pc = __atomic_load_n(&kc->trace_buf[idx + 1],
 			__ATOMIC_RELAXED);
-		/* Canonicalise once per PC and drive both pc_canon_to_edge
-		 * (for the existing PC bitmap) and pair_to_transition (for
-		 * the shadow transition map) off the same value.  Routing
-		 * through pc_to_edge() instead would re-run kcov_canon_pc on
-		 * every PC. */
-		unsigned long canon_pc = kcov_canon_pc(pc_val);
 		unsigned int edge = pc_canon_to_edge(canon_pc);
 		unsigned int local_count = dedup_inc(kc->dedup, edge,
 			kc->current_generation, nr, do32);

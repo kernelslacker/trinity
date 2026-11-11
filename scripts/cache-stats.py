@@ -757,7 +757,11 @@ def print_kcov_stats(b: CacheBundle, top_n: int) -> None:
     print(f"  bitmap density:  {fmt_pct(density)}  (bucket-bits)")
     print(f"  distinct/8M:     {fmt_pct(distinct_density)}  (slot coverage)")
     if k.kaslr_base is not None:
-        mode = "canonicalised" if k.kaslr_base != 0 else "raw PCs"
+        mode = (
+            "keyed to one boot, refused"
+            if k.kaslr_base != 0
+            else "PCs as KCOV reports them"
+        )
         print(f"  kaslr_base:      0x{k.kaslr_base:016x}  ({mode})")
     if k.boot_id is not None:
         print(f"  boot_id:         {k.boot_id}  (v4 raw-PC mode)")
@@ -905,7 +909,11 @@ def print_cmp_hints_stats(b: CacheBundle, top_n: int) -> None:
     print(f"  total constants: {h.total_constants} of {capacity}  ({fmt_pct(fill)})")
     print(f"  syscalls w/ hints:{nonempty}")
     print(f"  most-recent last_used clock: {h.most_recent_last_used}")
-    mode = "canonical cmp_ip" if h.kaslr_base != 0 else "raw cmp_ip"
+    mode = (
+        "keyed to one boot, refused"
+        if h.kaslr_base != 0
+        else "cmp_ip as KCOV reports it"
+    )
     print(f"  kaslr_base:      0x{h.kaslr_base:016x}  ({mode})")
     print(f"  crc:             {'OK' if h.crc_ok else 'MISMATCH'}")
     for n in h.notes:

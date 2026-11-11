@@ -9,9 +9,9 @@
  * Nothing touches mutable shared state, holds locks, or has observable
  * side-effects outside the return value.
  *
- * Contents: kcov_canon_pc (KASLR-strip a PC), pc_canon_to_edge (Murmur3
- * finalizer edge hash), kcov_entry_sentinel (per-call sentinel seed for
- * the transition map), pair_to_transition (prev/cur PC pair hash).
+ * Contents: pc_canon_to_edge (Murmur3 finalizer edge hash),
+ * kcov_entry_sentinel (per-call sentinel seed for the transition map),
+ * pair_to_transition (prev/cur PC pair hash).
  *
  * bucket_for_count (AFL hit-count bucket classifier) stays private to
  * collect.c rather than living here.
@@ -22,32 +22,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "kcov-internal.h"	/* kcov_kaslr_base, KCOV_NUM_EDGES,
-				   KCOV_NUM_TRANSITIONS */
+#include "kcov-internal.h"	/* KCOV_NUM_EDGES, KCOV_NUM_TRANSITIONS */
 
 /*
- * Strip the runtime KASLR base from a kernel PC so the bucket index for
- * a given instruction is invariant across reboots of the same kernel
- * build.  kcov_kaslr_base is populated by kcov_init_global from the
- * address of _text in /proc/kallsyms; on systems where that lookup
- * failed it stays zero and this is the identity transform (the run
- * then hashes raw PCs, matching the pre-canonicalisation behaviour).
- *
- * Single point of canonicalisation.  Callers route every PC that lands
- * in bucket_seen[] or the transition map through here exactly once at
- * the head of the kcov_collect() PC walk in collect.c, then feed the
- * canonical value into pc_canon_to_edge() and pair_to_transition()
- * without re-canonicalising: pc_canon_to_edge() must not call
- * kcov_canon_pc (it would double-subtract the base), and a caller of
- * pc_canon_to_edge() must have called kcov_canon_pc on the PC first.
- */
-static inline unsigned long kcov_canon_pc(unsigned long pc)
-{
-	return pc - (unsigned long)kcov_kaslr_base;
-}
-
-/*
- * Hash an already-canonicalised PC into an edge index.
+ * Hash a PC, as KCOV reports it, into an edge index.
  *
  * The previous xor-shift mixed too few of the bits in a typical kernel PC.
  * Two PCs that landed within the same cacheline (low 6 bits identical) and
@@ -76,9 +54,9 @@ static inline unsigned int pc_canon_to_edge(unsigned long pc)
  * trace so two unrelated calls cannot accidentally join across the
  * boundary (call A's last PC feeding call B's first PC would
  * manufacture a transition that never executed).  The sentinel sets
- * bit 63 so it cannot alias any canonicalised kernel PC (after the
- * KASLR-base subtraction those occupy the low 4 GB), with the
- * (nr, do32) pair encoded below the marker so each call site gets its
+ * bit 63 and leaves bits 33-62 clear, which no kernel PC does (kernel
+ * text sits at the top of the address space), and encodes the
+ * (nr, do32) pair below the marker so each call site gets its
  * own predecessor.  The do32 dimension matters because a 32-bit-compat
  * entry into the same syscall slot reaches different kernel entry
  * trampolines than the native path.
@@ -90,11 +68,10 @@ static inline unsigned long kcov_entry_sentinel(unsigned int nr, bool do32)
 
 /*
  * Hash a (prev_canon_pc, cur_canon_pc) pair into a transition slot
- * index.  Both inputs are already KASLR-canonicalised — the caller
- * (kcov_collect's PC walk) holds the canonical value for the current
- * PC so it can be threaded into both pc_canon_to_edge() and here
- * without re-running kcov_canon_pc.  Rotates cur left by 1 before
- * xoring so the pair (a, b) hashes differently from (b, a) — a
+ * index.  Both inputs are PCs as KCOV reports them, KASLR offset
+ * already off — the caller (kcov_collect's PC walk) threads the same
+ * value into both pc_canon_to_edge() and here.  Rotates cur left by 1
+ * before xoring so the pair (a, b) hashes differently from (b, a) — a
  * forward and a backward edge through the same two basic blocks are
  * distinct transitions.
  */

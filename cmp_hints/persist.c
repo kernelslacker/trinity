@@ -73,16 +73,9 @@
  * (pools[i][0] followed by pools[i][1] for each i).  Existing v3
  * snapshots are uniarch-shaped and are rejected via this version
  * gate; cold start is treated as benign by the warm-start path. */
-/* Bumped to 5: per-entry cmp_ip is now canonicalised against the
- * runtime KASLR base (kcov_canon_cmp_ip) before pool insert, and the
- * header carries the writer's kcov_kaslr_base so the load path can
- * reject a canonical-vs-raw mismatch the way the kcov-bitmap header
- * does.  v4 files were keyed by raw PCs; warm-loading them against a
- * v5 binary would either read raw cmp_ip into a canonical pool or
- * vice versa, silently aliasing every learned constant.  The header
- * grew by 8 bytes (kaslr_base appended after kallsyms_sha256); the
- * payload layout (cmp_hints_pool_ondisk / cmp_hints_entry_ondisk) is
- * unchanged. */
+/* Bumped to 5: the header grew by 8 bytes, kaslr_base appended after
+ * kallsyms_sha256 (see the field); the payload layout
+ * (cmp_hints_pool_ondisk / cmp_hints_entry_ondisk) is unchanged. */
 #define CMP_HINTS_FILE_VERSION	5U
 
 struct cmp_hints_entry_ondisk {
@@ -108,15 +101,13 @@ struct cmp_hints_file_header {
 	uint32_t payload_crc32;
 	uint64_t payload_bytes;		/* sizeof(struct cmp_hints_pool_ondisk) * max_syscall */
 	uint8_t  kallsyms_sha256[32];
-	uint64_t kaslr_base;		/* v5: runtime _text base at save time.
-					 * Zero means the writer could not resolve
-					 * the base and the persisted cmp_ip values
-					 * are raw runtime PCs.  The load path
-					 * rejects when (hdr.kaslr_base != 0) XOR
-					 * (current kcov_kaslr_base != 0) -- a
-					 * canonical-vs-raw mix would silently
-					 * alias the warm-loaded (cmp_ip, value,
-					 * size) keys against the live pool. */
+	uint64_t kaslr_base;		/* v5.  Zero: cmp_ip values are
+					 * comparison sites as KCOV reports
+					 * them, the same on every boot.
+					 * Anything else is a kernel-text base
+					 * the writer took off them as well,
+					 * which keyed every entry to its boot:
+					 * the load path refuses it. */
 };
 
 unsigned long cmp_hints_load_rejected_entries;
@@ -266,13 +257,8 @@ bool cmp_hints_save_file(const char *path)
 	hdr.entry_size = (uint32_t)sizeof(struct cmp_hints_entry_ondisk);
 	hdr.payload_bytes = payload_bytes;
 	hdr.payload_crc32 = crc32(payload, payload_bytes);
-	/* Mirror the kcov-bitmap header's kaslr_base contract.  Zero is the
-	 * "raw cmp_ip values, KASLR base lookup failed at save time" sentinel;
-	 * the load path uses the (!= 0) XOR check below to refuse a cross-
-	 * mode warm-load.  Stamping the value (not just a flag) leaves the
-	 * door open for an offline tool to spot a base shift even between
-	 * two canonical-mode runs. */
-	hdr.kaslr_base = kcov_kaslr_base_value();
+	/* cmp_ip values as KCOV reports them: see the header field. */
+	hdr.kaslr_base = 0;
 
 	ret = snprintf(tmppath, sizeof(tmppath), "%s.tmp.%d",
 		       path, (int)mypid());
@@ -339,11 +325,7 @@ fail:
  * slot is dropped and bumps cmp_hints_load_rejected_entries; the
  * surrounding pool keeps loading.  cmp_ip is permitted to be zero
  * only at offsets past the persisted count (i.e. the zero-padded
- * tail of the slice).  Under canonical mode (kcov_kaslr_base != 0
- * at save time) the on-disk cmp_ip is a small offset from the
- * runtime _text base, not a high-half kernel address; the zero /
- * all-ones gates here stay correct in either mode because they
- * reject the same two sentinels. */
+ * tail of the slice). */
 static bool cmp_hints_entry_valid(const struct cmp_hints_entry_ondisk *e)
 {
 	if (e->size != 1 && e->size != 2 && e->size != 4 && e->size != 8)
@@ -476,21 +458,10 @@ static bool cmp_hints_load_file_header(const char *path,
 		(void)close(fd);
 		return false;
 	}
-	/* Pool entries are keyed by canonical cmp_ip (raw runtime PC minus
-	 * the writer's KASLR base) when hdr->kaslr_base != 0, and by raw
-	 * PC otherwise.  This run's collector applies the same transform
-	 * against the local kcov_kaslr_base, so the two must agree on
-	 * whether canonicalisation is in effect at all -- any XOR mismatch
-	 * means one side is canonical and the other raw, and the
-	 * (cmp_ip, value, size) keys would silently disagree.  Both-
-	 * canonical (regardless of which base each used) and both-raw are
-	 * accepted; the cmp_ip keys line up because each side strips its
-	 * own local base.  Mirrors the kcov-bitmap warm-start guard. */
-	if ((hdr->kaslr_base != 0) != (kcov_kaslr_base_value() != 0)) {
-		output(0, "cmp-hints: canonicalisation mismatch at %s (file kaslr_base=0x%llx, current=0x%llx) -- refusing stale pool, cold start\n",
-		       path,
-		       (unsigned long long)hdr->kaslr_base,
-		       (unsigned long long)kcov_kaslr_base_value());
+	/* A nonzero kaslr_base keyed the entries to the writer's boot. */
+	if (hdr->kaslr_base != 0) {
+		output(0, "cmp-hints: entries at %s keyed to a kernel-text base (0x%llx) -- refusing stale pool, cold start\n",
+		       path, (unsigned long long)hdr->kaslr_base);
 		(void)close(fd);
 		return false;
 	}
