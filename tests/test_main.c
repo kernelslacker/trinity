@@ -25,6 +25,7 @@ void deferred_free_ownership_self_check(void);
 void maps_name_self_check(void);
 void maps_pick_self_check(void);
 void maps_initial_self_check(void);
+void pc_format_self_check(void);
 void stats_opclock_lossless_self_check(void);
 void struct_field_bounds_self_check(void);
 void struct_fill_elem_self_check(void);
@@ -212,6 +213,11 @@ int main(int argc, char **argv)
 	printf("  maps_initial_self_check ... ");
 	fflush(stdout);
 	maps_initial_self_check();
+	printf("OK\n");
+
+	printf("  pc_format_self_check ... ");
+	fflush(stdout);
+	pc_format_self_check();
 	printf("OK\n");
 
 	printf("  stats_opclock_lossless_self_check ... ");

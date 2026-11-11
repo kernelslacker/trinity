@@ -1059,6 +1059,12 @@ FAKE_SRCS	+= maps_pick_test.c
 PARENT_SRCS	+= $(TOP)/mm/maps-initial.c
 FAKE_SRCS	+= maps_initial_test.c
 
+# utils/pc_format.c brings pc_to_string() for the code that logs a PC, and
+# pc_to_source_line(), which pc_format_test.c runs against an addr2line
+# that never answers.
+PARENT_SRCS	+= $(TOP)/utils/pc_format.c
+FAKE_SRCS	+= pc_format_test.c
+
 # syscalls/perf/ brings the perf_event_attr body builders, linked for
 # maybe_fill_perf_attr_body() with the sample, tuple and config pickers it
 # draws from and the PMU table those read, which stays empty here.

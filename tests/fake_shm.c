@@ -19,7 +19,6 @@
 #include "utils-alloc.h"	/* deferred_free_reject_bump,
 				   looks_like_corrupted_ptr_pc,
 				   log_self_corrupt_culprit */
-#include "pc_format.h"		/* pc_to_string */
 
 /* ---------- Globals ------------------------------------------------------ */
 
@@ -182,12 +181,6 @@ bool stats_ring_enqueue(struct stats_ring *ring, enum stats_field field,
 void deferred_free_reject_bump(void *caller_pc)
 {
 	(void)caller_pc;
-}
-
-const char *pc_to_string(void *pc, char *buf, size_t buflen)
-{
-	(void)pc; (void)buf; (void)buflen;
-	return "(unknown)";
 }
 
 bool looks_like_corrupted_ptr_pc(struct syscallrecord *rec, const void *p,

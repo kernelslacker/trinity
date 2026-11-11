@@ -192,7 +192,8 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 		return NULL;
 	buf[0] = '\0';
 
-	/* Latched off after a prior abnormal exit -- see waitpid() below. */
+	/* Latched off after a prior timeout or abnormal exit -- see the
+	 * waitpid() below. */
 	if (__atomic_load_n(&resolver_disabled, __ATOMIC_RELAXED))
 		return NULL;
 
@@ -282,13 +283,17 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 			close(pipefd[0]);
 			(void)kill(pid, SIGKILL);
 			(void)waitpid_eintr(pid, &status, 0);
+			__atomic_store_n(&resolver_disabled, 1,
+					 __ATOMIC_RELAXED);
 			return NULL;
 		}
 	}
 
 	n = addr2line_drain(pipefd[0], pid, &deadline, buf, buflen);
-	if (n == -2)
+	if (n == -2) {
+		__atomic_store_n(&resolver_disabled, 1, __ATOMIC_RELAXED);
 		return NULL;
+	}
 	close(pipefd[0]);
 	{
 		pid_t w;
@@ -301,8 +306,10 @@ const char *pc_to_source_line(void *pc, char *buf, size_t buflen)
 			 * subsequent invocation will hit the same wall --
 			 * latch the resolver off for the rest of the run
 			 * rather than re-fork()ing per top-N PC across
-			 * every periodic stats dump.  Resets naturally on
-			 * parent restart.
+			 * every periodic stats dump.  A timeout above
+			 * latches it for the same reason, and each repeat
+			 * would cost the parent tick the full timeout.
+			 * Resets naturally on parent restart.
 			 */
 			__atomic_store_n(&resolver_disabled, 1,
 					 __ATOMIC_RELAXED);
