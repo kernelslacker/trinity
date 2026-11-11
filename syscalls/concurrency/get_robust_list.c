@@ -126,12 +126,8 @@ static void sanitise_get_robust_list(struct syscallrecord *rec)
  * re-issuing the same query for self gives a second read of the same
  * field through the same code path — the two copies must agree unless
  * something in between either (a) had copy_to_user write past or before
- * one of the two output slots, (b) the 32-bit-on-64-bit compat copy_to_user
- * truncated the head pointer from 8 bytes to 4, (c) struct-layout mismatch
- * on 32-on-64 emulation landed sizeof(*current->robust_list) (24 on 64-bit,
- * 12 on 32-bit) into the head_ptr slot or vice versa, or (d) a sibling
- * thread scribbled the user receive buffers between syscall return and the
- * post-hook.
+ * one of the two output slots, or (b) a sibling thread scribbled the user
+ * receive buffers between syscall return and the post-hook.
  *
  * Restrict to self (pid == 0 or pid == gettid()): cross-target sampling
  * races set_robust_list on the target task and tells us nothing.  The pid
@@ -226,6 +222,11 @@ static void post_get_robust_list(struct syscallrecord *rec)
 	}
 
 	if (!ONE_IN(100))
+		goto out_free;
+
+	/* A compat call answers from the task's compat robust list, a 4-byte
+	 * head and length, which the native re-call does not read. */
+	if (rec->do32bit)
 		goto out_free;
 
 	pid = (pid_t) get_arg_snapshot(rec, 1);

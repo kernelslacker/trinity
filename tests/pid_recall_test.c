@@ -6,7 +6,8 @@
  * task is the one the kernel was handed, which chain substitution can
  * rewrite after the sanitiser drew its own, as it, or a RedQueen pin, can
  * sched_getattr's size and flags.  A time32 call answers in the 32-bit
- * layout, which the oracle widens before it compares.
+ * layout, which the oracle widens before it compares; a compat
+ * get_robust_list answers from a list the native re-call cannot read.
  */
 
 #include <stdbool.h>
@@ -85,6 +86,31 @@ static unsigned long robust_list_anomalies(pid_t built, pid_t ran,
 	return shm->stats.oracle.get_robust_list_oracle_anomalies - before;
 }
 
+/* A compat get_robust_list, which answers from the task's compat robust
+ * list with a 4-byte head and length and leaves the slots' other bytes as
+ * they were; the anomalies the re-call reports. */
+static unsigned long compat_robust_list_anomalies(void)
+{
+	unsigned long before = shm->stats.oracle.get_robust_list_oracle_anomalies;
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	for (i = 0; i < RECALL_CALLS; i++) {
+		memset(&rec, 0, sizeof(rec));
+		rec.do32bit = true;
+		rec.a2 = (unsigned long) get_writable_address(sizeof(void *));
+		rec.a3 = (unsigned long) get_writable_address(sizeof(size_t));
+		syscall_get_robust_list.sanitise(&rec);
+
+		*(uint32_t *) rec.a2 = 0x10000;
+		*(uint32_t *) rec.a3 = 12;	/* struct compat_robust_list_head */
+		ran_on(&rec, &syscall_get_robust_list, 0);
+		rec.retval = 0;
+		syscall_get_robust_list.post(&rec);
+	}
+	return shm->stats.oracle.get_robust_list_oracle_anomalies - before;
+}
+
 static void robust_list_cases(void)
 {
 	pid_t other = gettid() + 1;
@@ -100,6 +126,8 @@ static void robust_list_cases(void)
 	      robust_list_anomalies(0, other, (char *) head + 64, len) == 0);
 	check("get_robust_list: a call run on this task answering another head was not reported",
 	      robust_list_anomalies(other, 0, (char *) head + 64, len) > 0);
+	check("get_robust_list: a compat call's 4-byte answer was compared with the native list",
+	      compat_robust_list_anomalies() == 0);
 }
 #endif
 
