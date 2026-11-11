@@ -7,6 +7,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <string.h>
+#include "kernel/compat.h"
 #include "kernel/keyctl.h"
 #include "name-pool.h"
 #include "objects.h"
@@ -432,21 +433,25 @@ static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
 
 static void sanitise_keyctl_instantiate_iov(struct syscallrecord *rec)
 {
-	struct iovec *iov;
+	void *iov;
 	char *buf;
 	unsigned int nvec, i;
 
 	/* arg2=key, arg3=iovec, arg4=iovcnt, arg5=dest_keyring */
 	rec->a2 = (unsigned long) random_key_id();
 
+	/* A compat call's kernel reads 8-byte struct compat_iovec entries. */
 	nvec = 1 + rnd_modulo_u32(4);
-	iov = (struct iovec *) get_writable_address(nvec * sizeof(*iov));
+	iov = get_writable_address(nvec * (rec->do32bit ?
+					   sizeof(struct compat_iovec) :
+					   sizeof(struct iovec)));
 	if (iov == NULL)
 		return;
 	for (i = 0; i < nvec; i++) {
 		buf = (char *) get_writable_address(64);
-		iov[i].iov_base = buf;
-		iov[i].iov_len = buf ? (1 + rnd_modulo_u32(63)) : 0;
+		iovec_set_entry(iov, i, (unsigned long) buf,
+				buf ? (1 + rnd_modulo_u32(63)) : 0,
+				rec->do32bit);
 	}
 	rec->a3 = (unsigned long) iov;
 	rec->a4 = nvec;
