@@ -159,7 +159,8 @@ void dump_pid_syscall(int pid)
  * Each fd is compacted to ONE output() line containing pos/flags/mnt_id
  * (the fields present in every fdinfo entry), rather than one line per
  * raw fdinfo line -- a fleet snapshot of wedged children was 78.7%
- * fdinfo lines, drowning the real signal in per-line noise.
+ * fdinfo lines, drowning the real signal in per-line noise.  Only the
+ * fds fdinfo_safe_to_read() passes are read.
  *
  * Uses getdents64 directly to stay allocation-free on the reap/watchdog
  * path (opendir/readdir would malloc), and a single O_RDONLY read per
@@ -170,6 +171,26 @@ void dump_pid_syscall(int pid)
 #define DSTATE_FDINFO_MAX_ENTRIES         64
 #define DSTATE_FDINFO_MAX_BYTES           512
 #define DSTATE_FDINFO_MAX_LINES_PER_SNAP  32
+
+/*
+ * Reading a file's fdinfo runs its ->show_fdinfo(), and some of those
+ * sleep uninterruptibly on a lock the wedged child may hold, where the
+ * reader would sleep with it: eventpoll's ep->mtx, tun's rtnl_lock(),
+ * perf's child_mutex, an fsnotify group's mutex.  pos, flags and mnt_id
+ * only say something of a file opened by a path, and a path outside
+ * /dev names no device, so only those are read.  The fd's link says
+ * which, and readlink() takes none of those locks.
+ */
+static bool fdinfo_safe_to_read(int pid, const char *name)
+{
+	char path[64], target[8];
+	ssize_t n;
+
+	snprintf(path, sizeof(path), "/proc/%d/fd/%s", pid, name);
+	n = readlink(path, target, sizeof(target));
+	return n > 0 && target[0] == '/' &&
+	       !(n >= 5 && memcmp(target, "/dev/", 5) == 0);
+}
 
 /*
  * Locate "key:" at the start of a line in the fdinfo blob and copy its
@@ -251,6 +272,8 @@ static void dump_pid_fdinfo_bounded(int pid)
 
 			/* Skip "." / ".." and any non-numeric entry. */
 			if (name[0] < '0' || name[0] > '9')
+				continue;
+			if (!fdinfo_safe_to_read(pid, name))
 				continue;
 
 			snprintf(filename, sizeof(filename),
@@ -371,8 +394,9 @@ static bool dump_dstate_epoll_select_topology(const char *name,
  *   - /proc/<pid>/wchan: the kernel sleep address/symbol.
  *   - /proc/<pid>/stack: the kernel call stack (silently omitted when
  *     the kernel hides it from unprivileged readers).
- *   - /proc/<pid>/fdinfo/: one compact line per fd carrying pos/flags/
- *     mnt_id, capped at DSTATE_FDINFO_MAX_ENTRIES fds walked,
+ *   - /proc/<pid>/fdinfo/: one compact line per fd opened by a path
+ *     outside /dev, carrying pos/flags/mnt_id, capped at
+ *     DSTATE_FDINFO_MAX_ENTRIES fds walked,
  *     DSTATE_FDINFO_MAX_BYTES read per fd, and
  *     DSTATE_FDINFO_MAX_LINES_PER_SNAP total output lines per snapshot,
  *     with a trailing "... truncated ..." note when the line cap trips.

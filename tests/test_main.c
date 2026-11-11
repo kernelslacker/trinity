@@ -72,6 +72,7 @@ void kcov_persist_self_check(void);
 void stats_render_self_check(void);
 void shutdown_wait_self_check(void);
 void reap_fault_beacon_self_check(void);
+void reap_dstate_self_check(void);
 void get_num_fds_self_check(void);
 void spawn_self_check(void);
 void post_oracle_self_check(void);
@@ -445,6 +446,11 @@ int main(int argc, char **argv)
 	printf("  reap_fault_beacon_self_check ... ");
 	fflush(stdout);
 	reap_fault_beacon_self_check();
+	printf("OK\n");
+
+	printf("  reap_dstate_self_check ... ");
+	fflush(stdout);
+	reap_dstate_self_check();
 	printf("OK\n");
 
 	printf("  get_num_fds_self_check ... ");

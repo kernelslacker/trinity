@@ -98,6 +98,12 @@ LDFLAGS		+= -Wl,--wrap=clock_gettime -Wl,--wrap=sleep -Wl,--wrap=usleep
 # it; spawn_test.c calls the real one as __real_replace_child().
 LDFLAGS		+= -Wl,--wrap=replace_child
 
+# dump_pid_stack() and dump_pid_syscall() stand-ins: main/reap-dstate.c
+# is linked for dump_dstate_diagnostics(), which reap_dstate_test.c runs
+# on a helper process, and the zombie reaper keeps the silent stand-ins
+# in fake_parent.c for the pids it makes up.
+LDFLAGS		+= -Wl,--wrap=dump_pid_stack -Wl,--wrap=dump_pid_syscall
+
 # get_num_fds() failure injection: fake_parent.c wraps it so a test can
 # make spawn_child() see any errno from the fd count.  The wrapper counts
 # for real unless a test has set fake_num_fds_errno.
@@ -429,6 +435,7 @@ PARENT_SRCS	:= \
 	$(TOP)/main/loop.c \
 	$(TOP)/main/reap.c \
 	$(TOP)/main/reap-zombie.c \
+	$(TOP)/main/reap-dstate.c \
 	$(TOP)/main/spawn.c \
 	$(TOP)/stats/rotation_event.c \
 	$(TOP)/tables/table-meta.c \
@@ -610,6 +617,7 @@ FAKE_SRCS	:= \
 	kcov_persist_test.c \
 	shutdown_wait_test.c \
 	reap_fault_beacon_test.c \
+	reap_dstate_test.c \
 	get_num_fds_test.c \
 	spawn_test.c \
 	post_oracle_test.c \

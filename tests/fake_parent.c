@@ -86,7 +86,7 @@ int fake_kill_probe_errno;
 unsigned int fake_kill_probes;
 unsigned int fake_sleeps;
 void (*fake_sleep_hook)(void);
-char fake_output_log[1024];
+char fake_output_log[8192];
 unsigned int fake_stray_ring_init;
 
 /* The slot spawn_child() last prepared, which the fork it makes next is for. */
@@ -449,12 +449,14 @@ void kmsg_monitor_note_reaped(pid_t pid, int status)
 	(void)pid; (void)status;
 }
 
-void dump_pid_stack(int pid)
+void __wrap_dump_pid_stack(int pid);
+void __wrap_dump_pid_stack(int pid)
 {
 	(void)pid;
 }
 
-void dump_pid_syscall(int pid)
+void __wrap_dump_pid_syscall(int pid);
+void __wrap_dump_pid_syscall(int pid)
 {
 	(void)pid;
 }
