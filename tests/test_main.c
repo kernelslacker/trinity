@@ -111,6 +111,7 @@ void pathname_pool_self_check(void);
 void io_uring_register_self_check(void);
 void gen_arg_time_self_check(void);
 void futex_self_check(void);
+void keyctl_self_check(void);
 void rt_sigaction_self_check(void);
 void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
@@ -643,6 +644,11 @@ int main(int argc, char **argv)
 	printf("  futex_self_check ... ");
 	fflush(stdout);
 	futex_self_check();
+	printf("OK\n");
+
+	printf("  keyctl_self_check ... ");
+	fflush(stdout);
+	keyctl_self_check();
 	printf("OK\n");
 
 	printf("  rt_sigaction_self_check ... ");

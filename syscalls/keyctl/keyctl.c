@@ -395,8 +395,9 @@ static void sanitise_keyctl_capabilities(struct syscallrecord *rec)
 
 static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
 {
-	char *buf;
-	/* arg2=key, arg3=watch_queue_fd, arg4=filter (NULL=remove) */
+	/* arg2=key, arg3=watch_queue_fd, arg4=watch_id: -1 removes the
+	 * watch, 0..0xff adds one, anything else is EINVAL before the key
+	 * lookup. */
 	int fd = -1;
 
 	/*
@@ -426,14 +427,7 @@ static void sanitise_keyctl_watch_key(struct syscallrecord *rec)
 	}
 	rec->a2 = (unsigned long) random_key_id();
 	rec->a3 = (unsigned long) fd;
-	if (RAND_BOOL()) {
-		rec->a4 = 0;
-	} else {
-		buf = (char *) get_writable_address(64);
-		rec->a4 = (unsigned long) buf;
-	}
-	if (rec->a4)
-		avoid_shared_buffer_out(&rec->a4, 64);
+	rec->a4 = ONE_IN(4) ? (unsigned long) -1L : RAND_RANGE(0U, 0xffU);
 }
 
 static void sanitise_keyctl_instantiate_iov(struct syscallrecord *rec)

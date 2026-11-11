@@ -1171,6 +1171,10 @@ FAKE_SRCS	+= blob_corpus_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/futex.c
 FAKE_SRCS	+= futex_test.c
 
+# keyctl_test.c runs the sanitiser of the syscalls/keyctl/keyctl.c linked
+# above with no key serial or watch queue pool.
+FAKE_SRCS	+= keyctl_test.c
+
 # syscalls/signal/sigaction.c brings rt_sigaction's sanitiser, whose act
 # rt_sigaction_test.c reads at the kernel's offsets for each ABI.
 PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaction.c
