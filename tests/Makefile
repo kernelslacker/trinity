@@ -691,6 +691,14 @@ PARENT_SRCS	+= $(TOP)/fds/sparse-files.c \
 		   $(TOP)/fds/pagecache.c
 FAKE_SRCS	+= planted_name_test.c
 
+# syscalls/fs/lseek.c and llseek.c bring syscall_lseek and syscall_llseek,
+# whose sanitisers seek_sanitise_test.c runs over a fake sparse-file pool
+# holding one file.  Same section-per-function treatment as the parent TUs
+# above.
+PARENT_SRCS	+= $(TOP)/syscalls/fs/lseek.c \
+		   $(TOP)/syscalls/fs/llseek.c
+FAKE_SRCS	+= seek_sanitise_test.c
+
 # child/child-sentinel.c brings the divergence sentinel's tick.
 # sentinel_test.c answers its uname() and sysinfo() with a model, through
 # the fake_syscall hook of landlock_test.c, and stands in for the pre-crash

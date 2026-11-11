@@ -34,10 +34,11 @@ static void sanitise_llseek(struct syscallrecord *rec)
 	/*
 	 * Mirror the lseek wireup: SEEK_DATA / SEEK_HOLE need a sparse
 	 * fd to reach the per-fs sparse-walk code, otherwise the
-	 * kernel rejects on pos >= i_size before getting there.
+	 * kernel rejects on pos >= i_size before getting there, so
+	 * three in four go to one, and the fourth keeps the drawn fd.
 	 */
 	if (origin == SEEK_DATA || origin == SEEK_HOLE) {
-		struct object *obj = get_rand_sparse_file_obj();
+		struct object *obj = ONE_IN(4) ? NULL : get_rand_sparse_file_obj();
 
 		if (obj != NULL) {
 			off_t size = obj->sparsefileobj.size;
@@ -55,9 +56,16 @@ static void sanitise_llseek(struct syscallrecord *rec)
 			 */
 			if (ONE_IN(5))
 				rec->a2 = rand64() & 0xff;
-			avoid_shared_buffer_out(&rec->a4, sizeof(loff_t));
-			return;
+		} else {
+			rec->a3 = rand64() & 0x7fffffff;
 		}
+		/* A negative offset one time in eight, as lseek draws. */
+		if (ONE_IN(8)) {
+			rec->a2 = RAND_BOOL() ? 0xffffffff : rand32() | 0x80000000;
+			rec->a3 = rand32();
+		}
+		avoid_shared_buffer_out(&rec->a4, sizeof(loff_t));
+		return;
 	}
 
 	rec->a3 = rand64() & 0x7fffffff;	/* offset_low: non-negative */
