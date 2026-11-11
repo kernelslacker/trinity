@@ -204,6 +204,66 @@ void mask_route_dst(struct nlmsghdr *nlh, size_t len)
 }
 
 /*
+ * fib_nl2rule() refuses a rule add or delete with a nonzero src_len or
+ * dst_len unless the last FRA_SRC or FRA_DST, the one its liberal parse
+ * keeps, holds an address of the family's size, and the addresses are drawn
+ * with the header out of sight.  So once both are in the message, each
+ * prefix without one gets an address appended seven times in eight, or goes
+ * back to 0 when the buffer has no room for it.  Returns the new length.
+ */
+size_t pair_rule_prefixes(struct nlmsghdr *nlh, size_t len, size_t cap)
+{
+	static const unsigned short types[] = { FRA_SRC, FRA_DST };
+	struct fib_rule_hdr *frh = NLMSG_DATA(nlh);
+	unsigned char *plens[] = { &frh->src_len, &frh->dst_len };
+	unsigned char *msg = (unsigned char *) nlh;
+	size_t off = NLMSG_LENGTH(sizeof(*frh));
+	size_t have[ARRAY_SIZE(types)] = { 0 };
+	struct nlattr nla;
+	unsigned int i;
+	size_t size;
+
+	if (nlh->nlmsg_type != RTM_NEWRULE && nlh->nlmsg_type != RTM_DELRULE)
+		return len;
+	if (len < off || ONE_IN(8))
+		return len;
+	switch (frh->family) {
+	case AF_INET:
+	case RTNL_FAMILY_IPMR:
+		size = 4;
+		break;
+	case AF_INET6:
+	case RTNL_FAMILY_IP6MR:
+		size = 16;
+		break;
+	default:
+		return len;
+	}
+	for (off = NLMSG_ALIGN(off); off + NLA_HDRLEN <= len;
+	     off += NLA_ALIGN(nla.nla_len)) {
+		memcpy(&nla, msg + off, sizeof(nla));
+		if (nla.nla_len < NLA_HDRLEN || nla.nla_len > len - off)
+			return len;
+		for (i = 0; i < ARRAY_SIZE(types); i++)
+			if ((nla.nla_type & NLA_TYPE_MASK) == types[i])
+				have[i] = nla.nla_len - NLA_HDRLEN;
+	}
+	for (i = 0; i < ARRAY_SIZE(types); i++) {
+		if (*plens[i] == 0 || have[i] == size)
+			continue;
+		off = NLA_ALIGN(len);
+		if (!start_nlattr(msg, off, cap, types[i], size)) {
+			*plens[i] = 0;
+			continue;
+		}
+		gen_rta_rule_payload(msg + off + NLA_HDRLEN, size, types[i],
+				     frh->family);
+		len = off + NLA_ALIGN(NLA_HDRLEN + size);
+	}
+	return len;
+}
+
+/*
  * lwtunnel_build_state() hands a route's RTA_ENCAP to the build_state() of
  * the kind its RTA_ENCAP_TYPE names, so a nest means something only beside
  * its type, and the two go out together.  The kind is LWTUNNEL_ENCAP_BPF
@@ -392,7 +452,8 @@ size_t gen_rta_rule_payload(unsigned char *p, size_t avail,
 	switch (nla_type) {
 	case FRA_DST:
 	case FRA_SRC:
-		if (family == AF_INET6 && avail >= 16) {
+		if ((family == AF_INET6 || family == RTNL_FAMILY_IP6MR) &&
+		    avail >= 16) {
 			struct in6_addr addr;
 			rand_ipv6(&addr);
 			memcpy(p, &addr, 16);

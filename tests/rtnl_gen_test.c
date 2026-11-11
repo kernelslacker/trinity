@@ -42,6 +42,7 @@ size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type, unsigned char family);
 void mask_route_dst(struct nlmsghdr *nlh, size_t len);
+size_t pair_rule_prefixes(struct nlmsghdr *nlh, size_t len, size_t cap);
 
 #define ROUNDS		800000
 
@@ -752,28 +753,92 @@ struct rule_header {
 	unsigned int msgs;
 	unsigned int taken;	/* a header the request's handler takes */
 	unsigned int unspec;	/* AF_UNSPEC, every family's rules */
+	unsigned int ruled;	/* an add or delete in a family with rules ops */
+	unsigned int prefixed;	/* ... with a nonzero src_len or dst_len */
+	unsigned int paired;	/* ... each one taken with its address */
 };
+
+/* The address size of a family's rules ops, 0 for a family without. */
+static unsigned int rule_addr_size(unsigned char family)
+{
+	switch (family) {
+	case AF_INET:
+	case RTNL_FAMILY_IPMR:
+		return 4;
+	case AF_INET6:
+	case RTNL_FAMILY_IP6MR:
+		return 16;
+	}
+	return 0;
+}
+
+/*
+ * fib_nl2rule() takes a prefix length of 0, or one within the family's
+ * address bits whose FRA_SRC or FRA_DST holds an address of the family's
+ * size: the last of its type, which the liberal parse keeps, in the
+ * attributes of the message's first len bytes, the parse stopping at the
+ * first one that does not fit.
+ */
+static bool rule_prefix_paired(const struct nlmsghdr *nlh, size_t len,
+			       unsigned int plen, unsigned short type,
+			       unsigned int size)
+{
+	const unsigned char *p = (const unsigned char *) nlh +
+				 NLMSG_SPACE(sizeof(struct fib_rule_hdr));
+	const struct nlattr *nla;
+	int last = -1;
+
+	if (plen == 0)
+		return true;
+	if (plen > size * 8 || len < NLMSG_SPACE(sizeof(struct fib_rule_hdr)))
+		return false;
+	len -= NLMSG_SPACE(sizeof(struct fib_rule_hdr));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == type)
+			last = nla->nla_len - NLA_HDRLEN;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return last == (int) size;
+}
 
 static void tally_rule_header(struct rule_header *t, const struct nlmsghdr *nlh,
 			      bool get)
 {
 	const struct fib_rule_hdr *frh = NLMSG_DATA(nlh);
-	bool ruled;
+	unsigned int size;
+	bool paired;
 
 	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*frh)))
 		return;
 	t->msgs++;
 	t->unspec += frh->family == AF_UNSPEC;
-	if (frh->src_len || frh->dst_len || frh->res1 || frh->res2)
+	if (frh->res1 || frh->res2)
 		return;
-	ruled = frh->family == AF_INET || frh->family == AF_INET6 ||
-		frh->family == RTNL_FAMILY_IPMR || frh->family == RTNL_FAMILY_IP6MR;
-	if (get)
-		t->taken += (ruled || frh->family == AF_UNSPEC) && !frh->tos &&
+	size = rule_addr_size(frh->family);
+	if (get) {
+		t->taken += (size || frh->family == AF_UNSPEC) &&
+			    !frh->src_len && !frh->dst_len && !frh->tos &&
 			    !frh->table && !frh->action && !frh->flags;
-	else
-		t->taken += ruled && !(frh->tos & IPTOS_ECN_MASK) &&
-			    (frh->family != AF_INET || !(frh->tos & ~IPTOS_TOS_MASK));
+		return;
+	}
+	if (!size)
+		return;
+	paired = rule_prefix_paired(nlh, nlh->nlmsg_len, frh->src_len,
+				    FRA_SRC, size) &&
+		 rule_prefix_paired(nlh, nlh->nlmsg_len, frh->dst_len,
+				    FRA_DST, size);
+	t->ruled++;
+	if (frh->src_len || frh->dst_len) {
+		t->prefixed++;
+		t->paired += paired;
+	}
+	t->taken += paired && !(frh->tos & IPTOS_ECN_MASK) &&
+		    (frh->family != AF_INET || !(frh->tos & ~IPTOS_TOS_MASK));
 }
 
 /*
@@ -784,8 +849,12 @@ static void tally_rule_header(struct rule_header *t, const struct nlmsghdr *nlh,
  * tos with an ECN bit, and IPv4 a bit outside IPTOS_TOS_MASK.  The dump
  * takes those families and AF_UNSPEC, and on a socket that asks for strict
  * checking refuses anything else in the header that is not 0.  The builder
- * keeps both to that seven times in eight, a dump asking for every family
- * one time in five.
+ * keeps a dump to that seven times in eight, asking for every family one
+ * time in five.  An add or delete names a family with rules ops seven
+ * times in eight and draws each prefix half the time, and seven prefixed
+ * rules in eight get the addresses they lack once the attributes are in
+ * (pairs_rule_prefixes_with_addresses() holds that step to the rate), so
+ * about 0.8 of them are taken.
  */
 static void expect_rule_header(const struct rule_header *get,
 			       const struct rule_header *newdel)
@@ -794,9 +863,15 @@ static void expect_rule_header(const struct rule_header *get,
 			"rtnl: RTM_GETRULE's header is not one the rule dump takes seven times in eight");
 	expect_fraction(get->unspec, get->msgs, 0.15, 0.24, "RTM_GETRULE",
 			"rtnl: RTM_GETRULE does not ask for every family's rules one time in five");
-	expect_fraction(newdel->taken, newdel->msgs, 0.84, 0.91,
+	expect_fraction(newdel->taken, newdel->msgs, 0.76, 0.85,
 			"RTM_NEWRULE and RTM_DELRULE",
-			"rtnl: a rule add or delete's header is not one fib_nl2rule() and its family take seven times in eight");
+			"rtnl: a rule add or delete is not one fib_nl2rule() and its family take about 0.8 of the time");
+	expect_fraction(newdel->prefixed, newdel->ruled, 0.70, 0.82,
+			"rule add or delete prefixes",
+			"rtnl: a rule add or delete does not carry a prefix about three times in four");
+	expect_fraction(newdel->paired, newdel->prefixed, 0.82, 0.93,
+			"rule prefixes with their addresses",
+			"rtnl: a prefixed rule does not carry the addresses fib_nl2rule() wants seven times in eight");
 }
 
 /* ---------- The ifaddrlblmsg of RTM_*ADDRLABEL --------------------------- */
@@ -1657,6 +1732,100 @@ static void cuts_route_dsts_to_their_prefix(void)
 			"rtnl: an IPv4 route's RTA_DSTs are not cut to its prefix seven times in eight");
 }
 
+/* ---------- A rule's prefixes and their addresses ----------------------- */
+
+/*
+ * A rule message of @type and @family with both prefix lengths @plen,
+ * carrying an FRA_SRC of @have bytes when @have is nonzero, with @room bytes
+ * of buffer past it, through pair_rule_prefixes(): 1 when each prefix now
+ * has its address, only the missing ones appended; 2 when each prefix
+ * without one went back to 0 and nothing else changed; 0 when nothing
+ * changed; -1 otherwise.
+ */
+static int pair_rule(unsigned short type, unsigned char family,
+		     unsigned int plen, size_t have, size_t room)
+{
+	static unsigned char buf[256], before[256];
+	struct nlmsghdr *nlh = (struct nlmsghdr *) buf;
+	struct fib_rule_hdr *frh = NLMSG_DATA(nlh);
+	unsigned int size = rule_addr_size(family);
+	size_t len = NLMSG_SPACE(sizeof(*frh)), grown, missing;
+
+	memset(buf, 0, sizeof(buf));
+	nlh->nlmsg_type = type;
+	frh->family = family;
+	frh->src_len = plen;
+	frh->dst_len = plen;
+	if (have) {
+		struct nlattr nla = {
+			.nla_len = NLA_HDRLEN + have,
+			.nla_type = FRA_SRC,
+		};
+
+		memcpy(buf + len, &nla, sizeof(nla));
+		memset(buf + len + NLA_HDRLEN, 0xa5, have);
+		len += NLA_ALIGN(nla.nla_len);
+	}
+	memcpy(before, buf, sizeof(buf));
+
+	grown = pair_rule_prefixes(nlh, len, len + room);
+	if (grown == len && !memcmp(buf, before, sizeof(buf)))
+		return 0;
+	if (grown == len) {
+		if (frh->dst_len || frh->src_len != (have == size ? plen : 0))
+			return -1;
+		frh->src_len = plen;
+		frh->dst_len = plen;
+		return memcmp(buf, before, sizeof(buf)) ? -1 : 2;
+	}
+	missing = have == size ? 1 : 2;
+	if (grown != len + missing * NLA_ALIGN(NLA_HDRLEN + size) ||
+	    memcmp(buf, before, len) ||
+	    !rule_prefix_paired(nlh, grown, plen, FRA_SRC, size) ||
+	    !rule_prefix_paired(nlh, grown, plen, FRA_DST, size))
+		return -1;
+	return 1;
+}
+
+/*
+ * pair_rule_prefixes() gives each prefix of a rule add or delete in a family
+ * with rules ops the address it lacks, four or sixteen bytes by family and
+ * after an FRA_SRC of another size, seven times in eight, and never one it
+ * has; with no room for one, the prefix goes back to 0.  A GET, a family
+ * without rules ops and a rule without a prefix are left alone.
+ */
+static void pairs_rule_prefixes_with_addresses(void)
+{
+	static const unsigned char families[] = {
+		AF_INET, AF_INET6, RTNL_FAMILY_IPMR, RTNL_FAMILY_IP6MR,
+	};
+	static const size_t haves[] = { 0, 4, 16 };
+	unsigned int i, paired = 0, zeroed = 0;
+
+	for (i = 0; i < ENTRIES; i++) {
+		unsigned char family = families[i % ARRAY_SIZE(families)];
+		unsigned short type = i % 2 ? RTM_NEWRULE : RTM_DELRULE;
+		size_t have = haves[(i / 8) % ARRAY_SIZE(haves)];
+		unsigned int plen = 1 + i % 32;
+		int r = pair_rule(type, family, plen, have, 64);
+		int z = pair_rule(type, family, plen, have, 0);
+
+		if (r < 0 || r == 2 || z < 0 || z == 1)
+			BUG("rtnl: a rule's prefixes did not come back with their addresses, or at 0");
+		paired += r;
+		zeroed += z == 2;
+		if (pair_rule(RTM_GETRULE, family, plen, have, 64) != 0 ||
+		    pair_rule(type, AF_UNSPEC, plen, have, 64) != 0 ||
+		    pair_rule(type, AF_BRIDGE, plen, have, 64) != 0 ||
+		    pair_rule(type, family, 0, have, 64) != 0)
+			BUG("rtnl: a rule message without a prefix fib_nl2rule() judges was changed");
+	}
+	expect_fraction(paired, ENTRIES, 0.84, 0.91, "rule prefixes paired",
+			"rtnl: a rule's prefixes do not get their addresses seven times in eight");
+	expect_fraction(zeroed, ENTRIES, 0.84, 0.91, "rule prefixes zeroed",
+			"rtnl: a rule's prefixes with no room for an address do not go back to 0 seven times in eight");
+}
+
 /* ---------- RTA_FLOWLABEL ---------------------------------------------- */
 
 struct route_flowlabel {
@@ -2347,6 +2516,7 @@ void rtnl_gen_self_check(void)
 	expect_route_header(&t.route_header);
 	expect_route_dst(&t.route_dst);
 	cuts_route_dsts_to_their_prefix();
+	pairs_rule_prefixes_with_addresses();
 	expect_route_encap(&t.route_encap);
 	expect_lwt_encap(&t.lwt_encap);
 	expect_route_flowlabel(&t.route_flowlabel);

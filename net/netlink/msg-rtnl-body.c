@@ -269,21 +269,25 @@ static size_t gen_rtnl_body_rule(unsigned char *body, size_t buflen, bool get,
 	frh.action = rnd_modulo_u32(256);
 	frh.flags = rand32();
 	/* fib_newrule() and fib_delrule() answer a family with no rules ops
-	 * -EAFNOSUPPORT, and fib_nl2rule() refuses a nonzero src_len or
-	 * dst_len without the FRA_SRC or FRA_DST it needs, which a request
-	 * carries about one time in ten.  The IPv4 and IPv6 rules refuse a
-	 * tos with an ECN bit, IPv4 also one outside IPTOS_TOS_MASK, and the
-	 * dump, on a socket that asks for strict checking, anything in the
-	 * header but the family.  The header stays random one time in
-	 * eight. */
+	 * -EAFNOSUPPORT.  Each prefix is drawn half the time, within the
+	 * family's address bits, and pair_rule_prefixes() gives it the
+	 * FRA_SRC or FRA_DST fib_nl2rule() wants once the attributes are in.
+	 * The IPv4 and IPv6 rules refuse a tos with an ECN bit, IPv4 also one
+	 * outside IPTOS_TOS_MASK, and the dump, on a socket that asks for
+	 * strict checking, anything in the header but the family.  The
+	 * header stays random one time in eight. */
 	if (!ONE_IN(8)) {
 		if (get) {
 			memset(&frh, 0, sizeof(frh));
 			frh.family = RAND_ARRAY(families);
 		} else {
+			unsigned int bits;
+
 			frh.family = families[rnd_modulo_u32(ARRAY_SIZE(families) - 1)];
-			frh.dst_len = 0;
-			frh.src_len = 0;
+			bits = frh.family == AF_INET6 ||
+			       frh.family == RTNL_FAMILY_IP6MR ? 128 : 32;
+			frh.dst_len = RAND_BOOL() ? 0 : RAND_RANGE(1U, bits);
+			frh.src_len = RAND_BOOL() ? 0 : RAND_RANGE(1U, bits);
 			frh.tos &= ~IPTOS_ECN_MASK;
 			if (frh.family == AF_INET)
 				frh.tos &= IPTOS_TOS_MASK;
