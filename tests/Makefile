@@ -1053,6 +1053,12 @@ FAKE_SRCS	+= maps_name_test.c
 PARENT_SRCS	+= $(TOP)/mm/maps-pick.c
 FAKE_SRCS	+= maps_pick_test.c
 
+# maps_initial_test.c builds the initial anon pool of mm/maps-initial.c in a
+# child under an RLIMIT_AS cap, through the get_objhead() stand-in and the
+# object hooks.
+PARENT_SRCS	+= $(TOP)/mm/maps-initial.c
+FAKE_SRCS	+= maps_initial_test.c
+
 # syscalls/perf/ brings the perf_event_attr body builders, linked for
 # maybe_fill_perf_attr_body() with the sample, tuple and config pickers it
 # draws from and the PMU table those read, which stays empty here.

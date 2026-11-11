@@ -7,6 +7,7 @@
  */
 #include <errno.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -157,6 +158,7 @@ static unsigned long long get_free_mem(void)
 
 static void setup_mapping_sizes(void)
 {
+	struct rlimit rl;
 	unsigned long long memfree;
 
 	mapping_sizes[0] = page_size;
@@ -167,6 +169,14 @@ static void setup_mapping_sizes(void)
 	 */
 	if (!ONE_IN(100))
 		goto disable_1gb_mappings;
+
+	/* One per kind would overrun the RLIMIT_AS cap init_rlimits() sets
+	 * on a non-ASAN build, and leave every child, which inherits the
+	 * mappings and the cap, no address space of its own. */
+	if (getrlimit(RLIMIT_AS, &rl) != 0 || rl.rlim_cur != RLIM_INFINITY) {
+		output(0, "Address space capped, disabling mmaping of 1GB pages\n");
+		goto disable_1gb_mappings;
+	}
 
 	memfree = get_free_mem();
 	if (memfree == 0) {

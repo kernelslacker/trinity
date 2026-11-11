@@ -1,9 +1,9 @@
 /*
  * Test-binary linker glue for the PURE-module dependencies that neither the
  * fake shm nor the fake RNG covers: the allocator and output stubs
- * utils/shared_str_heap.c needs, __BUG, the struct-catalog and minicorpus
- * stubs, and mapping_sizes.  A stub for a path no test reaches aborts if
- * called, so a coverage gap fails loudly instead of misbehaving silently.
+ * utils/shared_str_heap.c needs, __BUG, and the struct-catalog and
+ * minicorpus stubs.  A stub for a path no test reaches aborts if called, so
+ * a coverage gap fails loudly instead of misbehaving silently.
  */
 
 #include <stdarg.h>
@@ -207,8 +207,3 @@ void * __zmalloc_tracked(size_t size, const char *func)
 	}
 	return p;
 }
-
-/* Storage for the mmap pools' size table, which mm/maps-initial.c defines in
- * a run.  mmap's sanitiser draws a length from it; the tests that need the
- * run's sizes fill it in, and restore it. */
-unsigned long mapping_sizes[NR_MAPPING_SIZES];
