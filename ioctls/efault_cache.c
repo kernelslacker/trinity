@@ -13,6 +13,7 @@
 
 #include "efault_cache.h"
 #include "ioctls.h"
+#include "net.h"		/* seccomp_own_filter */
 #include "shm.h"
 #include "utils.h"		/* ARRAY_SIZE */
 
@@ -251,7 +252,9 @@ enum ioctl_arg_class ioctl_efault_classify(const struct ioctl_group *grp,
 	if (state != IOCTL_ARG_UNKNOWN)
 		return state;
 
-	if (!efault_probe_allowed_by_group[idx])
+	/* A child's own seccomp filter may answer the probe for the driver,
+	 * and its verdict would stand for every child. */
+	if (!efault_probe_allowed_by_group[idx] || seccomp_own_filter)
 		return IOCTL_ARG_UNKNOWN;
 
 	state = run_probe(fd, request);

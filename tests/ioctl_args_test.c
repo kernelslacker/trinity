@@ -6,6 +6,7 @@
  * and bridge requests are covered.
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -34,7 +35,9 @@
 #include "ioctls.h"		/* struct ioctl_group */
 #include "kernel/ext4.h"
 #include "kernel/userfaultfd.h"
+#include "net.h"		/* seccomp_own_filter */
 #include "sanitise.h"		/* writable pool */
+#include "shm.h"		/* ioctl_efault_cache */
 #include "syscall.h"		/* struct syscallrecord */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
@@ -478,6 +481,53 @@ static void size0_pointer_requests_get_a_buffer(void)
 	close(fd);
 }
 
+extern int (*fake_ioctl_hook)(int fd, unsigned long request, void *arg);	/* procfs_self_test.c */
+
+static unsigned int probes_sent;
+
+/* The driver, which copies the arg in. */
+static int probe_answers_efault(int fd, unsigned long request, void *arg)
+{
+	(void) fd;
+	(void) request;
+	(void) arg;
+	probes_sent++;
+	errno = EFAULT;
+	return -1;
+}
+
+/*
+ * A child with a seccomp filter of its own may have ioctl() answered by the
+ * filter instead of the driver, with whatever errno its ERRNO return names,
+ * and a probe's verdict stands for every child for the rest of the run.
+ * Such a child sends no probe and caches nothing, so the next child that
+ * asks still probes the driver.  The hook answers every probe, so no fd is
+ * touched.
+ */
+static void filtered_children_send_no_probe(void)
+{
+	const struct ioctl_group *grp = group_listing(SIOCGIFMTU);
+
+	if (grp == NULL)
+		BUG("ioctl args: the socket group is not linked");
+	memset(shm->ioctl_efault_cache, 0, sizeof(shm->ioctl_efault_cache));
+	fake_ioctl_hook = probe_answers_efault;
+	probes_sent = 0;
+
+	seccomp_own_filter = true;
+	if (ioctl_efault_classify(grp, 0, SIOCGIFMTU) != IOCTL_ARG_UNKNOWN ||
+	    probes_sent != 0)
+		BUG("ioctl args: a child with a seccomp filter of its own sent the EFAULT probe");
+
+	seccomp_own_filter = false;
+	if (ioctl_efault_classify(grp, 0, SIOCGIFMTU) != IOCTL_ARG_POINTER ||
+	    probes_sent != 2)
+		BUG("ioctl args: a filtered child's call left a verdict, or the next child sent no probe");
+
+	fake_ioctl_hook = NULL;
+	memset(shm->ioctl_efault_cache, 0, sizeof(shm->ioctl_efault_cache));
+}
+
 /*
  * The kernel arms a uffd once, with the first UFFDIO_API that succeeds,
  * and nothing reads these fds: one armed without UFFD_FEATURE_SIGBUS
@@ -818,6 +868,7 @@ void ioctl_args_self_check(void)
 	ext_checkpoint_never_flushes_the_journal();
 	size_rewrites_rebuild_the_arg();
 	size0_pointer_requests_get_a_buffer();
+	filtered_children_send_no_probe();
 	userfaultfd_api_always_asks_sigbus();
 	socket_bridge_requests_name_one_bridge();
 	socket_tunnel_requests_name_their_device();

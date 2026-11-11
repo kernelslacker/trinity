@@ -1308,6 +1308,8 @@ static void post_prctl(struct syscallrecord *rec)
 		post_futex_hash(rec, retval);
 		break;
 	case PR_SET_SECCOMP:
+		if (retval == 0)
+			seccomp_own_filter = true;
 		post_set_seccomp(snap);
 		break;
 	case PR_SET_NO_NEW_PRIVS:

@@ -2183,6 +2183,73 @@ static void prctl_set_seccomp_hands_a_program(void)
 }
 #endif
 
+/*
+ * The post handlers give a program to deferred free, which takes only what
+ * alloc tracking holds, and the test binary's tracked allocator tracks
+ * nothing: register the program for them, and drain it after.
+ */
+static void track_seccomp_program(const struct sock_fprog *prog)
+{
+	deferred_alloc_track((void *) prog, sizeof(*prog));
+	deferred_alloc_track(prog->filter, prog->len * sizeof(*prog->filter));
+}
+
+/*
+ * A filter the child's own sanitiser built marks the child once the kernel
+ * has installed it, through seccomp() or prctl(PR_SET_SECCOMP), and not
+ * when the kernel refused it.  The flags word is left 0, so the post
+ * handler closes no listener.
+ */
+static void installed_filters_mark_the_child(void)
+{
+	static const unsigned long retvals[] = { (unsigned long) -1L, 0 };
+	static struct syscallrecord rec;
+	unsigned int r, tries;
+
+	for (r = 0; r < ARRAY_SIZE(retvals); r++) {
+		seccomp_own_filter = false;
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			syscall_seccomp.sanitise(&rec);
+			if (rec.a1 == SECCOMP_SET_MODE_FILTER)
+				break;
+			if (rec.a1 == SECCOMP_GET_NOTIF_SIZES) {
+				free((void *) rec.a3);
+				free((void *) rec.post_state);
+			}
+		}
+		check("the sanitiser never drew SECCOMP_SET_MODE_FILTER",
+		      "seccomp install", rec.a1 == SECCOMP_SET_MODE_FILTER);
+		track_seccomp_program((const struct sock_fprog *) rec.a3);
+		rec.retval = retvals[r];
+		syscall_seccomp.post(&rec);
+		deferred_free_flush();
+		check("seccomp() marked the child by what the kernel answered",
+		      "seccomp install", seccomp_own_filter == (retvals[r] == 0));
+	}
+#ifdef USE_SECCOMP
+	for (r = 0; r < ARRAY_SIZE(retvals); r++) {
+		seccomp_own_filter = false;
+		for (tries = 0; tries < 4096; tries++) {
+			memset(&rec, 0, sizeof(rec));
+			syscall_prctl.sanitise(&rec);
+			if (rec.a1 == PR_SET_SECCOMP)
+				break;
+			free((void *) rec.post_state);
+		}
+		check("the sanitiser never drew PR_SET_SECCOMP",
+		      "seccomp install", rec.a1 == PR_SET_SECCOMP);
+		track_seccomp_program((const struct sock_fprog *) rec.a3);
+		rec.retval = retvals[r];
+		syscall_prctl.post(&rec);
+		deferred_free_flush();
+		check("prctl(PR_SET_SECCOMP) marked the child by what the kernel answered",
+		      "seccomp install", seccomp_own_filter == (retvals[r] == 0));
+	}
+#endif
+	seccomp_own_filter = false;
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -2205,6 +2272,7 @@ void bpf_gen_self_check(void)
 #ifdef USE_SECCOMP
 	prctl_set_seccomp_hands_a_program();
 #endif
+	installed_filters_mark_the_child();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif

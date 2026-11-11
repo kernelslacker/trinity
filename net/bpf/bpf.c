@@ -21,6 +21,16 @@
 
 #include "kernel/audit.h"
 #include "kernel/seccomp.h"
+
+/*
+ * Set in a child once a seccomp filter of its own, one bpf_gen_seccomp()
+ * built, has installed in it.  From then on a call the filter matches can
+ * fail by its hand, with the errno an ERRNO return names, so what such a
+ * child sees no longer speaks for the kernel alone and must not settle what
+ * the rest of the fleet believes about it.
+ */
+bool seccomp_own_filter;
+
 #ifdef USE_BPF
 /**
  * BPF filters are used in networking such as in pf_packet, but also

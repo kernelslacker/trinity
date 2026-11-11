@@ -265,6 +265,9 @@ static void post_seccomp(struct syscallrecord *rec)
 	case SECCOMP_SET_MODE_FILTER: {
 		struct sock_fprog *fprog = (struct sock_fprog *) snap->heap;
 
+		if (rec->retval != -1UL)
+			seccomp_own_filter = true;
+
 		if (get_arg_snapshot(rec, 2) & SECCOMP_FILTER_FLAG_NEW_LISTENER) {
 			int fd = (int)rec->retval;
 

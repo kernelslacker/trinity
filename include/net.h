@@ -117,6 +117,8 @@ extern const struct netproto proto_ieee802154;
 struct sock_fprog;
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
 void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
+/* Set once a filter of the child's own has installed (net/bpf/bpf.c). */
+extern bool seccomp_own_filter;
 void bpf_free_filter(struct sock_fprog *bpf);
 
 /* ip setsockopt functions */
