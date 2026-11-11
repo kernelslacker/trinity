@@ -19,11 +19,13 @@
 #include <linux/if_addrlabel.h>
 #include <linux/bpf.h>
 #include <linux/if_bridge.h>
+#include <linux/if_ether.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
 #include <linux/netlink.h>
 #include <linux/nexthop.h>
 #include <linux/pkt_cls.h>
+#include <linux/pkt_sched.h>
 #include <linux/rtnetlink.h>
 #include <linux/tc_act/tc_gact.h>
 
@@ -289,6 +291,119 @@ static void expect_link_header(const struct link_header *get,
 	expect_fraction(other->zero, other->msgs, 0.0, 0.001,
 			"RTM_NEWLINK, RTM_DELLINK and RTM_SETLINK",
 			"rtnl: RTM_NEWLINK, RTM_DELLINK and RTM_SETLINK lose their random type, flags and change");
+}
+
+/* ---------- The tcmsg of the qdisc, class, filter and chain types ------- */
+
+struct tc_header {
+	unsigned int msgs;
+	unsigned int lo;
+	unsigned int block, small_block;	/* TCM_IFINDEX_MAGIC_BLOCK */
+	unsigned int device, parent;	/* a device named, a parent it can have */
+	unsigned int handle;	/* a qdisc's or class's handle its handler takes */
+	unsigned int info;	/* a filter's priority and protocol */
+};
+
+/* A handle of the small range the builder draws from, 1:0 to 4:4. */
+static bool small_tc_handle(__u32 h)
+{
+	return TC_H_MAJ(h) >= 0x10000 && TC_H_MAJ(h) <= 0x40000 &&
+	       TC_H_MIN(h) <= 4;
+}
+
+static void tally_tc_header(struct tc_header *t, const struct nlmsghdr *nlh)
+{
+	const struct tcmsg *tc = NLMSG_DATA(nlh);
+	unsigned short base = nlh->nlmsg_type & ~3;
+	__u32 parent = tc->tcm_parent;
+	__u16 proto = TC_H_MIN(tc->tcm_info);
+
+	if (nlh->nlmsg_len < NLMSG_LENGTH(sizeof(*tc)))
+		return;
+	t->msgs++;
+	t->lo += tc->tcm_ifindex == LOOPBACK_IFINDEX;
+	if ((__u32) tc->tcm_ifindex == TCM_IFINDEX_MAGIC_BLOCK) {
+		t->block++;
+		t->small_block += tc->tcm_block_index >= 1 &&
+				  tc->tcm_block_index <= 63;
+	} else {
+		t->device++;
+		t->parent += parent == TC_H_ROOT || parent == TC_H_UNSPEC ||
+			     small_tc_handle(parent) ||
+			     (base != RTM_NEWTCLASS &&
+			      (parent == TC_H_INGRESS ||
+			       parent == TC_H_MAKE(TC_H_CLSACT, TC_H_MIN_INGRESS) ||
+			       parent == TC_H_MAKE(TC_H_CLSACT, TC_H_MIN_EGRESS)));
+	}
+	switch (base) {
+	case RTM_NEWQDISC:
+		t->handle += TC_H_MIN(tc->tcm_handle) == 0;
+		break;
+	case RTM_NEWTCLASS:
+		t->handle += parent == TC_H_ROOT || !TC_H_MAJ(parent) ||
+			     !TC_H_MAJ(tc->tcm_handle) ||
+			     TC_H_MAJ(tc->tcm_handle) == TC_H_MAJ(parent);
+		break;
+	case RTM_NEWTFILTER:
+		t->info += TC_H_MAJ(tc->tcm_info) <= 0x80000 &&
+			   (proto == htons(ETH_P_ALL) || proto == htons(ETH_P_IP) ||
+			    proto == htons(ETH_P_IPV6));
+		break;
+	}
+}
+
+/*
+ * Every qdisc, class, filter and chain request names a device first, or
+ * -ENODEV, and a lane child's netns, the only one where the changes hold
+ * CAP_NET_ADMIN, has lo alone: the builder names lo half the time, and a
+ * filter or chain names a shared block (TCM_IFINDEX_MAGIC_BLOCK) one time
+ * in eight instead, with an index a qdisc's TCA_INGRESS_BLOCK or
+ * TCA_EGRESS_BLOCK can make, 1 to 63.  Past the device, seven headers in
+ * eight hold to what a device whose qdiscs trinity made can answer:
+ * a parent of TC_H_ROOT, 0, a small X:Y or, but for a class, which only a
+ * qdisc's classes can parent, TC_H_INGRESS or a clsact minor, since any
+ * other must name a qdisc that exists (-ENOENT, -EINVAL); a qdisc handle
+ * with no minor (tc_modify_qdisc(), -EINVAL); a class handle whose major
+ * is 0 or the parent's (tc_ctl_tclass(), -EINVAL); and a filter priority
+ * of 0 or a small one, which a later request can name, beside a protocol
+ * that matches traffic (ETH_P_ALL, ETH_P_IP or ETH_P_IPV6), where creating
+ * a filter wants one nonzero.  The eighth header is random past the device.
+ */
+static void expect_tc_header(const struct tc_header *t, const char *what,
+			     bool blocks)
+{
+	if (blocks) {
+		expect_fraction(t->lo, t->msgs, 0.39, 0.49, what,
+				"rtnl: a filter or chain does not name lo seven times in sixteen");
+		expect_fraction(t->block, t->msgs, 0.10, 0.15, what,
+				"rtnl: a filter or chain does not name a shared block one time in eight");
+		expect_fraction(t->small_block, t->block, 0.84, 0.91, what,
+				"rtnl: a filter's or chain's shared block is not one a qdisc can make");
+	} else {
+		expect_fraction(t->lo, t->msgs, 0.45, 0.56, what,
+				"rtnl: a qdisc or class does not name lo half the time");
+		expect_fraction(t->block, t->msgs, 0.0, 0.0, what,
+				"rtnl: a qdisc or class names a shared block");
+	}
+	expect_fraction(t->parent, t->device, 0.84, 0.91, what,
+			"rtnl: a tc parent does not name what a device of trinity's can have seven times in eight");
+}
+
+static void expect_tc_headers(const struct tc_header *qdisc,
+			      const struct tc_header *tclass,
+			      const struct tc_header *filter,
+			      const struct tc_header *chain)
+{
+	expect_tc_header(qdisc, "the qdisc types", false);
+	expect_fraction(qdisc->handle, qdisc->msgs, 0.84, 0.91, "the qdisc types",
+			"rtnl: a qdisc handle has a minor more than one time in eight");
+	expect_tc_header(tclass, "the class types", false);
+	expect_fraction(tclass->handle, tclass->msgs, 0.84, 0.91, "the class types",
+			"rtnl: a class handle's major is not 0 or the parent's seven times in eight");
+	expect_tc_header(filter, "the filter types", true);
+	expect_fraction(filter->info, filter->msgs, 0.84, 0.91, "the filter types",
+			"rtnl: a filter's priority and protocol are not small and real seven times in eight");
+	expect_tc_header(chain, "the chain types", true);
 }
 
 /* ---------- The ifaddrmsg of RTM_NEWADDR, RTM_DELADDR and RTM_GETADDR ---- */
@@ -2310,6 +2425,7 @@ struct tallies {
 	unsigned int msgs, unhandled;
 	struct dump_bits dumps, dcb, both;
 	struct link_header getlink, linkprop, link;
+	struct tc_header qdisc, tclass, filter, chain;
 	struct addr_header getaddr, newdeladdr;
 	struct neigh_header getneigh, newdelneigh;
 	struct getneigh_attrs getneigh_attrs;
@@ -2455,6 +2571,26 @@ static void run_rounds(struct tallies *t)
 		case RTM_DELLINKPROP:
 			tally_link_header(&t->linkprop, nlh);
 			break;
+		case RTM_NEWQDISC:
+		case RTM_DELQDISC:
+		case RTM_GETQDISC:
+			tally_tc_header(&t->qdisc, nlh);
+			break;
+		case RTM_NEWTCLASS:
+		case RTM_DELTCLASS:
+		case RTM_GETTCLASS:
+			tally_tc_header(&t->tclass, nlh);
+			break;
+		case RTM_NEWTFILTER:
+		case RTM_DELTFILTER:
+		case RTM_GETTFILTER:
+			tally_tc_header(&t->filter, nlh);
+			break;
+		case RTM_NEWCHAIN:
+		case RTM_DELCHAIN:
+		case RTM_GETCHAIN:
+			tally_tc_header(&t->chain, nlh);
+			break;
 		case RTM_GETNEIGHTBL:
 		case RTM_SETNEIGHTBL:
 			tally_probe_interval(&t->probe_interval, nlh);
@@ -2495,6 +2631,7 @@ void rtnl_gen_self_check(void)
 	expect_handled_types(t.unhandled, t.msgs);
 	expect_dump_bits(&t.dumps, &t.dcb, &t.both);
 	expect_link_header(&t.getlink, &t.linkprop, &t.link);
+	expect_tc_headers(&t.qdisc, &t.tclass, &t.filter, &t.chain);
 	expect_addr_header(&t.getaddr, &t.newdeladdr);
 	expect_neigh_header(&t.getneigh, &t.newdelneigh);
 	expect_getneigh_attrs(&t.getneigh_attrs);

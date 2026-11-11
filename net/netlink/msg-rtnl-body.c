@@ -20,6 +20,8 @@
 #include <linux/net_namespace.h>
 #include <linux/nexthop.h>
 #include <linux/dcbnl.h>
+#include <linux/if_ether.h>
+#include <linux/pkt_sched.h>
 #include "msg-internal.h"
 #include "random.h"
 #include "rnd.h"
@@ -536,20 +538,89 @@ static size_t gen_rtnl_body_tunnel(unsigned char *body, size_t buflen, unsigned 
 	return sizeof(tm);
 }
 
-/* RTM_*QDISC / RTM_*TCLASS / RTM_*TFILTER / RTM_*CHAIN: struct tcmsg */
-static size_t gen_rtnl_body_tc(unsigned char *body, size_t buflen, unsigned char *out_family)
+/*
+ * A tc parent: TC_H_ROOT, 0 (the device's root qdisc) or a small X:Y of
+ * @major, or else TC_H_INGRESS or a clsact minor, which name the ingress
+ * or clsact qdisc.  That one has no classes to change, so a class draws
+ * from the first three only.
+ */
+static __u32 gen_tc_parent(__u32 major, bool tclass)
 {
+	switch (rnd_modulo_u32(tclass ? 3 : 5)) {
+	case 0:
+		return TC_H_ROOT;
+	case 1:
+		return TC_H_UNSPEC;
+	case 2:
+		return TC_H_MAKE(major, rnd_modulo_u32(5));
+	case 3:
+		return TC_H_INGRESS;
+	default:
+		return TC_H_MAKE(TC_H_CLSACT, RAND_BOOL() ? TC_H_MIN_INGRESS :
+							   TC_H_MIN_EGRESS);
+	}
+}
+
+/*
+ * RTM_*QDISC / RTM_*TCLASS / RTM_*TFILTER / RTM_*CHAIN: struct tcmsg.
+ * Every request names a device first (-ENODEV), and lo is the one device
+ * of a lane child's netns, the only one where the changes hold
+ * CAP_NET_ADMIN, so lo goes in half the time; a filter or chain names a
+ * shared block one time in eight instead, of the indexes a qdisc's
+ * TCA_INGRESS_BLOCK or TCA_EGRESS_BLOCK can make.  Handles keep to 1: to
+ * 4:, so one request can name what another made: a qdisc's is 0 or X:0
+ * (tc_modify_qdisc() refuses a minor), a class's major is 0 or its
+ * parent's (tc_ctl_tclass()), and a filter's priority is 0 or small,
+ * beside a protocol it can match traffic on.  One header in eight keeps
+ * random handles.
+ */
+static size_t gen_rtnl_body_tc(unsigned char *body, size_t buflen,
+			       unsigned short nlmsg_type, unsigned char *out_family)
+{
+	static const __u16 protocols[] = {
+		ETH_P_ALL, ETH_P_ALL, ETH_P_IP, ETH_P_IPV6,
+	};
+	unsigned int base = nlmsg_type & ~3;
+	__u32 major = (1 + rnd_modulo_u32(4)) << 16;
+	bool block = false;
 	struct tcmsg tc;
 
 	if (sizeof(tc) > buflen)
 		return 0;
+	memset(&tc, 0, sizeof(tc));
 	tc.tcm_family = rand_family();
-	tc.tcm__pad1 = 0;
-	tc.tcm__pad2 = 0;
-	tc.tcm_ifindex = rnd_modulo_u32(64);
-	tc.tcm_handle = rand32();
-	tc.tcm_parent = rand32();
-	tc.tcm_info = rand32();
+	if ((base == RTM_NEWTFILTER || base == RTM_NEWCHAIN) && ONE_IN(8)) {
+		tc.tcm_ifindex = (int) TCM_IFINDEX_MAGIC_BLOCK;
+		block = true;
+	} else {
+		tc.tcm_ifindex = RAND_BOOL() ? 1 : rnd_modulo_u32(64);
+	}
+
+	if (ONE_IN(8)) {
+		tc.tcm_handle = rand32();
+		tc.tcm_parent = rand32();
+		tc.tcm_info = rand32();
+		goto out;
+	}
+	if (block)
+		tc.tcm_block_index = 1 + rnd_modulo_u32(63);
+	else
+		tc.tcm_parent = gen_tc_parent(major, base == RTM_NEWTCLASS);
+	switch (base) {
+	case RTM_NEWQDISC:
+		tc.tcm_handle = ONE_IN(4) ? 0 : major;
+		break;
+	case RTM_NEWTCLASS:
+		tc.tcm_handle = TC_H_MAKE(RAND_BOOL() ? major : 0,
+					  rnd_modulo_u32(5));
+		break;
+	case RTM_NEWTFILTER:
+		tc.tcm_handle = RAND_BOOL() ? 0 : 1 + rnd_modulo_u32(8);
+		tc.tcm_info = TC_H_MAKE(ONE_IN(4) ? 0 : (1 + rnd_modulo_u32(8)) << 16,
+					htons(RAND_ARRAY(protocols)));
+		break;
+	}
+out:
 	*out_family = tc.tcm_family;
 	memcpy(body, &tc, sizeof(tc));
 	return sizeof(tc);
@@ -631,7 +702,7 @@ size_t gen_rtnl_body(unsigned char *body, unsigned short nlmsg_type,
 	case 6:  /* RTM_*TCLASS */
 	case 7:  /* RTM_*TFILTER */
 	case 21: /* RTM_*CHAIN */
-		return gen_rtnl_body_tc(body, buflen, out_family);
+		return gen_rtnl_body_tc(body, buflen, nlmsg_type, out_family);
 	default: return gen_rtnl_body_gen(body, buflen, out_family);
 	}
 }
