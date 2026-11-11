@@ -47,7 +47,8 @@ uint32_t *get_shared_futex_word(void)
 }
 
 /* A child's mappings, one past 4 GiB and one below, which the futex
- * words are drawn from; no lock pool still. */
+ * words are drawn from; no lock pool still.  HIGH_MAP is the pool's
+ * first entry, so a pool cut to one entry holds only it. */
 #define HIGH_MAP	0x7e0000000000UL
 #define LOW_MAP		0x40000000UL
 
@@ -150,6 +151,20 @@ void futex_self_check(void)
 
 		if (crec->a1 != LOW_MAP || crec->a5 != LOW_MAP)
 			BUG("futex: a compat call went without futex words below 4 GiB");
+	}
+
+	/* With only the high mapping to draw, a compat call's words must
+	 * still lie below 4 GiB, not at an address its kernel truncates. */
+	anon_pool.num_entries = 1;
+	for (i = 0; i < RUNS; i++) {
+		memset(crec, 0, sizeof(*crec));
+		crec->do32bit = true;
+		crec->nr = NR_FUTEX_TIME32;
+		crec->a2 = FUTEX_WAKE;
+		syscall_futex.sanitise(crec);
+
+		if (crec->a1 > UINT32_MAX || crec->a5 > UINT32_MAX)
+			BUG("futex: a compat call took a futex word past 4 GiB");
 	}
 	fake_this_child = NULL;
 	fake_heap_size = 0;

@@ -161,12 +161,18 @@ struct __lock * get_random_lock(void)
  * a compat call, which reads each slot as its low 32 bits, a mapping below
  * 4 GiB when the pools hold one, and runs the pool guards on the way.
  */
-static uint32_t * get_futex_mmap(void)
+static uint32_t * get_futex_mmap(const struct syscallrecord *rec)
 {
 	struct map_handle h;
 
 	if (!get_map_handle(&h))
 		return NULL;
+	/* With no low mapping drawn, get_map_handle() hands a compat call
+	 * one past 4 GiB, whose address the kernel would truncate onto
+	 * whatever lies below and write through: take a low-pool word. */
+	if (rec->do32bit &&
+	    (unsigned long) h.map->ptr + sizeof(uint32_t) > (1UL << 32))
+		return get_writable_struct(sizeof(uint32_t));
 	return (uint32_t *) h.map->ptr;
 }
 
@@ -406,8 +412,8 @@ static void sanitise_futex(struct syscallrecord *rec)
 		rec->a2 &= ~FUTEX_PRIVATE_FLAG;
 		goto out_setclock;
 	} else {
-		rec->a1 = (unsigned long) get_futex_mmap();
-		rec->a5 = (unsigned long) get_futex_mmap();
+		rec->a1 = (unsigned long) get_futex_mmap(rec);
+		rec->a5 = (unsigned long) get_futex_mmap(rec);
 		goto out_setclock;
 	}
 
