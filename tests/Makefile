@@ -1127,6 +1127,11 @@ FAKE_SRCS	+= pathname_pool_test.c
 # for post_oracle_test.c, and holds it to the payloads the kernel takes.
 FAKE_SRCS	+= io_uring_register_test.c
 
+# syscalls/io_uring/io_uring_setup.c brings io_uring_setup's sanitiser,
+# which io_uring_setup_test.c holds to the kernel's flag and size checks.
+PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_setup.c
+FAKE_SRCS	+= io_uring_setup_test.c
+
 # args/gen_arg_time.c brings the time generators, in place of
 # fake_arg_gens.c's stand-ins, which gen_arg_time_test.c holds to the
 # layout each call's ABI reads, syscalls/timer/timer_settime.c the

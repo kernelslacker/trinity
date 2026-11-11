@@ -34,17 +34,18 @@ static unsigned long io_uring_setup_flags[] = {
  * trips a flag-dependency reject in io_uring_create / io_validate_ext_arg
  * before reaching io_allocate_scq_urings, the productive setup path:
  * SQ_AFF requires SQPOLL, DEFER_TASKRUN requires SINGLE_ISSUER, HYBRID_IOPOLL
- * requires IOPOLL, TASKRUN_FLAG conflicts with COOP_TASKRUN, NO_MMAP requires
- * user-supplied SQ/CQ ring addresses we don't pass, and REGISTERED_FD_ONLY
- * requires NO_MMAP.  Enumerate the combos the validator accepts so most
- * dispatches reach the ring-allocation path instead of -EINVAL'ing early.
+ * requires IOPOLL, TASKRUN_FLAG requires COOP_TASKRUN or DEFER_TASKRUN,
+ * NO_MMAP requires user-supplied SQ/CQ ring addresses we don't pass, and
+ * REGISTERED_FD_ONLY requires NO_MMAP.  Enumerate the combos the validator
+ * accepts so most dispatches reach the ring-allocation path instead of
+ * -EINVAL'ing early.
  */
 static const unsigned long io_uring_setup_valid_combos[] = {
 	IORING_SETUP_CLAMP,
 	IORING_SETUP_CQSIZE,
 	IORING_SETUP_SUBMIT_ALL,
 	IORING_SETUP_COOP_TASKRUN,
-	IORING_SETUP_TASKRUN_FLAG,
+	IORING_SETUP_COOP_TASKRUN | IORING_SETUP_TASKRUN_FLAG,
 	IORING_SETUP_SQE128,
 	IORING_SETUP_CQE32,
 	IORING_SETUP_SINGLE_ISSUER,
@@ -91,8 +92,10 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 
 	params = zmalloc_tracked(sizeof(struct io_uring_params));
 	params->flags = pick_io_uring_setup_flags();
+	/* The kernel rounds both queues up to a power of two and refuses a
+	 * completion queue smaller than the submission queue. */
 	if (params->flags & IORING_SETUP_CQSIZE)
-		params->cq_entries = RAND_RANGE(1, 4096);
+		params->cq_entries = RAND_RANGE((unsigned int) rec->a1, 4096U);
 	if (params->flags & IORING_SETUP_SQ_AFF)
 		params->sq_thread_cpu = rnd_modulo_u32(64);
 	if (params->flags & IORING_SETUP_SQPOLL)
