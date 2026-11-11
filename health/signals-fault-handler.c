@@ -209,7 +209,9 @@ void emit_guard_page_attribution(int sig, siginfo_t *info, void *ctx)
  * into a stack buffer via the sigsafe_* helpers, single write(),
  * no stdio, no allocator, no lock.  Gates on me->syscall.state so a
  * signal that hit between syscalls emits -1 rather than the stale
- * previous-call number.
+ * previous-call number.  The this_child() deref is gated by
+ * range_in_tracked_shared exactly like stamp_fault_beacon: a fault
+ * here would cost the log its BUGLOG-COMPLETE line.
  */
 static __attribute__((no_sanitize("address")))
 void stamp_childop_identity(void)
@@ -220,7 +222,9 @@ void stamp_childop_identity(void)
 	int last_syscall_nr;
 	char buf[160];
 
-	if (me != NULL) {
+	if (me != NULL &&
+	    range_in_tracked_shared((unsigned long)me,
+				    sizeof(struct childdata))) {
 		enum syscallstate st = me->syscall.state;
 
 		opname = alt_op_name(me->op_type);

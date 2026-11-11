@@ -34,6 +34,8 @@
 #define TRAP_PERF	6
 #endif
 
+extern struct childdata *fake_this_child;	/* fake_shm.c */
+
 #define SURVIVED	42	/* the task got past the signal */
 #define NOT_SENT	43	/* the task could not send the signal */
 
@@ -54,6 +56,7 @@ static const char *const verdict_name[] = {
 #define SIBLING		0x1	/* a sibling sends it, else the task itself */
 #define NAMES_SELF	0x2	/* si_pid names the task, else the sender */
 #define IN_SYSCALL	0x4	/* the task is inside do_syscall() */
+#define WILD_CHILD	0x8	/* this_child() answers a page no one maps */
 
 /*
  * SI_USER is kill() and SI_TKILL is tgkill(), which stamp the sender's
@@ -121,6 +124,10 @@ static const struct child_case cases[] = {
 	  SIGILL, ILL_ILLOPC, 0, LOGGED },
 	{ "SIGSEGV forced by the kernel",
 	  SIGSEGV, SI_KERNEL, 0, LOGGED },
+	/* A scribbled this_child() costs the report its childdata, not
+	 * its completion. */
+	{ "SIGSEGV, SEGV_MAPERR with this_child() unmapped",
+	  SIGSEGV, SEGV_MAPERR, WILD_CHILD, LOGGED },
 
 	/* The writer-watch breakpoint's SIGTRAP is the kernel's, with
 	 * TRAP_PERF, and ends the task with a report of the writer.  What
@@ -194,6 +201,14 @@ static void task(const struct child_case *c, int ready, int go, int err)
 	mask_signals_child();
 	task_init(c->sig);
 	in_do_syscall = (c->flags & IN_SYSCALL) != 0;
+	if (c->flags & WILD_CHILD) {
+		void *p = mmap(NULL, page_size, PROT_NONE,
+			       MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+
+		if (p == MAP_FAILED || munmap(p, page_size) != 0)
+			_exit(NOT_SENT);
+		fake_this_child = p;
+	}
 
 	if (c->flags & SIBLING) {
 		if (write(ready, "r", 1) != 1)
