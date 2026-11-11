@@ -16,10 +16,10 @@ static unsigned long futex_waitv_clockids[] = {
 	CLOCK_MONOTONIC, CLOCK_REALTIME,
 };
 
-static const unsigned int futex2_sizes[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
-	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
-	FUTEX2_SIZE_U64,
+/* futex_flags_valid() takes only FUTEX2_SIZE_U32 for now: the rest are
+ * drawn one time in sixteen, for the EINVAL. */
+static const unsigned int futex2_refused_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U64,
 };
 
 static void sanitise_futex_waitv(struct syscallrecord *rec)
@@ -60,7 +60,8 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 			waiters[i].uaddr = (__u64)(unsigned long) &futex_words[i];
 			waiters[i].val = futex_words[i];
 		}
-		waiters[i].flags = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
+		waiters[i].flags = ONE_IN(16) ?
+			RAND_ARRAY(futex2_refused_sizes) : FUTEX2_SIZE_U32;
 		/*
 		 * FUTEX2_PRIVATE routes the waiter through the per-mm hash
 		 * bucket; setting it on a uaddr that lives in shared cross-
@@ -71,10 +72,10 @@ static void sanitise_futex_waitv(struct syscallrecord *rec)
 		 */
 		if (!is_shared && RAND_BOOL())
 			waiters[i].flags |= FUTEX2_PRIVATE;
-		if (RAND_BOOL()) {
+		/* __reserved stays 0: futex_parse_waitv() refuses any other
+		 * value. */
+		if (RAND_BOOL())
 			waiters[i].flags |= FUTEX2_MPOL;
-			waiters[i].__reserved = (__u32)FUTEX_NO_NODE;
-		}
 	}
 
 	rec->a1 = (unsigned long) waiters;

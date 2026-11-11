@@ -10,10 +10,10 @@
 #include "kernel/futex.h"
 #include "rnd.h"
 
-static const unsigned int futex2_sizes[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
-	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
-	FUTEX2_SIZE_U64,
+/* futex_flags_valid() takes only FUTEX2_SIZE_U32 for now: the rest are
+ * drawn one time in sixteen, for the EINVAL. */
+static const unsigned int futex2_refused_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U64,
 };
 
 static void sanitise_futex_requeue(struct syscallrecord *rec)
@@ -37,11 +37,8 @@ static void sanitise_futex_requeue(struct syscallrecord *rec)
 
 	/* Source and destination waitv must share identical flags; otherwise
 	 * futex_validate_input() rejects with -EINVAL before any of the
-	 * requeue / PI / waiter-walk paths run.  Draw one of the four futex2
-	 * size variants (U32 kept dominant) so all four size dispatch paths
-	 * are exercised, not just the U32 lane.
-	 */
-	size = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
+	 * requeue / PI / waiter-walk paths run. */
+	size = ONE_IN(16) ? RAND_ARRAY(futex2_refused_sizes) : FUTEX2_SIZE_U32;
 	waitv_flags = size;
 	if (RAND_BOOL())
 		waitv_flags |= FUTEX2_PRIVATE;

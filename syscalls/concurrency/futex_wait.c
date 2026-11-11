@@ -16,10 +16,10 @@ static unsigned long futex_wait_clockids[] = {
 	CLOCK_REALTIME, CLOCK_MONOTONIC,
 };
 
-static const unsigned int futex2_sizes[] = {
-	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16,
-	FUTEX2_SIZE_U32, FUTEX2_SIZE_U32,	/* keep U32 dominant */
-	FUTEX2_SIZE_U64,
+/* futex_flags_valid() takes only FUTEX2_SIZE_U32 for now: the rest are
+ * drawn one time in sixteen, for the EINVAL. */
+static const unsigned int futex2_refused_sizes[] = {
+	FUTEX2_SIZE_U8, FUTEX2_SIZE_U16, FUTEX2_SIZE_U64,
 };
 
 static void sanitise_futex_wait(struct syscallrecord *rec)
@@ -31,18 +31,19 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	unsigned int size;
 	__u32 *futex_word;
 
-	futex_word = (__u32 *) get_writable_struct(sizeof(*futex_word));
+	/* A FUTEX2_NUMA call reads a node id from the word after: no node,
+	 * for the mempolicy or the caller's node to pick. */
+	futex_word = (__u32 *) get_writable_struct(2 * sizeof(*futex_word));
 	if (!futex_word)
 		return;
 	*futex_word = rand32();
+	futex_word[1] = (__u32) FUTEX_NO_NODE;
 	rec->a1 = (unsigned long) futex_word;
 	rec->a2 = *futex_word;	/* match the value we just wrote */
 
-	/* Draw one of the four futex2 size variants; the mask below is
-	 * aligned to the drawn size so U8/U16 sub-word comparisons exercise
-	 * their own paths instead of always presenting a 32-bit-wide mask.
-	 */
-	size = futex2_sizes[rnd_modulo_u32(ARRAY_SIZE(futex2_sizes))];
+	/* The mask below is aligned to the drawn size, the rare refused
+	 * U8/U16 included. */
+	size = ONE_IN(16) ? RAND_ARRAY(futex2_refused_sizes) : FUTEX2_SIZE_U32;
 
 	/* mask: align width to the drawn size */
 	switch (size) {
@@ -58,9 +59,7 @@ static void sanitise_futex_wait(struct syscallrecord *rec)
 	}
 
 	/* flags: pair the drawn size with optional PRIVATE/NUMA/MPOL
-	 * modifiers so the composed form is exercised across all four size
-	 * dispatch paths instead of only the U32 lane.
-	 */
+	 * modifiers. */
 	flags = size;
 	if (RAND_BOOL())
 		flags |= FUTEX2_PRIVATE;
