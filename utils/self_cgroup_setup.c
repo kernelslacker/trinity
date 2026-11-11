@@ -45,17 +45,17 @@
  * and a generous memory.high so its bandit bookkeeping is never the OOM
  * target.
  *
- * Cleanup is best-effort: the kernel reclaims empty cgroups when the last
- * process exits, so rmdir failures during teardown are benign.
+ * Cleanup is best-effort, but cgroup v2 never removes an empty cgroup by
+ * itself: a trinity-<pid>/ the teardown fails to rmdir stays behind.
  */
 static char *cg_container;	/* trinity-<pid>/ */
 static char *cg_parent;		/* trinity-<pid>/parent/ */
 char *cg_workload;		/* trinity-<pid>/children/ in split mode,
 				 * or the single trinity-<pid>/ in fallback */
-static char *cg_original;	/* full /sys/fs/cgroup<parent> path we joined
-				 * from at startup; cleanup moves trinity-main
-				 * back here so the parent rmdir succeeds.
-				 * Populated only in split mode. */
+static char *cg_original;	/* full /sys/fs/cgroup path trinity-main
+				 * was moved from at startup; single-cgroup
+				 * cleanup moves it back here so the
+				 * container rmdir succeeds. */
 int cg_workload_fd = -1;	/* O_DIRECTORY on cg_workload */
 bool cg_split_mode;		/* true if parent/children sub-cgroups are live */
 
@@ -337,6 +337,8 @@ static bool setup_single(const char *container_path,
 	output(0, "self-cgroup: single-cgroup fallback "
 	       "(memory.max=%s memory.high=%s memory.swap.max=%s) -- no OOM scope split\n",
 	       max_str, high_str, swap_str);
+	cg_original = origin_path;
+	origin_path = NULL;
 	ok = true;
 
 fail:
