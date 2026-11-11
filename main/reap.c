@@ -152,11 +152,11 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 
 	__atomic_store_n(&pids[childno], EMPTY_PIDSLOT, __ATOMIC_RELEASE);
 
-	/* Drop the per-child pre-crash ring's backing pages.  The forensic
-	 * dump above has already consumed the ring contents; reset head to 0
-	 * so the slot's next occupant publishes its first entry into a clean
-	 * ring.  Reap runs strictly after the child has been waited on, so
-	 * no live writer can race this reset. */
+	/* Empty the per-child pre-crash ring.  The forensic dump above has
+	 * already consumed the ring contents; reset head to 0 so the slot's
+	 * next occupant publishes its first entry into a clean ring.  A
+	 * deferred reap's child may still write one more entry: see
+	 * pre_crash_ring_reset(). */
 	pre_crash_ring_reset(&child->pre_crash);
 
 	/* Drop the slot's bug-backtrace snapshot too.  The ~520 B struct

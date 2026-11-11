@@ -9,8 +9,6 @@
 
 #include <stdatomic.h>
 #include <stdint.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <time.h>
 
@@ -181,45 +179,20 @@ static void dump_one_ring(struct childdata *child,
 
 void pre_crash_ring_reset(struct pre_crash_ring *ring)
 {
-	const long pagesize = sysconf(_SC_PAGESIZE);
-	uintptr_t start, end, aligned_start, aligned_end;
-
-	if (ring == NULL || pagesize <= 0)
+	if (ring == NULL)
 		return;
 
-	/* Reset head BEFORE dropping the pages.  Most callers satisfy the
-	 * "child fully gone" precondition documented in the header, but the
-	 * deferred-reap path runs reset while the kernel may still resume the
-	 * task to finish its in-flight syscall -- one more producer call can
-	 * land between the madvise and the head store.  Publishing head=0
-	 * first means any such late producer reloads head as 0, writes slot 0,
-	 * and republishes head=1 on top of a slot the madvise is about to
-	 * drop; the dumper then sees either an empty ring or that single slot
-	 * in a fresh page.  Doing this in the other order would let the
-	 * producer write at the old (high) head into a freshly-faulted zero
-	 * page, then have the reset stomp head back to 0, leaving the next
-	 * occupant's ring with a stranded high-offset entry visible to the
-	 * dumper once head wraps back around. */
+	/* head is the reset: the dumper reads only the entries below it.
+	 * Most callers satisfy the "child fully gone" precondition documented
+	 * in the header, but the deferred-reap path runs reset while the
+	 * kernel may still resume the task to finish its in-flight syscall --
+	 * one more producer call can land after the store.  It reloads head
+	 * as 0, writes slot 0 and republishes head=1, so the dumper sees
+	 * either an empty ring or that single slot.  The entries' pages stay
+	 * resident: childdata is MAP_ANON | MAP_SHARED, shmem, which
+	 * MADV_DONTNEED only unmaps, and the slot's next occupant refills
+	 * the ring. */
 	__atomic_store_n(&ring->base.head, 0, __ATOMIC_RELEASE);
-
-	/* Drop the rolling-history entries pages.  The childdata mapping is
-	 * MAP_ANON | MAP_SHARED, so MADV_DONTNEED frees the resident pages
-	 * and the next producer faults clean zero pages on demand -- the
-	 * parent's RSS no longer carries one slot's worth of stale ring per
-	 * recycled child for the rest of the run.  Only the page-aligned
-	 * interior of entries[] is dropped; bytes sharing the head/tail
-	 * boundary pages with other childdata fields stay resident but are
-	 * unreachable once head is reset to 0 above. */
-	start = (uintptr_t) ring->entries;
-	end = start + sizeof(ring->entries);
-	aligned_start = (start + (uintptr_t) pagesize - 1) &
-			~((uintptr_t) pagesize - 1);
-	aligned_end = end & ~((uintptr_t) pagesize - 1);
-	if (aligned_end > aligned_start) {
-		(void) madvise((void *) aligned_start,
-			       (size_t) (aligned_end - aligned_start),
-			       MADV_DONTNEED);
-	}
 }
 
 void pre_crash_ring_dump(struct childdata *child, pre_crash_emit_fn emit)
