@@ -235,11 +235,11 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 	case STATE_GEN_VALIDATE_ARCH:
 		used = 3;
 		memcpy(curr, validate_arch, sizeof(validate_arch));
-		/* Randomize architecture */
+		/* Randomize the arch the JEQ compares the loaded one with */
 		if (ONE_IN(3))
-			curr[0].k = bpf_rand(seccomp_jmp_arch);
+			curr[1].k = bpf_rand(seccomp_jmp_arch);
 		else
-			curr[0].k = NATIVE_AUDIT_ARCH;
+			curr[1].k = NATIVE_AUDIT_ARCH;
 		break;
 	case STATE_GEN_EXAMINE_SYSCALL:
 		used = 1;

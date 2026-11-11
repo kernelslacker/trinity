@@ -22,6 +22,7 @@
 #include "exec-paths.h"
 #include "kallsyms-symbols.h"
 #include "debug.h"		/* BUG */
+#include "net.h"		/* bpf_gen_seccomp */
 #include "deferred-free.h"	/* deferred_alloc_track, alloc_track_lookup */
 #include "objects.h"		/* struct bpfobj */
 #include "rnd.h"
@@ -31,6 +32,8 @@
 #include "syscalls/syscalls.h"	/* syscall_bpf */
 #include "utils.h"		/* ARRAY_SIZE */
 
+#include "kernel/audit.h"
+#include "kernel/seccomp.h"
 #include "net/bpf/ebpf-internal.h"
 #include "struct_catalog-internal.h"	/* bpf_attr_variants */
 #include "syscalls/bpf-internal.h"
@@ -2044,6 +2047,44 @@ static void link_create_catalog_has_the_tracing_multi_tail(void)
 }
 #endif /* USE_BPF_LINK_CREATE_TRACING_MULTI */
 
+/*
+ * seccomp_check_filter() refuses an absolute load past struct
+ * seccomp_data or off a word boundary, so an arch check loads the arch
+ * and puts the AUDIT_ARCH value in the JEQ after the load, mostly the
+ * native one.
+ */
+static void seccomp_arch_checks_compare_the_arch(void)
+{
+	enum { PROGRAMS = 2000 };
+	unsigned int i, j, checks = 0, native = 0;
+
+	for (i = 0; i < PROGRAMS; i++) {
+		unsigned long *addr = NULL, len = 0;
+		struct sock_fprog *prog;
+
+		bpf_gen_seccomp(&addr, &len);
+		prog = (struct sock_fprog *) addr;
+		for (j = 0; j < prog->len; j++) {
+			const struct sock_filter *f = &prog->filter[j];
+
+			if (f->code != (BPF_LD | BPF_W | BPF_ABS))
+				continue;
+			check("an absolute load leaves struct seccomp_data",
+			      "seccomp program",
+			      f->k < sizeof(struct seccomp_data) && !(f->k & 3));
+			if (f->k != offsetof(struct seccomp_data, arch) ||
+			    j + 1 == prog->len)
+				continue;
+			checks++;
+			native += prog->filter[j + 1].k == NATIVE_AUDIT_ARCH;
+		}
+		free(prog->filter);
+		free(prog);
+	}
+	check("most arch checks do not compare against the native arch",
+	      "seccomp program", native * 2 > checks);
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -2061,6 +2102,7 @@ void bpf_gen_self_check(void)
 	map_elem_draws_reach_the_maps_code();
 	link_create_takes_its_arm_and_the_head_its_taker_wants();
 	link_create_draws_an_attach_type_its_program_takes();
+	seccomp_arch_checks_compare_the_arch();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif
