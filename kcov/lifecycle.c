@@ -709,14 +709,16 @@ bool kcov_recover_fd(struct kcov_child *kc, bool is_cmp)
 	/* Park the rebuilt fd above the picker range, same best-effort
 	 * relocation kcov_init_child does.  A failed dup just leaves the
 	 * fresh fd at its low slot; the protected-fd registry still covers
-	 * it via fd_is_protected once we install it below. */
+	 * it via fd_is_protected once we install it below.  The dead fd's
+	 * number is free and usually the lowest one past the base, so the
+	 * dup most often lands on it: then there is no old fd to close. */
 	new_fd = fd_relocate_high(new_fd);
 
 	if (*buf_slot != NULL) {
 		untrack_shared_region((unsigned long)*buf_slot, buf_bytes);
 		munmap(*buf_slot, buf_bytes);
 	}
-	if (*fd_slot >= 0)
+	if (*fd_slot >= 0 && *fd_slot != new_fd)
 		close(*fd_slot);
 
 	*fd_slot = new_fd;
