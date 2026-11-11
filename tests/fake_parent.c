@@ -335,9 +335,10 @@ void record_reap(int childno, int childstatus)
 	fake_slot_log[childno].reap_status = childstatus;
 }
 
-void dump_child_fault_beacon(struct childdata *child)
+void dump_child_fault_beacon(struct childdata *child, unsigned int childno)
 {
 	(void)child;
+	(void)childno;
 }
 
 /* What spawn_child() reaches.  It tells the canary queue which slot is

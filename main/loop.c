@@ -107,7 +107,7 @@ static unsigned int drain_child_surfaces(void)
 			if (__atomic_load_n(&bc->bug_dumped,
 					    __ATOMIC_ACQUIRE))
 				continue;
-			dump_child_bug(bc);
+			dump_child_bug(bc, bi);
 		}
 	}
 
@@ -137,7 +137,7 @@ static unsigned int drain_child_surfaces(void)
 			if (__atomic_load_n(&fc->fault_beacon_dumped,
 					    __ATOMIC_ACQUIRE))
 				continue;
-			dump_child_fault_beacon(fc);
+			dump_child_fault_beacon(fc, fi);
 		}
 	}
 

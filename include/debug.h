@@ -27,7 +27,7 @@ void dump_syscallrec(struct syscallrecord *rec);
  * but never called from a signal handler) and drains
  * child->pre_crash_ring.  Called from the main_loop per-tick poll.
  */
-void dump_child_bug(struct childdata *child);
+void dump_child_bug(struct childdata *child, unsigned int childno);
 
 /*
  * Surface a signal-time fault beacon stamped by child_fault_handler
@@ -38,7 +38,7 @@ void dump_child_bug(struct childdata *child);
  * writable segment.  Called from the main_loop per-tick poll, same
  * shape as dump_child_bug().
  */
-void dump_child_fault_beacon(struct childdata *child);
+void dump_child_fault_beacon(struct childdata *child, unsigned int childno);
 
 /*
  * Classify the on-disk bug log for a reaped child that had a fault beacon.

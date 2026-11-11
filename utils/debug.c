@@ -217,8 +217,18 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	}
 }
 
-void dump_child_bug(struct childdata *child)
+/*
+ * @childno is the slot the caller found @child in: childdata, num with the
+ * rest, is the child's to write, so a scribbled num would index pids[] out
+ * of bounds.  bug_text and bug_func are the child's pointers too, to string
+ * literals in the image both processes map at one address: print one only
+ * from there, as anything else could fault the parent.
+ */
+void dump_child_bug(struct childdata *child, unsigned int childno)
 {
+	const char *text = child->bug_text;
+	const char *func = child->bug_func;
+
 	if (child == NULL)
 		return;
 
@@ -234,13 +244,14 @@ void dump_child_bug(struct childdata *child)
 					  __ATOMIC_RELAXED))
 		return;
 
+	if (text == NULL || !range_overlaps_image((unsigned long) text, 0))
+		text = "?";
+	if (func == NULL || !range_overlaps_image((unsigned long) func, 0))
+		func = "?";
 	outputerr("BUG!: (child %u pid %d) %s\n",
-		  child->num, pids[child->num],
-		  child->bug_text ? child->bug_text : "?");
+		  childno, pids[childno], text);
 	outputerr("BUG!: %s\n", VERSION);
-	outputerr("BUG!: %s:%u\n",
-		  child->bug_func ? child->bug_func : "?",
-		  child->bug_lineno);
+	outputerr("BUG!: %s:%u\n", func, child->bug_lineno);
 
 #ifdef USE_BACKTRACE
 	/* Acquire-load on .count pairs with the child's release-store in
@@ -276,7 +287,7 @@ void dump_child_bug(struct childdata *child)
 	pre_crash_ring_dump(child, outputerr);
 
 	outputerr("BUG!: fleet halted — fuzzing stopped, attach gdb to pid %d (or any other live process) to inspect\n",
-		  pids[child->num]);
+		  pids[childno]);
 }
 
 /*
@@ -367,7 +378,8 @@ void beacon_loss_count_skipped_timed_out(void)
 	skipped_timed_out_beacons++;
 }
 
-void dump_child_fault_beacon(struct childdata *child)
+/* @childno as for dump_child_bug(). */
+void dump_child_fault_beacon(struct childdata *child, unsigned int childno)
 {
 	struct child_fault_beacon *beacon;
 	uint32_t written;
@@ -409,7 +421,7 @@ void dump_child_fault_beacon(struct childdata *child)
 	}
 
 	outputerr("FAULT!: (child %u pid %d) %s (si_code=%d, si_addr=%p)\n",
-		  child->num, pids[child->num], signame,
+		  childno, pids[childno], signame,
 		  (int)beacon->sig_code, beacon->fault_addr);
 	if (beacon->fault_ip != NULL || beacon->fault_sp != NULL) {
 		outputerr("FAULT!:  ip=%p sp=%p\n",

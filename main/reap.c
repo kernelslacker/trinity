@@ -126,7 +126,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 
 	/* Surface any stamped beacon while pids[childno] still holds the
 	 * real pid and the pre-crash ring is still intact.  dump_child_fault_beacon
-	 * reads pids[child->num] for the FAULT!/BUG! output lines and reads
+	 * reads pids[childno] for the FAULT!/BUG! output lines and reads
 	 * the pre-crash ring for the breadcrumb hash in the FAULT! aggregation
 	 * key.  Clearing pids[] first produces a stale pid in the FAULT! line;
 	 * resetting the ring first zeros head so the breadcrumb loop runs 0
@@ -137,7 +137,7 @@ void reap_child(struct childdata *child, int childno, bool child_dead)
 	 * calls dump_child_fault_beacon; the fault_beacon_dumped cmpxchg gate
 	 * makes this call idempotent against that path so it is safe even if
 	 * both paths see the beacon. */
-	dump_child_fault_beacon(child);
+	dump_child_fault_beacon(child, childno);
 	/*
 	 * Classify the on-disk bug log once the child has exited.  Pass pid
 	 * explicitly -- captured from pids[childno] above -- so the zombie-
