@@ -1,6 +1,7 @@
 #include <sys/klog.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <syslog.h>
@@ -9,6 +10,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <time.h>
+#include <unistd.h>
 #include "arch.h"
 #include "child.h"
 #include "kcov.h"
@@ -450,21 +452,30 @@ static int format_artifact_dirname(char *out, size_t outlen, unsigned int seed)
 	return 0;
 }
 
-static FILE *open_artifact(const char *dir, const char *name)
+/*
+ * A new file in the artifact directory, which @dirfd holds.  The run's tmp/
+ * is world-writable without the sticky bit, so a local user may have put a
+ * symlink in the place of a name: create each file, never follow one.
+ */
+static FILE *open_artifact(int dirfd, const char *name)
 {
-	char path[256];
-	int n;
+	FILE *fp;
+	int fd;
 
-	n = snprintf(path, sizeof(path), "%s/%s", dir, name);
-	if (n < 0 || (size_t) n >= sizeof(path))
+	fd = openat(dirfd, name, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW |
+		    O_CLOEXEC, 0644);
+	if (fd < 0)
 		return NULL;
-	return fopen(path, "w");
+	fp = fdopen(fd, "w");
+	if (fp == NULL)
+		close(fd);
+	return fp;
 }
 
-static void __cold write_artifact_buf(const char *dir, const char *name,
+static void __cold write_artifact_buf(int dirfd, const char *name,
 				      const char *buf, size_t len)
 {
-	FILE *fp = open_artifact(dir, name);
+	FILE *fp = open_artifact(dirfd, name);
 
 	if (fp == NULL)
 		return;
@@ -549,6 +560,7 @@ void __cold tainted_postmortem(void)
 	size_t runtime_len = 0;
 	unsigned int seed;
 	char dirname[128];
+	int dirfd = -1;
 
 	__atomic_store_n(&shm->postmortem_in_progress, true, __ATOMIC_RELEASE);
 
@@ -577,8 +589,12 @@ void __cold tainted_postmortem(void)
 	syslog(LOG_CRIT, "Detected kernel tainting. Last seed was %u\n", seed);
 	closelog();
 
+	/* Held by fd from its mkdir() on: a rename and a symlink in its
+	 * place (see open_artifact()) cannot redirect the files. */
 	if (format_artifact_dirname(dirname, sizeof(dirname), seed) < 0 ||
-	    mkdir(dirname, 0755) != 0) {
+	    mkdir(dirname, 0755) != 0 ||
+	    (dirfd = open(dirname, O_RDONLY | O_DIRECTORY | O_NOFOLLOW |
+			  O_CLOEXEC)) < 0) {
 		outputerr("Failed to create post-mortem dir (%s)\n",
 			  strerror(errno));
 		goto out;
@@ -586,7 +602,7 @@ void __cold tainted_postmortem(void)
 	output(0, "Post-mortem artifact: %s/\n", dirname);
 
 	/* Small triage header. The bulky data lives in sibling files. */
-	fp = open_artifact(dirname, "summary.log");
+	fp = open_artifact(dirfd, "summary.log");
 	if (fp != NULL) {
 		if (have_header)
 			fprintf(fp, "KERNEL: %s\n", header);
@@ -596,33 +612,35 @@ void __cold tainted_postmortem(void)
 		fclose(fp);
 	}
 
-	fp = open_artifact(dirname, "syscall-rings.log");
+	fp = open_artifact(dirfd, "syscall-rings.log");
 	if (fp != NULL) {
 		dump_syscall_records(fp, &taint_tp);
 		fclose(fp);
 	}
 
 	if (runtime_buf != NULL && runtime_len > 0)
-		write_artifact_buf(dirname, "child-state.log",
+		write_artifact_buf(dirfd, "child-state.log",
 				   runtime_buf, runtime_len);
 
 	if (kmsg != NULL && kmsg_len > 0)
-		write_artifact_buf(dirname, "dmesg.txt", kmsg, kmsg_len);
+		write_artifact_buf(dirfd, "dmesg.txt", kmsg, kmsg_len);
 
 	/* Replay marker: `trinity -s $(cat seed)` reproduces this run. */
-	fp = open_artifact(dirname, "seed");
+	fp = open_artifact(dirfd, "seed");
 	if (fp != NULL) {
 		fprintf(fp, "%u\n", seed);
 		fclose(fp);
 	}
 
-	fp = open_artifact(dirname, "kcov.log");
+	fp = open_artifact(dirfd, "kcov.log");
 	if (fp != NULL) {
 		dump_kcov_state(fp);
 		fclose(fp);
 	}
 
 out:
+	if (dirfd >= 0)
+		close(dirfd);
 	free(kmsg);
 	free(runtime_buf);
 	__atomic_store_n(&shm->postmortem_in_progress, false, __ATOMIC_RELEASE);

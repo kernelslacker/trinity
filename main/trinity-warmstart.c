@@ -346,11 +346,17 @@ void publish_and_persist_seed(void)
 		output(0, "seed=0x%x\n", active_seed);
 
 		if (user_set_seed == false) {
-			FILE *f = fopen("last-run-seed.tmp", "w");
+			int fd;
 
-			if (f != NULL) {
-				int wrote = fprintf(f, "%u\n", active_seed);
-				int closed = fclose(f);
+			/* tmp/ is world-writable without the sticky bit, so
+			 * a local user may have put a symlink here: create
+			 * the file afresh rather than follow one. */
+			(void)unlink("last-run-seed.tmp");
+			fd = open("last-run-seed.tmp", O_WRONLY | O_CREAT |
+				  O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0644);
+			if (fd >= 0) {
+				int wrote = dprintf(fd, "%u\n", active_seed);
+				int closed = close(fd);
 
 				if (wrote > 0 && closed == 0) {
 					if (rename("last-run-seed.tmp",
