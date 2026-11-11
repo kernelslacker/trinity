@@ -1063,6 +1063,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	unsigned long saved_a[6];
 	unsigned long saved_retval, saved_post_state;
 	int saved_errno_post;
+	unsigned int saved_flags;
+	bool saved_kernel_entered;
 	bool ok;
 
 	/* Per-window cap.  Reset to a fresh window
@@ -1142,9 +1144,12 @@ static bool redqueen_reexec_step(struct childdata *child,
 	 * Restore on exit so a caller that reads rec after the helper
 	 * returns -- the chain-corpus save in chain-corpus.c being the
 	 * load-bearing one -- sees the original dispatched call's args /
-	 * retval, not the re-exec's.  nr / do32bit are NOT in the snapshot
-	 * set: redqueen always dispatches the same (nr, do32) as the
-	 * parent, so those fields stay invariant across the helper. */
+	 * retval, not the re-exec's.  The drain's next entry reads the
+	 * parent's REEXEC_OK out of flags in the gate above, and the
+	 * dispatch wrapper counts the parent as completed off
+	 * kernel_entered.  nr / do32bit are NOT in the snapshot set:
+	 * redqueen always dispatches the same (nr, do32) as the parent, so
+	 * those fields stay invariant across the helper. */
 	saved_a[0] = rec->a1;
 	saved_a[1] = rec->a2;
 	saved_a[2] = rec->a3;
@@ -1154,6 +1159,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	saved_retval = rec->retval;
 	saved_post_state = rec->post_state;
 	saved_errno_post = rec->errno_post;
+	saved_flags = rec->flags;
+	saved_kernel_entered = rec->kernel_entered;
 
 	/* Coherent re-publishes around the re-exec dispatch state.  Same
 	 * (nr, do32bit) as the parent so those don't need re-publication,
@@ -1339,6 +1346,8 @@ static bool redqueen_reexec_step(struct childdata *child,
 	rec->retval = saved_retval;
 	rec->post_state = saved_post_state;
 	rec->errno_post = saved_errno_post;
+	rec->flags = saved_flags;
+	rec->kernel_entered = saved_kernel_entered;
 	srec_publish_end(rec);
 
 	return ok;
