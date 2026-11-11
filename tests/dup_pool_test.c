@@ -71,6 +71,7 @@ extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
+extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 extern bool (*fake_syscall)(long number, const unsigned long a[6],
 			    long *ret);	/* landlock_test.c */
 
@@ -2343,6 +2344,41 @@ static void open_oracle_reports_a_dead_fd(void)
 	}
 }
 
+/* openat2's struct open_how, as the uapi lays it out. */
+struct open_how_view {
+	uint64_t flags;
+	uint64_t mode;
+	uint64_t resolve;
+};
+
+/* openat2 refuses a mode unless the open creates: O_CREAT, or the whole of
+ * O_TMPFILE, which glibc spells with O_DIRECTORY in it, so that an open of
+ * a directory alone takes none.  The flags are a random subset of the
+ * open flags, O_DIRECTORY and O_TMPFILE among them. */
+static void openat2_sets_a_mode_only_for_an_open_that_creates(void)
+{
+	unsigned int i;
+
+	fake_rand_bitmask_draws = true;
+	for (i = 0; i < 1000; i++) {
+		const struct open_how_view *how;
+		struct syscallrecord rec;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = (unsigned long) AT_FDCWD;
+		rec.a2 = (unsigned long) "/";
+		syscall_openat2.sanitise(&rec);
+		how = (const struct open_how_view *) rec.a3;
+		check("a mode went with flags that create nothing", "openat2",
+		      how->mode == 0 || (how->flags & O_CREAT) ||
+		      (how->flags & O_TMPFILE) == O_TMPFILE);
+		/* The release .cleanup makes leaks here: this binary's
+		 * zmalloc_tracked() registers nothing with the alloc-track. */
+		free((void *) rec.post_state);
+	}
+	fake_rand_bitmask_draws = false;
+}
+
 /* What fstat() would say of a @mode file nothing else in the test holds. */
 static struct stat stat_of(mode_t mode)
 {
@@ -4309,6 +4345,7 @@ void dup_pool_self_check(void)
 	open_closing_a_device_does_not_evict();
 	open_without_a_destructor_closes();
 	open_oracle_reports_a_dead_fd();
+	openat2_sets_a_mode_only_for_an_open_that_creates();
 
 	/* The O_PATH oracle's cases run alike on any host: the ctime rule
 	 * holds unless a case says otherwise, and a kernel without unique

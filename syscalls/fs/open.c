@@ -625,13 +625,14 @@ static void sanitise_openat2(struct syscallrecord *rec)
 
 	/*
 	 * mode is only legal when the kernel will create or materialise
-	 * an inode (O_CREAT or __O_TMPFILE).  O_TMPFILE bundles
-	 * O_DIRECTORY plus __O_TMPFILE, so a single mask check covers
-	 * both.  Outside those, a non-zero mode trips the kernel's
-	 * "mode set without O_CREAT/__O_TMPFILE" -EINVAL gate before
-	 * any lookup work happens.
+	 * an inode (O_CREAT or __O_TMPFILE).  Outside those, a non-zero
+	 * mode trips the kernel's "mode set without O_CREAT/__O_TMPFILE"
+	 * -EINVAL gate before any lookup work happens.  O_TMPFILE bundles
+	 * O_DIRECTORY, and glibc's __O_TMPFILE does too, so masking with
+	 * either would also give a mode to an open of a directory: test
+	 * for the whole of O_TMPFILE, as glibc's __OPEN_NEEDS_MODE does.
 	 */
-	if (how->flags & (O_CREAT | O_TMPFILE))
+	if ((how->flags & O_CREAT) || (how->flags & O_TMPFILE) == O_TMPFILE)
 		how->mode = 0666;
 
 	/*
