@@ -175,7 +175,8 @@ static struct sock_fprog *do_set_seccomp(struct syscallrecord *rec)
 	unsigned long *optval = NULL, __unused__ optlen = 0;
 
 #ifdef USE_BPF
-	bpf_gen_seccomp(&optval, &optlen);
+	/* prctl() gives a filter no listener. */
+	bpf_gen_seccomp(&optval, &optlen, true);
 #endif
 
 	/*

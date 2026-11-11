@@ -4,7 +4,8 @@
  * EXTRA_FORK call, so those entries have to leave the active table.
  * --dry-run issues no call anywhere and takes them in the child like the
  * rest, and every other build leaves the table alone.  An ENOSYS return
- * (deactivate_enosys()) takes out the entry that returned it.
+ * (deactivate_enosys()) takes out the entry that returned it, but not in a
+ * child whose own seccomp filter may have answered it.
  */
 
 #include <stdbool.h>
@@ -12,6 +13,7 @@
 
 #include "arch.h"		/* biarch */
 #include "debug.h"		/* BUG */
+#include "net.h"		/* seccomp_own_filter */
 #include "params.h"		/* dry_run */
 #include "syscall.h"
 #include "syscall-internal.h"	/* deactivate_enosys */
@@ -226,6 +228,16 @@ static void enosys_deactivates_the_dispatched_entry(void)
 		BUG("tables_extrafork: ENOSYS deactivated another entry than the 64-bit one that returned it");
 	if (strstr(fake_output_log, ":[32BIT]") != NULL)
 		BUG("tables_extrafork: the ENOSYS deactivation logged the wrong ABI");
+
+	/* TRACE and USER_NOTIF answer ENOSYS: a child with a filter of its
+	 * own retires nothing, and its siblings still judge the call. */
+	nr_deactivated = 0;
+	fake_output_log[0] = '\0';
+	seccomp_own_filter = true;
+	deactivate_enosys(&p64.entry[PLAIN]);
+	seccomp_own_filter = false;
+	if (nr_deactivated != 0 || fake_output_log[0] != '\0')
+		BUG("tables_extrafork: a child with a seccomp filter of its own retired a syscall on ENOSYS");
 
 	biarch = false;
 	syscalls_32bit = NULL;

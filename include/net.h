@@ -116,7 +116,8 @@ extern const struct netproto proto_ieee802154;
 /* bpf */
 struct sock_fprog;
 void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
-void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen);
+/* @notify: the filter gets no listener, so a match may return USER_NOTIF. */
+void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen, bool notify);
 /* Set once a filter of the child's own has installed (net/bpf/bpf.c). */
 extern bool seccomp_own_filter;
 void bpf_free_filter(struct sock_fprog *bpf);

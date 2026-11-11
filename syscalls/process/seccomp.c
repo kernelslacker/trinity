@@ -42,6 +42,9 @@ static const uint32_t seccomp_ret_actions[] = {
  * fprog->filter free), and a flip away from SECCOMP_SET_MODE_FILTER
  * can't leak the sock_fprog and its filter.
  *
+ * For SECCOMP_SET_MODE_FILTER, notify records whether bpf_gen_seccomp()
+ * was let write USER_NOTIF returns, for vet_final_seccomp().
+ *
  * Per-op allocation matrix.  Of the four SECCOMP_* ops, two allocate
  * a heap buffer that the post handler has to free:
  *
@@ -64,6 +67,7 @@ static const uint32_t seccomp_ret_actions[] = {
 struct seccomp_post_state {
 	unsigned long magic;
 	unsigned int op;
+	bool notify;
 	void *heap;
 };
 
@@ -98,6 +102,7 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 {
 	struct seccomp_post_state *snap;
 	void *heap = NULL;
+	bool notify = false;
 
 	rec->a1 = pick_seccomp_op();
 
@@ -119,7 +124,8 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		unsigned long *addr = NULL;
 		unsigned long len = 0;
 
-		bpf_gen_seccomp(&addr, &len);
+		notify = !(rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER);
+		bpf_gen_seccomp(&addr, &len, notify);
 		rec->a3 = (unsigned long) addr;
 		avoid_shared_buffer_inout(&rec->a3, sizeof(struct sock_fprog));
 		heap = addr;
@@ -175,10 +181,35 @@ static void sanitise_seccomp(struct syscallrecord *rec)
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic = SECCOMP_POST_STATE_MAGIC;
 		snap->op = rec->a1;
+		snap->notify = notify;
 		snap->heap = heap;
 		rec->post_state = (unsigned long) snap;
 		post_state_register(snap);
 	}
+}
+
+/*
+ * The flags word may have changed since sanitise_seccomp() built the
+ * program for it (chain substitution, a RedQueen pin): refuse a
+ * NEW_LISTENER on a program built without one, which may return
+ * USER_NOTIF (seccomp_match_action()), or on one whose snapshot cannot
+ * say how it was built.
+ */
+static int vet_final_seccomp(struct syscallrecord *rec,
+			     const struct syscallentry *entry)
+{
+	const struct seccomp_post_state *snap =
+		(const struct seccomp_post_state *) rec->post_state;
+
+	if (snap == NULL || !(rec->a2 & SECCOMP_FILTER_FLAG_NEW_LISTENER))
+		return 0;
+	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
+	    snap->magic == SECCOMP_POST_STATE_MAGIC && !snap->notify)
+		return 0;
+
+	outputerr("arg-coupling: %s rejected: NEW_LISTENER on a program that may return USER_NOTIF\n",
+		  entry->name);
+	return -1;
 }
 
 static void post_seccomp(struct syscallrecord *rec)
@@ -328,11 +359,11 @@ static unsigned long seccomp_ops[] = {
 };
 
 /*
- * The two wait flags need NEW_LISTENER, and bpf_gen_seccomp() writes no
- * USER_NOTIF return, so no filter installed here ever leaves a task
- * waiting for a reply.  That matters for RESTART_BEFORE_RECV: such a
- * wait restarts on a signal instead of failing with EINTR, so the
- * alarm(1) backstop could not break it.
+ * The two wait flags need NEW_LISTENER, and a filter with a listener
+ * returns no USER_NOTIF (vet_final_seccomp()), so no filter installed
+ * here ever leaves a task waiting for a reply.  That matters for
+ * RESTART_BEFORE_RECV: such a wait restarts on a signal instead of
+ * failing with EINTR, so the alarm(1) backstop could not break it.
  */
 static unsigned long seccomp_flags[] = {
 	SECCOMP_FILTER_FLAG_TSYNC,
@@ -352,6 +383,7 @@ struct syscallentry syscall_seccomp = {
 	.arg_params[0].list = ARGLIST(seccomp_ops),
 	.arg_params[1].list = ARGLIST(seccomp_flags),
 	.sanitise = sanitise_seccomp,
+	.vet_final = vet_final_seccomp,
 	.post = post_seccomp,
 	.group = GROUP_PROCESS,
 	/* a2 (flags word) is read by post_seccomp to decide whether

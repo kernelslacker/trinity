@@ -1,4 +1,3 @@
-#include <errno.h>
 #include <linux/unistd.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
@@ -25,9 +24,10 @@
 /*
  * Set in a child once a seccomp filter of its own, one bpf_gen_seccomp()
  * built, has installed in it.  From then on a call the filter matches can
- * fail by its hand, with the errno an ERRNO return names, so what such a
- * child sees no longer speaks for the kernel alone and must not settle what
- * the rest of the fleet believes about it.
+ * fail by its hand, with the errno an ERRNO return names or the ENOSYS a
+ * TRACE or USER_NOTIF return gets with no tracer or listener attached, so
+ * what such a child sees no longer speaks for the kernel alone and must not
+ * settle what the rest of the fleet believes about it.
  */
 bool seccomp_own_filter;
 
@@ -220,33 +220,40 @@ static const float seccomp_markov_init[__STATE_GEN_MAX] = {
  * The action of the RET behind a syscall-number match; every other RET
  * allows.  A filter stays on the child for good and filters stack, so
  * a RET every call reaches that refused them would leave the child
- * fuzzing nothing, and a match ends the child one time in 256.  No
- * TRACE or USER_NOTIF, and no ERRNO with ENOSYS: with no tracer or
- * listener each fails the call with ENOSYS, which deactivate_enosys()
- * takes for a missing syscall and retires from every child's table.
- * ERRNO's errno is nonzero, as 0 returns success without running it.
+ * fuzzing nothing, and a match ends the child one time in 256.  The rest
+ * return LOG, TRACE, ERRNO or, if @notify, USER_NOTIF.  With no tracer or
+ * listener attached TRACE and USER_NOTIF fail the call with ENOSYS,
+ * which deactivate_enosys() does not take for a missing syscall in a
+ * child with a filter of its own (seccomp_own_filter).  A filter that
+ * gets a listener (NEW_LISTENER) must not return USER_NOTIF: the child
+ * would wait on its own listener for a reply nothing sends.  ERRNO's
+ * errno is nonzero, as 0 returns success without running the call.
  */
-static uint32_t seccomp_match_action(void)
+static uint32_t seccomp_match_action(bool notify)
 {
 	static const uint32_t fatal[] = {
 		SECCOMP_RET_KILL_THREAD, SECCOMP_RET_KILL_PROCESS,
 		SECCOMP_RET_TRAP,
 	};
-	uint32_t err;
 
 	if (!ONE_IN(8))
 		return SECCOMP_RET_ALLOW;
 	if (ONE_IN(32))
 		return RAND_ARRAY(fatal);
-	if (RAND_BOOL())
+	switch (rnd_modulo_u32(notify ? 4 : 3)) {
+	case 0:
 		return SECCOMP_RET_LOG;
-	do {
-		err = 1 + rnd_modulo_u32(SECCOMP_RET_DATA);
-	} while (err == ENOSYS);
-	return SECCOMP_RET_ERRNO | err;
+	case 1:
+		return SECCOMP_RET_TRACE | rnd_modulo_u32(SECCOMP_RET_DATA + 1);
+	case 2:
+		return SECCOMP_RET_ERRNO | (1 + rnd_modulo_u32(SECCOMP_RET_DATA));
+	default:
+		return SECCOMP_RET_USER_NOTIF;
+	}
 }
 
-static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
+static int gen_seccomp_bpf_code(struct sock_filter *curr, int state,
+				bool notify)
 {
 	unsigned int nr;
 	int used = 0;
@@ -295,7 +302,7 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 			nr = max_nr_syscalls;
 		}
 		curr[0].k = nr > 1 ? 1 + rnd_modulo_u32(nr - 1) : 1;
-		curr[1].k = seccomp_match_action();
+		curr[1].k = seccomp_match_action(notify);
 		break;
 	case STATE_GEN_ALLOW:
 		used = 1;
@@ -348,7 +355,7 @@ static int seccomp_choose(const float probs[__STATE_GEN_MAX])
 	return -1;
 }
 
-void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
+void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen, bool notify)
 {
 	int avail;
 	int state;
@@ -375,7 +382,7 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 	for (curr = bpf->filter; avail > 3; ) {
 		int used;
 
-		used = gen_seccomp_bpf_code(curr, state);
+		used = gen_seccomp_bpf_code(curr, state, notify);
 		curr  += used;
 		avail -= used;
 

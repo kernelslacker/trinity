@@ -11,6 +11,7 @@
 
 #include "arch.h"		/* biarch */
 #include "fd.h"
+#include "net.h"		/* seccomp_own_filter */
 #include "params.h"
 #include "shm.h"
 #include "syscall.h"
@@ -165,6 +166,11 @@ void deactivate_enosys(struct syscallentry *entry)
 
 	/* some syscalls return ENOSYS instead of EINVAL etc (futex for eg) */
 	if (entry->flags & IGNORE_ENOSYS)
+		return;
+
+	/* A seccomp filter of the child's own can answer ENOSYS for a call
+	 * the kernel has: leave it to a sibling without one. */
+	if (seccomp_own_filter)
 		return;
 
 	lock(&shm->syscalltable_lock);

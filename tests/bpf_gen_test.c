@@ -2064,7 +2064,7 @@ static void seccomp_arch_checks_compare_the_arch(void)
 		unsigned long *addr = NULL, len = 0;
 		struct sock_fprog *prog;
 
-		bpf_gen_seccomp(&addr, &len);
+		bpf_gen_seccomp(&addr, &len, true);
 		prog = (struct sock_fprog *) addr;
 		for (j = 0; j < prog->len; j++) {
 			const struct sock_filter *f = &prog->filter[j];
@@ -2093,22 +2093,23 @@ static void seccomp_arch_checks_compare_the_arch(void)
  * child for good, so only the RET behind a syscall-number match (a JEQ
  * with jt 0 and jf 1) does anything else: it allows seven times in
  * eight and ends the child about one time in 256, and the match is not
- * on 0, which A holds before the first load.  No RET fails a call with
- * ENOSYS, which retires the call from every child's table: no TRACE or
- * USER_NOTIF, which do with no tracer or listener attached, and no
- * ERRNO with ENOSYS.  Nor ERRNO with 0, which returns 0 unrun.
+ * on 0, which A holds before the first load.  The rest LOG, TRACE, fail
+ * the call with an ERRNO other than 0, which returns 0 unrun, or, only
+ * in a program for a filter that gets no listener, return USER_NOTIF.
  */
 static void seccomp_programs_refuse_only_calls_they_name(void)
 {
 	enum { PROGRAMS = 2000 };
-	unsigned int i, j, matched = 0, allows = 0, fatal = 0;
+	unsigned int i, j, matched = 0, allows = 0, fatal = 0, traces = 0;
+	unsigned int notifs[2] = { 0, 0 };
 
 	for (i = 0; i < PROGRAMS; i++) {
 		unsigned long *addr = NULL, len = 0;
 		const struct sock_filter *last;
 		struct sock_fprog *prog;
+		bool may_notify = i & 1;
 
-		bpf_gen_seccomp(&addr, &len);
+		bpf_gen_seccomp(&addr, &len, may_notify);
 		prog = (struct sock_fprog *) addr;
 		last = &prog->filter[prog->len - 1];
 		check("a program does not end on a RET that allows",
@@ -2131,19 +2132,15 @@ static void seccomp_programs_refuse_only_calls_they_name(void)
 			}
 			matched++;
 			allows += action == SECCOMP_RET_ALLOW;
+			traces += action == SECCOMP_RET_TRACE;
+			notifs[may_notify] += action == SECCOMP_RET_USER_NOTIF;
 			check("a match is on 0, which A holds before any load",
 			      "seccomp program", prog->filter[j - 1].k != 0);
-			check("a matched RET returns TRACE or USER_NOTIF",
-			      "seccomp program",
-			      action != SECCOMP_RET_TRACE &&
-			      action != SECCOMP_RET_USER_NOTIF);
-			check("an ERRNO carries errno 0 or ENOSYS",
-			      "seccomp program",
-			      action != SECCOMP_RET_ERRNO ||
-			      (data != 0 && data != ENOSYS));
-			fatal += action != SECCOMP_RET_ERRNO &&
-				 action != SECCOMP_RET_LOG &&
-				 action != SECCOMP_RET_ALLOW;
+			check("an ERRNO carries errno 0", "seccomp program",
+			      action != SECCOMP_RET_ERRNO || data != 0);
+			fatal += action == SECCOMP_RET_KILL_THREAD ||
+				 action == SECCOMP_RET_KILL_PROCESS ||
+				 action == SECCOMP_RET_TRAP;
 		}
 		free(prog->filter);
 		free(prog);
@@ -2153,6 +2150,12 @@ static void seccomp_programs_refuse_only_calls_they_name(void)
 	      allows > matched * 0.82 && allows < matched * 0.93);
 	check("more than one matched RET in 64 ends the child",
 	      "seccomp program", fatal * 64 < matched);
+	check("hardly a matched RET returns TRACE", "seccomp program",
+	      traces * 64 > matched);
+	check("a program for a filter with a listener returns USER_NOTIF",
+	      "seccomp program", notifs[0] == 0);
+	check("hardly a program for a filter without one returns USER_NOTIF",
+	      "seccomp program", notifs[1] * 128 > matched);
 }
 
 #ifdef USE_SECCOMP
@@ -2182,6 +2185,74 @@ static void prctl_set_seccomp_hands_a_program(void)
 	free((void *) rec.post_state);
 }
 #endif
+
+/* A RET in @prog returns USER_NOTIF. */
+static bool program_notifies(const struct sock_fprog *prog)
+{
+	unsigned int j;
+
+	for (j = 0; j < prog->len; j++)
+		if (prog->filter[j].code == (BPF_RET | BPF_K) &&
+		    (prog->filter[j].k & SECCOMP_RET_ACTION_FULL) ==
+		    SECCOMP_RET_USER_NOTIF)
+			return true;
+	return false;
+}
+
+/*
+ * A filter installed with NEW_LISTENER has a listener of its own, and a
+ * USER_NOTIF it returns parks the child on it, with nothing to answer but
+ * the alarm, which RESTART_BEFORE_RECV defeats: a program the sanitiser
+ * builds for one returns no USER_NOTIF, and a flags word rewritten after
+ * the sanitiser ran cannot give one to a program that may.  A FILTER call
+ * is built with flags 0 or NEW_LISTENER in turn; .vet_final then sees the
+ * flags it was built with, and NEW_LISTENER.
+ */
+static void listener_filters_return_no_user_notif(void)
+{
+	static struct syscallrecord rec;
+	unsigned int built[2] = { 0, 0 }, notifying = 0, tries;
+
+	check("seccomp has no .vet_final", "seccomp listener",
+	      syscall_seccomp.vet_final != NULL);
+	if (syscall_seccomp.vet_final == NULL)
+		return;
+	for (tries = 0; tries < 20000 && built[0] + built[1] < 2000; tries++) {
+		bool listener = tries & 1;
+		struct sock_fprog *prog;
+		bool notifies;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a2 = listener ? SECCOMP_FILTER_FLAG_NEW_LISTENER : 0;
+		syscall_seccomp.sanitise(&rec);
+		if (rec.a1 != SECCOMP_SET_MODE_FILTER) {
+			if (rec.a1 == SECCOMP_GET_NOTIF_SIZES)
+				free((void *) rec.a3);
+			free((void *) rec.post_state);
+			continue;
+		}
+		prog = (struct sock_fprog *) rec.a3;
+		notifies = program_notifies(prog);
+		built[listener]++;
+		notifying += notifies;
+		check("a program for a filter with a listener returns USER_NOTIF",
+		      "seccomp listener", !listener || !notifies);
+		check("vet_final refused the flags the call was built with",
+		      "seccomp listener",
+		      syscall_seccomp.vet_final(&rec, &syscall_seccomp) == 0);
+		rec.a2 = SECCOMP_FILTER_FLAG_NEW_LISTENER;
+		check("vet_final let a rewrite give a listener to a program that may notify",
+		      "seccomp listener",
+		      (syscall_seccomp.vet_final(&rec, &syscall_seccomp) == 0) == listener);
+		free(prog->filter);
+		free(prog);
+		free((void *) rec.post_state);
+	}
+	check("the sanitiser drew too few FILTER calls of either kind",
+	      "seccomp listener", built[0] > 500 && built[1] > 500);
+	check("no program for a filter without a listener returns USER_NOTIF",
+	      "seccomp listener", notifying > 0);
+}
 
 /*
  * The post handlers give a program to deferred free, which takes only what
@@ -2272,6 +2343,7 @@ void bpf_gen_self_check(void)
 #ifdef USE_SECCOMP
 	prctl_set_seccomp_hands_a_program();
 #endif
+	listener_filters_return_no_user_notif();
 	installed_filters_mark_the_child();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
