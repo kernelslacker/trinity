@@ -293,8 +293,8 @@ void dump_child_bug(struct childdata *child, unsigned int childno)
 /*
  * Beacon-capture accounting.  Written only from dump_child_fault_beacon()
  * and classify_child_buglog() (parent main-loop / reap context, no
- * concurrent writers), read from print_stats() and finalize_and_exit()
- * via beacon_loss_get_counts().
+ * concurrent writers), reported from print_stats() and finalize_and_exit()
+ * via beacon_loss_report().
  *
  * total_beacon_dumps      -- incremented once per FAULT! beacon surfaced.
  * no_buglog_beacons       -- beacon fired but no per-pid bug log file
@@ -338,34 +338,37 @@ static unsigned int complete_buglog_beacons;
 static unsigned int skipped_timed_out_beacons;
 
 /*
- * Return the five beacon-capture counters accumulated across the run.
- * Called from print_stats() and finalize_and_exit() to surface numbers in
- * the run summary.  Safe to call from any parent context.
+ * Log the beacon-capture counters accumulated across the run, once at
+ * least one beacon has been surfaced.  Called from print_stats() and
+ * finalize_and_exit().  Safe to call from any parent context.
  *
  * total - (no_log + partial + unreadable + complete + skipped_timed_out)
  * gives the 'pending/lost' residual: beacons surfaced but never classified
  * because the owning child was killed (e.g. via kill_all_kids()) before
- * reap_child() ran classify_child_buglog().
+ * reap_child() ran classify_child_buglog().  classify_child_buglog() goes
+ * by the child-written .written, though, so it can count a beacon that was
+ * never surfaced: one a parked child stamped after its reap and that was
+ * classified before a tick's poll got to it, or one behind a scribbled
+ * fault_beacon_dumped.  The residual stops at zero then.
  */
-void beacon_loss_get_counts(unsigned int *out_total,
-			    unsigned int *out_no_log,
-			    unsigned int *out_partial,
-			    unsigned int *out_unreadable,
-			    unsigned int *out_complete,
-			    unsigned int *out_skipped_timed_out)
+void beacon_loss_report(void)
 {
-	if (out_total)
-		*out_total             = total_beacon_dumps;
-	if (out_no_log)
-		*out_no_log            = no_buglog_beacons;
-	if (out_partial)
-		*out_partial           = partial_buglog_beacons;
-	if (out_unreadable)
-		*out_unreadable        = unreadable_buglog_beacons;
-	if (out_complete)
-		*out_complete          = complete_buglog_beacons;
-	if (out_skipped_timed_out)
-		*out_skipped_timed_out = skipped_timed_out_beacons;
+	unsigned int classified;
+
+	if (total_beacon_dumps == 0)
+		return;
+
+	classified = no_buglog_beacons + partial_buglog_beacons +
+		     unreadable_buglog_beacons + complete_buglog_beacons +
+		     skipped_timed_out_beacons;
+	output(0, "FAULT-CAPTURE: beacons=%u complete=%u partial=%u "
+	       "unreadable=%u no_log=%u skipped_timed_out=%u "
+	       "pending/lost=%u\n",
+	       total_beacon_dumps, complete_buglog_beacons,
+	       partial_buglog_beacons, unreadable_buglog_beacons,
+	       no_buglog_beacons, skipped_timed_out_beacons,
+	       classified < total_beacon_dumps ?
+			total_beacon_dumps - classified : 0);
 }
 
 /*

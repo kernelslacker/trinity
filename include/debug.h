@@ -52,25 +52,16 @@ void dump_child_fault_beacon(struct childdata *child, unsigned int childno);
 void classify_child_buglog(struct childdata *child, pid_t pid);
 
 /*
- * Return the four beacon-capture loss counters accumulated by
- * dump_child_fault_beacon() / classify_child_buglog() across the run.
- * Any out-pointer may be NULL.
- *   *out_total       -- total beacons surfaced (cmpxchg-gated)
- *   *out_no_log      -- no per-pid bug log file on disk
- *   *out_partial     -- log present but BUGLOG-COMPLETE sentinel absent
- *   *out_unreadable  -- log present but zero-byte, read error, or open error
- *   *out_complete    -- log present, readable, BUGLOG-COMPLETE sentinel found
- *
- * total - (no_log + partial + unreadable + complete + skipped_timed_out)
- * is the 'pending/lost' residual: beacons surfaced but never classified
- * (child killed before reap_child() ran classify_child_buglog()).
+ * Log the beacon-capture counters accumulated by dump_child_fault_beacon()
+ * / classify_child_buglog() across the run as one FAULT-CAPTURE line:
+ * beacons surfaced (cmpxchg-gated); logs complete (BUGLOG-COMPLETE found),
+ * partial (sentinel absent), unreadable (zero-byte, read or open error) and
+ * missing; beacons skipped on the timed-out reap arm; and the
+ * 'pending/lost' residual of beacons surfaced but never classified (child
+ * killed before reap_child() ran classify_child_buglog()).  Logs nothing
+ * until a beacon has been surfaced.
  */
-void beacon_loss_get_counts(unsigned int *out_total,
-			    unsigned int *out_no_log,
-			    unsigned int *out_partial,
-			    unsigned int *out_unreadable,
-			    unsigned int *out_complete,
-			    unsigned int *out_skipped_timed_out);
+void beacon_loss_report(void);
 
 /*
  * Increment the skipped-timed-out beacon counter.  Call from the reap
