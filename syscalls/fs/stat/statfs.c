@@ -296,23 +296,21 @@ struct syscallentry syscall_statfs = {
 
 #ifdef SYS_statfs64
 /*
- * Snapshot of the three statfs64 input args read by the post oracle,
+ * Snapshot of the statfs64 input args read by the post oracle,
  * captured at sanitise time and consumed by the post handler.  Lives
  * in rec->post_state, a slot the syscall ABI does not expose, so a
  * sibling syscall scribbling rec->aN between the syscall returning
- * and the post handler running cannot smear the buffer-size word used
- * to seed the re-issue or steer the source memcpy at a foreign user
- * buffer.  The pathname is snapshotted by VALUE into the embedded byte
- * buffer below rather than by pointer -- a stale heap-shaped pathname
- * pointer that survived looks_like_corrupted_ptr's shape-only gate
- * would otherwise let the .post strncpy walk off the end of an
- * unrelated allocation, and a sibling rewrite of the bytes between
- * sanitise and post would forge a clean-looking divergence.
+ * and the post handler running cannot steer the source memcpy at a
+ * foreign user buffer.  The pathname is snapshotted by VALUE into the
+ * embedded byte buffer below rather than by pointer -- a stale
+ * heap-shaped pathname pointer that survived looks_like_corrupted_ptr's
+ * shape-only gate would otherwise let the .post strncpy walk off the
+ * end of an unrelated allocation, and a sibling rewrite of the bytes
+ * between sanitise and post would forge a clean-looking divergence.
  */
 #define STATFS64_POST_STATE_MAGIC	0x53544636UL	/* "STF6" */
 struct statfs64_post_state {
 	unsigned long magic;
-	unsigned long sz;
 	unsigned long buf;
 	uint64_t poison_seed;
 	char pathname[PATH_MAX];
@@ -352,10 +350,9 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		 * sibling syscall may have scribbled the slots:
 		 * looks_like_corrupted_ptr() cannot tell a real-but-wrong
 		 * heap address from the original user buf pointer, so the
-		 * source memcpy would touch a foreign allocation, a stomped
-		 * sz word would change the buffer-size semantics on the
-		 * re-issue, and a stale rec->a1 / sibling-rewritten pathname
-		 * bytes would let the re-issue resolve a different mount.
+		 * source memcpy would touch a foreign allocation, and a stale
+		 * rec->a1 / sibling-rewritten pathname bytes would let the
+		 * re-issue resolve a different mount.
 		 * Snapshot the pathname BYTES via post_snapshot_str so the
 		 * post handler never re-derefs the user pointer; skip the
 		 * post sample when the snapshot source is not provably
@@ -368,7 +365,6 @@ static void sanitise_statfs64(struct syscallrecord *rec)
 		 */
 		snap = zmalloc_tracked(sizeof(*snap));
 		snap->magic    = STATFS64_POST_STATE_MAGIC;
-		snap->sz       = rec->a2;
 		snap->buf      = rec->a3;
 		if (!post_snapshot_str(snap->pathname, sizeof(snap->pathname),
 				       (const char *)(unsigned long) rec->a1))
@@ -408,8 +404,8 @@ static void sanitise_statfs64(struct syscallrecord *rec)
  * f_fsid and f_type must match), and field-by-field comparison of
  * f_bsize, f_namelen and f_frsize with no early return so multi-field
  * corruption surfaces in a single sample.  The only shape delta from
- * post_statfs is the sz argument: snapshot rec->a2 and pass that exact
- * value back into the recheck issue rather than synthesizing one, so
+ * post_statfs is the sz argument: re-issue with the sz the kernel was
+ * handed, read from the arg shadow, rather than synthesizing one, so
  * the recheck sees the same buffer-size semantics the kernel saw the
  * first time.
  *
@@ -424,7 +420,7 @@ static void post_statfs64(struct syscallrecord *rec)
 {
 	struct statfs64_post_state *snap;
 	struct statfs64 first, recheck;
-	size_t sz_snapshot;
+	size_t sz;
 	int diverged = 0;
 
 	/*
@@ -441,7 +437,9 @@ static void post_statfs64(struct syscallrecord *rec)
 	if ((long) rec->retval != 0)
 		goto out_release;
 
-	if (snap->sz < sizeof(struct statfs64))
+	/* The size the kernel answered. */
+	sz = (size_t) get_arg_snapshot(rec, 2);
+	if (sz < sizeof(struct statfs64))
 		goto out_release;
 
 	if (snap->buf == 0)
@@ -468,14 +466,12 @@ static void post_statfs64(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_release;
 
-	sz_snapshot = (size_t) snap->sz;
-
 	if (!post_snapshot_or_skip(&first,
 				   (void *)(unsigned long) snap->buf,
 				   sizeof(first)))
 		goto out_release;
 
-	if (syscall(SYS_statfs64, snap->pathname, sz_snapshot, &recheck) != 0)
+	if (syscall(SYS_statfs64, snap->pathname, sz, &recheck) != 0)
 		goto out_release;
 
 	if (first.f_fsid.__val[0] != recheck.f_fsid.__val[0] ||
@@ -496,7 +492,7 @@ static void post_statfs64(struct syscallrecord *rec)
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x} "
 	       "recall={type=%lx,bsize=%ld,blocks=%llu,files=%llu,"
 	       "namelen=%ld,frsize=%ld,flags=%lx,fsid=%x:%x}\n",
-	       snap->pathname, sz_snapshot,
+	       snap->pathname, sz,
 	       (unsigned long) first.f_type, (long) first.f_bsize,
 	       (unsigned long long) first.f_blocks,
 	       (unsigned long long) first.f_files,
@@ -529,6 +525,10 @@ struct syscallentry syscall_statfs64 = {
 #ifdef SYS_statfs64
 	.post = post_statfs64,
 #endif
+	/* sz (a2): the re-call repeats the size the kernel was handed,
+	 * which chain substitution or a RedQueen pin may have rewritten
+	 * after the sanitiser drew its own. */
+	.arg_snapshot_mask = (1u << 1),
 	.group = GROUP_VFS_STAT,
 	.rettype = RET_ZERO_SUCCESS,
 	.flags = REEXEC_SANITISE_OK,
