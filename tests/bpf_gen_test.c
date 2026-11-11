@@ -2085,6 +2085,74 @@ static void seccomp_arch_checks_compare_the_arch(void)
 	      "seccomp program", native * 2 > checks);
 }
 
+/*
+ * bpf_check_classic() refuses a program whose last instruction is not a
+ * RET, so every program ends on one that allows.  A filter stays on the
+ * child for good, so only the RET behind a syscall-number match (a JEQ
+ * with jt 0 and jf 1) does anything else: it allows seven times in
+ * eight and ends the child about one time in 256, and the match is not
+ * on 0, which A holds before the first load.  No RET fails a call with
+ * ENOSYS, which retires the call from every child's table: no TRACE or
+ * USER_NOTIF, which do with no tracer or listener attached, and no
+ * ERRNO with ENOSYS.  Nor ERRNO with 0, which returns 0 unrun.
+ */
+static void seccomp_programs_refuse_only_calls_they_name(void)
+{
+	enum { PROGRAMS = 2000 };
+	unsigned int i, j, matched = 0, allows = 0, fatal = 0;
+
+	for (i = 0; i < PROGRAMS; i++) {
+		unsigned long *addr = NULL, len = 0;
+		const struct sock_filter *last;
+		struct sock_fprog *prog;
+
+		bpf_gen_seccomp(&addr, &len);
+		prog = (struct sock_fprog *) addr;
+		last = &prog->filter[prog->len - 1];
+		check("a program does not end on a RET that allows",
+		      "seccomp program",
+		      last->code == (BPF_RET | BPF_K) &&
+		      last->k == SECCOMP_RET_ALLOW);
+		for (j = 0; j < prog->len; j++) {
+			const struct sock_filter *f = &prog->filter[j];
+			uint32_t action = f->k & SECCOMP_RET_ACTION_FULL;
+			uint32_t data = f->k & SECCOMP_RET_DATA;
+
+			if (f->code != (BPF_RET | BPF_K))
+				continue;
+			if (j == 0 || prog->filter[j - 1].jt != 0 ||
+			    prog->filter[j - 1].jf != 1) {
+				check("a RET no match guards does not allow",
+				      "seccomp program",
+				      f->k == SECCOMP_RET_ALLOW);
+				continue;
+			}
+			matched++;
+			allows += action == SECCOMP_RET_ALLOW;
+			check("a match is on 0, which A holds before any load",
+			      "seccomp program", prog->filter[j - 1].k != 0);
+			check("a matched RET returns TRACE or USER_NOTIF",
+			      "seccomp program",
+			      action != SECCOMP_RET_TRACE &&
+			      action != SECCOMP_RET_USER_NOTIF);
+			check("an ERRNO carries errno 0 or ENOSYS",
+			      "seccomp program",
+			      action != SECCOMP_RET_ERRNO ||
+			      (data != 0 && data != ENOSYS));
+			fatal += action != SECCOMP_RET_ERRNO &&
+				 action != SECCOMP_RET_LOG &&
+				 action != SECCOMP_RET_ALLOW;
+		}
+		free(prog->filter);
+		free(prog);
+	}
+	check("a matched RET does not allow seven times in eight",
+	      "seccomp program",
+	      allows > matched * 0.82 && allows < matched * 0.93);
+	check("more than one matched RET in 64 ends the child",
+	      "seccomp program", fatal * 64 < matched);
+}
+
 #endif /* USE_BPF */
 
 void bpf_gen_self_check(void);
@@ -2103,6 +2171,7 @@ void bpf_gen_self_check(void)
 	link_create_takes_its_arm_and_the_head_its_taker_wants();
 	link_create_draws_an_attach_type_its_program_takes();
 	seccomp_arch_checks_compare_the_arch();
+	seccomp_programs_refuse_only_calls_they_name();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif

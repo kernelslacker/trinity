@@ -325,12 +325,11 @@ static unsigned long seccomp_ops[] = {
 };
 
 /*
- * The two wait flags need NEW_LISTENER, and post_seccomp() closes every
- * listener a call makes before the child issues another syscall, so no
- * filter installed here ever leaves a task waiting for a reply.  That
- * matters for RESTART_BEFORE_RECV: such a wait restarts on a signal
- * instead of failing with EINTR, so the alarm(1) backstop could not
- * break it.
+ * The two wait flags need NEW_LISTENER, and bpf_gen_seccomp() writes no
+ * USER_NOTIF return, so no filter installed here ever leaves a task
+ * waiting for a reply.  That matters for RESTART_BEFORE_RECV: such a
+ * wait restarts on a signal instead of failing with EINTR, so the
+ * alarm(1) backstop could not break it.
  */
 static unsigned long seccomp_flags[] = {
 	SECCOMP_FILTER_FLAG_TSYNC,

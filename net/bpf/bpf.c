@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <linux/unistd.h>
 #include <linux/bpf.h>
 #include <linux/filter.h>
@@ -73,13 +74,6 @@ static const uint16_t bpf_ret_vars[] = {
 
 static const uint16_t bpf_misc_vars[] = {
 	BPF_TAX, BPF_TXA,
-};
-
-static const uint32_t bpf_seccomp_ret_k_vars[] = {
-	SECCOMP_RET_KILL, SECCOMP_RET_KILL_PROCESS,
-	SECCOMP_RET_TRAP, SECCOMP_RET_ERRNO,
-	SECCOMP_RET_USER_NOTIF, SECCOMP_RET_TRACE,
-	SECCOMP_RET_LOG, SECCOMP_RET_ALLOW,
 };
 
 static const uint32_t bpf_saner_vars[] = {
@@ -193,8 +187,8 @@ static uint16_t gen_bpf_code_more_crazy(bool last_instr)
 enum {
 	STATE_GEN_VALIDATE_ARCH    = 0,
 	STATE_GEN_EXAMINE_SYSCALL  = 1,
-	STATE_GEN_ALLOW_SYSCALL    = 2,
-	STATE_GEN_KILL_PROCESS     = 3,
+	STATE_GEN_MATCH_SYSCALL    = 2,
+	STATE_GEN_ALLOW            = 3,
 	STATE_GEN_RANDOM_CRAP      = 4,
 	__STATE_GEN_MAX,
 };
@@ -212,23 +206,54 @@ static const float seccomp_markov_init[__STATE_GEN_MAX] = {
 	.5f, .3f, .1f, .05f, .05f
 };
 
+/*
+ * The action of the RET behind a syscall-number match; every other RET
+ * allows.  A filter stays on the child for good and filters stack, so
+ * a RET every call reaches that refused them would leave the child
+ * fuzzing nothing, and a match ends the child one time in 256.  No
+ * TRACE or USER_NOTIF, and no ERRNO with ENOSYS: with no tracer or
+ * listener each fails the call with ENOSYS, which deactivate_enosys()
+ * takes for a missing syscall and retires from every child's table.
+ * ERRNO's errno is nonzero, as 0 returns success without running it.
+ */
+static uint32_t seccomp_match_action(void)
+{
+	static const uint32_t fatal[] = {
+		SECCOMP_RET_KILL_THREAD, SECCOMP_RET_KILL_PROCESS,
+		SECCOMP_RET_TRAP,
+	};
+	uint32_t err;
+
+	if (!ONE_IN(8))
+		return SECCOMP_RET_ALLOW;
+	if (ONE_IN(32))
+		return RAND_ARRAY(fatal);
+	if (RAND_BOOL())
+		return SECCOMP_RET_LOG;
+	do {
+		err = 1 + rnd_modulo_u32(SECCOMP_RET_DATA);
+	} while (err == ENOSYS);
+	return SECCOMP_RET_ERRNO | err;
+}
+
 static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 {
+	unsigned int nr;
 	int used = 0;
 	struct sock_filter validate_arch[] = {
 		BPF_STMT(BPF_LD  | BPF_W   | BPF_ABS, arch_nr),
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 1, 0),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 	};
 	struct sock_filter examine_syscall[] = {
 		BPF_STMT(BPF_LD | BPF_W | BPF_ABS, syscall_nr),
 	};
-	struct sock_filter allow_syscall[] = {
+	struct sock_filter match_syscall[] = {
 		BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, 0, 0, 1),
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
+		BPF_STMT(BPF_RET | BPF_K, 0),
 	};
-	struct sock_filter kill_process[] = {
-		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL),
+	struct sock_filter allow[] = {
+		BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW),
 	};
 
 	switch (state) {
@@ -245,25 +270,26 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 		used = 1;
 		memcpy(curr, examine_syscall, sizeof(examine_syscall));
 		break;
-	case STATE_GEN_ALLOW_SYSCALL:
+	case STATE_GEN_MATCH_SYSCALL:
 		used = 2;
-		memcpy(curr, allow_syscall, sizeof(allow_syscall));
-		/* Pick a syscall nr from whichever table is active. */
+		memcpy(curr, match_syscall, sizeof(match_syscall));
+		/* Pick a syscall nr from whichever table is active, but not
+		 * 0: A is 0 until the program loads a word, so a match on 0
+		 * ahead of the first load would answer every call. */
 		if (biarch) {
 			if (syscalls == syscalls_32bit)
-				curr[0].k = rnd_modulo_u32(max_nr_32bit_syscalls);
+				nr = max_nr_32bit_syscalls;
 			else
-				curr[0].k = rnd_modulo_u32(max_nr_64bit_syscalls);
+				nr = max_nr_64bit_syscalls;
 		} else {
-			curr[0].k = rnd_modulo_u32(max_nr_syscalls);
+			nr = max_nr_syscalls;
 		}
+		curr[0].k = nr > 1 ? 1 + rnd_modulo_u32(nr - 1) : 1;
+		curr[1].k = seccomp_match_action();
 		break;
-	case STATE_GEN_KILL_PROCESS:
+	case STATE_GEN_ALLOW:
 		used = 1;
-		memcpy(curr, kill_process, sizeof(kill_process));
-		if (ONE_IN(3))
-			/* Variate between seccomp ret values */
-			curr[0].k = bpf_rand(seccomp_ret_k);
+		memcpy(curr, allow, sizeof(allow));
 		break;
 	default:
 	case STATE_GEN_RANDOM_CRAP:
@@ -278,7 +304,10 @@ static int gen_seccomp_bpf_code(struct sock_filter *curr, int state)
 		curr->code = (uint16_t) rnd_u32() & 0x07;
 		curr->jt = (uint8_t) rnd_u32();
 		curr->jf = (uint8_t) rnd_u32();
-		curr->k = rand32();
+		/* A RET here answers every call that reaches it, so it
+		 * allows. */
+		curr->k = BPF_CLASS(curr->code) == BPF_RET ?
+			  SECCOMP_RET_ALLOW : rand32();
 		break;
 	}
 
@@ -342,6 +371,10 @@ void bpf_gen_seccomp(unsigned long **addr, unsigned long *addrlen)
 
 		state = seccomp_choose(seccomp_markov[state]);
 	}
+	/* bpf_check_classic() wants a RET last.  The loop leaves one to
+	 * three slots free, and a jump past a state lands in them. */
+	bpf->filter[bpf->len - 1] =
+		(struct sock_filter) BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_ALLOW);
 
 	*addr = (void *) bpf;
 	if (addrlen != NULL)
