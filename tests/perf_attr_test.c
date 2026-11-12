@@ -9,15 +9,19 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "child.h"		/* struct childdata */
 #include "csfu.h"
 #include "debug.h"		/* BUG */
 #include "perf_event.h"
 #include "random.h"		/* RAND_BOOL */
+#include "uid.h"		/* orig_uid */
 #include "struct_catalog-internal.h"	/* perf_event_attr_fields */
 #include "utils-macros.h"		/* ARRAY_SIZE */
 #include "syscalls/perf/perf_event_open-internal.h"
 
 void perf_attr_self_check(void);
+
+extern struct childdata *fake_this_child;	/* fake_shm.c */
 
 /* Attrs per case: enough that a rule the builders meet in one draw in eight
  * is seen hundreds of times. */
@@ -419,6 +423,62 @@ static void check_defer_aux(void)
 	num_pmus = 0;
 }
 
+/*
+ * perf_event_open() wants perf_allow_kernel() for exclude_kernel 0, text_poke
+ * or a kernel callchain, and perfmon_capable() for namespaces (kernel/events/
+ * core.c), which a child, running with no capabilities, does not have; and
+ * perf_copy_attr() refuses inherit_thread without inherit, remove_on_exec
+ * with enable_on_exec, and sigtrap without remove_on_exec.
+ */
+static bool child_could_open(const struct perf_event_attr *attr)
+{
+	if (!attr->exclude_kernel || attr->text_poke || attr->namespaces)
+		return false;
+	if ((attr->sample_type & PERF_SAMPLE_CALLCHAIN) &&
+	    !attr->exclude_callchain_kernel)
+		return false;
+	if (attr->inherit_thread && !attr->inherit)
+		return false;
+	if (attr->remove_on_exec && attr->enable_on_exec)
+		return false;
+	return !attr->sigtrap || attr->remove_on_exec;
+}
+
+/*
+ * The counting and sampling builders, half the draws, mostly make attrs a
+ * child can open; the global builder's want a privileged caller, and the
+ * random one's seldom pass.  The root parent that fills the provider's pool
+ * keeps drawing kernel-mode events.
+ */
+static void check_privilege_gates(void)
+{
+	static struct childdata child;
+	struct perf_event_attr attr;
+	unsigned long passed = 0, kernel = 0, i;
+	uid_t saved_uid = orig_uid;
+
+	fake_this_child = &child;
+	for (i = 0; i < NR_ATTRS; i++) {
+		memset(&attr, 0, sizeof(attr));
+		maybe_fill_perf_attr_body(&attr, CSFU_BUCKET_EXACT, i & 1);
+		passed += child_could_open(&attr);
+	}
+	fake_this_child = NULL;
+	expect(passed * 4 > NR_ATTRS,
+	       "a quarter of a child's attrs clear the privilege and pairing checks",
+	       passed);
+
+	orig_uid = 0;
+	for (i = 0; i < NR_ATTRS; i++) {
+		memset(&attr, 0, sizeof(attr));
+		maybe_fill_perf_attr_body(&attr, CSFU_BUCKET_EXACT, i & 1);
+		kernel += !attr.exclude_kernel;
+	}
+	orig_uid = saved_uid;
+	expect(kernel * 4 > NR_ATTRS,
+	       "the root parent draws kernel-mode events", kernel);
+}
+
 void perf_attr_self_check(void)
 {
 	check_regs_intr();
@@ -427,6 +487,7 @@ void perf_attr_self_check(void)
 	check_flag_bits();
 	check_catalog();
 	check_defer_aux();
+	check_privilege_gates();
 
 	if (failed != 0)
 		BUG("perf attr: a check failed");

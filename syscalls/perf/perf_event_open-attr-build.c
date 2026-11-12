@@ -7,16 +7,45 @@
  * maybe_fill_perf_attr_body() is external; the create_* builders are static.
  */
 
+#include "child-api.h"
 #include "csfu.h"
 #include "perf.h"
 #include "perf_event.h"
 #include "random.h"
 #include "rnd.h"
 #include "trinity.h"
+#include "uid.h"
 
 #include "perf_event_open-internal.h"
 
 #include "kernel/time.h"
+
+/*
+ * The attr bits perf_event_open() gates or pairs, for the two mostly-valid
+ * builders.  exclude_kernel 0, text_poke and a kernel callchain want
+ * perf_allow_kernel(), and namespaces perfmon_capable(): a child, which runs
+ * with no capabilities, asks for them one time in eight, the root parent
+ * filling the provider's pool half the time.  perf_copy_attr() refuses
+ * inherit_thread without inherit, remove_on_exec with enable_on_exec, and
+ * sigtrap without remove_on_exec, so those come from the sets it takes.
+ */
+static void draw_gated_bits(struct perf_event_attr *attr)
+{
+	unsigned int odds = (this_child() == NULL && orig_uid == 0) ? 2 : 8;
+	unsigned int exec = rnd_modulo_u32(4);
+
+	attr->exclude_kernel = !ONE_IN(odds);
+	attr->exclude_callchain_kernel = !ONE_IN(odds);
+	attr->text_poke = ONE_IN(odds);
+	attr->namespaces = ONE_IN(odds);
+
+	attr->inherit = RAND_BOOL();
+	attr->inherit_thread = attr->inherit && RAND_BOOL();
+
+	attr->enable_on_exec = exec == 1;
+	attr->remove_on_exec = exec >= 2;
+	attr->sigtrap = exec == 3;
+}
 
 static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 						int group_leader)
@@ -36,20 +65,17 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 
 	/* Bitfield parameters, mostly boolean */
 	attr->disabled = RAND_BOOL();
-	attr->inherit = RAND_BOOL();
 	if (group_leader) {
 		attr->pinned = RAND_BOOL();
 	}
 	attr->exclusive = RAND_BOOL();
 	attr->exclude_user = RAND_BOOL();
-	attr->exclude_kernel = RAND_BOOL();
 	attr->exclude_hv = RAND_BOOL();
 	attr->exclude_idle = RAND_BOOL();
 	attr->mmap = RAND_BOOL();
 	attr->comm = RAND_BOOL();
 	attr->freq = RAND_BOOL();
 	attr->inherit_stat = RAND_BOOL();
-	attr->enable_on_exec = RAND_BOOL();
 	attr->task = RAND_BOOL();
 	attr->watermark = RAND_BOOL();
 	attr->precise_ip = rnd_modulo_u32(4);	// two bits
@@ -57,23 +83,18 @@ static void create_mostly_valid_counting_event(struct perf_event_attr *attr,
 	attr->sample_id_all = RAND_BOOL();
 	attr->exclude_host = RAND_BOOL();
 	attr->exclude_guest = RAND_BOOL();
-	attr->exclude_callchain_kernel = RAND_BOOL();
 	attr->exclude_callchain_user = RAND_BOOL();
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
 	attr->write_backward = RAND_BOOL();
-	attr->namespaces = RAND_BOOL();
 	attr->ksymbol = RAND_BOOL();
 	attr->bpf_event = RAND_BOOL();
 	attr->aux_output = RAND_BOOL();
 	attr->cgroup = RAND_BOOL();
-	attr->text_poke = RAND_BOOL();
 	attr->build_id = RAND_BOOL();
-	attr->inherit_thread = RAND_BOOL();
-	attr->remove_on_exec = RAND_BOOL();
-	attr->sigtrap = RAND_BOOL();
+	draw_gated_bits(attr);
 
 	/* wakeup events not relevant */
 
@@ -115,7 +136,6 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 
 	/* Bitfield parameters, mostly boolean */
 	attr->disabled = RAND_BOOL();
-	attr->inherit = RAND_BOOL();
 	/* only group leaders can be pinned */
 	if (group_leader) {
 		attr->pinned = RAND_BOOL();
@@ -124,14 +144,12 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	}
 	attr->exclusive = RAND_BOOL();
 	attr->exclude_user = RAND_BOOL();
-	attr->exclude_kernel = RAND_BOOL();
 	attr->exclude_hv = RAND_BOOL();
 	attr->exclude_idle = RAND_BOOL();
 	attr->mmap = RAND_BOOL();
 	attr->comm = RAND_BOOL();
 	attr->freq = RAND_BOOL();
 	attr->inherit_stat = RAND_BOOL();
-	attr->enable_on_exec = RAND_BOOL();
 	attr->task = RAND_BOOL();
 	attr->watermark = RAND_BOOL();
 	attr->precise_ip = rnd_modulo_u32(4);	// two bits
@@ -139,23 +157,18 @@ static void create_mostly_valid_sampling_event(struct perf_event_attr *attr,
 	attr->sample_id_all = RAND_BOOL();
 	attr->exclude_host = RAND_BOOL();
 	attr->exclude_guest = RAND_BOOL();
-	attr->exclude_callchain_kernel = RAND_BOOL();
 	attr->exclude_callchain_user = RAND_BOOL();
 	attr->mmap2 = RAND_BOOL();
 	attr->comm_exec = RAND_BOOL();
 	attr->use_clockid = RAND_BOOL();
 	attr->context_switch = RAND_BOOL();
 	attr->write_backward = RAND_BOOL();
-	attr->namespaces = RAND_BOOL();
 	attr->ksymbol = RAND_BOOL();
 	attr->bpf_event = RAND_BOOL();
 	attr->aux_output = RAND_BOOL();
 	attr->cgroup = RAND_BOOL();
-	attr->text_poke = RAND_BOOL();
 	attr->build_id = RAND_BOOL();
-	attr->inherit_thread = RAND_BOOL();
-	attr->remove_on_exec = RAND_BOOL();
-	attr->sigtrap = RAND_BOOL();
+	draw_gated_bits(attr);
 
 	attr->wakeup_events = rand32();
 
