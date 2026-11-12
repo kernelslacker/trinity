@@ -1323,9 +1323,16 @@ FAKE_SRCS	+= lsm_list_modules_test.c
 
 # syscalls/socket/getsockopt.c brings getsockopt's sanitiser, whose
 # buffers getsockopt_test.c checks on a compat call, with stand-ins for
-# the setsockopt helpers it draws the option from.
-PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockopt.c
-FAKE_SRCS	+= getsockopt_test.c
+# the setsockopt helpers it draws the option from.  The real helpers come
+# with syscalls/socket/setsockopt.c and its builders, whose sanitiser
+# setsockopt_test.c runs, so the stand-ins take their place through
+# --wrap.
+PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockopt.c \
+		   $(TOP)/syscalls/socket/setsockopt.c \
+		   $(TOP)/syscalls/socket/setsockopt-optval-builders.c
+FAKE_SRCS	+= getsockopt_test.c \
+		   setsockopt_test.c
+LDFLAGS		+= -Wl,--wrap=do_setsockopt -Wl,--wrap=release_sockopt_optval
 
 # listmount_test.c runs syscall_listmount's sanitiser, linked above for
 # the recall test, with its id-buffer draw refused.

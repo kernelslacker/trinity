@@ -655,7 +655,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * strategy, and most protocols are fine with a single page.
 	 */
 	/* Mostly released via deferred_freeptr(&rec->post_state) in
-	 * post_setsockopt(); a RAND_BOOL fallback below may direct-free.
+	 * post_setsockopt(); the NULL-optval branch below may direct-free.
 	 * Opt in to the alloc tracker: the rare direct-free path leaves
 	 * a stale slot to be evicted (benign leak), which is the safer
 	 * failure mode per the 2026-05-19 alloc-tracking audit. */
@@ -673,7 +673,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * SOL_SOCKET path which is correct on any socket fd. */
 	if (triplet == NULL) {
 		socket_setsockopt(so, triplet);
-		goto disable_maybe;
+		goto null_maybe;
 	}
 
 	/*
@@ -709,11 +709,13 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	if (from_random_path && ONE_IN(10))
 		so->optname |= (1UL << (rnd_modulo_u32(32)));
 
-disable_maybe:
-	/* optval should be nonzero to enable a boolean option, or zero if
-	 * the option is to be disabled.  Disable it half the time.
+null_maybe:
+	/* An option that reads its optval fails a NULL one with -EFAULT in
+	 * copy_from_sockptr(), before its handler runs: one call in 32
+	 * keeps that path.  A boolean option is disabled by an int of 0,
+	 * which the builders draw.
 	 */
-	if (RAND_BOOL()) {
+	if (ONE_IN(32)) {
 		tracked_free_now((void *) so->optval);
 		so->optval = 0;
 	}
@@ -801,11 +803,11 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	 * reuses that buffer for the secondary payload, so the post-handler
 	 * snapshot machinery below sees a normal heap optval to free.
 	 *
-	 * The RAND_BOOL "disable" branch in do_setsockopt() may have freed
-	 * optval and zeroed it; try_paired_setsockopt() bails on that case
-	 * so the disable semantics survive.  Skip pairing entirely when fd
-	 * was the random-fd fallback above (no triplet) -- pairing on a
-	 * non-socket fd is just noise.
+	 * The NULL-optval branch in do_setsockopt() may have freed optval
+	 * and zeroed it; try_paired_setsockopt() bails on that case so the
+	 * fault path survives.  Skip pairing entirely when fd was the
+	 * random-fd fallback above (no triplet) -- pairing on a non-socket
+	 * fd is just noise.
 	 */
 	if (triplet != NULL && rnd_modulo_u32(4) == 0)
 		try_paired_setsockopt(&so, fd);
@@ -822,9 +824,9 @@ static void sanitise_setsockopt(struct syscallrecord *rec)
 	 * lookup_sockopt_pair() simply finds no match on garbage keys. */
 	sso_history_record(fd, so.level, so.optname);
 
-	/* Snap only when there is a heap optval to free.  The RAND_BOOL
-	 * disable path in do_setsockopt() already freed and zeroed optval,
-	 * so post_state stays NULL and the post handler returns early. */
+	/* Snap only when there is a heap optval to free.  The NULL-optval
+	 * branch in do_setsockopt() already freed and zeroed optval, so
+	 * post_state stays NULL and the post handler returns early. */
 	if (so.optval == 0)
 		return;
 

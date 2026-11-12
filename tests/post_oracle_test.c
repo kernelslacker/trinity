@@ -40,6 +40,7 @@
 #include "arch.h"		/* ARCH_IS_BIARCH */
 #include "bpf.h"		/* BPF_PROG_STREAM_READ_BY_FD */
 #include "debug.h"		/* BUG */
+#include "deferred-free.h"	/* tracked_free_now */
 #include "fake_parent.h"	/* fake_output_log */
 #include "kernel/compat.h"	/* struct old_timeval32, ... */
 #include "kernel/io_uring.h"	/* IORING_REGISTER_* */
@@ -58,6 +59,8 @@
 #include "syscalls/syscalls.h"	/* syscall_prctl */
 #include "utils.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
+
+extern bool fake_zmalloc_tracks;	/* fake_stubs.c */
 
 static unsigned int bumps;
 static unsigned int failed;
@@ -130,7 +133,13 @@ void post_state_release(struct syscallrecord *rec, void *snap)
 {
 	if (rec->post_state == (unsigned long) snap)
 		rec->post_state = 0;
-	free(snap);
+	/* A snapshot the fake allocator registered leaves alloc_track with
+	 * it: a plain free() would leave its slot behind, for a later
+	 * lookup to find. */
+	if (fake_zmalloc_tracks)
+		tracked_free_now(snap);
+	else
+		free(snap);
 }
 
 void post_state_install_sized(struct syscallrecord *rec, void *snap,

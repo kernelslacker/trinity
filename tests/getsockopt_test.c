@@ -31,8 +31,10 @@ extern bool fake_random_fd_empty;		/* fake_stubs.c */
 #define CALLS	1024
 
 /* The sanitiser keeps only the level and option do_setsockopt() draws for
- * the socket: these name SO_TYPE. */
-void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
+ * the socket: these name SO_TYPE.  The real ones, which setsockopt_test.c
+ * runs, are linked too, so these stand in for them through --wrap. */
+void __wrap_do_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void __wrap_do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
 	(void) triplet;
 	memset(so, 0, sizeof(*so));
@@ -40,7 +42,8 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	so->optname = SO_TYPE;
 }
 
-void release_sockopt_optval(struct sockopt *so)
+void __wrap_release_sockopt_optval(struct sockopt *so);
+void __wrap_release_sockopt_optval(struct sockopt *so)
 {
 	(void) so;
 }

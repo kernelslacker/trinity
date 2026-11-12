@@ -23,6 +23,7 @@
 
 #include "args-internal.h"
 #include "debug.h"
+#include "deferred-free.h"	/* deferred_alloc_track */
 #include "fd.h"			/* get_random_fd */
 #include "maps.h"
 #include "minicorpus.h"
@@ -138,6 +139,20 @@ const struct struct_desc *struct_arg_lookup(unsigned int nr,
 	return NULL;
 }
 
+/* Nor a setsockopt option's payload: apply_sockopt_entry(), which
+ * setsockopt_test.c runs, then fills it with the row's own builder. */
+const struct struct_desc *struct_arg_lookup_two_key(const char *name,
+						    unsigned int arg_idx,
+						    unsigned long key1,
+						    unsigned long key2)
+{
+	(void) name;
+	(void) arg_idx;
+	(void) key1;
+	(void) key2;
+	return NULL;
+}
+
 /*
  * FOR_EACH_SYSCALL_STRUCT_ARG walks this table until it hits an entry
  * with .entries == NULL.  A single NULL-sentinel row is the empty set.
@@ -210,6 +225,11 @@ in_addr_t random_ipv4_address(void)
 	return htonl(INADDR_LOOPBACK);
 }
 
+/* Set by a test whose code under test frees through tracked_free_now(),
+ * which frees only what alloc_track knows: the allocations are then
+ * registered as utils/zmalloc.c registers them.  setsockopt_test.c. */
+bool fake_zmalloc_tracks;
+
 void * __zmalloc_tracked(size_t size, const char *func)
 {
 	(void) func;
@@ -219,5 +239,7 @@ void * __zmalloc_tracked(size_t size, const char *func)
 		fprintf(stderr, "fake __zmalloc_tracked: calloc(%zu) failed\n", size);
 		abort();
 	}
+	if (fake_zmalloc_tracks)
+		deferred_alloc_track(p, size);
 	return p;
 }
