@@ -2,8 +2,8 @@
  * Self-check for the args the ioctl group sanitisers build: what they draw
  * has to be what the kernel's own checks take, and the draw has to reach all
  * of it.  The drm group's client caps and object types, the ext group's new
- * requests, the userfaultfd group's handshake and the socket group's tunnel
- * and bridge requests are covered.
+ * requests, the userfaultfd group's handshake, the socket group's tunnel
+ * and bridge requests and the epoll group's busy-poll params are covered.
  */
 
 #include <errno.h>
@@ -34,6 +34,7 @@
 #include "efault_cache.h"
 #include "fake_ioctls.h"
 #include "ioctls.h"		/* struct ioctl_group */
+#include "kernel/epoll.h"	/* struct epoll_params */
 #include "kernel/ext4.h"
 #include "kernel/userfaultfd.h"
 #include "net.h"		/* seccomp_own_filter */
@@ -903,6 +904,47 @@ static void cdrom_reads_get_a_block_buffer(void)
 	}
 }
 
+/*
+ * ep_eventpoll_bp_ioctl() in fs/eventpoll.c answers EPIOCSPARAMS -EINVAL
+ * for a nonzero pad, a busy_poll_usecs past S32_MAX or a prefer_busy_poll
+ * past 1, and -EPERM for a busy_poll_budget past NAPI_POLL_WEIGHT (64)
+ * without CAP_NET_ADMIN, which no child holds.  The draw stays within the
+ * first three, and goes past the budget only now and then, for the -EPERM.
+ */
+#define EPOLL_UNPRIV_BUDGET	64
+
+static void epoll_params_pass_the_checks(void)
+{
+	static struct syscallrecord rec;
+	const struct ioctl_group *grp = fake_ioctl_group("epoll");
+	unsigned int i, over = 0;
+
+	if (grp == NULL)
+		BUG("ioctl args: the epoll group is not linked");
+
+	for (i = 0; i < ROUNDS; i++) {
+		const struct epoll_params *p;
+
+		memset(&rec, 0, sizeof(rec));
+		fake_ioctl_request = EPIOCSPARAMS;
+		grp->sanitise(grp, &rec);
+		if (rec.a3 == FAKE_IOCTL_JUNK_ARG)
+			BUG("ioctl args: EPIOCSPARAMS got no struct");
+
+		p = (const struct epoll_params *) rec.a3;
+		if (p->__pad != 0 || p->busy_poll_usecs > INT32_MAX ||
+		    p->prefer_busy_poll > 1)
+			BUG("ioctl args: epoll params the kernel refuses with -EINVAL");
+		if (p->busy_poll_budget > EPOLL_UNPRIV_BUDGET)
+			over++;
+	}
+	if (over == 0 || over > ROUNDS / 4) {
+		fprintf(stderr, "%u of %u budgets past %u\n", over, ROUNDS,
+			EPOLL_UNPRIV_BUDGET);
+		BUG("ioctl args: an EPIOCSPARAMS budget a child may not set is drawn too often, or never");
+	}
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -924,4 +966,5 @@ void ioctl_args_self_check(void)
 	socket_bridge_requests_name_one_bridge();
 	socket_tunnel_requests_name_their_device();
 	cdrom_reads_get_a_block_buffer();
+	epoll_params_pass_the_checks();
 }

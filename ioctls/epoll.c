@@ -5,6 +5,7 @@
 #include <sys/stat.h>
 
 #include "ioctls.h"
+#include "kernel/epoll.h"
 #include "objects.h"
 #include "random.h"
 #include "rnd.h"
@@ -32,25 +33,13 @@ static int epoll_fd_test(int fd, const struct stat *st __attribute__((unused)))
 	return -1;
 }
 
-#ifndef EPIOCSPARAMS
-struct epoll_params {
-	__u32 busy_poll_usecs;
-	__u16 busy_poll_budget;
-	__u8 prefer_busy_poll;
-	__u8 __pad;
-};
-#define EPOLL_IOC_TYPE 0x8A
-#define EPIOCSPARAMS _IOW(EPOLL_IOC_TYPE, 0x01, struct epoll_params)
-#define EPIOCGPARAMS _IOR(EPOLL_IOC_TYPE, 0x02, struct epoll_params)
-#endif
-
 /*
  * Compile-time: EPIOCSPARAMS and EPIOCGPARAMS both carry struct
  * epoll_params and the sanitiser below fills it to sizeof(struct).
  * Pin each direction against its _IOC_SIZE independently so a
  * <linux/eventpoll.h> change that grows or shrinks the struct
- * (or -- more likely -- an older-header fallback here that drifts
- * from the shipping uapi) hard-fails the compile rather than
+ * (or -- more likely -- the older-header fallback in kernel/epoll.h
+ * drifting from the shipping uapi) hard-fails the compile rather than
  * silently letting the kernel copy_from_user() / copy_to_user() a
  * different number of bytes than the sanitiser prepared.  The two
  * directions get one assert each: a header refactor could
@@ -72,7 +61,11 @@ static void epoll_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 
 	if (rec->a2 == EPIOCSPARAMS) {
 		params->busy_poll_usecs = rnd_modulo_u32(1000000);
-		params->busy_poll_budget = rnd_modulo_u32(256);
+		/* A budget past NAPI_POLL_WEIGHT (64) is -EPERM without
+		 * CAP_NET_ADMIN, which no child holds: one draw in eight
+		 * goes past it, for that refusal. */
+		params->busy_poll_budget = ONE_IN(8) ? 65 + rnd_modulo_u32(191) :
+						       rnd_modulo_u32(65);
 		params->prefer_busy_poll = RAND_BOOL();
 		params->__pad = 0;
 	}
