@@ -262,12 +262,12 @@ static void __attribute__((noreturn)) kmsg_helper_main(void)
 	const char taskname[13] = "trinity-kmsg";
 
 	/*
-	 * Drop the inherited stats-log fd before anything else.  stats.c
-	 * opens it via fopen(path, "a") with no "e" flag, so the underlying
-	 * fd lacks O_CLOEXEC and the fork-time clone landed it in our table
-	 * too -- the fuzz-child path drops the same fd in
-	 * stats_log_drop_in_child() to preserve the parent-only-writer
-	 * invariant.  Without this the helper would silently hold a second
+	 * Drop the inherited stats-log fd before anything else.
+	 * stats_log_open() opens it with fopen(path, "ae"), but O_CLOEXEC
+	 * only acts on an exec, and this helper is forked without one, so
+	 * the fd sits in our table too -- the fuzz-child path drops the
+	 * same fd in stats_log_drop_in_child() to preserve the
+	 * parent-only-writer invariant.  Without this the helper would silently hold a second
 	 * fd-table reference to the operator's stats.log for the whole run.
 	 */
 	stats_log_drop_in_child();
