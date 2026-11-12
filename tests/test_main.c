@@ -155,6 +155,7 @@ void inet_sockopt_self_check(void);
 void ipv6_sockopt_self_check(void);
 void netlink_sockopt_self_check(void);
 void rds_sockopt_self_check(void);
+void rxrpc_sockopt_self_check(void);
 void setsockopt_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -888,6 +889,11 @@ int main(int argc, char **argv)
 	printf("  rds_sockopt_self_check ... ");
 	fflush(stdout);
 	rds_sockopt_self_check();
+	printf("OK\n");
+
+	printf("  rxrpc_sockopt_self_check ... ");
+	fflush(stdout);
+	rxrpc_sockopt_self_check();
 	printf("OK\n");
 
 	printf("  setsockopt_self_check ... ");

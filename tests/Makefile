@@ -766,6 +766,12 @@ FAKE_SRCS	+= netlink_sockopt_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/rds.c
 FAKE_SRCS	+= rds_sockopt_test.c
 
+# net/proto/rxrpc.c brings the RxRPC option builder, whose
+# RXRPC_MANAGE_RESPONSE values rxrpc_sockopt_test.c holds to what
+# rxrpc_setsockopt() takes.
+PARENT_SRCS	+= $(TOP)/net/proto/rxrpc.c
+FAKE_SRCS	+= rxrpc_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.

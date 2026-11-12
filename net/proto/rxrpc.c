@@ -62,6 +62,12 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 		optval_us[1] = rnd_u32();
 		so->optlen = 2 * sizeof(unsigned short);
 		break;
+	case RXRPC_MANAGE_RESPONSE:
+		/* rxrpc_setsockopt() takes 0 or 1. */
+		optval32 = (unsigned int *) so->optval;
+		*optval32 = RAND_BOOL();
+		so->optlen = sizeof(unsigned int);
+		break;
 	default:
 		optval32 = (unsigned int *) so->optval;
 		*optval32 = rnd_u32();
