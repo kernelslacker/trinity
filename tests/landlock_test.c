@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -30,6 +31,7 @@
 #include "publish_resource.h"
 #include "syscall.h"
 #include "syscalls/syscalls.h"	/* syscall_landlock_add_rule */
+#include "tmpdir.h"		/* change_tmp_dir, trinity_tmpdir_abs */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 void landlock_self_check(void);
@@ -98,6 +100,24 @@ static int permission_rule_answer(unsigned long rule_type, unsigned long flags,
 		return -EINVAL;
 	if (!pa->allowed && !pa->quiet)
 		return -ENOMSG;
+	return 0;
+}
+
+/*
+ * add_rule_path_beneath() for a ruleset that handles @handled_fs: a rule that
+ * allows nothing is -ENOMSG, one that allows a right the ruleset does not
+ * handle -EINVAL, and the parent fd has to name a file.
+ */
+static int path_rule_answer(unsigned long flags,
+			    const struct landlock_path_beneath_attr *pb,
+			    unsigned long long handled_fs)
+{
+	if (!flags && !pb->allowed_access)
+		return -ENOMSG;
+	if ((pb->allowed_access | handled_fs) != handled_fs)
+		return -EINVAL;
+	if (fcntl(pb->parent_fd, F_GETFD) == -1)
+		return -EBADF;
 	return 0;
 }
 
@@ -271,6 +291,7 @@ struct fake_ruleset {
 	int fd;
 	unsigned long long handled_permissions;
 	unsigned long long handled_access;	/* filesystem, network and scope */
+	unsigned long long handled_fs;
 	unsigned long long allowed_ns, allowed_caps;
 };
 static struct fake_ruleset rulesets[16];
@@ -279,6 +300,8 @@ struct rule_call {
 	int fd;
 	unsigned int type, flags;
 	struct landlock_permission_attr attr;
+	unsigned long long allowed_access;	/* a path-beneath rule's */
+	char path[256];				/* and the file it names */
 	long ret;
 };
 static struct rule_call rule_calls[64];
@@ -380,6 +403,7 @@ static long fake_create_ruleset(const unsigned char *attr, size_t size,
 	rs->fd = fd;
 	rs->handled_permissions = f[6];
 	rs->handled_access = f[0] | f[1] | f[2];
+	rs->handled_fs = f[0];
 	create_sizes[nr_creates] = size;
 	create_fds[nr_creates++] = fd;
 	return fd;
@@ -396,6 +420,7 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 			  unsigned int flags)
 {
 	struct landlock_permission_attr pa = { 0 };
+	struct landlock_path_beneath_attr pb = { 0 };
 	struct fake_ruleset *rs = find_ruleset(fd);
 	long ret;
 
@@ -418,8 +443,10 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 			rs->allowed_ns |= pa.allowed & NS_ALL;
 		else if (ret == 0)
 			rs->allowed_caps |= pa.allowed & CAPS_ALL;
-	} else if (type == LANDLOCK_RULE_PATH_BENEATH_COMPAT ||
-		   type == LANDLOCK_RULE_NET_PORT_COMPAT) {
+	} else if (type == LANDLOCK_RULE_PATH_BENEATH_COMPAT) {
+		memcpy(&pb, attr, sizeof(pb));
+		ret = path_rule_answer(flags, &pb, rs->handled_fs);
+	} else if (type == LANDLOCK_RULE_NET_PORT_COMPAT) {
 		ret = 0;
 	} else {
 		ret = -EINVAL;
@@ -432,6 +459,15 @@ static long fake_add_rule(int fd, unsigned int type, const void *attr,
 		rc->type = type;
 		rc->flags = flags;
 		rc->attr = pa;
+		rc->allowed_access = pb.allowed_access;
+		if (type == LANDLOCK_RULE_PATH_BENEATH_COMPAT) {
+			char link[32];
+			ssize_t n;
+
+			snprintf(link, sizeof(link), "/proc/self/fd/%d", pb.parent_fd);
+			n = readlink(link, rc->path, sizeof(rc->path) - 1);
+			rc->path[n > 0 ? n : 0] = '\0';
+		}
 		rc->ret = ret;
 	}
 	return ret;
@@ -540,6 +576,46 @@ static unsigned int count_rule_calls(unsigned int type, unsigned int *taken)
 	return n;
 }
 
+/* The provider closed @fd, so reset_kernel() must not close it again. */
+static void expect_closed(int fd, const char *what)
+{
+	struct fake_ruleset *rs = find_ruleset(fd);
+
+	expect(fd >= 0 && fcntl(fd, F_GETFD) == -1 && errno == EBADF, what, fd);
+	if (rs != NULL)
+		rs->used = false;
+}
+
+/*
+ * A ruleset denies each filesystem right it handles wherever no rule allows
+ * it, and a child that restricted itself with the published one still makes
+ * its bug log under the tmp dir: the ruleset's first path-beneath rule has to
+ * allow there every right it handles.  The kernel takes each of its rules,
+ * the random ones included.
+ */
+static void expect_tmp_dir_rule(int fd, unsigned long long handled_fs)
+{
+	unsigned int i, n = 0;
+
+	for (i = 0; i < nr_rule_calls; i++) {
+		const struct rule_call *rc = &rule_calls[i];
+
+		if (rc->fd != fd || rc->type != LANDLOCK_RULE_PATH_BENEATH_COMPAT)
+			continue;
+		expect(rc->ret == 0,
+		       "the kernel takes every path rule of the published ruleset",
+		       (unsigned long) -rc->ret);
+		if (n++ != 0)
+			continue;
+		expect(strcmp(rc->path, trinity_tmpdir_abs()) == 0,
+		       "the first path rule is on the tmp dir", i);
+		expect(rc->allowed_access == handled_fs,
+		       "the tmp dir rule allows every handled right",
+		       rc->allowed_access);
+	}
+	expect(n != 0, "the published ruleset has a path rule", n);
+}
+
 /*
  * A ruleset that handles a permission and holds no rule for it denies every
  * member of it, and a child that restricts itself with one loses every
@@ -576,6 +652,7 @@ static void check_provider(void)
 	expect(at_publish.allowed_caps == CAPS_ALL,
 	       "every capability is allowed when the ruleset is published",
 	       at_publish.allowed_caps);
+	expect_tmp_dir_rule(create_fds[0], at_publish.handled_fs);
 
 	/* ABI 10 and 11 know 48 bytes of the struct and answer -E2BIG to a
 	 * non-zero byte past them, so only ABI 12 is sent handled_permissions. */
@@ -596,6 +673,7 @@ static void check_provider(void)
 		expect(ns_calls == 0 && caps_calls == 0,
 		       "an older ruleset is given no permission rule",
 		       ns_calls + caps_calls);
+		expect_tmp_dir_rule(create_fds[0], at_publish.handled_fs);
 	}
 
 	fake_abi = 0;
@@ -614,7 +692,6 @@ static void check_provider(void)
  */
 static void expect_ruleset_without_permissions(void)
 {
-	struct fake_ruleset *rs;
 	unsigned int i;
 	int first;
 
@@ -630,12 +707,8 @@ static void expect_ruleset_without_permissions(void)
 	       "the ruleset that is published is the second", nr_objs);
 
 	first = create_fds[0];
-	expect(first >= 0 && fcntl(first, F_GETFD) == -1 && errno == EBADF,
-	       "the ruleset whose permission rule was refused is closed", first);
-	/* Closed already, so reset_kernel() must not close it again. */
-	rs = find_ruleset(first);
-	if (rs != NULL)
-		rs->used = false;
+	expect_closed(first, "the ruleset whose permission rule was refused is closed");
+	expect_tmp_dir_rule(create_fds[1], at_publish.handled_fs);
 
 	for (i = 0; i < nr_rule_calls; i++) {
 		if (rule_calls[i].type != LANDLOCK_RULE_NAMESPACE_COMPAT &&
@@ -680,7 +753,9 @@ static void check_provider_refused(void)
 /*
  * -x landlock_add_rule has trinity_raw_syscall() answer every add_rule call
  * with -ENOSYS without making it, which turns away the permission rule of a
- * ruleset that handles one, every time.  The provider still has a ruleset.
+ * ruleset that handles one, and then the tmp dir rule of the ruleset made
+ * without: neither may reach the pool, so the provider has none, and leaves
+ * neither open.
  */
 static void check_provider_excluded(void)
 {
@@ -689,9 +764,37 @@ static void check_provider_excluded(void)
 	fake_refuse_any = true;
 	fake_refuse_errno = ENOSYS;
 
-	expect(run_provider_init(),
-	       "-x landlock_add_rule costs the provider its ruleset", 0);
-	expect_ruleset_without_permissions();
+	expect(!run_provider_init(),
+	       "-x landlock_add_rule leaves the provider without a ruleset", 0);
+	expect(published == 0, "nothing is published under -x landlock_add_rule",
+	       published);
+	expect(nr_creates == 2, "the ruleset is made again without permissions",
+	       nr_creates);
+	expect_closed(create_fds[0], "the ruleset made with permissions is closed");
+	expect_closed(create_fds[1], "the ruleset made without them is closed");
+
+	fake_abi = 0;
+	reset_kernel();
+}
+
+/*
+ * A tmp dir rule the kernel turns away costs the provider its ruleset: a
+ * child restricted with it could make no bug log.
+ */
+static void check_provider_tmp_rule_refused(void)
+{
+	fake_abi = 12;
+	reset_kernel();
+	fake_refuse_type = LANDLOCK_RULE_PATH_BENEATH_COMPAT;
+	fake_refuse_errno = EACCES;
+
+	expect(!run_provider_init(), "a refused tmp dir rule fails the provider", 0);
+	expect(published == 0,
+	       "nothing is published when the tmp dir rule is refused", published);
+	expect(nr_creates == 1, "a refused tmp dir rule makes no second ruleset",
+	       nr_creates);
+	expect_closed(create_fds[0],
+		      "the ruleset whose tmp dir rule was refused is closed");
 
 	fake_abi = 0;
 	reset_kernel();
@@ -704,8 +807,6 @@ static void check_provider_excluded(void)
  */
 static void check_provider_refused_then_refused(void)
 {
-	struct fake_ruleset *rs;
-	int first;
 
 	fake_abi = 12;
 	reset_kernel();
@@ -718,14 +819,8 @@ static void check_provider_refused_then_refused(void)
 	expect(published == 0, "nothing is published when the second create fails",
 	       published);
 	expect(nr_creates == 1, "only the first ruleset was made", nr_creates);
-
-	first = create_fds[0];
-	expect(first >= 0 && fcntl(first, F_GETFD) == -1 && errno == EBADF,
-	       "the ruleset whose permission rule was refused is closed", first);
-	/* Closed already, so reset_kernel() must not close it again. */
-	rs = find_ruleset(first);
-	if (rs != NULL)
-		rs->used = false;
+	expect_closed(create_fds[0],
+		      "the ruleset whose permission rule was refused is closed");
 
 	fake_abi = 0;
 	reset_kernel();
@@ -1497,16 +1592,47 @@ long __wrap_syscall(long number, ...)
 	return ret;
 }
 
+/*
+ * The provider's tmp dir rule opens trinity_tmpdir_abs(), which tmpdir_test.c
+ * leaves at a tmp/ it removed, so the provider cases run under a live one.
+ */
+static char tmp_base[] = "/tmp/trinity-landlock-test.XXXXXX";
+static int saved_cwd = -1;
+
+static void enter_tmp_dir(void)
+{
+	saved_cwd = open(".", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+	if (saved_cwd < 0 || mkdtemp(tmp_base) == NULL ||
+	    chdir(tmp_base) != 0 || mkdir("tmp", 0700) != 0)
+		BUG("landlock: cannot set up a tmp/");
+	change_tmp_dir();
+}
+
+static void leave_tmp_dir(void)
+{
+	char tmp[sizeof(tmp_base) + sizeof("/tmp")];
+
+	if (fchdir(saved_cwd) != 0)
+		BUG("landlock: cannot return to the starting directory");
+	close(saved_cwd);
+	snprintf(tmp, sizeof(tmp), "%s/tmp", tmp_base);
+	if (rmdir(tmp) != 0 || rmdir(tmp_base) != 0)
+		BUG("landlock: cannot remove the test tree");
+}
+
 void landlock_self_check(void)
 {
 	check_permission_rules();
 	check_older_rule_flags();
 	check_rule_types_drawn();
 #ifdef __NR_landlock_create_ruleset
+	enter_tmp_dir();
 	check_provider();
 	check_provider_refused();
 	check_provider_excluded();
+	check_provider_tmp_rule_refused();
 	check_provider_refused_then_refused();
+	leave_tmp_dir();
 	check_allow_permissions();
 	check_allow_refused();
 	check_create();

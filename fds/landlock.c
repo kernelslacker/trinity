@@ -16,6 +16,7 @@
 #include "rnd.h"
 #include "sanitise.h"
 #include "shm.h"
+#include "tmpdir.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -86,39 +87,62 @@ bool landlock_allow_permissions(int ruleset_fd, __u64 handled)
 #endif
 }
 
+#ifdef __NR_landlock_add_rule
+static long add_path_rule(int ruleset_fd, const char *path, __u64 allowed)
+{
+	struct landlock_path_beneath_attr attr;
+	long ret;
+	int err;
+
+	memset(&attr, 0, sizeof(attr));
+	attr.parent_fd = open(path, O_PATH | O_CLOEXEC);
+	if (attr.parent_fd < 0)
+		return -1;
+	attr.allowed_access = allowed;
+	ret = trinity_raw_syscall(__NR_landlock_add_rule, ruleset_fd,
+			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
+	err = errno;
+	close(attr.parent_fd);
+	errno = err;
+	return ret;
+}
+#endif
+
 /*
- * Add a few path-beneath rules to the landlock ruleset so it
- * has actual content. Without rules, the ruleset is an empty
- * shell and landlock_restrict_self is a no-op.
+ * Path-beneath rules for a ruleset on its way to the pool.  The ruleset
+ * denies each filesystem right it handles wherever no rule allows it, and
+ * a child that restricts itself with it still has to make its bug log
+ * under the tmp dir, so the first rule allows every handled right there;
+ * false, with errno set, means that one was refused, and the ruleset must
+ * not reach the pool.  A few more allow a random part of the handled
+ * rights on random paths, so the ruleset has content of its own: the
+ * kernel refuses a right the ruleset does not handle, or none at all.
  *
- * We deliberately do NOT call landlock_restrict_self here —
- * that would sandbox the fuzzer itself. We just populate the
- * ruleset so that syscalls operating on it exercise real kernel paths.
+ * We deliberately do NOT call landlock_restrict_self here --
+ * that would sandbox the fuzzer itself.
  */
-static void arm_landlock(int ruleset_fd)
+static bool arm_landlock(int ruleset_fd, __u64 handled_fs)
 {
 #ifdef __NR_landlock_add_rule
 	unsigned int i, count;
 
+	if (add_path_rule(ruleset_fd, trinity_tmpdir_abs(), handled_fs) != 0)
+		return false;
+
 	count = 1 + rnd_modulo_u32(3);
 	for (i = 0; i < count; i++) {
-		struct landlock_path_beneath_attr attr;
-		const char *path;
-		int path_fd;
+		__u64 allowed = rnd_u64() & handled_fs;
 
-		path = landlock_paths[rnd_modulo_u32(ARRAY_SIZE(landlock_paths))];
-		path_fd = open(path, O_PATH | O_CLOEXEC);
-		if (path_fd < 0)
-			continue;
-
-		memset(&attr, 0, sizeof(attr));
-		attr.parent_fd = path_fd;
-		attr.allowed_access = rnd_u32();
-
-		trinity_raw_syscall(__NR_landlock_add_rule, ruleset_fd,
-			LANDLOCK_RULE_PATH_BENEATH, &attr, 0);
-		close(path_fd);
+		add_path_rule(ruleset_fd,
+			      landlock_paths[rnd_modulo_u32(ARRAY_SIZE(landlock_paths))],
+			      allowed ? allowed : handled_fs);
 	}
+	return true;
+#else
+	(void) ruleset_fd;
+	(void) handled_fs;
+	errno = ENOSYS;
+	return false;
 #endif
 }
 
@@ -231,7 +255,16 @@ retry:
 		attr_size = LANDLOCK_ATTR_SIZE_V5;
 		goto retry;
 	}
-	arm_landlock(fd);
+	if (!arm_landlock(fd, attr.handled_access_fs)) {
+		int err = errno;
+
+		outputerr("open_landlock_fd: landlock_add_rule(abi=%d) refused the tmp dir rule: %s\n",
+			abi, strerror(err));
+		fd_provider_init_fail(FD_INIT_REASON_ERRNO, err,
+				      "landlock_add_rule");
+		close(fd);
+		return false;
+	}
 
 	obj = alloc_object();
 	if (obj == NULL) {
