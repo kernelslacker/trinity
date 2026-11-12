@@ -3,6 +3,7 @@
 	struct sigevent __user *, timer_event_spec,
 	timer_t __user *, created_timer_id)
  */
+#include <linux/posix_types.h>
 #include <signal.h>
 #include <stdint.h>
 #include <sys/syscall.h>
@@ -233,10 +234,11 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 
 	/*
 	 * created_timer_id (a3) is the kernel's output: timer_create writes
-	 * the new timer_t there on success.  Random pool can land it inside
+	 * the new timer's id there on success, as the kernel's timer_t, an
+	 * int, half the width of glibc's.  Random pool can land it inside
 	 * an alloc_shared region, so scrub.
 	 */
-	avoid_shared_buffer_out(&rec->a3, sizeof(timer_t));
+	avoid_shared_buffer_out(&rec->a3, sizeof(__kernel_timer_t));
 
 	/* magic-cookie / private post_state: see post_state_register().
 	 * The OUT-pointer is defended via .arg_snapshot_mask + the
@@ -262,9 +264,9 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 	 * stays 0 on skip and gates the post-side check.
 	 */
 	if (rec->a3 != 0 &&
-	    range_readable_user((void *)(unsigned long) rec->a3, sizeof(timer_t)))
+	    range_readable_user((void *)(unsigned long) rec->a3, sizeof(__kernel_timer_t)))
 		snap->poison_seed = poison_output_struct((void *)(unsigned long) rec->a3,
-							 sizeof(timer_t), 0);
+							 sizeof(__kernel_timer_t), 0);
 }
 
 static unsigned long clock_ids[] = {
@@ -295,7 +297,7 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 {
 	struct timer_create_post_state *snap =
 		(struct timer_create_post_state *) rec->post_state;
-	timer_t *idp;
+	__kernel_timer_t *idp;
 	intptr_t tid_int;
 
 	/* timer_create is RET_ZERO_SUCCESS: the only successful retval is
@@ -326,7 +328,7 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 	 * accessor and the post handler still sees the address the kernel
 	 * actually wrote.
 	 */
-	idp = (timer_t *) get_arg_snapshot(rec, 3);
+	idp = (__kernel_timer_t *) get_arg_snapshot(rec, 3);
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		return;
 
@@ -340,7 +342,7 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 	 * post_timer_create() so a single event is logged once.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct_user_or_skip(idp, sizeof(timer_t),
+	    check_output_struct_user_or_skip(idp, sizeof(*idp),
 					     snap->poison_seed))
 		return;
 
@@ -358,7 +360,7 @@ static void post_timer_create_record_tid(struct syscallrecord *rec)
 	 * them to the pool.  Corruption-bump attribution stays in
 	 * post_timer_create() so a single bad call is logged once.
 	 */
-	tid_int = (intptr_t) *idp;
+	tid_int = *idp;
 	if (tid_int < 0 || tid_int > 65535)
 		return;
 
@@ -389,7 +391,7 @@ static void post_timer_create(struct syscallrecord *rec)
 {
 	struct timer_create_post_state *snap =
 		(struct timer_create_post_state *) rec->post_state;
-	timer_t *idp;
+	__kernel_timer_t *idp;
 	intptr_t tid_int;
 
 	if (snap == NULL)
@@ -435,7 +437,7 @@ static void post_timer_create(struct syscallrecord *rec)
 	 * per-syscall mismatch counter would only ever fire on the same
 	 * stomp class the generic tripwire already covers.
 	 */
-	idp = (timer_t *) get_arg_snapshot(rec, 3);
+	idp = (__kernel_timer_t *) get_arg_snapshot(rec, 3);
 	if (idp == NULL || looks_like_corrupted_ptr(rec, idp))
 		goto out_free;
 
@@ -454,17 +456,17 @@ static void post_timer_create(struct syscallrecord *rec)
 	 * additionally bump the corrupt-ptr counter for the same event.
 	 */
 	if (snap->poison_seed != 0 &&
-	    check_output_struct_user_or_skip(idp, sizeof(timer_t),
+	    check_output_struct_user_or_skip(idp, sizeof(*idp),
 					     snap->poison_seed)) {
 		__atomic_add_fetch(&shm->stats.post_handler_untouched_out_buf,
 				   1, __ATOMIC_RELAXED);
 		goto out_free;
 	}
 
-	tid_int = (intptr_t) *idp;
+	tid_int = *idp;
 	if (tid_int < 0 || tid_int > 65535) {
-		outputerr("post_timer_create: rejected suspicious tid=%p (kernel-write-buffer-scribbled?)\n",
-			  (void *) (intptr_t) *idp);
+		outputerr("post_timer_create: rejected suspicious tid=%ld (kernel-write-buffer-scribbled?)\n",
+			  (long) tid_int);
 		post_handler_corrupt_ptr_bump(rec, NULL);
 	}
 

@@ -885,7 +885,9 @@ PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
 		   $(TOP)/syscalls/timer/timerfd_create.c
 
 # syscalls/timer/timer_create.c brings timer_create, whose timers' signal
-# timer_create_test.c holds to the set health/signals-safelist.c defines.
+# timer_create_test.c holds to the set health/signals-safelist.c defines,
+# and whose post handlers post_oracle_test.c hands the timer id the kernel
+# writes.
 PARENT_SRCS	+= $(TOP)/syscalls/timer/timer_create.c \
 		   $(TOP)/health/signals-safelist.c
 FAKE_SRCS	+= timer_create_test.c

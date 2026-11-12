@@ -6,7 +6,8 @@
  * unless a test installs a hook for the call it drives: dup_pool_test.c
  * hooks find_local_object_by_fd() and get_objhead(), maps_name_test.c
  * alloc_object() and add_object(), canary_path_test.c get_objhead(),
- * alloc_object() and add_object().
+ * alloc_object() and add_object(), post_oracle_test.c
+ * prop_ring_push_scalar().
  */
 
 #include <stdbool.h>
@@ -24,6 +25,8 @@ struct objhead *(*fake_get_objhead)(enum obj_scope scope, enum objecttype type);
 struct object *(*fake_alloc_object)(void);
 void (*fake_add_object)(struct object *obj, enum obj_scope scope,
 			enum objecttype type);
+void (*fake_prop_ring_push_scalar)(unsigned int nr, long scalar_val,
+				   enum scalar_kind kind);
 
 /* The real alloc_object() of objects/registry.c, unless a test hooks it. */
 struct object *__real_alloc_object(void);
@@ -69,7 +72,10 @@ void __wrap_set_object_fd(struct object *obj, enum objecttype type, int fd)
 void prop_ring_push_scalar(unsigned int nr, long scalar_val,
 			   enum scalar_kind kind)
 {
-	(void)nr; (void)scalar_val; (void)kind;
+	if (fake_prop_ring_push_scalar != NULL) {
+		fake_prop_ring_push_scalar(nr, scalar_val, kind);
+		return;
+	}
 	fprintf(stderr, "fake prop_ring_push_scalar called unexpectedly\n");
 	abort();
 }

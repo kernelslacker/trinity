@@ -8,8 +8,9 @@
  * the untouched buffers it reports, and the PR_FUTEX_HASH -EBUSY tally
  * by what it counts.  The handlers run as shipped; the post_state
  * table, post_snapshot_or_skip() and the bump itself are faked here,
- * bpf's pool publishes are counted through landlock_test.c's
- * publish_resource() hook, and capget's re-call goes to a model through
+ * bpf's and timer_create's pool publishes are counted through
+ * landlock_test.c's publish_resource() hook, timer_create's prop ring push
+ * through fake_objects.c's, and capget's re-call goes to a model through
  * its syscall() hook.
  */
 
@@ -48,6 +49,7 @@
 #include "maps.h"		/* get_map */
 #include "net.h"		/* fd_from_socketinfo */
 #include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
+#include "prop_ring.h"		/* SCALAR_TIMER_ID */
 #include "publish_resource.h"	/* struct resource_meta */
 #include "sanitise.h"		/* writable pool */
 #include "shm.h"
@@ -1695,6 +1697,81 @@ static void fd_tag_rewritten(void)
 	fake_publish_resource = NULL;
 }
 
+extern void (*fake_prop_ring_push_scalar)(unsigned int nr, long scalar_val,
+					  enum scalar_kind kind);	/* fake_objects.c */
+
+/* The timer ids timer_create's registrar hands the pool and the prop ring;
+ * -1 for none. */
+static long timer_pooled, timer_ringed;
+
+static struct object *pool_timer(enum objecttype type, unsigned long id,
+				 const struct resource_meta *meta)
+{
+	(void) meta;
+	if (type != OBJ_TIMERID)
+		BUG("timer_create published to another pool than the timers'");
+	timer_pooled = (long) id;
+	return NULL;
+}
+
+static void ring_timer(unsigned int nr, long scalar_val,
+		       enum scalar_kind kind)
+{
+	(void) nr;
+	if (kind != SCALAR_TIMER_ID)
+		BUG("timer_create pushed another kind than a timer id");
+	timer_ringed = scalar_val;
+}
+
+/* timer_create writes the id of the timer it made as the kernel's timer_t,
+ * an int, so it covers half of the glibc timer_t the call is handed: the
+ * timer goes to the pool and the prop ring without a bump, and an id the
+ * kernel cannot write goes to neither, with one. */
+static void timer_create_id(void)
+{
+	static const struct {
+		int id;
+		bool pooled;
+	} cases[] = {
+		{ 0, true },
+		{ 7, true },
+		{ -5, false },
+	};
+	static struct syscallrecord rec;
+	unsigned int i;
+
+	fake_publish_resource = pool_timer;
+	fake_prop_ring_push_scalar = ring_timer;
+	for (i = 0; i < ARRAY_SIZE(cases); i++) {
+		long want = cases[i].pooled ? cases[i].id : -1;
+		char what[64];
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a3 = (unsigned long) get_writable_address(sizeof(timer_t));
+		syscall_timer_create.sanitise(&rec);
+
+		memcpy((void *) rec.a3, &cases[i].id, sizeof(cases[i].id));
+		rec.arg_shadow[2] = rec.a3;
+		rec.arg_snapshot_mask = syscall_timer_create.arg_snapshot_mask;
+		rec.retval = 0;
+		timer_pooled = timer_ringed = -1;
+		bumps = 0;
+		syscall_timer_create.ret_objtype_via_post(&rec);
+		syscall_timer_create.post(&rec);
+
+		snprintf(what, sizeof(what), "timer_create, timer id %d",
+			 cases[i].id);
+		expect(what, bumps, cases[i].pooled ? 0 : 1);
+		if (timer_pooled != want || timer_ringed != want) {
+			fprintf(stderr, "%s: pooled %ld, ringed %ld\n", what,
+				timer_pooled, timer_ringed);
+			failed++;
+		}
+	}
+	fake_prop_ring_push_scalar = NULL;
+	fake_publish_resource = NULL;
+}
+
 /* The fd the last invalidate_obj_mmap_by_fd() named, which mm/maps-proc.c
  * implements outside this binary; -1 for none. */
 static int invalidated_fd = -1;
@@ -1975,6 +2052,7 @@ void post_oracle_self_check(void)
 	getitimer_compat();
 	io_uring_register_answers();
 	fd_tag_rewritten();
+	timer_create_id();
 	cut_fd_rewritten();
 	sigpending_cases();
 	count_rewritten();
