@@ -253,21 +253,20 @@ void shadow_promotion_evaluate(void)
 			continue;
 
 		/*
-		 * Snapshot the pair in baseline-then-would-win order:
-		 * baseline is the divisor, so if a concurrent bump
-		 * lands between the two loads the observed ratio can
-		 * only get MORE conservative, never less.  If baseline
-		 * fails the sample floor there is no point reading
-		 * would-win at all.
+		 * Snapshot the pair in would-win-then-baseline order:
+		 * baseline is the divisor, so a concurrent bump landing
+		 * between the two loads reaches only the divisor and
+		 * the observed ratio can only get MORE conservative,
+		 * never less.
 		 */
+		would_win = __atomic_load_n(
+			shadow_arm_counter(arm->would_win_offset),
+			__ATOMIC_RELAXED);
 		baseline = __atomic_load_n(
 			shadow_arm_counter(arm->baseline_offset),
 			__ATOMIC_RELAXED);
 		if (baseline < arm->min_baseline_samples)
 			continue;
-		would_win = __atomic_load_n(
-			shadow_arm_counter(arm->would_win_offset),
-			__ATOMIC_RELAXED);
 
 		/*
 		 * Criterion (2): would_win / baseline >= threshold,
