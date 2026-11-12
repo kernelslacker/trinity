@@ -25,11 +25,11 @@
  * memory.high crossings.
  *
  * In split mode the watcher attaches to children/memory.events — that's
- * where the workload's memory pressure shows up.  memory.max crossings
- * are tracked for diagnostics only: with children/memory.oom.group=1 the
- * kernel kills the entire worker pool atomically when the cap fires, the
- * parent re-spawns from a clean state, and any userspace shed-on-top
- * would just race the kernel.
+ * where the workload's memory pressure shows up.  memory.max hits are
+ * tracked for diagnostics only: the kernel reclaims at the cap, and when
+ * that fails, children/memory.oom.group=1 has it kill the entire worker
+ * pool atomically, the parent re-spawns from a clean state, and any
+ * userspace shed-on-top would just race the kernel.
  *
  * The watch is parent-only.  Inotify on cgroupfs delivers IN_MODIFY
  * each time the kernel rewrites memory.events; the parent drains those
@@ -257,8 +257,10 @@ void self_cgroup_events_check(void)
 	}
 
 	/*
-	 * memory.events:max means the kernel has already OOM-killed in the
-	 * children/ cgroup.  With memory.oom.group=1 the kill takes the
+	 * memory.events:max counts the times the cgroup's usage was about
+	 * to cross memory.max, before the kernel reclaims; only when that
+	 * fails does the cgroup go OOM (counted in oom_kill and, with
+	 * memory.oom.group=1, oom_group_kill).  A group kill then takes the
 	 * whole worker pool atomically and the parent (which lives in the
 	 * sibling parent/ cgroup with no memory.max) survives untouched —
 	 * the existing reap loop in main_loop sees all the SIGCHLDs and
@@ -272,9 +274,10 @@ void self_cgroup_events_check(void)
 		last_max_count = max;
 		max_event_seq++;
 		output(0, "self-cgroup: MAX event #%u (delta=%lu) -- "
-		       "kernel %s; parent re-spawns worker pool\n",
+		       "usage reached memory.max; the kernel reclaims, and "
+		       "%s if that fails\n",
 		       max_event_seq, delta,
-		       cg_split_mode ? "group-killed children cgroup atomically"
-				     : "OOM-killed in single-cgroup mode");
+		       cg_split_mode ? "group-kills the children cgroup"
+				     : "OOM-kills in the cgroup");
 	}
 }
