@@ -718,6 +718,11 @@ FAKE_SRCS	+= pppol2tp_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/ip-sctp.c
 FAKE_SRCS	+= sctp_sockopt_test.c
 
+# net/proto/packet.c brings the AF_PACKET option builders, whose
+# PACKET_FANOUT word packet_sockopt_test.c holds to fanout_add()'s layout.
+PARENT_SRCS	+= $(TOP)/net/proto/packet.c
+FAKE_SRCS	+= packet_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.

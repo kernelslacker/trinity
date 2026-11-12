@@ -120,7 +120,8 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 		break;
 
 	case PACKET_FANOUT: {
-		/* type in low 16 bits, flags in high 16 bits */
+		/* struct fanout_args' first word: the group id in the low
+		 * 16 bits, the type and its flags in the high 16 */
 		unsigned int *optval32 = (unsigned int *) so->optval;
 		unsigned int type = rnd_modulo_u32(7);	/* HASH..CBPF */
 		unsigned int flags = 0;
@@ -133,7 +134,7 @@ static void packet_setsockopt(struct sockopt *so, __unused__ struct socket_tripl
 			flags |= PACKET_FANOUT_FLAG_IGNORE_OUTGOING;
 		if (RAND_BOOL())
 			flags |= PACKET_FANOUT_FLAG_DEFRAG;
-		*optval32 = type | (flags << 16) | ((rnd_modulo_u32(256)) << 8);
+		*optval32 = rnd_modulo_u32(256) | ((type | flags) << 16);
 		so->optlen = sizeof(unsigned int);
 		break;
 	}
