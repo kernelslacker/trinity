@@ -2,7 +2,6 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
-#include <stdint.h>
 #include "net.h"
 #include "kernel/rds.h"
 #include "random.h"
@@ -48,12 +47,36 @@ static const unsigned int rds_opts[] = {
 
 static void rds_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	unsigned int *optval32 = (unsigned int *) so->optval;
+	struct rds_rx_trace_so *trace;
+	unsigned int i;
+
 	so->level = SOL_RDS;
 	so->optname = RAND_ARRAY(rds_opts);
 
 	switch (so->optname) {
+	case RDS_RECVERR:
 	case RDS_CONG_MONITOR:
-		so->optlen = sizeof(uint64_t);
+	case SO_TIMESTAMP_OLD:
+	case SO_TIMESTAMP_NEW:
+		/* A flag, on for any value but 0. */
+		*optval32 = RAND_BOOL();
+		so->optlen = sizeof(unsigned int);
+		break;
+	case SO_RDS_TRANSPORT:
+		/* rds_set_transport() takes TCP in any netns, IB only in the
+		 * initial one. */
+		*optval32 = RAND_BOOL() ? RDS_TRANS_TCP : RDS_TRANS_IB;
+		so->optlen = sizeof(unsigned int);
+		break;
+	case SO_RDS_MSG_RXPATH_LATENCY:
+		/* rds_recv_track_latency() takes up to
+		 * RDS_MSG_RX_DGRAM_TRACE_MAX trace points, each below it. */
+		trace = (struct rds_rx_trace_so *) so->optval;
+		trace->rx_traces = rnd_modulo_u32(RDS_MSG_RX_DGRAM_TRACE_MAX + 1);
+		for (i = 0; i < trace->rx_traces; i++)
+			trace->rx_trace_pos[i] = rnd_modulo_u32(RDS_MSG_RX_DGRAM_TRACE_MAX);
+		so->optlen = sizeof(struct rds_rx_trace_so);
 		break;
 	case RDS_CANCEL_SENT_TO:
 		so->optlen = sizeof(struct sockaddr_in);

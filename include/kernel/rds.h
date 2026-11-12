@@ -5,6 +5,8 @@
 
 #ifndef SO_RDS_TRANSPORT
 #define SO_RDS_TRANSPORT	8
+#define RDS_TRANS_IB		0
+#define RDS_TRANS_TCP		2
 #endif
 #ifndef SOL_RDS
 #define SOL_RDS			276
@@ -57,6 +59,11 @@ struct rds_atomic_args {
 
 #ifndef SO_RDS_MSG_RXPATH_LATENCY
 #define SO_RDS_MSG_RXPATH_LATENCY	10
+#define RDS_MSG_RX_DGRAM_TRACE_MAX	3
+struct rds_rx_trace_so {
+	__u8 rx_traces;
+	__u8 rx_trace_pos[RDS_MSG_RX_DGRAM_TRACE_MAX];
+};
 #endif
 
 #ifndef RDS_INFO_FIRST
