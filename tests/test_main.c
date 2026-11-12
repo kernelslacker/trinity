@@ -147,6 +147,7 @@ void can_sockaddr_self_check(void);
 void qrtr_sockaddr_self_check(void);
 void pppol2tp_sockaddr_self_check(void);
 void sctp_sockopt_self_check(void);
+void sctp_catalog_self_check(void);
 void packet_sockopt_self_check(void);
 void setsockopt_self_check(void);
 
@@ -841,6 +842,11 @@ int main(int argc, char **argv)
 	printf("  sctp_sockopt_self_check ... ");
 	fflush(stdout);
 	sctp_sockopt_self_check();
+	printf("OK\n");
+
+	printf("  sctp_catalog_self_check ... ");
+	fflush(stdout);
+	sctp_catalog_self_check();
 	printf("OK\n");
 
 	printf("  packet_sockopt_self_check ... ");

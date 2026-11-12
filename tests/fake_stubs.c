@@ -20,6 +20,9 @@
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #endif
+#ifdef USE_SCTP
+#include <linux/sctp.h>
+#endif
 
 #include "args-internal.h"
 #include "debug.h"
@@ -90,15 +93,17 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 
 /*
  * The catalog the schema fill reads: args/struct_validate.c walks every row of
- * it on the first fill.  It is empty but for the bpf_attr and setsockopt rows,
- * which are the real ones, so a sanitiser that fills a bpf attr through it, or
- * a test that fills a setsockopt struct with sockaddrs embedded by name, runs
- * on the catalog's own tables; the real struct_catalog/catalog.c would bring
- * the tables of every family into the link.
+ * it on the first fill.  It is empty but for the bpf_attr, setsockopt and SCTP
+ * rows, which are the real ones, so a sanitiser that fills a bpf attr through
+ * it, or a test that fills a setsockopt struct with sockaddrs embedded by name
+ * or an SCTP option's payload, runs on the catalog's own tables; the real
+ * struct_catalog/catalog.c would bring the tables of every family into the
+ * link.
  */
 const struct struct_desc struct_catalog[SC_NR_ENTRIES] = {
 #include "struct_catalog/catalog-bpf.inc"
 #include "struct_catalog/catalog-setsockopt.inc"
+#include "struct_catalog/catalog-sctp.inc"
 };
 
 /*

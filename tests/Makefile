@@ -718,6 +718,12 @@ FAKE_SRCS	+= pppol2tp_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/ip-sctp.c
 FAKE_SRCS	+= sctp_sockopt_test.c
 
+# struct_catalog/sctp.c brings the rows of the SCTP options, which
+# fake_stubs.c's catalog holds and sctp_catalog_test.c fills, holding
+# their assoc_ids to the ones a one-to-many socket takes.
+PARENT_SRCS	+= $(TOP)/struct_catalog/sctp.c
+FAKE_SRCS	+= sctp_catalog_test.c
+
 # net/proto/packet.c brings the AF_PACKET option builders, whose
 # PACKET_FANOUT word packet_sockopt_test.c holds to fanout_add()'s layout.
 PARENT_SRCS	+= $(TOP)/net/proto/packet.c

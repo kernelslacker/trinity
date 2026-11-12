@@ -22,9 +22,16 @@
 #include <sys/socket.h>
 #include <linux/sctp.h>
 
+#include "net.h"	/* sctp_assoc_id */
 #include "utils.h"
 
 #include "kernel/sctp.h"
+
+/*
+ * Every assoc_id below is an FT_PICKER on sctp_assoc_id(), the option
+ * builders' own draw of the ids a one-to-many socket's options take.
+ */
+
 /*
  * struct sctp_initmsg -- IPPROTO_SCTP / SCTP_INITMSG.  Four __u16 fields
  * controlling SCTP association init params.  Stream counts bound to
@@ -53,15 +60,14 @@ const struct struct_field sctp_initmsg_fields[SCTP_INITMSG_FIELDS_N] = {
 /*
  * struct sctp_rtoinfo -- IPPROTO_SCTP / SCTP_RTOINFO.  Carries the SCTP
  * RTO (retransmission timeout) envelope for an association: assoc_id
- * picks the target association (FT_RAW lets the per-byte splat drive
- * the kernel's per-assoc lookup) and three __u32 millisecond fields
+ * picks the target association and three __u32 millisecond fields
  * (initial / max / min) bounded to [0, 60000] -- a window wide enough to
  * exercise the kernel's clamp logic without flooding it with absurd
  * values.  Bespoke build_sctp_rtoinfo() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_rtoinfo_fields[SCTP_RTOINFO_FIELDS_N] = {
-	FIELDX(struct sctp_rtoinfo, srto_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_rtoinfo, srto_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_rtoinfo, srto_initial, FT_RANGE,
 	       .u.range = { 0, 60000 },
 	       .mutate_weight = 60),
@@ -76,8 +82,7 @@ const struct struct_field sctp_rtoinfo_fields[SCTP_RTOINFO_FIELDS_N] = {
 /*
  * struct sctp_assocparams -- IPPROTO_SCTP / SCTP_ASSOCINFO.  Examines
  * and sets various per-association and endpoint parameters.  sasoc_assoc_id
- * picks the target association (FT_RAW so the per-field splat continues to
- * drive the association lookup).  sasoc_asocmaxrxt is the association-level
+ * picks the target association.  sasoc_asocmaxrxt is the association-level
  * max retransmit (FT_RANGE [0, 16] keeps it within plausible retry budgets).
  * sasoc_number_peer_destinations / sasoc_peer_rwnd / sasoc_local_rwnd
  * are FT_RAW (peer-count and window-byte counters with no useful clamp).
@@ -87,8 +92,8 @@ const struct struct_field sctp_rtoinfo_fields[SCTP_RTOINFO_FIELDS_N] = {
  * miss-fallback.
  */
 const struct struct_field sctp_assocparams_fields[SCTP_ASSOCPARAMS_FIELDS_N] = {
-	FIELDX(struct sctp_assocparams, sasoc_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_assocparams, sasoc_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_assocparams, sasoc_asocmaxrxt, FT_RANGE,
 	       .u.range = { 0, 16 },
 	       .mutate_weight = 60),
@@ -121,8 +126,7 @@ const struct struct_field sctp_setadaptation_fields[SCTP_SETADAPTATION_FIELDS_N]
  * struct sctp_assoc_value -- IPPROTO_SCTP / { SCTP_CONTEXT, SCTP_MAXSEG,
  * SCTP_MAX_BURST, SCTP_STREAM_SCHEDULER }.  Two-field carrier shared by
  * several sockopts that take an (assoc_id, value) pair: assoc_id picks
- * the target association (FT_RAW so the per-field splat continues to
- * drive the association lookup), assoc_value is the per-optname payload
+ * the target association, assoc_value is the per-optname payload
  * (FT_RAW -- value semantics differ per optname: SCTP_CONTEXT is an
  * opaque cookie, SCTP_MAXSEG / SCTP_MAX_BURST / SCTP_STREAM_SCHEDULER
  * are small integers with kernel-side clamping, so a single FT_RANGE
@@ -130,8 +134,8 @@ const struct struct_field sctp_setadaptation_fields[SCTP_SETADAPTATION_FIELDS_N]
  * Bespoke build_sctp_assoc_value() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_assoc_value_fields[SCTP_ASSOC_VALUE_FIELDS_N] = {
-	FIELDX(struct sctp_assoc_value, assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_assoc_value, assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_assoc_value, assoc_value, FT_RAW,
 	       .mutate_weight = 60),
 };
@@ -144,11 +148,9 @@ const struct struct_field sctp_assoc_value_fields[SCTP_ASSOC_VALUE_FIELDS_N] = {
  * bitfield drawn from the SCTP send-flag set (UNORDERED / ADDR_OVER /
  * ABORT / SACK_IMMEDIATELY / SENDALL / EOF), masked so the splat lands
  * on plausible combinations rather than random 16-bit noise.  snd_ppid
- * (peer-visible payload protocol id), snd_context (opaque per-message
- * cookie), and snd_assoc_id (association lookup key) are FT_RAW -- each
- * is either peer-visible / opaque or a lookup constant the kernel
- * compares against.  Bespoke build_sctp_sndinfo() zero-fills as a
- * miss-fallback.
+ * (peer-visible payload protocol id) and snd_context (opaque per-message
+ * cookie) are FT_RAW, and snd_assoc_id picks the target association.
+ * Bespoke build_sctp_sndinfo() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_sndinfo_fields[SCTP_SNDINFO_FIELDS_N] = {
 	FIELDX(struct sctp_sndinfo, snd_sid, FT_RANGE,
@@ -163,8 +165,8 @@ const struct struct_field sctp_sndinfo_fields[SCTP_SNDINFO_FIELDS_N] = {
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_sndinfo, snd_context, FT_RAW,
 	       .mutate_weight = 40),
-	FIELDX(struct sctp_sndinfo, snd_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_sndinfo, snd_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 };
 
 /*
@@ -176,10 +178,10 @@ const struct struct_field sctp_sndinfo_fields[SCTP_SNDINFO_FIELDS_N] = {
  * SCTP send-flag set (UNORDERED / ADDR_OVER / ABORT / SACK_IMMEDIATELY
  * / SENDALL / EOF), masked so the splat lands on plausible combinations
  * rather than random 16-bit noise.  sinfo_ssn / sinfo_ppid /
- * sinfo_context / sinfo_timetolive / sinfo_tsn / sinfo_cumtsn /
- * sinfo_assoc_id are FT_RAW -- each is either peer-visible / opaque or
- * a lookup constant the kernel compares against.  Bespoke
- * build_sctp_sndrcvinfo() zero-fills as a miss-fallback.
+ * sinfo_context / sinfo_timetolive / sinfo_tsn / sinfo_cumtsn are FT_RAW
+ * -- each is peer-visible or opaque -- and sinfo_assoc_id picks the
+ * target association.  Bespoke build_sctp_sndrcvinfo() zero-fills as a
+ * miss-fallback.
  */
 const struct struct_field sctp_sndrcvinfo_fields[SCTP_SNDRCVINFO_FIELDS_N] = {
 	FIELDX(struct sctp_sndrcvinfo, sinfo_stream, FT_RANGE,
@@ -202,8 +204,8 @@ const struct struct_field sctp_sndrcvinfo_fields[SCTP_SNDRCVINFO_FIELDS_N] = {
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_sndrcvinfo, sinfo_cumtsn, FT_RAW,
 	       .mutate_weight = 40),
-	FIELDX(struct sctp_sndrcvinfo, sinfo_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_sndrcvinfo, sinfo_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 };
 
 /*
@@ -265,8 +267,7 @@ const struct struct_field sctp_authchunk_fields[SCTP_AUTHCHUNK_FIELDS_N] = {
  * struct sctp_sack_info -- IPPROTO_SCTP / SCTP_DELAYED_SACK (the canonical
  * spelling; SCTP_DELAYED_ACK / SCTP_DELAYED_ACK_TIME alias the same
  * optname value 16).  RFC 6458 delayed-SACK tuning: sack_assoc_id picks
- * the target association (FT_RAW so the kernel's per-assoc lookup
- * constant shows up to KCOV-CMP), sack_delay is the delayed-ack timer
+ * the target association, sack_delay is the delayed-ack timer
  * in ms bounded to [0, 500] -- the kernel rejects values above
  * SCTP_MAX_DELAY_VALUE (500ms) outright, so staying inside the window
  * exercises the timer-arm path rather than the EINVAL early-out, and
@@ -276,8 +277,8 @@ const struct struct_field sctp_authchunk_fields[SCTP_AUTHCHUNK_FIELDS_N] = {
  * zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_sack_info_fields[SCTP_SACK_INFO_FIELDS_N] = {
-	FIELDX(struct sctp_sack_info, sack_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_sack_info, sack_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_sack_info, sack_delay, FT_RANGE,
 	       .u.range = { 0, 500 },
 	       .mutate_weight = 60),
@@ -289,15 +290,14 @@ const struct struct_field sctp_sack_info_fields[SCTP_SACK_INFO_FIELDS_N] = {
 /*
  * struct sctp_authkeyid -- IPPROTO_SCTP / SCTP_AUTH_{ACTIVE,DELETE,
  * DEACTIVATE}_KEY.  RFC 4895 AUTH key management: scact_assoc_id picks
- * the target association (FT_RAW so the kernel's per-assoc lookup
- * constant shows up to KCOV-CMP), scact_keynumber is the shared-key
+ * the target association, scact_keynumber is the shared-key
  * identifier bounded to [0, 8] -- realistic for the small set of keys an
  * endpoint typically provisions while still exercising the lookup path.
  * Bespoke build_sctp_authkeyid() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_authkeyid_fields[SCTP_AUTHKEYID_FIELDS_N] = {
-	FIELDX(struct sctp_authkeyid, scact_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_authkeyid, scact_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_authkeyid, scact_keynumber, FT_RANGE,
 	       .u.range = { 0, 8 },
 	       .mutate_weight = 60),
@@ -306,8 +306,7 @@ const struct struct_field sctp_authkeyid_fields[SCTP_AUTHKEYID_FIELDS_N] = {
 /*
  * struct sctp_default_prinfo -- IPPROTO_SCTP / SCTP_DEFAULT_PRINFO.
  * RFC 7496 PR-SCTP default policy carrier: pr_assoc_id selects the
- * target association (FT_RAW so the per-assoc lookup constant shows
- * up to KCOV-CMP), pr_value is the policy-specific lifetime / retx
+ * target association, pr_value is the policy-specific lifetime / retx
  * limit / priority cookie (FT_RAW -- semantics differ per policy and
  * the kernel does not clamp), and pr_policy is the small 4-valued
  * vocab the kernel branches on in sctp_set_default_prinfo() (FT_ENUM
@@ -321,8 +320,8 @@ const unsigned long sctp_default_prinfo_policy_values[SCTP_DEFAULT_PRINFO_POLICY
 };
 
 const struct struct_field sctp_default_prinfo_fields[SCTP_DEFAULT_PRINFO_FIELDS_N] = {
-	FIELDX(struct sctp_default_prinfo, pr_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_default_prinfo, pr_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_default_prinfo, pr_value, FT_RAW,
 	       .mutate_weight = 60),
 	FIELDX(struct sctp_default_prinfo, pr_policy, FT_ENUM,
@@ -334,8 +333,7 @@ const struct struct_field sctp_default_prinfo_fields[SCTP_DEFAULT_PRINFO_FIELDS_
 /*
  * struct sctp_add_streams -- IPPROTO_SCTP / SCTP_ADD_STREAMS.  RFC 6525
  * dynamic stream reconfiguration: sas_assoc_id picks the target
- * association (FT_RAW so the kernel's per-assoc lookup constant shows
- * up to KCOV-CMP) while sas_instrms / sas_outstrms request how many
+ * association while sas_instrms / sas_outstrms request how many
  * additional inbound / outbound streams to negotiate, bounded to
  * [0, 128] -- the kernel branches on (current + requested) overflowing
  * 16 bits and on the peer's RECONF capability, so staying inside a
@@ -344,8 +342,8 @@ const struct struct_field sctp_default_prinfo_fields[SCTP_DEFAULT_PRINFO_FIELDS_
  * miss-fallback.
  */
 const struct struct_field sctp_add_streams_fields[SCTP_ADD_STREAMS_FIELDS_N] = {
-	FIELDX(struct sctp_add_streams, sas_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_add_streams, sas_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_add_streams, sas_instrms, FT_RANGE,
 	       .u.range = { 0, 128 },
 	       .mutate_weight = 60),
@@ -357,8 +355,7 @@ const struct struct_field sctp_add_streams_fields[SCTP_ADD_STREAMS_FIELDS_N] = {
 /*
  * struct sctp_stream_value -- IPPROTO_SCTP / SCTP_STREAM_SCHEDULER_VALUE.
  * Per-stream scheduler parameter carrier: assoc_id selects the
- * association (FT_RAW so the kernel's per-assoc lookup constant shows
- * up to KCOV-CMP), stream_id picks the target stream bounded to
+ * association, stream_id picks the target stream bounded to
  * [0, 128] matching the SCTP_INITMSG stream-count envelope, and
  * stream_value is the scheduler-specific opaque cookie (FT_RAW; the
  * kernel's interpretation varies by active scheduler so no useful
@@ -366,8 +363,8 @@ const struct struct_field sctp_add_streams_fields[SCTP_ADD_STREAMS_FIELDS_N] = {
  * miss-fallback.
  */
 const struct struct_field sctp_stream_value_fields[SCTP_STREAM_VALUE_FIELDS_N] = {
-	FIELDX(struct sctp_stream_value, assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_stream_value, assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_stream_value, stream_id, FT_RANGE,
 	       .u.range = { 0, 128 },
 	       .mutate_weight = 60),
@@ -379,8 +376,7 @@ const struct struct_field sctp_stream_value_fields[SCTP_STREAM_VALUE_FIELDS_N] =
  * struct sctp_event -- IPPROTO_SCTP / SCTP_EVENT.  RFC 6458 generic
  * notification-subscription opt (the modern per-event toggle that
  * superseded the legacy SCTP_EVENTS / sctp_event_subscribe bitmap):
- * se_assoc_id selects the target association (FT_RAW so the kernel's
- * per-assoc lookup constant shows up to KCOV-CMP), se_type names the
+ * se_assoc_id selects the target association, se_type names the
  * sctp_sn_type notification (FT_RAW -- the value list lives in the
  * SCTP_SN_TYPE_BASE = (1<<15) range rather than a contiguous small
  * enum, so the byte-noise default still hits the live span often
@@ -389,8 +385,8 @@ const struct struct_field sctp_stream_value_fields[SCTP_STREAM_VALUE_FIELDS_N] =
  * Bespoke build_sctp_event() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_event_fields[SCTP_EVENT_FIELDS_N] = {
-	FIELDX(struct sctp_event, se_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_event, se_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_event, se_type, FT_RAW,
 	       .mutate_weight = 60),
 	FIELDX(struct sctp_event, se_on, FT_RANGE,
@@ -401,8 +397,7 @@ const struct struct_field sctp_event_fields[SCTP_EVENT_FIELDS_N] = {
 /*
  * struct sctp_paddrthlds -- IPPROTO_SCTP / SCTP_PEER_ADDR_THLDS.  Per-
  * peer-address retransmit / partial-failure threshold opt (RFC 5062 +
- * the peer-failure draft).  spt_assoc_id picks the target association
- * (FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP);
+ * the peer-failure draft).  spt_assoc_id picks the target association;
  * spt_address embeds a struct sockaddr_storage, one opaque FT_RAW
  * field spanning it, not split into sub-fields KCOV-CMP would misread:
  * the kernel matches it against the live peer address list rather
@@ -416,8 +411,8 @@ const struct struct_field sctp_event_fields[SCTP_EVENT_FIELDS_N] = {
  * zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_paddrthlds_fields[SCTP_PADDRTHLDS_FIELDS_N] = {
-	FIELDX(struct sctp_paddrthlds, spt_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds, spt_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_paddrthlds, spt_address, FT_RAW,
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_paddrthlds, spt_pathmaxrxt, FT_RANGE,
@@ -433,16 +428,15 @@ const struct struct_field sctp_paddrthlds_fields[SCTP_PADDRTHLDS_FIELDS_N] = {
  * Back-compat extension of struct sctp_paddrthlds adding a trailing
  * spt_pathcpthld (__u16, FT_RANGE [0, 16]) -- the per-path
  * consecutive-retransmit threshold the v2 optname carries on top of
- * the v1 layout.  Everything else mirrors v1: spt_assoc_id is FT_RAW
- * so the per-assoc lookup constant shows up to KCOV-CMP, spt_address
- * is a single opaque FT_RAW blob spanning sizeof(struct
- * sockaddr_storage), and spt_pathmaxrxt / spt_pathpfthld stay in the
- * [0, 16] envelope.  Bespoke build_sctp_paddrthlds_v2() zero-fills
- * as a miss-fallback.
+ * the v1 layout.  Everything else mirrors v1: spt_assoc_id picks the
+ * target association, spt_address is a single opaque FT_RAW blob
+ * spanning sizeof(struct sockaddr_storage), and spt_pathmaxrxt /
+ * spt_pathpfthld stay in the [0, 16] envelope.  Bespoke
+ * build_sctp_paddrthlds_v2() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_paddrthlds_v2_fields[SCTP_PADDRTHLDS_V2_FIELDS_N] = {
-	FIELDX(struct sctp_paddrthlds_v2, spt_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrthlds_v2, spt_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_paddrthlds_v2, spt_address, FT_RAW,
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_paddrthlds_v2, spt_pathmaxrxt, FT_RANGE,
@@ -459,8 +453,7 @@ const struct struct_field sctp_paddrthlds_v2_fields[SCTP_PADDRTHLDS_V2_FIELDS_N]
 /*
  * struct sctp_udpencaps -- IPPROTO_SCTP / SCTP_REMOTE_UDP_ENCAPS_PORT.
  * Per-peer UDP encapsulation port for SCTP-over-UDP (RFC 6951).
- * sue_assoc_id picks the target association (sctp_assoc_t / __u32,
- * FT_RAW so the per-assoc lookup constant shows up to KCOV-CMP).
+ * sue_assoc_id picks the target association.
  * sue_address embeds a struct sockaddr_storage, one opaque FT_RAW
  * field that keeps optval's zero bytes, the wildcard address, as
  * spt_address does in sctp_paddrthlds above.  sue_port
@@ -470,8 +463,8 @@ const struct struct_field sctp_paddrthlds_v2_fields[SCTP_PADDRTHLDS_V2_FIELDS_N]
  * build_sctp_udpencaps() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_udpencaps_fields[SCTP_UDPENCAPS_FIELDS_N] = {
-	FIELDX(struct sctp_udpencaps, sue_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_udpencaps, sue_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_udpencaps, sue_address, FT_RAW,
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_udpencaps, sue_port, FT_RAW,
@@ -481,11 +474,10 @@ const struct struct_field sctp_udpencaps_fields[SCTP_UDPENCAPS_FIELDS_N] = {
 /*
  * struct sctp_paddrparams -- IPPROTO_SCTP / SCTP_PEER_ADDR_PARAMS.
  * Per-peer-address heartbeat / PMTU / SACK-delay parameter block
- * (RFC 6458 7.1.13).  spp_assoc_id picks the target association
- * (sctp_assoc_t / __u32, FT_RAW so the per-assoc lookup constant
- * shows up to KCOV-CMP); spp_address embeds a struct sockaddr_storage,
- * one opaque FT_RAW field that keeps optval's zero bytes, the wildcard
- * address, as spt_address does in sctp_paddrthlds above.
+ * (RFC 6458 7.1.13).  spp_assoc_id picks the target association;
+ * spp_address embeds a struct sockaddr_storage, one opaque FT_RAW field
+ * that keeps optval's zero bytes, the wildcard address, as spt_address
+ * does in sctp_paddrthlds above.
  * spp_hbinterval / spp_pathmtu / spp_sackdelay
  * are __u32 timer/MTU/delay knobs (FT_RAW -- letting the per-byte
  * splat exercise the full range without anchoring KCOV-CMP at a
@@ -501,8 +493,8 @@ const struct struct_field sctp_udpencaps_fields[SCTP_UDPENCAPS_FIELDS_N] = {
  * zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_paddrparams_fields[SCTP_PADDRPARAMS_FIELDS_N] = {
-	FIELDX(struct sctp_paddrparams, spp_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_paddrparams, spp_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_paddrparams, spp_address, FT_RAW,
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_paddrparams, spp_hbinterval, FT_RAW,
@@ -531,11 +523,10 @@ const struct struct_field sctp_paddrparams_fields[SCTP_PADDRPARAMS_FIELDS_N] = {
 /*
  * struct sctp_probeinterval -- IPPROTO_SCTP / SCTP_PLPMTUD_PROBE_INTERVAL.
  * PLPMTUD (Packetization Layer Path MTU Discovery, RFC 8899) probe-interval
- * knob exposed by SCTP.  spi_assoc_id (sctp_assoc_t / __u32) picks the
- * target association -- FT_RAW so the per-assoc lookup constant shows up
- * to KCOV-CMP.  spi_address embeds a struct sockaddr_storage, one
- * opaque FT_RAW field that keeps optval's zero bytes, the wildcard
- * address, as spt_address does in sctp_paddrthlds above.  spi_interval
+ * knob exposed by SCTP.  spi_assoc_id picks the target association.
+ * spi_address embeds a struct sockaddr_storage, one opaque FT_RAW field
+ * that keeps optval's zero bytes, the wildcard address, as spt_address
+ * does in sctp_paddrthlds above.  spi_interval
  * is the probe interval in milliseconds
  * (__u32, unsigned) -- FT_RANGE [0, 60000] keeps the splat inside the
  * documented kernel envelope (0 disables, otherwise plausible PMTUD
@@ -543,8 +534,8 @@ const struct struct_field sctp_paddrparams_fields[SCTP_PADDRPARAMS_FIELDS_N] = {
  * build_sctp_probeinterval() zero-fills as a miss-fallback.
  */
 const struct struct_field sctp_probeinterval_fields[SCTP_PROBEINTERVAL_FIELDS_N] = {
-	FIELDX(struct sctp_probeinterval, spi_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_probeinterval, spi_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_probeinterval, spi_address, FT_RAW,
 	       .mutate_weight = 40),
 	FIELDX(struct sctp_probeinterval, spi_interval, FT_RANGE,
@@ -561,15 +552,15 @@ const struct struct_field sctp_probeinterval_fields[SCTP_PROBEINTERVAL_FIELDS_N]
  * __attribute__((packed, aligned(4))), so ssp_addr sits at offset 4
  * with no trailing padding; FIELD()/FIELDX() pick up that layout via
  * offsetof, no manual offset arithmetic required.  ssp_assoc_id
- * (FT_RAW) lets the per-assoc lookup constant flow to KCOV-CMP.
+ * picks the target association.
  * ssp_addr, one opaque FT_RAW field over the whole sockaddr_storage,
  * keeps optval's zero bytes, the wildcard address, as spt_address does
  * in sctp_paddrthlds above.  Bespoke build_sctp_prim() zero-fills as a
  * miss-fallback.
  */
 const struct struct_field sctp_prim_fields[SCTP_PRIM_FIELDS_N] = {
-	FIELDX(struct sctp_prim, ssp_assoc_id, FT_RAW,
-	       .mutate_weight = 60),
+	FIELDX(struct sctp_prim, ssp_assoc_id, FT_PICKER,
+	       .u.picker.pick = sctp_assoc_id),
 	FIELDX(struct sctp_prim, ssp_addr, FT_RAW,
 	       .mutate_weight = 40),
 };

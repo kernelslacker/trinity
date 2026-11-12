@@ -93,6 +93,9 @@ void gen_socket_args(struct socket_triplet *st);
 /* ipv4 */
 in_addr_t random_ipv4_address(void);
 
+/* sctp */
+unsigned long long sctp_assoc_id(void);
+
 extern const struct netproto proto_ipv4;
 extern const struct netproto proto_inet6;
 extern const struct netproto proto_pppol2tp;

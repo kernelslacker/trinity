@@ -39,9 +39,11 @@ static const unsigned int sctp_opts[] = {
  * of the socket's associations with -EINVAL, but for SCTP_FUTURE_ASSOC
  * and, for about half of the options, SCTP_CURRENT_ASSOC and
  * SCTP_ALL_ASSOC, which reach every association the socket has; a
- * one-to-one socket ignores the id.
+ * one-to-one socket ignores the id.  The struct catalog's SCTP rows,
+ * which fill a curated option's payload in place of these builders, draw
+ * theirs here too, so the return takes an FT_PICKER's type.
  */
-static sctp_assoc_t sctp_assoc_id(void)
+unsigned long long sctp_assoc_id(void)
 {
 	switch (rnd_modulo_u32(8)) {
 	case 0:
