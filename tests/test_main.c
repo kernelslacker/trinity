@@ -114,6 +114,7 @@ void gen_arg_time_self_check(void);
 void futex_self_check(void);
 void keyctl_self_check(void);
 void rt_sigaction_self_check(void);
+void sigaltstack_self_check(void);
 void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
 void cmsg_build_self_check(void);
@@ -660,6 +661,11 @@ int main(int argc, char **argv)
 	printf("  rt_sigaction_self_check ... ");
 	fflush(stdout);
 	rt_sigaction_self_check();
+	printf("OK\n");
+
+	printf("  sigaltstack_self_check ... ");
+	fflush(stdout);
+	sigaltstack_self_check();
 	printf("OK\n");
 
 	printf("  epoll_volatility_self_check ... ");

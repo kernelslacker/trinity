@@ -1185,6 +1185,11 @@ FAKE_SRCS	+= keyctl_test.c
 PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaction.c
 FAKE_SRCS	+= rt_sigaction_test.c
 
+# syscalls/signal/sigaltstack.c brings sigaltstack's sanitiser and post
+# oracle, which sigaltstack_test.c runs on compat calls.
+PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaltstack.c
+FAKE_SRCS	+= sigaltstack_test.c
+
 # childops/misc/epoll-volatility.c brings the epoll_volatility childop,
 # whose epoll_ctl() calls epoll_volatility_test.c counts on real epfds;
 # rand/interesting-numbers.c is the edge values its ADD masks draw.

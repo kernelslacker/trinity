@@ -22,6 +22,13 @@
 #define HAVE_SYS_SIGALTSTACK 1
 #endif
 
+/* include/linux/compat.h: the stack_t a compat call reads and writes. */
+struct compat_stack {
+	uint32_t ss_sp;
+	int32_t ss_flags;
+	uint32_t ss_size;
+};
+
 #ifdef HAVE_SYS_SIGALTSTACK
 /*
  * Snapshot of the two sigaltstack input args read by the post oracle,
@@ -147,6 +154,16 @@ static void sanitise_sigaltstack(struct syscallrecord *rec)
 		ss->ss_size = SIGSTKSZ;
 	}
 
+	if (rec->do32bit) {
+		struct compat_stack css = {
+			.ss_sp = (uint32_t) (unsigned long) ss->ss_sp,
+			.ss_flags = ss->ss_flags,
+			.ss_size = (uint32_t) ss->ss_size,
+		};
+
+		memcpy(ss, &css, sizeof(css));
+	}
+
 	rec->a1 = (unsigned long) ss;
 	avoid_shared_buffer_inout(&rec->a1, sizeof(stack_t));
 
@@ -233,8 +250,6 @@ choose_uoss:
  * a byte-identical (ss_sp, ss_flags, ss_size) triple unless one of:
  *
  *   - copy_to_user mis-write past or before the stack_t user slot.
- *   - 32-on-64 compat sign-extension on ss_size or pointer truncation on
- *     ss_sp.
  *   - Torn write from a parallel sigaltstack(uss != NULL) against ourselves
  *     (sighand_lock starvation lets two writers interleave).
  *   - Stale rcu read of task->sas_ss_* after a parallel exec walked through
@@ -317,6 +332,11 @@ static void post_sigaltstack(struct syscallrecord *rec)
 				   1, __ATOMIC_RELAXED);
 
 	if (!ONE_IN(100))
+		goto out_free;
+
+	/* A compat call answers in struct compat_stack's 32-bit fields,
+	 * which the native re-call does not. */
+	if (rec->do32bit)
 		goto out_free;
 
 	if (snap->uss != 0)
