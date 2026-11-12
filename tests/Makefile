@@ -1303,6 +1303,12 @@ FAKE_SRCS	+= seccomp_notif_test.c
 PARENT_SRCS	+= $(TOP)/child/cred_throttle.c
 FAKE_SRCS	+= cred_class_test.c
 
+# struct_catalog/sockaddr-mcast.c brings the multicast membership rows of the
+# setsockopt catalog, which mcast_catalog_test.c fills and holds to a group
+# on a device every network namespace has.
+PARENT_SRCS	+= $(TOP)/struct_catalog/sockaddr-mcast.c
+FAKE_SRCS	+= mcast_catalog_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

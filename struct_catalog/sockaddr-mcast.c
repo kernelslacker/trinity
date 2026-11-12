@@ -32,9 +32,11 @@
  * group; FT_MAGIC carries a curated set of well-known IPv4 multicast
  * destinations (all-hosts, all-routers, IGMPv3, mDNS, NTP, SSM, SSDP)
  * in network byte order, so the join/leave path names a real
- * 224.0.0.0/4 group on every dispatch.  imr_address and imr_ifindex
- * stay FT_RAW: the bespoke builder zeroed both and the kernel accepts
- * any small ifindex (or zero = default interface).
+ * 224.0.0.0/4 group on every dispatch.  ip_mc_find_dev() takes the
+ * device from a nonzero imr_ifindex, which must exist (-ENODEV), else
+ * from a nonzero imr_address, which must be local, else from the
+ * group's route; so the ifindex is 0 or lo's 1, which every netns
+ * has, and the address unset or lo's.
  */
 
 /* 224.0.0.1 -- all-hosts */
@@ -82,13 +84,32 @@ const unsigned char *const ipv4_mcast_vocab[] = {
 	ipv4_mcast_ssdp,
 };
 
+/* 0.0.0.0 -- no address: the ifindex or the group's route picks */
+const unsigned char ipv4_iface_any[4] = {
+	0x00, 0x00, 0x00, 0x00,
+};
+
+/* 127.0.0.1 -- lo's */
+const unsigned char ipv4_iface_lo[4] = {
+	0x7f, 0x00, 0x00, 0x01,
+};
+
+const unsigned char *const ipv4_iface_vocab[] = {
+	ipv4_iface_any,
+	ipv4_iface_lo,
+};
+
 const struct struct_field ip_mreqn_fields[] = {
 	FIELDX(struct ip_mreqn, imr_multiaddr, FT_MAGIC,
 	       .u.magic = { ipv4_mcast_vocab,
 			    ARRAY_SIZE(ipv4_mcast_vocab),
 			    sizeof(((struct ip_mreqn *)NULL)->imr_multiaddr) }),
-	FIELD(struct ip_mreqn, imr_address),
-	FIELD(struct ip_mreqn, imr_ifindex),
+	FIELDX(struct ip_mreqn, imr_address, FT_MAGIC,
+	       .u.magic = { ipv4_iface_vocab,
+			    ARRAY_SIZE(ipv4_iface_vocab),
+			    sizeof(((struct ip_mreqn *)NULL)->imr_address) }),
+	FIELDX(struct ip_mreqn, imr_ifindex, FT_RANGE,
+	       .u.range = { 0, 1 }),
 };
 
 /*
@@ -121,8 +142,9 @@ const struct struct_field ip_mreq_source_fields[] = {
  * MLDv2, solicited-node, site-local routers) in network byte order;
  * the pass-1 dispatch memcpy's one chosen 16-byte entry into the
  * field so the join/leave path names a real ff0x:: group.
- * ipv6mr_interface stays FT_RAW: the bespoke builder zeroed it and
- * the kernel accepts any small ifindex (or zero = default).
+ * ipv6mr_interface is 0 or lo's 1, as ip_mreqn's ifindex is:
+ * ip6_mc_find_dev() takes a nonzero one as the device, which must
+ * exist (-ENODEV), and zero as the group's route.
  */
 const unsigned char ipv6_mcast_all_nodes[16] = {
 	0xff, 0x02, 0x00, 0x00,  0x00, 0x00, 0x00, 0x00,
@@ -164,5 +186,6 @@ const struct struct_field ipv6_mreq_fields[] = {
 	       .u.magic = { ipv6_mreq_multiaddr_vocab,
 			    ARRAY_SIZE(ipv6_mreq_multiaddr_vocab),
 			    sizeof(((struct ipv6_mreq *)NULL)->ipv6mr_multiaddr) }),
-	FIELD(struct ipv6_mreq, ipv6mr_interface),
+	FIELDX(struct ipv6_mreq, ipv6mr_interface, FT_RANGE,
+	       .u.range = { 0, 1 }),
 };

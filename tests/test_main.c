@@ -137,6 +137,7 @@ void modify_ldt_self_check(void);
 void seccomp_notif_self_check(void);
 void cred_class_self_check(void);
 void seek_sanitise_self_check(void);
+void mcast_catalog_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -779,6 +780,11 @@ int main(int argc, char **argv)
 	printf("  seek_sanitise_self_check ... ");
 	fflush(stdout);
 	seek_sanitise_self_check();
+	printf("OK\n");
+
+	printf("  mcast_catalog_self_check ... ");
+	fflush(stdout);
+	mcast_catalog_self_check();
 	printf("OK\n");
 
 	return 0;
