@@ -188,9 +188,6 @@ static void publish_resource_stamp_metadata(struct object *obj,
 	case OBJ_FD_BPF_LINK:
 		obj->bpflinkobj.attach_type = m->subtype;
 		break;
-	case OBJ_FD_PIDFD:
-		obj->pidfdobj.pid = (pid_t)m->extra_int;
-		break;
 	default:
 		break;
 	}

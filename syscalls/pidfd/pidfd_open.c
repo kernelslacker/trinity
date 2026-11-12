@@ -2,18 +2,20 @@
  * SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
  */
 #include <linux/pidfd.h>
-#include "publish_resource.h"
+#include "fd.h"
+#include "objects.h"
 #include "sanitise.h"
 
+/* Same refusal contract as post_mount_fd(). */
 static void post_pidfd_open(struct syscallrecord *rec)
 {
-	int fd = rec->retval;
-	struct resource_meta meta = { .extra_int = rec->a1 };
+	long fd = (long) rec->retval;
 
-	if (fd < 0)
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
-	publish_resource(OBJ_FD_PIDFD, fd, &meta);
+	if (pool_typed_fd(OBJ_FD_PIDFD, (int) fd) == NULL)
+		rec->retval = -1UL;
 }
 
 static unsigned long pidfd_open_flags[] = {

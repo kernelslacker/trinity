@@ -2,8 +2,8 @@
  *   SYSCALL_DEFINE2(io_uring_setup, u32, entries, struct io_uring_params __user *, params)
  */
 #include <linux/types.h>
+#include "fd.h"
 #include "objects.h"
-#include "publish_resource.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -136,12 +136,16 @@ static void sanitise_io_uring_setup(struct syscallrecord *rec)
 	rec->post_state = (unsigned long) params;
 }
 
+/* Same refusal contract as post_mount_fd(). */
 static void post_io_uring_setup(struct syscallrecord *rec)
 {
-	if ((long)rec->retval < 0)
+	long fd = (long) rec->retval;
+
+	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
-	publish_resource(OBJ_FD_IO_URING, (int)rec->retval, NULL);
+	if (pool_typed_fd(OBJ_FD_IO_URING, (int) fd) == NULL)
+		rec->retval = -1UL;
 }
 
 static void cleanup_io_uring_setup(struct syscallrecord *rec)

@@ -3,9 +3,10 @@
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
  * pidfs namespace getters, bpf's BPF_PROG_STREAM_OPEN, the typed producers,
- * open_tree, epoll_create and signalfd, close and close_range, and the key
- * serials keyctl pools.  Whatever object a number held is retired, copy
- * pooled or not, and a retire never closes the number.
+ * open_tree, epoll_create, io_uring_setup, pidfd_open and signalfd, close
+ * and close_range, and the key serials keyctl pools.  Whatever object a
+ * number held is retired, copy pooled or not, and a retire never closes
+ * the number.
  */
 
 #include <errno.h>
@@ -3345,9 +3346,10 @@ static void typed_fd_the_pool_cannot_own_is_closed(void)
 	      fcntl(fd, F_GETFD) == -1);
 }
 
-/* Run open_tree's post handler on a return of @retval; what it leaves in
+/* Run @entry's post handler on a return of @retval; what it leaves in
  * the return. */
-static unsigned long run_open_tree(unsigned long retval)
+static unsigned long run_post(const struct syscallentry *entry,
+			      unsigned long retval)
 {
 	static struct syscallrecord rec;
 
@@ -3355,7 +3357,7 @@ static unsigned long run_open_tree(unsigned long retval)
 	rec.retval = retval;
 
 	forget_calls();
-	syscall_open_tree.post(&rec);
+	entry->post(&rec);
 	return rec.retval;
 }
 
@@ -3372,7 +3374,7 @@ static void open_tree_pools_a_namespace_fd_as_a_file(void)
 	fd = eventfd(0, 0);
 	if (fd < 0)
 		BUG("fd pool: cannot make a descriptor to pool");
-	ret = run_open_tree((unsigned long) fd);
+	ret = run_post(&syscall_open_tree, (unsigned long) fd);
 	check("a mount fd was not pooled as a mount", "open_tree",
 	      pool_find(fd, OBJ_FD_MOUNT) != NULL &&
 	      ret == (unsigned long) fd);
@@ -3382,7 +3384,7 @@ static void open_tree_pools_a_namespace_fd_as_a_file(void)
 	fd = open_kind(FILE_NSFS, &peer);
 	if (fd < 0)
 		BUG("fd pool: cannot open a namespace file");
-	ret = run_open_tree((unsigned long) fd);
+	ret = run_post(&syscall_open_tree, (unsigned long) fd);
 	check("a namespace fd was pooled as a mount", "open_tree",
 	      pool_find(fd, OBJ_FD_MOUNT) == NULL);
 	check("a namespace fd was not pooled as a file", "open_tree",
@@ -3475,6 +3477,69 @@ static void epoll_create_pools_an_epoll_object(void)
 		      ret == (unsigned long) -1L);
 	}
 	syscall_epoll_create1.is_epoll_create1 = false;
+}
+
+/* io_uring_setup and pidfd_open pool their fd under its type, whose pool
+ * holds POOLED_FD_MAX at most, a full one destroying its oldest object.
+ * A refused fd is closed, and its return coerced so the generic registrar
+ * does not pool the number. */
+static void io_uring_and_pidfd_pools_are_capped(void)
+{
+	static const struct {
+		const struct syscallentry *entry;
+		enum objecttype type;
+	} producers[] = {
+		{ &syscall_io_uring_setup, OBJ_FD_IO_URING },
+		{ &syscall_pidfd_open, OBJ_FD_PIDFD },
+	};
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(producers); i++) {
+		const char *name = producers[i].entry->name;
+		enum objecttype type = producers[i].type;
+		unsigned long ret;
+		int fd;
+
+		reset();
+		for (k = 0; k < POOLED_FD_MAX; k++) {
+			pool_add(true, 91000 + k, type);
+			pool_find(91000 + k, type)->obj.slot_version = 1000 - k;
+		}
+		fd = eventfd(0, 0);
+		if (fd < 0)
+			BUG("fd pool: cannot make a descriptor to pool");
+		pool_add(true, fd, OBJ_FD_TESTFILE);
+		ret = run_post(producers[i].entry, (unsigned long) fd);
+		check("the fd was not pooled under its type", name,
+		      pool_find(fd, type) != NULL && pool_count(fd) == 1 &&
+		      published == 1 && retires == 1);
+		check("a full pool did not destroy its oldest object", name,
+		      destroys == 1 &&
+		      destroyed_fds[0] == 91000 + POOLED_FD_MAX - 1 &&
+		      destroyed_scope == OBJ_LOCAL && destroyed_type == type);
+		check("a pooled fd's return was coerced", name,
+		      ret == (unsigned long) fd);
+		check("a pooled fd was closed", name,
+		      fcntl(fd, F_GETFD) != -1);
+		close(fd);
+
+		reset();
+		ret = run_post(producers[i].entry, (unsigned long) -1L);
+		check("a failed call pooled or retired something", name,
+		      published == 0 && retires == 0 &&
+		      ret == (unsigned long) -1L);
+
+		reset();
+		no_destructor = true;
+		fd = eventfd(0, 0);
+		if (fd < 0)
+			BUG("fd pool: cannot make a descriptor to pool");
+		ret = run_post(producers[i].entry, (unsigned long) fd);
+		check("a refused fd was pooled or left open", name,
+		      published == 0 && fcntl(fd, F_GETFD) == -1);
+		check("a refused fd's return was not coerced", name,
+		      ret == (unsigned long) -1L);
+	}
 }
 
 /* Run @entry's post handler, as the current call, on a return of @retval
@@ -4532,6 +4597,7 @@ void dup_pool_self_check(void)
 	typed_fd_the_pool_cannot_own_is_closed();
 	open_tree_pools_a_namespace_fd_as_a_file();
 	epoll_create_pools_an_epoll_object();
+	io_uring_and_pidfd_pools_are_capped();
 	signalfd_publishes_only_a_new_fd();
 	keyctl_pools_only_owned_keyrings();
 #ifdef USE_BPF

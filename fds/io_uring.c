@@ -85,9 +85,9 @@ static void io_uring_destructor(struct object *obj)
 
 	/* Lockless clear: pairs with the ACQUIRE load in get_io_uring_ring()
 	 * and the RELEASE store in open_io_uring_fd_config().  The destructor
-	 * is reachable from child context via prune_objects() destroying
-	 * OBJ_LOCAL OBJ_FD_IO_URING entries (post_io_uring_setup adds those,
-	 * and the destructor is inherited from the OBJ_GLOBAL provider).
+	 * is reachable from child context via pool_typed_fd() destroying the
+	 * oldest OBJ_LOCAL OBJ_FD_IO_URING entry (post_io_uring_setup adds
+	 * those, and the destructor is inherited from the OBJ_GLOBAL provider).
 	 * Taking shm->objlock from a child would risk deadlocking the parent
 	 * if the child was killed mid-lock — same class as e4e32ff0. */
 	__atomic_compare_exchange_n(&shm->mapped_ring, &expected, NULL,

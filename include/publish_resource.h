@@ -18,8 +18,8 @@
  * across ~70 producers, each one stamping the union member by hand
  * for the matching OBJ_<TYPE>.  The shape of the stamp varies — some
  * carry only the fd, some carry a flags word, some carry a bpf
- * subtype, a memfd name pointer, a pidfd's owning pid, ... — but the
- * routing decision is the same enum switch every time.
+ * subtype, a memfd name pointer, ... — but the routing decision is the
+ * same enum switch every time.
  *
  * Centralising the switch behind one call lets producers stop
  * hand-rolling the publish path and lets diagnostic / audit tooling
@@ -40,7 +40,7 @@
  *   aux         — fanotify event_f_flags (secondary flags),
  *                 timerfd clockid
  *   subtype     — bpf map_type / prog_type / attach_type
- *   extra_int   — eventfd count, pidfd owning pid
+ *   extra_int   — eventfd count
  *   name        — memfd display name.  The wrapper stores the pointer
  *                 as-is; the caller (or the per-pool destroy callback)
  *                 retains lifetime ownership.  No strdup happens here.
