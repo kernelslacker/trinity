@@ -277,7 +277,11 @@ void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_syscall
 					&kcov_shm->remote_enable.remote_fallback_to_local[nr],
 					__ATOMIC_RELAXED);
 				unsigned long gap = succ >= req ? 0 : req - succ;
-				unsigned long milli = (gap * 1000UL) / req;
+				/* The selection loop skipped a req of 0, but
+				 * this is a second read of a counter in shared
+				 * memory, which a stray write can zero. */
+				unsigned long milli = req != 0 ?
+					(gap * 1000UL) / req : 0;
 
 				output(0, "  %-24s %10lu %10lu %10lu %10lu %10lu %4lu.%03lu\n",
 				       name, req, succ, fail, fbl, gap,
