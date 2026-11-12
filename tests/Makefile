@@ -1333,6 +1333,11 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/getsockopt.c \
 FAKE_SRCS	+= getsockopt_test.c \
 		   setsockopt_test.c
 LDFLAGS		+= -Wl,--wrap=do_setsockopt -Wl,--wrap=release_sockopt_optval
+# setsockopt_test.c calls the real helpers through __real_, and wraps
+# bpf_gen_filter() and free() to see the filters they build and whether
+# both of a filter's buffers are freed; the wrappers forward to the real
+# calls.
+LDFLAGS		+= -Wl,--wrap=bpf_gen_filter -Wl,--wrap=free
 
 # listmount_test.c runs syscall_listmount's sanitiser, linked above for
 # the recall test, with its id-buffer draw refused.

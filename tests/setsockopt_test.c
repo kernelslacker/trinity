@@ -2,17 +2,18 @@
  * Self-check for setsockopt's sanitiser: an option that reads its optval
  * fails a NULL one with -EFAULT in copy_from_sockptr(), before its handler
  * runs, so the call gets the buffer the builders filled all but now and
- * then.
+ * then; and a filter's instructions are freed on every path.
  */
 
 #include <stdbool.h>
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <linux/filter.h>	/* struct sock_fprog */
 
 #include "debug.h"		/* BUG */
 #include "deferred-free.h"	/* deferred_free_flush */
-#include "net.h"		/* struct socketinfo */
+#include "net.h"		/* struct socketinfo, struct sockopt */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_setsockopt */
 
@@ -20,6 +21,67 @@ extern bool fake_random_fd_empty;	/* fake_stubs.c */
 extern bool fake_zmalloc_tracks;	/* fake_stubs.c */
 
 #define SETSOCKOPT_ROUNDS	2000
+#define FILTER_ROUNDS		30000
+
+/* The filter bpf_gen_filter() last made, its instructions, and whether
+ * each has been handed to free() since. */
+static struct sock_fprog *last_filter;
+static struct sock_filter *last_insns;
+static bool filter_freed, insns_freed;
+
+void __real_bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
+void __wrap_bpf_gen_filter(unsigned long **addr, unsigned long *addrlen);
+void __wrap_bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
+{
+	__real_bpf_gen_filter(addr, addrlen);
+	last_filter = (struct sock_fprog *) *addr;
+	last_insns = last_filter != NULL ? last_filter->filter : NULL;
+	filter_freed = false;
+	insns_freed = false;
+}
+
+void __real_free(void *p);
+void __wrap_free(void *p);
+void __wrap_free(void *p)
+{
+	if (p != NULL && p == last_filter)
+		filter_freed = true;
+	if (p != NULL && p == last_insns)
+		insns_freed = true;
+	__real_free(p);
+}
+
+void __real_do_setsockopt(struct sockopt *so, struct socket_triplet *triplet);
+void __real_release_sockopt_optval(struct sockopt *so);
+
+/* An SO_ATTACH_FILTER optval is a sock_fprog whose instructions are a
+ * second allocation, which the release paths free by the option's name:
+ * a call handed a NULL optval, or the filter under another name, must
+ * still give both back. */
+static void filters_freed_whole(struct socket_triplet *triplet)
+{
+	unsigned int i, built = 0;
+
+	fake_zmalloc_tracks = true;
+	for (i = 0; i < FILTER_ROUNDS; i++) {
+		struct sockopt so = { 0, 0, 0, 0 };
+
+		last_filter = NULL;
+		__real_do_setsockopt(&so, triplet);
+		__real_release_sockopt_optval(&so);
+		if (last_filter == NULL)
+			continue;
+		built++;
+		deferred_free_flush();
+		if (!filter_freed || !insns_freed)
+			BUG("setsockopt: a filter's sock_fprog is not freed whole");
+	}
+	deferred_free_flush();
+	fake_zmalloc_tracks = false;
+
+	if (built == 0)
+		BUG("setsockopt: no draw built a filter");
+}
 
 void setsockopt_self_check(void);
 void setsockopt_self_check(void)
@@ -56,4 +118,7 @@ void setsockopt_self_check(void)
 
 	if (unfilled == 0 || unfilled > SETSOCKOPT_ROUNDS / 8)
 		BUG("setsockopt: a NULL optval is drawn too often, or never");
+
+	filters_freed_whole(NULL);
+	filters_freed_whole(&si.triplet);
 }

@@ -704,9 +704,11 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 * 10% of the time mangle the optname bits.  Restrict this to the
 	 * random / legacy path; mangling a curated entry just defeats its
 	 * purpose and pushes the draw straight back into the EOPNOTSUPP
-	 * rejection path the curated table is meant to skip past.
+	 * rejection path the curated table is meant to skip past.  The
+	 * release paths free a filter's instructions by SO_ATTACH_FILTER,
+	 * so a filter keeps its name.
 	 */
-	if (from_random_path && ONE_IN(10))
+	if (from_random_path && so->optname != SO_ATTACH_FILTER && ONE_IN(10))
 		so->optname |= (1UL << (rnd_modulo_u32(32)));
 
 null_maybe:
@@ -715,10 +717,8 @@ null_maybe:
 	 * keeps that path.  A boolean option is disabled by an int of 0,
 	 * which the builders draw.
 	 */
-	if (ONE_IN(32)) {
-		tracked_free_now((void *) so->optval);
-		so->optval = 0;
-	}
+	if (ONE_IN(32))
+		release_sockopt_optval(so);
 }
 
 /*
