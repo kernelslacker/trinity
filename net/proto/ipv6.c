@@ -6,6 +6,7 @@
 #include <linux/in6.h>	// needed for in6_flowlabel_req
 #include <linux/if.h>
 #include <linux/ipv6.h>	// needed for ipv6_opt_hdr
+#include <linux/seg6.h>	// struct ipv6_sr_hdr
 #include <linux/if_arp.h>
 #include <linux/if_packet.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
@@ -170,6 +171,26 @@ static const struct sock_option inet6_opts[] = {
 	{ .name = IPV6_FREEBIND, },
 };
 
+/*
+ * A segment routing header of one to eight segments, which
+ * seg6_validate_srh() passes: ipv6_set_opt_hdr() keeps an IPV6_RTHDR only
+ * of type 4, or of type 2 with MIP6 built in, and the zeroed optval is
+ * type 0.
+ */
+static void ipv6_set_srh(struct sockopt *so)
+{
+	struct ipv6_sr_hdr *srh = (struct ipv6_sr_hdr *) so->optval;
+	unsigned int i, nsegs = 1 + rnd_modulo_u32(8);
+
+	srh->hdrlen = nsegs * 2;
+	srh->type = IPV6_SRCRT_TYPE_4;
+	srh->first_segment = nsegs - 1;
+	srh->segments_left = rnd_modulo_u32(nsegs);
+	for (i = 0; i < nsegs; i++)
+		gen_random_ipv6_address(&srh->segments[i]);
+	so->optlen = (srh->hdrlen + 1) << 3;
+}
+
 static void __inet6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
@@ -181,9 +202,19 @@ static void __inet6_setsockopt(struct sockopt *so)
 	so->optlen = sockoptlen(inet6_opts[val].len);
 
 	switch (so->optname) {
+	case IPV6_RTHDR:
+		/* A length of 0 drops the socket's routing header. */
+		if (ONE_IN(8)) {
+			so->optlen = 0;
+			break;
+		}
+		if (!ONE_IN(8)) {
+			ipv6_set_srh(so);
+			break;
+		}
+		/* fall through */
 	case IPV6_HOPOPTS:
 	case IPV6_RTHDRDSTOPTS:
-	case IPV6_RTHDR:
 	case IPV6_DSTOPTS:
 		so->optlen = sizeof(struct ipv6_opt_hdr);
 		so->optlen += rnd_modulo_u32((8 * 255) - so->optlen);
