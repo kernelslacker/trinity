@@ -116,17 +116,21 @@ const struct struct_field ip_mreqn_fields[] = {
  * struct ip_mreq_source -- IPPROTO_IP / IP_{ADD,DROP}_SOURCE_MEMBERSHIP
  * and IP_{BLOCK,UNBLOCK}_SOURCE.  The IPv4 source-multicast sibling of
  * ip_mreqn: imr_multiaddr selects the multicast group, imr_interface
- * the local interface address (zero = kernel default), imr_sourceaddr
- * the unicast source whose membership is being added / dropped /
- * blocked / unblocked.  imr_multiaddr tags FT_MAGIC -- the natural tag
- * for curated be32 multicast vocab -- though the schema fill switch
- * still falls through to FT_RAW for it today; the other two fields
- * stay FT_RAW.  Same multicast-bias regression vs the bespoke builder
- * applies, with the same FT_MAGIC follow-up restoring it.
+ * the local interface address, imr_sourceaddr the unicast source whose
+ * membership is being added / dropped / blocked / unblocked.  These
+ * calls pass ip_mc_find_dev() no ifindex, so imr_interface alone picks
+ * the device, from ip_mreqn's unset-or-lo addresses; imr_sourceaddr
+ * stays FT_RAW, as ip_mc_source() files any source.
  */
 const struct struct_field ip_mreq_source_fields[] = {
-	FIELDX(struct ip_mreq_source, imr_multiaddr, FT_MAGIC),
-	FIELD(struct ip_mreq_source, imr_interface),
+	FIELDX(struct ip_mreq_source, imr_multiaddr, FT_MAGIC,
+	       .u.magic = { ipv4_mcast_vocab,
+			    ARRAY_SIZE(ipv4_mcast_vocab),
+			    sizeof(((struct ip_mreq_source *)NULL)->imr_multiaddr) }),
+	FIELDX(struct ip_mreq_source, imr_interface, FT_MAGIC,
+	       .u.magic = { ipv4_iface_vocab,
+			    ARRAY_SIZE(ipv4_iface_vocab),
+			    sizeof(((struct ip_mreq_source *)NULL)->imr_interface) }),
 	FIELD(struct ip_mreq_source, imr_sourceaddr),
 };
 

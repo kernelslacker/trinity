@@ -67,6 +67,10 @@ static const unsigned int socket_opts[] = {
 #endif
 };
 
+/*
+ * build writes the optval when the catalog has no row for (level,
+ * optname); a row whose shape only the catalog describes leaves it NULL.
+ */
 struct sockopt_entry {
 	int level;
 	int optname;
@@ -117,6 +121,10 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_IP,   IP_MULTICAST_LOOP,     build_int_bool },
 	{ IPPROTO_IP,   IP_FREEBIND,           build_int_bool },
 	{ IPPROTO_IP,   IP_TRANSPARENT,        build_int_bool },
+	{ IPPROTO_IP,   IP_ADD_SOURCE_MEMBERSHIP,  NULL },
+	{ IPPROTO_IP,   IP_DROP_SOURCE_MEMBERSHIP, NULL },
+	{ IPPROTO_IP,   IP_BLOCK_SOURCE,           NULL },
+	{ IPPROTO_IP,   IP_UNBLOCK_SOURCE,         NULL },
 
 	/* IPPROTO_IPV6 */
 	{ IPPROTO_IPV6, IPV6_V6ONLY,           build_int_bool },
@@ -441,7 +449,8 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 	 * That keeps the int/bool/string/scalar entries (no struct shape,
 	 * no catalog row to register) and any struct-shaped optnames not
 	 * yet migrated working byte-identically -- coverage never drops as
-	 * rows are added incrementally.
+	 * rows are added incrementally.  A row with no builder has nothing
+	 * to fall back on, and the caller takes the per-protocol path.
 	 */
 	desc = struct_arg_lookup_two_key("setsockopt", 4,
 					 (unsigned long) e->level,
@@ -450,8 +459,10 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 		struct_field_fill_schema_aware((unsigned char *) so->optval,
 					       desc->struct_size, desc, NULL);
 		exact = (socklen_t) desc->struct_size;
-	} else {
+	} else if (e->build != NULL) {
 		exact = e->build((void *) so->optval);
+	} else {
+		return false;
 	}
 
 	so->level = e->level;

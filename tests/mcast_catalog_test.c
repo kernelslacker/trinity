@@ -1,8 +1,9 @@
 /*
  * Self-check for the multicast membership rows of the setsockopt catalog: a
- * filled ip_mreqn or ipv6_mreq names a multicast group on a device every
- * network namespace has, ifindex 0 (the group's route) or 1 (lo), so
- * ip_mc_find_dev() and ip6_mc_find_dev() find one.
+ * filled ip_mreqn, ip_mreq_source or ipv6_mreq names a multicast group on a
+ * device every network namespace has, ifindex 0 (the group's route) or 1
+ * (lo), or an unset or loopback address, so ip_mc_find_dev() and
+ * ip6_mc_find_dev() find one.
  */
 
 #include <arpa/inet.h>
@@ -25,15 +26,27 @@ static void note_ifindex(bool seen[2], unsigned int ifindex, const char *what)
 	seen[ifindex] = true;
 }
 
+/* An interface address that is unset or lo's, seen both ways. */
+static void note_iface(bool seen[2], in_addr_t addr, const char *what)
+{
+	if (addr == htonl(INADDR_ANY))
+		seen[0] = true;
+	else if (addr == htonl(INADDR_LOOPBACK))
+		seen[1] = true;
+	else
+		BUG(what);
+}
+
 void mcast_catalog_self_check(void);
 void mcast_catalog_self_check(void)
 {
 	bool seen4[2] = { false, false }, seen6[2] = { false, false };
-	bool lo_addr = false;
+	bool addr4[2] = { false, false }, src_iface[2] = { false, false };
 	unsigned int i;
 
 	for (i = 0; i < MCAST_ROUNDS; i++) {
 		struct ip_mreqn mr;
+		struct ip_mreq_source ms;
 		struct ipv6_mreq m6;
 
 		memset(&mr, 0, sizeof(mr));
@@ -44,10 +57,18 @@ void mcast_catalog_self_check(void)
 		note_ifindex(seen4, (unsigned int) mr.imr_ifindex,
 			     "ip_mreqn: the ifindex names no device every netns has");
 		/* With no ifindex, the address picks the device: lo's or none. */
-		if (mr.imr_address.s_addr == htonl(INADDR_LOOPBACK))
-			lo_addr = true;
-		else if (mr.imr_address.s_addr != htonl(INADDR_ANY))
-			BUG("ip_mreqn: the address is neither unset nor lo's");
+		note_iface(addr4, mr.imr_address.s_addr,
+			   "ip_mreqn: the address is neither unset nor lo's");
+
+		/* The source ops have no ifindex: imr_interface picks alone. */
+		memset(&ms, 0, sizeof(ms));
+		struct_fill_passes((unsigned char *) &ms, sizeof(ms),
+				   ip_mreq_source_fields,
+				   IP_MREQ_SOURCE_FIELDS_N, NULL);
+		if (!IN_MULTICAST(ntohl(ms.imr_multiaddr.s_addr)))
+			BUG("ip_mreq_source: the group is not multicast");
+		note_iface(src_iface, ms.imr_interface.s_addr,
+			   "ip_mreq_source: the interface is neither unset nor lo's");
 
 		memset(&m6, 0, sizeof(m6));
 		struct_fill_passes((unsigned char *) &m6, sizeof(m6),
@@ -60,6 +81,6 @@ void mcast_catalog_self_check(void)
 
 	if (!seen4[0] || !seen4[1] || !seen6[0] || !seen6[1])
 		BUG("mcast rows: an ifindex never names the route's device or lo");
-	if (!lo_addr)
-		BUG("ip_mreqn: the address never names lo");
+	if (!addr4[0] || !addr4[1] || !src_iface[0] || !src_iface[1])
+		BUG("mcast rows: an address is never unset or never lo's");
 }
