@@ -319,6 +319,16 @@ static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		__inet6_setsockopt(so);
 		break;
 	case 1:
+		/* A raw socket takes none of its protocol's options, but the
+		 * raw layer's, and a raw ICMPv6 one ICMPV6_FILTER too. */
+		if ((triplet->type & SOCK_TYPE_MASK) == SOCK_RAW) {
+			if (triplet_protocol(triplet) == IPPROTO_ICMPV6 &&
+			    RAND_BOOL())
+				icmpv6_setsockopt(so, triplet);
+			else
+				raw_setsockopt(so, triplet);
+			break;
+		}
 		switch (triplet_protocol(triplet)) {
 		case IPPROTO_TCP:
 			so->level = SOL_TCP;

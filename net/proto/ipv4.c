@@ -329,9 +329,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_IDP] = { .func = NULL },
 	[IPPROTO_TP] = { .func = NULL },
 	[IPPROTO_DCCP] = { .func = NULL },
-#ifdef USE_IPV6
-	[IPPROTO_IPV6] = { .sol = SOL_IPV6, .func = &icmpv6_setsockopt },
-#endif
+	[IPPROTO_IPV6] = { .func = NULL },
 	[IPPROTO_RSVP] = { .func = NULL },
 	[IPPROTO_GRE] = { .func = NULL },
 	[IPPROTO_ESP] = { .func = NULL },
@@ -343,7 +341,7 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 	[IPPROTO_COMP] = { .func = NULL },
 	[IPPROTO_SCTP] = { .sol = SOL_SCTP, .func = &sctp_setsockopt },
 	[IPPROTO_UDPLITE] = { .sol = SOL_UDPLITE, .func = &udplite_setsockopt },
-	[IPPROTO_RAW] = { .sol = SOL_RAW, .func = &raw_setsockopt },
+	[IPPROTO_RAW] = { .func = NULL },
 	[IPPROTO_MPLS] = { .func = NULL },
 #if defined(IPPROTO_MAX) && (IPPROTO_MPTCP < IPPROTO_MAX)
 	[IPPROTO_MPTCP] = { .sol = SOL_MPTCP, .func = &mptcp_setsockopt },
@@ -353,6 +351,13 @@ static const struct ip_sso_funcptr ip_ssoptrs[IPPROTO_MAX] = {
 static void call_inet_sso_ptr(struct sockopt *so, struct socket_triplet *triplet)
 {
 	unsigned int proto = triplet_protocol(triplet);
+
+	/* A raw socket takes none of its protocol's options, but the raw
+	 * layer's. */
+	if ((triplet->type & SOCK_TYPE_MASK) == SOCK_RAW) {
+		raw_setsockopt(so, triplet);
+		return;
+	}
 
 	/* we might have gotten here from a non-IP socket, (see setsockopt.c
 	 * Make sure we don't run past the end of the array above
