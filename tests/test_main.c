@@ -141,6 +141,7 @@ void mcast_catalog_self_check(void);
 void membarrier_self_check(void);
 void timer_create_self_check(void);
 void timerfd_settime_self_check(void);
+void signalfd_pool_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -803,6 +804,11 @@ int main(int argc, char **argv)
 	printf("  timerfd_settime_self_check ... ");
 	fflush(stdout);
 	timerfd_settime_self_check();
+	printf("OK\n");
+
+	printf("  signalfd_pool_self_check ... ");
+	fflush(stdout);
+	signalfd_pool_self_check();
 	printf("OK\n");
 
 	return 0;

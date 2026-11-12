@@ -690,6 +690,12 @@ PARENT_SRCS	+= $(TOP)/fds/testfiles.c \
 		   $(TOP)/fds/files.c
 FAKE_SRCS	+= testfile_pool_test.c
 
+# fds/signalfd.c brings the signalfd pool's provider, which registers itself
+# at load time.  signalfd_pool_test.c runs its init hook against the
+# object-pool hooks in fake_objects.c.
+PARENT_SRCS	+= $(TOP)/fds/signalfd.c
+FAKE_SRCS	+= signalfd_pool_test.c
+
 # utils/writer-watch.c brings the --writer-watch breakpoint's probe, open
 # and arm.  writer_watch_test.c answers their perf_event_open() with a model
 # of the kernel's checks, through the fake_syscall hook of landlock_test.c.

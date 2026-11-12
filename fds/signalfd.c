@@ -18,6 +18,9 @@
 
 #include "kernel/signalfd.h"
 
+/* The kernel's sigset_t: signalfd4() refuses glibc's 128-byte one. */
+#define KERNEL_SIGSET_SIZE	8
+
 static int do_signalfd4(void)
 {
 	sigset_t mask;
@@ -28,7 +31,7 @@ static int do_signalfd4(void)
 	sigaddset(&mask, SIGCHLD);
 
 #ifdef __NR_signalfd4
-	return trinity_raw_syscall(__NR_signalfd4, -1, &mask, sizeof(sigset_t),
+	return trinity_raw_syscall(__NR_signalfd4, -1, &mask, KERNEL_SIGSET_SIZE,
 		       SFD_CLOEXEC | SFD_NONBLOCK);
 #else
 	errno = ENOSYS;
