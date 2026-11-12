@@ -382,13 +382,13 @@ static void cmp_recent_insert(unsigned int nr, bool do32,
  * the source-tagged, non-persisted, non-LRU-displacing lane that
  * the trinity_cmp_syscall harvest feeds when --childop-cmp-harvest=on.
  *
- * Single-writer per (nr, do32): every caller runs inside a
- * trinity_cmp_syscall() under a kcov_cmp_bracket on a CMP-mode
- * child, and a CMP-mode child only ever holds one bracket at a
- * time, so the head/count writes need no lock.  Lockless readers
- * in the eventual consume side will tolerate a torn (cmp_ip, val,
- * size) triplet the same way cmp_hints_try_get_ex() tolerates one
- * against recent_pools[] today.
+ * Unlike cmp_recent_insert(), this runs under no pool lock, and the
+ * lane is shared memory every CMP-mode child's harvest writes, so two
+ * children can insert into one (nr, do32) at once: a race can drop an
+ * insert or tear a (cmp_ip, val, size) triplet, which an advisory,
+ * non-persisted lane tolerates.  Lockless readers in the eventual
+ * consume side will tolerate a torn triplet the same way
+ * cmp_hints_try_get_ex() tolerates one against recent_pools[] today.
  *
  * Pool-insert / pool-evict bumps land in kcov_shm under the same
  * per-nr keying the rest of the childop_cmp_* shadow counters use,

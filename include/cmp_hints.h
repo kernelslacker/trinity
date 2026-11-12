@@ -131,13 +131,11 @@ void cmp_hints_collect(unsigned long *trace_buf, unsigned int nr, bool do32);
  * ->childop_cmp_pool_evicts[nr] when the ring slot being overwritten
  * was already populated.
  *
- * Single-writer per (nr, do32): every caller is inside a
- * trinity_cmp_syscall() under a kcov_cmp_bracket on a CMP-mode child,
- * and a CMP-mode child holds exactly one bracket at a time, so the
- * ring writes need no lock.  Readers in the eventual consume side
- * tolerate a torn (cmp_ip, value, size) triplet identically to how
- * cmp_hints_try_get_ex() reads the recent ring today -- advisory
- * values, advisory pool.
+ * No lock: every CMP-mode child's harvest writes the lane, so two
+ * inserts into one (nr, do32) can race, dropping one or tearing a
+ * (cmp_ip, value, size) triplet.  Readers in the eventual consume side
+ * tolerate a torn triplet identically to how cmp_hints_try_get_ex()
+ * reads the recent ring today -- advisory values, advisory pool.
  *
  * No dedup -- the ring deliberately accepts the same (cmp_ip, val,
  * size) tuple again so "recent" semantics aren't diluted by
