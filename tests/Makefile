@@ -1209,6 +1209,11 @@ FAKE_SRCS	+= sigaltstack_test.c
 PARENT_SRCS	+= $(TOP)/random_syscall/dispatch-wrappers.c
 FAKE_SRCS	+= chain_bias_test.c
 
+# utils/rlimits.c brings init_rlimits(), which rlimits_test.c runs in a
+# forked child.
+PARENT_SRCS	+= $(TOP)/utils/rlimits.c
+FAKE_SRCS	+= rlimits_test.c
+
 # childops/misc/epoll-volatility.c brings the epoll_volatility childop,
 # whose epoll_ctl() calls epoll_volatility_test.c counts on real epfds;
 # rand/interesting-numbers.c is the edge values its ADD masks draw.

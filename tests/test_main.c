@@ -116,6 +116,7 @@ void keyctl_self_check(void);
 void rt_sigaction_self_check(void);
 void sigaltstack_self_check(void);
 void chain_bias_self_check(void);
+void rlimits_self_check(void);
 void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
 void cmsg_build_self_check(void);
@@ -672,6 +673,11 @@ int main(int argc, char **argv)
 	printf("  chain_bias_self_check ... ");
 	fflush(stdout);
 	chain_bias_self_check();
+	printf("OK\n");
+
+	printf("  rlimits_self_check ... ");
+	fflush(stdout);
+	rlimits_self_check();
 	printf("OK\n");
 
 	printf("  epoll_volatility_self_check ... ");

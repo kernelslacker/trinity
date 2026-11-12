@@ -96,6 +96,10 @@ void init_rlimits(unsigned int nr_children)
 	raise_memlock_unlimited();
 
 	cap_one(RLIMIT_NOFILE, "NOFILE", (rlim_t) NOFILE_TARGET);
+	/* init_main_process() read the limit before the cap: the spawn
+	 * headroom check and for_each_fd_arg() want the one children
+	 * inherit. */
+	(void) getrlimit(RLIMIT_NOFILE, &max_files_rlimit);
 
 	/*
 	 * RLIMIT_NPROC is per-UID -- it counts every process the invoking
