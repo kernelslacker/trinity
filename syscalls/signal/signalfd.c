@@ -74,6 +74,11 @@ static void post_signalfd(struct syscallrecord *rec)
 	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
 
+	/* A call on a signalfd sets its mask and returns its number, which
+	 * is pooled already: only a call on -1 makes a new fd. */
+	if ((int) get_arg_snapshot(rec, 1) != -1)
+		return;
+
 	if (publish_resource(OBJ_FD_SIGNALFD, fd, NULL) == NULL)
 		close(fd);
 }
@@ -86,6 +91,9 @@ struct syscallentry syscall_signalfd = {
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask" },
 	.sanitise = sanitise_signalfd,
 	.post = post_signalfd,
+	/* ufd (a1): the post handler publishes only the fd a call on -1
+	 * made, and the ufd is the one the kernel read. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_SIGNALFD,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
@@ -144,6 +152,9 @@ struct syscallentry syscall_signalfd4 = {
 	.argname = { [0] = "ufd", [1] = "user_mask", [2] = "sizemask", [3] = "flags" },
 	.sanitise = sanitise_signalfd4,
 	.post = post_signalfd,
+	/* ufd (a1): the post handler publishes only the fd a call on -1
+	 * made, and the ufd is the one the kernel read. */
+	.arg_snapshot_mask = (1u << 0),
 	.rettype = RET_FD,
 	.ret_objtype = OBJ_FD_SIGNALFD,
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,

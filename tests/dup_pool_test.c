@@ -2,9 +2,9 @@
  * Self-check for how the post handlers pool and retire the descriptors a
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
- * pidfs namespace getters, bpf's BPF_PROG_STREAM_OPEN, the typed producers
- * and epoll_create, close and close_range, and the key serials keyctl
- * pools.  Whatever object a number held is retired, copy pooled or not,
+ * pidfs namespace getters, bpf's BPF_PROG_STREAM_OPEN, the typed producers,
+ * epoll_create and signalfd, close and close_range, and the key serials
+ * keyctl pools.  Whatever object a number held is retired, copy pooled or not,
  * and a retire never closes the number.
  */
 
@@ -72,6 +72,7 @@ extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
 					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
+extern bool stomps_expected;		/* post_oracle_test.c */
 extern bool (*fake_syscall)(long number, const unsigned long a[6],
 			    long *ret);	/* landlock_test.c */
 
@@ -3380,6 +3381,66 @@ static void epoll_create_pools_an_epoll_object(void)
 	syscall_epoll_create1.is_epoll_create1 = false;
 }
 
+/* Run @entry's post handler, as the current call, on a return of @retval
+ * from a call the kernel ran on @ufd, with @live in a1. */
+static void run_signalfd(struct syscallentry *entry, int ufd, int live,
+			 unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.a1 = (unsigned long) live;
+	rec.arg_shadow[0] = (unsigned long) ufd;
+	rec.arg_snapshot_mask = entry->arg_snapshot_mask;
+	rec.retval = retval;
+
+	fake_child.syscall.entry = entry;
+	forget_calls();
+	entry->post(&rec);
+	fake_child.syscall.entry = NULL;
+}
+
+/* signalfd and signalfd4 publish the fd a call on ufd -1 made.  A call on
+ * a signalfd sets its mask and returns the same number, pooled already,
+ * which is neither published again nor closed. */
+static void signalfd_publishes_only_a_new_fd(void)
+{
+	struct syscallentry *entries[] = {
+		&syscall_signalfd, &syscall_signalfd4,
+	};
+	unsigned int i;
+
+	for (i = 0; i < ARRAY_SIZE(entries); i++) {
+		const char *name = entries[i]->name;
+		int fd = eventfd(0, 0);
+
+		if (fd < 0)
+			BUG("fd pool: cannot make a descriptor to pool");
+
+		reset();
+		run_signalfd(entries[i], -1, -1, (unsigned long) fd);
+		check("a new fd was not published", name,
+		      published == 1 && pool_find(fd, OBJ_FD_SIGNALFD) != NULL);
+
+		reset();
+		run_signalfd(entries[i], fd, fd, (unsigned long) fd);
+		check("a mask update published its fd again", name,
+		      published == 0);
+		check("a mask update closed its fd", name,
+		      fcntl(fd, F_GETFD) != -1);
+
+		/* What the kernel ran on decides, not a1 as a write after
+		 * the dispatch left it. */
+		reset();
+		stomps_expected = true;
+		run_signalfd(entries[i], -1, fd, (unsigned long) fd);
+		stomps_expected = false;
+		check("a new fd under a rewritten a1 was not published", name,
+		      published == 1);
+		close(fd);
+	}
+}
+
 /* The pool's destructor invalidates what it holds, so keyctl pools only
  * the keyrings a child owns: GET_KEYRING_ID's thread and process
  * keyrings, never the session, user or requestor keyrings it shares,
@@ -4370,6 +4431,7 @@ void dup_pool_self_check(void)
 	typed_fd_pool_is_capped_per_type();
 	typed_fd_the_pool_cannot_own_is_closed();
 	epoll_create_pools_an_epoll_object();
+	signalfd_publishes_only_a_new_fd();
 	keyctl_pools_only_owned_keyrings();
 #ifdef USE_BPF
 	bpf_stream_open_pools_the_fd_it_returned();

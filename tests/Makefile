@@ -734,13 +734,15 @@ PARENT_SRCS	+= $(TOP)/syscalls/socket/accept.c \
 # syscalls/fs/open.c and creat.c bring the open family, whose post handlers
 # dup_pool_test.c drives against the same pool, and fds/fds-pool.c the
 # capped pool they put a file or directory in; it drives the post handlers
-# of syscalls/ioctl.c, linked above, and syscalls/poll/epoll_create.c the
-# same way.  syscalls/fs/ctime-rule.c brings the rule openat's O_PATH oracle
-# judges a held ctime by, which ctime_rule_test.c checks.
+# of syscalls/ioctl.c, linked above, and syscalls/poll/epoll_create.c and
+# syscalls/signal/signalfd.c the same way.  syscalls/fs/ctime-rule.c brings
+# the rule openat's O_PATH oracle judges a held ctime by, which
+# ctime_rule_test.c checks.
 PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/fs/ctime-rule.c \
 		   $(TOP)/syscalls/fs/creat.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
+		   $(TOP)/syscalls/signal/signalfd.c \
 		   $(TOP)/fds/fds-pool.c \
 		   $(TOP)/dispatch/syscall-retfd.c
 
