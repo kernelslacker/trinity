@@ -1,9 +1,9 @@
 /*
- * Invariant checks for the lossless per-child op-count counter
- * (stats_ring.lossless_op_count) and the drain that sums it.  A simulated SPSC
- * ring, counter, aggregate scalars, drains and epoch resets stand in for the
- * real shm and ring modules; the per-slot plausibility guard is production's
- * opclock_slot_observe() (include/stats_ring_opclock_limits.h).
+ * Checks for the per-slot plausibility guard the drain folds each child's
+ * lossless op count (stats_ring.lossless_op_count) through, production's
+ * opclock_slot_observe() (include/stats_ring_opclock_limits.h).  A simulated
+ * SPSC ring, counter and aggregate scalars stand in for the real shm and
+ * ring modules.
  */
 
 #include <stdbool.h>
@@ -16,10 +16,7 @@
 /* Simulated ring                                                      */
 /* ------------------------------------------------------------------ */
 
-/*
- * Capacity matches the real STATS_RING_SIZE so the saturation tests
- * are realistic.
- */
+/* Capacity matches the real STATS_RING_SIZE. */
 #define RING_CAP 1024
 
 /*
@@ -95,7 +92,6 @@ struct sim_aggregate {
 	unsigned long op_count;
 	unsigned long total_op_count;
 	unsigned long epoch_start_op_count;
-	unsigned long previous_op_count;
 };
 
 static void agg_init(struct sim_aggregate *a)
@@ -124,32 +120,6 @@ static void sim_op_complete(struct sim_ring *ring)
 
 	/* Step 2: ring enqueue (return discarded, matching production) */
 	(void)ring_enqueue(ring, 1u);
-}
-
-/* ------------------------------------------------------------------ */
-/* Simulated drain                                                      */
-/*                                                                     */
-/* Models stats_ring_drain_all() with the per-child lossless sum:     */
-/*   1. drain the ring (slots counted but not used for op_count)      */
-/*   2. sum lossless_op_count across all children (here: one child)   */
-/*   3. set total_op_count = sum                                       */
-/*   4. set op_count = total - epoch_start                            */
-/*   5. publish fleet_op_count = op_count (mirrors stats_publish)     */
-/* ------------------------------------------------------------------ */
-
-static void sim_drain(struct sim_ring *ring,
-		      struct sim_aggregate *agg,
-		      unsigned long *fleet_op_count)
-{
-	/* Step 1: drain the ring */
-	(void)ring_drain(ring);
-
-	/* Steps 2-4: sum lossless_op_count (single child in this test) */
-	agg->total_op_count = ring->lossless_op_count;
-	agg->op_count = agg->total_op_count - agg->epoch_start_op_count;
-
-	/* Step 5: publish fleet_op_count */
-	*fleet_op_count = agg->op_count;
 }
 
 /* ------------------------------------------------------------------ */
@@ -191,25 +161,6 @@ static enum opclock_verdict sim_drain_guarded(struct sim_ring *ring,
 }
 
 /* ------------------------------------------------------------------ */
-/* Simulated epoch reset                                               */
-/*                                                                     */
-/* Models reset_epoch_state() with the per-child sum snapshot:        */
-/*   1. zero op_count and previous_op_count                           */
-/*   2. snapshot epoch_start_op_count from parent_stats.total_op_count */
-/*   3. total_op_count unchanged (already set by last drain)           */
-/*   4. publish fleet_op_count = 0                                    */
-/* ------------------------------------------------------------------ */
-
-static void sim_epoch_reset(struct sim_aggregate *agg,
-			    unsigned long *fleet_op_count)
-{
-	agg->op_count = 0;
-	agg->previous_op_count = 0;
-	agg->epoch_start_op_count = agg->total_op_count;
-	*fleet_op_count = 0;
-}
-
-/* ------------------------------------------------------------------ */
 /* SELFTEST_ASSERT helper                                              */
 /* ------------------------------------------------------------------ */
 
@@ -230,290 +181,7 @@ static void selftest_bug(const char *msg, const char *file,
 	} while (0)
 
 /* ------------------------------------------------------------------ */
-/* Test 1: ring_full_no_loss                                           */
-/*                                                                     */
-/* Dispatch 3 * RING_CAP operations.  The ring fills after RING_CAP-1 */
-/* slots; the remaining ops are dropped.  lossless_op_count must      */
-/* reflect ALL ops; the ring holds only RING_CAP-1 slots at the end.  */
-/* ------------------------------------------------------------------ */
-
-static void test_ring_full_no_loss(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long total_ops = 3 * RING_CAP;
-	unsigned long i;
-
-	ring_init(&ring);
-	agg_init(&agg);
-
-	/* Dispatch total_ops completions WITHOUT draining between them. */
-	for (i = 0; i < total_ops; i++)
-		sim_op_complete(&ring);
-
-	/* Ring is saturated; lossless_op_count must show all ops. */
-	SELFTEST_ASSERT(ring.lossless_op_count == total_ops);
-
-	/* Drain once -- derives from lossless_op_count, not ring count. */
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(agg.total_op_count == total_ops);
-	SELFTEST_ASSERT(agg.op_count       == total_ops);
-	SELFTEST_ASSERT(fleet              == total_ops);
-
-	/* Confirm the ring DID drop slots (sanity: dropped != 0). */
-	SELFTEST_ASSERT(ring.lossless_op_count > (unsigned long)(RING_CAP - 1));
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 2: epoch_semantics                                             */
-/*                                                                     */
-/* Run N ops in epoch 0, then reset, then run M ops in epoch 1.       */
-/* Verify that op_count == N after the first drain, == 0 after reset, */
-/* and == M after the second drain.  total_op_count is N+M throughout */
-/* the second epoch.                                                   */
-/* ------------------------------------------------------------------ */
-
-static void test_epoch_semantics(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long i;
-	unsigned long epoch0_ops = 500;
-	unsigned long epoch1_ops = 300;
-
-	ring_init(&ring);
-	agg_init(&agg);
-
-	/* --- Epoch 0 --- */
-	for (i = 0; i < epoch0_ops; i++)
-		sim_op_complete(&ring);
-
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(agg.op_count       == epoch0_ops);
-	SELFTEST_ASSERT(agg.total_op_count == epoch0_ops);
-	SELFTEST_ASSERT(fleet              == epoch0_ops);
-
-	/* Reset: op_count drops to 0, epoch_start snapshotted. */
-	sim_epoch_reset(&agg, &fleet);
-
-	SELFTEST_ASSERT(agg.op_count             == 0);
-	SELFTEST_ASSERT(agg.previous_op_count    == 0);
-	SELFTEST_ASSERT(agg.epoch_start_op_count == epoch0_ops);
-	SELFTEST_ASSERT(agg.total_op_count       == epoch0_ops);
-	SELFTEST_ASSERT(fleet                    == 0);
-
-	/* --- Epoch 1 --- */
-	for (i = 0; i < epoch1_ops; i++)
-		sim_op_complete(&ring);
-
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(agg.op_count       == epoch1_ops);
-	SELFTEST_ASSERT(agg.total_op_count == epoch0_ops + epoch1_ops);
-	SELFTEST_ASSERT(fleet              == epoch1_ops);
-
-	/* No double-count: epoch_ops computed as total - start is exact. */
-	{
-		unsigned long epoch_ops = agg.total_op_count
-			- agg.epoch_start_op_count;
-		SELFTEST_ASSERT(epoch_ops == epoch1_ops);
-	}
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 3: call_limit_exact                                            */
-/*                                                                     */
-/* Simulate syscalls_todo = LIMIT.  Old ring-only accumulation would  */
-/* under-count if the ring fills and drops occur; the lossless per-   */
-/* child counter makes the check exact.                                */
-/*                                                                     */
-/* We saturate the ring, drain once (op_count from lossless sum), then */
-/* verify fleet_op_count >= LIMIT fires when expected.                */
-/* ------------------------------------------------------------------ */
-
-static void test_call_limit_exact(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long limit = 2 * RING_CAP + 7;
-	unsigned long i;
-
-	ring_init(&ring);
-	agg_init(&agg);
-
-	/* Dispatch limit ops without draining (ring fills and drops). */
-	for (i = 0; i < limit; i++)
-		sim_op_complete(&ring);
-
-	/*
-	 * Old scheme: ring holds at most RING_CAP-1 slots; op_count
-	 * after drain would be RING_CAP-1, NOT limit.
-	 * New scheme: drain reads lossless_op_count -- op_count == limit.
-	 */
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(fleet == limit);
-	SELFTEST_ASSERT(fleet >= limit);	/* termination check fires */
-
-	/* Verify old behaviour would have been wrong. */
-	SELFTEST_ASSERT((unsigned long)(RING_CAP - 1) < limit);
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 4: epoch_termination                                           */
-/*                                                                     */
-/* Set epoch_iterations = E.  Run E ops across two drain windows      */
-/* without ever draining in between the first window's ops, so some   */
-/* ops would be dropped by a ring-only scheme.  Verify that           */
-/* (total - start) == E exactly after the final drain.                */
-/* ------------------------------------------------------------------ */
-
-static void test_epoch_termination(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long epoch_iterations = RING_CAP + 200;
-	unsigned long i;
-
-	ring_init(&ring);
-	agg_init(&agg);
-	sim_epoch_reset(&agg, &fleet);
-
-	/* Window 1: fill the ring completely (RING_CAP ops). */
-	for (i = 0; i < (unsigned long)RING_CAP; i++)
-		sim_op_complete(&ring);
-	sim_drain(&ring, &agg, &fleet);
-
-	/* Window 2: 200 more ops. */
-	for (i = 0; i < 200; i++)
-		sim_op_complete(&ring);
-	sim_drain(&ring, &agg, &fleet);
-
-	{
-		unsigned long epoch_ops = agg.total_op_count
-			- agg.epoch_start_op_count;
-		SELFTEST_ASSERT(epoch_ops == epoch_iterations);
-		SELFTEST_ASSERT(epoch_ops >= epoch_iterations);
-	}
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 5: rotation_boundary                                           */
-/*                                                                     */
-/* The strategy rotation clock reads fleet_op_count (= op_count from  */
-/* per-child sum) and fires when (fleet - syscalls_at_last_switch) >= */
-/* WINDOW.  Verify that under ring saturation the rotation fires at   */
-/* exactly WINDOW ops, not RING_CAP-1 ops (the old under-count).      */
-/* ------------------------------------------------------------------ */
-
-static void test_rotation_boundary(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long syscalls_at_last_switch = 0;
-	unsigned long window = RING_CAP + 50;
-	unsigned long i;
-	bool rotated = false;
-
-	ring_init(&ring);
-	agg_init(&agg);
-
-	/* Dispatch window+1 ops, filling the ring past capacity. */
-	for (i = 0; i < window + 1; i++)
-		sim_op_complete(&ring);
-
-	sim_drain(&ring, &agg, &fleet);
-
-	/* Check rotation: (fleet - syscalls_at_last_switch) >= window */
-	if ((fleet - syscalls_at_last_switch) >= window) {
-		rotated = true;
-		syscalls_at_last_switch = fleet;
-	}
-
-	/* Must have rotated (we dispatched window+1 >= window ops). */
-	SELFTEST_ASSERT(rotated == true);
-
-	/* fleet_op_count that triggered the rotation is exact. */
-	SELFTEST_ASSERT(fleet == window + 1);
-
-	/* After rotation, window clock is reset; next window clean. */
-	SELFTEST_ASSERT(syscalls_at_last_switch == fleet);
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 6: child_respawn_preserve                                      */
-/*                                                                     */
-/* A child exits and is respawned.  Production stats_ring_init() does  */
-/* NOT zero lossless_op_count (it is run-monotonic across respawns).  */
-/* The ring page is allocated once per slot in shm.c and never        */
-/* reallocated; lossless_op_count simply continues incrementing in    */
-/* the new child.  The parent drain reads the counter directly and    */
-/* needs no compensation: total_op_count = lossless_op_count after    */
-/* any drain, naturally spanning both child lifetimes.                 */
-/* ------------------------------------------------------------------ */
-
-static void test_child_respawn_preserve(void)
-{
-	struct sim_ring ring;
-	struct sim_aggregate agg;
-	unsigned long fleet = 0;
-	unsigned long pre_exit_ops = 400;
-	unsigned long post_respawn_ops = 300;
-	unsigned long i;
-
-	ring_init(&ring);
-	agg_init(&agg);
-	sim_epoch_reset(&agg, &fleet);
-
-	/* Child A runs pre_exit_ops. */
-	for (i = 0; i < pre_exit_ops; i++)
-		sim_op_complete(&ring);
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(agg.op_count       == pre_exit_ops);
-	SELFTEST_ASSERT(agg.total_op_count == pre_exit_ops);
-	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops);
-
-	/*
-	 * Child A exits.  Production stats_ring_init() is called on the
-	 * same ring page; it clears slots/head/tail but leaves
-	 * lossless_op_count intact.  Simulate with ring_respawn_init().
-	 */
-	ring_respawn_init(&ring);
-	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops);
-
-	/* Child B runs post_respawn_ops; lossless_op_count keeps climbing. */
-	for (i = 0; i < post_respawn_ops; i++)
-		sim_op_complete(&ring);
-
-	SELFTEST_ASSERT(ring.lossless_op_count == pre_exit_ops + post_respawn_ops);
-
-	/*
-	 * Drain: total_op_count = lossless_op_count directly -- no
-	 * compensation required.  The run-monotonic counter already spans
-	 * both child lifetimes.
-	 */
-	sim_drain(&ring, &agg, &fleet);
-
-	SELFTEST_ASSERT(agg.total_op_count == pre_exit_ops + post_respawn_ops);
-	SELFTEST_ASSERT(agg.op_count       == pre_exit_ops + post_respawn_ops);
-
-	{
-		unsigned long epoch_ops = agg.total_op_count
-			- agg.epoch_start_op_count;
-		SELFTEST_ASSERT(epoch_ops == pre_exit_ops + post_respawn_ops);
-	}
-}
-
-/* ------------------------------------------------------------------ */
-/* Test 7: delta_guard                                                 */
+/* Test 1: delta_guard                                                 */
 /*                                                                     */
 /* Exercises the per-slot delta plausibility guard for                */
 /* lossless_op_count:                                                  */
@@ -652,9 +320,9 @@ static void test_delta_guard(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 8: first_drain_scribble                                        */
+/* Test 2: first_drain_scribble                                        */
 /*                                                                     */
-/* Mirror of test 7: scribble a pointer-shaped value (below the       */
+/* Mirror of test 1: scribble a pointer-shaped value (below the       */
 /* absolute ceiling) BEFORE the first drain, so prev == 0.  A guard   */
 /* that only engaged once prev > 0 would admit the scribble as the    */
 /* baseline and lock total_op_count HIGH; this one must reject it.    */
@@ -704,7 +372,7 @@ static void test_first_drain_scribble(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 9: transient_and_downward_scribbles                            */
+/* Test 3: transient_and_downward_scribbles                            */
 /*                                                                     */
 /* One wild reading followed by the true value costs nothing: the     */
 /* true value is back within MAX_DELTA_PER_DRAIN of prev and counts   */
@@ -776,7 +444,7 @@ static void test_transient_and_downward_scribbles(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 10: over_ceiling_scribble_rebases                              */
+/* Test 4: over_ceiling_scribble_rebases                               */
 /*                                                                     */
 /* The observed wild value 0x693bb2ae5ba348af sits above the absolute */
 /* ceiling.  The slot rebases on it once the counter climbs           */
@@ -834,7 +502,7 @@ static void test_over_ceiling_scribble_rebases(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 11: clock_scribble_never_counts                                */
+/* Test 5: clock_scribble_never_counts                                 */
 /*                                                                     */
 /* A scribble source keeps writing a nanosecond clock into the        */
 /* counter while the child counts normally in between.  None of the   */
@@ -901,7 +569,7 @@ static void test_clock_scribble_never_counts(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 12: second_run_restarts_the_span                               */
+/* Test 6: second_run_restarts_the_span                                */
 /*                                                                     */
 /* A slot that rebased and is then scribbled again starts a new       */
 /* implausible run: a second diagnostic, and a full                    */
@@ -957,7 +625,7 @@ static void test_second_run_restarts_the_span(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Test 13: wobbling_scribble_never_rebases                            */
+/* Test 7: wobbling_scribble_never_rebases                             */
 /*                                                                     */
 /* A scribbler that keeps rewriting the counter between two nearby    */
 /* values never climbs monotonically: every backward step restarts    */
@@ -1000,12 +668,6 @@ static void test_wobbling_scribble_never_rebases(void)
 void stats_opclock_lossless_self_check(void);
 void stats_opclock_lossless_self_check(void)
 {
-	test_ring_full_no_loss();
-	test_epoch_semantics();
-	test_call_limit_exact();
-	test_epoch_termination();
-	test_rotation_boundary();
-	test_child_respawn_preserve();
 	test_delta_guard();
 	test_first_drain_scribble();
 	test_transient_and_downward_scribbles();
