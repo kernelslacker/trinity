@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <sys/mman.h>
+#include <sys/personality.h>
 #include <asm/mman.h>
 
 #include "child.h"
@@ -24,6 +25,14 @@ bool proc_maps_check(unsigned long addr, unsigned long len,
 	unsigned long start, end;
 	char perms[5];
 	bool found = false;
+	int judged = PROT_READ | PROT_WRITE | PROT_EXEC;
+
+	/* READ_IMPLIES_EXEC adds PROT_EXEC to a PROT_READ request unless the
+	 * file is on a noexec mount (do_mmap(), do_mprotect_pkey()), so the X
+	 * bit can go either way. */
+	if ((expected_prot & PROT_READ) &&
+	    (personality(0xffffffff) & READ_IMPLIES_EXEC))
+		judged &= ~PROT_EXEC;
 
 	f = fopen("/proc/self/maps", "r");
 	if (!f)
@@ -45,8 +54,7 @@ bool proc_maps_check(unsigned long addr, unsigned long len,
 			if (perms[2] == 'x')
 				map_prot |= PROT_EXEC;
 
-			if ((map_prot & (PROT_READ | PROT_WRITE | PROT_EXEC)) ==
-			    (expected_prot & (PROT_READ | PROT_WRITE | PROT_EXEC))) {
+			if ((map_prot & judged) == (expected_prot & judged)) {
 				found = true;
 				break;
 			}
