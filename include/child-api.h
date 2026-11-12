@@ -564,7 +564,7 @@ bool replay_syscall_step(struct childdata *child,
  * the sequence-chain executor when --chain-resource-typing=live has
  * biased the next link to a specific consumer NR; the caller falls
  * back to plain random_syscall_step() when this returns FAIL (unknown
- * NR, deactivated, sanitise, or per-syscall AVOID gate).
+ * NR, deactivated, or per-syscall AVOID gate).
  */
 bool random_syscall_step_biased(struct childdata *child,
 				unsigned int bias_nr, bool bias_do32,

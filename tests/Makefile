@@ -85,6 +85,10 @@ LDFLAGS		+= -Wl,--wrap=pread
 # fake_parent.c wraps it with one that only records the pid.
 LDFLAGS		+= -Wl,--wrap=kill_pid
 
+# dispatch_step() seam: chain_bias_test.c wraps the dispatch the chain
+# executor's biased step ends in with one that only records the entry.
+LDFLAGS		+= -Wl,--wrap=dispatch_step
+
 # Fake CLOCK_MONOTONIC: fake_parent.c wraps clock_gettime(), sleep() and
 # usleep() so a test can run out the shutdown wait's 30 s bound or the
 # spawn path's backoff and stall deadline without sleeping.  The
@@ -1194,6 +1198,11 @@ FAKE_SRCS	+= rt_sigaction_test.c
 # oracle, which sigaltstack_test.c runs on compat calls.
 PARENT_SRCS	+= $(TOP)/syscalls/signal/sigaltstack.c
 FAKE_SRCS	+= sigaltstack_test.c
+
+# random_syscall/dispatch-wrappers.c brings random_syscall_step_biased(),
+# which chain_bias_test.c runs on a consumer with a sanitiser.
+PARENT_SRCS	+= $(TOP)/random_syscall/dispatch-wrappers.c
+FAKE_SRCS	+= chain_bias_test.c
 
 # childops/misc/epoll-volatility.c brings the epoll_volatility childop,
 # whose epoll_ctl() calls epoll_volatility_test.c counts on real epfds;

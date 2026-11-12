@@ -91,7 +91,7 @@ bool random_syscall_step(struct childdata *child,
  * contaminated by an external NR override.
  *
  * Returns FAIL when the biased NR is no longer callable in this run
- * (out of range, no entry, sanitise, deactivated / AVOID / lost cap);
+ * (out of range, no entry, deactivated / AVOID / lost cap);
  * the chain executor then falls back to a plain random_syscall_step
  * for the same slot so the iteration still does useful work.
  */
@@ -111,17 +111,6 @@ bool random_syscall_step_biased(struct childdata *child,
 
 	entry = get_syscall_entry(bias_nr, bias_do32);
 	if (entry == NULL)
-		return FAIL;
-
-	/* Same sanitise gate replay_syscall_step uses: sanitise-bearing
-	 * syscalls stash heap pointers into arg slots during
-	 * generic_sanitise, and a fresh-args regeneration here would
-	 * still route through generate_syscall_args -- but the bias
-	 * consumer table is a static NR list, so a NR whose entry
-	 * carries .sanitise cannot come out of pick_consumer(); the
-	 * gate is defensive against a future table addition slipping a
-	 * sanitise-tagged NR through unnoticed. */
-	if (entry->sanitise != NULL)
 		return FAIL;
 
 	if (!validate_specific_syscall_silent(
