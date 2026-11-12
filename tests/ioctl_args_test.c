@@ -24,6 +24,7 @@
 #include <drm/drm.h>
 #include <drm/drm_mode.h>
 #endif
+#include <linux/cdrom.h>
 #include <linux/hidraw.h>
 #include <linux/input.h>
 #include <linux/joystick.h>
@@ -852,6 +853,56 @@ static void socket_tunnel_requests_name_their_device(void)
 	}
 }
 
+/*
+ * CDROMREADMODE1, CDROMREADMODE2 and CDROMREADRAW read a struct cdrom_msf
+ * from the arg and copy the block they read back over it
+ * (mmc_ioctl_cdrom_read_data()), so the arg has to be a buffer of the
+ * block, opening with a minute, second and frame on an 80-minute disc
+ * that msf_to_lba() takes to a block >= 0.
+ */
+#define CDROM_READ_ROUNDS	400
+
+static void cdrom_reads_get_a_block_buffer(void)
+{
+	static const struct {
+		unsigned int request;
+		size_t block;
+	} reads[] = {
+		{ CDROMREADMODE1, CD_FRAMESIZE },
+		{ CDROMREADMODE2, CD_FRAMESIZE_RAW0 },
+		{ CDROMREADRAW, CD_FRAMESIZE_RAW },
+	};
+	static struct syscallrecord rec;
+	unsigned int i, round;
+
+	for (i = 0; i < ARRAY_SIZE(reads); i++) {
+		const struct ioctl_group *grp = group_listing(reads[i].request);
+		unsigned int on_disc = 0;
+
+		if (grp == NULL)
+			BUG("ioctl args: the cdrom group is not linked");
+
+		for (round = 0; round < CDROM_READ_ROUNDS; round++) {
+			const struct cdrom_msf *msf;
+
+			memset(&rec, 0, sizeof(rec));
+			rec.a1 = (unsigned long) -1;
+			fake_ioctl_request = reads[i].request;
+			grp->sanitise(grp, &rec);
+			if (!range_in_writable_pool(rec.a3, reads[i].block))
+				BUG("ioctl args: a cdrom read's arg is no buffer of its block");
+			msf = (const struct cdrom_msf *) rec.a3;
+			on_disc += msf->cdmsf_min0 < 80 &&
+				   msf->cdmsf_sec0 < CD_SECS &&
+				   msf->cdmsf_frame0 < CD_FRAMES &&
+				   (msf->cdmsf_min0 * CD_SECS + msf->cdmsf_sec0) *
+				   CD_FRAMES + msf->cdmsf_frame0 >= CD_MSF_OFFSET;
+		}
+		if (on_disc < CDROM_READ_ROUNDS * 9 / 10)
+			BUG("ioctl args: a cdrom read seldom names a block on the disc");
+	}
+}
+
 void ioctl_args_self_check(void);
 void ioctl_args_self_check(void)
 {
@@ -872,4 +923,5 @@ void ioctl_args_self_check(void)
 	userfaultfd_api_always_asks_sigbus();
 	socket_bridge_requests_name_one_bridge();
 	socket_tunnel_requests_name_their_device();
+	cdrom_reads_get_a_block_buffer();
 }

@@ -255,6 +255,25 @@ static void sanitise_cdrom_read(struct syscallrecord *rec, int bufsz)
 	rec->a3 = (unsigned long) cr;
 }
 
+/*
+ * READMODE1, READMODE2 and READRAW read a struct cdrom_msf from the arg and
+ * copy the block they read back over it (mmc_ioctl_cdrom_read_data()), so
+ * the arg is a buffer of the block, opening with an address on the disc.
+ */
+static void sanitise_cdrom_read_msf(struct syscallrecord *rec, int blocksize)
+{
+	struct cdrom_msf *msf;
+
+	msf = (struct cdrom_msf *) get_writable_struct(blocksize);
+	if (!msf)
+		return;
+	memset(msf, 0, sizeof(*msf));
+	msf->cdmsf_min0   = rnd_modulo_u32(80);
+	msf->cdmsf_sec0   = rnd_modulo_u32(CD_SECS);
+	msf->cdmsf_frame0 = rnd_modulo_u32(CD_FRAMES);
+	rec->a3 = (unsigned long) msf;
+}
+
 static void sanitise_cdrom_readaudio(struct syscallrecord *rec)
 {
 	struct cdrom_read_audio *ra;
@@ -405,14 +424,16 @@ static void cdrom_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		sanitise_cdrom_subchnl(rec);
 		break;
 	case CDROMREADMODE1:
+		sanitise_cdrom_read_msf(rec, CD_FRAMESIZE);
+		break;
 	case CDROMREADCOOKED:
 		sanitise_cdrom_read(rec, 2048);
 		break;
 	case CDROMREADMODE2:
-		sanitise_cdrom_read(rec, 2336);
+		sanitise_cdrom_read_msf(rec, CD_FRAMESIZE_RAW0);
 		break;
 	case CDROMREADRAW:
-		sanitise_cdrom_read(rec, 2352);
+		sanitise_cdrom_read_msf(rec, CD_FRAMESIZE_RAW);
 		break;
 	case CDROMREADALL:
 		sanitise_cdrom_read(rec, 2646);

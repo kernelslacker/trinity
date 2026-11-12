@@ -375,7 +375,7 @@ REAL_SRCS	:= \
 # with the drm group's, for the args they build; its fd_test is not run.
 # ioctls/hidraw.c, input.c and joystick.c bring the groups that rewrite a
 # size-0 request to a random length, whose sanitisers ioctl_args_test.c
-# runs.  ioctls/ioctl-arg.c brings the arg tiers they rebuild a3 with,
+# runs, as it does cdrom.c's for its read cmds.  ioctls/ioctl-arg.c brings the arg tiers they rebuild a3 with,
 # which ioctl_args_test.c also runs on its own; the EFAULT probe they
 # reach is efault_cache.c's.
 # ioctls/procfs-self.c brings the procfs-self group, whose fd_test and
@@ -473,6 +473,7 @@ PARENT_SRCS	:= \
 	$(TOP)/ioctls/hidraw.c \
 	$(TOP)/ioctls/input.c \
 	$(TOP)/ioctls/joystick.c \
+	$(TOP)/ioctls/cdrom.c \
 	$(TOP)/ioctls/procfs-self.c \
 	$(TOP)/ioctls/nsfs.c \
 	$(TOP)/ioctls/efault_cache.c \
