@@ -15,7 +15,13 @@ static void can_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 	can = zmalloc_tracked(sizeof(struct sockaddr_can));
 
 	can->can_family = AF_CAN;
-	can->can_ifindex = rnd_u32();
+	/* raw_bind() and bcm_connect() take ifindex 0 for every CAN device,
+	 * and refuse any other index with -ENODEV unless it names a CAN one:
+	 * a small index can name a real device, a random one none. */
+	if (RAND_BOOL())
+		can->can_ifindex = 0;
+	else
+		can->can_ifindex = RAND_BOOL() ? 1 + rnd_modulo_u32(8) : rnd_u32();
 
 	switch (rnd_modulo_u32(3)) {
 	case 0:

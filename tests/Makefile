@@ -696,6 +696,12 @@ PARENT_SRCS	+= $(TOP)/net/proto/alg.c \
 		   $(TOP)/net/proto/alg-dict.c
 FAKE_SRCS	+= alg_sockaddr_test.c
 
+# net/proto/can.c brings the AF_CAN sockaddr generator, whose ifindex
+# can_sockaddr_test.c holds to the one raw_bind() and bcm_connect() take
+# for any CAN device.
+PARENT_SRCS	+= $(TOP)/net/proto/can.c
+FAKE_SRCS	+= can_sockaddr_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
