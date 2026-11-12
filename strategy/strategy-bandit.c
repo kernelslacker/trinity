@@ -336,11 +336,13 @@ void bandit_record_pull(int arm, enum strategy_selection_reason reason,
  * bucket-count signal is a separate decision once both signals have
  * been observed under discounting against real run data.
  *
- * pulls_x1000 == 0 clamps to 1: an arm whose discounted count
- * decayed all the way to zero (≈140 windows of no selection at
- * gamma=0.95) is by definition starved, the resulting huge explore
- * term is the correct outcome.  The clamp keeps the division
- * well-defined rather than relying on a separate guard.
+ * pulls_x1000 == 0 clamps to 1: an arm only plateau-forced windows
+ * have run is past cold-start, yet bandit_record_pull() never credits
+ * it, so its count is 0.  The decay rounds to nearest, so a credited
+ * arm's count bottoms out at 10 (0.01 pulls) instead of reaching 0.
+ * Either way the arm is starved and the resulting huge explore term
+ * is the correct outcome.  The clamp keeps the division well-defined
+ * rather than relying on a separate guard.
  */
 static double ucb1_score(int arm, double total_n, double norm)
 {
@@ -486,9 +488,7 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 	 * least once by any path" as cold-start-satisfying; bandit_pulls[]
 	 * still gates UCB scoring.  Recent (discounted) pulls are
 	 * intentionally NOT consulted here -- cold-start is a "never
-	 * observed" trigger, not a "haven't been observed lately" one,
-	 * and reading recent_pulls_x1000 would re-fire cold-start every
-	 * ~140 windows for any arm the picker has stopped choosing. */
+	 * observed" trigger, not a "haven't been observed lately" one. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		if (!eligible[i])
 			continue;
@@ -517,10 +517,10 @@ int pick_next_strategy(int prev, enum strategy_selection_reason *reason_out)
 	 * arms so the exploit term lives in the same numeric range as the
 	 * exploration term.  Falls back to 1.0 when every arm has yielded
 	 * zero edges in the recent horizon (well-defined and harmless).
-	 * Skips arms whose discounted pulls decayed to zero -- their
-	 * "mean" is undefined, and they will get a huge explore-term
-	 * score from ucb1_score's pulls_x1000==0 clamp so the picker will
-	 * re-try them on this pass anyway. */
+	 * Skips arms with no credited pull -- their "mean" is undefined,
+	 * and they will get a huge explore-term score from ucb1_score's
+	 * pulls_x1000==0 clamp so the picker will re-try them on this
+	 * pass anyway. */
 	for (i = 0; i < NR_STRATEGIES; i++) {
 		unsigned long p, r;
 		double mean;
