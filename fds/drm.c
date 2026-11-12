@@ -138,7 +138,12 @@ done:
 
 #else
 
-static int open_drm_fds(void) { return true; }
+static int open_drm_fds(void)
+{
+	fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
+			      "<drm/drm.h> missing");
+	return false;
+}
 
 #endif /* USE_DRM */
 
