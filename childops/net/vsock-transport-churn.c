@@ -636,6 +636,10 @@ static void iter_reconnect_while_closing(const struct timespec *t_outer,
 	(*direct_calls)++;
 	if (listen(listener, 8) < 0)
 		goto out;
+	/* vsock_accept() waits SO_RCVTIMEO: a reconnect that queues no
+	 * connection leaves accept() below nothing to take, and without a
+	 * timeout it blocks until the alt-op's SIGALRM. */
+	apply_timeouts(listener, direct_calls);
 
 	/* Open client socket with the standard 100 ms timeouts. */
 	(*direct_calls)++;
