@@ -956,6 +956,7 @@ static unsigned long publishes;
 static struct fake_ruleset published_rs;
 static struct object published_obj;
 static bool pool_refuses;	/* the pool turns every fd away */
+static bool pool_no_destructor;	/* the pool has nothing to close an fd with */
 
 static struct object *publish_hook(enum objecttype type, unsigned long id,
 				   const struct resource_meta *meta)
@@ -999,6 +1000,9 @@ static void post_create(struct syscallrecord *rec)
 	publishes = 0;
 	memset(&published_rs, 0, sizeof(published_rs));
 	fake_publish_resource = publish_hook;
+	memset(&fake_head, 0, sizeof(fake_head));
+	fake_head.destroy = pool_no_destructor ? NULL : close_fd_destructor;
+	fake_get_objhead = head_hook;
 
 	rec->arg_snapshot_mask = entry->arg_snapshot_mask;
 	rec->arg_shadow[0] = rec->a1;
@@ -1013,6 +1017,7 @@ static void post_create(struct syscallrecord *rec)
 	stomps_expected = false;
 
 	fake_publish_resource = NULL;
+	fake_get_objhead = NULL;
 }
 
 /* The syscall with the args in @rec against the model kernel, its answer as
@@ -1037,7 +1042,8 @@ static long run_create(struct syscallrecord *rec)
  * left open and unpooled can still be named by a guessed number, and
  * restrict_self() with a ruleset that allows none of what it handles takes
  * that from the child for good.  The same goes for a ruleset the pool turns
- * away, so what is left open is armed and pooled.  Returns whether it was kept.
+ * away or has nothing to close with, so what is left open is armed and
+ * pooled.  Returns whether it was kept.
  */
 static bool check_fate(const struct syscallrecord *rec, long fd)
 {
@@ -1057,7 +1063,7 @@ static bool check_fate(const struct syscallrecord *rec, long fd)
 		  (fake_refuse_type == LANDLOCK_RULE_CAPABILITY_COMPAT &&
 		   (handled & LANDLOCK_PERMISSION_CAPABILITY_USE)) ||
 		  (handled & ~BOTH_PERMISSIONS);
-	kept = !unarmed && !pool_refuses;
+	kept = !unarmed && !pool_refuses && !pool_no_destructor;
 
 	if (kept) {
 		expect(rec->retval == (unsigned long) fd,
@@ -1084,8 +1090,9 @@ static bool check_fate(const struct syscallrecord *rec, long fd)
 	       rec->retval);
 	expect(fcntl(fd, F_GETFD) == -1 && errno == EBADF,
 	       "a ruleset that was not kept is closed", fd);
-	expect(publishes == (unarmed ? 0 : 1),
-	       "only a ruleset that was armed is offered to the pool", publishes);
+	expect(publishes == (unarmed || pool_no_destructor ? 0 : 1),
+	       "only an armed ruleset is offered to a pool that can close it",
+	       publishes);
 	/* Closed already, so the model must not close it again. */
 	rs->used = false;
 	return false;
@@ -1104,6 +1111,7 @@ struct create_case {
 	unsigned int refuse_type;	/* a rule type the kernel turns away ... */
 	int refuse_errno;		/* ... with this errno */
 	bool pool_refuses;
+	bool pool_no_destructor;
 	unsigned int rules;		/* the rules the handler asks for */
 	bool kept;
 };
@@ -1165,6 +1173,9 @@ static const struct create_case create_cases[] = {
 	{ .what = "the pool turning an armed ruleset away",
 	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS, .pool_refuses = true,
 	  .rules = 2, .kept = false },
+	{ .what = "a pool with nothing to close an armed ruleset with",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
+	  .pool_no_destructor = true, .rules = 2, .kept = false },
 	{ .what = "a permission the kernel has since added",
 	  .abi = 13, .size = 56, .perms = THIRD_PERMISSION, .rules = ANY_RULES,
 	  .kept = false },
@@ -1247,6 +1258,7 @@ static void check_create_cases(void)
 		fake_refuse_errno = cc->refuse_errno;
 		fake_compat = cc->compat;
 		pool_refuses = cc->pool_refuses;
+		pool_no_destructor = cc->pool_no_destructor;
 
 		memset(&rec, 0, sizeof(rec));
 		rec.do32bit = cc->compat;
@@ -1286,6 +1298,7 @@ static void check_create_cases(void)
 	}
 
 	pool_refuses = false;
+	pool_no_destructor = false;
 	fake_abi = 0;
 	reset_kernel();
 }

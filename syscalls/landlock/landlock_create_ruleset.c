@@ -11,7 +11,7 @@
 #include "deferred-free.h"
 #include "fd.h"
 #include "landlock.h"
-#include "publish_resource.h"
+#include "objects.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -293,18 +293,21 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 	 * published.  One that cannot be armed is closed: left open and out of
 	 * the pool, a guessed number could still restrict the child with it.
 	 * So is one whose attr cannot be read back to say what it handles, and
-	 * one the pool turns away, so whatever stays open is armed.  A stdio or
-	 * protected number is never closed here: it is the child's own plumbing
-	 * unless the child closed it, and a stomped retval must not close it.
+	 * pool_typed_fd() closes one the pool turns away, so whatever stays open
+	 * is armed.  A stdio or protected number is never closed here: it is
+	 * the child's own plumbing unless the child closed it, and a stomped
+	 * retval must not close it.
 	 */
-	if (kernel_handled_permissions(rec, &handled) &&
-	    landlock_allow_permissions(fd, handled) &&
-	    publish_resource(OBJ_FD_LANDLOCK, fd, NULL) != NULL)
+	if (!kernel_handled_permissions(rec, &handled) ||
+	    !landlock_allow_permissions(fd, handled)) {
+		if (fd > 2 && !fd_is_protected(fd))
+			close(fd);
+		rec->retval = -1UL;
 		return;
+	}
 
-	if (fd > 2 && !fd_is_protected(fd))
-		close(fd);
-	rec->retval = -1UL;
+	if (pool_typed_fd(OBJ_FD_LANDLOCK, fd) == NULL)
+		rec->retval = -1UL;
 }
 
 struct syscallentry syscall_landlock_create_ruleset = {
