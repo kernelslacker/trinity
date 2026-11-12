@@ -79,8 +79,6 @@ static void add_drm_obj(int fd)
 	output(2, "fd[%d] = drm\n", fd);
 }
 
-static struct fd_provider drm_fd_provider;
-
 static int open_drm_fds(void)
 {
 	struct objhead *head;
@@ -127,8 +125,13 @@ static int open_drm_fds(void)
 		closedir(dir);
 
 done:
-	if (objects_empty(OBJ_FD_DRM) == true)
-		drm_fd_provider.enabled = false;
+	/* open_fds() takes this as the provider's enabled flag: the copy
+	 * the registry holds, not drm_fd_provider below. */
+	if (objects_empty(OBJ_FD_DRM) == true) {
+		fd_provider_init_fail(FD_INIT_REASON_CONFIG_ABSENT, 0,
+				      "no /dev/dri node opened");
+		return false;
+	}
 
 	return true;
 }
