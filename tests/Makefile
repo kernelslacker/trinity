@@ -1186,6 +1186,10 @@ PARENT_SRCS	+= $(TOP)/args/gen_arg_time.c \
 		   $(TOP)/syscalls/clock/clock_adjtime.c
 FAKE_SRCS	+= gen_arg_time_test.c
 
+# timerfd_settime_test.c holds the absolute deadlines timerfd_settime.c's
+# sanitiser draws to the clock of the timerfd each call names.
+FAKE_SRCS	+= timerfd_settime_test.c
+
 # args/handle_arg.c brings the generators argtype_table.c's rows name
 # from it, and publish_paired_length(): arg_list_test.c draws
 # handle_arg_list() masks, with the cmp-hint and prop_ring draws stood

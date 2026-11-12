@@ -51,13 +51,10 @@ static void fill_nonzero_timespec(struct timespec *ts)
 }
 
 /*
- * TFD_TIMER_CANCEL_ON_SET only has meaning when paired with
- * TFD_TIMER_ABSTIME on a CLOCK_REALTIME timerfd.  The OBJ_FD_TIMERFD
- * pool publishes the clockid each fd was created with, so look the
- * picked fd up and refuse to set the bit on monotonic/boottime fds
- * where the kernel would just return EINVAL.
+ * The clock @fd's timer runs on, which the OBJ_FD_TIMERFD pool records for
+ * each fd it made, or -1 for an fd it does not hold.
  */
-static int timerfd_is_realtime(int fd)
+static int timerfd_clockid(int fd)
 {
 	struct objhead *head;
 	struct object *obj;
@@ -65,14 +62,13 @@ static int timerfd_is_realtime(int fd)
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_TIMERFD);
 	if (head == NULL)
-		return 0;
+		return -1;
 
 	for_each_obj(head, obj, idx) {
-		if (obj->timerfdobj.fd != fd)
-			continue;
-		return obj->timerfdobj.clockid == CLOCK_REALTIME;
+		if (obj->timerfdobj.fd == fd)
+			return obj->timerfdobj.clockid;
 	}
-	return 0;
+	return -1;
 }
 
 static void sanitise_timerfd_settime(struct syscallrecord *rec)
@@ -81,6 +77,7 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 	struct itimerspec *its;
 	uint32_t bucket;
 	unsigned long flags = 0;
+	int clockid = -1;
 	void *buf;
 
 	/*
@@ -110,10 +107,21 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 		fill_nonzero_timespec(&its->it_value);
 		fill_nonzero_timespec(&its->it_interval);
 	} else {
-		/* TFD_TIMER_ABSTIME with a near-now deadline. */
+		/* TFD_TIMER_ABSTIME with a near-now deadline, read off the
+		 * clock the timer runs on: a CLOCK_REALTIME time is decades
+		 * away on the monotonic and boottime clocks.  An ALARM
+		 * clock keeps the time of its base clock, and an fd the
+		 * pool does not hold gets the realtime one. */
 		struct timespec now;
+		clockid_t base = CLOCK_REALTIME;
 
-		if (clock_gettime(CLOCK_REALTIME, &now) == 0) {
+		clockid = timerfd_clockid((int) rec->a1);
+		if (clockid == CLOCK_MONOTONIC)
+			base = CLOCK_MONOTONIC;
+		else if (clockid == CLOCK_BOOTTIME || clockid == CLOCK_BOOTTIME_ALARM)
+			base = CLOCK_BOOTTIME;
+
+		if (clock_gettime(base, &now) == 0) {
 			its->it_value.tv_sec = now.tv_sec + 1;
 			its->it_value.tv_nsec = now.tv_nsec;
 		} else {
@@ -123,11 +131,13 @@ static void sanitise_timerfd_settime(struct syscallrecord *rec)
 	}
 	time_struct_for_abi(rec, its, 2);
 
-	/* CANCEL_ON_SET is only valid on CLOCK_REALTIME timerfds and only
-	 * paired with ABSTIME -- gate on both. */
+	/* timerfd_setup_cancel() arms the cancel only for CANCEL_ON_SET
+	 * beside ABSTIME on a realtime timer, and no child can set the
+	 * ALARM one (-EPERM without CAP_WAKE_ALARM): gate on
+	 * CLOCK_REALTIME. */
 	if ((flags & TFD_TIMER_ABSTIME) &&
 	    rnd_modulo_u32(100) < 15 &&
-	    timerfd_is_realtime((int) rec->a1))
+	    clockid == CLOCK_REALTIME)
 		flags |= TFD_TIMER_CANCEL_ON_SET;
 
 	rec->a2 = flags;
