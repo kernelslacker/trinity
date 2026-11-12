@@ -56,6 +56,11 @@ struct ioctl_group {
 	 * substituted after it would take args built for another. */
 	bool cmd_held;
 
+	/* Set with cmd_held: the arg the sanitiser drew is held too, for a
+	 * group whose cmds must never see another (loop-control's
+	 * LOOP_CTL_ADD outside its reserved index range). */
+	bool arg_held;
+
 	/* The group's cmds act on a request before they look at its arg, so
 	 * the bogus one the EFAULT probe sends (ioctls/efault_cache.c) does
 	 * not stop them, and what they make, a new fd, is one nothing closes.

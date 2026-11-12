@@ -53,24 +53,26 @@ static const struct ioctl_group *pick_group_first(struct syscallrecord *rec)
 
 /*
  * The cmd a group that holds its cmd drew (struct ioctl_group's cmd_held),
- * for vet_final_ioctl().  Lives in rec->post_state, a slot the syscall ABI
- * does not expose.
+ * and the arg if it holds that too, for vet_final_ioctl().  Lives in
+ * rec->post_state, a slot the syscall ABI does not expose.
  */
 #define IOCTL_POST_STATE_MAGIC	0x494F43544C5F4344UL	/* "IOCTL_CD" */
 struct ioctl_post_state {
 	unsigned long magic;
 	unsigned long cmd;
+	unsigned long arg;
+	bool arg_held;
 };
 
 /*
  * A group that holds its cmd builds valid args only for the cmds it means
  * to see work, so a final cmd other than the one it drew, which a RedQueen
  * pin on the cmd slot or a chain substitution can supply, would reach the
- * driver with args built for another: the call is refused.  The kernel
- * reads the cmd as an unsigned int.  A call with no snapshot drew its cmd
- * from a group that holds none; one whose snapshot fails the shape,
- * ownership or magic check, in post_state_claim_owned()'s order, is
- * refused too.
+ * driver with args built for another: the call is refused, as is one whose
+ * arg a group that holds it no longer finds.  The kernel reads the cmd as
+ * an unsigned int.  A call with no snapshot drew its cmd from a group that
+ * holds none; one whose snapshot fails the shape, ownership or magic
+ * check, in post_state_claim_owned()'s order, is refused too.
  */
 static int vet_final_ioctl(struct syscallrecord *rec,
 			   const struct syscallentry *entry)
@@ -82,10 +84,11 @@ static int vet_final_ioctl(struct syscallrecord *rec,
 		return 0;
 	if (!is_corrupt_ptr_shape(snap) && post_state_is_owned(snap) &&
 	    snap->magic == IOCTL_POST_STATE_MAGIC &&
-	    (unsigned int) rec->a2 == (unsigned int) snap->cmd)
+	    (unsigned int) rec->a2 == (unsigned int) snap->cmd &&
+	    (!snap->arg_held || rec->a3 == snap->arg))
 		return 0;
 
-	outputerr("arg-coupling: %s rejected: the cmd is not the one its group drew\n",
+	outputerr("arg-coupling: %s rejected: the cmd or arg is not the one its group drew\n",
 		  entry->name);
 	return -1;
 }
@@ -167,6 +170,8 @@ static void sanitise_ioctl(struct syscallrecord *rec)
 
 		snap->magic = IOCTL_POST_STATE_MAGIC;
 		snap->cmd = rec->a2;
+		snap->arg = rec->a3;
+		snap->arg_held = grp->arg_held;
 		post_state_install(rec, snap);
 	}
 }

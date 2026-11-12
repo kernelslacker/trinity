@@ -3,7 +3,8 @@
  * cmds whose return value is the new fd, withdrawn when the group was drawn
  * without regard to the fd; the group-first draw (one call in sixteen) that
  * swaps in an fd of the group's class; the zero arg of the pidfs namespace
- * getters; and typed-fd groups claiming the fds the child made itself.
+ * getters; typed-fd groups claiming the fds the child made itself; and the
+ * cmd, and the arg, a group holds.
  */
 
 #include <fcntl.h>
@@ -185,6 +186,26 @@ static const struct ioctl_group held_grp = {
 	.cmd_held = true,
 };
 
+/* A group that holds its arg as well, which its sanitiser draws as
+ * HELD_ARG. */
+#define HELD_ARG	0x7f8UL
+static bool fd_arg_held;
+
+static void arg_held_sanitise(const struct ioctl_group *grp,
+			      struct syscallrecord *rec)
+{
+	(void)grp;
+	rec->a2 = HELD_CMD;
+	rec->a3 = HELD_ARG;
+}
+
+static const struct ioctl_group arg_held_grp = {
+	.name = "arg_held",
+	.sanitise = arg_held_sanitise,
+	.cmd_held = true,
+	.arg_held = true,
+};
+
 static const struct ioctl_group random_grp = {
 	.name = "random",
 	.sanitise = random_sanitise,
@@ -193,6 +214,8 @@ static const struct ioctl_group random_grp = {
 const struct ioctl_group *find_ioctl_group(int fd)
 {
 	(void)fd;
+	if (fd_arg_held)
+		return &arg_held_grp;
 	if (fd_held)
 		return &held_grp;
 	return fd_claimed ? &claimed_grp : NULL;
@@ -278,6 +301,50 @@ static void cmd_held_to_the_one_drawn(void)
 	fd_held = false;
 	if (held == 0 || other == 0)
 		BUG("ioctl: a held group, or one that holds none, was never drawn");
+}
+
+/*
+ * A group that holds its arg as well refuses a final arg other than the
+ * one its sanitiser drew; one that holds only its cmd leaves the arg to
+ * whatever rewrites it.
+ */
+static void arg_held_to_the_one_drawn(void)
+{
+	static struct syscallrecord rec;
+	unsigned int held = 0, cmd_only = 0;
+	int pass, i;
+
+	for (pass = 0; pass < 2; pass++) {
+		fd_arg_held = pass == 0;
+		fd_held = pass != 0;
+		for (i = 0; i < PICK_ROUNDS; i++) {
+			memset(&rec, 0, sizeof(rec));
+			rec.entry = &syscall_ioctl;
+			syscall_ioctl.sanitise(&rec);
+			if (rec.a2 != HELD_CMD) {
+				syscall_ioctl.cleanup(&rec);
+				continue;
+			}
+			if (fd_arg_held) {
+				held++;
+				if (validate_arg_coupling(&rec, &syscall_ioctl) != 0)
+					BUG("ioctl: the arg a held group drew was refused");
+				rec.a3 = HELD_ARG + 1;
+				if (validate_arg_coupling(&rec, &syscall_ioctl) != -1)
+					BUG("ioctl: a held group's arg was rewritten and kept");
+			} else {
+				cmd_only++;
+				rec.a3 = HELD_ARG + 1;
+				if (validate_arg_coupling(&rec, &syscall_ioctl) != 0)
+					BUG("ioctl: the arg of a group that holds only its cmd was refused");
+			}
+			syscall_ioctl.cleanup(&rec);
+		}
+	}
+	fd_arg_held = false;
+	fd_held = false;
+	if (held == 0 || cmd_only == 0)
+		BUG("ioctl: a group holding its arg, or only its cmd, was never drawn");
 }
 
 /*
@@ -748,4 +815,5 @@ void ioctl_sanitise_self_check(void)
 	fd_class_groups_claim_the_childs_own_fds();
 	userfaultfd_group_claims_the_childs_own_fds();
 	cmd_held_to_the_one_drawn();
+	arg_held_to_the_one_drawn();
 }
