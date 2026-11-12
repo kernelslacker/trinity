@@ -16,8 +16,9 @@
 
 /*
  * socket() keeps an inet protocol of 0 as given, where inet_create() makes
- * 0 the type's own protocol: UDP for a datagram socket and TCP for a
- * stream one.
+ * 0 the first protocol registered for the type: UDP for a datagram socket,
+ * TCP for a stream one and SCTP for a seqpacket one, SCTP's being the only
+ * seqpacket protosw (a socket of that shape opens only once it is loaded).
  */
 unsigned int triplet_protocol(const struct socket_triplet *triplet)
 {
@@ -29,6 +30,8 @@ unsigned int triplet_protocol(const struct socket_triplet *triplet)
 			return IPPROTO_UDP;
 		if (type == SOCK_STREAM)
 			return IPPROTO_TCP;
+		if (type == SOCK_SEQPACKET)
+			return IPPROTO_SCTP;
 	}
 	return triplet->protocol;
 }

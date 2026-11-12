@@ -1,9 +1,10 @@
 /*
  * Self-check for the inet option dispatch: inet_create() and
  * inet6_create() make a protocol of 0 the first one registered for the
- * socket's type, TCP for a stream socket and UDP for a datagram one, so
- * such a socket takes that protocol's options, and the dispatch draws
- * them for it as for a socket opened with the protocol named.
+ * socket's type, TCP for a stream socket, UDP for a datagram one and
+ * SCTP, once loaded, for a seqpacket one, so such a socket takes that
+ * protocol's options, and the dispatch draws them for it as for a socket
+ * opened with the protocol named.
  */
 
 #include <netinet/in.h>
@@ -15,6 +16,8 @@
 #include "debug.h"		/* BUG */
 #include "net.h"		/* proto_ipv4, proto_inet6, struct sockopt */
 #include "utils-macros.h"	/* ARRAY_SIZE */
+
+#include "kernel/socket.h"	/* SOL_SCTP */
 
 #define INET_ROUNDS	3000
 #define INET_OPTVAL_LEN	4096
@@ -31,10 +34,14 @@ void inet_sockopt_self_check(void)
 		  SOL_TCP },
 		{ &proto_ipv4, { .family = PF_INET, .type = SOCK_DGRAM },
 		  SOL_UDP },
+		{ &proto_ipv4, { .family = PF_INET, .type = SOCK_SEQPACKET },
+		  SOL_SCTP },
 		{ &proto_inet6, { .family = PF_INET6, .type = SOCK_STREAM },
 		  SOL_TCP },
 		{ &proto_inet6, { .family = PF_INET6, .type = SOCK_DGRAM },
 		  SOL_UDP },
+		{ &proto_inet6, { .family = PF_INET6, .type = SOCK_SEQPACKET },
+		  SOL_SCTP },
 	};
 	static unsigned char optval[INET_OPTVAL_LEN];
 	unsigned int i, s;
