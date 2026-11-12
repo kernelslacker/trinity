@@ -12,6 +12,7 @@
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
+#include "kernel/crypto.h"
 #include "kernel/socket.h"
 static const char *hashes[] = {
 	"md4", "md5",
@@ -234,8 +235,16 @@ static void alg_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 	idx = rnd_modulo_u32(ARRAY_SIZE(types));
 	pick_alg(types[idx].type, types[idx].str, alg);
 
-	alg->salg_feat = rand32();
-	alg->salg_mask = rand32();
+	/* alg_bind() refuses any salg_feat or salg_mask bit but
+	 * CRYPTO_ALG_KERN_DRIVER_ONLY with -EINVAL, before the algorithm
+	 * lookup: one draw in eight keeps random words, for the refusal. */
+	if (ONE_IN(8)) {
+		alg->salg_feat = rand32();
+		alg->salg_mask = rand32();
+	} else {
+		alg->salg_feat = RAND_BOOL() ? CRYPTO_ALG_KERN_DRIVER_ONLY : 0;
+		alg->salg_mask = RAND_BOOL() ? CRYPTO_ALG_KERN_DRIVER_ONLY : 0;
+	}
 
 	*addr = (struct sockaddr *) alg;
 	*addrlen = sizeof(struct sockaddr_alg);

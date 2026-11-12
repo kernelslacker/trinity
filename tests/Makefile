@@ -690,6 +690,12 @@ PARENT_SRCS	+= $(TOP)/fds/testfiles.c \
 		   $(TOP)/fds/files.c
 FAKE_SRCS	+= testfile_pool_test.c
 
+# net/proto/alg.c and alg-dict.c bring the AF_ALG sockaddr generator, whose
+# salg_feat and salg_mask alg_sockaddr_test.c holds to what alg_bind() takes.
+PARENT_SRCS	+= $(TOP)/net/proto/alg.c \
+		   $(TOP)/net/proto/alg-dict.c
+FAKE_SRCS	+= alg_sockaddr_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
