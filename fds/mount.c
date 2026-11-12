@@ -6,6 +6,7 @@
 #include <unistd.h>
 
 #include "fd.h"
+#include "ioctls.h"
 #include "kernel/mount.h"
 #include "syscall-gate.h"
 #include "objects.h"
@@ -95,6 +96,10 @@ static int get_rand_mount_fd(void)
 /*
  * A refused fd is coerced to -1UL so register_returned_fd() does not
  * pool a number pool_typed_fd() closed or left to its owner.
+ * OPEN_TREE_NAMESPACE returns the nsfs fd of a new mount namespace, which
+ * no mount call takes: it is pooled as a file, as the nsfs getters' fds
+ * are, and coerced the same way, or register_returned_fd() would pool it
+ * as a mount after all.
  */
 void post_mount_fd(struct syscallrecord *rec)
 {
@@ -102,6 +107,14 @@ void post_mount_fd(struct syscallrecord *rec)
 
 	if (fd < 0 || fd >= FD_NR_MAX)
 		return;
+
+	if (fd_is_nsfs((int) fd)) {
+		if (fd > 2 && !fd_is_protected((int) fd) &&
+		    !pool_returned_fd((int) fd))
+			close((int) fd);
+		rec->retval = -1UL;
+		return;
+	}
 
 	if (pool_typed_fd(OBJ_FD_MOUNT, (int) fd) == NULL)
 		rec->retval = -1UL;

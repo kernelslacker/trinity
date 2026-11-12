@@ -3,9 +3,9 @@
  * call returns, run as shipped against a fake object pool: dup, dup2, dup3,
  * fcntl(F_DUPFD*), pidfd_getfd, the socket producers, the open family, the
  * pidfs namespace getters, bpf's BPF_PROG_STREAM_OPEN, the typed producers,
- * epoll_create and signalfd, close and close_range, and the key serials
- * keyctl pools.  Whatever object a number held is retired, copy pooled or not,
- * and a retire never closes the number.
+ * open_tree, epoll_create and signalfd, close and close_range, and the key
+ * serials keyctl pools.  Whatever object a number held is retired, copy
+ * pooled or not, and a retire never closes the number.
  */
 
 #include <errno.h>
@@ -3298,6 +3298,55 @@ static void typed_fd_the_pool_cannot_own_is_closed(void)
 	      fcntl(fd, F_GETFD) == -1);
 }
 
+/* Run open_tree's post handler on a return of @retval; what it leaves in
+ * the return. */
+static unsigned long run_open_tree(unsigned long retval)
+{
+	static struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.retval = retval;
+
+	forget_calls();
+	syscall_open_tree.post(&rec);
+	return rec.retval;
+}
+
+/* open_tree pools a mount fd under its type.  OPEN_TREE_NAMESPACE returns
+ * the nsfs fd of a new mount namespace instead, which no mount call takes:
+ * it is pooled as a file, and its return coerced so the RET_FD registrar
+ * does not pool it as a mount after all. */
+static void open_tree_pools_a_namespace_fd_as_a_file(void)
+{
+	unsigned long ret;
+	int peer, fd;
+
+	reset();
+	fd = eventfd(0, 0);
+	if (fd < 0)
+		BUG("fd pool: cannot make a descriptor to pool");
+	ret = run_open_tree((unsigned long) fd);
+	check("a mount fd was not pooled as a mount", "open_tree",
+	      pool_find(fd, OBJ_FD_MOUNT) != NULL &&
+	      ret == (unsigned long) fd);
+	close(fd);
+
+	reset();
+	fd = open_kind(FILE_NSFS, &peer);
+	if (fd < 0)
+		BUG("fd pool: cannot open a namespace file");
+	ret = run_open_tree((unsigned long) fd);
+	check("a namespace fd was pooled as a mount", "open_tree",
+	      pool_find(fd, OBJ_FD_MOUNT) == NULL);
+	check("a namespace fd was not pooled as a file", "open_tree",
+	      pool_find(fd, OBJ_FD_TESTFILE) != NULL);
+	check("a namespace fd's return was not coerced", "open_tree",
+	      ret == (unsigned long) -1L);
+	check("a pooled namespace fd was closed", "open_tree",
+	      fcntl(fd, F_GETFD) != -1);
+	close(fd);
+}
+
 /* Run @entry's post handler, as the current call, on a return of @retval
  * with @flags in a1 and its snapshot. */
 static unsigned long run_epoll_create(struct syscallentry *entry,
@@ -4430,6 +4479,7 @@ void dup_pool_self_check(void)
 	typed_fd_leaves_stdio_and_protected_numbers_alone();
 	typed_fd_pool_is_capped_per_type();
 	typed_fd_the_pool_cannot_own_is_closed();
+	open_tree_pools_a_namespace_fd_as_a_file();
 	epoll_create_pools_an_epoll_object();
 	signalfd_publishes_only_a_new_fd();
 	keyctl_pools_only_owned_keyrings();
