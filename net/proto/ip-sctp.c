@@ -34,10 +34,31 @@ static const unsigned int sctp_opts[] = {
 	SCTP_EXPOSE_POTENTIALLY_FAILED_STATE, SCTP_REMOTE_UDP_ENCAPS_PORT, SCTP_PLPMTUD_PROBE_INTERVAL,
 };
 
+/*
+ * On a one-to-many socket an option refuses an assoc_id that names none
+ * of the socket's associations with -EINVAL, but for SCTP_FUTURE_ASSOC
+ * and, for about half of the options, SCTP_CURRENT_ASSOC and
+ * SCTP_ALL_ASSOC, which reach every association the socket has; a
+ * one-to-one socket ignores the id.
+ */
+static sctp_assoc_t sctp_assoc_id(void)
+{
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		return rnd_u32();
+	case 1:
+		return SCTP_CURRENT_ASSOC;
+	case 2:
+		return SCTP_ALL_ASSOC;
+	default:
+		return SCTP_FUTURE_ASSOC;
+	}
+}
+
 static void sctp_set_rtoinfo(struct sockopt *so)
 {
 	struct sctp_rtoinfo *rtoinfo = (struct sctp_rtoinfo *) so->optval;
-	rtoinfo->srto_assoc_id = rnd_u32();
+	rtoinfo->srto_assoc_id = sctp_assoc_id();
 	rtoinfo->srto_initial = rnd_modulo_u32(60000);
 	rtoinfo->srto_max = rnd_modulo_u32(60000);
 	rtoinfo->srto_min = rnd_modulo_u32(60000);
@@ -47,7 +68,7 @@ static void sctp_set_rtoinfo(struct sockopt *so)
 static void sctp_set_associnfo(struct sockopt *so)
 {
 	struct sctp_assocparams *assocparams = (struct sctp_assocparams *) so->optval;
-	assocparams->sasoc_assoc_id = rnd_u32();
+	assocparams->sasoc_assoc_id = sctp_assoc_id();
 	assocparams->sasoc_asocmaxrxt = rnd_u32();
 	assocparams->sasoc_number_peer_destinations = rnd_u32();
 	assocparams->sasoc_peer_rwnd = rnd_u32();
@@ -105,7 +126,7 @@ static void sctp_set_peer_primary_addr(struct sockopt *so)
 {
 	struct sctp_setpeerprim *pp = (struct sctp_setpeerprim *) so->optval;
 	memset(pp, 0, sizeof(*pp));
-	pp->sspp_assoc_id = rnd_u32();
+	pp->sspp_assoc_id = sctp_assoc_id();
 	so->optlen = sizeof(struct sctp_setpeerprim);
 }
 
@@ -113,7 +134,7 @@ static void sctp_set_primary_addr(struct sockopt *so)
 {
 	struct sctp_prim *prim = (struct sctp_prim *) so->optval;
 	memset(prim, 0, sizeof(*prim));
-	prim->ssp_assoc_id = rnd_u32();
+	prim->ssp_assoc_id = sctp_assoc_id();
 	so->optlen = sizeof(struct sctp_prim);
 }
 
@@ -128,7 +149,7 @@ static void sctp_set_default_send_param(struct sockopt *so)
 	sinfo->sinfo_timetolive = rnd_modulo_u32(60000);
 	sinfo->sinfo_tsn = 0;
 	sinfo->sinfo_cumtsn = 0;
-	sinfo->sinfo_assoc_id = rnd_u32();
+	sinfo->sinfo_assoc_id = sctp_assoc_id();
 	so->optlen = sizeof(struct sctp_sndrcvinfo);
 }
 
@@ -139,7 +160,7 @@ static void sctp_set_default_sndinfo(struct sockopt *so)
 	sndinfo->snd_flags = rnd_u32() & 0x010f;
 	sndinfo->snd_ppid = rnd_u32();
 	sndinfo->snd_context = rnd_u32();
-	sndinfo->snd_assoc_id = rnd_u32();
+	sndinfo->snd_assoc_id = sctp_assoc_id();
 	so->optlen = sizeof(struct sctp_sndinfo);
 }
 
@@ -153,7 +174,7 @@ static void sctp_set_peer_addr_params(struct sockopt *so)
 {
 	struct sctp_paddrparams *pp = (struct sctp_paddrparams *) so->optval;
 	memset(pp, 0, sizeof(*pp));
-	pp->spp_assoc_id = rnd_u32();
+	pp->spp_assoc_id = sctp_assoc_id();
 	pp->spp_hbinterval = rnd_modulo_u32(30000);
 	pp->spp_pathmaxrxt = rnd_modulo_u32(12);
 	pp->spp_pathmtu = rnd_modulo_u32(65536);
@@ -185,7 +206,7 @@ static void sctp_set_auth_key(struct sockopt *so)
 {
 	struct sctp_authkey *authkey = (struct sctp_authkey *) so->optval;
 	unsigned int keylen = rnd_modulo_u32(64);
-	authkey->sca_assoc_id = rnd_u32();
+	authkey->sca_assoc_id = sctp_assoc_id();
 	authkey->sca_keynumber = rnd_modulo_u32(8);
 	authkey->sca_keylength = keylen;
 	generate_rand_bytes(authkey->sca_key, keylen);
@@ -195,7 +216,7 @@ static void sctp_set_auth_key(struct sockopt *so)
 static void sctp_set_authkeyid(struct sockopt *so)
 {
 	struct sctp_authkeyid *keyid = (struct sctp_authkeyid *) so->optval;
-	keyid->scact_assoc_id = rnd_u32();
+	keyid->scact_assoc_id = sctp_assoc_id();
 	keyid->scact_keynumber = rnd_modulo_u32(8);
 	so->optlen = sizeof(struct sctp_authkeyid);
 }
@@ -203,7 +224,7 @@ static void sctp_set_authkeyid(struct sockopt *so)
 static void sctp_set_delayed_ack_time(struct sockopt *so)
 {
 	struct sctp_sack_info *sack = (struct sctp_sack_info *) so->optval;
-	sack->sack_assoc_id = rnd_u32();
+	sack->sack_assoc_id = sctp_assoc_id();
 	sack->sack_delay = rnd_modulo_u32(500);
 	sack->sack_freq = 1 + (rnd_modulo_u32(8));
 	so->optlen = sizeof(struct sctp_sack_info);
@@ -212,7 +233,7 @@ static void sctp_set_delayed_ack_time(struct sockopt *so)
 static void sctp_set_assoc_value(struct sockopt *so)
 {
 	struct sctp_assoc_value *av = (struct sctp_assoc_value *) so->optval;
-	av->assoc_id = rnd_u32();
+	av->assoc_id = sctp_assoc_id();
 	av->assoc_value = rnd_u32();
 	so->optlen = sizeof(struct sctp_assoc_value);
 }
@@ -220,7 +241,7 @@ static void sctp_set_assoc_value(struct sockopt *so)
 static void sctp_set_stream_scheduler(struct sockopt *so)
 {
 	struct sctp_assoc_value *av = (struct sctp_assoc_value *) so->optval;
-	av->assoc_id = rnd_u32();
+	av->assoc_id = sctp_assoc_id();
 	av->assoc_value = rnd_modulo_u32(SCTP_SS_MAX + 1);
 	so->optlen = sizeof(struct sctp_assoc_value);
 }
@@ -228,7 +249,7 @@ static void sctp_set_stream_scheduler(struct sockopt *so)
 static void sctp_set_stream_scheduler_value(struct sockopt *so)
 {
 	struct sctp_stream_value *sv = (struct sctp_stream_value *) so->optval;
-	sv->assoc_id = rnd_u32();
+	sv->assoc_id = sctp_assoc_id();
 	sv->stream_id = rnd_modulo_u32(1024);
 	sv->stream_value = rnd_modulo_u32(1024);
 	so->optlen = sizeof(struct sctp_stream_value);
@@ -237,7 +258,7 @@ static void sctp_set_stream_scheduler_value(struct sockopt *so)
 static void sctp_set_default_prinfo(struct sockopt *so)
 {
 	struct sctp_default_prinfo *prinfo = (struct sctp_default_prinfo *) so->optval;
-	prinfo->pr_assoc_id = rnd_u32();
+	prinfo->pr_assoc_id = sctp_assoc_id();
 	prinfo->pr_value = rnd_u32();
 	prinfo->pr_policy = rnd_u32() & 0x3;
 	so->optlen = sizeof(struct sctp_default_prinfo);
@@ -246,7 +267,7 @@ static void sctp_set_default_prinfo(struct sockopt *so)
 static void sctp_set_event(struct sockopt *so)
 {
 	struct sctp_event *event = (struct sctp_event *) so->optval;
-	event->se_assoc_id = rnd_u32();
+	event->se_assoc_id = sctp_assoc_id();
 	event->se_type = rnd_modulo_u32(16);
 	event->se_on = RAND_BOOL();
 	so->optlen = sizeof(struct sctp_event);
@@ -256,7 +277,7 @@ static void sctp_set_remote_udp_encaps_port(struct sockopt *so)
 {
 	struct sctp_udpencaps *encaps = (struct sctp_udpencaps *) so->optval;
 	memset(encaps, 0, sizeof(*encaps));
-	encaps->sue_assoc_id = rnd_u32();
+	encaps->sue_assoc_id = sctp_assoc_id();
 	encaps->sue_port = rnd_modulo_u32(65536);
 	so->optlen = sizeof(struct sctp_udpencaps);
 }
@@ -265,7 +286,7 @@ static void sctp_set_peer_addr_thlds(struct sockopt *so)
 {
 	struct sctp_paddrthlds *thlds = (struct sctp_paddrthlds *) so->optval;
 	memset(thlds, 0, sizeof(*thlds));
-	thlds->spt_assoc_id = rnd_u32();
+	thlds->spt_assoc_id = sctp_assoc_id();
 	thlds->spt_pathmaxrxt = rnd_modulo_u32(12);
 	thlds->spt_pathpfthld = rnd_modulo_u32(12);
 	so->optlen = sizeof(struct sctp_paddrthlds);
@@ -275,7 +296,7 @@ static void sctp_set_peer_addr_thlds_v2(struct sockopt *so)
 {
 	struct sctp_paddrthlds_v2 *thlds = (struct sctp_paddrthlds_v2 *) so->optval;
 	memset(thlds, 0, sizeof(*thlds));
-	thlds->spt_assoc_id = rnd_u32();
+	thlds->spt_assoc_id = sctp_assoc_id();
 	thlds->spt_pathmaxrxt = rnd_modulo_u32(12);
 	thlds->spt_pathpfthld = rnd_modulo_u32(12);
 	thlds->spt_pathcpthld = rnd_modulo_u32(12);
@@ -285,7 +306,7 @@ static void sctp_set_peer_addr_thlds_v2(struct sockopt *so)
 static void sctp_set_add_streams(struct sockopt *so)
 {
 	struct sctp_add_streams *adds = (struct sctp_add_streams *) so->optval;
-	adds->sas_assoc_id = rnd_u32();
+	adds->sas_assoc_id = sctp_assoc_id();
 	adds->sas_instrms = rnd_modulo_u32(16);
 	adds->sas_outstrms = rnd_modulo_u32(16);
 	so->optlen = sizeof(struct sctp_add_streams);
@@ -296,7 +317,7 @@ static void sctp_set_reset_streams(struct sockopt *so)
 	struct sctp_reset_streams *rstr = (struct sctp_reset_streams *) so->optval;
 	unsigned int n = rnd_modulo_u32(4);
 	unsigned int i;
-	rstr->srs_assoc_id = rnd_u32();
+	rstr->srs_assoc_id = sctp_assoc_id();
 	rstr->srs_flags = rnd_u32() & 3;
 	rstr->srs_number_streams = n;
 	for (i = 0; i < n; i++)
@@ -338,7 +359,7 @@ static void sctp_set_connectx3(struct sockopt *so)
 		sa[i].sin_port = htons(rnd_modulo_u32(65535) + 1);
 		sa[i].sin_addr.s_addr = htonl(0x7f000000 | rnd_modulo_u32(256));
 	}
-	gao->assoc_id = rnd_u32();
+	gao->assoc_id = sctp_assoc_id();
 	gao->addr_num = n;
 	gao->addrs = (struct sockaddr *) sa;
 	so->optlen = sizeof(struct sctp_getaddrs_old);
@@ -365,7 +386,7 @@ static void sctp_set_plpmtud_probe_interval(struct sockopt *so)
 {
 	struct sctp_probeinterval *pi = (struct sctp_probeinterval *) so->optval;
 	memset(pi, 0, sizeof(*pi));
-	pi->spi_assoc_id = rnd_u32();
+	pi->spi_assoc_id = sctp_assoc_id();
 	pi->spi_interval = rnd_modulo_u32(60000);
 	so->optlen = sizeof(struct sctp_probeinterval);
 }

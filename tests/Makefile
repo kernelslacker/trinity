@@ -713,6 +713,11 @@ FAKE_SRCS	+= qrtr_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/pppox.c
 FAKE_SRCS	+= pppol2tp_sockaddr_test.c
 
+# net/proto/ip-sctp.c brings the SCTP option builders, whose assoc_ids
+# sctp_sockopt_test.c holds to the ones a one-to-many socket takes.
+PARENT_SRCS	+= $(TOP)/net/proto/ip-sctp.c
+FAKE_SRCS	+= sctp_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.

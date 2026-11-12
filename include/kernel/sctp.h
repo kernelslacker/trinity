@@ -5,6 +5,12 @@
 #include <netinet/sctp.h>
 #endif
 
+#ifndef SCTP_FUTURE_ASSOC
+#define SCTP_FUTURE_ASSOC	0
+#define SCTP_CURRENT_ASSOC	1
+#define SCTP_ALL_ASSOC		2
+#endif
+
 #ifndef SCTP_RTOINFO
 #define SCTP_RTOINFO    0
 #define SCTP_ASSOCINFO  1
