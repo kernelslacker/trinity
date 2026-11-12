@@ -153,6 +153,7 @@ void sctp_catalog_self_check(void);
 void packet_sockopt_self_check(void);
 void inet_sockopt_self_check(void);
 void ipv6_sockopt_self_check(void);
+void udp_sockopt_self_check(void);
 void netlink_sockopt_self_check(void);
 void rds_sockopt_self_check(void);
 void rxrpc_sockopt_self_check(void);
@@ -879,6 +880,11 @@ int main(int argc, char **argv)
 	printf("  ipv6_sockopt_self_check ... ");
 	fflush(stdout);
 	ipv6_sockopt_self_check();
+	printf("OK\n");
+
+	printf("  udp_sockopt_self_check ... ");
+	fflush(stdout);
+	udp_sockopt_self_check();
 	printf("OK\n");
 
 	printf("  netlink_sockopt_self_check ... ");
