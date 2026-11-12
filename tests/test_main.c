@@ -149,6 +149,7 @@ void pppol2tp_sockaddr_self_check(void);
 void sctp_sockopt_self_check(void);
 void sctp_catalog_self_check(void);
 void packet_sockopt_self_check(void);
+void inet_sockopt_self_check(void);
 void setsockopt_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -852,6 +853,11 @@ int main(int argc, char **argv)
 	printf("  packet_sockopt_self_check ... ");
 	fflush(stdout);
 	packet_sockopt_self_check();
+	printf("OK\n");
+
+	printf("  inet_sockopt_self_check ... ");
+	fflush(stdout);
+	inet_sockopt_self_check();
 	printf("OK\n");
 
 	printf("  setsockopt_self_check ... ");

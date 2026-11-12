@@ -288,7 +288,7 @@ static void inet6_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		__inet6_setsockopt(so);
 		break;
 	case 1:
-		switch (triplet->protocol) {
+		switch (triplet_protocol(triplet)) {
 		case IPPROTO_TCP:
 			so->level = SOL_TCP;
 			tcp_setsockopt(so, triplet);

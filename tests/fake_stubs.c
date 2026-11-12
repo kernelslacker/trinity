@@ -30,7 +30,6 @@
 #include "fd.h"			/* get_random_fd */
 #include "maps.h"
 #include "minicorpus.h"
-#include "net.h"		/* random_ipv4_address */
 #include "random.h"		/* rand32 */
 #include "rnd.h"
 #include "struct_catalog.h"
@@ -221,14 +220,6 @@ unsigned char desired_group;
 /* Owned by main/trinity-warmstart.c, which counts the CPUs at start-up.
  * The io_uring_register payloads take the 0 left here for one CPU. */
 unsigned int num_online_cpus;
-
-/* Owned by net/proto/ipv4.c, whose setsockopt tables would pull in every
- * inet protocol's.  The PPPoL2TP sockaddrs pppol2tp_sockaddr_test.c draws
- * take their tunnel address from it. */
-in_addr_t random_ipv4_address(void)
-{
-	return htonl(INADDR_LOOPBACK);
-}
 
 /* Set by a test whose code under test frees through tracked_free_now(),
  * which frees only what alloc_track knows: the allocations are then

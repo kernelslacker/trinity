@@ -729,6 +729,19 @@ FAKE_SRCS	+= sctp_catalog_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/packet.c
 FAKE_SRCS	+= packet_sockopt_test.c
 
+# net/proto/ipv4.c and ipv6.c bring the inet option dispatch, with the
+# per-protocol builders its tables name; inet_sockopt_test.c holds a
+# socket of protocol 0 to its protocol's options.
+PARENT_SRCS	+= $(TOP)/net/proto/ipv4.c \
+		   $(TOP)/net/proto/ipv6.c \
+		   $(TOP)/net/proto/ip-tcp.c \
+		   $(TOP)/net/proto/ip-udp.c \
+		   $(TOP)/net/proto/ip-udplite.c \
+		   $(TOP)/net/proto/ip-raw.c \
+		   $(TOP)/net/proto/icmp6.c \
+		   $(TOP)/net/proto/ip-mptcp.c
+FAKE_SRCS	+= inet_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
