@@ -2380,6 +2380,53 @@ static void openat2_sets_a_mode_only_for_an_open_that_creates(void)
 	fake_rand_bitmask_draws = false;
 }
 
+/* build_open_flags() refuses O_CREAT beside O_DIRECTORY, which O_TMPFILE
+ * carries too, so open, openat and openat2 keep that pair to a small share
+ * of the opens that create.  The flags are a random subset of the open
+ * flags, each drawn one time in two. */
+static void opens_that_create_seldom_name_a_directory(void)
+{
+	static struct syscallentry *const entries[] = {
+		&syscall_open, &syscall_openat, &syscall_openat2,
+	};
+	unsigned int e, i;
+
+	fake_rand_bitmask_draws = true;
+	for (e = 0; e < ARRAY_SIZE(entries); e++) {
+		unsigned int creates = 0, refused = 0;
+
+		for (i = 0; i < 4000; i++) {
+			struct syscallrecord rec;
+			unsigned long flags;
+
+			memset(&rec, 0, sizeof(rec));
+			if (entries[e] == &syscall_open) {
+				rec.a1 = (unsigned long) "/";
+			} else {
+				rec.a1 = (unsigned long) AT_FDCWD;
+				rec.a2 = (unsigned long) "/";
+			}
+			entries[e]->sanitise(&rec);
+			if (entries[e] == &syscall_open)
+				flags = rec.a2;
+			else if (entries[e] == &syscall_openat)
+				flags = rec.a3;
+			else
+				flags = ((const struct open_how_view *) rec.a3)->flags;
+			/* As above: nothing here frees through the alloc-track. */
+			free((void *) rec.post_state);
+
+			if (!(flags & O_CREAT))
+				continue;
+			creates++;
+			refused += (flags & O_DIRECTORY) != 0;
+		}
+		check("most opens that create name a directory too",
+		      entries[e]->name, creates != 0 && refused * 4 < creates);
+	}
+	fake_rand_bitmask_draws = false;
+}
+
 /* What fstat() would say of a @mode file nothing else in the test holds. */
 static struct stat stat_of(mode_t mode)
 {
@@ -4456,6 +4503,7 @@ void dup_pool_self_check(void)
 	open_without_a_destructor_closes();
 	open_oracle_reports_a_dead_fd();
 	openat2_sets_a_mode_only_for_an_open_that_creates();
+	opens_that_create_seldom_name_a_directory();
 
 	/* The O_PATH oracle's cases run alike on any host: the ctime rule
 	 * holds unless a case says otherwise, and a kernel without unique

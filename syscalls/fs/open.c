@@ -66,16 +66,28 @@ unsigned long get_o_flags(void)
 	return mask;
 }
 
+/*
+ * O_CREAT for one open in four.  build_open_flags() refuses it beside
+ * O_DIRECTORY, which O_TMPFILE carries too, so a create keeps neither
+ * but one time in eight, for that -EINVAL.
+ */
+static unsigned long draw_creat(unsigned long flags)
+{
+	if (!ONE_IN(4))
+		return flags;
+	flags |= O_CREAT;
+	if (!ONE_IN(8))
+		flags &= ~(O_DIRECTORY | O_TMPFILE);
+	return flags;
+}
+
 static void sanitise_open(struct syscallrecord *rec)
 {
 	unsigned long flags;
 
 	flags = get_o_flags();
 
-	rec->a2 |= flags;
-
-	if (ONE_IN(4))
-		rec->a2 |= O_CREAT;
+	rec->a2 = draw_creat(rec->a2 | flags);
 
 	if (rec->a2 & O_CREAT)
 		rec->a3 = 0666;
@@ -247,10 +259,7 @@ static void sanitise_openat(struct syscallrecord *rec)
 
 	flags = get_o_flags();
 
-	rec->a3 |= flags;
-
-	if (ONE_IN(4))
-		rec->a3 |= O_CREAT;
+	rec->a3 = draw_creat(rec->a3 | flags);
 
 	if (rec->a3 & O_CREAT)
 		rec->a4 = 0666;
@@ -610,10 +619,7 @@ static void sanitise_openat2(struct syscallrecord *rec)
 	buf = build_csfu_struct(&desc_openat2);
 	how = buf.ptr;
 
-	how->flags = RAND_ARRAY(open_o_flags_base) | get_o_flags();
-
-	if (ONE_IN(4))
-		how->flags |= O_CREAT;
+	how->flags = draw_creat(RAND_ARRAY(open_o_flags_base) | get_o_flags());
 
 	/*
 	 * OPENAT2_REGULAR (upper-32-bit, openat2-exclusive) restricts the
