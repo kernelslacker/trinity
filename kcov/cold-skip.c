@@ -1,10 +1,11 @@
 /*
  * kcov/cold-skip.c — per-syscall cold-skip policy.
  *
- * kcov_syscall_cold_skip_pct() returns the probability (0..90%) that the
+ * kcov_syscall_cold_skip_pct() returns the probability (0..95%) that the
  * dispatcher skips a syscall nr on this attempt because it has stopped
- * contributing new coverage: a hard saturation cap for confirmed dead weight,
- * otherwise a ramp graded by the gap since its last new edge.
+ * contributing new coverage: a hard saturation cap (KCOV_SAT_CAP_SKIP_PCT)
+ * for confirmed dead weight, otherwise a 50..90% ramp graded by the gap
+ * since its last new edge.
  */
 
 #include <stdbool.h>
@@ -65,8 +66,8 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 
 	/* Graduated skip: the further past the threshold, the more we skip.
 	 * Formula is a 50% base plus 10 percentage points per additional
-	 * KCOV_COLD_THRESHOLD-sized step, capped at 90% so even the deadest
-	 * syscall still gets called once every ~10 attempts in case kernel
+	 * KCOV_COLD_THRESHOLD-sized step, capped at 90% so a syscall on the
+	 * ramp still gets called once every ~10 attempts in case kernel
 	 * state changes underneath us. */
 	pct = 50 + (unsigned int)((gap / KCOV_COLD_THRESHOLD) * 10);
 	if (pct > 90)
