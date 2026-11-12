@@ -12,6 +12,7 @@
 #include "sanitise.h"
 #include "shm.h"
 #include "trinity.h"
+#include "uid.h"
 #include "utils.h"
 
 #define NR_FANOTIFYFDS 10
@@ -40,7 +41,7 @@ static int open_fanotify_fd(void)
 	int fd;
 
 	eventflags = get_fanotify_init_event_flags();
-	flags = get_fanotify_init_flags();
+	flags = get_fanotify_init_flags(orig_uid == 0);
 	fd = fanotify_init(flags, eventflags);
 	if (fd < 0)
 		return false;
@@ -120,9 +121,8 @@ static int get_rand_fanotifyfd(void)
  * epoll_try_replenish() (fds/epoll.c) for the general contract.
  * init_fanotify_fds() seeds NR_FANOTIFYFDS entries once; without this
  * hook a child that drained its private copy stopped seeing an
- * ARG_FD_FANOTIFY hit at all.  Reuse the same randomised flag / event-
- * flag generators that init used so the topped-up fds carry the same
- * flag distribution rather than one fixed shape.
+ * ARG_FD_FANOTIFY hit at all.  The flags are drawn from the groups an
+ * unprivileged caller can make, as a child always is.
  */
 static void fanotify_try_replenish(unsigned int budget)
 {
@@ -144,7 +144,7 @@ static void fanotify_try_replenish(unsigned int budget)
 		return;
 
 	for (i = 0; i < budget; i++) {
-		unsigned long flags = get_fanotify_init_flags();
+		unsigned long flags = get_fanotify_init_flags(false);
 		unsigned long eventflags = get_fanotify_init_event_flags();
 		int fd = fanotify_init(flags, eventflags);
 

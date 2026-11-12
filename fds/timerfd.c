@@ -168,10 +168,10 @@ static int get_rand_timerfd_fd(void)
  *
  * Restrict to the CLOEXEC-bearing subset of the init flag set so the
  * replenished fds do not leak across an exec-carrying syscall picked
- * later this iteration.  Clockid is picked at random across the same
- * five __init_timerfd_fds() is called with so downstream read/poll/
- * settime paths see the CLOCK_MONOTONIC vs. CLOCK_REALTIME_ALARM
- * split rather than one fixed variety.  Deliberately unarmed -- the
+ * later this iteration.  Clockid is picked at random among the three of
+ * init's five a child can use: the two ALARM clocks want CAP_WAKE_ALARM
+ * (timerfd_create()), which no child holds.  A root parent's ALARM
+ * timerfds stay in the global pool.  Deliberately unarmed -- the
  * kernel-side benefit here is fd reachability, not timer expiries;
  * arm_timerfd() would add an extra timerfd_settime() per replenished
  * fd that this budget-capped path cannot afford.
@@ -185,8 +185,6 @@ static void timerfd_try_replenish(unsigned int budget)
 		CLOCK_REALTIME,
 		CLOCK_MONOTONIC,
 		CLOCK_BOOTTIME,
-		CLOCK_REALTIME_ALARM,
-		CLOCK_BOOTTIME_ALARM,
 	};
 	static const unsigned int flags[] = {
 		TFD_CLOEXEC,

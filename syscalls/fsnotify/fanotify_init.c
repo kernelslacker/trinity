@@ -29,16 +29,41 @@ static unsigned long fanotify_init_flags[] = {
 };
 
 /*
+ * The groups an unprivileged caller can make: fanotify_init() wants
+ * CAP_SYS_ADMIN for anything but a notification group that reports file
+ * handles or mounts, and takes FAN_REPORT_NAME only beside
+ * FAN_REPORT_DIR_FID, FAN_REPORT_TARGET_FID only beside FAN_REPORT_NAME
+ * and FAN_REPORT_FID, and FAN_REPORT_MNT beside no file handle.
+ */
+static const unsigned long fanotify_unprivileged_shapes[] = {
+	FAN_REPORT_FID,
+	FAN_REPORT_DIR_FID,
+	FAN_REPORT_FID | FAN_REPORT_DIR_FID,
+	FAN_REPORT_DIR_FID | FAN_REPORT_NAME,
+	FAN_REPORT_FID | FAN_REPORT_DIR_FID | FAN_REPORT_NAME,
+	FAN_REPORT_FID | FAN_REPORT_DIR_FID | FAN_REPORT_NAME |
+		FAN_REPORT_TARGET_FID,
+	FAN_REPORT_MNT,
+};
+
+/*
  * The flags the fanotify provider (fds/fanotify_init.c) makes its groups
  * with.  A root run's parent makes the global ones, which every child
  * inherits and could not make itself: a content class would let a child
  * arm permission events, which stall any process on the host opening the
  * marked file until someone answers, and an unlimited queue or mark count
- * would let host events or marks pile up without bound.
+ * would let host events or marks pile up without bound.  An unprivileged
+ * caller, a child topping up or a non-root run's parent, draws only what
+ * it can make.
  */
-unsigned long get_fanotify_init_flags(void)
+unsigned long get_fanotify_init_flags(bool privileged)
 {
 	unsigned long flags;
+
+	if (!privileged)
+		return RAND_ARRAY(fanotify_unprivileged_shapes) |
+		       (RAND_BOOL() ? FAN_CLOEXEC : 0) |
+		       (RAND_BOOL() ? FAN_NONBLOCK : 0);
 
 	do {
 		flags = RAND_ARRAY(fanotify_init_flags);
