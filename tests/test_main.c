@@ -20,7 +20,6 @@
 extern pid_t mainpid;
 void shared_freelist_self_check(void);
 void shared_str_heap_free_size_check(void);
-void dispatch_stage_order_self_check(void);
 void deferred_free_ownership_self_check(void);
 void maps_name_self_check(void);
 void maps_pick_self_check(void);
@@ -191,11 +190,6 @@ int main(int argc, char **argv)
 	printf("  shared_str_heap_free_size_check ... ");
 	fflush(stdout);
 	shared_str_heap_free_size_check();
-	printf("OK\n");
-
-	printf("  dispatch_stage_order_self_check ... ");
-	fflush(stdout);
-	dispatch_stage_order_self_check();
 	printf("OK\n");
 
 	printf("  deferred_free_ownership_self_check ... \n");

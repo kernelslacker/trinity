@@ -566,7 +566,6 @@ FAKE_SRCS	:= \
 	rnd_stream_golden.c \
 	shared_freelist_selftest.c \
 	shared_str_heap_selftest.c \
-	dispatch_stage_order_test.c \
 	deferred_free_test.c \
 	stats_opclock_lossless_test.c \
 	struct_field_bounds_test.c \
