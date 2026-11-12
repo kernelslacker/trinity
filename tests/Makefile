@@ -612,6 +612,7 @@ FAKE_SRCS	:= \
 	asb_relocate_test.c \
 	fake_ioctls.c \
 	loop_status_test.c \
+	loop_ctl_test.c \
 	ioctl_sanitise_test.c \
 	ioctl_args_test.c \
 	procfs_self_test.c \

@@ -60,6 +60,7 @@ void redqueen_pin_self_check(void);
 void arg_coupling_self_check(void);
 void asb_relocate_self_check(void);
 void loop_status_self_check(void);
+void loop_ctl_self_check(void);
 void ioctl_sanitise_self_check(void);
 void ioctl_args_self_check(void);
 void procfs_self_self_check(void);
@@ -391,6 +392,11 @@ int main(int argc, char **argv)
 	printf("  loop_status_self_check ... ");
 	fflush(stdout);
 	loop_status_self_check();
+	printf("OK\n");
+
+	printf("  loop_ctl_self_check ... ");
+	fflush(stdout);
+	loop_ctl_self_check();
 	printf("OK\n");
 
 	printf("  ioctl_sanitise_self_check ... ");

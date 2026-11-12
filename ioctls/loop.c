@@ -196,6 +196,41 @@ static void loop_sanitise(const struct ioctl_group *grp, struct syscallrecord *r
 	}
 }
 
+/*
+ * loop_control_ioctl() checks no capability, and the parent opened
+ * /dev/loop-control as root before fork, so a child holds a copy whatever
+ * its own credentials.  LOOP_CTL_ADD makes a device, at the lowest free
+ * index for a negative arg, and LOOP_CTL_REMOVE deletes any unbound one;
+ * either outlives the run.  Both name an index from a range trinity keeps
+ * to itself, so it leaves at most LOOP_CTL_INDEX_NR devices behind and
+ * deletes none of the host's, and the group holds the cmd and the arg
+ * against a rewrite.  The range sits well above the indices a host fills
+ * from loop0 up, and below 4096, past which the index shifted by
+ * part_shift (8 at max_part=255) overruns MINORMASK.  LOOP_CTL_GET_FREE
+ * ignores its arg.
+ */
+#define LOOP_CTL_INDEX_BASE	2040
+#define LOOP_CTL_INDEX_NR	8
+
+static void sanitise_loop_ctl(const struct ioctl_group *grp,
+			      struct syscallrecord *rec)
+{
+	pick_random_ioctl(grp, rec);
+
+	switch (rec->a2) {
+#ifdef LOOP_CTL_ADD
+	case LOOP_CTL_ADD:
+#endif
+#ifdef LOOP_CTL_REMOVE
+	case LOOP_CTL_REMOVE:
+#endif
+		rec->a3 = LOOP_CTL_INDEX_BASE + rnd_modulo_u32(LOOP_CTL_INDEX_NR);
+		break;
+	default:
+		break;
+	}
+}
+
 static const struct ioctl loop_ctrl_ioctls[] = {
 #ifdef LOOP_CTL_ADD
 	IOCTL(LOOP_CTL_ADD),
@@ -217,9 +252,11 @@ static const struct ioctl_group loop_ctrl_grp = {
 	.devtype = DEV_MISC,
 	.devs = loop_ctrl_devs,
 	.devs_cnt = ARRAY_SIZE(loop_ctrl_devs),
-	.sanitise = pick_random_ioctl,
+	.sanitise = sanitise_loop_ctl,
 	.ioctls = loop_ctrl_ioctls,
 	.ioctls_cnt = ARRAY_SIZE(loop_ctrl_ioctls),
+	.cmd_held = true,
+	.arg_held = true,
 };
 
 REG_IOCTL_GROUP(loop_ctrl_grp)
