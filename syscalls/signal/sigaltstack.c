@@ -257,10 +257,8 @@ choose_uoss:
  *   - Sibling-thread scribble of either rec->aN or the user buffer between
  *     syscall return and our post-hook re-read.
  *
- * Mode A (uss != NULL) is gated out by the rec->a1 != 0 check: the
- * sanitiser always wires a non-NULL ss into a1 today, but if a future
- * sanitiser revision starts emitting mode-B calls the oracle picks them up
- * automatically.
+ * Mode A (uss != NULL) is gated out by the snap->uss != 0 check; mode B
+ * is the sanitiser's getter-only shape, one call in ten.
  *
  * TOCTOU defeat: the two input args (uss, uoss) are snapshotted at
  * sanitise time into a heap struct in rec->post_state, so a sibling that
