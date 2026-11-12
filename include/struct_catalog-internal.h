@@ -263,9 +263,10 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
  * Sockaddr / setsockopt leaf tables defined in the struct_catalog/
  * sockaddr-* TUs: sockaddr_storage variants and per-AF field arrays
  * live in struct_catalog/sockaddr-af.c, the IPv4/IPv6 multicast
- * optval tables (ip_mreqn / ip_mreq_source / ipv6_mreq) in
- * struct_catalog/sockaddr-mcast.c, and the non-multicast optval
- * tables (linger / packet_mreq / group_req / group_source_req) in
+ * optval tables (ip_mreqn / ip_mreq_source / ipv6_mreq) and the
+ * multicast sockaddrs group_req embeds in
+ * struct_catalog/sockaddr-mcast.c, and the other optval tables
+ * (linger / packet_mreq / group_req / group_source_req) in
  * struct_catalog/sockaddr-sockopt.c.  The sockaddr_storage envelope
  * itself is always built, so the sockaddr_storage_fields and
  * sockaddr_storage_variants externs (plus the always-on AF arms)
@@ -290,6 +291,7 @@ enum {
 	PACKET_MREQ_FIELDS_N		= 4,
 	GROUP_REQ_FIELDS_N		= 2,
 	GROUP_SOURCE_REQ_FIELDS_N	= 3,
+	SOCKADDR_MCAST_FIELDS_N		= 2,
 
 	SOCKADDR_STORAGE_VARIANTS_N	= 8 /* UNIX,INET,INET6,NETLINK,PACKET,TIPC,QIPCRTR,NFC */
 #ifdef USE_VSOCK
@@ -403,10 +405,16 @@ extern const unsigned char ipv6_mcast_solicited_node[16];
 extern const unsigned char ipv6_mcast_site_routers[16];
 extern const unsigned char *const ipv6_mreq_multiaddr_vocab[];
 extern const struct struct_field ipv6_mreq_fields[IPV6_MREQ_FIELDS_N];
+extern const unsigned long mcast_af_inet[];
+extern const unsigned long mcast_af_inet6[];
+extern const struct struct_field sockaddr_in_mcast_fields[SOCKADDR_MCAST_FIELDS_N];
+extern const struct struct_field sockaddr_in6_mcast_fields[SOCKADDR_MCAST_FIELDS_N];
 extern const unsigned long packet_mreq_type_values[];
 extern const struct struct_field packet_mreq_fields[PACKET_MREQ_FIELDS_N];
-extern const struct struct_field group_req_fields[GROUP_REQ_FIELDS_N];
-extern const struct struct_field group_source_req_fields[GROUP_SOURCE_REQ_FIELDS_N];
+extern const struct struct_field group_req_ip_fields[GROUP_REQ_FIELDS_N];
+extern const struct struct_field group_req_ipv6_fields[GROUP_REQ_FIELDS_N];
+extern const struct struct_field group_source_req_ip_fields[GROUP_SOURCE_REQ_FIELDS_N];
+extern const struct struct_field group_source_req_ipv6_fields[GROUP_SOURCE_REQ_FIELDS_N];
 
 /*
  * time-shaped leaf tables defined in struct_catalog/time.c.  The _N

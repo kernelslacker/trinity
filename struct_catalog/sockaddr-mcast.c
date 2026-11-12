@@ -1,7 +1,8 @@
 /*
  * struct_catalog/sockaddr-mcast.c -- IPv4 / IPv6 multicast setsockopt
- * optval struct field tables (ip_mreqn / ip_mreq_source / ipv6_mreq)
- * plus the well-known multicast address pools those tables reference.
+ * optval struct field tables (ip_mreqn / ip_mreq_source / ipv6_mreq),
+ * the well-known multicast address pools those tables reference, and
+ * the multicast sockaddrs group_req and group_source_req embed.
  *
  * Tables are `const` (not `static const`) so the spine's designated-init
  * `.fields =` references resolve via the externs in struct_catalog-internal.h.
@@ -192,4 +193,37 @@ const struct struct_field ipv6_mreq_fields[] = {
 			    sizeof(((struct ipv6_mreq *)NULL)->ipv6mr_multiaddr) }),
 	FIELDX(struct ipv6_mreq, ipv6mr_interface, FT_RANGE,
 	       .u.range = { 0, 1 }),
+};
+
+/*
+ * sockaddr_in_mcast / sockaddr_in6_mcast -- the sockaddrs a group_req or
+ * group_source_req carries at IPPROTO_IP and at IPPROTO_IPV6
+ * (struct_catalog/sockaddr-sockopt.c): that level's family and a group
+ * from its vocabulary above.  The port, flow info and scope id, which
+ * the MCAST_* handlers never read, stay zero.
+ */
+const unsigned long mcast_af_inet[] = {
+	AF_INET,
+};
+
+const unsigned long mcast_af_inet6[] = {
+	AF_INET6,
+};
+
+const struct struct_field sockaddr_in_mcast_fields[] = {
+	FIELDX(struct sockaddr_in, sin_family, FT_ENUM,
+	       .u.enum_ = { mcast_af_inet, ARRAY_SIZE(mcast_af_inet) }),
+	FIELDX(struct sockaddr_in, sin_addr, FT_MAGIC,
+	       .u.magic = { ipv4_mcast_vocab,
+			    ARRAY_SIZE(ipv4_mcast_vocab),
+			    sizeof(((struct sockaddr_in *)NULL)->sin_addr) }),
+};
+
+const struct struct_field sockaddr_in6_mcast_fields[] = {
+	FIELDX(struct sockaddr_in6, sin6_family, FT_ENUM,
+	       .u.enum_ = { mcast_af_inet6, ARRAY_SIZE(mcast_af_inet6) }),
+	FIELDX(struct sockaddr_in6, sin6_addr, FT_MAGIC,
+	       .u.magic = { ipv6_mreq_multiaddr_vocab,
+			    ARRAY_SIZE(ipv6_mreq_multiaddr_vocab),
+			    sizeof(((struct sockaddr_in6 *)NULL)->sin6_addr) }),
 };

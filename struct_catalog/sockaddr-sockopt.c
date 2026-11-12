@@ -77,51 +77,49 @@ const struct struct_field packet_mreq_fields[] = {
 };
 
 /*
- * struct group_req -- IPPROTO_IP / IPPROTO_IPV6 / MCAST_{JOIN,LEAVE}_GROUP.
- * The protocol-independent MCAST_JOIN_GROUP / MCAST_LEAVE_GROUP optnames
- * accept the same payload at both levels: a small unsigned ifindex plus a
- * sockaddr_storage carrying the multicast group address (AF_INET sin_addr
- * in 224.0.0.0/4 or AF_INET6 sin6_addr in ff00::/8).  gr_interface tags
- * FT_RANGE over a small ifindex window, mirroring packet_mreq's
- * mr_ifindex.  gr_group resolves as an embedded sockaddr_storage via the
- * cataloged SC_SOCKADDR_STORAGE tagged-union, so its ss_family and the
- * per-AF address bytes are populated by the schema-aware fill.  The
- * variant set spans all cataloged families rather than biasing toward
- * multicast addresses, so MCAST_JOIN kernel validation will still reject
- * a fraction of draws; a multicast-addr bias is a follow-up.
+ * struct group_req / group_source_req -- MCAST_{JOIN,LEAVE}_GROUP and
+ * MCAST_{JOIN,LEAVE}_SOURCE_GROUP / MCAST_{BLOCK,UNBLOCK}_SOURCE, taken at
+ * IPPROTO_IP and at IPPROTO_IPV6.  Each level reads every sockaddr in them
+ * as its own family and refuses the other (-EINVAL for an IPv4 join or
+ * leave, -EADDRNOTAVAIL otherwise), so each level has its own rows, whose
+ * sockaddrs are that family's multicast rows in sockaddr-mcast.c.  The
+ * source comes from the group vocabulary too: ip_mc_source() and
+ * ip6_mc_source() file any address as a source, and a small vocabulary
+ * lets a drop or unblock find the source an earlier add or block filed.
+ * The ifindex is 0 or lo's 1, for the reason ip_mreqn's is.
  */
-const struct struct_field group_req_fields[] = {
+const struct struct_field group_req_ip_fields[] = {
 	FIELDX(struct group_req, gr_interface, FT_RANGE,
-	       .u.range = { 0, 4 },
+	       .u.range = { 0, 1 },
 	       .mutate_weight = 60),
 	FIELDX(struct group_req, gr_group, FT_EMBEDDED_STRUCT,
-	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in_mcast" }),
 };
 
-/*
- * struct group_source_req -- IPPROTO_IP / IPPROTO_IPV6 /
- * MCAST_{JOIN,LEAVE}_SOURCE_GROUP / MCAST_{BLOCK,UNBLOCK}_SOURCE.
- * Source-filter sibling of group_req: same ifindex + group-address
- * payload, with an additional sockaddr_storage carrying the source
- * address (AF_INET sin_addr / AF_INET6 sin6_addr in the unicast
- * source range).  The protocol-independent MCAST_*_SOURCE optnames
- * accept the same payload under both IPv4 and IPv6 levels.
- * gsr_interface tags FT_RANGE over the same small ifindex window
- * used for gr_interface / mr_ifindex; gsr_group and gsr_source both
- * resolve as embedded sockaddr_storage via the cataloged
- * SC_SOCKADDR_STORAGE tagged-union, so ss_family and the per-AF
- * address bytes come from the schema-aware fill.  As with group_req
- * the variant set spans all cataloged families and does not bias
- * toward multicast (on gsr_group) or unicast (on gsr_source), so
- * MCAST_*_SOURCE kernel validation will still reject a fraction of
- * draws; addr-class biases are a follow-up.
- */
-const struct struct_field group_source_req_fields[] = {
+const struct struct_field group_req_ipv6_fields[] = {
+	FIELDX(struct group_req, gr_interface, FT_RANGE,
+	       .u.range = { 0, 1 },
+	       .mutate_weight = 60),
+	FIELDX(struct group_req, gr_group, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in6_mcast" }),
+};
+
+const struct struct_field group_source_req_ip_fields[] = {
 	FIELDX(struct group_source_req, gsr_interface, FT_RANGE,
-	       .u.range = { 0, 4 },
+	       .u.range = { 0, 1 },
 	       .mutate_weight = 60),
 	FIELDX(struct group_source_req, gsr_group, FT_EMBEDDED_STRUCT,
-	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in_mcast" }),
 	FIELDX(struct group_source_req, gsr_source, FT_EMBEDDED_STRUCT,
-	       .u.embedded_struct = { .elem_struct_name = "sockaddr_storage" }),
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in_mcast" }),
+};
+
+const struct struct_field group_source_req_ipv6_fields[] = {
+	FIELDX(struct group_source_req, gsr_interface, FT_RANGE,
+	       .u.range = { 0, 1 },
+	       .mutate_weight = 60),
+	FIELDX(struct group_source_req, gsr_group, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in6_mcast" }),
+	FIELDX(struct group_source_req, gsr_source, FT_EMBEDDED_STRUCT,
+	       .u.embedded_struct = { .elem_struct_name = "sockaddr_in6_mcast" }),
 };

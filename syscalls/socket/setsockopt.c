@@ -125,6 +125,12 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_IP,   IP_DROP_SOURCE_MEMBERSHIP, NULL },
 	{ IPPROTO_IP,   IP_BLOCK_SOURCE,           NULL },
 	{ IPPROTO_IP,   IP_UNBLOCK_SOURCE,         NULL },
+	{ IPPROTO_IP,   MCAST_JOIN_GROUP,          NULL },
+	{ IPPROTO_IP,   MCAST_LEAVE_GROUP,         NULL },
+	{ IPPROTO_IP,   MCAST_JOIN_SOURCE_GROUP,   NULL },
+	{ IPPROTO_IP,   MCAST_LEAVE_SOURCE_GROUP,  NULL },
+	{ IPPROTO_IP,   MCAST_BLOCK_SOURCE,        NULL },
+	{ IPPROTO_IP,   MCAST_UNBLOCK_SOURCE,      NULL },
 
 	/* IPPROTO_IPV6 */
 	{ IPPROTO_IPV6, IPV6_V6ONLY,           build_int_bool },
@@ -135,6 +141,12 @@ static const struct sockopt_entry sockopt_table[] = {
 	{ IPPROTO_IPV6, IPV6_DROP_MEMBERSHIP,  build_ipv6_mreq },
 	{ IPPROTO_IPV6, IPV6_RECVPKTINFO,      build_int_bool },
 	{ IPPROTO_IPV6, IPV6_TCLASS,           build_int_small_positive },
+	{ IPPROTO_IPV6, MCAST_JOIN_GROUP,          NULL },
+	{ IPPROTO_IPV6, MCAST_LEAVE_GROUP,         NULL },
+	{ IPPROTO_IPV6, MCAST_JOIN_SOURCE_GROUP,   NULL },
+	{ IPPROTO_IPV6, MCAST_LEAVE_SOURCE_GROUP,  NULL },
+	{ IPPROTO_IPV6, MCAST_BLOCK_SOURCE,        NULL },
+	{ IPPROTO_IPV6, MCAST_UNBLOCK_SOURCE,      NULL },
 
 	/* IPPROTO_TCP */
 	{ IPPROTO_TCP,  TCP_NODELAY,           build_int_bool },

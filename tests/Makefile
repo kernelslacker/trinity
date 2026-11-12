@@ -1303,10 +1303,12 @@ FAKE_SRCS	+= seccomp_notif_test.c
 PARENT_SRCS	+= $(TOP)/child/cred_throttle.c
 FAKE_SRCS	+= cred_class_test.c
 
-# struct_catalog/sockaddr-mcast.c brings the multicast membership rows of the
-# setsockopt catalog, which mcast_catalog_test.c fills and holds to a group
-# on a device every network namespace has.
-PARENT_SRCS	+= $(TOP)/struct_catalog/sockaddr-mcast.c
+# struct_catalog/sockaddr-mcast.c and sockaddr-sockopt.c bring the rows of
+# the setsockopt catalog, which fake_stubs.c's catalog holds and
+# mcast_catalog_test.c fills, holding the multicast ones to a group on a
+# device every network namespace has.
+PARENT_SRCS	+= $(TOP)/struct_catalog/sockaddr-mcast.c \
+		   $(TOP)/struct_catalog/sockaddr-sockopt.c
 FAKE_SRCS	+= mcast_catalog_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the

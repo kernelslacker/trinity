@@ -22,21 +22,45 @@
 		.fields		= packet_mreq_fields,
 		.num_fields	= ARRAY_SIZE(packet_mreq_fields),
 	},
-	[SC_GROUP_REQ] = {
-		.name		= "group_req",
+	[SC_GROUP_REQ_IP] = {
+		.name		= "group_req_ip",
 		.struct_size	= sizeof(struct group_req),
-		.fields		= group_req_fields,
-		.num_fields	= ARRAY_SIZE(group_req_fields),
+		.fields		= group_req_ip_fields,
+		.num_fields	= ARRAY_SIZE(group_req_ip_fields),
 	},
-	[SC_GROUP_SOURCE_REQ] = {
-		.name		= "group_source_req",
+	[SC_GROUP_REQ_IPV6] = {
+		.name		= "group_req_ipv6",
+		.struct_size	= sizeof(struct group_req),
+		.fields		= group_req_ipv6_fields,
+		.num_fields	= ARRAY_SIZE(group_req_ipv6_fields),
+	},
+	[SC_GROUP_SOURCE_REQ_IP] = {
+		.name		= "group_source_req_ip",
 		.struct_size	= sizeof(struct group_source_req),
-		.fields		= group_source_req_fields,
-		.num_fields	= ARRAY_SIZE(group_source_req_fields),
+		.fields		= group_source_req_ip_fields,
+		.num_fields	= ARRAY_SIZE(group_source_req_ip_fields),
+	},
+	[SC_GROUP_SOURCE_REQ_IPV6] = {
+		.name		= "group_source_req_ipv6",
+		.struct_size	= sizeof(struct group_source_req),
+		.fields		= group_source_req_ipv6_fields,
+		.num_fields	= ARRAY_SIZE(group_source_req_ipv6_fields),
 	},
 	[SC_IP_MREQ_SOURCE] = {
 		.name		= "ip_mreq_source",
 		.struct_size	= sizeof(struct ip_mreq_source),
 		.fields		= ip_mreq_source_fields,
 		.num_fields	= ARRAY_SIZE(ip_mreq_source_fields),
+	},
+	[SC_SOCKADDR_IN_MCAST] = {
+		.name		= "sockaddr_in_mcast",
+		.struct_size	= sizeof(struct sockaddr_in),
+		.fields		= sockaddr_in_mcast_fields,
+		.num_fields	= ARRAY_SIZE(sockaddr_in_mcast_fields),
+	},
+	[SC_SOCKADDR_IN6_MCAST] = {
+		.name		= "sockaddr_in6_mcast",
+		.struct_size	= sizeof(struct sockaddr_in6),
+		.fields		= sockaddr_in6_mcast_fields,
+		.num_fields	= ARRAY_SIZE(sockaddr_in6_mcast_fields),
 	},

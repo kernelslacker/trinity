@@ -12,8 +12,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <netinet/in.h>
+#include <linux/if_packet.h>
 #ifdef USE_BPF
 #include <linux/bpf.h>
 #endif
@@ -85,13 +88,15 @@ void __BUG(const char *bugtxt, const char *filename, const char *funcname,
 
 /*
  * The catalog the schema fill reads: args/struct_validate.c walks every row of
- * it on the first fill.  It is empty but for the bpf_attr row, which is the
- * real one, so a sanitiser that fills a bpf attr through it runs on the
- * catalog's own tables; the real struct_catalog/catalog.c would bring the
- * tables of every family into the link.
+ * it on the first fill.  It is empty but for the bpf_attr and setsockopt rows,
+ * which are the real ones, so a sanitiser that fills a bpf attr through it, or
+ * a test that fills a setsockopt struct with sockaddrs embedded by name, runs
+ * on the catalog's own tables; the real struct_catalog/catalog.c would bring
+ * the tables of every family into the link.
  */
 const struct struct_desc struct_catalog[SC_NR_ENTRIES] = {
 #include "struct_catalog/catalog-bpf.inc"
+#include "struct_catalog/catalog-setsockopt.inc"
 };
 
 /*

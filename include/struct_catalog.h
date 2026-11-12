@@ -370,7 +370,8 @@ enum struct_catalog_idx {
 	SC_IP_MREQN,
 	SC_IPV6_MREQ,
 	SC_PACKET_MREQ,
-	SC_GROUP_REQ,
+	SC_GROUP_REQ_IP,
+	SC_GROUP_REQ_IPV6,
 #ifdef USE_TCP_REPAIR_OPT
 	SC_TCP_REPAIR_OPT,
 #endif
@@ -398,8 +399,11 @@ enum struct_catalog_idx {
 	SC_SCTP_PRIM,
 #endif
 	SC_FILE_HANDLE,
-	SC_GROUP_SOURCE_REQ,
+	SC_GROUP_SOURCE_REQ_IP,
+	SC_GROUP_SOURCE_REQ_IPV6,
 	SC_IP_MREQ_SOURCE,
+	SC_SOCKADDR_IN_MCAST,
+	SC_SOCKADDR_IN6_MCAST,
 
 	SC_NR_ENTRIES,		/* sentinel; equals ARRAY_SIZE(struct_catalog) once both stay in lockstep */
 };

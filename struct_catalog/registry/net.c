@@ -61,16 +61,10 @@ static const unsigned long setsockopt_packet_mreq_optnames[] = {
 };
 
 /*
- * Protocol-independent MCAST_* setsockopt family: the same optname
- * payload is accepted under both IPPROTO_IP and IPPROTO_IPV6.  The
- * two-key map entry uses both lists so one row covers the full
- * (level, optname) cross product without cloning the entry.
+ * Protocol-independent MCAST_* setsockopt family: the same optnames
+ * take the same struct at IPPROTO_IP and IPPROTO_IPV6, but each level
+ * reads its own address family into it, so each level has its own row.
  */
-static const unsigned long setsockopt_mcast_levels[] = {
-	IPPROTO_IP,
-	IPPROTO_IPV6,
-};
-
 static const unsigned long setsockopt_mcast_join_optnames[] = {
 	MCAST_JOIN_GROUP,
 	MCAST_LEAVE_GROUP,
@@ -78,8 +72,8 @@ static const unsigned long setsockopt_mcast_join_optnames[] = {
 
 /*
  * Source-filter optnames in the same protocol-independent MCAST_*
- * family, sharing setsockopt_mcast_levels[] with the join/leave row.
- * Sibling list for the group_source_req payload shape.
+ * family, one row per level as with join/leave.  Sibling list for the
+ * group_source_req payload shape.
  */
 static const unsigned long setsockopt_mcast_source_optnames[] = {
 	MCAST_JOIN_SOURCE_GROUP,
@@ -165,19 +159,33 @@ const struct syscall_struct_arg struct_catalog_registry_net[] = {
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_packet_mreq_optnames),
 	},
 	{
-		"setsockopt", 4, &struct_catalog[SC_GROUP_REQ],
+		"setsockopt", 4, &struct_catalog[SC_GROUP_REQ_IP],
 		.discrim_arg_idx	= 2,
-		.discrim_values		= setsockopt_mcast_levels,
-		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
+		.discrim_value		= IPPROTO_IP,
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_mcast_join_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_join_optnames),
 	},
 	{
-		"setsockopt", 4, &struct_catalog[SC_GROUP_SOURCE_REQ],
+		"setsockopt", 4, &struct_catalog[SC_GROUP_REQ_IPV6],
 		.discrim_arg_idx	= 2,
-		.discrim_values		= setsockopt_mcast_levels,
-		.num_discrim_values	= ARRAY_SIZE(setsockopt_mcast_levels),
+		.discrim_value		= IPPROTO_IPV6,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_mcast_join_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_join_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_GROUP_SOURCE_REQ_IP],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_IP,
+		.discrim2_arg_idx	= 3,
+		.discrim2_values	= setsockopt_mcast_source_optnames,
+		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_source_optnames),
+	},
+	{
+		"setsockopt", 4, &struct_catalog[SC_GROUP_SOURCE_REQ_IPV6],
+		.discrim_arg_idx	= 2,
+		.discrim_value		= IPPROTO_IPV6,
 		.discrim2_arg_idx	= 3,
 		.discrim2_values	= setsockopt_mcast_source_optnames,
 		.num_discrim2_values	= ARRAY_SIZE(setsockopt_mcast_source_optnames),
