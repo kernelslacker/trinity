@@ -285,9 +285,10 @@ static void vsock_transport_iter_send_burst(int cli, int srv,
  *           [VS_BUFFER_SIZE_LO, VS_BUFFER_SIZE_HI] so each iteration
  *           rotates the per-sock buffer size through both shrink and
  *           grow paths.
- *   RACE B: SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW (struct __kernel_timespec
- *           assembled inline to avoid a header dependency) -- exercises
- *           the timer-rearm path while the connection is established.
+ *   RACE B: SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW (struct
+ *           __kernel_sock_timeval, seconds and microseconds, assembled
+ *           inline to avoid a header dependency) -- exercises the
+ *           timer-rearm path while the connection is established.
  *   RACE C: IOCTL_VM_SOCKETS_GET_LOCAL_CID -- read-only on the kernel
  *           side but takes the vsock transport rwlock, racing with the
  *           in-flight setsockopt paths above.
@@ -300,8 +301,8 @@ static void vsock_transport_iter_race(int cli, unsigned long *direct_calls)
 	uint64_t sz;
 	struct {
 		int64_t tv_sec;
-		int64_t tv_nsec;
-	} ts;
+		int64_t tv_usec;
+	} tv;
 	unsigned int cid = 0;
 
 	/* RACE A. */
@@ -314,12 +315,13 @@ static void vsock_transport_iter_race(int cli, unsigned long *direct_calls)
 			&shm->stats.vsock_transport_churn.buffer_size_ok,
 			1, __ATOMIC_RELAXED);
 
-	/* RACE B. */
-	ts.tv_sec = 0;
-	ts.tv_nsec = (int64_t)(VS_CONNECT_TIMEO_US * 1000ULL);
+	/* RACE B: vsock_connectible_setsockopt() refuses a tv_usec of a
+	 * second or more with -ERANGE. */
+	tv.tv_sec = 0;
+	tv.tv_usec = (int64_t) VS_CONNECT_TIMEO_US;
 	(*direct_calls)++;
 	if (setsockopt(cli, AF_VSOCK, SO_VM_SOCKETS_CONNECT_TIMEOUT_NEW,
-		       &ts, sizeof(ts)) == 0)
+		       &tv, sizeof(tv)) == 0)
 		__atomic_add_fetch(
 			&shm->stats.vsock_transport_churn.timeout_ok,
 			1, __ATOMIC_RELAXED);
