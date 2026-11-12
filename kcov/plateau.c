@@ -502,12 +502,6 @@ void kcov_plateau_check(void)
 					KCOV_PLATEAU_ENTER_THRESHOLD,
 					KCOV_PLATEAU_WINDOW_SEC / 60);
 			strategy_plateau_response();
-			/* Lock in the current bitmap on plateau entry --
-			 * discovery has stalled, so the bucket_seen table
-			 * is at its high-water mark for this run.  Snapshot
-			 * even if the periodic cadence wouldn't have fired
-			 * yet; bypass the gate via a one-shot. */
-			kcov_bitmap_maybe_snapshot();
 		}
 	} else if (delta >= KCOV_PLATEAU_EXIT_THRESHOLD &&
 		   __atomic_load_n(&kcov_shm->plateau.plateau_active,

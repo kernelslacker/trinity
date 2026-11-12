@@ -432,8 +432,7 @@ void kcov_bitmap_enable_snapshots(const char *path);
 
 /* Cheap per-tick gate: writes the snapshot if either trigger has elapsed
  * since the last successful save, otherwise returns immediately.  Called
- * from the parent's stats tick and from kcov_plateau_check() when a
- * plateau is first entered. */
+ * from the parent's stats tick. */
 void kcov_bitmap_maybe_snapshot(void);
 
 /* Mid-run cadence for kcov_bitmap_canary_check(): how often the parent
