@@ -755,6 +755,7 @@ PARENT_SRCS	+= $(TOP)/syscalls/fs/open.c \
 		   $(TOP)/syscalls/fs/creat.c \
 		   $(TOP)/syscalls/poll/epoll_create.c \
 		   $(TOP)/syscalls/pidfd/pidfd_open.c \
+		   $(TOP)/syscalls/perf/perf_event_open.c \
 		   $(TOP)/syscalls/signal/signalfd.c \
 		   $(TOP)/syscalls/fs/mount/open_tree.c \
 		   $(TOP)/fds/mount.c \

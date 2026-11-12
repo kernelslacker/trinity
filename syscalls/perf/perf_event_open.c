@@ -249,15 +249,15 @@ static void post_perf_event_open(struct syscallrecord *rec)
 			close(fd);
 
 			rec->retval = -1UL;
+		} else if (pool_typed_fd(OBJ_FD_PERF, fd) == NULL) {
+			/* Same refusal contract as post_epoll_create(). */
+			rec->retval = -1UL;
 		}
 		/*
-		 * Common path: leave the fd open.  The dispatcher's
-		 * register_returned_fd() runs after this handler and claims
-		 * the fd into the OBJ_FD_PERF OBJ_LOCAL pool via the
-		 * .ret_objtype annotation.  perffd_destructor handles
-		 * IOC_DISABLE+close at child teardown -- and walks the pool
-		 * for any peers whose group_fd matches the leader, disabling
-		 * and closing those too.
+		 * Common path: the fd joins the child's OBJ_FD_PERF pool,
+		 * capped as every typed pool is: a full pool disables and
+		 * closes its oldest event through perffd_destructor(), and
+		 * child teardown the rest.
 		 */
 	} else if (fd != -1) {
 		outputerr("post_perf_event_open: rejecting out-of-bound fd=%d\n", fd);

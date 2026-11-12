@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "child-api.h"
 #include "deferred-free.h"
 #include "syscall-gate.h"
 #include "fd.h"
@@ -31,12 +32,19 @@
  * pool first and pre-close any members of this fd, invalidating their
  * fd field so the outer loop's later destructor invocation skips its
  * own close().
+ *
+ * Only the parent walks: it destroys the global objects and holds no
+ * local ones, and a child destroys only its own local objects.  A local
+ * object's number can be one the child closed and got back from an
+ * unrelated perf_event_open(), and the global members still naming it
+ * as their leader are another group's, whose events every child
+ * inherited: disabling them would stop them for all of them.
  */
 static void perffd_destructor(struct object *obj)
 {
 	int leader_fd = obj->perfobj.fd;
 
-	if (leader_fd >= 0) {
+	if (leader_fd >= 0 && this_child() == NULL) {
 		struct objhead *head = get_objhead(OBJ_GLOBAL, OBJ_FD_PERF);
 
 		if (head != NULL && head->array != NULL) {

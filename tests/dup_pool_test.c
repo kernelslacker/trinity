@@ -3533,11 +3533,11 @@ static void epoll_create_pools_an_epoll_object(void)
 	syscall_epoll_create1.is_epoll_create1 = false;
 }
 
-/* io_uring_setup and pidfd_open pool their fd under its type, whose pool
- * holds POOLED_FD_MAX at most, a full one destroying its oldest object.
- * A refused fd is closed, and its return coerced so the generic registrar
- * does not pool the number. */
-static void io_uring_and_pidfd_pools_are_capped(void)
+/* io_uring_setup, pidfd_open and perf_event_open pool their fd under its
+ * type, whose pool holds POOLED_FD_MAX at most, a full one destroying its
+ * oldest object.  A refused fd is closed, and its return coerced so the
+ * generic registrar does not pool the number. */
+static void typed_producers_pools_are_capped(void)
 {
 	static const struct {
 		const struct syscallentry *entry;
@@ -3545,6 +3545,7 @@ static void io_uring_and_pidfd_pools_are_capped(void)
 	} producers[] = {
 		{ &syscall_io_uring_setup, OBJ_FD_IO_URING },
 		{ &syscall_pidfd_open, OBJ_FD_PIDFD },
+		{ &syscall_perf_event_open, OBJ_FD_PERF },
 	};
 	unsigned int i, k;
 
@@ -4652,7 +4653,7 @@ void dup_pool_self_check(void)
 	typed_fd_the_pool_cannot_own_is_closed();
 	open_tree_pools_a_namespace_fd_as_a_file();
 	epoll_create_pools_an_epoll_object();
-	io_uring_and_pidfd_pools_are_capped();
+	typed_producers_pools_are_capped();
 	signalfd_publishes_only_a_new_fd();
 	keyctl_pools_only_owned_keyrings();
 #ifdef USE_BPF
