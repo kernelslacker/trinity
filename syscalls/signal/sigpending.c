@@ -35,8 +35,8 @@ struct sigpending_post_state {
 	unsigned long magic;
 	unsigned long set;
 	/*
-	 * Seed for the poison pattern stamped into the 8-byte
-	 * old_sigset_t buffer at sanitise time.  Returned by
+	 * Seed for the poison pattern stamped into the old_sigset_t
+	 * buffer at sanitise time.  Returned by
 	 * poison_output_struct() and fed back into check_output_struct()
 	 * in the post handler.  A stomp of rec->a1 between syscall return
 	 * and post entry cannot redirect the poison check at an unrelated
@@ -93,8 +93,8 @@ static void sanitise_sigpending(struct syscallrecord *rec)
 	/*
 	 * Stamp a per-call poison pattern into the output buffer the
 	 * kernel is about to fill.  CRITICAL: the poison window is
-	 * exactly sizeof(unsigned long) == old_sigset_t (8 bytes on
-	 * x86_64), NOT sizeof(sigset_t).  avoid_shared_buffer_out above
+	 * exactly sizeof(unsigned long) == old_sigset_t, NOT
+	 * sizeof(sigset_t).  avoid_shared_buffer_out above
 	 * bounds the writable draw at the larger sigset_t width, but the
 	 * kernel only writes the leading old_sigset_t word -- a wider
 	 * poison window would leave the unwritten tail intact and false-
@@ -126,37 +126,30 @@ static void sanitise_sigpending(struct syscallrecord *rec)
 
 #ifdef HAVE_SYS_SIGPENDING
 /*
- * Oracle: sigpending(2) writes the calling thread's pending-signal mask
- * to a single old_sigset_t (== unsigned long on x86_64).  The procfs
- * view of the same fact is /proc/self/status "SigPnd:", which formats
- * the per-thread pending mask via render_sigset_t() after a separate
- * siglock acquire.  Both views read task->pending.signal but through
- * entirely separate paths — siglock-guarded copy_to_user vs
- * proc_pid_status() rendering — so a divergence between them for the
- * same task is its own corruption shape: a torn write into the user
- * buffer, a stale signal_struct rcu pointer, or a copy_to_user that
- * overwrote past/before the live mask.  Mirror of the rt_sigpending
- * procfs oracle pattern; the only difference is the writeback width
- * (old_sigset_t vs sigset_t).
+ * Oracle: sigpending(2) writes do_sigpending()'s set, the signals pending
+ * for the thread or the process that the thread blocks, cut to one
+ * old_sigset_t, an unsigned long: signals 1 to 32 on a 32-bit build.  The
+ * procfs view of the same fact is /proc/self/status, whose SigPnd and
+ * ShdPnd render the two pending sets and SigBlk the blocked one through
+ * proc_pid_status() rather than a siglock-guarded copy_to_user, so a
+ * divergence for the same task is its own corruption shape: a torn write
+ * into the user buffer, a stale signal_struct rcu pointer, or a
+ * copy_to_user that overwrote past/before the live mask.  Mirror of the
+ * rt_sigpending procfs oracle, whose set the kernel writes whole.
  *
- * False-positive sources at ONE_IN(100):
- *   - A sibling thread receiving and queueing a signal between syscall
- *     return and our procfs read will legitimately advance SigPnd.
- *     Acceptable at this sample rate.
- *   - SigPnd in /proc/self/status reports per-thread pending signals;
- *     sigpending(2) returns per-thread signals on Linux >= 2.6.  These
- *     are the same view by construction — a documented match.
+ * False-positive source at ONE_IN(100): a signal queued between syscall
+ * return and our procfs read legitimately advances SigPnd or ShdPnd.
+ * Acceptable at this sample rate.
  *
- * Wrapped in #if defined(SYS_sigpending) || defined(__NR_sigpending)
- * so toolchains lacking the legacy define still build the entry; the
- * syscall is x86_64 slot 127 and present on all current targets, but
- * minimal libcs may omit the macro.
+ * Only an ABI with __NR_sigpending builds it: i386 has it (slot 73),
+ * x86_64 does not.
  */
 static void post_sigpending(struct syscallrecord *rec)
 {
 	struct sigpending_post_state *snap;
-	unsigned long user_snap;	/* old_sigset_t == unsigned long on x86_64 */
+	unsigned long user_snap;	/* old_sigset_t */
 	uint64_t syscall_pending, proc_pending;
+	uint64_t sigpnd = 0, shdpnd = 0, sigblk = 0;
 
 	/*
 	 * Canonical SNAPSHOT_OWNED bracket: shape -> ownership -> magic,
@@ -189,7 +182,7 @@ static void post_sigpending(struct syscallrecord *rec)
 	 * but the leading old_sigset_t word still matches the poison
 	 * pattern we stamped at sanitise time -- the kernel never called
 	 * copy_to_user() at all and never landed the pending mask.  Window
-	 * is exactly sizeof(unsigned long) == old_sigset_t (8 bytes),
+	 * is exactly sizeof(unsigned long) == old_sigset_t,
 	 * matching what the kernel actually writes; the sigset_t upper
 	 * bound used by avoid_shared_buffer_out() is deliberately NOT
 	 * reused here or the unwritten tail would false-positive on every
@@ -197,7 +190,7 @@ static void post_sigpending(struct syscallrecord *rec)
 	 * a single-word writeback either lands whole or not at all.)
 	 * Cheap (single-word compare, no re-issue), so runs on every
 	 * success sample the buffer snapshot succeeded on -- unlike the
-	 * procfs SigPnd divergence arm below, which stays rate-limited.
+	 * procfs divergence arm below, which stays rate-limited.
 	 * Counts against the shared post_handler_untouched_out_buf slot.
 	 * poison_seed of 0 means sanitise skipped the stamp -- skip the
 	 * check too so "we could not poison" is not confused with "kernel
@@ -212,14 +205,25 @@ static void post_sigpending(struct syscallrecord *rec)
 	if (!ONE_IN(100))
 		goto out_free;
 
-	if (!proc_status_read_sigmask("SigPnd", &proc_pending))
+	/*
+	 * Both pending halves from one /proc/self/status snapshot, as
+	 * rt_sigpending reads them; SigBlk changes only by this thread's own
+	 * call, so a read of its own cannot straddle a change.
+	 */
+	if (!proc_status_read_sigmask_pair(&sigpnd, &shdpnd) ||
+	    !proc_status_read_sigmask("SigBlk", &sigblk))
 		goto out_free;
+
+	proc_pending = (sigpnd | shdpnd) & sigblk & (uint64_t) ~0UL;
 
 	if (syscall_pending != proc_pending) {
 		output(0, "sigpending oracle: syscall=0x%016lx but "
-		       "/proc/self/status SigPnd=0x%016lx\n",
+		       "/proc/self/status (SigPnd|ShdPnd)&SigBlk=0x%016lx "
+		       "(SigPnd=0x%016llx ShdPnd=0x%016llx SigBlk=0x%016llx)\n",
 		       (unsigned long)syscall_pending,
-		       (unsigned long)proc_pending);
+		       (unsigned long)proc_pending,
+		       (unsigned long long)sigpnd, (unsigned long long)shdpnd,
+		       (unsigned long long)sigblk);
 		__atomic_add_fetch(&shm->stats.oracle.sigpending_oracle_anomalies, 1,
 				   __ATOMIC_RELAXED);
 	}
