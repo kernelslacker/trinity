@@ -3,6 +3,7 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include "net.h"
+#include "random.h"
 #include "rnd.h"
 
 #include "kernel/netlink.h"
@@ -43,16 +44,27 @@ static const unsigned int netlink_opts[] = {
 
 static void netlink_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	unsigned int *optval32 = (unsigned int *) so->optval;
+
 	so->level = SOL_NETLINK;
 	so->optname = RAND_ARRAY(netlink_opts);
 
 	so->optlen = sizeof(unsigned int);
 	switch (so->optname) {
+	case NETLINK_ADD_MEMBERSHIP:
+	case NETLINK_DROP_MEMBERSHIP:
+		/* netlink_setsockopt() refuses group 0 and any past the
+		 * protocol's, which __netlink_kernel_create() makes 32 at
+		 * the least. */
+		*optval32 = ONE_IN(8) ? rnd_u32() : 1 + rnd_modulo_u32(32);
+		break;
 	case NETLINK_RX_RING:
 	case NETLINK_TX_RING:
 		so->optlen = sizeof(struct nl_mmap_req);
 		break;
 	default:
+		/* A flag, on for any value but 0. */
+		*optval32 = RAND_BOOL();
 		break;
 	}
 }

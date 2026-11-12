@@ -744,6 +744,13 @@ PARENT_SRCS	+= $(TOP)/net/proto/ipv4.c \
 FAKE_SRCS	+= inet_sockopt_test.c \
 		   ipv6_sockopt_test.c
 
+# net/proto/netlink.c brings the AF_NETLINK option builder, whose
+# memberships and flags netlink_sockopt_test.c holds to what
+# netlink_setsockopt() takes; its message bodies come with the
+# net/netlink objects, NETLINK_SRCS.
+PARENT_SRCS	+= $(TOP)/net/proto/netlink.c
+FAKE_SRCS	+= netlink_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
