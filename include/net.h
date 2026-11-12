@@ -71,6 +71,9 @@ int fd_from_socketinfo(struct socketinfo *si);
 int get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
 				  unsigned int n_triplets);
 
+/* The protocol the kernel records for a socket of the triplet's shape. */
+unsigned int triplet_protocol(const struct socket_triplet *triplet);
+
 /*
  * l2tp tunnel and session ids are drawn from 1 to L2TP_ID_MAX, so that a
  * request names a tunnel or session an earlier create made.

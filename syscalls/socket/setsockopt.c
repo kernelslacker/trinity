@@ -422,12 +422,46 @@ static bool try_paired_setsockopt(struct sockopt *so, int fd)
 }
 
 /*
- * Pick a structured entry, write its payload into so->optval, and (when
- * `mismatch_len` is true) deliberately scramble so->optlen to land in
- * the per-option size-validation rejection path.  Returns true on a
- * successful build.
+ * Whether a socket of the family and protocol answers a level: SOL_SOCKET
+ * any, IPPROTO_IP an inet socket of either family, IPPROTO_IPV6 an
+ * AF_INET6 one, a transport's level a socket of that protocol, and
+ * SOL_PACKET and SOL_NETLINK their families'.  Any other level gets
+ * -ENOPROTOOPT before the option is looked at.
  */
-static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
+static bool sockopt_level_fits(int level, unsigned int family,
+			       unsigned int protocol)
+{
+	bool inet = family == PF_INET || family == PF_INET6;
+
+	switch (level) {
+	case SOL_SOCKET:
+		return true;
+	case IPPROTO_IP:
+		return inet;
+	case IPPROTO_IPV6:
+		return family == PF_INET6;
+	case IPPROTO_TCP:
+	case IPPROTO_UDP:
+	case IPPROTO_SCTP:
+		return inet && protocol == (unsigned int) level;
+	case SOL_PACKET:
+		return family == PF_PACKET;
+	case SOL_NETLINK:
+		return family == PF_NETLINK;
+	default:
+		return false;
+	}
+}
+
+/*
+ * Pick a structured entry at a level the socket answers, but one draw in
+ * sixteen, which takes any, for the -ENOPROTOOPT the rest skip; write its
+ * payload into so->optval, and (when `mismatch_len` is true) deliberately
+ * scramble so->optlen to land in the per-option size-validation rejection
+ * path.  Returns true on a successful build.
+ */
+static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len,
+				const struct socket_triplet *triplet)
 {
 	const struct sockopt_entry *e;
 	const struct struct_desc *desc;
@@ -438,7 +472,26 @@ static bool apply_sockopt_entry(struct sockopt *so, bool mismatch_len)
 	if (so->optval == 0)
 		return false;
 
-	e = &sockopt_table[rnd_modulo_u32(ARRAY_SIZE(sockopt_table))];
+	if (ONE_IN(16)) {
+		e = &sockopt_table[rnd_modulo_u32(ARRAY_SIZE(sockopt_table))];
+	} else {
+		unsigned int protocol = triplet_protocol(triplet);
+		unsigned int i, fits = 0, pick;
+
+		for (i = 0; i < ARRAY_SIZE(sockopt_table); i++)
+			fits += sockopt_level_fits(sockopt_table[i].level,
+						   triplet->family, protocol);
+		if (fits == 0)
+			return false;
+		pick = rnd_modulo_u32(fits);
+		for (i = 0; i < ARRAY_SIZE(sockopt_table); i++) {
+			if (sockopt_level_fits(sockopt_table[i].level,
+					       triplet->family, protocol) &&
+			    pick-- == 0)
+				break;
+		}
+		e = &sockopt_table[i];
+	}
 
 	/*
 	 * Catalog-first: if syscall_struct_args[] carries a
@@ -687,7 +740,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 	 */
 	roll = rnd_modulo_u32(100);
 	if (roll < 70) {
-		if (!apply_sockopt_entry(so, false))
+		if (!apply_sockopt_entry(so, false, triplet))
 			call_sso_ptr(so, triplet);
 	} else if (roll < 90) {
 		from_random_path = true;
@@ -696,7 +749,7 @@ void do_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		else
 			call_sso_ptr(so, triplet);
 	} else {
-		if (!apply_sockopt_entry(so, true))
+		if (!apply_sockopt_entry(so, true, triplet))
 			call_sso_ptr(so, triplet);
 	}
 

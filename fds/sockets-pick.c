@@ -15,26 +15,36 @@
 #include "utils.h"
 
 /*
+ * socket() keeps an inet protocol of 0 as given, where inet_create() makes
+ * 0 the type's own protocol: UDP for a datagram socket and TCP for a
+ * stream one.
+ */
+unsigned int triplet_protocol(const struct socket_triplet *triplet)
+{
+	unsigned int type = triplet->type & SOCK_TYPE_MASK;
+
+	if (triplet->protocol == 0 &&
+	    (triplet->family == PF_INET || triplet->family == PF_INET6)) {
+		if (type == SOCK_DGRAM)
+			return IPPROTO_UDP;
+		if (type == SOCK_STREAM)
+			return IPPROTO_TCP;
+	}
+	return triplet->protocol;
+}
+
+/*
  * Whether si is a socket of one of the n shapes, which name the protocol
  * the kernel records.  socket() keeps the type with its SOCK_CLOEXEC and
- * SOCK_NONBLOCK flags and an inet protocol of 0 as given, where
- * inet_create() makes 0 the type's own protocol: UDP for a datagram
- * socket and TCP for a stream one.
+ * SOCK_NONBLOCK flags.
  */
 static bool socket_has_shape(const struct socketinfo *si,
 			     const struct socket_triplet *shapes, unsigned int n)
 {
 	unsigned int family = si->triplet.family;
 	unsigned int type = si->triplet.type & SOCK_TYPE_MASK;
-	unsigned int protocol = si->triplet.protocol;
+	unsigned int protocol = triplet_protocol(&si->triplet);
 	unsigned int i;
-
-	if (protocol == 0 && (family == PF_INET || family == PF_INET6)) {
-		if (type == SOCK_DGRAM)
-			protocol = IPPROTO_UDP;
-		else if (type == SOCK_STREAM)
-			protocol = IPPROTO_TCP;
-	}
 
 	for (i = 0; i < n; i++) {
 		if (family == shapes[i].family && type == shapes[i].type &&

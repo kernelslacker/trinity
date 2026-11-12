@@ -2,7 +2,9 @@
  * Self-check for setsockopt's sanitiser: an option that reads its optval
  * fails a NULL one with -EFAULT in copy_from_sockptr(), before its handler
  * runs, so the call gets the buffer the builders filled all but now and
- * then; and a filter's instructions are freed on every path.
+ * then; a level the socket does not answer is -ENOPROTOOPT, so a unix
+ * socket's curated draws keep to SOL_SOCKET all but now and then; and a
+ * filter's instructions are freed on every path.
  */
 
 #include <stdbool.h>
@@ -83,17 +85,19 @@ static void filters_freed_whole(struct socket_triplet *triplet)
 		BUG("setsockopt: no draw built a filter");
 }
 
-void setsockopt_self_check(void);
-void setsockopt_self_check(void)
+/* Runs the sanitiser over a socket of the given shape: how many calls
+ * got a NULL optval, and how many a level other than SOL_SOCKET. */
+static void draw_options(const struct socket_triplet *triplet,
+			 unsigned int *unfilled, unsigned int *not_socket_level)
 {
 	struct socketinfo si;
-	unsigned int i, unfilled = 0;
+	unsigned int i;
 
 	memset(&si, 0, sizeof(si));
-	si.triplet.family = PF_INET;
-	si.triplet.type = SOCK_STREAM;
-	si.triplet.protocol = IPPROTO_TCP;
+	si.triplet = *triplet;
 	si.fd = -1;
+	*unfilled = 0;
+	*not_socket_level = 0;
 
 	/* One call in a thousand asks the fd pool for any fd instead of
 	 * the socket's: there is none.  The sanitiser frees what it
@@ -109,16 +113,35 @@ void setsockopt_self_check(void)
 		rec.a1 = (unsigned long) &si;
 		syscall_setsockopt.sanitise(&rec);
 		if (rec.a4 == 0)
-			unfilled++;
+			(*unfilled)++;
+		if (rec.a2 != SOL_SOCKET)
+			(*not_socket_level)++;
 		syscall_setsockopt.post(&rec);
 	}
 	deferred_free_flush();
 	fake_zmalloc_tracks = false;
 	fake_random_fd_empty = false;
+}
 
+void setsockopt_self_check(void);
+void setsockopt_self_check(void)
+{
+	struct socket_triplet tcp = {
+		.family = PF_INET, .type = SOCK_STREAM, .protocol = IPPROTO_TCP,
+	};
+	struct socket_triplet unix_stream = {
+		.family = PF_UNIX, .type = SOCK_STREAM | SOCK_CLOEXEC,
+	};
+	unsigned int unfilled, not_socket_level;
+
+	draw_options(&tcp, &unfilled, &not_socket_level);
 	if (unfilled == 0 || unfilled > SETSOCKOPT_ROUNDS / 8)
 		BUG("setsockopt: a NULL optval is drawn too often, or never");
 
+	draw_options(&unix_stream, &unfilled, &not_socket_level);
+	if (not_socket_level > SETSOCKOPT_ROUNDS * 2 / 5)
+		BUG("setsockopt: a unix socket is mostly drawn levels it does not answer");
+
 	filters_freed_whole(NULL);
-	filters_freed_whole(&si.triplet);
+	filters_freed_whole(&tcp);
 }
