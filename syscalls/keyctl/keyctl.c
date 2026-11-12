@@ -22,31 +22,10 @@
  * by add_key/request_key (and the keyctl subcommands that mint keys).
  * Consumed by keyctl/add_key/request_key argument generation so subsequent
  * fuzzed calls hit serials the kernel actually has on hand instead of
- * dead-on-arrival random integers.  Lives in the per-child OBJ_LOCAL pool;
- * the pool destructor calls KEYCTL_INVALIDATE on shutdown so produced
- * keys don't leak past child lifetime.
+ * dead-on-arrival random integers.  Lives in the per-child OBJ_LOCAL pool,
+ * which nothing prunes or tears down: the keys go when their keyrings do,
+ * or expire (add_key.c).
  */
-static void key_serial_destructor(struct object *obj)
-{
-	syscall(SYS_keyctl, KEYCTL_INVALIDATE, obj->keyserialobj.serial);
-}
-
-static void init_key_serial_pool(void)
-{
-	struct objhead *head;
-
-	head = get_objhead(OBJ_GLOBAL, OBJ_KEY_SERIAL);
-	if (head == NULL)
-		return;
-
-	/* Wire the destructor on the OBJ_GLOBAL head; child OBJ_LOCAL
-	 * pools inherit it from here at child fork time
-	 * (init_object_lists() copies destroy/dump from the GLOBAL head). */
-	head->destroy = &key_serial_destructor;
-}
-
-REG_GLOBAL_OBJ(key_serial, init_key_serial_pool);
-
 void register_key_serial(int32_t serial)
 {
 	if (serial <= 0)
@@ -602,25 +581,23 @@ static void sanitise_keyctl(struct syscallrecord *rec)
  *
  * Not wired: KEYCTL_INSTANTIATE / KEYCTL_NEGATE / KEYCTL_REJECT /
  * KEYCTL_INSTANTIATE_IOV all return 0 on success — they operate on an
- * already-allocated key, they don't mint a new serial.  Pool teardown
- * is handled by the existing OBJ_KEY_SERIAL destructor (KEYCTL_INVALIDATE).
+ * already-allocated key, they don't mint a new serial.
  *
- * The destructor invalidates every serial in the pool, and every cmd
- * draws its keys from it three times in eight (random_key_id()), REVOKE,
- * CLEAR and INVALIDATE among them, so a keyring the child does not own
- * stays out of it.  GET_KEYRING_ID pools only the thread and process
- * keyrings, which die with the child anyway: the session keyring a child
- * inherits is the parent's and every sibling's, and the login's that
- * started the run, and the user, user-session and requestor keyrings are
- * shared as well, all of them reachable again through their KEY_SPEC_*
- * ids.  KEY_SPEC_BPF_KEYRING, KEY_SPEC_DM_VERITY_KEYRING and
- * KEY_SPEC_FS_VERITY_KEYRING name the kernel's own .bpf, .dm-verity and
- * .fs-verity keyrings, which nothing re-creates, so a key SEARCH finds in
- * one is not pooled either.  Nor is GET_PERSISTENT's keyring: the user's
- * persistent keyring, shared by every process of the uid (a krb5
- * KEYRING:persistent cache lives there), which the child possesses once
- * the call links it into one of its keyrings, and whose possessor may
- * write and search it.
+ * Every cmd draws its keys from the pool three times in eight
+ * (random_key_id()), REVOKE, CLEAR and INVALIDATE among them, so a
+ * keyring the child does not own stays out of it.  GET_KEYRING_ID pools
+ * only the thread and process keyrings, which die with the child
+ * anyway: the session keyring a child inherits is the parent's and
+ * every sibling's, and the login's that started the run, and the user,
+ * user-session and requestor keyrings are shared as well, all of them
+ * reachable again through their KEY_SPEC_* ids.  KEY_SPEC_BPF_KEYRING,
+ * KEY_SPEC_DM_VERITY_KEYRING and KEY_SPEC_FS_VERITY_KEYRING name the
+ * kernel's own .bpf, .dm-verity and .fs-verity keyrings, which nothing
+ * re-creates, so a key SEARCH finds in one is not pooled either.  Nor
+ * is GET_PERSISTENT's keyring: the user's persistent keyring, shared by
+ * every process of the uid (a krb5 KEYRING:persistent cache lives
+ * there), which the child possesses once the call links it into one of
+ * its keyrings, and whose possessor may write and search it.
  */
 static void post_keyctl(struct syscallrecord *rec)
 {

@@ -114,8 +114,7 @@ literals `tables/` copies into shared memory.
    snapshot and `cleanup_sanitiser_fd()` closes it from `.cleanup`
    (`process/setns.c`, `fs/path/fchdir.c`, `fchroot.c`), never read back
    from the arg slot, which may hold a pool fd or a chain splice.
-4. **Object pools cross-pollinate related syscalls.** `keyctl.c` registers a
-   `key_serial_destructor` via `REG_GLOBAL_OBJ` and exposes
+4. **Object pools cross-pollinate related syscalls.** `keyctl.c` exposes
    `get_random_key_serial()`/`register_key_serial()` consumed by
    `add_key.c`/`request_key.c` so those three syscalls exercise real live
    key serials instead of dead-on-arrival random integers — the same
@@ -172,9 +171,10 @@ literals `tables/` copies into shared memory.
    allocation matrix (only 6 of 34 `PTRACE_*` ops allocate a freeable
    buffer) behind a magic-cookie-guarded `post_state`; `keyctl/keyctl.c`
    (655 lines) and its sibling `add_key.c`/`request_key.c` share a live
-   key-serial object pool whose destructor issues a real
-   `KEYCTL_INVALIDATE` at pool teardown; `bpf.c` (609 lines, `#ifdef
-   USE_BPF`) builds both classic and eBPF programs and drives
+   key-serial object pool, which keeps out every keyring a child does not
+   own, since fuzzed REVOKE, CLEAR and INVALIDATE calls draw from it;
+   `bpf.c` (609 lines, `#ifdef USE_BPF`) builds both classic and eBPF
+   programs and drives
    `BPF_PROG_LOAD`/`BPF_MAP_CREATE`-shaped `union bpf_attr` payloads.
    `fs/mount/mount.c` (567 lines) maintains its own sacrificial-mount-path pool
    under trinity's tmp dir: `make_sacrificial_mount_paths()` (the `.init`

@@ -17,14 +17,12 @@
 
 /*
  * Bounded expiry for keys the child links into the per-uid USER /
- * USER_SESSION keyrings.  The OBJ_KEY_SERIAL destructor issues
- * KEYCTL_INVALIDATE at clean child exit, but a SIGKILL (watchdog,
- * OOM) skips destructors: keys on the per-uid rings then outlive
- * the child and burn quota against the fuzzer's uid until add_key
- * starts returning -EDQUOT fleet-wide.  Arming a short expiry lets
- * the kernel key GC reap orphans automatically; the value only has
- * to outlast one child so subsequent keyctl ops still hit a live
- * key.
+ * USER_SESSION keyrings.  Nothing invalidates a child's keys when it
+ * exits, so keys on the per-uid rings outlive the child and burn quota
+ * against the fuzzer's uid until add_key starts returning -EDQUOT
+ * fleet-wide.  Arming a short expiry lets the kernel key GC reap
+ * orphans automatically; the value only has to outlast one child so
+ * subsequent keyctl ops still hit a live key.
  */
 #define KEYCTL_TIMEOUT_SECS 60
 
@@ -402,13 +400,13 @@ static void sanitise_add_key(struct syscallrecord *rec)
 /*
  * Post-hook: for a5 == KEY_SPEC_USER_KEYRING or
  * KEY_SPEC_USER_SESSION_KEYRING, arm KEYCTL_SET_TIMEOUT on the
- * returned serial so the kernel GC reaps the key if the child dies
- * before OBJ_KEY_SERIAL's KEYCTL_INVALIDATE destructor runs.  Only
- * the two persistent ringids need this — thread/process/session
- * keyrings die with the credential that owns them, so their keys
- * are already cleaned up by the kernel on child exit.  Best-effort:
- * ignore the return value.  register_key_serial() itself is still
- * handled by the generic .ret_objtype = OBJ_KEY_SERIAL dispatch.
+ * returned serial so the kernel GC reaps the key once the child is
+ * gone.  Only the two persistent ringids need this —
+ * thread/process/session keyrings die with the credential that owns
+ * them, so their keys are already cleaned up by the kernel on child
+ * exit.  Best-effort: ignore the return value.  register_key_serial()
+ * itself is still handled by the generic .ret_objtype =
+ * OBJ_KEY_SERIAL dispatch.
  */
 static void post_add_key(struct syscallrecord *rec)
 {
