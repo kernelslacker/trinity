@@ -108,9 +108,9 @@ static unsigned long pick_perf_flags(void)
 {
 	unsigned long flags = 0;
 
-	/* flags */
-	/* You almost never set these unless you're playing with cgroups */
-	if (RAND_BOOL()) {
+	/* perf_event_open() refuses a bit outside PERF_FLAG_ALL before it
+	 * reads the attr, so random flags stay rare. */
+	if (ONE_IN(16)) {
 		flags = rand64();
 	} else {
 		if (RAND_BOOL())
