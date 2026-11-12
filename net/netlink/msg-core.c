@@ -326,7 +326,8 @@ static size_t iter_nlmsg_attr(unsigned char *msg, size_t offset, size_t buflen,
 	/* A route's (group 2's) encap nest goes out beside the
 	 * RTA_ENCAP_TYPE that names its kind. */
 	if (rtnl_group == 2 && attr_hint == RTA_ENCAP)
-		return append_route_encap(msg, offset, buflen);
+		return append_lwt_encap(msg, offset, buflen, RTA_ENCAP_TYPE,
+					RTA_ENCAP);
 
 	if (ONE_IN(7)) {
 		unsigned short outer = attr_hint ? attr_hint : rand16();
@@ -439,6 +440,17 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	 * to draw it. */
 	offset = append_required_attrs(msg, offset, buflen, spec_table, nr_specs,
 				       &once_used);
+
+	/* A nexthop add mostly takes one shape's attributes instead. */
+	if (rtnl_group >= 0 && nlmsg_type == RTM_NEWNEXTHOP) {
+		size_t shaped = append_nexthop_shape(nlh, offset - msg_start,
+						     buflen - msg_start);
+
+		if (shaped != offset - msg_start) {
+			offset = msg_start + shaped;
+			num_attrs = 0;
+		}
+	}
 
 	while (num_attrs-- > 0 && offset < buflen) {
 		size_t new_off = iter_nlmsg_attr(msg, offset, buflen,

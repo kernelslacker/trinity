@@ -646,15 +646,16 @@ static void tally_nexthop_header(struct nexthop_header *t,
  * and the dumps refuse a delete or a GET whose protocol, scope, reserved
  * byte or flags are nonzero, on every socket.  The builder keeps both to
  * that seven times in eight, and an add carries RTNH_F_ONLINK half of
- * those.
+ * those, but for the blackholes, fdb nexthops and fdb groups a shape
+ * clears it from: about 0.30 of the adds.
  */
 static void expect_nexthop_header(const struct nexthop_header *add,
 				  const struct nexthop_header *other)
 {
 	expect_fraction(add->taken, add->msgs, 0.84, 0.91, "RTM_NEWNEXTHOP",
 			"rtnl: RTM_NEWNEXTHOP's header is not one rtm_to_nh_config() takes seven times in eight");
-	expect_fraction(add->onlink, add->msgs, 0.38, 0.50, "RTM_NEWNEXTHOP",
-			"rtnl: RTM_NEWNEXTHOP does not carry RTNH_F_ONLINK about half the time");
+	expect_fraction(add->onlink, add->msgs, 0.25, 0.35, "RTM_NEWNEXTHOP",
+			"rtnl: RTM_NEWNEXTHOP does not carry RTNH_F_ONLINK where its shape lets it");
 	expect_fraction(other->taken, other->msgs, 0.84, 0.91,
 			"RTM_DELNEXTHOP, RTM_GETNEXTHOP and RTM_GETNEXTHOPBUCKET",
 			"rtnl: a nexthop delete or GET does not have a zero protocol, scope and flags seven times in eight");
@@ -699,12 +700,13 @@ static void tally_nexthop_flags(struct nexthop_flags *t,
  * refuses with any payload (-ERANGE), and the nexthop parses are strict, so
  * they refuse one flagged NLA_F_NESTED as well.  The builder sends them
  * empty all but one time in eight where the attribute path does not make
- * one a nested container's outer attribute, about 0.73 of them; random
+ * one a nested container's outer attribute, about 0.73 of them, and a
+ * nexthop add's shape always does, which brings them to about 0.79; random
  * bytes left about one in a hundred empty.
  */
 static void expect_nexthop_flags(const struct nexthop_flags *t)
 {
-	expect_fraction(t->empty, t->flags, 0.66, 0.80, "nexthop flags",
+	expect_fraction(t->empty, t->flags, 0.72, 0.86, "nexthop flags",
 			"rtnl: NHA_BLACKHOLE, NHA_FDB and NHA_GROUPS mostly carry the payload an NLA_FLAG refuses");
 }
 
@@ -749,12 +751,13 @@ static void tally_nexthop_gateway(struct nexthop_gateway *t,
  * rtm_to_nh_config() refuses an NHA_GATEWAY that is not the nhmsg family's
  * address, 4 bytes for AF_INET and 16 for AF_INET6.  The builder sizes it
  * to the family where the attribute path does not make it a nested
- * container's outer attribute, about 0.84 of them; random bytes were the
- * right width about one time in a hundred.
+ * container's outer attribute, about 0.84 of them, and a nexthop add's
+ * shape always does, which brings them to about 0.99; random bytes were
+ * the right width about one time in a hundred.
  */
 static void expect_nexthop_gateway(const struct nexthop_gateway *t)
 {
-	expect_fraction(t->sized, t->gateways, 0.78, 0.90, "NHA_GATEWAY",
+	expect_fraction(t->sized, t->gateways, 0.94, 1.00, "NHA_GATEWAY",
 			"rtnl: a nexthop's NHA_GATEWAY is mostly not its family's address width");
 }
 
@@ -845,21 +848,223 @@ static void tally_nexthop_attrs(struct nexthop_attrs *t, const struct nlmsghdr *
  * attribute outside it refuses the request; a delete, a GET doit and a
  * bucket GET doit answer -EINVAL without NHA_ID too.  The builder draws
  * each op's types from its policy seven times in eight, and the attribute
- * path still makes one in eight of them random, so about 0.62 of the adds,
- * 0.38 of the deletes, 0.30 of the doits and 0.53 of the dumps carry only
- * types their op takes; drawing from one table without NHA_ID left 0.29,
- * none, none and 0.17 or less.
+ * path still makes one in eight of them random, so about 0.38 of the
+ * deletes, 0.30 of the doits and 0.53 of the dumps carry only types their
+ * op takes, and about 0.62 of the adds left to those draws; with the adds
+ * that go out as a shape (expect_nexthop_shapes()), about 0.91 of them.
+ * Drawing from one table without NHA_ID left 0.29, none, none and 0.17 or
+ * less.
  */
 static void expect_nexthop_attrs(const struct nexthop_attrs *t)
 {
-	static const double lo[NH_OPS] = { 0.55, 0.30, 0.24, 0.46, 0.24, 0.46 };
-	static const double hi[NH_OPS] = { 0.68, 0.45, 0.37, 0.61, 0.37, 0.61 };
+	static const double lo[NH_OPS] = { 0.86, 0.30, 0.24, 0.46, 0.24, 0.46 };
+	static const double hi[NH_OPS] = { 0.95, 0.45, 0.37, 0.61, 0.37, 0.61 };
 	int op;
 
 	for (op = 0; op < NH_OPS; op++)
 		expect_fraction(t[op].taken, t[op].msgs, lo[op], hi[op],
 				nh_policies[op].name,
 				"rtnl: a nexthop op's attributes are mostly not the types its policy holds");
+}
+
+/* ---------- The shape of RTM_NEWNEXTHOP -------------------------------- */
+
+enum { NH_GROUP_SHAPE, NH_BLACKHOLE_SHAPE, NH_FDB_SHAPE, NH_DEVICE_SHAPE,
+       NH_SHAPES };
+
+static const char *const nh_shape_names[NH_SHAPES] = {
+	"group", "blackhole", "fdb", "device",
+};
+
+/*
+ * Whether nlmsg_parse()'s strict parse against rtm_nh_policy_new keeps the
+ * attribute @nla: the width its type takes, NLA_F_NESTED on a nest and only
+ * there, NHA_DST_PORT at least 1 and NHA_HW_STATS_ENABLE at most 1; a type
+ * the policy leaves NLA_UNSPEC, or past it, is refused.
+ */
+static bool nh_new_attr_ok(const struct nlattr *nla)
+{
+	unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+	bool nested = nla->nla_type & NLA_F_NESTED;
+	size_t plen = nla->nla_len - NLA_HDRLEN;
+	const void *data = (const unsigned char *) nla + NLA_HDRLEN;
+	uint16_t port;
+	uint32_t on;
+
+	switch (type) {
+	case NHA_ENCAP:
+	case NHA_RES_GROUP:
+		return nested;
+	case NHA_GROUP:
+	case NHA_GATEWAY:
+		return !nested;
+	case NHA_BLACKHOLE:
+	case NHA_FDB:
+		return !nested && plen == 0;
+	case NHA_GROUP_TYPE:
+	case NHA_ENCAP_TYPE:
+		return !nested && plen == 2;
+	case NHA_ID:
+	case NHA_OIF:
+		return !nested && plen == 4;
+	case NHA_DST_PORT:
+		if (nested || plen != sizeof(port))
+			return false;
+		memcpy(&port, data, sizeof(port));
+		return ntohs(port) >= 1;
+	case NHA_HW_STATS_ENABLE:
+		if (nested || plen != sizeof(on))
+			return false;
+		memcpy(&on, data, sizeof(on));
+		return on <= 1;
+	default:
+		return false;
+	}
+}
+
+/*
+ * nh_check_attr_group(): a nonzero whole number of entries, none with a
+ * reserved word or the weight 0x10000, no id twice; and no attribute past
+ * NHA_GROUP_TYPE but NHA_HW_STATS_ENABLE, NHA_FDB and, for a resilient
+ * group, NHA_RES_GROUP.
+ */
+static bool nh_group_ok(const struct nlattr *const *tb, unsigned int last)
+{
+	const struct nlattr *grp = tb[NHA_GROUP];
+	size_t len = grp->nla_len - NLA_HDRLEN;
+	struct nexthop_grp e[64];
+	uint16_t type = NEXTHOP_GRP_TYPE_MPATH;
+	size_t n, i, j;
+
+	if (tb[NHA_GROUP_TYPE] != NULL)
+		memcpy(&type, (const unsigned char *) tb[NHA_GROUP_TYPE] +
+		       NLA_HDRLEN, sizeof(type));
+	if (type > NEXTHOP_GRP_TYPE_MAX)
+		return false;
+	if (len == 0 || len % sizeof(e[0]) != 0 || len > sizeof(e))
+		return false;
+	n = len / sizeof(e[0]);
+	memcpy(e, (const unsigned char *) grp + NLA_HDRLEN, len);
+	for (i = 0; i < n; i++) {
+		if (e[i].resvd2 != 0 ||
+		    (e[i].weight == 0xff && e[i].weight_high == 0xff))
+			return false;
+		for (j = i + 1; j < n; j++)
+			if (e[i].id == e[j].id)
+				return false;
+	}
+	for (i = NHA_GROUP_TYPE + 1; i <= last; i++) {
+		if (tb[i] == NULL || i == NHA_HW_STATS_ENABLE || i == NHA_FDB)
+			continue;
+		if (i == NHA_RES_GROUP && type == NEXTHOP_GRP_TYPE_RES)
+			continue;
+		return false;
+	}
+	return true;
+}
+
+/*
+ * The shape rtm_to_nh_config() takes the nexthop add @nlh as, after the
+ * strict parse, or -1 when one of them refuses it.  Each type's last
+ * attribute is the one the parse keeps.
+ */
+static int nexthop_add_shape(const struct nlmsghdr *nlh)
+{
+	const struct nhmsg *nhm = NLMSG_DATA(nlh);
+	const struct nlattr *tb[NHA_DST_PORT + 1] = { NULL };
+	const unsigned char *p;
+	const struct nlattr *nla;
+	size_t len, width;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(*nhm)))
+		return -1;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(*nhm));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(*nhm));
+	while (len > 0) {
+		size_t total;
+
+		nla = fit_attr(p, len);
+		if (nla == NULL || !nh_new_attr_ok(nla))
+			return -1;
+		tb[nla->nla_type & NLA_TYPE_MASK] = nla;
+		total = NLA_ALIGN(nla->nla_len);
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+
+	if (nhm->resvd || nhm->nh_scope || (nhm->nh_flags & ~RTNH_F_ONLINK))
+		return -1;
+	if (nhm->nh_family != AF_INET && nhm->nh_family != AF_INET6 &&
+	    !(nhm->nh_family == AF_UNSPEC && tb[NHA_GROUP] != NULL))
+		return -1;
+	if (tb[NHA_FDB] != NULL &&
+	    (tb[NHA_OIF] != NULL || tb[NHA_BLACKHOLE] != NULL ||
+	     tb[NHA_ENCAP] != NULL || tb[NHA_ENCAP_TYPE] != NULL ||
+	     nhm->nh_flags))
+		return -1;
+	if (tb[NHA_DST_PORT] != NULL &&
+	    (tb[NHA_FDB] == NULL || tb[NHA_GATEWAY] == NULL))
+		return -1;
+	if (tb[NHA_GROUP] != NULL)
+		return nhm->nh_family == AF_UNSPEC &&
+		       nh_group_ok(tb, NHA_DST_PORT) ? NH_GROUP_SHAPE : -1;
+	if (tb[NHA_BLACKHOLE] != NULL)
+		return tb[NHA_GATEWAY] == NULL && tb[NHA_OIF] == NULL &&
+		       tb[NHA_ENCAP] == NULL && tb[NHA_ENCAP_TYPE] == NULL &&
+		       tb[NHA_FDB] == NULL ? NH_BLACKHOLE_SHAPE : -1;
+	if (tb[NHA_FDB] == NULL && tb[NHA_OIF] == NULL)
+		return -1;
+	width = nhm->nh_family == AF_INET6 ? 16 : 4;
+	if (tb[NHA_GATEWAY] != NULL ?
+	    tb[NHA_GATEWAY]->nla_len != NLA_HDRLEN + width :
+	    (nhm->nh_flags & RTNH_F_ONLINK))
+		return -1;
+	if ((tb[NHA_ENCAP] == NULL) != (tb[NHA_ENCAP_TYPE] == NULL) ||
+	    tb[NHA_HW_STATS_ENABLE] != NULL)
+		return -1;
+	return tb[NHA_FDB] != NULL ? NH_FDB_SHAPE : NH_DEVICE_SHAPE;
+}
+
+struct nexthop_shapes {
+	unsigned int adds;
+	unsigned int taken[NH_SHAPES];
+};
+
+static void tally_nexthop_shape(struct nexthop_shapes *t,
+				const struct nlmsghdr *nlh)
+{
+	int shape = nexthop_add_shape(nlh);
+
+	t->adds++;
+	if (shape >= 0)
+		t->taken[shape]++;
+}
+
+/*
+ * rtm_to_nh_config() takes a nexthop add in one of four shapes and refuses
+ * another's attributes beside it, so seven adds in eight whose header it
+ * takes, about 0.76 of them, go out as one: a group for AF_UNSPEC, a third
+ * of them, and a blackhole, an fdb nexthop and a device nexthop, a quarter,
+ * a quarter and a half of the rest.  Independent draws made about 0.015 of
+ * them that it took.
+ */
+static void expect_nexthop_shapes(const struct nexthop_shapes *t)
+{
+	static const double lo[NH_SHAPES] = { 0.22, 0.10, 0.10, 0.22 };
+	static const double hi[NH_SHAPES] = { 0.30, 0.16, 0.16, 0.30 };
+	unsigned int taken = 0;
+	int shape;
+
+	for (shape = 0; shape < NH_SHAPES; shape++) {
+		expect_fraction(t->taken[shape], t->adds, lo[shape], hi[shape],
+				nh_shape_names[shape],
+				"rtnl: a nexthop add seldom takes this shape whole");
+		taken += t->taken[shape];
+	}
+	expect_fraction(taken, t->adds, 0.72, 0.84, "RTM_NEWNEXTHOP",
+			"rtnl: a nexthop add is mostly not one rtm_to_nh_config() takes");
 }
 
 /* ---------- The fib_rule_hdr of RTM_NEWRULE, RTM_DELRULE and RTM_GETRULE - */
@@ -2433,6 +2638,7 @@ struct tallies {
 	struct nexthop_flags nexthop_flags;
 	struct nexthop_attrs nexthop_attrs[NH_OPS];
 	struct nexthop_gateway nexthop_gateway;
+	struct nexthop_shapes nexthop_shapes;
 	struct rule_header getrule, newdelrule;
 	struct addrlabel_header getaddrlabel, newdeladdrlabel;
 	struct stats_header getstats, setstats;
@@ -2540,6 +2746,7 @@ static void run_rounds(struct tallies *t)
 			tally_nexthop_flags(&t->nexthop_flags, nlh);
 			tally_nexthop_attrs(t->nexthop_attrs, nlh);
 			tally_nexthop_gateway(&t->nexthop_gateway, nlh);
+			tally_nexthop_shape(&t->nexthop_shapes, nlh);
 			break;
 		case RTM_DELNEXTHOP:
 		case RTM_GETNEXTHOP:
@@ -2639,6 +2846,7 @@ void rtnl_gen_self_check(void)
 	expect_nexthop_flags(&t.nexthop_flags);
 	expect_nexthop_attrs(t.nexthop_attrs);
 	expect_nexthop_gateway(&t.nexthop_gateway);
+	expect_nexthop_shapes(&t.nexthop_shapes);
 	expect_rule_header(&t.getrule, &t.newdelrule);
 	expect_addrlabel_header(&t.getaddrlabel, &t.newdeladdrlabel);
 	expect_stats_header(&t.getstats, &t.setstats);

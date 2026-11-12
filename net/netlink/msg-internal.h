@@ -185,12 +185,22 @@ size_t gen_rta_vlandb_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 
 /*
- * A route's RTA_ENCAP_TYPE and the RTA_ENCAP nest of the kind it names,
- * appended at buf+offset; returns the new offset.  Defined in
- * msg-rtnl-route.c, called from the attribute loop in msg-core.c in place
- * of a lone RTA_ENCAP.
+ * An lwtunnel encap type, as a @type_attr attribute, and the @encap_attr
+ * nest of the kind it names, appended at buf+offset; returns the new
+ * offset.  Defined in msg-rtnl-route.c, called from the attribute loop in
+ * msg-core.c in place of a lone RTA_ENCAP, and for a device nexthop.
  */
-size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen);
+size_t append_lwt_encap(unsigned char *buf, size_t offset, size_t buflen,
+			unsigned short type_attr, unsigned short encap_attr);
+
+/*
+ * One of the shapes rtm_to_nh_config() takes for a nexthop add, header
+ * flags and attributes, the message's first len bytes holding its header
+ * in a buffer of cap bytes; returns the new length, or len to leave the
+ * message to the random draws.  Defined in msg-rtnl-route.c, called from
+ * build_one_nlmsg() in place of them.
+ */
+size_t append_nexthop_shape(struct nlmsghdr *nlh, size_t len, size_t cap);
 
 /*
  * Cut each RTA_DST of an IPv4 route add or delete to its rtm_dst_len, the

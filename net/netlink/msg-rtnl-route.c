@@ -264,20 +264,22 @@ size_t pair_rule_prefixes(struct nlmsghdr *nlh, size_t len, size_t cap)
 }
 
 /*
- * lwtunnel_build_state() hands a route's RTA_ENCAP to the build_state() of
- * the kind its RTA_ENCAP_TYPE names, so a nest means something only beside
- * its type, and the two go out together.  The kind is LWTUNNEL_ENCAP_BPF
- * seven times in eight; the eighth names any kind, NONE included, over
- * random bytes.
+ * lwtunnel_build_state() hands a route's RTA_ENCAP, or a nexthop's
+ * NHA_ENCAP, to the build_state() of the kind its RTA_ENCAP_TYPE or
+ * NHA_ENCAP_TYPE names, so a nest means something only beside its type,
+ * and the two go out together, as @type_attr and @encap_attr.  The kind is
+ * LWTUNNEL_ENCAP_BPF seven times in eight; the eighth names any kind, NONE
+ * included, over random bytes.
  */
-size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen)
+size_t append_lwt_encap(unsigned char *buf, size_t offset, size_t buflen,
+			unsigned short type_attr, unsigned short encap_attr)
 {
 	unsigned short kind = LWTUNNEL_ENCAP_BPF;
 	size_t cap, len;
 
 	if (ONE_IN(8))
 		kind = rnd_modulo_u32(LWTUNNEL_ENCAP_MAX + 1);
-	if (!start_nlattr(buf, offset, buflen, RTA_ENCAP_TYPE, sizeof(kind)))
+	if (!start_nlattr(buf, offset, buflen, type_attr, sizeof(kind)))
 		return offset;
 	memcpy(buf + offset + NLA_HDRLEN, &kind, sizeof(kind));
 	offset += NLA_ALIGN(NLA_HDRLEN + sizeof(kind));
@@ -293,7 +295,7 @@ size_t append_route_encap(unsigned char *buf, size_t offset, size_t buflen)
 			len = cap;
 		generate_rand_bytes(buf + offset + NLA_HDRLEN, len);
 	}
-	if (!start_nlattr(buf, offset, buflen, RTA_ENCAP | NLA_F_NESTED, len))
+	if (!start_nlattr(buf, offset, buflen, encap_attr | NLA_F_NESTED, len))
 		return offset;
 	return offset + NLA_ALIGN(NLA_HDRLEN + len);
 }
@@ -636,6 +638,167 @@ size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
 	default:
 		return 0;
 	}
+}
+
+/*
+ * A nexthop's id is 1 to NH_IDS and a group's the next NH_IDS, and a
+ * group's members are nexthops, so a group names what earlier adds made.
+ */
+#define NH_IDS		8
+#define NH_GROUP_MAX	3
+
+/* Append @len bytes of @data as an attribute of @type at buf+*off, in a
+ * buffer of cap bytes, and step *off past it; false when it does not fit. */
+static bool put_nh_attr(unsigned char *buf, size_t *off, size_t cap,
+			unsigned short type, const void *data, size_t len)
+{
+	if (!start_nlattr(buf, *off, cap, type, len))
+		return false;
+	if (len != 0)
+		memcpy(buf + *off + NLA_HDRLEN, data, len);
+	*off += NLA_ALIGN(NLA_HDRLEN + len);
+	return true;
+}
+
+/*
+ * A group: its members, no id twice (nh_check_attr_group()), its type, and
+ * of what a group takes beside them a resilient group's NHA_RES_GROUP, and
+ * NHA_HW_STATS_ENABLE and NHA_FDB now and then, NHA_FDB with no header
+ * flags, as rtm_to_nh_config() wants.  The timers are clock_t, held to two
+ * minutes.
+ */
+static size_t put_nh_group(unsigned char *buf, size_t off, size_t cap,
+			   struct nhmsg *nhm)
+{
+	struct nexthop_grp grp[NH_GROUP_MAX];
+	unsigned int n = 1 + rnd_modulo_u32(NH_GROUP_MAX), i, j;
+	__u16 type = RAND_BOOL() ? NEXTHOP_GRP_TYPE_MPATH :
+				   NEXTHOP_GRP_TYPE_RES;
+
+	memset(grp, 0, sizeof(grp));
+	for (i = 0; i < n; i++) {
+		do {
+			grp[i].id = 1 + rnd_modulo_u32(NH_IDS);
+			for (j = 0; j < i && grp[j].id != grp[i].id; j++)
+				;
+		} while (j < i);
+		grp[i].weight = rnd_modulo_u32(256);
+	}
+	if (!put_nh_attr(buf, &off, cap, NHA_GROUP, grp, n * sizeof(grp[0])) ||
+	    !put_nh_attr(buf, &off, cap, NHA_GROUP_TYPE, &type, sizeof(type)))
+		return off;
+
+	if (type == NEXTHOP_GRP_TYPE_RES && RAND_BOOL()) {
+		unsigned char nest[3 * NLA_ALIGN(NLA_HDRLEN + sizeof(__u32))];
+		__u16 buckets = 1 + rnd_modulo_u32(256);
+		__u32 idle = rnd_modulo_u32(12000);
+		__u32 unbalanced = rnd_modulo_u32(12000);
+		size_t nlen = 0;
+
+		if (RAND_BOOL())
+			put_nh_attr(nest, &nlen, sizeof(nest),
+				    NHA_RES_GROUP_BUCKETS, &buckets,
+				    sizeof(buckets));
+		if (RAND_BOOL())
+			put_nh_attr(nest, &nlen, sizeof(nest),
+				    NHA_RES_GROUP_IDLE_TIMER, &idle,
+				    sizeof(idle));
+		if (RAND_BOOL())
+			put_nh_attr(nest, &nlen, sizeof(nest),
+				    NHA_RES_GROUP_UNBALANCED_TIMER,
+				    &unbalanced, sizeof(unbalanced));
+		put_nh_attr(buf, &off, cap, NHA_RES_GROUP | NLA_F_NESTED,
+			    nest, nlen);
+	}
+	if (ONE_IN(4)) {
+		__u32 on = RAND_BOOL();
+
+		put_nh_attr(buf, &off, cap, NHA_HW_STATS_ENABLE, &on,
+			    sizeof(on));
+	}
+	if (ONE_IN(8) && put_nh_attr(buf, &off, cap, NHA_FDB, NULL, 0))
+		nhm->nh_flags = 0;
+	return off;
+}
+
+/*
+ * A nexthop of @nhm's family: a blackhole or an fdb nexthop a quarter of
+ * the time each, with no header flags, which fib_check_nh_nongw() refuses
+ * a blackhole and rtm_to_nh_config() an fdb nexthop, else a device one.
+ * An fdb nexthop has a gateway mostly, and a VXLAN or GENEVE port beside it
+ * half of those; a device nexthop names lo seven times in eight, has a
+ * gateway whenever the header says RTNH_F_ONLINK and a quarter of the rest,
+ * and an encap with its type one time in eight.
+ */
+static size_t put_nh_single(unsigned char *buf, size_t off, size_t cap,
+			    struct nhmsg *nhm)
+{
+	unsigned char gw[sizeof(struct in6_addr)];
+	size_t gwlen = gen_route_addr(gw, sizeof(gw), nhm->nh_family);
+	__u16 port = htons(RAND_BOOL() ? 4789 : 6081);
+	__u32 oif = ONE_IN(8) ? 2 + rnd_modulo_u32(62) : 1;
+
+	switch (rnd_modulo_u32(4)) {
+	case 0:
+		nhm->nh_flags = 0;
+		put_nh_attr(buf, &off, cap, NHA_BLACKHOLE, NULL, 0);
+		return off;
+	case 1:
+		nhm->nh_flags = 0;
+		if (!put_nh_attr(buf, &off, cap, NHA_FDB, NULL, 0) ||
+		    ONE_IN(4) ||
+		    !put_nh_attr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
+			return off;
+		if (RAND_BOOL())
+			put_nh_attr(buf, &off, cap, NHA_DST_PORT, &port,
+				    sizeof(port));
+		return off;
+	default:
+		if (!put_nh_attr(buf, &off, cap, NHA_OIF, &oif, sizeof(oif)))
+			return off;
+		if (((nhm->nh_flags & RTNH_F_ONLINK) || ONE_IN(4)) &&
+		    !put_nh_attr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
+			return off;
+		if (ONE_IN(8))
+			off = append_lwt_encap(buf, off, cap, NHA_ENCAP_TYPE,
+					       NHA_ENCAP);
+		return off;
+	}
+}
+
+/*
+ * rtm_to_nh_config() takes a nexthop add in one of four shapes and refuses
+ * another's attributes beside it: a group, for AF_UNSPEC, and a blackhole,
+ * an fdb nexthop or a device nexthop for AF_INET and AF_INET6.
+ * Independent draws seldom make one, so seven adds in eight whose header it
+ * takes go out as the shape their family names, with an id most of the
+ * time.  Returns the new length of the message, whose first len bytes hold
+ * its header in a buffer of cap bytes; len leaves it to the random draws.
+ */
+size_t append_nexthop_shape(struct nlmsghdr *nlh, size_t len, size_t cap)
+{
+	struct nhmsg *nhm = NLMSG_DATA(nlh);
+	unsigned char *msg = (unsigned char *) nlh;
+	size_t off = NLMSG_ALIGN(len);
+	__u32 id;
+
+	if (len < NLMSG_LENGTH(sizeof(*nhm)) || ONE_IN(8))
+		return len;
+	if (nhm->resvd || nhm->nh_scope || (nhm->nh_flags & ~RTNH_F_ONLINK))
+		return len;
+	if (nhm->nh_family != AF_UNSPEC && nhm->nh_family != AF_INET &&
+	    nhm->nh_family != AF_INET6)
+		return len;
+
+	id = 1 + rnd_modulo_u32(NH_IDS);
+	if (nhm->nh_family == AF_UNSPEC)
+		id += NH_IDS;
+	if (!ONE_IN(8) &&
+	    !put_nh_attr(msg, &off, cap, NHA_ID, &id, sizeof(id)))
+		return off;
+	if (nhm->nh_family == AF_UNSPEC)
+		return put_nh_group(msg, off, cap, nhm);
+	return put_nh_single(msg, off, cap, nhm);
 }
 
 /*
