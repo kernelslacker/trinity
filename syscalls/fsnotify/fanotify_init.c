@@ -28,9 +28,24 @@ static unsigned long fanotify_init_flags[] = {
 	FAN_REPORT_MNT, FAN_ENABLE_AUDIT,
 };
 
+/*
+ * The flags the fanotify provider (fds/fanotify_init.c) makes its groups
+ * with.  A root run's parent makes the global ones, which every child
+ * inherits and could not make itself: a content class would let a child
+ * arm permission events, which stall any process on the host opening the
+ * marked file until someone answers, and an unlimited queue or mark count
+ * would let host events or marks pile up without bound.
+ */
 unsigned long get_fanotify_init_flags(void)
 {
-	return RAND_ARRAY(fanotify_init_flags);
+	unsigned long flags;
+
+	do {
+		flags = RAND_ARRAY(fanotify_init_flags);
+	} while (flags & (FAN_CLASS_CONTENT | FAN_CLASS_PRE_CONTENT |
+			  FAN_UNLIMITED_QUEUE | FAN_UNLIMITED_MARKS));
+
+	return flags;
 }
 
 

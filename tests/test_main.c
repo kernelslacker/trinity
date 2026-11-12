@@ -117,6 +117,7 @@ void rt_sigaction_self_check(void);
 void sigaltstack_self_check(void);
 void chain_bias_self_check(void);
 void rlimits_self_check(void);
+void fanotify_flags_self_check(void);
 void epoll_volatility_self_check(void);
 void userfaultfd_arm_self_check(void);
 void cmsg_build_self_check(void);
@@ -678,6 +679,11 @@ int main(int argc, char **argv)
 	printf("  rlimits_self_check ... ");
 	fflush(stdout);
 	rlimits_self_check();
+	printf("OK\n");
+
+	printf("  fanotify_flags_self_check ... ");
+	fflush(stdout);
+	fanotify_flags_self_check();
 	printf("OK\n");
 
 	printf("  epoll_volatility_self_check ... ");

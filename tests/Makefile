@@ -874,6 +874,10 @@ PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_register.c \
 PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
 		   $(TOP)/syscalls/timer/timerfd_create.c
 
+# fanotify_init.c's get_fanotify_init_flags() draws the flags the fanotify
+# provider makes its groups with, which fanotify_flags_test.c checks.
+FAKE_SRCS	+= fanotify_flags_test.c
+
 # syscalls/fs/fallocate.c and syscalls/fs/ftruncate.c bring fallocate,
 # ftruncate and ftruncate64, whose post handlers post_oracle_test.c checks
 # invalidate the pooled mappings of the file the kernel cut, through a
