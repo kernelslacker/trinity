@@ -1,9 +1,10 @@
 /*
- * Self-check for the UDP option builder: udp_lib_setsockopt()
- * (net/ipv4/udp.c) reads an int for every option, refusing a shorter
- * optlen, turns a flag on for any value but 0, and takes UDP_ENCAP's
- * ESP-in-UDP, L2TP or 0, so the flags drawn turn both on and off, and
- * most UDP_ENCAP and UDP_SEGMENT draws are ones it takes.
+ * Self-check for the UDP option builders: udp_lib_setsockopt()
+ * (net/ipv4/udp.c), which takes UDP's options on a UDP-Lite socket too,
+ * reads an int for every option, refusing a shorter optlen, turns a flag
+ * on for any value but 0, and takes UDP_ENCAP's ESP-in-UDP, L2TP or 0,
+ * so the flags drawn turn both on and off, and most UDP_ENCAP and
+ * UDP_SEGMENT draws are ones it takes.
  */
 
 #include <limits.h>
@@ -13,7 +14,7 @@
 
 #include "debug.h"		/* BUG */
 #include "kernel/udp.h"		/* UDP_SEGMENT, UDP_GRO */
-#include "net.h"		/* udp_setsockopt, struct sockopt */
+#include "net.h"		/* udp_setsockopt, udplite_setsockopt */
 
 #define UDP_ROUNDS	6000
 #define UDP_OPTVAL_LEN	4096
@@ -73,6 +74,9 @@ void udp_sockopt_self_check(void)
 	const char *refused;
 
 	refused = udp_options_refused(udp_setsockopt);
+	if (refused != NULL)
+		BUG(refused);
+	refused = udp_options_refused(udplite_setsockopt);
 	if (refused != NULL)
 		BUG(refused);
 }

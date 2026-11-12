@@ -753,8 +753,8 @@ PARENT_SRCS	+= $(TOP)/net/proto/ipv4.c \
 FAKE_SRCS	+= inet_sockopt_test.c \
 		   ipv6_sockopt_test.c
 
-# udp_sockopt_test.c holds the UDP options of the net/proto/ip-udp.c
-# linked above to the ones udp_lib_setsockopt() takes.
+# udp_sockopt_test.c holds the UDP options of the net/proto/ip-udp.c and
+# ip-udplite.c linked above to the ones udp_lib_setsockopt() takes.
 FAKE_SRCS	+= udp_sockopt_test.c
 
 # net/proto/netlink.c brings the AF_NETLINK option builder, whose

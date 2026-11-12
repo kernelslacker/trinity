@@ -1,15 +1,8 @@
-#include <linux/udp.h>
-#include "kernel/udp.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"
 
 #include "kernel/udplite.h"
-static const unsigned int udplite_opts[] = {
-	UDP_CORK, UDP_ENCAP, UDPLITE_SEND_CSCOV, UDPLITE_RECV_CSCOV,
-	UDP_NO_CHECK6_TX, UDP_NO_CHECK6_RX, UDP_SEGMENT, UDP_GRO,
-};
-
 /* Interesting checksum coverage values for UDPLite. */
 static const unsigned int cscov_values[] = {
 	0,	/* covers entire datagram */
@@ -18,51 +11,21 @@ static const unsigned int cscov_values[] = {
 	65535,	/* max */
 };
 
-void udplite_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
+void udplite_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 {
-	unsigned int *optval32;
-	unsigned short *optval16;
+	unsigned int *optval32 = (unsigned int *) so->optval;
 
-	so->optname = RAND_ARRAY(udplite_opts);
-
-	switch (so->optname) {
-	case UDP_CORK:
-	case UDP_NO_CHECK6_TX:
-	case UDP_NO_CHECK6_RX:
-	case UDP_GRO:
-		so->optlen = sizeof(unsigned int);
-		break;
-
-	case UDP_ENCAP: {
-		unsigned int *encap = (unsigned int *) so->optval;
-		*encap = RAND_RANGE(1, UDP_ENCAP_RXRPC);
-		so->optlen = sizeof(unsigned int);
-		break;
+	/* udp_lib_setsockopt() takes UDP's options on a UDP-Lite socket
+	 * too: the checksum coverage pair keeps its quarter of the draws. */
+	if (!ONE_IN(4)) {
+		udp_setsockopt(so, triplet);
+		return;
 	}
 
-	case UDP_SEGMENT:
-		optval16 = (unsigned short *) so->optval;
-		switch (rnd_modulo_u32(5)) {
-		case 0: *optval16 = 0; break;
-		case 1: *optval16 = 1; break;
-		case 2: *optval16 = 1400; break;
-		case 3: *optval16 = 65535; break;
-		case 4: *optval16 = rnd_modulo_u32(65536); break;
-		}
-		so->optlen = sizeof(unsigned short);
-		break;
-
-	case UDPLITE_SEND_CSCOV:
-	case UDPLITE_RECV_CSCOV:
-		optval32 = (unsigned int *) so->optval;
-		if (RAND_BOOL())
-			*optval32 = RAND_ARRAY(cscov_values);
-		else
-			*optval32 = rnd_modulo_u32(65536);
-		so->optlen = sizeof(unsigned int);
-		break;
-
-	default:
-		break;
-	}
+	so->optname = RAND_BOOL() ? UDPLITE_SEND_CSCOV : UDPLITE_RECV_CSCOV;
+	if (RAND_BOOL())
+		*optval32 = RAND_ARRAY(cscov_values);
+	else
+		*optval32 = rnd_modulo_u32(65536);
+	so->optlen = sizeof(unsigned int);
 }
