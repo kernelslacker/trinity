@@ -19,6 +19,7 @@
 #include "utils.h"
 
 #include "kernel/audit.h"
+#include "kernel/filter.h"
 #include "kernel/seccomp.h"
 
 /*
@@ -38,16 +39,6 @@ bool seccomp_own_filter;
  * specific BPF JIT compilers, this might be good to fuzz for errors.
  *    -- Daniel Borkmann, <borkmann@redhat.com>
  */
-
-
-/* Both here likely defined in linux/filter.h already */
-#ifndef SKF_AD_OFF
-# define SKF_AD_OFF	(-0x1000)
-#endif
-
-#ifndef SKF_AD_MAX
-# define SKF_AD_MAX	64
-#endif
 
 #define syscall_nr	(offsetof(struct seccomp_data, nr))
 #define arch_nr		(offsetof(struct seccomp_data, arch))
@@ -86,12 +77,33 @@ static const uint16_t bpf_misc_vars[] = {
 	BPF_TAX, BPF_TXA,
 };
 
-static const uint32_t bpf_saner_vars[] = {
-	BPF_LDX_B, BPF_LDX_W, BPF_JMP_JA, BPF_JMP_JEQ, BPF_JMP_JGT,
-	BPF_JMP_JGE, BPF_JMP_JSET, BPF_ALU_ADD, BPF_ALU_SUB, BPF_ALU_MUL,
-	BPF_ALU_DIV, BPF_ALU_MOD, BPF_ALU_NEG, BPF_ALU_AND, BPF_ALU_OR,
-	BPF_ALU_XOR, BPF_ALU_LSH, BPF_ALU_RSH, BPF_MISC_TAX, BPF_MISC_TXA,
-	BPF_LD_B, BPF_LD_H, BPF_LD_W, BPF_RET, BPF_ST, BPF_STX,
+/* The opcodes chk_code_allowed() (net/core/filter.c) takes. */
+static const uint16_t bpf_saner_vars[] = {
+	BPF_ALU | BPF_ADD | BPF_K, BPF_ALU | BPF_ADD | BPF_X,
+	BPF_ALU | BPF_SUB | BPF_K, BPF_ALU | BPF_SUB | BPF_X,
+	BPF_ALU | BPF_MUL | BPF_K, BPF_ALU | BPF_MUL | BPF_X,
+	BPF_ALU | BPF_DIV | BPF_K, BPF_ALU | BPF_DIV | BPF_X,
+	BPF_ALU | BPF_MOD | BPF_K, BPF_ALU | BPF_MOD | BPF_X,
+	BPF_ALU | BPF_AND | BPF_K, BPF_ALU | BPF_AND | BPF_X,
+	BPF_ALU | BPF_OR | BPF_K, BPF_ALU | BPF_OR | BPF_X,
+	BPF_ALU | BPF_XOR | BPF_K, BPF_ALU | BPF_XOR | BPF_X,
+	BPF_ALU | BPF_LSH | BPF_K, BPF_ALU | BPF_LSH | BPF_X,
+	BPF_ALU | BPF_RSH | BPF_K, BPF_ALU | BPF_RSH | BPF_X,
+	BPF_ALU | BPF_NEG,
+	BPF_LD | BPF_W | BPF_ABS, BPF_LD | BPF_H | BPF_ABS,
+	BPF_LD | BPF_B | BPF_ABS, BPF_LD | BPF_W | BPF_LEN,
+	BPF_LD | BPF_W | BPF_IND, BPF_LD | BPF_H | BPF_IND,
+	BPF_LD | BPF_B | BPF_IND, BPF_LD | BPF_IMM, BPF_LD | BPF_MEM,
+	BPF_LDX | BPF_W | BPF_LEN, BPF_LDX | BPF_B | BPF_MSH,
+	BPF_LDX | BPF_IMM, BPF_LDX | BPF_MEM,
+	BPF_ST, BPF_STX,
+	BPF_MISC | BPF_TAX, BPF_MISC | BPF_TXA,
+	BPF_RET | BPF_K, BPF_RET | BPF_A,
+	BPF_JMP | BPF_JA,
+	BPF_JMP | BPF_JEQ | BPF_K, BPF_JMP | BPF_JEQ | BPF_X,
+	BPF_JMP | BPF_JGE | BPF_K, BPF_JMP | BPF_JGE | BPF_X,
+	BPF_JMP | BPF_JGT | BPF_K, BPF_JMP | BPF_JGT | BPF_X,
+	BPF_JMP | BPF_JSET | BPF_K, BPF_JMP | BPF_JSET | BPF_X,
 };
 
 static const uint32_t bpf_seccomp_jmp_arch_vars[] = {
@@ -119,36 +131,13 @@ struct seccomp_data {
 	(bpf_##type##_vars[rnd_modulo_u32(ARRAY_SIZE(bpf_##type##_vars))])
 
 
+/* An opcode the kernel takes, and last a RET of K or A, which
+ * bpf_check_classic() wants there. */
 static uint16_t gen_bpf_code_less_crazy(bool last_instr)
 {
-	uint16_t ret = bpf_rand(saner);
-
 	if (last_instr)
-		ret = BPF_RET;
-
-	switch (ret) {
-	case BPF_LD:
-	case BPF_LDX:
-		ret |= bpf_rand(mode);
-		break;
-	case BPF_ST:
-	case BPF_STX:
-		break;
-	case BPF_ALU:
-		ret |= bpf_rand(src);
-		break;
-	case BPF_JMP:
-		ret |= bpf_rand(src);
-		break;
-	case BPF_RET:
-		ret |= bpf_rand(ret);
-		break;
-	case BPF_MISC:
-	default:
-		break;
-	}
-
-	return ret;
+		return BPF_RET | (RAND_BOOL() ? BPF_K : BPF_A);
+	return bpf_rand(saner);
 }
 
 static uint16_t gen_bpf_code_more_crazy(bool last_instr)
@@ -424,15 +413,20 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 	bpf->filter = zmalloc_tracked(bpf->len * sizeof(struct sock_filter));
 
 	for (i = 0; i < bpf->len; i++) {
+		/* The instructions after this one, where its jumps may land:
+		 * an offset past them is refused. */
+		unsigned int span = bpf->len - i - 1;
+		unsigned int reach = span < 256 ? span : 256;
+
 		if (ONE_IN(100))
 			bpf->filter[i].code = gen_bpf_code_more_crazy(i == bpf->len - 1);
 		else
 			bpf->filter[i].code = gen_bpf_code_less_crazy(i == bpf->len - 1);
 
 		/* Fill out jump offsets if jmp instruction */
-		if (BPF_CLASS(bpf->filter[i].code) == BPF_JMP) {
-			bpf->filter[i].jt = (uint8_t) (rnd_modulo_u32(bpf->len));
-			bpf->filter[i].jf = (uint8_t) (rnd_modulo_u32(bpf->len));
+		if (BPF_CLASS(bpf->filter[i].code) == BPF_JMP && reach != 0) {
+			bpf->filter[i].jt = (uint8_t) rnd_modulo_u32(reach);
+			bpf->filter[i].jf = (uint8_t) rnd_modulo_u32(reach);
 		}
 
 		/* Also give it a chance if not BPF_JMP */
@@ -450,16 +444,36 @@ void bpf_gen_filter(unsigned long **addr, unsigned long *addrlen)
 		case 2:	break;
 		}
 
-		/* Also try to jump into BPF extensions by chance */
+		/* Also try to jump into BPF extensions by chance: each
+		 * ancillary load sits on a multiple of four below
+		 * SKF_AD_MAX, and an absolute load of any other offset
+		 * from SKF_AD_OFF up is refused. */
 		if (BPF_CLASS(bpf->filter[i].code) == BPF_LD ||
 		    BPF_CLASS(bpf->filter[i].code) == BPF_LDX) {
 			if (bpf->filter[i].k > 65000 &&
 			    bpf->filter[i].k < (uint32_t) SKF_AD_OFF) {
 				if (ONE_IN(10)) {
 					bpf->filter[i].k = (uint32_t) (SKF_AD_OFF +
-							   rnd_modulo_u32(SKF_AD_MAX));
+							   4 * rnd_modulo_u32(SKF_AD_MAX / 4));
 				}
 			}
+		}
+
+		/* bpf_check_classic() refuses a K divisor of 0, a K shift
+		 * of 32 or more, and a JA past the end. */
+		switch (bpf->filter[i].code) {
+		case BPF_ALU | BPF_DIV | BPF_K:
+		case BPF_ALU | BPF_MOD | BPF_K:
+			if (bpf->filter[i].k == 0)
+				bpf->filter[i].k = 1 + rnd_modulo_u32(255);
+			break;
+		case BPF_ALU | BPF_LSH | BPF_K:
+		case BPF_ALU | BPF_RSH | BPF_K:
+			bpf->filter[i].k &= 31;
+			break;
+		case BPF_JMP | BPF_JA:
+			bpf->filter[i].k = span ? rnd_modulo_u32(span) : 0;
+			break;
 		}
 
 		/* In case of M[] access, kernel checks it anyway,

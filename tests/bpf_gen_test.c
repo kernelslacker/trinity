@@ -35,6 +35,7 @@
 #include "utils.h"		/* ARRAY_SIZE */
 
 #include "kernel/audit.h"
+#include "kernel/filter.h"	/* SKF_AD_OFF, SKF_AD_MAX */
 #include "kernel/seccomp.h"
 #include "net/bpf/ebpf-internal.h"
 #include "struct_catalog-internal.h"	/* bpf_attr_variants */
@@ -2050,6 +2051,109 @@ static void link_create_catalog_has_the_tracing_multi_tail(void)
 #endif /* USE_BPF_LINK_CREATE_TRACING_MULTI */
 
 /*
+ * bpf_check_classic() (net/core/filter.c), short of check_load_and_stores():
+ * an opcode chk_code_allowed() takes, a nonzero K divisor, a K shift under
+ * 32, a scratch slot under BPF_MEMWORDS, jumps that land inside the
+ * program, and an absolute load below SKF_AD_OFF or on an ancillary load.
+ */
+static bool classic_insn_ok(const struct sock_filter *f, unsigned int pc,
+			    unsigned int flen)
+{
+	switch (f->code) {
+	case BPF_ALU | BPF_DIV | BPF_K:
+	case BPF_ALU | BPF_MOD | BPF_K:
+		return f->k != 0;
+	case BPF_ALU | BPF_LSH | BPF_K:
+	case BPF_ALU | BPF_RSH | BPF_K:
+		return f->k < 32;
+	case BPF_LD | BPF_MEM:
+	case BPF_LDX | BPF_MEM:
+	case BPF_ST:
+	case BPF_STX:
+		return f->k < BPF_MEMWORDS;
+	case BPF_JMP | BPF_JA:
+		return f->k < flen - pc - 1;
+	case BPF_JMP | BPF_JEQ | BPF_K:
+	case BPF_JMP | BPF_JEQ | BPF_X:
+	case BPF_JMP | BPF_JGE | BPF_K:
+	case BPF_JMP | BPF_JGE | BPF_X:
+	case BPF_JMP | BPF_JGT | BPF_K:
+	case BPF_JMP | BPF_JGT | BPF_X:
+	case BPF_JMP | BPF_JSET | BPF_K:
+	case BPF_JMP | BPF_JSET | BPF_X:
+		return pc + f->jt + 1 < flen && pc + f->jf + 1 < flen;
+	case BPF_LD | BPF_W | BPF_ABS:
+	case BPF_LD | BPF_H | BPF_ABS:
+	case BPF_LD | BPF_B | BPF_ABS:
+		return f->k < (uint32_t) SKF_AD_OFF ||
+		       (f->k - (uint32_t) SKF_AD_OFF < SKF_AD_MAX && !(f->k & 3));
+	case BPF_ALU | BPF_ADD | BPF_K:
+	case BPF_ALU | BPF_ADD | BPF_X:
+	case BPF_ALU | BPF_SUB | BPF_K:
+	case BPF_ALU | BPF_SUB | BPF_X:
+	case BPF_ALU | BPF_MUL | BPF_K:
+	case BPF_ALU | BPF_MUL | BPF_X:
+	case BPF_ALU | BPF_DIV | BPF_X:
+	case BPF_ALU | BPF_MOD | BPF_X:
+	case BPF_ALU | BPF_AND | BPF_K:
+	case BPF_ALU | BPF_AND | BPF_X:
+	case BPF_ALU | BPF_OR | BPF_K:
+	case BPF_ALU | BPF_OR | BPF_X:
+	case BPF_ALU | BPF_XOR | BPF_K:
+	case BPF_ALU | BPF_XOR | BPF_X:
+	case BPF_ALU | BPF_LSH | BPF_X:
+	case BPF_ALU | BPF_RSH | BPF_X:
+	case BPF_ALU | BPF_NEG:
+	case BPF_LD | BPF_W | BPF_LEN:
+	case BPF_LD | BPF_W | BPF_IND:
+	case BPF_LD | BPF_H | BPF_IND:
+	case BPF_LD | BPF_B | BPF_IND:
+	case BPF_LD | BPF_IMM:
+	case BPF_LDX | BPF_W | BPF_LEN:
+	case BPF_LDX | BPF_B | BPF_MSH:
+	case BPF_LDX | BPF_IMM:
+	case BPF_MISC | BPF_TAX:
+	case BPF_MISC | BPF_TXA:
+	case BPF_RET | BPF_K:
+	case BPF_RET | BPF_A:
+		return true;
+	default:
+		return false;
+	}
+}
+
+/*
+ * A socket filter has to get past bpf_check_classic(), whose last check is
+ * a RET at the end, before it attaches and runs, so most do; the odd crazy
+ * instruction keeps its refusals reached.
+ */
+static void socket_filters_pass_the_classic_checks(void)
+{
+	enum { PROGRAMS = 4000 };
+	unsigned int i, pc, passed = 0;
+
+	for (i = 0; i < PROGRAMS; i++) {
+		unsigned long *addr = NULL, len = 0;
+		const struct sock_filter *last;
+		struct sock_fprog *prog;
+		bool ok = true;
+
+		bpf_gen_filter(&addr, &len);
+		prog = (struct sock_fprog *) addr;
+		for (pc = 0; ok && pc < prog->len; pc++)
+			ok = classic_insn_ok(&prog->filter[pc], pc, prog->len);
+		last = &prog->filter[prog->len - 1];
+		passed += ok && (last->code == (BPF_RET | BPF_K) ||
+				 last->code == (BPF_RET | BPF_A));
+		free(prog->filter);
+		free(prog);
+	}
+	check("fewer than two filters in three get past the classic checks",
+	      "socket filter", passed * 3 > PROGRAMS * 2);
+	check("no filter is refused", "socket filter", passed < PROGRAMS);
+}
+
+/*
  * seccomp_check_filter() refuses an absolute load past struct
  * seccomp_data or off a word boundary, so an arch check loads the arch
  * and puts the AUDIT_ARCH value in the JEQ after the load, mostly the
@@ -2338,6 +2442,7 @@ void bpf_gen_self_check(void)
 	map_elem_draws_reach_the_maps_code();
 	link_create_takes_its_arm_and_the_head_its_taker_wants();
 	link_create_draws_an_attach_type_its_program_takes();
+	socket_filters_pass_the_classic_checks();
 	seccomp_arch_checks_compare_the_arch();
 	seccomp_programs_refuse_only_calls_they_name();
 #ifdef USE_SECCOMP
