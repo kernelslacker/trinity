@@ -776,6 +776,11 @@ FAKE_SRCS	+= rds_sockopt_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/rxrpc.c
 FAKE_SRCS	+= rxrpc_sockopt_test.c
 
+# net/proto/nfc.c brings the NFC option builder, whose LLCP options
+# nfc_sockopt_test.c holds to what nfc_llcp_setsockopt() takes.
+PARENT_SRCS	+= $(TOP)/net/proto/nfc.c
+FAKE_SRCS	+= nfc_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.

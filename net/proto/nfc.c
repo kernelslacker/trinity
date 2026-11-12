@@ -40,9 +40,9 @@ static void nfc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 	}
 }
 
+/* The NFC_LLCP_REMOTE_* parameters are getsockopt's alone. */
 static const unsigned int nfc_opts[] = {
 	NFC_LLCP_RW, NFC_LLCP_MIUX,
-	NFC_LLCP_REMOTE_MIU, NFC_LLCP_REMOTE_LTO, NFC_LLCP_REMOTE_RW,
 };
 
 static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
@@ -52,8 +52,13 @@ static void nfc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	so->level = SOL_NFC;
 	so->optname = RAND_ARRAY(nfc_opts);
 
+	/* nfc_llcp_setsockopt() takes a receive window up to LLCP_MAX_RW
+	 * (15) and a MIUX up to LLCP_MAX_MIUX (0x7ff). */
 	optval32 = (unsigned int *) so->optval;
-	*optval32 = rnd_u32();
+	if (so->optname == NFC_LLCP_RW)
+		*optval32 = rnd_modulo_u32(16);
+	else
+		*optval32 = rnd_modulo_u32(0x800);
 	so->optlen = sizeof(unsigned int);
 }
 
