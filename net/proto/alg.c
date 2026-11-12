@@ -8,11 +8,13 @@
 #include "net.h"
 #include "proto-alg-dict.h"
 #include "rnd.h"
+#include "sanitise.h"	/* get_random_key_serial */
 
 #ifdef USE_IF_ALG
 #include <linux/if_alg.h>
 
 #include "kernel/crypto.h"
+#include "kernel/if_alg.h"
 #include "kernel/socket.h"
 static const char *hashes[] = {
 	"md4", "md5",
@@ -256,10 +258,6 @@ static void alg_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct s
 #define ALG_SET_AEAD_AUTHSIZE	5
 #define ALG_SET_DRBG_ENTROPY	6
 
-#ifndef ALG_SET_KEY_BY_KEY_SERIAL
-#define ALG_SET_KEY_BY_KEY_SERIAL 7
-#endif
-
 static const unsigned int alg_opts[] = {
 	ALG_SET_KEY, ALG_SET_IV, ALG_SET_OP,
 	ALG_SET_AEAD_ASSOCLEN, ALG_SET_AEAD_AUTHSIZE,
@@ -342,6 +340,13 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 		fill = len < page_size ? len : page_size;
 		generate_rand_bytes((unsigned char *) so->optval, fill);
 		so->optlen = len;
+		break;
+
+	case ALG_SET_KEY_BY_KEY_SERIAL:
+		/* alg_setkey_by_key_serial() looks the serial up as a key,
+		 * and the zeroed optval's 0 names none. */
+		*(int32_t *) so->optval = get_random_key_serial();
+		so->optlen = sizeof(int32_t);
 		break;
 
 	default:

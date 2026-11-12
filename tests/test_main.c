@@ -143,6 +143,7 @@ void timer_create_self_check(void);
 void timerfd_settime_self_check(void);
 void signalfd_pool_self_check(void);
 void alg_sockaddr_self_check(void);
+void alg_sockopt_self_check(void);
 void can_sockaddr_self_check(void);
 void can_sockopt_self_check(void);
 void qrtr_sockaddr_self_check(void);
@@ -826,6 +827,11 @@ int main(int argc, char **argv)
 	printf("  alg_sockaddr_self_check ... ");
 	fflush(stdout);
 	alg_sockaddr_self_check();
+	printf("OK\n");
+
+	printf("  alg_sockopt_self_check ... ");
+	fflush(stdout);
+	alg_sockopt_self_check();
 	printf("OK\n");
 
 	printf("  can_sockaddr_self_check ... ");

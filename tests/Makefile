@@ -696,6 +696,10 @@ PARENT_SRCS	+= $(TOP)/net/proto/alg.c \
 		   $(TOP)/net/proto/alg-dict.c
 FAKE_SRCS	+= alg_sockaddr_test.c
 
+# alg_sockopt_test.c holds the key serials the AF_ALG option builder of the
+# net/proto/alg.c linked above draws to ones lookup_user_key() can find.
+FAKE_SRCS	+= alg_sockopt_test.c
+
 # net/proto/can.c brings the AF_CAN sockaddr generator, whose ifindex
 # can_sockaddr_test.c holds to the one raw_bind() and bcm_connect() take
 # for any CAN device.
