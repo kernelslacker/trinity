@@ -135,13 +135,25 @@ static void can_isotp_setsockopt(struct sockopt *so)
 		*(unsigned int *) so->optval = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
-	case CAN_ISOTP_LL_OPTS:
+	case CAN_ISOTP_LL_OPTS: {
+		/* isotp_setsockopt_locked() takes a data length padlen()
+		 * keeps, and with the classic CAN MTU only 8 and no
+		 * tx_flags. */
+		static const __u8 fd_dls[] = { 8, 12, 16, 20, 24, 32, 48, 64 };
+
 		ll = (struct can_isotp_ll_options *) so->optval;
-		ll->mtu = RAND_BOOL() ? 16 : 72;
-		ll->tx_dl = 8;
-		ll->tx_flags = rnd_u32() & 0x07;
+		if (RAND_BOOL()) {
+			ll->mtu = CAN_MTU;
+			ll->tx_dl = 8;
+			ll->tx_flags = 0;
+		} else {
+			ll->mtu = CANFD_MTU;
+			ll->tx_dl = RAND_ARRAY(fd_dls);
+			ll->tx_flags = rnd_u32() & 0x07;
+		}
 		so->optlen = sizeof(struct can_isotp_ll_options);
 		break;
+	}
 	}
 }
 

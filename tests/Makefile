@@ -702,6 +702,11 @@ FAKE_SRCS	+= alg_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/can.c
 FAKE_SRCS	+= can_sockaddr_test.c
 
+# can_sockopt_test.c holds the ISO-TP link-layer options of the
+# net/proto/can.c linked above to the ones isotp_setsockopt_locked()
+# takes.
+FAKE_SRCS	+= can_sockopt_test.c
+
 # net/proto/qrtr.c brings the AF_QIPCRTR sockaddr generator, whose node
 # qrtr_sockaddr_test.c holds to the one qrtr_bind() takes.
 PARENT_SRCS	+= $(TOP)/net/proto/qrtr.c
