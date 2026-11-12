@@ -262,6 +262,12 @@ LDFLAGS		+= -Wl,--wrap=ctime_marks_change -Wl,--wrap=stat_mnt_id
 # moment it is published; unhooked, the call goes on to the stand-in.
 LDFLAGS		+= -Wl,--wrap=publish_resource
 
+# seed_timerid_if_empty() stand-in: syscalls/timer/timer_create.c is linked,
+# and the real call would make a timer for a pool the timer sanitisers
+# gen_arg_time_test.c and post_oracle_test.c run never build.
+# gen_arg_time_test.c wraps it to leave that pool empty.
+LDFLAGS		+= -Wl,--wrap=seed_timerid_if_empty
+
 # pick_cmsg_kind() and cmsg_build() stand-ins: lib/cmsg_build.c is linked
 # for cmsg_build_test.c, which runs the builder through __real_, and the
 # send.c sanitisers get arg_coupling_test.c's wrappers, which build no
@@ -877,6 +883,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/io_uring/io_uring_register.c \
 # post_oracle_test.c checks the tags of.
 PARENT_SRCS	+= $(TOP)/syscalls/fsnotify/fanotify_init.c \
 		   $(TOP)/syscalls/timer/timerfd_create.c
+
+# syscalls/timer/timer_create.c brings timer_create, whose timers' signal
+# timer_create_test.c holds to the set health/signals-safelist.c defines.
+PARENT_SRCS	+= $(TOP)/syscalls/timer/timer_create.c \
+		   $(TOP)/health/signals-safelist.c
+FAKE_SRCS	+= timer_create_test.c
 
 # fanotify_init.c's get_fanotify_init_flags() draws the flags the fanotify
 # provider makes its groups with, which fanotify_flags_test.c checks.

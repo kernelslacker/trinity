@@ -19,6 +19,7 @@
 #include "sanitise.h"
 #include "random.h"
 #include "shm.h"
+#include "signals-safelist.h"
 #include "trinity.h"
 #include "utils.h"
 
@@ -114,16 +115,6 @@ int32_t seed_timerid_if_empty(void)
 	return (int32_t) tid_int;
 }
 
-static int pick_signo_avoiding_sigint(void)
-{
-	int signo;
-
-	do {
-		signo = rnd_modulo_u32(_NSIG);
-	} while (signo == SIGINT);
-	return signo;
-}
-
 /*
  * Snapshot for the post handler.  Mirrors the pipe/socketpair shape:
  *
@@ -181,13 +172,23 @@ static void timer_create_sanitise(struct syscallrecord *rec)
 		memset(sigev, 0, sizeof(*sigev));
 
 		sigev->sigev_value.sival_int = (int) rnd_u32();
-		sigev->sigev_signo = pick_signo_avoiding_sigint();
-		/* good_sigevent() requires sigev_signo > 0 && <= SIGRTMAX on
-		 * arms that check it (SIGEV_SIGNAL, SIGEV_SIGNAL|SIGEV_THREAD_ID).
-		 * pick_signo_avoiding_sigint() can return 0, which -EINVALs
-		 * before any interesting kernel path runs -- clamp to 1. */
-		if (sigev->sigev_signo == 0)
-			sigev->sigev_signo = 1;
+		/* An armed timer signals the child that made it, on every
+		 * expiry, as a kill(getpid(), sig) would: draw from the
+		 * signals a child survives (signals-safelist.c) and the
+		 * realtime ones it ignores, which, like the safe ones it
+		 * ignores, park a periodic timer on the kernel's ignored
+		 * list.  Not SIGALRM or SIGXCPU, safe once but not as a
+		 * timer repeats them: each SIGALRM interrupts the syscall
+		 * in flight and runs the stall check, and the hundredth
+		 * SIGXCPU ends the child.  No child-fatal bucket, unlike
+		 * the delivery sanitisers': such a timer tears its child
+		 * down whenever it fires. */
+		do {
+			sigev->sigev_signo = RAND_BOOL() ?
+				child_safe_signals[rnd_modulo_u32(child_safe_signals_count)] :
+				SIGRTMIN + rnd_modulo_u32(SIGRTMAX - SIGRTMIN + 1);
+		} while (sigev->sigev_signo == SIGALRM ||
+			 sigev->sigev_signo == SIGXCPU);
 
 		/* Disposition arms match the kernel's good_sigevent() acceptance
 		 * set: SIGEV_NONE, SIGEV_SIGNAL, SIGEV_THREAD, and the compound

@@ -2,7 +2,8 @@
 
 /*
  * Shared signal vocabulary for the kill / tgkill / rt_sigqueueinfo /
- * pidfd_send_signal sanitisers.  Defined once in signals-safelist.c so
+ * pidfd_send_signal sanitisers, and for the signal timer_create's gives
+ * the timers it makes.  Defined once in signals-safelist.c so
  * the four delivery-syscall safe-lists cannot drift apart from -- or
  * from -- the policy mask_signals_child() actually installs.
  *

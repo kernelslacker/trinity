@@ -47,7 +47,8 @@ void blob_fill(unsigned char *buf, size_t len, unsigned int nr, bool do32)
 
 /* timer_settime's sanitiser seeds a timer when the pool has none; the
  * pool stays empty here. */
-int32_t seed_timerid_if_empty(void)
+int32_t __wrap_seed_timerid_if_empty(void);
+int32_t __wrap_seed_timerid_if_empty(void)
 {
 	return -1;
 }
