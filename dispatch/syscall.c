@@ -6,6 +6,8 @@
  * EXTRA_FORK throwaway-grandchild wrapper.
  */
 
+#include <errno.h>
+
 #include "child.h"
 #include "deferred-free.h"
 #include "kcov.h"
@@ -37,7 +39,11 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 				  "entry\n");
 		/* Mark as kernel-never-entered so kcov_collect() skips
 		 * total_calls / per_syscall_calls[nr] and the arg-drain
-		 * in handle_syscall_ret() still runs on return.
+		 * in handle_syscall_ret() still runs on return.  The
+		 * failure return is for the readers that do not wait for
+		 * AFTER (the per-arm return class, the chain executor,
+		 * the crash rings), which would otherwise take the
+		 * previous call's answer for this one's.
 		 *
 		 * Deliberately softer than the two chokepoints in
 		 * child_process(), the loop-top seal and the childop-dispatch
@@ -52,7 +58,11 @@ void do_syscall(struct syscallrecord *rec, struct syscallentry *entry,
 		 * -- do not silently harden to abort without updating the
 		 * loop-top comments and the rationale in the commit log. */
 		clear_stale_kcov_state(kc, rec);
+		srec_publish_begin(rec);
+		rec->errno_post = EINVAL;
+		rec->retval = (unsigned long) -1L;
 		rec->validator_rejected = true;
+		srec_publish_end(rec);
 		__atomic_add_fetch(
 			&shm->stats.syscall_dispatch.seal_fail_ops,
 			1, __ATOMIC_RELAXED);

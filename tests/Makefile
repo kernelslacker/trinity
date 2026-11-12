@@ -89,6 +89,11 @@ LDFLAGS		+= -Wl,--wrap=kill_pid
 # executor's biased step ends in with one that only records the entry.
 LDFLAGS		+= -Wl,--wrap=dispatch_step
 
+# Seal failure injection: dispatch_extrafork_test.c wraps
+# deferred_free_seal_all() so a case can fail do_syscall()'s kernel-entry
+# seal.  The wrapper forwards to the real seal unless armed.
+LDFLAGS		+= -Wl,--wrap=deferred_free_seal_all
+
 # Fake CLOCK_MONOTONIC: fake_parent.c wraps clock_gettime(), sleep() and
 # usleep() so a test can run out the shutdown wait's 30 s bound or the
 # spawn path's backoff and stall deadline without sleeping.  The

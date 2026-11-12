@@ -4,8 +4,9 @@
  * the caller's own.  The fchdir, fchroot and setns sanitisers close only the
  * fd they opened, the coupling validator keeps F_SETSIG to signals the parent
  * ignores, the kernel is handed the slots the validator vetted, a fork
- * failing in a dead pid namespace recycles the child, and a compat call
- * reaches the kernel with all six arguments.
+ * failing in a dead pid namespace recycles the child, a compat call
+ * reaches the kernel with all six arguments, and a call whose kernel-entry
+ * seal fails reports no answer.
  */
 
 #include <errno.h>
@@ -75,6 +76,18 @@ bool fd_event_enqueue(struct fd_event_ring *ring, enum fd_event_type type, int f
 {
 	(void)ring; (void)type; (void)fd1;
 	return false;
+}
+
+/* Fails do_syscall()'s kernel-entry seal while set. */
+static bool seal_fails;
+
+bool __real_deferred_free_seal_all(void);
+bool __wrap_deferred_free_seal_all(void);
+bool __wrap_deferred_free_seal_all(void)
+{
+	if (seal_fails)
+		return false;
+	return __real_deferred_free_seal_all();
 }
 
 /* Shared, as in production: a write by the grandchild is visible to us. */
@@ -490,6 +503,31 @@ static void selftest_compat_sixth_arg(void)
 }
 #endif
 
+/* A call whose seal fails never enters the kernel, and its record says
+ * so: the per-arm return class, the chain executor and the crash rings
+ * read the return without waiting for AFTER, and would take the previous
+ * call's answer for this one's. */
+static void selftest_seal_failure(void)
+{
+	struct syscallentry entry = { .name = "probe" };
+	struct childdata *child = map_child();
+	struct syscallrecord *rec = &child->syscall;
+
+	rec->nr = __NR_getppid;
+	rec->retval = 7;	/* the previous call's answer */
+	seal_fails = true;
+	do_syscall(rec, &entry, &child->kcov, child);
+	seal_fails = false;
+
+	if (!rec->validator_rejected ||
+	    __atomic_load_n(&rec->state, __ATOMIC_ACQUIRE) == AFTER)
+		BUG("dispatch_extrafork: a call whose seal failed was taken for one that ran");
+	if (rec->retval != (unsigned long)-1L || rec->errno_post != EINVAL)
+		BUG("dispatch_extrafork: a call whose seal failed kept the previous call's answer");
+
+	munmap(child, sizeof(*child));
+}
+
 void dispatch_extrafork_self_check(void);
 void dispatch_extrafork_self_check(void)
 {
@@ -502,4 +540,5 @@ void dispatch_extrafork_self_check(void)
 #ifdef DO_32_SYSCALL
 	selftest_compat_sixth_arg();
 #endif
+	selftest_seal_failure();
 }
