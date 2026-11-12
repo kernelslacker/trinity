@@ -183,12 +183,17 @@ static void scream_stuck_child(struct childdata *child, int childno,
 	}
 
 	if (stack_n > 0) {
+		char *line, *save = NULL;
+
 		output(0,
-		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s sigblk=%s\nkernel stack:\n%s%s",
+		       "STUCK CHILD: pid=%d childno=%d op=%s wedged %lds state=%c wchan=%s sigblk=%s\nkernel stack:\n",
 		       pid, childno, opname, (long)wedge_seconds, state, wchan,
-		       sigblkstr,
-		       stackbuf,
-		       stackbuf[stack_n - 1] == '\n' ? "" : "\n");
+		       sigblkstr);
+		/* One output() call formats at most 1KB and the stack can
+		 * fill stackbuf, so it goes out a line at a time. */
+		for (line = strtok_r(stackbuf, "\n", &save); line != NULL;
+		     line = strtok_r(NULL, "\n", &save))
+			output(CONT, "%s\n", line);
 	} else {
 		/* Distinguish open-gate (EPERM: ptrace_may_access on a
 		 * non-dumpable child; EACCES: CAP_SYS_ADMIN missing;
