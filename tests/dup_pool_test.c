@@ -562,14 +562,16 @@ static void old_object_is_retired(void)
 		      pool_find(SRC, OBJ_FD_EVENTFD) != NULL &&
 		      pool_find(SRC, OBJ_FD_EVENTFD)->stale);
 
-		/* The source is not tracked: nothing joins a pool, but the
-		 * file the copy replaced is gone all the same. */
+		/* The source is not tracked: the copy joins the pool of
+		 * returned files, and the file it replaced is gone. */
 		reset();
 		pool_add(true, NEW, OBJ_FD_PIPE);
 		run(entries[i], name, SRC, NEW, NEW);
-		check("the replaced pipe is still pooled when the copy is not",
-		      name, pool_count(NEW) == 0);
-		check("an untracked source was pooled", name, published == 0);
+		check("the replaced pipe is still pooled", name,
+		      pool_find(NEW, OBJ_FD_PIPE) == NULL);
+		check("a copy of an untracked source was not pooled as a file",
+		      name, pool_find(NEW, OBJ_FD_TESTFILE) != NULL &&
+		      pool_count(NEW) == 1 && published == 1);
 	}
 
 	/* dup: a free number, held by an object whose fd was closed. */
@@ -586,7 +588,9 @@ static void old_object_is_retired(void)
 	pool_add(true, NEW, OBJ_FD_PIPE);
 	run(&syscall_dup, "dup", SRC, 0, NEW);
 	check("a stale object survived a dup of an untracked fd",
-	      "dup", pool_count(NEW) == 0 && published == 0);
+	      "dup", pool_find(NEW, OBJ_FD_PIPE) == NULL);
+	check("a dup of an untracked fd was not pooled as a file", "dup",
+	      pool_find(NEW, OBJ_FD_TESTFILE) != NULL && pool_count(NEW) == 1);
 }
 
 /* dup2(fd, fd) succeeds and changes nothing: nothing is closed, retired
@@ -671,6 +675,53 @@ static void protected_fds_are_not_pooled(void)
 	run(&syscall_dup3, "dup3", KCOV_CMP_FD, NEW, NEW);
 	check("a dup3 of the kcov cmp fd was pooled", "dup3",
 	      published == 0 && pool_count(NEW) == 0);
+}
+
+/* The copy of an fd no pool tracks, a provider's replenish fd for one,
+ * goes to the pool of returned files, which holds POOLED_FD_MAX at most:
+ * a full one destroys its oldest file.  A copy that pool refuses is
+ * closed, or it would keep the file alive with nothing to close it. */
+static void untracked_copy_is_capped_or_closed(void)
+{
+	const struct syscallentry *entries[] = {
+		&syscall_dup, &syscall_dup2, &syscall_dup3,
+	};
+	unsigned int i, k;
+
+	for (i = 0; i < ARRAY_SIZE(entries); i++) {
+		const char *name = entries[i]->name;
+		int src, copy;
+
+		src = eventfd(0, 0);
+		copy = dup(src);
+		if (src < 0 || copy < 0)
+			BUG("fd pool: cannot make a descriptor to copy");
+
+		reset();
+		for (k = 0; k < POOLED_FD_MAX; k++) {
+			pool_add(true, 91000 + k, OBJ_FD_TESTFILE);
+			pool_find(91000 + k, OBJ_FD_TESTFILE)->obj.slot_version =
+				1000 - k;
+		}
+		run(entries[i], name, (unsigned long) src,
+		    (unsigned long) copy, (unsigned long) copy);
+		check("a full pool did not make room for the copy", name,
+		      destroys == 1 &&
+		      destroyed_fds[0] == 91000 + POOLED_FD_MAX - 1 &&
+		      pool_find(copy, OBJ_FD_TESTFILE) != NULL);
+		check("a pooled copy was closed", name,
+		      fcntl(copy, F_GETFD) != -1);
+
+		reset();
+		no_destructor = true;
+		run(entries[i], name, (unsigned long) src,
+		    (unsigned long) copy, (unsigned long) copy);
+		check("a copy the pool refused was pooled or left open", name,
+		      published == 0 && fcntl(copy, F_GETFD) == -1);
+		check("the source of a refused copy was closed", name,
+		      fcntl(src, F_GETFD) != -1);
+		close(src);
+	}
 }
 
 /* A type publish_resource() cannot route stays unpooled, and the copy
@@ -784,13 +835,16 @@ static void fcntl_dupfd_pools_the_copy(void)
 		check("F_DUPFD reported a close it did not make", name,
 		      closes == 0);
 
-		/* The source is not tracked: nothing joins a pool, but the
-		 * number is free all the same. */
+		/* The source is not tracked: the copy joins the pool of
+		 * returned files, and the number is free all the same. */
 		reset();
 		pool_add(true, NEW, OBJ_FD_PIPE);
 		run_fcntl(cmds[i].cmd, SRC, NEW, name);
 		check("a stale object survived an F_DUPFD of an untracked fd",
-		      name, pool_count(NEW) == 0 && published == 0);
+		      name, pool_find(NEW, OBJ_FD_PIPE) == NULL);
+		check("an F_DUPFD of an untracked fd was not pooled as a file",
+		      name, pool_find(NEW, OBJ_FD_TESTFILE) != NULL &&
+		      pool_count(NEW) == 1);
 
 		/* A call that failed, or returned what no fd table holds. */
 		for (j = 0; j < 2; j++) {
@@ -4528,6 +4582,7 @@ void dup_pool_self_check(void)
 	failed_call_pools_nothing();
 	stdio_is_not_pooled();
 	protected_fds_are_not_pooled();
+	untracked_copy_is_capped_or_closed();
 	unrouted_type_stays_open();
 	fcntl_dupfd_pools_the_copy();
 	fcntl_other_cmds_pool_nothing();

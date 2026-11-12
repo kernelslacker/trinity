@@ -7,6 +7,7 @@
 #include <stdbool.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <unistd.h>
 #include "fd.h"
 #include "net.h"
 #include "objects.h"
@@ -15,9 +16,12 @@
 /*
  * Pool the descriptor a successful dup, dup2, dup3 or fcntl(F_DUPFD*)
  * returned under the object type of the one it copies, so it joins the
- * pool its source came from.  A source no pool tracks has no type to
- * inherit, and neither end of the copy may be a descriptor the protected
- * registry shields: the copy reaches the same file.  Types
+ * pool its source came from.  A source no pool tracks, a provider's
+ * replenish fd for one, has no type to inherit: its copy goes to the
+ * capped pool of returned files, or is closed when that refuses it, since
+ * nothing else would close it and it keeps the file alive after the
+ * source's owner closes it.  Neither end of the copy may be a descriptor
+ * the protected registry shields: the copy reaches the same file.  Types
  * publish_resource() does not route (the pagecache and canary files,
  * scratch block devices) stay unpooled, and the copy stays open.
  *
@@ -40,8 +44,11 @@ void pool_dup_result(int oldfd, int newfd)
 	if (fd_is_protected(oldfd))
 		return;
 	src = find_object_by_fd(oldfd);
-	if (src == NULL)
+	if (src == NULL) {
+		if (!pool_returned_fd(newfd))
+			close(newfd);
 		return;
+	}
 
 	type = src->obj_type;
 	obj = publish_resource(type, newfd, NULL);
