@@ -10,3 +10,11 @@
  * ruleset still denies what it handles, and the caller closes it.
  */
 bool landlock_allow_permissions(int ruleset_fd, __u64 handled);
+
+/*
+ * Make a ruleset that handles the filesystem rights in @handled_fs allow every
+ * one of them beneath the tmp dir, where a child that restricts itself with it
+ * makes its bug log.  False means the rule was refused, and the caller closes
+ * the ruleset.
+ */
+bool landlock_allow_tmpdir(int ruleset_fd, __u64 handled_fs);

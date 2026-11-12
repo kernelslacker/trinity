@@ -242,15 +242,16 @@ static void cleanup_landlock_create_ruleset(struct syscallrecord *rec)
 }
 
 /*
- * What sys_landlock_create_ruleset() took as handled_permissions.  The kernel
- * copies min(56, size) bytes of the attr and zero-fills the rest, so a size
- * inside the field exposes only its low bytes, and a compat call hands it the
- * low 32 bits of the pointer and the size.  Copying the same bytes into a
- * zeroed struct reads the field as the kernel did, whatever the byte order.
- * The shadows hold what __do_syscall() passed the kernel.  False when the attr
- * cannot be read back.
+ * What sys_landlock_create_ruleset() took as handled_access_fs and
+ * handled_permissions.  The kernel copies min(56, size) bytes of the attr and
+ * zero-fills the rest, so a size inside a field exposes only its low bytes,
+ * and a compat call hands it the low 32 bits of the pointer and the size.
+ * Copying the same bytes into a zeroed struct reads the fields as the kernel
+ * did, whatever the byte order.  The shadows hold what __do_syscall() passed
+ * the kernel.  False when the attr cannot be read back.
  */
-static bool kernel_handled_permissions(struct syscallrecord *rec, __u64 *handled)
+static bool kernel_handled(struct syscallrecord *rec, __u64 *handled_fs,
+			   __u64 *handled)
 {
 	struct landlock_ruleset_attr_abi12 seen = { 0 };
 	unsigned long attr = get_arg_snapshot(rec, 1);
@@ -264,13 +265,14 @@ static bool kernel_handled_permissions(struct syscallrecord *rec, __u64 *handled
 				   min(size, sizeof(seen))))
 		return false;
 
+	*handled_fs = seen.handled_access_fs;
 	*handled = seen.handled_permissions;
 	return true;
 }
 
 static void post_landlock_create_ruleset(struct syscallrecord *rec)
 {
-	__u64 handled;
+	__u64 handled_fs, handled;
 	int fd = rec->retval;
 
 	if ((long)rec->retval < 0)
@@ -289,17 +291,18 @@ static void post_landlock_create_ruleset(struct syscallrecord *rec)
 	}
 
 	/*
-	 * landlock_allow_permissions() says why a ruleset is armed before it is
-	 * published.  One that cannot be armed is closed: left open and out of
-	 * the pool, a guessed number could still restrict the child with it.
-	 * So is one whose attr cannot be read back to say what it handles, and
-	 * pool_typed_fd() closes one the pool turns away, so whatever stays open
-	 * is armed.  A stdio or protected number is never closed here: it is
-	 * the child's own plumbing unless the child closed it, and a stomped
-	 * retval must not close it.
+	 * landlock_allow_permissions() and landlock_allow_tmpdir() say why a
+	 * ruleset is armed before it is published.  One that cannot be armed is
+	 * closed: left open and out of the pool, a guessed number could still
+	 * restrict the child with it.  So is one whose attr cannot be read back
+	 * to say what it handles, and pool_typed_fd() closes one the pool turns
+	 * away, so whatever stays open is armed.  A stdio or protected number is
+	 * never closed here: it is the child's own plumbing unless the child
+	 * closed it, and a stomped retval must not close it.
 	 */
-	if (!kernel_handled_permissions(rec, &handled) ||
-	    !landlock_allow_permissions(fd, handled)) {
+	if (!kernel_handled(rec, &handled_fs, &handled) ||
+	    !landlock_allow_permissions(fd, handled) ||
+	    !landlock_allow_tmpdir(fd, handled_fs)) {
 		if (fd > 2 && !fd_is_protected(fd))
 			close(fd);
 		rec->retval = -1UL;

@@ -109,14 +109,32 @@ static long add_path_rule(int ruleset_fd, const char *path, __u64 allowed)
 #endif
 
 /*
- * Path-beneath rules for a ruleset on its way to the pool.  The ruleset
- * denies each filesystem right it handles wherever no rule allows it, and
- * a child that restricts itself with it still has to make its bug log
- * under the tmp dir, so the first rule allows every handled right there;
- * false, with errno set, means that one was refused, and the ruleset must
- * not reach the pool.  A few more allow a random part of the handled
- * rights on random paths, so the ruleset has content of its own: the
- * kernel refuses a right the ruleset does not handle, or none at all.
+ * A ruleset denies each filesystem right it handles wherever no rule allows
+ * it, and a child that restricts itself with one still has to make its bug
+ * log under the tmp dir, so a ruleset on its way to a pool gets a rule that
+ * allows every handled right there.  One that handles none needs no rule,
+ * and the kernel refuses a rule that allows nothing.  False, with errno
+ * set, means the rule was refused, and the ruleset must not reach a pool.
+ */
+bool landlock_allow_tmpdir(int ruleset_fd, __u64 handled_fs)
+{
+	if (handled_fs == 0)
+		return true;
+#ifdef __NR_landlock_add_rule
+	return add_path_rule(ruleset_fd, trinity_tmpdir_abs(), handled_fs) == 0;
+#else
+	(void) ruleset_fd;
+	errno = ENOSYS;
+	return false;
+#endif
+}
+
+/*
+ * Path-beneath rules for a ruleset on its way to the pool: the tmp dir rule
+ * first, whose refusal keeps the ruleset out of the pool, then a few that
+ * allow a random part of the handled rights on random paths, so the ruleset
+ * has content of its own: the kernel refuses a right the ruleset does not
+ * handle, or none at all.
  *
  * We deliberately do NOT call landlock_restrict_self here --
  * that would sandbox the fuzzer itself.
@@ -126,7 +144,7 @@ static bool arm_landlock(int ruleset_fd, __u64 handled_fs)
 #ifdef __NR_landlock_add_rule
 	unsigned int i, count;
 
-	if (add_path_rule(ruleset_fd, trinity_tmpdir_abs(), handled_fs) != 0)
+	if (!landlock_allow_tmpdir(ruleset_fd, handled_fs))
 		return false;
 
 	count = 1 + rnd_modulo_u32(3);

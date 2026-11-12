@@ -1037,8 +1037,9 @@ static long run_create(struct syscallrecord *rec)
 
 /*
  * What the post handler owes the ruleset @fd that the model made.  One that
- * handles a permission is armed with a rule for each, whole, before it is
- * published, or it is closed, out of the pool and gone from the retval: an fd
+ * handles a permission is armed with a rule for each, whole, and one that
+ * handles a filesystem right with the tmp dir rule, before it is published,
+ * or it is closed, out of the pool and gone from the retval: an fd
  * left open and unpooled can still be named by a guessed number, and
  * restrict_self() with a ruleset that allows none of what it handles takes
  * that from the child for good.  The same goes for a ruleset the pool turns
@@ -1062,7 +1063,9 @@ static bool check_fate(const struct syscallrecord *rec, long fd)
 		   (handled & LANDLOCK_PERMISSION_NAMESPACE_USE)) ||
 		  (fake_refuse_type == LANDLOCK_RULE_CAPABILITY_COMPAT &&
 		   (handled & LANDLOCK_PERMISSION_CAPABILITY_USE)) ||
-		  (handled & ~BOTH_PERMISSIONS);
+		  (handled & ~BOTH_PERMISSIONS) ||
+		  (fake_refuse_type == LANDLOCK_RULE_PATH_BENEATH_COMPAT &&
+		   rs->handled_fs != 0);
 	kept = !unarmed && !pool_refuses && !pool_no_destructor;
 
 	if (kept) {
@@ -1071,9 +1074,13 @@ static bool check_fate(const struct syscallrecord *rec, long fd)
 		expect(fcntl(fd, F_GETFD) >= 0, "an armed and pooled ruleset is open",
 		       fd);
 		expect(publishes == 1, "an armed ruleset is published once", publishes);
-		expect(nr_rule_calls == (unsigned int) __builtin_popcountll(handled),
-		       "one rule for each permission the ruleset handles and no other",
+		expect(nr_rule_calls == (unsigned int) __builtin_popcountll(handled) +
+					(rs->handled_fs != 0),
+		       "one rule for each permission the ruleset handles, the tmp "
+		       "dir rule if it handles a filesystem right, and no other",
 		       nr_rule_calls);
+		if (rs->handled_fs != 0)
+			expect_tmp_dir_rule(fd, rs->handled_fs);
 		expect(published_rs.allowed_ns ==
 		       ((handled & LANDLOCK_PERMISSION_NAMESPACE_USE) ? NS_ALL : 0),
 		       "a handled namespace permission allows every type when the "
@@ -1112,6 +1119,7 @@ struct create_case {
 	int refuse_errno;		/* ... with this errno */
 	bool pool_refuses;
 	bool pool_no_destructor;
+	bool no_fs;			/* the attr handles no filesystem right */
 	unsigned int rules;		/* the rules the handler asks for */
 	bool kept;
 };
@@ -1126,31 +1134,34 @@ struct create_case {
  */
 static const struct create_case create_cases[] = {
 	{ .what = "a ruleset that handles no permission",
-	  .abi = 12, .size = 56, .rules = 0, .kept = true },
+	  .abi = 12, .size = 56, .rules = 1, .kept = true },
+	{ .what = "a ruleset that handles no filesystem right",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS, .no_fs = true,
+	  .rules = 2, .kept = true },
 	{ .what = "namespace use", .abi = 12, .size = 56,
-	  .perms = LANDLOCK_PERMISSION_NAMESPACE_USE, .rules = 1, .kept = true },
+	  .perms = LANDLOCK_PERMISSION_NAMESPACE_USE, .rules = 2, .kept = true },
 	{ .what = "capability use", .abi = 12, .size = 56,
-	  .perms = LANDLOCK_PERMISSION_CAPABILITY_USE, .rules = 1, .kept = true },
+	  .perms = LANDLOCK_PERMISSION_CAPABILITY_USE, .rules = 2, .kept = true },
 	{ .what = "both permissions", .abi = 12, .size = 56,
-	  .perms = BOTH_PERMISSIONS, .rules = 2, .kept = true },
+	  .perms = BOTH_PERMISSIONS, .rules = 3, .kept = true },
 	{ .what = "an attr longer than the kernel's, with a zero tail",
-	  .abi = 12, .size = 60, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .abi = 12, .size = 60, .perms = BOTH_PERMISSIONS, .rules = 3,
 	  .kept = true },
 	{ .what = "a size that ends one byte into handled_permissions",
-	  .abi = 12, .size = 49, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .abi = 12, .size = 49, .perms = BOTH_PERMISSIONS, .rules = 3,
 	  .kept = true },
 	{ .what = "a size that ends in the middle of handled_permissions",
-	  .abi = 12, .size = 52, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .abi = 12, .size = 52, .perms = BOTH_PERMISSIONS, .rules = 3,
 	  .kept = true },
 	{ .what = "a size that ends one byte short of the whole attr",
-	  .abi = 12, .size = 55, .perms = BOTH_PERMISSIONS, .rules = 2,
+	  .abi = 12, .size = 55, .perms = BOTH_PERMISSIONS, .rules = 3,
 	  .kept = true },
 	{ .what = "a size that stops short of handled_permissions",
-	  .abi = 12, .size = 48, .perms = BOTH_PERMISSIONS, .rules = 0,
+	  .abi = 12, .size = 48, .perms = BOTH_PERMISSIONS, .rules = 1,
 	  .kept = true },
 	{ .what = "a bit past the size that was copied",
 	  .abi = 12, .size = 49, .perms = BOTH_PERMISSIONS | (1ULL << 8),
-	  .rules = 2, .kept = true },
+	  .rules = 3, .kept = true },
 	{ .what = "the same bit in a size that copies it, which is refused",
 	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS | (1ULL << 8),
 	  .rules = 0, .kept = false },
@@ -1169,13 +1180,21 @@ static const struct create_case create_cases[] = {
 	{ .what = "a refused rule the ruleset does not need",
 	  .abi = 12, .size = 56, .perms = LANDLOCK_PERMISSION_CAPABILITY_USE,
 	  .refuse_type = LANDLOCK_RULE_NAMESPACE_COMPAT, .refuse_errno = ENOMEM,
-	  .rules = 1, .kept = true },
+	  .rules = 2, .kept = true },
+	{ .what = "a refused tmp dir rule, -EACCES",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
+	  .refuse_type = LANDLOCK_RULE_PATH_BENEATH_COMPAT,
+	  .refuse_errno = EACCES, .rules = 3, .kept = false },
+	{ .what = "a refused path rule the ruleset does not need",
+	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS, .no_fs = true,
+	  .refuse_type = LANDLOCK_RULE_PATH_BENEATH_COMPAT,
+	  .refuse_errno = EACCES, .rules = 2, .kept = true },
 	{ .what = "the pool turning an armed ruleset away",
 	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS, .pool_refuses = true,
-	  .rules = 2, .kept = false },
+	  .rules = 3, .kept = false },
 	{ .what = "a pool with nothing to close an armed ruleset with",
 	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
-	  .pool_no_destructor = true, .rules = 2, .kept = false },
+	  .pool_no_destructor = true, .rules = 3, .kept = false },
 	{ .what = "a permission the kernel has since added",
 	  .abi = 13, .size = 56, .perms = THIRD_PERMISSION, .rules = ANY_RULES,
 	  .kept = false },
@@ -1187,10 +1206,10 @@ static const struct create_case create_cases[] = {
 	  .kept = false },
 	{ .what = "flags the kernel truncates to none",
 	  .abi = 12, .size = 56, .perms = BOTH_PERMISSIONS,
-	  .flags = 1ULL << 32, .rules = 2, .kept = true },
+	  .flags = 1ULL << 32, .rules = 3, .kept = true },
 	{ .what = "a size a 32-bit task has truncated below the field",
 	  .abi = 12, .compat = true, .size = (1ULL << 32) | 8,
-	  .perms = BOTH_PERMISSIONS, .rules = 0, .kept = true },
+	  .perms = BOTH_PERMISSIONS, .rules = 1, .kept = true },
 	{ .what = "the version query", .abi = 12,
 	  .flags = LANDLOCK_CREATE_RULESET_VERSION, .rules = 0 },
 	{ .what = "the errata query", .abi = 12,
@@ -1218,7 +1237,7 @@ static void check_create_cases(void)
 	for (i = 0; i < ARRAY_SIZE(create_cases); i++) {
 		const struct create_case *cc = &create_cases[i];
 		struct landlock_ruleset_attr_abi12 hdr = {
-			.handled_access_fs = 1,
+			.handled_access_fs = cc->no_fs ? 0 : 1,
 			.handled_permissions = cc->perms,
 		};
 		unsigned char attr[96] = { 0 };
@@ -1551,6 +1570,9 @@ static void check_create(void)
 	run_creates(12, LANDLOCK_RULE_CAPABILITY_COMPAT, EINVAL, false, &st);
 	expect(st.kept < st.created && st.kept > st.created / 2,
 	       "a refused capability rule closes the rulesets that need it", st.kept);
+	run_creates(12, LANDLOCK_RULE_PATH_BENEATH_COMPAT, EACCES, false, &st);
+	expect(st.kept < st.created && st.kept > 0,
+	       "a refused tmp dir rule closes the rulesets that need it", st.kept);
 	run_creates(12, 0, 0, true, &st);
 	expect(st.created > 0 && st.kept == 0,
 	       "a pool that refuses every fd keeps no ruleset open", st.kept);
@@ -1606,8 +1628,9 @@ long __wrap_syscall(long number, ...)
 }
 
 /*
- * The provider's tmp dir rule opens trinity_tmpdir_abs(), which tmpdir_test.c
- * leaves at a tmp/ it removed, so the provider cases run under a live one.
+ * The tmp dir rule, the provider's and the create handler's, opens
+ * trinity_tmpdir_abs(), which tmpdir_test.c leaves at a tmp/ it removed, so
+ * the cases that make one run under a live one.
  */
 static char tmp_base[] = "/tmp/trinity-landlock-test.XXXXXX";
 static int saved_cwd = -1;
@@ -1645,11 +1668,11 @@ void landlock_self_check(void)
 	check_provider_excluded();
 	check_provider_tmp_rule_refused();
 	check_provider_refused_then_refused();
-	leave_tmp_dir();
 	check_allow_permissions();
 	check_allow_refused();
 	check_create();
 	check_create_stomped_args();
+	leave_tmp_dir();
 #endif
 
 	if (failed != 0)
