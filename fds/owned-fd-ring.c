@@ -2,6 +2,7 @@
 #include <unistd.h>
 
 #include "child-api.h"
+#include "objects.h"
 #include "owned-fd-ring.h"
 
 /*
@@ -72,8 +73,11 @@ void owned_fd_ring_record(struct owned_fd_ring *ring, int fd)
 		ring->linked = true;
 	}
 
-	/* Retire before the eviction below, which may be that very slot. */
+	/* Retire before the eviction below, which may be that very slot.  A
+	 * local object under the number is as stale, and the pool's
+	 * destructor would close this fd when it evicts it. */
 	owned_fd_ring_retire(fd);
+	remove_local_objects_by_fd(fd);
 
 	if (ring->head >= MAX_OWNED_FDS)
 		owned_fd_slot_evict(slot);

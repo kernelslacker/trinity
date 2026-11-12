@@ -4,6 +4,7 @@
  * recorded, so a number freed by a fuzzed close() and reissued stays open.
  * owned_fd_ring_retire() drops a number from every ring without closing it;
  * account_fd_and_group() retires every fd a call returns but one it was given.
+ * Recording an fd also retires the local objects still under its number.
  */
 
 #include <fcntl.h>
@@ -31,6 +32,17 @@ enum frontier_group_antilock_mode frontier_group_antilock_mode;
 
 static unsigned int pushes;
 static int pushed_fd;
+
+extern void (*fake_remove_local_objects_by_fd)(int fd);	/* dup_pool_test.c */
+
+static unsigned int local_retires;
+static int local_retired_fd;
+
+static void note_local_retire(int fd)
+{
+	local_retires++;
+	local_retired_fd = fd;
+}
 
 void child_fd_ring_push(struct child_fd_ring *ring, int fd)
 {
@@ -187,7 +199,7 @@ void owned_fd_ring_self_check(void)
 	 */
 	static struct owned_fd_ring wrap_ring, recycled_ring, reissued_ring,
 				    unreadable_ring, first_ring, second_ring,
-				    retired_ring, selective_ring;
+				    retired_ring, selective_ring, pooled_ring;
 	int fresh[MAX_OWNED_FDS];
 	struct stat st, want;
 	int a[2], b[2], owned, other;
@@ -314,6 +326,24 @@ void owned_fd_ring_self_check(void)
 	if (fcntl(other, F_GETFD) >= 0)
 		BUG("owned fd ring: retiring a number kept another slot's fd");
 	close_all(fresh, MAX_OWNED_FDS);
+	close(owned);
+
+	/*
+	 * The kernel hands out only a free number, so a local object still
+	 * under the one recorded names a file that is gone: it is retired,
+	 * or the pool's destructor would close the new fd under it.
+	 */
+	owned = dup(a[1]);
+	if (owned < 0)
+		BUG("owned fd ring: dup failed");
+	local_retires = 0;
+	fake_remove_local_objects_by_fd = note_local_retire;
+	owned_fd_ring_record(&pooled_ring, owned);
+	fake_remove_local_objects_by_fd = NULL;
+	if (local_retires != 1 || local_retired_fd != owned)
+		BUG("owned fd ring: a recorded fd left the local objects under its number");
+	if (fcntl(owned, F_GETFD) < 0)
+		BUG("owned fd ring: retiring the local objects closed the fd");
 	close(owned);
 
 	account_self_check(a, b);
