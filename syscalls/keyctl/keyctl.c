@@ -375,11 +375,9 @@ static void sanitise_keyctl_get_persistent(struct syscallrecord *rec)
 	rec->a2 = RAND_BOOL() ? (unsigned long) -1 : (unsigned long)(rnd_modulo_u32(65536));
 	rec->a3 = (unsigned long) random_key_id();
 
-	/* Scalar-only arm: two integer slots.  See REEXEC_OK contract
-	 * in include/syscall.h.  post_keyctl registers the returned
-	 * persistent-keyring serial into OBJ_KEY_SERIAL, which is
-	 * additive to the pool and does not gate any deferred-free /
-	 * post_state oracle -- safe under the contract. */
+	/* Scalar-only arm: two integer slots, and no deferred-free or
+	 * post_state oracle behind them.  See REEXEC_OK contract in
+	 * include/syscall.h. */
 	rec->flags |= REEXEC_OK;
 }
 
@@ -601,23 +599,28 @@ static void sanitise_keyctl(struct syscallrecord *rec)
  *   KEYCTL_GET_KEYRING_ID       - returns the resolved keyring's serial
  *   KEYCTL_JOIN_SESSION_KEYRING - returns the joined/created session keyring
  *   KEYCTL_SEARCH               - returns the found key's serial
- *   KEYCTL_GET_PERSISTENT       - returns the persistent keyring's serial
  *
  * Not wired: KEYCTL_INSTANTIATE / KEYCTL_NEGATE / KEYCTL_REJECT /
  * KEYCTL_INSTANTIATE_IOV all return 0 on success — they operate on an
  * already-allocated key, they don't mint a new serial.  Pool teardown
  * is handled by the existing OBJ_KEY_SERIAL destructor (KEYCTL_INVALIDATE).
  *
- * The destructor invalidates every serial in the pool, so a keyring the
- * child does not own stays out of it.  GET_KEYRING_ID pools only the
- * thread and process keyrings, which die with the child anyway: the
- * session keyring a child inherits is the parent's and every sibling's,
- * and the login's that started the run, and the user, user-session and
- * requestor keyrings are shared as well, all of them reachable again
- * through their KEY_SPEC_* ids.  KEY_SPEC_BPF_KEYRING,
- * KEY_SPEC_DM_VERITY_KEYRING and KEY_SPEC_FS_VERITY_KEYRING name the
- * kernel's own .bpf, .dm-verity and .fs-verity keyrings, which nothing
- * re-creates, so a key SEARCH finds in one is not pooled either.
+ * The destructor invalidates every serial in the pool, and every cmd
+ * draws its keys from it three times in eight (random_key_id()), REVOKE,
+ * CLEAR and INVALIDATE among them, so a keyring the child does not own
+ * stays out of it.  GET_KEYRING_ID pools only the thread and process
+ * keyrings, which die with the child anyway: the session keyring a child
+ * inherits is the parent's and every sibling's, and the login's that
+ * started the run, and the user, user-session and requestor keyrings are
+ * shared as well, all of them reachable again through their KEY_SPEC_*
+ * ids.  KEY_SPEC_BPF_KEYRING, KEY_SPEC_DM_VERITY_KEYRING and
+ * KEY_SPEC_FS_VERITY_KEYRING name the kernel's own .bpf, .dm-verity and
+ * .fs-verity keyrings, which nothing re-creates, so a key SEARCH finds in
+ * one is not pooled either.  Nor is GET_PERSISTENT's keyring: the user's
+ * persistent keyring, shared by every process of the uid (a krb5
+ * KEYRING:persistent cache lives there), which the child possesses once
+ * the call links it into one of its keyrings, and whose possessor may
+ * write and search it.
  */
 static void post_keyctl(struct syscallrecord *rec)
 {
@@ -650,7 +653,6 @@ static void post_keyctl(struct syscallrecord *rec)
 		}
 		break;
 	case KEYCTL_JOIN_SESSION_KEYRING:
-	case KEYCTL_GET_PERSISTENT:
 		register_key_serial((int32_t) ret);
 		break;
 	default:

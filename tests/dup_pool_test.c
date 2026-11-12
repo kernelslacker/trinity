@@ -3537,13 +3537,14 @@ static void signalfd_publishes_only_a_new_fd(void)
 	}
 }
 
-/* The pool's destructor invalidates what it holds, so keyctl pools only
- * the keyrings a child owns: GET_KEYRING_ID's thread and process
- * keyrings, never the session, user or requestor keyrings it shares,
- * nor the kernel's own .bpf, .dm-verity and .fs-verity keyrings.
- * SEARCH pools the key it finds unless it searched one of the kernel's.
- * The kernel reads the id as a key_serial_t, so bits above the low 32
- * do not hide it. */
+/* keyctl draws its keys from the pool, REVOKE, CLEAR and INVALIDATE
+ * among the cmds, so it pools only the keyrings a child owns:
+ * GET_KEYRING_ID's thread and process keyrings, never the session, user
+ * or requestor keyrings it shares, nor the kernel's own .bpf, .dm-verity
+ * and .fs-verity keyrings, nor the user's persistent keyring
+ * GET_PERSISTENT links in.  SEARCH pools the key it finds unless it
+ * searched one of the kernel's.  The kernel reads the id as a
+ * key_serial_t, so bits above the low 32 do not hide it. */
 static void keyctl_pools_only_owned_keyrings(void)
 {
 	static const struct {
@@ -3582,6 +3583,8 @@ static void keyctl_pools_only_owned_keyrings(void)
 		  (unsigned long) KEY_SPEC_DM_VERITY_KEYRING, false },
 		{ "SEARCH(fs-verity)", KEYCTL_SEARCH,
 		  (unsigned long) KEY_SPEC_FS_VERITY_KEYRING, false },
+		{ "GET_PERSISTENT(own)", KEYCTL_GET_PERSISTENT,
+		  (unsigned long) -1, false },
 	};
 	const int serial = 4242;
 	unsigned int i;
