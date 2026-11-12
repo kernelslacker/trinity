@@ -70,21 +70,64 @@ static void pppox_PX_PROTO_OE(struct sockaddr **addr, socklen_t *addrlen)
 	*addrlen = sizeof(struct sockaddr_pppox);
 }
 
+/*
+ * pppol2tp_connect() makes a tunnel when both session ids are 0, over the
+ * socket fd names, which l2tp_validate_socket() takes only as an AF_INET
+ * or AF_INET6 UDP socket in the caller's netns that carries no tunnel yet;
+ * other ids have to name a tunnel a connect or a genl create made.
+ */
+static const struct socket_triplet l2tp_udp_socks[] = {
+	{ .family = PF_INET, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+	{ .family = PF_INET6, .type = SOCK_DGRAM, .protocol = IPPROTO_UDP },
+};
+
+struct l2tp_connect {
+	int fd;
+	unsigned int s_tunnel, s_session, d_tunnel, d_session;
+};
+
+static void pick_l2tp_connect(struct l2tp_connect *c)
+{
+	c->fd = get_rand_socket_fd_of_triplet(l2tp_udp_socks,
+					      ARRAY_SIZE(l2tp_udp_socks));
+	if (c->fd < 0 || ONE_IN(8))
+		c->fd = get_random_fd();
+
+	if (ONE_IN(8)) {
+		c->s_tunnel = rnd_u32();
+		c->s_session = rnd_u32();
+		c->d_tunnel = rnd_u32();
+		c->d_session = rnd_u32();
+		return;
+	}
+	c->s_tunnel = 1 + rnd_modulo_u32(L2TP_ID_MAX);
+	c->d_tunnel = 1 + rnd_modulo_u32(L2TP_ID_MAX);
+	if (RAND_BOOL()) {
+		c->s_session = 0;
+		c->d_session = 0;
+	} else {
+		c->s_session = 1 + rnd_modulo_u32(L2TP_ID_MAX);
+		c->d_session = 1 + rnd_modulo_u32(L2TP_ID_MAX);
+	}
+}
+
 static void pppox_PX_PROTO_OL2TP_PPPoL2TP(struct sockaddr **addr, socklen_t *addrlen)
 {
 	struct sockaddr_pppol2tp *pppol2tp;
+	struct l2tp_connect c;
 
 	pppol2tp = zmalloc_tracked(sizeof(struct sockaddr_pppol2tp));
 
 	pppol2tp->sa_family = PF_PPPOX;
 	pppol2tp->sa_protocol = rnd_modulo_u32(3);
 	pppol2tp->pppol2tp.pid = get_pid();
-	pppol2tp->pppol2tp.fd = get_random_fd();
 	pppol2tp->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
-	pppol2tp->pppol2tp.s_tunnel = rnd_u32();
-	pppol2tp->pppol2tp.s_session = rnd_u32();
-	pppol2tp->pppol2tp.d_tunnel = rnd_u32();
-	pppol2tp->pppol2tp.d_session = rnd_u32();
+	pick_l2tp_connect(&c);
+	pppol2tp->pppol2tp.fd = c.fd;
+	pppol2tp->pppol2tp.s_tunnel = c.s_tunnel;
+	pppol2tp->pppol2tp.s_session = c.s_session;
+	pppol2tp->pppol2tp.d_tunnel = c.d_tunnel;
+	pppol2tp->pppol2tp.d_session = c.d_session;
 	*addr = (struct sockaddr *) pppol2tp;
 	*addrlen = sizeof(struct sockaddr_pppol2tp);
 }
@@ -94,17 +137,19 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPin6(__unused__ struct sockaddr **addr,
 {
 #ifdef USE_PPPOL2TPIN6
 	struct sockaddr_pppol2tpin6 *pppol2tpin6;
+	struct l2tp_connect c;
 
 	pppol2tpin6 = zmalloc_tracked(sizeof(struct sockaddr_pppol2tpin6));
 
 	pppol2tpin6->sa_family = PF_PPPOX;
 	pppol2tpin6->sa_protocol = rnd_modulo_u32(3);
 	pppol2tpin6->pppol2tp.pid = get_pid();
-	pppol2tpin6->pppol2tp.fd = get_random_fd();
-	pppol2tpin6->pppol2tp.s_tunnel = rnd_u32();
-	pppol2tpin6->pppol2tp.s_session = rnd_u32();
-	pppol2tpin6->pppol2tp.d_tunnel = rnd_u32();
-	pppol2tpin6->pppol2tp.d_session = rnd_u32();
+	pick_l2tp_connect(&c);
+	pppol2tpin6->pppol2tp.fd = c.fd;
+	pppol2tpin6->pppol2tp.s_tunnel = c.s_tunnel;
+	pppol2tpin6->pppol2tp.s_session = c.s_session;
+	pppol2tpin6->pppol2tp.d_tunnel = c.d_tunnel;
+	pppol2tpin6->pppol2tp.d_session = c.d_session;
 	pppol2tpin6->pppol2tp.addr.sin6_family = AF_INET6;
 	pppol2tpin6->pppol2tp.addr.sin6_port = htons(rnd_u32());
 	pppol2tpin6->pppol2tp.addr.sin6_flowinfo = rnd_u32();
@@ -123,18 +168,20 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3(__unused__ struct sockaddr **addr,
 {
 #ifdef USE_PPPOL2TPV3
 	struct sockaddr_pppol2tpv3 *pppol2tpv3;
+	struct l2tp_connect c;
 
 	pppol2tpv3 = zmalloc_tracked(sizeof(struct sockaddr_pppol2tpv3));
 
 	pppol2tpv3->sa_family = PF_PPPOX;
 	pppol2tpv3->sa_protocol = rnd_modulo_u32(3);
 	pppol2tpv3->pppol2tp.pid = get_pid();
-	pppol2tpv3->pppol2tp.fd = get_random_fd();
 	pppol2tpv3->pppol2tp.addr.sin_addr.s_addr = random_ipv4_address();
-	pppol2tpv3->pppol2tp.s_tunnel = rnd_u32();
-	pppol2tpv3->pppol2tp.s_session = rnd_u32();
-	pppol2tpv3->pppol2tp.d_tunnel = rnd_u32();
-	pppol2tpv3->pppol2tp.d_session = rnd_u32();
+	pick_l2tp_connect(&c);
+	pppol2tpv3->pppol2tp.fd = c.fd;
+	pppol2tpv3->pppol2tp.s_tunnel = c.s_tunnel;
+	pppol2tpv3->pppol2tp.s_session = c.s_session;
+	pppol2tpv3->pppol2tp.d_tunnel = c.d_tunnel;
+	pppol2tpv3->pppol2tp.d_session = c.d_session;
 	*addr = (struct sockaddr *) pppol2tpv3;
 	*addrlen = sizeof(struct sockaddr_pppol2tpv3);
 #endif
@@ -145,17 +192,19 @@ static void pppox_PX_PROTO_OL2TP_PPPoL2TPv3in6(__unused__ struct sockaddr **addr
 {
 #ifdef USE_PPPOL2TPIN6
 	struct sockaddr_pppol2tpv3in6 *pppol2tpv3in6;
+	struct l2tp_connect c;
 
 	pppol2tpv3in6 = zmalloc_tracked(sizeof(struct sockaddr_pppol2tpv3in6));
 
 	pppol2tpv3in6->sa_family = PF_PPPOX;
 	pppol2tpv3in6->sa_protocol = rnd_modulo_u32(3);
 	pppol2tpv3in6->pppol2tp.pid = get_pid();
-	pppol2tpv3in6->pppol2tp.fd = get_random_fd();
-	pppol2tpv3in6->pppol2tp.s_tunnel = rnd_u32();
-	pppol2tpv3in6->pppol2tp.s_session = rnd_u32();
-	pppol2tpv3in6->pppol2tp.d_tunnel = rnd_u32();
-	pppol2tpv3in6->pppol2tp.d_session = rnd_u32();
+	pick_l2tp_connect(&c);
+	pppol2tpv3in6->pppol2tp.fd = c.fd;
+	pppol2tpv3in6->pppol2tp.s_tunnel = c.s_tunnel;
+	pppol2tpv3in6->pppol2tp.s_session = c.s_session;
+	pppol2tpv3in6->pppol2tp.d_tunnel = c.d_tunnel;
+	pppol2tpv3in6->pppol2tp.d_session = c.d_session;
 	pppol2tpv3in6->pppol2tp.addr.sin6_family = AF_INET6;
 	pppol2tpv3in6->pppol2tp.addr.sin6_port = htons(rnd_u32());
 	pppol2tpv3in6->pppol2tp.addr.sin6_flowinfo = rnd_u32();

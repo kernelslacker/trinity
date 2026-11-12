@@ -71,6 +71,12 @@ int fd_from_socketinfo(struct socketinfo *si);
 int get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
 				  unsigned int n_triplets);
 
+/*
+ * l2tp tunnel and session ids are drawn from 1 to L2TP_ID_MAX, so that a
+ * request names a tunnel or session an earlier create made.
+ */
+#define L2TP_ID_MAX	8
+
 void generate_sockaddr(struct sockaddr **addr, socklen_t *addrlen, int pf);
 
 unsigned int sockoptlen(unsigned int len);

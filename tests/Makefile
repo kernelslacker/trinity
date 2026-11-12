@@ -707,6 +707,12 @@ FAKE_SRCS	+= can_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/qrtr.c
 FAKE_SRCS	+= qrtr_sockaddr_test.c
 
+# net/proto/pppox.c brings the PPPoX sockaddr generator, whose PPPoL2TP
+# fd and ids pppol2tp_sockaddr_test.c holds to what pppol2tp_connect()
+# takes.
+PARENT_SRCS	+= $(TOP)/net/proto/pppox.c
+FAKE_SRCS	+= pppol2tp_sockaddr_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.

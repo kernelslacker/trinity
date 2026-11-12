@@ -15,6 +15,7 @@
 
 #include <linux/l2tp.h>
 
+#include "net.h"			/* L2TP_ID_MAX */
 #include "netlink-genl-families.h"
 #include "socketinfo.h"
 #include "utils.h"
@@ -29,7 +30,6 @@
  * so that a tunnel or session op, or a SESSION_CREATE, names one that a
  * create made.
  */
-#define L2TP_ID_MAX	8
 
 /*
  * l2tp_nl_cmd_tunnel_create() answers -EINVAL without the two conn ids,
