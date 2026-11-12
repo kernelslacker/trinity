@@ -610,17 +610,11 @@ static int open_sockets(void)
 	head->dump = &socket_dump;
 	/*
 	 * socketinfo objs come from alloc_object() and land in the
-	 * OBJ_GLOBAL pool.  add_socket() is the single allocation site but
-	 * is reached from two runtime contexts:
-	 *
-	 *   - generate_sockets() at init: the per-protocol valid-triplet
-	 *     fan-out (and the random-fill loop that brings nr_sockets
-	 *     up to NR_SOCKET_FDS).  Pre-fork in the parent, so children
-	 *     inherit the pool via fork/COW.
-	 *
-	 *   - open_socket_fd(): the .open hook fired by try_regenerate_
-	 *     fd() when the pool drops below threshold.  Picks a random
-	 *     family/type/protocol triplet and opens a fresh socket.
+	 * OBJ_GLOBAL pool.  add_socket() is the single allocation site,
+	 * reached only from generate_sockets() at init: the per-protocol
+	 * valid-triplet fan-out (and the random-fill loop that brings
+	 * nr_sockets up to NR_SOCKET_FDS).  Pre-fork in the parent, so
+	 * children inherit the pool via fork/COW.
 	 *
 	 * struct socketinfo carries no pointer fields (triplet is three
 	 * ints, fd is an int), so the obj's scalars stay valid across
