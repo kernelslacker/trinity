@@ -54,7 +54,7 @@ static int init_pidfd_fds(void)
 	 */
 
 	/* Children haven't been forked yet at init time, so only pid 1
-	 * is available.  open_pidfd_fd() will pick child pids at runtime. */
+	 * is available. */
 	fd = open_pidfd(1, 0);
 	if (fd >= 0) {
 		obj = alloc_object();
