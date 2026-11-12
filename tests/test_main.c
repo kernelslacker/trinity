@@ -144,6 +144,7 @@ void timerfd_settime_self_check(void);
 void signalfd_pool_self_check(void);
 void alg_sockaddr_self_check(void);
 void can_sockaddr_self_check(void);
+void qrtr_sockaddr_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
 
@@ -821,6 +822,11 @@ int main(int argc, char **argv)
 	printf("  can_sockaddr_self_check ... ");
 	fflush(stdout);
 	can_sockaddr_self_check();
+	printf("OK\n");
+
+	printf("  qrtr_sockaddr_self_check ... ");
+	fflush(stdout);
+	qrtr_sockaddr_self_check();
 	printf("OK\n");
 
 	return 0;

@@ -702,6 +702,11 @@ FAKE_SRCS	+= alg_sockaddr_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/can.c
 FAKE_SRCS	+= can_sockaddr_test.c
 
+# net/proto/qrtr.c brings the AF_QIPCRTR sockaddr generator, whose node
+# qrtr_sockaddr_test.c holds to the one qrtr_bind() takes.
+PARENT_SRCS	+= $(TOP)/net/proto/qrtr.c
+FAKE_SRCS	+= qrtr_sockaddr_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
