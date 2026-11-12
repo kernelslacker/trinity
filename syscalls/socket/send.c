@@ -168,6 +168,20 @@ struct sendmsg_post_state {
 };
 
 /*
+ * Whether a send names its destination.  An AF_UNIX or vsock stream
+ * socket refuses one outright (-EISCONN, or -EOPNOTSUPP unconnected),
+ * before it reads the payload or takes the SCM_RIGHTS fds, TCP reads one
+ * only for a fast-open connect, and a connected socket of any type sends
+ * to its peer without one.
+ */
+static bool send_names_dest(const struct socketinfo *si)
+{
+	if ((si->triplet.type & SOCK_TYPE_MASK) == SOCK_STREAM)
+		return ONE_IN(8);
+	return !ONE_IN(4);
+}
+
+/*
  * Compat twin of sanitise_sendmsg().  A compat call's kernel reads a
  * struct compat_msghdr at the low 32 bits of the pointer and
  * 32-bit iovec entries, so the native msghdr -- a heap struct the
@@ -199,7 +213,8 @@ static void sanitise_sendmsg_compat(struct syscallrecord *rec)
 
 	si = lane_netlink_socketinfo(si);
 	rec->a1 = fd_from_socketinfo(si);
-	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
+	if (send_names_dest(si))
+		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 skip_si:
 	msg = get_writable_struct(sizeof(struct compat_msghdr));
@@ -312,7 +327,8 @@ static void sanitise_sendmsg(struct syscallrecord *rec)
 	si = lane_netlink_socketinfo(si);
 	rec->a1 = fd_from_socketinfo(si);
 
-	generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
+	if (send_names_dest(si))
+		generate_sockaddr((struct sockaddr **) &sa, (socklen_t *) &salen, si->triplet.family);
 
 skip_si:
 	cmsg_family = (si != NULL) ? (unsigned int) si->triplet.family : 0;
@@ -746,7 +762,7 @@ static void sanitise_sendmmsg_compat(struct syscallrecord *rec)
 			msg->msg_iovlen = num_entries;
 		}
 
-		if (si != NULL)
+		if (si != NULL && send_names_dest(si))
 			generate_sockaddr(&sa, &salen, si->triplet.family);
 		fill_compat_msghdr(msg, sa, salen, IOV_KERNEL_READ);
 		tracked_free_now(sa);
@@ -816,7 +832,7 @@ static void sanitise_sendmmsg(struct syscallrecord *rec)
 			msg->msg_iovlen = 0;
 		}
 
-		if (si != NULL)
+		if (si != NULL && send_names_dest(si))
 			generate_sockaddr(&sa, &salen, si->triplet.family);
 		msg->msg_name = sa;
 		msg->msg_namelen = salen;

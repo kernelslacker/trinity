@@ -14,9 +14,6 @@
 #include "socketinfo.h"
 #include "utils.h"
 
-/* include/linux/net.h: socket()'s type carries its flags above these bits. */
-#define SOCK_TYPE_MASK	0xf
-
 /*
  * Whether si is a socket of one of the n shapes, which name the protocol
  * the kernel records.  socket() keeps the type with its SOCK_CLOEXEC and

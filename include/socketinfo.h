@@ -9,6 +9,9 @@ struct socket_triplet {
 	unsigned int protocol;
 };
 
+/* include/linux/net.h: socket()'s type carries its flags above these bits. */
+#define SOCK_TYPE_MASK	0xf
+
 /* We create one of these per socket fd we open, and store them in shm->sockets */
 struct socketinfo {
 	struct socket_triplet triplet;
