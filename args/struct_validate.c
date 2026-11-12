@@ -141,8 +141,8 @@ void struct_field_fill_schema_aware(unsigned char *buf, unsigned int size,
 	 * a tagged-union parent reads the same syscall args.  Buffer-
 	 * derived discriminators can't resolve here -- the buffer is empty
 	 * -- so the shared desc->fields[] head pass runs first and writes
-	 * the discriminator (e.g. sockaddr_storage's ss_family).  The
-	 * per-AF variant fill then runs on the now-populated buffer.
+	 * the discriminator (e.g. perf_event_attr's type).  The
+	 * variant fill then runs on the now-populated buffer.
 	 */
 	variant = struct_desc_resolve_variant(desc, rec, NULL);
 	if (variant != NULL) {

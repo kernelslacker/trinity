@@ -66,8 +66,8 @@ lives in `args/struct_fill.c`, `args/struct_mutate.c`, `args/struct_validate.c`,
    misconfiguration is treated as a build-time-class error surfaced at first
    run rather than a silently wrong fuzzing target.
 6. **Config-driven catalog shape.** Optional kernel features (`USE_BPF`,
-   `USE_SCTP`, `USE_TCP_REPAIR_OPT`, many `USE_<AF>` sockaddr families) gate
-   both catalog entries and their `SC_X` enum slots identically, so a disabled feature can't leave a
+   `USE_SCTP`, `USE_TCP_REPAIR_OPT`) gate both catalog entries and their
+   `SC_X` enum slots identically, so a disabled feature can't leave a
    dangling reference; `struct_catalog-internal.h` mirrors the same guards on
    its `_N` size constants and externs.
 

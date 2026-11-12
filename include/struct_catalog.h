@@ -275,7 +275,7 @@ struct struct_desc {
 	/*
 	 * Buffer-relative discriminator: used when the value lives at a
 	 * fixed offset inside the just-filled buffer itself (e.g.
-	 * sockaddr_storage's ss_family at offset 0) rather than in a
+	 * perf_event_attr's type at offset 0) rather than in a
 	 * syscall arg.  Consulted only when discrim_arg_idx == 0;
 	 * buffer_discrim_size of 1/2/4 selects width, zero disables.
 	 */
@@ -349,7 +349,6 @@ enum struct_catalog_idx {
 	SC_RLIMIT,
 	SC_EPOLL_EVENT,
 	SC_PERF_EVENT_ATTR,
-	SC_SOCKADDR_STORAGE,
 #ifdef USE_BPF
 	SC_BPF_ATTR,
 #endif
@@ -494,7 +493,7 @@ const struct struct_desc *struct_arg_lookup_two_key(const char *name,
  *   - desc->buffer_discrim_size > 0: read the discriminator from
  *     buf + desc->buffer_discrim_offset at the indicated width.  Used
  *     when the live discriminator was just written into the buffer by
- *     the scalar pass (e.g. sockaddr_storage's ss_family).  buf must
+ *     the scalar pass (e.g. perf_event_attr's type).  buf must
  *     be non-NULL on this path; pass NULL to opt out (callers that
  *     resolve before the buffer is filled).
  *
@@ -559,8 +558,8 @@ void struct_variant_overlay_nested(unsigned char *buf, unsigned int size,
  * FT_BPF_PROGRAM, FT_TAGGED_UNION) fields are never candidates so the
  * (ptr, len) coupling and address / fd validity invariants the fill
  * resolves stay intact.  Variant resolution receives the live post-fill
- * buf so buffer-derived discriminators (e.g. sockaddr_storage's
- * ss_family) scope correctly.
+ * buf so buffer-derived discriminators (e.g. perf_event_attr's
+ * type) scope correctly.
  */
 void struct_field_mutate_one(unsigned char *buf, unsigned int size,
 			     const struct struct_desc *desc,

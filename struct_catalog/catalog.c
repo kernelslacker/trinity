@@ -9,15 +9,10 @@
 #include <sys/resource.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
-#include <sys/un.h>
 #include <utime.h>
 #include <netinet/in.h>
 #include <sys/prctl.h>
-#include <linux/netlink.h>
-#include <linux/if_arp.h>
-#include <linux/if_ether.h>
 #include <linux/if_packet.h>
-#include <linux/tipc.h>
 #include <linux/netfilter.h>
 #include <linux/sched.h>
 #include <linux/sched/types.h>
@@ -26,43 +21,8 @@
 #include <string.h>
 
 #include "config.h"
-/*
- * linux/if_pppox.h pulls in linux/l2tp.h, whose enum declares
- * L2TP_ATTR_IP6_SADDR / RX_COOKIE_DISCARDS / ... as identifiers.
- * include/kernel headers define those same names as fallback numeric macros for
- * older kernel-headers packages, so the include must precede the kernel fallback header;
- * otherwise the macro expansion turns the enum members into integer
- * literals and -Werror trips.
- */
-#ifdef USE_PPPOX
-#include <linux/if_pppox.h>
-#endif
 #ifdef USE_BPF
 #include <linux/bpf.h>
-#endif
-#ifdef USE_VSOCK
-#include <linux/vm_sockets.h>
-#endif
-#ifdef USE_CAN
-#include <linux/can.h>
-#endif
-#ifdef USE_RXRPC
-#include <linux/rxrpc.h>
-#endif
-#ifdef USE_X25
-#include <linux/x25.h>
-#endif
-#ifdef USE_PHONET
-#include <linux/phonet.h>
-#endif
-#ifdef USE_ATM
-#include <linux/atm.h>
-#endif
-#ifdef USE_MCTP
-#include <linux/mctp.h>
-#endif
-#ifdef USE_XDP
-#include "kernel/if_xdp.h"
 #endif
 #ifdef USE_SCTP
 #include <linux/sctp.h>
@@ -83,7 +43,6 @@
 #include "trinity.h"
 #include "utils.h"
 
-#include "kernel/l2tp.h"
 /* FIELD / FIELDX initialiser macros live in struct_catalog-internal.h
  * so the per-family leaf TUs under struct_catalog/ can reuse them. */
 
@@ -127,18 +86,6 @@ const struct struct_desc struct_catalog[] = {
 		.buffer_discrim_offset	= offsetof(struct perf_event_attr, type),
 		.buffer_discrim_size	= sizeof(((struct perf_event_attr *) 0)->
 						 type),
-	},
-	[SC_SOCKADDR_STORAGE] = {
-		.name			= "sockaddr_storage",
-		.struct_size		= sizeof(struct sockaddr_storage),
-		.fields			= sockaddr_storage_fields,
-		.num_fields		= ARRAY_SIZE(sockaddr_storage_fields),
-		.variants		= sockaddr_storage_variants,
-		.num_variants		= ARRAY_SIZE(sockaddr_storage_variants),
-		.buffer_discrim_offset	= offsetof(struct sockaddr_storage,
-						   ss_family),
-		.buffer_discrim_size	= sizeof(((struct sockaddr_storage *) 0)->
-						 ss_family),
 	},
 #include "catalog-bpf.inc"
 	[SC_MOUNT_ATTR] = {

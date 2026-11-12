@@ -260,30 +260,14 @@ extern const struct union_variant bpf_attr_variants[BPF_ATTR_VARIANTS_N];
 #endif /* USE_BPF */
 
 /*
- * Sockaddr / setsockopt leaf tables defined in the struct_catalog/
- * sockaddr-* TUs: sockaddr_storage variants and per-AF field arrays
- * live in struct_catalog/sockaddr-af.c, the IPv4/IPv6 multicast
- * optval tables (ip_mreqn / ip_mreq_source / ipv6_mreq) and the
- * multicast sockaddrs group_req embeds in
+ * Setsockopt leaf tables defined in the struct_catalog/sockaddr-* TUs:
+ * the IPv4/IPv6 multicast optval tables (ip_mreqn / ip_mreq_source /
+ * ipv6_mreq) and the multicast sockaddrs group_req embeds in
  * struct_catalog/sockaddr-mcast.c, and the other optval tables
  * (linger / packet_mreq / group_req / group_source_req) in
- * struct_catalog/sockaddr-sockopt.c.  The sockaddr_storage envelope
- * itself is always built, so the sockaddr_storage_fields and
- * sockaddr_storage_variants externs (plus the always-on AF arms)
- * live outside any USE_* guard.  Per-AF variants and their pools are
- * gated by the same USE_<AF> macros the definitions use so the
- * extern surface tracks the live build.
- *
- * sockaddr_storage_variants is the tagged-union dispatch table whose
- * entry count is configuration-dependent (one entry per #ifdef
- * USE_<AF> arm).
- * SOCKADDR_STORAGE_VARIANTS_N mirrors that arithmetic so the spine's
- * ARRAY_SIZE(sockaddr_storage_variants) folds to a constant.  USE_*
- * macros come from config.h, which struct_catalog/catalog.c and the
- * sockaddr-* TUs include before this header.
+ * struct_catalog/sockaddr-sockopt.c.
  */
 enum {
-	SOCKADDR_STORAGE_FIELDS_N	= 1,
 	LINGER_FIELDS_N			= 2,
 	IP_MREQN_FIELDS_N		= 3,
 	IP_MREQ_SOURCE_FIELDS_N		= 3,
@@ -292,97 +276,7 @@ enum {
 	GROUP_REQ_FIELDS_N		= 2,
 	GROUP_SOURCE_REQ_FIELDS_N	= 3,
 	SOCKADDR_MCAST_FIELDS_N		= 2,
-
-	SOCKADDR_STORAGE_VARIANTS_N	= 8 /* UNIX,INET,INET6,NETLINK,PACKET,TIPC,QIPCRTR,NFC */
-#ifdef USE_VSOCK
-		+ 1
-#endif
-#ifdef USE_PPPOX
-		+ 1
-#endif
-#ifdef USE_CAN
-		+ 1
-#endif
-#ifdef USE_RXRPC
-		+ 1
-#endif
-#ifdef USE_X25
-		+ 1
-#endif
-#ifdef USE_PHONET
-		+ 1
-#endif
-#ifdef USE_ATM
-		+ 1 /* AF_ATMPVC */
-#endif
-#ifdef USE_MCTP
-		+ 1
-#endif
-#ifdef USE_IF_ALG
-		+ 1
-#endif
-#ifdef USE_XDP
-		+ 1
-#endif
-		,
 };
-
-extern const unsigned long sockaddr_storage_af_vocab[];
-extern const unsigned long packet_eth_p_vocab[];
-extern const unsigned long packet_arphrd_vocab[];
-extern const unsigned long packet_pkttype_vocab[];
-extern const struct struct_field sockaddr_un_variant_fields[];
-extern const struct struct_field sockaddr_in_variant_fields[];
-extern const struct struct_field sockaddr_in6_variant_fields[];
-extern const struct struct_field sockaddr_nl_variant_fields[];
-extern const struct struct_field sockaddr_ll_variant_fields[];
-#ifdef USE_VSOCK
-extern const unsigned long vsock_cid_vocab[];
-extern const struct struct_field sockaddr_vm_variant_fields[];
-#endif
-#ifdef USE_PPPOX
-extern const struct struct_field sockaddr_pppox_variant_fields[];
-#endif
-#ifdef USE_CAN
-extern const struct struct_field sockaddr_can_variant_fields[];
-#endif
-#ifdef USE_RXRPC
-extern const struct struct_field sockaddr_rxrpc_variant_fields[];
-#endif
-#ifdef USE_X25
-extern const struct struct_field sockaddr_x25_variant_fields[];
-#endif
-#ifdef USE_PHONET
-extern const struct struct_field sockaddr_pn_variant_fields[];
-#endif
-#ifdef USE_ATM
-extern const struct struct_field sockaddr_atmpvc_variant_fields[];
-#endif
-#ifdef USE_MCTP
-extern const struct struct_field sockaddr_mctp_variant_fields[];
-#endif
-#ifdef USE_IF_ALG
-extern const char *const salg_type_vocab[];
-extern const char *const salg_name_vocab[];
-extern const struct struct_field sockaddr_alg_variant_fields[];
-#endif
-extern const unsigned long tipc_addrtype_vocab[];
-extern const unsigned long tipc_scope_vocab[];
-extern const struct struct_field sockaddr_tipc_variant_fields[];
-extern const struct struct_field sockaddr_tipc_id_fields[];
-extern const struct struct_field sockaddr_tipc_nameseq_fields[];
-extern const struct struct_field sockaddr_tipc_name_fields[];
-extern const struct union_variant sockaddr_tipc_addr_nested[];
-extern const unsigned long qrtr_node_vocab[];
-extern const unsigned long qrtr_port_vocab[];
-extern const struct struct_field sockaddr_qrtr_variant_fields[];
-extern const unsigned long nfc_proto_vocab[];
-extern const struct struct_field sockaddr_nfc_variant_fields[];
-#ifdef USE_XDP
-extern const struct struct_field sockaddr_xdp_variant_fields[];
-#endif
-extern const struct union_variant sockaddr_storage_variants[SOCKADDR_STORAGE_VARIANTS_N];
-extern const struct struct_field sockaddr_storage_fields[SOCKADDR_STORAGE_FIELDS_N];
 
 extern const struct struct_field linger_fields[LINGER_FIELDS_N];
 extern const unsigned char ipv4_mcast_all_hosts[4];

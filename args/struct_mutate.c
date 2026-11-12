@@ -547,7 +547,7 @@ mutate_one_unconditional(unsigned char *buf, unsigned int size,
  * struct_field_fill_schema_aware() at the two top-level ARG_STRUCT
  * call sites; runs at most one tag-respecting neighbour mutation per
  * invocation.  Variant resolution receives the live post-fill buf so
- * buffer-derived discriminators (sockaddr_storage's ss_family,
+ * buffer-derived discriminators (perf_event_attr's type,
  * bpf_attr's cmd) scope to the correct variant -- passing NULL would
  * silently mis-scope every tagged-union mutation.
  *

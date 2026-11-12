@@ -74,11 +74,10 @@ shared struct-of-callbacks pattern).
   `net_protocols[]` directly for privileged-triplet checks and to skip
   families the running kernel can't open (defends against OOB reads
   past `TRINITY_PF_MAX` with an explicit bounds comment).
-- `struct_catalog/sockaddr-af.c`, `sockaddr-mcast.c`,
-  `sockaddr-sockopt.c` — own the `sockaddr_storage` tagged-union
-  per-AF field tables and setsockopt optval struct shapes (linger,
-  packet_mreq, group_req, ip_mreqn, etc.) consumed by the generic
-  struct-fill machinery; net/ itself has no `struct_catalog`
+- `struct_catalog/sockaddr-mcast.c`, `sockaddr-sockopt.c` — own the
+  setsockopt optval struct shapes (linger, packet_mreq, group_req,
+  ip_mreqn, etc.) and the multicast sockaddrs they embed, consumed by
+  the generic struct-fill machinery; net/ itself has no `struct_catalog`
   references — sockaddr/optval *scalar* generation lives in net/,
   *struct-shaped* optval generation lives in struct_catalog/.
 - `syscalls/bpf-prog.c`, `syscalls/process/seccomp.c`,

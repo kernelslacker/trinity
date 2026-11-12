@@ -746,16 +746,10 @@ check_header linux/vhost.h USE_VHOST
 check_header execinfo.h USE_BACKTRACE
 check_header bluetooth/bluetooth.h USE_BLUETOOTH
 check_header linux/vm_sockets.h USE_VSOCK
-check_header linux/if_pppox.h USE_PPPOX
-check_header linux/can.h USE_CAN
-check_header linux/rxrpc.h USE_RXRPC
 check_header linux/if_xdp.h USE_XDP
 check_header linux/mctp.h USE_MCTP
 check_header linux/sctp.h USE_SCTP
 check_header linux/tcp.h USE_TCP_REPAIR_OPT
-check_header linux/x25.h USE_X25
-check_header linux/phonet.h USE_PHONET
-check_header linux/atm.h USE_ATM
 
 #############################################################################################
 # Optional: guard-page armour for alloc_shared() regions.  Off-by-default
