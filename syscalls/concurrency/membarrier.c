@@ -81,12 +81,12 @@ static void sanitise_membarrier(struct syscallrecord *rec)
 		rec->a2 = 0;
 	} else if (pick < 99) {
 		/*
-		 * ~5% (minus the invalid-flag slot): supported cmd with
-		 * MEMBARRIER_CMD_FLAG_CPU.  rec->a3 already holds an
-		 * ARG_CPU pick from the argtype dispatch.
+		 * ~4%: MEMBARRIER_CMD_FLAG_CPU, which the kernel takes beside
+		 * MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ alone (-EINVAL beside
+		 * any other cmd), aimed at the CPU in rec->a3, an ARG_CPU pick
+		 * from the argtype dispatch.
 		 */
-		if (membarrier_supported_mask != 0)
-			rec->a1 = pick_supported_cmd(membarrier_supported_mask);
+		rec->a1 = MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ;
 		rec->a2 = MEMBARRIER_CMD_FLAG_CPU;
 	} else {
 		/* ~1%: invalid flag bit -- reject path. */

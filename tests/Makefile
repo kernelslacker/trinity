@@ -1312,6 +1312,11 @@ PARENT_SRCS	+= $(TOP)/struct_catalog/sockaddr-mcast.c \
 		   $(TOP)/struct_catalog/sockaddr-sockopt.c
 FAKE_SRCS	+= mcast_catalog_test.c
 
+# syscalls/concurrency/membarrier.c brings membarrier's sanitiser, which
+# membarrier_test.c holds to the cmd MEMBARRIER_CMD_FLAG_CPU needs.
+PARENT_SRCS	+= $(TOP)/syscalls/concurrency/membarrier.c
+FAKE_SRCS	+= membarrier_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
