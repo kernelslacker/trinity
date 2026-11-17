@@ -2,6 +2,7 @@
 
 #include <linux/filter.h>
 #include <linux/if.h>
+#include <linux/if_arp.h>
 #include <linux/if_tun.h>
 #include <linux/sockios.h>
 #include <stdio.h>
@@ -195,6 +196,22 @@ static void sanitise_tun_uint_out(struct syscallrecord *rec)
 #define TUN_F_ALL (TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN | \
 		   TUN_F_UFO | TUN_F_USO4 | TUN_F_USO6)
 
+/*
+ * TUNSETLINK's link type.  __tun_chr_ioctl() refuses IEEE 802.15.4, its
+ * monitor type and 6LoWPAN, comparing the arg as an unsigned short, and
+ * takes any other: the types tun_get_addr_len() sizes an address for, and
+ * ones another stack keys a device's private data on.
+ */
+static const unsigned short tun_link_types[] = {
+	ARPHRD_ETHER, ARPHRD_NONE, ARPHRD_VOID, ARPHRD_LOOPBACK, ARPHRD_PPP,
+	ARPHRD_RAWIP, ARPHRD_TUNNEL, ARPHRD_TUNNEL6, ARPHRD_SIT, ARPHRD_IPGRE,
+	ARPHRD_IP6GRE, ARPHRD_FDDI, ARPHRD_HIPPI, ARPHRD_IEEE802,
+	ARPHRD_LOCALTLK, ARPHRD_ROSE, ARPHRD_NETROM, ARPHRD_AX25, ARPHRD_X25,
+	ARPHRD_CAN, ARPHRD_MCTP, ARPHRD_INFINIBAND, ARPHRD_IEEE80211,
+	ARPHRD_IEEE80211_RADIOTAP, ARPHRD_PHONET, ARPHRD_PHONET_PIPE,
+	ARPHRD_IEEE802154, ARPHRD_IEEE802154_MONITOR, ARPHRD_6LOWPAN,
+};
+
 static void tun_sanitise(const struct ioctl_group *grp,
 			 struct syscallrecord *rec)
 {
@@ -215,6 +232,15 @@ static void tun_sanitise(const struct ioctl_group *grp,
 	case TUNSETPERSIST:
 		/* Arg is used directly as a bool -- keep it scalar. */
 		rec->a3 = rnd_modulo_u32(2);
+		break;
+
+	case TUNSETLINK:
+		/* The type is the arg itself.  One draw in eight sets a bit
+		 * past the low 16, which the unsigned short compare and the
+		 * store into dev->type both drop. */
+		rec->a3 = RAND_ARRAY(tun_link_types);
+		if (ONE_IN(8))
+			rec->a3 |= 1UL << (16 + rnd_modulo_u32(16));
 		break;
 
 	case TUNSETOWNER:
@@ -299,6 +325,7 @@ static const struct ioctl tun_ioctls[] = {
 	IOCTL(TUNSETIFF),
 	IOCTL(TUNGETIFF),
 	IOCTL(TUNSETPERSIST),
+	IOCTL(TUNSETLINK),
 	IOCTL(TUNSETOWNER),
 	IOCTL(TUNSETGROUP),
 	IOCTL(TUNGETFEATURES),

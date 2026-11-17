@@ -1022,6 +1022,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c \
 		   $(TOP)/syscalls/sched/sched_getattr.c \
 		   $(TOP)/syscalls/sched/sched_rr_get_interval.c
 
+# ioctls/tun.c brings the tun group, which registers itself at load time;
+# tun_ioctl_test.c holds the args its sanitiser draws to what
+# __tun_chr_ioctl() takes.
+PARENT_SRCS	+= $(TOP)/ioctls/tun.c
+FAKE_SRCS	+= tun_ioctl_test.c
+
 # syscalls/sched/sched_setattr.c brings syscall_sched_setattr, whose
 # utilization clamps sched_setattr_test.c holds to what uclamp_validate()
 # takes.
