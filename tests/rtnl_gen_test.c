@@ -7,11 +7,13 @@
  * per type; no netlink socket is opened.
  */
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
@@ -22,6 +24,7 @@
 #include <linux/if_ether.h>
 #include <linux/lwtunnel.h>
 #include <linux/neighbour.h>
+#include <linux/net_namespace.h>
 #include <linux/netlink.h>
 #include <linux/nexthop.h>
 #include <linux/pkt_cls.h>
@@ -41,6 +44,8 @@ void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 extern int (*fake_get_rand_bpf_prog_fd_of_type)(unsigned int prog_type);	/* fake_fds.c */
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
+size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
+			    unsigned short nla_type);
 size_t gen_rta_route_payload(unsigned char *p, size_t avail,
 			     unsigned short nla_type, unsigned char family);
 void mask_route_dst(struct nlmsghdr *nlh, size_t len);
@@ -2216,6 +2221,37 @@ static void draws_flowlabels_inside_the_mask(void)
 			"rtnl: a flow label is mostly outside IPV6_FLOWLABEL_MASK");
 }
 
+/*
+ * RTM_NEWNSID: alloc_netid() takes any id up to INT_MAX, and
+ * get_net_ns_by_pid() finds the caller's own netns by its own pid, which
+ * a random pid rarely names.
+ */
+static void draws_nsids_at_the_top_and_its_own_pid(void)
+{
+	static unsigned char buf[4];
+	unsigned int i, top = 0, own = 0;
+
+	for (i = 0; i < ENTRIES; i++) {
+		int32_t nsid;
+		uint32_t pid;
+
+		if (gen_rta_nsid_payload(buf, sizeof(buf), NETNSA_NSID) !=
+		    sizeof(nsid))
+			BUG("rtnl: a NETNSA_NSID payload is not four bytes");
+		memcpy(&nsid, buf, sizeof(nsid));
+		top += nsid >= INT_MAX - 1;
+		if (gen_rta_nsid_payload(buf, sizeof(buf), NETNSA_PID) !=
+		    sizeof(pid))
+			BUG("rtnl: a NETNSA_PID payload is not four bytes");
+		memcpy(&pid, buf, sizeof(pid));
+		own += pid == (uint32_t) getpid();
+	}
+	if (top == 0)
+		BUG("rtnl: no NETNSA_NSID reaches the top of the id space");
+	expect_fraction(own, ENTRIES, 0.18, 0.32, "NETNSA_PID",
+			"rtnl: a NETNSA_PID rarely names the caller's netns");
+}
+
 /* ---------- The RTA_ENCAP_TYPE of RTM_NEWROUTE, DELROUTE and GETROUTE --- */
 
 struct route_encap {
@@ -2866,5 +2902,6 @@ void rtnl_gen_self_check(void)
 	expect_lwt_encap(&t.lwt_encap);
 	expect_route_flowlabel(&t.route_flowlabel);
 	draws_flowlabels_inside_the_mask();
+	draws_nsids_at_the_top_and_its_own_pid();
 	expect_action_attrs(&t.action);
 }

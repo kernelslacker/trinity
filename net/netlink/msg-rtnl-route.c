@@ -3,9 +3,11 @@
  * groups.
  */
 #include <sys/socket.h>
+#include <limits.h>
 #include <stddef.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <unistd.h>
 #include <linux/bpf.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -814,10 +816,12 @@ size_t append_nexthop_shape(struct nlmsghdr *nlh, size_t len, size_t cap)
  * slot to 4 bytes so the parse reaches the value-carrying path; the
  * signed NSID slots bias toward small positive values (real allocated
  * nsids are small) with the occasional NETNSA_NSID_NOT_ASSIGNED (-1)
- * to exercise the "no id" gate.  NETNSA_CURRENT_NSID is reply-only in
- * the kernel (it has no rtnl_net_policy entry and is only emitted via
- * nla_put_s32 in the fill path) but is included in the emitted set so
- * the policy walker's unknown-attr arm runs alongside the live slots.
+ * to exercise the "no id" gate, and now and then INT_MAX or one below,
+ * the top of the id space alloc_netid() takes.  NETNSA_CURRENT_NSID is
+ * reply-only in the kernel (it has no rtnl_net_policy entry and is only
+ * emitted via nla_put_s32 in the fill path) but is included in the
+ * emitted set so the policy walker's unknown-attr arm runs alongside the
+ * live slots.
  */
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 			    unsigned short nla_type)
@@ -831,6 +835,8 @@ size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 
 			if (ONE_IN(8))
 				val = NETNSA_NSID_NOT_ASSIGNED;
+			else if (ONE_IN(16))
+				val = INT_MAX - (__s32)rnd_modulo_u32(2);
 			else
 				val = (__s32)rnd_modulo_u32(1024);
 			memcpy(p, &val, 4);
@@ -843,6 +849,10 @@ size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
 		if (avail >= 4) {
 			__u32 val = rnd_modulo_u32(1 << 16);
 
+			/* get_net_ns_by_pid() finds the caller's own netns
+			 * by its own pid, which a random pid rarely names. */
+			if (nla_type == NETNSA_PID && ONE_IN(4))
+				val = (__u32)getpid();
 			memcpy(p, &val, 4);
 			return 4;
 		}
