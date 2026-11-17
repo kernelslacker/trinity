@@ -32,6 +32,70 @@ static const struct csfu_desc desc_sched_setattr = {
 	.n_known_sizes = ARRAY_SIZE(sched_setattr_known_sizes),
 };
 
+/* include/linux/sched.h: the top of a utilization clamp. */
+#define SCHED_CAPACITY_SCALE	1024
+
+/*
+ * uclamp_validate() takes a clamp of 0..SCHED_CAPACITY_SCALE, or -1 to
+ * reset it: mostly those, with edges, and for the refusal values past the
+ * scale, among them ones whose low 11 bits (the width of uclamp_se::value)
+ * are a clamp it takes.
+ */
+static unsigned int uclamp_value(void)
+{
+	static const unsigned int edges[] = { 0, 1, 1023, 1024 };
+	static const unsigned int over[] = {
+		1025, 2047, 2048, 0x7fffffff, 0x80000000, 0xfffff800, 0xfffffffe,
+	};
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:	return -1U;
+	case 1:	return RAND_ARRAY(edges);
+	case 2:	return RAND_ARRAY(over);
+	default: return rnd_modulo_u32(SCHED_CAPACITY_SCALE + 1);
+	}
+}
+
+/*
+ * The clamps reach uclamp_validate() only past
+ * user_check_sched_setscheduler(), which a child without CAP_SYS_NICE
+ * passes when KEEP_POLICY and KEEP_PARAMS have the call keep its own
+ * policy and params.  uclamp_validate() refuses a min above the max, one
+ * pair in eight here.
+ */
+static void draw_uclamp(struct sched_attr *sa)
+{
+	unsigned int min, max;
+
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN;
+		break;
+	case 1:
+		sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MAX;
+		break;
+	default:
+		sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN |
+				   SCHED_FLAG_UTIL_CLAMP_MAX;
+		break;
+	}
+	if (RAND_BOOL())
+		sa->sched_flags |= SCHED_FLAG_KEEP_POLICY |
+				   SCHED_FLAG_KEEP_PARAMS;
+
+	min = uclamp_value();
+	max = uclamp_value();
+	if (min <= SCHED_CAPACITY_SCALE && max <= SCHED_CAPACITY_SCALE &&
+	    (min > max) != ONE_IN(8)) {
+		unsigned int t = min;
+
+		min = max;
+		max = t;
+	}
+	sa->sched_util_min = min;
+	sa->sched_util_max = max;
+}
+
 static void sanitise_sched_setattr(struct syscallrecord *rec)
 {
 	struct csfu_buf buf = build_csfu_struct(&desc_sched_setattr);
@@ -172,8 +236,7 @@ static void sanitise_sched_setattr(struct syscallrecord *rec)
 		if (ONE_IN(8))
 			sa->sched_flags |= SCHED_FLAG_KEEP_PARAMS;
 		if (buf.usize >= SCHED_ATTR_SIZE_VER1 && ONE_IN(8))
-			sa->sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN |
-					   SCHED_FLAG_UTIL_CLAMP_MAX;
+			draw_uclamp(sa);
 	} else {
 		sa->sched_flags |= (1ULL << (rnd_modulo_u32(57) + 7));
 	}

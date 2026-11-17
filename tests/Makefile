@@ -1022,6 +1022,12 @@ PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c \
 		   $(TOP)/syscalls/sched/sched_getattr.c \
 		   $(TOP)/syscalls/sched/sched_rr_get_interval.c
 
+# syscalls/sched/sched_setattr.c brings syscall_sched_setattr, whose
+# utilization clamps sched_setattr_test.c holds to what uclamp_validate()
+# takes.
+PARENT_SRCS	+= $(TOP)/syscalls/sched/sched_setattr.c
+FAKE_SRCS	+= sched_setattr_test.c
+
 # syscalls/fs/write.c and syscalls/fs/splice/vmsplice.c bring writev /
 # pwritev / pwritev2 and vmsplice, whose iovec sanitisers and post
 # handler arg_coupling_test.c runs over compat arrays on the last
