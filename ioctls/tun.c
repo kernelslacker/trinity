@@ -12,6 +12,7 @@
 #include <sys/sysmacros.h>
 
 #include "ioctls.h"
+#include "kernel/if_tun.h"
 #include "random.h"
 #include "rnd.h"
 #include "sanitise.h"
@@ -170,31 +171,17 @@ static void sanitise_tun_uint_out(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) p;
 }
 
-/* TUN_F_* offload feature bits accepted by TUNSETOFFLOAD. */
-#ifndef TUN_F_CSUM
-#define TUN_F_CSUM	0x01
-#endif
-#ifndef TUN_F_TSO4
-#define TUN_F_TSO4	0x02
-#endif
-#ifndef TUN_F_TSO6
-#define TUN_F_TSO6	0x04
-#endif
-#ifndef TUN_F_TSO_ECN
-#define TUN_F_TSO_ECN	0x08
-#endif
-#ifndef TUN_F_UFO
-#define TUN_F_UFO	0x10
-#endif
-#ifndef TUN_F_USO4
-#define TUN_F_USO4	0x20
-#endif
-#ifndef TUN_F_USO6
-#define TUN_F_USO6	0x40
-#endif
-
+/*
+ * The TUN_F_* offload feature bits accepted by TUNSETOFFLOAD.
+ * set_offload() takes the UDP tunnel bits only beside CSUM and a plain
+ * GSO (TSO4 or TSO6, or USO4 with USO6), all of which TUN_F_ALL carries.
+ */
 #define TUN_F_ALL (TUN_F_CSUM | TUN_F_TSO4 | TUN_F_TSO6 | TUN_F_TSO_ECN | \
-		   TUN_F_UFO | TUN_F_USO4 | TUN_F_USO6)
+		   TUN_F_UFO | TUN_F_USO4 | TUN_F_USO6 | \
+		   TUN_F_UDP_TUNNEL_GSO | TUN_F_UDP_TUNNEL_GSO_CSUM)
+
+/* drivers/net/tun_vnet.h: sizeof(struct virtio_net_hdr_v1_hash_tunnel). */
+#define TUN_VNET_TNL_SIZE	24
 
 /*
  * TUNSETLINK's link type.  __tun_chr_ioctl() refuses IEEE 802.15.4, its
@@ -264,11 +251,14 @@ static void tun_sanitise(const struct ioctl_group *grp,
 	case TUNSETVNETHDRSZ:
 		/* Sizes 0, sizeof(virtio_net_hdr), and a large value cover
 		 * the accepted/rejected/pathological arms.  Kernel enforces
-		 * a minimum of sizeof(struct virtio_net_hdr) (10 bytes). */
-		switch (rnd_modulo_u32(4)) {
+		 * a minimum of sizeof(struct virtio_net_hdr) (10 bytes).
+		 * From TUN_VNET_TNL_SIZE up, tun_get_user() reads a write's
+		 * header as the UDP tunnel one. */
+		switch (rnd_modulo_u32(5)) {
 		case 0:  sanitise_tun_int_ptr(rec, 0); break;
 		case 1:  sanitise_tun_int_ptr(rec, 10); break;
 		case 2:  sanitise_tun_int_ptr(rec, 12); break;
+		case 3:  sanitise_tun_int_ptr(rec, TUN_VNET_TNL_SIZE); break;
 		default: sanitise_tun_int_ptr(rec, (int) rnd_u32()); break;
 		}
 		break;
