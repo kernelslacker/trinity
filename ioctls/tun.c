@@ -49,8 +49,9 @@ static int tun_fd_test(int fd __attribute__((unused)),
  * a four-byte pointer.  The kernel then copy_from_user()s a whole
  * struct ifreq off that pointer and faults past the first field --
  * a classic ioctl arg under-size.  Allocate a real ifreq, zero it (pool residue leaks
- * back on any output-carrying command), stamp ifr_name and ifr_flags
- * with plausible values, and rewrite a3 to point at it.
+ * back on any output-carrying command), stamp ifr_name with a plausible
+ * name and ifr_flags with the caller's flags, and rewrite a3 to point at
+ * it.
  */
 /*
  * IFF_BACKPRESSURE (7.3) is a plain upstream #define, not an enum
@@ -80,7 +81,8 @@ static const unsigned short tun_iff_flags[] = {
 	IFF_TAP | IFF_VNET_HDR | IFF_BACKPRESSURE,
 };
 
-static void sanitise_tun_ifreq(struct syscallrecord *rec)
+static void sanitise_tun_ifreq(struct syscallrecord *rec,
+			       unsigned short flags)
 {
 	struct ifreq *ifr;
 
@@ -94,7 +96,7 @@ static void sanitise_tun_ifreq(struct syscallrecord *rec)
 	else
 		snprintf(ifr->ifr_name, IFNAMSIZ, "tap%u",
 			 rnd_modulo_u32(16));
-	ifr->ifr_flags = (short) RAND_ARRAY(tun_iff_flags);
+	ifr->ifr_flags = (short) flags;
 	rec->a3 = (unsigned long) ifr;
 }
 
@@ -207,8 +209,14 @@ static void tun_sanitise(const struct ioctl_group *grp,
 	switch (rec->a2) {
 	case TUNSETIFF:
 	case TUNGETIFF:
+		sanitise_tun_ifreq(rec, RAND_ARRAY(tun_iff_flags));
+		break;
+
 	case TUNSETQUEUE:
-		sanitise_tun_ifreq(rec);
+		/* tun_set_queue() takes only a detach, from a multiqueue
+		 * device, or an attach of a queue a detach left detached. */
+		sanitise_tun_ifreq(rec, RAND_BOOL() ? IFF_ATTACH_QUEUE
+						    : IFF_DETACH_QUEUE);
 		break;
 
 	case TUNATTACHFILTER:

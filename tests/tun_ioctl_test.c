@@ -2,13 +2,15 @@
  * Self-check for the tun group's sanitiser (ioctls/tun.c), held to what
  * __tun_chr_ioctl() (drivers/net/tun.c) takes: TUNSETLINK's link type,
  * which it refuses for IEEE 802.15.4, its monitor type and 6LoWPAN,
- * compared as an unsigned short; and TUNSETOFFLOAD's features, UDP
- * tunnel GSO among them, with a vnet header size that has a write carry
- * the tunnel header.
+ * compared as an unsigned short; TUNSETOFFLOAD's features, UDP tunnel
+ * GSO among them, with a vnet header size that has a write carry the
+ * tunnel header; and TUNSETQUEUE's flags, which tun_set_queue() takes
+ * only as a queue attach or detach.
  */
 
 #include <stdbool.h>
 #include <string.h>
+#include <linux/if.h>
 #include <linux/if_arp.h>
 #include <linux/if_tun.h>
 
@@ -122,6 +124,26 @@ static void draws_tunnel_offloads(void)
 		BUG("tun: no TUNSETVNETHDRSZ is as long as the UDP tunnel header");
 }
 
+static void draws_queue_attach_and_detach(void)
+{
+	unsigned int i, attach = 0, detach = 0;
+
+	for (i = 0; i < ROUNDS; i++) {
+		unsigned long arg = tun_arg(TUNSETQUEUE);
+		short flags;
+
+		if (arg == FAKE_IOCTL_JUNK_ARG)
+			continue;
+		flags = ((const struct ifreq *) arg)->ifr_flags;
+		if (flags & IFF_ATTACH_QUEUE)
+			attach++;
+		else if (flags & IFF_DETACH_QUEUE)
+			detach++;
+	}
+	if (attach == 0 || detach == 0)
+		BUG("tun: TUNSETQUEUE does not both attach and detach a queue, all tun_set_queue() takes");
+}
+
 void tun_ioctl_self_check(void);
 void tun_ioctl_self_check(void)
 {
@@ -130,4 +152,5 @@ void tun_ioctl_self_check(void)
 		BUG("tun: the group did not register");
 	draws_link_types();
 	draws_tunnel_offloads();
+	draws_queue_attach_and_detach();
 }
