@@ -196,32 +196,6 @@ else
 fi
 
 #############################################################################################
-# is /usr/include/linux/llc.h new enough to feature LLC_OPT_PKTINFO
-#
-echo -n "[*] Checking if llc can use LLC_OPT_PKTINFO.. "
-rm -f "$TMP" || exit 1
-
-cat >"$TMP.c" << EOF
-#include <stdio.h>
-#include <net/if.h>
-#include <linux/llc.h>
-
-int main(void)
-{
-	printf("%d\n", LLC_OPT_PKTINFO);
-}
-EOF
-
-${CC} ${CFLAGS} "$TMP.c" -o "$TMP" &>"$TMP.log"
-if [ ! -x "$TMP" ]; then
-	echo $RED "[NO]" $COL_RESET
-	MISSING_DEFS=1
-else
-	echo $GREEN "[YES]" $COL_RESET
-	echo "#define USE_LLC_OPT_PKTINFO 1" >> $CONFIGH
-fi
-
-#############################################################################################
 # Do glibc headers provides struct termios2
 
 echo -n "[*] Checking if glibc headers provide termios2.. "

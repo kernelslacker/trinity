@@ -24,7 +24,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 	[PF_NFC] = { .proto = &proto_nfc },
 	[PF_NETLINK] = { .proto = &proto_netlink },
 	[PF_ATMPVC] = { .proto = &proto_atmpvc },
-	[PF_NETBEUI] = { .proto = &proto_netbeui },
 	[PF_IEEE802154] = { .proto = &proto_ieee802154 },
 	[PF_PPPOX] = { .proto = &proto_pppol2tp },
 	[PF_IUCV] = { .proto = &proto_iucv },
@@ -32,8 +31,6 @@ const struct protoptr net_protocols[TRINITY_PF_MAX] = {
 #ifdef USE_IF_ALG
 	[PF_ALG] = { .proto = &proto_alg },
 #endif
-	[PF_IB] = { .proto = &proto_ib },
-	[PF_MPLS] = { .proto = &proto_mpls },
 	[PF_KCM] = { .proto = &proto_kcm },
 	[PF_QIPCRTR] = { .proto = &proto_qipcrtr },
 	[PF_SMC] = { .proto = &proto_smc },

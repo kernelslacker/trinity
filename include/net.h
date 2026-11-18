@@ -111,7 +111,6 @@ extern const struct netproto proto_tipc;
 extern const struct netproto proto_phonet;
 extern const struct netproto proto_rds;
 extern const struct netproto proto_bluetooth;
-extern const struct netproto proto_netbeui;
 extern const struct netproto proto_iucv;
 extern const struct netproto proto_rxrpc;
 extern const struct netproto proto_kcm;
@@ -121,8 +120,6 @@ extern const struct netproto proto_vsock;
 extern const struct netproto proto_xdp;
 extern const struct netproto proto_mctp;
 extern const struct netproto proto_key;
-extern const struct netproto proto_ib;
-extern const struct netproto proto_mpls;
 extern const struct netproto proto_ieee802154;
 
 /* bpf */
