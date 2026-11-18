@@ -1,7 +1,10 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <errno.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "net.h"
+#include "pids.h"
 #include "random.h"
 #include "utils.h"
 #include "kernel/rxrpc.h"
@@ -9,9 +12,11 @@
 
 #include "kernel/socket.h"
 static const unsigned int rxrpc_opts[] = {
+	RXRPC_SECURITY_KEY,
+	RXRPC_SECURITY_KEYRING,
+	RXRPC_EXCLUSIVE_CONNECTION,
 	RXRPC_MIN_SECURITY_LEVEL,
 	RXRPC_UPGRADEABLE_SERVICE,
-	RXRPC_SUPPORTED_CMSG,
 	RXRPC_MANAGE_RESPONSE,
 };
 
@@ -40,6 +45,34 @@ static void rxrpc_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct
 	*addrlen = sizeof(struct sockaddr_rxrpc);
 }
 
+/*
+ * A description for RXRPC_SECURITY_KEY, which request_key()s an rxrpc key
+ * of that name from the caller's keyrings, or for RXRPC_SECURITY_KEYRING,
+ * which request_key()s a keyring.  Neither passes callout info, so a miss
+ * is -ENOKEY without an upcall.  Most keys are named as rxrpc_key_install
+ * names the ones it adds to this child's thread keyring, by kind, pid and
+ * an iteration below its cap of 48 (childops/net/rxrpc-key-install.c),
+ * and most keyrings as the user's own.
+ */
+static void rxrpc_key_description(struct sockopt *so)
+{
+	static const char *const kinds[] = {
+		"null", "short", "v1", "xdr", "xrxkad", "xrxgk",
+	};
+	char *desc = (char *) so->optval;
+	int len;
+
+	if (ONE_IN(4))
+		len = snprintf(desc, 64, "trinity-rxrpc-%u", rnd_u32());
+	else if (so->optname == RXRPC_SECURITY_KEYRING)
+		len = snprintf(desc, 64, "_uid.%u", (unsigned int) getuid());
+	else
+		len = snprintf(desc, 64, "trinity-rxrpc-%s-%u-%u",
+			       RAND_ARRAY(kinds), (unsigned int) mypid(),
+			       rnd_modulo_u32(48));
+	so->optlen = len;
+}
+
 static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned short *optval_us;
@@ -49,6 +82,14 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 	so->optname = RAND_ARRAY(rxrpc_opts);
 
 	switch (so->optname) {
+	case RXRPC_SECURITY_KEY:
+	case RXRPC_SECURITY_KEYRING:
+		rxrpc_key_description(so);
+		break;
+	case RXRPC_EXCLUSIVE_CONNECTION:
+		/* Taken only at an optlen of 0, on an unbound socket. */
+		so->optlen = 0;
+		break;
 	case RXRPC_MIN_SECURITY_LEVEL:
 		/* 0=plain, 1=auth, 2=encrypt */
 		optval32 = (unsigned int *) so->optval;
@@ -66,11 +107,6 @@ static void rxrpc_setsockopt(struct sockopt *so, __unused__ struct socket_triple
 		/* rxrpc_setsockopt() takes 0 or 1. */
 		optval32 = (unsigned int *) so->optval;
 		*optval32 = RAND_BOOL();
-		so->optlen = sizeof(unsigned int);
-		break;
-	default:
-		optval32 = (unsigned int *) so->optval;
-		*optval32 = rnd_u32();
 		so->optlen = sizeof(unsigned int);
 		break;
 	}

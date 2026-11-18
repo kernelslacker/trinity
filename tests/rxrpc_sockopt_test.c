@@ -2,7 +2,10 @@
  * Self-check for the RxRPC option builder: rxrpc_setsockopt()
  * (net/rxrpc/af_rxrpc.c) refuses an RXRPC_MANAGE_RESPONSE value other
  * than 0 or 1 with -EINVAL, so the values drawn are ones it takes, and
- * some turn response management on.
+ * some turn response management on.  It takes RXRPC_EXCLUSIVE_CONNECTION
+ * only at an optlen of 0, and a key or keyring description of 1 to
+ * PAGE_SIZE - 1 bytes, and does nothing with RXRPC_SUPPORTED_CMSG, which
+ * only getsockopt answers.
  */
 
 #include <string.h>
@@ -24,6 +27,7 @@ void rxrpc_sockopt_self_check(void)
 	};
 	static unsigned char optval[RXRPC_OPTVAL_LEN];
 	unsigned int i, drawn = 0, taken = 0, on = 0;
+	unsigned int exclusive = 0, keys = 0, installed = 0, keyrings = 0;
 
 	for (i = 0; i < RXRPC_ROUNDS; i++) {
 		struct sockopt so = { .optval = (unsigned long) optval };
@@ -31,6 +35,27 @@ void rxrpc_sockopt_self_check(void)
 
 		memset(optval, 0, sizeof(optval));
 		proto_rxrpc.setsockopt(&so, &rxrpc);
+		if (so.optname == RXRPC_SUPPORTED_CMSG)
+			BUG("rxrpc: RXRPC_SUPPORTED_CMSG, which setsockopt ignores, drawn");
+		if (so.optname == RXRPC_EXCLUSIVE_CONNECTION) {
+			if (so.optlen != 0)
+				BUG("rxrpc: RXRPC_EXCLUSIVE_CONNECTION with an optlen");
+			exclusive++;
+			continue;
+		}
+		if (so.optname == RXRPC_SECURITY_KEY ||
+		    so.optname == RXRPC_SECURITY_KEYRING) {
+			if (so.optlen == 0 || so.optlen >= RXRPC_OPTVAL_LEN)
+				BUG("rxrpc: a key description of no length or past a page");
+			if (so.optname == RXRPC_SECURITY_KEYRING) {
+				keyrings++;
+			} else {
+				keys++;
+				installed += strncmp((const char *) optval,
+						     "trinity-rxrpc-", 14) == 0;
+			}
+			continue;
+		}
 		if (so.optname != RXRPC_MANAGE_RESPONSE)
 			continue;
 
@@ -42,6 +67,10 @@ void rxrpc_sockopt_self_check(void)
 			on++;
 	}
 
+	if (exclusive == 0 || keyrings == 0)
+		BUG("rxrpc: no RXRPC_EXCLUSIVE_CONNECTION or RXRPC_SECURITY_KEYRING drawn");
+	if (keys == 0 || installed < keys / 2)
+		BUG("rxrpc: the keys rxrpc_key_install adds are seldom named");
 	if (drawn == 0)
 		BUG("rxrpc: no RXRPC_MANAGE_RESPONSE drawn");
 	if (taken < drawn * 3 / 4 || on == 0)
