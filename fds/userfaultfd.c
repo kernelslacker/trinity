@@ -292,6 +292,7 @@ static const struct fd_provider userfaultfd_provider = {
 	 * watch sets; direct read()/UFFDIO_* fuzzing remains unaffected.
 	 */
 	.poll_can_block = true,
+	.local_pool = true,
 };
 
 REG_FD_PROV(userfaultfd_provider);

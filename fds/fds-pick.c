@@ -49,7 +49,9 @@ int get_new_random_fd(void)
 	 * objects_empty() is an O(1) read of head->num_entries -- racy
 	 * vs. concurrent updates but only transiently so; worst case we
 	 * skip a provider that just got populated, or include one that
-	 * just emptied (the inner retry covers the latter).
+	 * just emptied (the inner retry covers the latter).  A provider
+	 * whose .get also draws the child's own pool (local_pool) counts
+	 * that pool too: memfd's and userfaultfd's global ones stay empty.
 	 */
 	for (i = 0; i < num_active_providers; i++) {
 		provider = active_providers[i];
@@ -58,7 +60,9 @@ int get_new_random_fd(void)
 					   __ATOMIC_RELAXED);
 			continue;
 		}
-		if (objects_empty(provider->objtype))
+		if (objects_empty(provider->objtype) &&
+		    (!provider->local_pool ||
+		     objects_pool_empty(OBJ_LOCAL, provider->objtype)))
 			continue;
 		populated[npop++] = provider;
 	}
@@ -211,24 +215,30 @@ regen:
 		/*
 		 * Cache the slot's generation so the next iteration can
 		 * detect close-then-reopen-to-same-fd recycling without a
-		 * syscall.  An untracked fd (e.g. a child-private fd not in
-		 * the global pool) gets cached_fd_generation = 0; that won't
-		 * match any real entry's gen, so the next iteration will
-		 * always re-fetch.
+		 * syscall.  An fd the global fd_hash does not track is stale,
+		 * unless one of the child's own pools holds it: those never
+		 * enter the fork-time snapshot.  No generation follows such
+		 * an fd, so it goes out for this call alone, as one that
+		 * stayed untracked through the rerolls does.
 		 */
 		e = fd_hash_lookup(child->current_fd);
-		if (e == NULL && child->current_fd >= 0 && retries++ < 10) {
+		if (e == NULL && child->current_fd >= 0 &&
+		    local_fd_find_by_fd(child->current_fd) == NULL &&
+		    retries++ < 10) {
 			__atomic_add_fetch(&shm->stats.fd.stale_detected, 1,
 					   __ATOMIC_RELAXED);
 			goto regen;
 		}
-		child->cached_fd_generation = e ?
-			__atomic_load_n(&e->gen, __ATOMIC_ACQUIRE) : 0;
-
-		if (max_children >= 5)
-			child->fd_lifetime = RAND_RANGE(5U, max_children);
-		else
-			child->fd_lifetime = RAND_RANGE(1, 5);
+		if (e == NULL) {
+			child->fd_lifetime = 0;
+		} else {
+			child->cached_fd_generation =
+				__atomic_load_n(&e->gen, __ATOMIC_ACQUIRE);
+			if (max_children >= 5)
+				child->fd_lifetime = RAND_RANGE(5U, max_children);
+			else
+				child->fd_lifetime = RAND_RANGE(1, 5);
+		}
 	} else
 		child->fd_lifetime--;
 

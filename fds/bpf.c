@@ -256,6 +256,7 @@ static const struct fd_provider bpf_map_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_fds,
 	.get = &get_rand_bpf_fd,
+	.local_pool = true,
 };
 
 REG_FD_PROV(bpf_map_fd_provider);
@@ -513,6 +514,7 @@ static const struct fd_provider bpf_prog_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_prog_fds,
 	.get = &get_rand_bpf_prog_fd,
+	.local_pool = true,
 };
 
 REG_FD_PROV(bpf_prog_fd_provider);
@@ -572,6 +574,7 @@ static const struct fd_provider bpf_link_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_link_fds,
 	.get = &get_rand_bpf_link_fd,
+	.local_pool = true,
 };
 
 REG_FD_PROV(bpf_link_fd_provider);
@@ -621,6 +624,7 @@ static const struct fd_provider bpf_btf_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_btf_fds,
 	.get = &get_rand_bpf_btf_fd,
+	.local_pool = true,
 };
 
 REG_FD_PROV(bpf_btf_fd_provider);
@@ -671,6 +675,7 @@ static const struct fd_provider bpf_token_fd_provider = {
 	.enabled = true,
 	.init = &init_bpf_token_fds,
 	.get = &get_rand_bpf_token_fd,
+	.local_pool = true,
 };
 
 REG_FD_PROV(bpf_token_fd_provider);

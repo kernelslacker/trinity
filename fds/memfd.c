@@ -247,6 +247,7 @@ static const struct fd_provider memfd_fd_provider = {
 	.child_init = &memfd_child_init,
 	.get = &get_rand_memfd_fd,
 	.try_replenish = &memfd_try_replenish,
+	.local_pool = true,
 };
 
 REG_FD_PROV(memfd_fd_provider);

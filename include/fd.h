@@ -94,6 +94,15 @@ struct fd_provider {
 	 * explicitly.
 	 */
 	bool poll_can_block;
+	/*
+	 * Set by providers whose .get also draws the calling child's own
+	 * OBJ_LOCAL pool: the ones .child_init seeds (memfd, userfaultfd)
+	 * and the bpf pools, which a child's syscall posts fill.  Their
+	 * OBJ_GLOBAL pools can stay empty for the whole run, so the
+	 * untyped picker counts such a provider as having fds while either
+	 * pool holds some.
+	 */
+	bool local_pool;
 };
 
 void register_fd_provider(const struct fd_provider *prov);
