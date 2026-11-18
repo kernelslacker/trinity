@@ -876,9 +876,9 @@ static void recv_buffer_names_mapping(void)
 
 /* send.c brings sendmsg and sendmmsg along, and an ASAN build keeps them
  * linked.  The sendmmsg cases build messages with no socket and so no
- * address, and send_names_by_socket_type() builds both kinds over a
- * socket, counting the addresses drawn and leaving each message without
- * one.  The control builder, wrapped here, declines, leaving each message
+ * address, and send_names_by_socket_type() builds both kinds, and
+ * sendto's arguments, over a socket, counting the addresses drawn and
+ * leaving each send without one.  The control builder, wrapped here, declines, leaving each message
  * the sanitiser's random control arm. */
 enum cmsg_kind __wrap_pick_cmsg_kind(unsigned int family);
 enum cmsg_kind __wrap_pick_cmsg_kind(unsigned int family)
@@ -937,15 +937,15 @@ static void send_buffer_names_mapping(void)
 }
 
 /* An AF_UNIX or vsock stream socket refuses a send that names any
- * destination, so sendmsg and sendmmsg name one for a stream socket one
- * time in eight, whatever flags its type carries, and for any other three
- * times in four; native and compat alike. */
+ * destination, so sendmsg, sendmmsg and sendto each name one for a stream
+ * socket one time in eight, whatever flags its type carries, and for any
+ * other three times in four; native and compat alike. */
 #define SEND_NAME_ROUNDS	64
 
 static void send_names_by_socket_type(void)
 {
 	struct syscallentry *const entries[] = {
-		&syscall_sendmsg, &syscall_sendmmsg,
+		&syscall_sendmsg, &syscall_sendmmsg, &syscall_sendto,
 	};
 	static const unsigned int types[] = { SOCK_STREAM, SOCK_DGRAM };
 #ifdef ARCH_IS_BIARCH
@@ -961,14 +961,14 @@ static void send_names_by_socket_type(void)
 	fake_socketinfo_fds = true;
 	fake_sockaddr_drawable = true;
 	for (t = 0; t < ARRAY_SIZE(types); t++) {
-		unsigned int sends = 0;
-
 		memset(&si, 0, sizeof(si));
 		si.triplet.family = PF_UNIX;
 		si.triplet.type = types[t] | SOCK_NONBLOCK;
 		si.fd = -1;
-		fake_sockaddr_draws = 0;
 		for (e = 0; e < ARRAY_SIZE(entries); e++) {
+			unsigned int sends = 0;
+
+			fake_sockaddr_draws = 0;
 			for (abi = 0; abi < abis; abi++) {
 				for (round = 0; round < SEND_NAME_ROUNDS; round++) {
 					struct syscallrecord *mrec = mm_call(entries[e]);
@@ -976,21 +976,22 @@ static void send_names_by_socket_type(void)
 					mrec->a1 = (unsigned long) &si;
 					mrec->do32bit = abi != 0;
 					entries[e]->sanitise(mrec);
-					sends += entries[e] == &syscall_sendmsg ?
-						1 : (unsigned int) mrec->a3;
+					sends += entries[e] == &syscall_sendmmsg ?
+						(unsigned int) mrec->a3 : 1;
 					mrec->retval = (unsigned long) -1L;
-					entries[e]->post(mrec);
+					if (entries[e]->post != NULL)
+						entries[e]->post(mrec);
 					while (mrec->owned_count > 0)
 						free(mrec->owned[--mrec->owned_count]);
 				}
 			}
+			if (types[t] == SOCK_STREAM &&
+			    (fake_sockaddr_draws == 0 || fake_sockaddr_draws > sends / 4))
+				BUG("send: a stream socket's sends name a destination too often, or never");
+			if (types[t] != SOCK_STREAM &&
+			    (fake_sockaddr_draws < sends / 2 || fake_sockaddr_draws == sends))
+				BUG("send: a datagram socket's sends name a destination too rarely, or always");
 		}
-		if (types[t] == SOCK_STREAM &&
-		    (fake_sockaddr_draws == 0 || fake_sockaddr_draws > sends / 4))
-			BUG("send: a stream socket's sends name a destination too often, or never");
-		if (types[t] != SOCK_STREAM &&
-		    (fake_sockaddr_draws < sends / 2 || fake_sockaddr_draws == sends))
-			BUG("send: a datagram socket's sends name a destination too rarely, or always");
 	}
 	deferred_free_flush();
 	fake_sockaddr_drawable = false;

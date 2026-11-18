@@ -87,6 +87,40 @@ struct syscallentry syscall_send = {
 
 
 /*
+ * Whether a send names its destination.  An AF_UNIX or vsock stream
+ * socket refuses one outright (-EISCONN, or -EOPNOTSUPP unconnected),
+ * before it reads the payload or takes the SCM_RIGHTS fds, TCP reads one
+ * only for a fast-open connect, and a connected socket of any type sends
+ * to its peer without one.
+ */
+static bool send_names_dest(const struct socketinfo *si)
+{
+	if ((si->triplet.type & SOCK_TYPE_MASK) == SOCK_STREAM)
+		return ONE_IN(8);
+	return !ONE_IN(4);
+}
+
+/*
+ * sendto() takes the destination sendmsg() finds in its msghdr, so it
+ * names one as sendmsg() does: as often as send_names_dest() says, and
+ * in the socket's own family, since a socket refuses nearly every other
+ * family at its family check.  The rest is send()'s.
+ */
+static void sanitise_sendto(struct syscallrecord *rec)
+{
+	struct socketinfo *si = (struct socketinfo *) rec->a1;
+	struct sockaddr *sa = NULL;
+	socklen_t salen = 0;
+
+	if (si != NULL && send_names_dest(si))
+		generate_sockaddr(&sa, &salen, si->triplet.family);
+	rec->a5 = (unsigned long) sa;
+	rec->a6 = salen;
+
+	sanitise_send(rec);
+}
+
+/*
  * SYSCALL_DEFINE6(sendto, int, fd, void __user *, buff, size_t, len,
 	 unsigned, flags, struct sockaddr __user *, addr,
 	 int, addr_len)
@@ -99,7 +133,8 @@ struct syscallentry syscall_sendto = {
 	.arg_params[3].list = ARGLIST(sendflags),
 	.flags = NEED_ALARM | REEXEC_SANITISE_OK,
 	.group = GROUP_NET,
-	.sanitise = sanitise_send,	// same as send
+	.sanitise = sanitise_sendto,
+	.sanitiser_owned_mask = (1u << 4) | (1u << 5),
 	.bound_arg = 3,
 	.rettype = RET_NUM_BYTES,
 };
@@ -166,20 +201,6 @@ struct sendmsg_post_state {
 	unsigned int family;
 	unsigned int _pad;
 };
-
-/*
- * Whether a send names its destination.  An AF_UNIX or vsock stream
- * socket refuses one outright (-EISCONN, or -EOPNOTSUPP unconnected),
- * before it reads the payload or takes the SCM_RIGHTS fds, TCP reads one
- * only for a fast-open connect, and a connected socket of any type sends
- * to its peer without one.
- */
-static bool send_names_dest(const struct socketinfo *si)
-{
-	if ((si->triplet.type & SOCK_TYPE_MASK) == SOCK_STREAM)
-		return ONE_IN(8);
-	return !ONE_IN(4);
-}
 
 /*
  * Compat twin of sanitise_sendmsg().  A compat call's kernel reads a
