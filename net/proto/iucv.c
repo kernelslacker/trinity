@@ -27,20 +27,34 @@ static bool iucv_available(void)
 	return cached;
 }
 
+/*
+ * iucv_sock_setsockopt() (net/iucv/af_iucv.c) reads an int for each
+ * option; SO_MSGSIZE it leaves to getsockopt.
+ */
 static const unsigned int iucv_opts[] = {
-	SO_IPRMDATA_MSG, SO_MSGLIMIT, SO_MSGSIZE
+	SO_IPRMDATA_MSG, SO_MSGLIMIT,
 };
 
 static void iucv_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
+	int *optval = (int *) so->optval;
+
 	if (!iucv_available())
 		return;
 
 	so->level = SOL_IUCV;
-
 	so->optname = RAND_ARRAY(iucv_opts);
-
 	so->optlen = sizeof(int);
+
+	switch (so->optname) {
+	case SO_IPRMDATA_MSG:
+		*optval = RAND_BOOL();
+		break;
+	case SO_MSGLIMIT:
+		/* Taken before the socket connects, 1 through U16_MAX. */
+		*optval = RAND_RANGE(1, 65535);
+		break;
+	}
 }
 
 static void iucv_gen_sockaddr(__unused__ struct socket_triplet *triplet, struct sockaddr **addr, socklen_t *addrlen)
