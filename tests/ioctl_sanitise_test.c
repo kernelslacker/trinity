@@ -17,6 +17,7 @@
 #include "arg_coupling.h"	/* validate_arg_coupling */
 #include "debug.h"		/* BUG */
 #include "fake_ioctls.h"
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "fd.h"			/* get_typed_fd */
 #include "ioctls.h"		/* struct ioctl_group */
 #include "kernel/nsfs.h"
@@ -31,8 +32,6 @@
 
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 #define ROUNDS		3
 #define PICK_ROUNDS	4000

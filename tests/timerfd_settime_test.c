@@ -11,14 +11,12 @@
 #include <time.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "kernel/time.h"	/* CLOCK_BOOTTIME, CLOCK_*_ALARM */
 #include "objects.h"		/* get_objhead */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_timerfd_settime */
 #include "utils-macros.h"	/* ARRAY_SIZE */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 #define TIMERFD_ROUNDS	400
 #define TIMERFD_FD	41

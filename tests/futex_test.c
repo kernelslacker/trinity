@@ -18,28 +18,18 @@
 #include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
 #include "arch.h"		/* page_size */
+#include "fake_objects.h"	/* fake_get_objhead, fake_no_objhead */
 #include "kernel/compat.h"	/* struct old_timespec32 */
 #include "maps.h"		/* struct map */
 #include "objects.h"		/* struct objhead */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_futex */
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 extern unsigned long fake_heap_start, fake_heap_size;	/* fake_shm.c */
 
 /* futex on i386, which takes time32. */
 #define NR_FUTEX_TIME32	240
-
-/* The lock and mapping pools stay empty, as does the shared word pool,
- * so every branch of the sanitiser finds no futex word to use. */
-static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
-{
-	(void) scope;
-	(void) type;
-	return NULL;
-}
 
 uint32_t *get_shared_futex_word(void)
 {
@@ -97,7 +87,10 @@ void futex_self_check(void)
 	bool armed = false;
 	unsigned int i;
 
-	fake_get_objhead = no_pool;
+	/* The lock and mapping pools stay empty, as does the shared word
+	 * pool, so every branch of the sanitiser finds no futex word to
+	 * use. */
+	fake_get_objhead = fake_no_objhead;
 	for (i = 0; i < RUNS; i++) {
 		const struct timespec *ts;
 

@@ -39,7 +39,8 @@
 #include "deferred-free.h"		/* deferred_alloc_track, deferred_free_flush */
 #include "ipc-common.h"			/* SEMGET_NSEMS_CAP */
 #include "files.h"			/* get_rand_pagecache_fd */
-#include "fake_objects.h"		/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"		/* fake_get_objhead, fake_no_objhead,
+					   fake_alloc_object, fake_add_object */
 #include "hugepages.h"			/* pick_random_huge_size_encoding */
 #include "kernel/mman.h"		/* MADV_GUARD_INSTALL */
 #include "kernel/syslog.h"		/* SYSLOG_ACTION_READ */
@@ -66,8 +67,6 @@ extern bool fake_overlaps_shared;
 extern bool fake_overlaps_libc_heap;
 
 extern struct childdata *fake_this_child;	/* fake_shm.c */
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
@@ -1251,15 +1250,6 @@ static void keyed_range_known_through_the_dispatched_entry(void)
 	fake_this_child = NULL;
 }
 
-/* No pool holds the test mapping.  munmap's sanitiser asks, to know
- * which pool a whole-mapping unmap takes the entry out of. */
-static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
-{
-	(void) scope;
-	(void) type;
-	return NULL;
-}
-
 #define MM_DRAWS	500
 
 /* Whatever the sanitiser builds is a range it vetted, a whole-mapping
@@ -1594,7 +1584,7 @@ static void munmap_retires_what_it_holed(struct syscallentry *entry)
 	entry->post(mrec);
 	if (!pool_obj.map.holed || !retire_global.map.holed)
 		BUG("munmap: a holed clone left its global entry to be cloned back");
-	fake_get_objhead = no_pool;
+	fake_get_objhead = fake_no_objhead;
 }
 
 /* munmap's final range stays inside the mapping its sanitiser picked. */
@@ -1606,7 +1596,9 @@ static void munmap_range_held_to_mapping(void)
 
 	/* munmap's slots and sanitiser, without its final-slot rule. */
 	other.vet_final = NULL;
-	fake_get_objhead = no_pool;
+	/* No pool holds the test mapping.  munmap's sanitiser asks, to know
+	 * which pool a whole-mapping unmap takes the entry out of. */
+	fake_get_objhead = fake_no_objhead;
 
 	munmap_sanitised_range_passes(&munmap_entry);
 	munmap_compat_whole_mapping(&munmap_entry);
@@ -3574,7 +3566,7 @@ static void mremap_post_follows_mapping(void)
 	const unsigned long moved_to = POOL_MAP + 0x40000000UL;
 	unsigned int i;
 
-	fake_get_objhead = no_pool;
+	fake_get_objhead = fake_no_objhead;
 	for (i = 0; i < 3; i++) {
 		struct syscallrecord *mrec =
 			mremap_drawn(&mremap_entry, i == 2 ? MREMAP_DRAW_GROW :
@@ -5362,7 +5354,7 @@ static void shmat_remap_drops_entry(int shmid)
 {
 	unsigned int c;
 
-	fake_get_objhead = no_pool;
+	fake_get_objhead = fake_no_objhead;
 	for (c = 0; c < 3; c++) {
 		bool drops = c == 0;
 

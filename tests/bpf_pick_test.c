@@ -15,12 +15,11 @@
 
 #include "bpf.h"		/* struct bpfobj, struct bpfprogobj */
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "objects.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
 #ifdef USE_BPF
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 bool __real_get_rand_bpf_map(struct bpfobj *map);
 int __real_get_rand_bpf_fd(void);

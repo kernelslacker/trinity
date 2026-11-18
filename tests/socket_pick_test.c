@@ -13,13 +13,11 @@
 #include <sys/socket.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "kernel/in.h"		/* IPPROTO_L2TP */
 #include "net.h"
 #include "objects.h"
 #include "utils-macros.h"	/* ARRAY_SIZE */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 int __real_get_rand_socket_fd_of_triplet(const struct socket_triplet *triplets,
 					 unsigned int n_triplets);

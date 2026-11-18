@@ -31,6 +31,7 @@
 
 #include "arg_coupling.h"	/* validate_arg_coupling */
 #include "bpf.h"		/* BPF_PROG_STREAM_OPEN */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "syscalls/bpf-internal.h"	/* post_bpf_prog_load */
 #include "child.h"
 #include "debug.h"		/* BUG */
@@ -69,8 +70,6 @@ extern bool fake_no_mnt_id;
 extern struct object *(*fake_find_object_by_fd)(int fd);	/* fake_fds.c */
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern const void *post_state_disowned;	/* post_oracle_test.c */
 extern bool fake_rand_bitmask_draws;	/* genl_ops_test.c */
 extern bool stomps_expected;		/* post_oracle_test.c */

@@ -15,16 +15,13 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "maps.h"		/* setup_initial_mappings */
 #include "objects.h"
 #include "random.h"		/* ONE_IN */
 #include "rnd.h"		/* rnd_seed */
 #include "utils.h"		/* waitpid_eintr, GB */
 #include "utils-mem.h"		/* alloc_shared_str, free_shared_str */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 static struct objhead anon_head;
 

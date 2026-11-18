@@ -10,13 +10,10 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "fds/fds-internal.h"	/* fd_providers */
 #include "objects.h"		/* struct objhead */
 #include "utils-macros.h"	/* ARRAY_SIZE */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 static struct objhead fake_head;
 static struct object objs[8];

@@ -14,7 +14,7 @@
 
 #include "arch.h"		/* NATIVE_AUDIT_ARCH */
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "fd.h"			/* struct fd_provider */
 #include "fds/fds-internal.h"	/* fd_providers */
 #include "list.h"
@@ -26,8 +26,6 @@
 #include "kernel/audit.h"
 #include "kernel/seccomp.h"
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern bool (*fake_syscall)(long number, const unsigned long a[6],
 			    long *ret);	/* landlock_test.c */
 

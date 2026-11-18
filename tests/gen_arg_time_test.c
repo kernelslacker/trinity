@@ -22,6 +22,7 @@
 #include "args-internal.h"	/* gen_arg_timespec */
 #include "blob_mutator.h"	/* blob_mutator_mode */
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead, fake_no_objhead */
 #include "fd.h"			/* get_pollable_random_fd */
 #include "kernel/compat.h"	/* struct old_timespec32 */
 #include "kernel/stat.h"	/* UTIME_NOW */
@@ -51,18 +52,6 @@ int32_t __wrap_seed_timerid_if_empty(void);
 int32_t __wrap_seed_timerid_if_empty(void)
 {
 	return -1;
-}
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
-
-/* timerfd_settime's sanitiser looks the timerfd's clock up in its pool,
- * which stays empty here too. */
-static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
-{
-	(void) scope;
-	(void) type;
-	return NULL;
 }
 
 /* pselect6's sanitiser draws pollable fds, of which there are none, and
@@ -306,7 +295,9 @@ void gen_arg_time_self_check(void)
 	if (!sanitised(&syscall_utimensat, NR_UTIMENSAT_TIME32, 3,
 		       compat_first_now))
 		BUG("gen_arg_time: utimensat's UTIME_NOW never reached a time32 call");
-	fake_get_objhead = no_pool;
+	/* timerfd_settime's sanitiser looks the timerfd's clock up in
+	 * its pool, which stays empty here too. */
+	fake_get_objhead = fake_no_objhead;
 	if (!sanitised(&syscall_timerfd_settime, NR_TIMERFD_SETTIME_TIME32, 3,
 		       compat_value_armed))
 		BUG("gen_arg_time: timerfd_settime's timer never reached a time32 call");

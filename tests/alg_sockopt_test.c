@@ -12,23 +12,13 @@
 #include <linux/if_alg.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead, fake_no_objhead */
 #include "kernel/if_alg.h"	/* ALG_SET_KEY_BY_KEY_SERIAL */
 #include "net.h"		/* proto_alg, struct sockopt */
 #include "objects.h"		/* struct objhead */
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
-
 #define ALG_ROUNDS	2000
 #define ALG_OPTVAL_LEN	4096
-
-/* No key serial pool: the builder draws a serial without one. */
-static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
-{
-	(void) scope;
-	(void) type;
-	return NULL;
-}
 
 void alg_sockopt_self_check(void);
 void alg_sockopt_self_check(void)
@@ -39,7 +29,8 @@ void alg_sockopt_self_check(void)
 	static unsigned char optval[ALG_OPTVAL_LEN];
 	unsigned int i, by_serial = 0;
 
-	fake_get_objhead = no_pool;
+	/* No key serial pool: the builder draws a serial without one. */
+	fake_get_objhead = fake_no_objhead;
 	for (i = 0; i < ALG_ROUNDS; i++) {
 		struct sockopt so = { .optval = (unsigned long) optval };
 		int32_t serial;

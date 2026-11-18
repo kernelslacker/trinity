@@ -19,13 +19,11 @@
 
 #include "child-api.h"		/* child_userns_lane_is_active */
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "net.h"		/* lane_netlink_socketinfo */
 #include "objects.h"
 #include "socketinfo.h"
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);
 extern struct object *(*fake_find_local_object_by_fd)(enum objecttype type,
 						       int fd);	/* fake_objects.c */
 extern int (*fake_netlink_socket)(int type, int protocol);	/* fake_net.c */

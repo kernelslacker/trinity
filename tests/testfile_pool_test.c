@@ -22,7 +22,7 @@
 
 #include "arch.h"		/* page_size */
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "fd.h"
 #include "fds/fds-internal.h"	/* fd_providers */
 #include "list.h"
@@ -33,8 +33,6 @@
 #include "utils-macros.h"	/* ARRAY_SIZE */
 #include "utils-mem.h"		/* free_shared_str */
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern const char *fake_unlink_plant;	/* fake_fds.c */
 extern const char *fake_unlink_target;	/* fake_fds.c */
 

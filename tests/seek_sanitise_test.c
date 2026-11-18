@@ -14,14 +14,12 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "kernel/fs.h"		/* SEEK_DATA, SEEK_HOLE */
 #include "objects.h"		/* get_objhead */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_lseek, syscall_llseek */
 #include "utils-macros.h"	/* ARRAY_SIZE */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 #define ROUNDS		40000
 #define DRAWN_FD	37	/* what generic_sanitise drew; no protected fd */

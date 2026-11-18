@@ -20,6 +20,7 @@
 #include "arch.h"		/* biarch */
 #include "cmp_hints.h"		/* cmp_hints_feedback_reset_stash */
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead, fake_no_objhead */
 #include "objects.h"		/* enum obj_scope, struct objhead */
 #include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
 #include "sanitise.h"		/* generic_sanitise, generate_syscall_args */
@@ -29,8 +30,6 @@
 #include "utils.h"		/* waitpid_eintr */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern bool fake_socket_fd_none;	/* post_oracle_test.c */
 
 /* Bit (argnum - 1) is set for each slot generic_sanitise() generated. */
@@ -223,14 +222,6 @@ static const uint8_t owner_slots[] = {
 #define OWNER_RUNS	2048
 #define OWNER_MARK(k)	(0x5a5a00UL + (k))
 
-/* No pools, so a sanitiser that draws from one takes its empty-pool arm,
- * and no socket, so one that asks for a socket's fd gets -1. */
-static struct objhead *no_pools(enum obj_scope scope, enum objecttype type)
-{
-	(void)scope; (void)type;
-	return NULL;
-}
-
 static void real_entries_own_what_they_write(void)
 {
 	static struct syscallrecord rec;
@@ -239,7 +230,9 @@ static void real_entries_own_what_they_write(void)
 	};
 	unsigned int e, i, k;
 
-	fake_get_objhead = no_pools;
+	/* No pools, so a sanitiser that draws from one takes its empty-pool
+	 * arm, and no socket, so one that asks for a socket's fd gets -1. */
+	fake_get_objhead = fake_no_objhead;
 	fake_socket_fd_none = true;
 
 	for (e = 0; e < ARRAY_SIZE(owner_entry); e++) {

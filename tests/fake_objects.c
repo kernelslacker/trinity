@@ -101,6 +101,12 @@ void register_global_obj_init(struct global_obj_entry *entry)
 	(void)entry;
 }
 
+struct objhead *fake_no_objhead(enum obj_scope scope, enum objecttype type)
+{
+	(void)scope; (void)type;
+	return NULL;
+}
+
 struct objhead *__wrap_get_objhead(enum obj_scope scope, enum objecttype type);
 struct objhead *__wrap_get_objhead(enum obj_scope scope, enum objecttype type)
 {

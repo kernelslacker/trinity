@@ -11,11 +11,10 @@
 #include "arch.h"		/* page_size */
 #include "child.h"
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead */
 #include "maps.h"
 #include "objects.h"
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern unsigned long fake_heap_start, fake_heap_size;		/* fake_shm.c */
 extern struct childdata *fake_this_child;			/* fake_shm.c */
 

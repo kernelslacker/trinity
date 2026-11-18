@@ -10,26 +10,17 @@
 
 #include "child.h"		/* struct childdata */
 #include "debug.h"		/* BUG */
+#include "fake_objects.h"	/* fake_get_objhead, fake_no_objhead */
 #include "kernel/keyctl.h"	/* KEYCTL_WATCH_KEY, KEYCTL_INSTANTIATE_IOV */
 #include "objects.h"		/* struct objhead */
 #include "sanitise.h"		/* iovec_entry_base, iovec_entry_len */
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_keyctl */
 
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 extern struct childdata *fake_this_child;	/* fake_shm.c */
 
 /* keyctl on i386. */
 #define NR_KEYCTL_32	288
-
-/* No key serial or watch queue pool: the sanitiser draws without them. */
-static struct objhead *no_pool(enum obj_scope scope, enum objecttype type)
-{
-	(void) scope;
-	(void) type;
-	return NULL;
-}
 
 void keyctl_self_check(void);
 void keyctl_self_check(void)
@@ -37,7 +28,9 @@ void keyctl_self_check(void)
 	static struct childdata compat;
 	unsigned int i, watches = 0, removes = 0, iovs;
 
-	fake_get_objhead = no_pool;
+	/* No key serial or watch queue pool: the sanitiser draws without
+	 * them. */
+	fake_get_objhead = fake_no_objhead;
 	for (i = 0; i < 10000; i++) {
 		struct syscallrecord rec;
 		int id;

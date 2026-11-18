@@ -18,16 +18,13 @@
 #include "child-api.h"		/* init_child_mappings */
 #include "debug.h"		/* BUG */
 #include "deferred-free.h"
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "maps.h"
 #include "mm/maps-internal.h"	/* clone_global_mmap_pool */
 #include "objects.h"
 #include "shm.h"
 #include "syscall.h"		/* struct syscallrecord */
 #include "syscalls/syscalls.h"	/* syscall_mmap */
-
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 /*
  * Run the OBJ_LOCAL destructor on a pool entry whose only live field is the

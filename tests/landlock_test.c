@@ -20,7 +20,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
-#include "fake_objects.h"	/* fake_alloc_object, fake_add_object */
+#include "fake_objects.h"	/* fake_get_objhead, fake_{alloc,add}_object */
 #include "fd.h"
 #include "fds/fds-internal.h"	/* fd_providers */
 #include "kernel/landlock.h"
@@ -39,8 +39,6 @@ void landlock_self_check(void);
 extern bool fake_random_fd_empty;	/* fake_stubs.c */
 extern bool stomps_expected;		/* post_oracle_test.c */
 extern unsigned int stomps;		/* post_oracle_test.c */
-extern struct objhead *(*fake_get_objhead)(enum obj_scope scope,
-					   enum objecttype type);	/* fake_objects.c */
 
 /* Calls per case: enough that a draw one time in sixteen is seen hundreds of
  * times. */
