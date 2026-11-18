@@ -25,15 +25,34 @@ static void phonet_gen_sockaddr(__unused__ struct socket_triplet *triplet, struc
 
 #define SOL_PNPIPE 275
 
+/*
+ * pep_setsockopt() (net/phonet/pep.c) reads an int for each option;
+ * PNPIPE_IFINDEX it leaves to getsockopt.
+ */
 static void phonet_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	static const unsigned int pnpipe_opts[] = {
-		PNPIPE_ENCAP, PNPIPE_IFINDEX, PNPIPE_HANDLE, PNPIPE_INITSTATE,
+		PNPIPE_ENCAP, PNPIPE_HANDLE, PNPIPE_INITSTATE,
 	};
+	unsigned int *optval32 = (unsigned int *) so->optval;
 
 	so->level = SOL_PNPIPE;
 	so->optname = RAND_ARRAY(pnpipe_opts);
 	so->optlen = sizeof(unsigned int);
+
+	switch (so->optname) {
+	case PNPIPE_ENCAP:
+		/* A change of encapsulation needs CAP_NET_ADMIN. */
+		*optval32 = RAND_BOOL() ? PNPIPE_ENCAP_IP : PNPIPE_ENCAP_NONE;
+		break;
+	case PNPIPE_HANDLE:
+		/* Taken before the pipe connects, below PN_PIPE_INVALID_HANDLE. */
+		*optval32 = rnd_modulo_u32(0xff);
+		break;
+	case PNPIPE_INITSTATE:
+		*optval32 = RAND_BOOL();
+		break;
+	}
 }
 
 /*

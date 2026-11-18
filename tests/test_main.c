@@ -162,6 +162,7 @@ void netlink_sockopt_self_check(void);
 void rds_sockopt_self_check(void);
 void rxrpc_sockopt_self_check(void);
 void nfc_sockopt_self_check(void);
+void phonet_sockopt_self_check(void);
 void setsockopt_self_check(void);
 
 #define DEFAULT_TEST_SEED	0xa17e57ULL
@@ -930,6 +931,11 @@ int main(int argc, char **argv)
 	printf("  nfc_sockopt_self_check ... ");
 	fflush(stdout);
 	nfc_sockopt_self_check();
+	printf("OK\n");
+
+	printf("  phonet_sockopt_self_check ... ");
+	fflush(stdout);
+	phonet_sockopt_self_check();
 	printf("OK\n");
 
 	printf("  setsockopt_self_check ... ");

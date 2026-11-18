@@ -785,6 +785,12 @@ FAKE_SRCS	+= rxrpc_sockopt_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/nfc.c
 FAKE_SRCS	+= nfc_sockopt_test.c
 
+# net/proto/phonet.c brings the Phonet pipe option builder, whose
+# options and values phonet_sockopt_test.c holds to what pep_setsockopt()
+# takes.
+PARENT_SRCS	+= $(TOP)/net/proto/phonet.c
+FAKE_SRCS	+= phonet_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
