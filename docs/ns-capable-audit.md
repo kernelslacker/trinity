@@ -67,7 +67,7 @@ not count (`FIBMAP` in `ioctls/vfs.c`, for one, tests `capable(CAP_SYS_RAWIO)` a
 |---|---|---|---|---|
 | `FIFREEZE` | `ioctls/vfs.c:240` | `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` (`fs/ioctl.c:389`) | **2** | Reachable when child owns the mount's superblock (e.g. tmpfs in a child-owned mount namespace); `sb->s_user_ns` reflects user\_ns of the namespace that mounted the fs |
 | `FITHAW` | `ioctls/vfs.c:241` | `ns_capable(sb->s_user_ns, CAP_SYS_ADMIN)` (`fs/ioctl.c:406`) | **2** | Same as FIFREEZE; both ioctls share the `ioctl_fsfreeze`/`ioctl_fsthaw` path |
-| `TUNSETIFF` | `ioctls/tun.c:299` | `ns_capable(net->user_ns, CAP_NET_ADMIN)`: `tun_permitted()` (`drivers/net/tun.c:527`, called at `:2886`) when attaching to an existing device, `tun_set_iff()` (`:2917`) when creating one | **2** | Reachable when child unshares its own network namespace; `net` is derived from `current`'s netns.  `IFF_NAPI_FRAGS` also needs `capable(CAP_NET_ADMIN)` (`:2863`), dead for that flag |
+| `TUNSETIFF` | `ioctls/tun.c:299` | `ns_capable(net->user_ns, CAP_NET_ADMIN)`: `tun_permitted()` (`drivers/net/tun.c:527`, called at `:2886`) when attaching to an existing device, `tun_set_iff()` (`:2917`) when creating one | **2** | Reachable only on a tun fd opened inside a network namespace the child owns: `net` is the netns of the fd's socket, which `tun_chr_open()` takes from the opener, not the caller, so the parent's `/dev/net/tun` (`fds/dev_template.c`, opened before fork) fails the check in every child, lane children too.  `IFF_NAPI_FRAGS` also needs `capable(CAP_NET_ADMIN)` (`:2863`), dead for that flag |
 | `TUNSETPERSIST` | `ioctls/tun.c:301` | none of its own (`drivers/net/tun.c:3304`); needs an fd already attached by `TUNSETIFF` | **2** | `-EBADFD` on an unattached fd, so it inherits the `TUNSETIFF` gate above; the flag value does not change the check |
 | `BTRFS_IOC_ENCODED_READ` | `ioctls/btrfs.c:102` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c:4366`) | **1** | Already documented as permanently dead |
 | `BTRFS_IOC_ENCODED_WRITE` | `ioctls/btrfs.c:105` | `capable(CAP_SYS_ADMIN)` (`fs/btrfs/ioctl.c:4470`) | **1** | Same; btrfs encoded I/O unconditionally requires global CAP\_SYS\_ADMIN |
@@ -197,7 +197,8 @@ To satisfy a `GENL_UNS_ADMIN_PERM` gate the child needs:
 
 `FIFREEZE`/`FITHAW` additionally require an owned **mount namespace** with a
 child-mounted filesystem (so `sb->s_user_ns` reflects the child's user\_ns).
-`TUNSETIFF` requires only a child-owned network namespace.
+`TUNSETIFF` requires a tun fd opened inside a child-owned network namespace,
+since it checks the namespace the fd was opened in.
 
 ### Dead tail magnitude
 
