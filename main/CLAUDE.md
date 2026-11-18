@@ -122,7 +122,10 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
    `shm->spawn_no_more`/`shm->exit_reason`; the actual unwind happens on
    the main_loop while-condition's next check, giving in-flight per-tick
    work (drain, watchdog kill) one more pass to run cleanly before the
-   loop exits.
+   loop exits.  A failure reason always lands; a clean one never
+   replaces a failure, and `EXIT_EPOCH_DONE` claims only a running run,
+   so a limit falling due on the tick a failure or a run-ending stop
+   landed cannot restart the fleet.
 5. **Bounded backoff everywhere in the spawn path** — per-slot retry cap
    (10; `fork_children()` then skips the slot for the rest of the call and
    the next call retries it, so a slot that will not fork does not hold

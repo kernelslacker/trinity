@@ -221,8 +221,8 @@ void check_run_limits(const struct timespec *epoch_start)
 		clock_gettime(CLOCK_MONOTONIC, &now);
 		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
 			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
-			final_state_save();
-			panic(EXIT_EPOCH_DONE);
+			if (panic(EXIT_EPOCH_DONE))
+				final_state_save();
 		}
 	}
 }
@@ -841,9 +841,25 @@ bool reset_epoch_state(void)
 /*
  * Something potentially bad happened. Alert all processes by setting appropriate shm vars.
  * (not always 'bad', reaching max count for eg is one example).
+ *
+ * A failure reason always lands.  A clean one never replaces a failure,
+ * and EXIT_EPOCH_DONE, which restarts the fleet, claims only a running
+ * run, so a stop or run limit that landed first, on the same tick or by
+ * a child's hand, still ends the run.  Returns whether @reason is the
+ * published reason now.
  */
-void panic(int reason)
+bool panic(int reason)
 {
+	enum exit_reasons cur = __atomic_load_n(&shm->exit_reason,
+						__ATOMIC_ACQUIRE);
+
 	__atomic_store_n(&shm->spawn_no_more, true, __ATOMIC_RELEASE);
-	__atomic_store_n(&shm->exit_reason, reason, __ATOMIC_RELEASE);
+	do {
+		if (exit_reason_is_clean(reason) && cur != STILL_RUNNING &&
+		    (reason == EXIT_EPOCH_DONE || !exit_reason_is_clean(cur)))
+			return false;
+	} while (!__atomic_compare_exchange_n(&shm->exit_reason, &cur, reason,
+					      false, __ATOMIC_RELEASE,
+					      __ATOMIC_ACQUIRE));
+	return true;
 }

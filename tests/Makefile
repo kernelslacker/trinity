@@ -599,6 +599,7 @@ FAKE_SRCS	:= \
 	tmpdir_test.c \
 	fake_parent.c \
 	epoch_reset_test.c \
+	run_limits_test.c \
 	reap_stop_test.c \
 	reap_dead_kids_test.c \
 	extrafork_reap_test.c \

@@ -22,7 +22,7 @@ void pidstatfiles_drop_in_child(void);
  * still short-circuit on the flag for cache locality. */
 unsigned long fork_pressure_drain_active(void);
 
-void panic(int reason);
+bool panic(int reason);
 
 #define __unused__ __attribute((unused))
 

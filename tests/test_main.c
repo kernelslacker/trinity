@@ -38,6 +38,7 @@ void fd_protected_self_check(void);
 void owned_fd_ring_self_check(void);
 void fd_replenish_self_check(void);
 void epoch_reset_self_check(void);
+void run_limits_self_check(void);
 void drop_privs_self_check(void);
 void tmpdir_self_check(void);
 void inode_spewer_self_check(void);
@@ -312,6 +313,11 @@ int main(int argc, char **argv)
 	printf("  epoch_reset_self_check ... ");
 	fflush(stdout);
 	epoch_reset_self_check();
+	printf("OK\n");
+
+	printf("  run_limits_self_check ... ");
+	fflush(stdout);
+	run_limits_self_check();
 	printf("OK\n");
 
 	printf("  drop_privs_self_check ... ");
