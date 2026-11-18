@@ -448,7 +448,7 @@ static void init_shm_publish_and_subsystems(void)
 {
 	/* Allocate the parent-write / child-read mirror page.
 	 * Children read shm_published->fleet_op_count off the cold path
-	 * (rotation clock, syscalls_todo termination); the parent re-publishes
+	 * (rotation clock, childop success stamps); the parent re-publishes
 	 * inside stats_ring_drain_all(). */
 	stats_published_init();
 

@@ -186,8 +186,9 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	 *
 	 * The parent leaves only for an operator stop (ctrl-c or
 	 * EXIT_USER_REQUEST): its children go on fuzzing and write
-	 * exit_reason themselves (EXIT_KERNEL_TAINTED, EXIT_REACHED_COUNT),
-	 * and that must not end the spin the operator attaches to.
+	 * exit_reason themselves (EXIT_KERNEL_TAINTED,
+	 * EXIT_NO_SYSCALLS_ENABLED), and that must not end the spin the
+	 * operator attaches to.
 	 *
 	 * A child's parent is gone when getppid() no longer names mainpid
 	 * and pid_alive() agrees, so a worker whose /proc is hidden stays

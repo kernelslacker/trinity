@@ -473,9 +473,8 @@ void stats_ring_drain_all(void)
 	 * lossless_op_count (RELAXED atomic fetch-add, sole writer) so the sum is lossless
 	 * -- no ring-full drop can silently lose an increment.  op_count =
 	 * total - epoch_start preserves the per-epoch view that
-	 * fleet_op_count (published below) and check_main_loop_stops()
-	 * gate on.  total_op_count stays monotonically increasing across
-	 * epoch boundaries as before.
+	 * fleet_op_count (published below) carries.  total_op_count stays
+	 * monotonically increasing across epoch boundaries as before.
 	 */
 	/* High-water clamp: a shrinking contributor set (child exit removes
 	 * its ring from the sum) can drop lossless_total below a prior drain.
@@ -500,8 +499,8 @@ void stats_published_init(void)
  * Per-child mprotect freeze of the shm_published mirror page.  The
  * mirror is parent-write / child-read: children read fleet_op_count
  * off it on the cold path (maybe_rotate_strategy()'s rotation clock
- * in random_syscall/strategy-rotate.c and the syscalls_todo termination
- * check in child_process()), and the parent's stats_publish_locked()
+ * in random_syscall/strategy-rotate.c and the childop success stamps
+ * in child_process()), and the parent's stats_publish_locked()
  * inside stats_ring_drain_all() is the sole writer.  The mirror-integrity
  * sample in shm_is_corrupt() (main/loop.c) already documents the
  * PROT_READ contract -- "republish-time we wrote ... and then
@@ -509,7 +508,7 @@ void stats_published_init(void)
  * call was missing, leaving the contract as comment only.  A wild
  * kernel store through a fuzzed syscall arg pointer could scribble
  * fleet_op_count between publishes, perturbing the rotation clock
- * and syscalls_todo progress; the integrity check would only flag
+ * and the childop success stamps; the integrity check would only flag
  * the damage post-hoc.
  *
  * Called from the per-child post-fork init hook so the freeze

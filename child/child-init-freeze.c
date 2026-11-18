@@ -217,13 +217,13 @@ void init_child_freeze_shared(struct childdata *child, int childno)
 
 	/* Same shape for the shm_published stats mirror: children read
 	 * fleet_op_count off it on the cold path (maybe_rotate_strategy()'s
-	 * rotation clock, syscalls_todo termination); the parent's
+	 * rotation clock, childop success stamps); the parent's
 	 * stats_publish_locked() inside stats_ring_drain_all() is the
 	 * sole writer.  The integrity check in shm_is_corrupt() already
 	 * documents the PROT_READ contract, but the matching mprotect()
 	 * call was missing -- a wild kernel write through a fuzzed syscall
 	 * arg pointer could scribble fleet_op_count between publishes and
-	 * perturb rotation / termination behavior. */
+	 * perturb rotation behavior. */
 	stats_published_freeze();
 }
 

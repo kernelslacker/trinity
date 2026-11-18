@@ -194,8 +194,10 @@ void stop_file_init(void)
 /* The operator's limits: -N, --epoch-iterations and --epoch-timeout. */
 void check_run_limits(const struct timespec *epoch_start)
 {
-	unsigned long op = parent_stats.op_count;
 	/*
+	 * -N budgets the whole run, so it counts total_op_count, which no
+	 * epoch reset zeroes.
+	 *
 	 * Epoch iteration budget is measured against the monotonic
 	 * total_op_count minus the snapshot taken at epoch entry, so the
 	 * check remains correct even though op_count itself is zeroed by
@@ -206,7 +208,7 @@ void check_run_limits(const struct timespec *epoch_start)
 	unsigned long epoch_ops = parent_stats.total_op_count
 		- parent_stats.epoch_start_op_count;
 
-	if (syscalls_todo && (op >= syscalls_todo)) {
+	if (syscalls_todo && (parent_stats.total_op_count >= syscalls_todo)) {
 		output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
 		panic(EXIT_REACHED_COUNT);
 	}

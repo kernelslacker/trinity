@@ -102,8 +102,7 @@ struct childop_stats {
 	/* Per-childop "last successful dispatch" logical timestamp, indexed
 	 * by enum child_op_type.  Stored as shm_published->fleet_op_count
 	 * sampled at the moment the alt-op dispatch returned success (ret
-	 * != FAIL), i.e. the same fleet-clock source the syscalls_todo
-	 * termination check already reads inside child_process().  Set to
+	 * != FAIL), i.e. the fleet clock the strategy rotation reads.  Set to
 	 * 0 by the create_shm() memset; 0 is the "never succeeded" sentinel
 	 * that dump_stats() interprets as a never-fired op (and so omits
 	 * from the ranked table -- never-zero rows are skipped, matching

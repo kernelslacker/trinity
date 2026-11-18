@@ -987,8 +987,8 @@ void child_process(struct childdata *child, int childno)
 				1UL, __ATOMIC_RELAXED);
 
 			/* Per-op "last successful dispatch" timestamp, sampled
-			 * from the same fleet-clock source the syscalls_todo
-			 * termination check below reads.  Only stamped when the
+			 * from the fleet clock the parent publishes for the
+			 * strategy rotation.  Only stamped when the
 			 * op returned SUCCESS -- a FAIL return covers throttled
 			 * / setup-failed / skipped paths and must not refresh
 			 * the timestamp, otherwise the dormancy signal collapses
@@ -1015,21 +1015,6 @@ void child_process(struct childdata *child, int childno)
 
 		if (ret == FAIL)
 			goto out;
-
-		if (syscalls_todo) {
-			/* Read the parent-published mirror page rather than the
-			 * canonical aggregate (which is parent-private and not
-			 * visible from a child).  Mirror lag is bounded by the
-			 * parent's drain cadence (~ms), well inside the
-			 * termination granularity callers expect. */
-			if (shm_published != NULL &&
-			    __atomic_load_n(&shm_published->fleet_op_count,
-					    __ATOMIC_RELAXED) >= syscalls_todo) {
-				__atomic_store_n(&shm->exit_reason,
-						EXIT_REACHED_COUNT, __ATOMIC_RELAXED);
-				goto out;
-			}
-		}
 	}
 
 	/* If we're exiting because we tainted, wait here for it to be done.

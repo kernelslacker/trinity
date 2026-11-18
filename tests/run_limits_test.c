@@ -126,6 +126,42 @@ static void taint_tick_keeps_its_reason(void)
 	}
 }
 
+/*
+ * -N counts the whole run: the first epoch ends at its iteration limit
+ * below the run's limit, and the second takes the run past it with fewer
+ * ops of its own than the limit.
+ */
+static void count_spans_epochs(void)
+{
+	struct timespec epoch_start;
+
+	fake_parent_reset();
+	clock_gettime(CLOCK_MONOTONIC, &epoch_start);
+	syscalls_todo = 100;
+	epoch_iterations = 80;
+	epoch_timeout = 0;
+	parent_stats.total_op_count = 80;
+	parent_stats.epoch_start_op_count = 0;
+	parent_stats.op_count = 80;
+
+	check_run_limits(&epoch_start);
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_EPOCH_DONE)
+		BUG("run limits: the first epoch did not end at its iteration limit");
+	if (!reset_epoch_state())
+		BUG("run limits: refused to start the second epoch");
+
+	/* What stats_ring_drain_all() derives 40 ops into the new epoch. */
+	parent_stats.total_op_count = 120;
+	parent_stats.op_count = parent_stats.total_op_count -
+				parent_stats.epoch_start_op_count;
+
+	check_run_limits(&epoch_start);
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_REACHED_COUNT)
+		BUG("run limits: -N lost the ops of an earlier epoch");
+}
+
 void run_limits_self_check(void);
 void run_limits_self_check(void)
 {
@@ -140,6 +176,7 @@ void run_limits_self_check(void)
 	failure_replaces_clean_stop();
 	run_stop_outlives_epoch_restart();
 	taint_tick_keeps_its_reason();
+	count_spans_epochs();
 
 	syscalls_todo = 0;
 	epoch_iterations = 0;
