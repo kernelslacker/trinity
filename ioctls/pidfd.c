@@ -3,6 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
+#include "arch.h"
 #include "ioctls.h"
 #include "objects.h"
 #include "random.h"
@@ -57,6 +58,15 @@
  */
 #ifndef PIDFD_INFO_SIZE_VER0
 # define PIDFD_INFO_SIZE_VER0 64
+#endif
+#ifndef PIDFD_INFO_SIZE_VER1
+# define PIDFD_INFO_SIZE_VER1 72
+#endif
+#ifndef PIDFD_INFO_SIZE_VER2
+# define PIDFD_INFO_SIZE_VER2 80
+#endif
+#ifndef PIDFD_INFO_SIZE_VER3
+# define PIDFD_INFO_SIZE_VER3 88
 #endif
 
 /*
@@ -156,9 +166,37 @@ bool pidfd_ns_getter(unsigned long cmd)
 	return false;
 }
 
+/*
+ * PIDFD_GET_INFO's struct size, which its cmd carries: each published
+ * version's, since pidfd_info() reports a field only to a caller struct
+ * that holds it (COREDUMP_CODE from VER2, supported_mask from VER3); one
+ * in eight larger, whose tail copy_struct_to_user() clears; one in
+ * sixteen under VER0, which pidfs_ioctl_valid() refuses.
+ */
+static unsigned int pidfd_info_size(void)
+{
+	static const unsigned int versions[] = {
+		PIDFD_INFO_SIZE_VER0, PIDFD_INFO_SIZE_VER1,
+		PIDFD_INFO_SIZE_VER2, PIDFD_INFO_SIZE_VER3,
+	};
+
+	switch (rnd_modulo_u32(16)) {
+	case 0:
+		return rnd_modulo_u32(PIDFD_INFO_SIZE_VER0);
+	case 1:
+	case 2:
+		return PIDFD_INFO_SIZE_VER3 + 1 +
+		       rnd_modulo_u32(page_size - PIDFD_INFO_SIZE_VER3);
+	default:
+		return RAND_ARRAY(versions);
+	}
+}
+
 static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *rec)
 {
 	struct pidfd_info *info;
+	unsigned int size;
+	size_t len;
 	static const unsigned long info_flags[] = {
 		PIDFD_INFO_PID,
 		PIDFD_INFO_CREDS,
@@ -186,10 +224,16 @@ static void pidfd_sanitise(const struct ioctl_group *grp, struct syscallrecord *
 		return;
 	}
 
-	info = (struct pidfd_info *) get_writable_struct(sizeof(*info));
+	/* The buffer runs as far as the size names, since a larger struct's
+	 * tail is cleared to its end. */
+	size = pidfd_info_size();
+	rec->a2 = _IOC(_IOC_DIR(PIDFD_GET_INFO), _IOC_TYPE(PIDFD_GET_INFO),
+		       _IOC_NR(PIDFD_GET_INFO), size);
+	len = max((size_t) size, sizeof(*info));
+	info = (struct pidfd_info *) get_writable_struct(len);
 	if (!info)
 		return;
-	memset(info, 0, sizeof(*info));
+	memset(info, 0, len);
 	info->mask = set_rand_bitmask(ARRAY_SIZE(info_flags), info_flags);
 	rec->a3 = (unsigned long) info;
 }

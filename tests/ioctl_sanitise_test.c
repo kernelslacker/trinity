@@ -559,6 +559,62 @@ static void ns_getters_get_a_zero_arg(void)
 }
 
 /*
+ * PIDFD_GET_INFO's cmd carries its struct size.  pidfd_info() reports a
+ * field only to a caller struct that holds it, refuses a size under the
+ * first version's 64 bytes, and clears the tail of a struct larger than
+ * its own 88, so each published size (64, 72, 80, 88) is drawn, and
+ * larger and smaller ones too, each with a buffer as long as the size it
+ * names.
+ */
+#define INFO_ROUNDS	2000
+
+static void pidfd_info_draws_each_size(void)
+{
+	static struct syscallrecord rec;
+	static const unsigned int versions[] = { 64, 72, 80, 88 };
+	const struct ioctl_group *grp = fake_ioctl_group("pidfd");
+	unsigned long info_cmd = 0;
+	unsigned int seen[4] = { 0 }, larger = 0, smaller = 0;
+	unsigned int round, v;
+	size_t i;
+
+	for (i = 0; i < grp->ioctls_cnt; i++)
+		if (strcmp(grp->ioctls[i].name, "PIDFD_GET_INFO") == 0)
+			info_cmd = grp->ioctls[i].request;
+	if (info_cmd == 0)
+		BUG("pidfd info: the group has no PIDFD_GET_INFO");
+
+	for (round = 0; round < INFO_ROUNDS; round++) {
+		unsigned int size;
+
+		memset(&rec, 0, sizeof(rec));
+		fake_ioctl_request = info_cmd;
+		grp->sanitise(grp, &rec);
+
+		if (_IOC_DIR(rec.a2) != _IOC_DIR(info_cmd) ||
+		    _IOC_TYPE(rec.a2) != _IOC_TYPE(info_cmd) ||
+		    _IOC_NR(rec.a2) != _IOC_NR(info_cmd))
+			BUG("pidfd info: the cmd is no PIDFD_GET_INFO of any size");
+		size = _IOC_SIZE(rec.a2);
+		if (!range_in_writable_pool(rec.a3, size > 88 ? size : 88))
+			BUG("pidfd info: the struct is shorter than the size the cmd names");
+		for (v = 0; v < 4; v++)
+			if (size == versions[v])
+				seen[v]++;
+		if (size > 88)
+			larger++;
+		if (size < 64)
+			smaller++;
+	}
+
+	for (v = 0; v < 4; v++)
+		if (seen[v] == 0)
+			BUG("pidfd info: a published struct size is never drawn");
+	if (larger == 0 || smaller == 0)
+		BUG("pidfd info: no size past the kernel's struct, or none under the first");
+}
+
+/*
  * What post_ioctl() asks before it owns a return value: the ten getters of
  * the pidfd group are the cmds whose return value is a namespace file, and
  * no other cmd of any linked group is.  The kernel reads the cmd as an
@@ -809,6 +865,7 @@ void ioctl_sanitise_self_check(void)
 	withdrawn_off_the_fd();
 	group_first_pick();
 	ns_getters_get_a_zero_arg();
+	pidfd_info_draws_each_size();
 	only_the_ns_getters_are_getters();
 	only_the_nsfs_cmds_that_return_an_fd_are_getters();
 	fd_class_groups_claim_the_childs_own_fds();
