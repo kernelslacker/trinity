@@ -96,6 +96,7 @@ void sockname_recall_self_check(void);
 void pid_recall_self_check(void);
 void sched_setattr_self_check(void);
 void tun_ioctl_self_check(void);
+void vt_ioctl_self_check(void);
 void mount_pool_self_check(void);
 void bpf_gen_self_check(void);
 void objpool_reader_self_check(void);
@@ -598,6 +599,11 @@ int main(int argc, char **argv)
 	printf("  tun_ioctl_self_check ... ");
 	fflush(stdout);
 	tun_ioctl_self_check();
+	printf("OK\n");
+
+	printf("  vt_ioctl_self_check ... ");
+	fflush(stdout);
+	vt_ioctl_self_check();
 	printf("OK\n");
 
 	printf("  mount_pool_self_check ... ");

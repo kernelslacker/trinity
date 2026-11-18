@@ -1029,6 +1029,17 @@ PARENT_SRCS	+= $(TOP)/syscalls/concurrency/get_robust_list.c \
 PARENT_SRCS	+= $(TOP)/ioctls/tun.c
 FAKE_SRCS	+= tun_ioctl_test.c
 
+# ioctls/vt.c and its five family files bring the vt group, which
+# registers itself at load time; vt_ioctl_test.c holds the termio and
+# TIOCSIG args its sanitiser draws to what the tty layer reads.
+PARENT_SRCS	+= $(TOP)/ioctls/vt.c \
+		   $(TOP)/ioctls/vt-font.c \
+		   $(TOP)/ioctls/vt-kd.c \
+		   $(TOP)/ioctls/vt-tioc.c \
+		   $(TOP)/ioctls/vt-unimap.c \
+		   $(TOP)/ioctls/vt-vt.c
+FAKE_SRCS	+= vt_ioctl_test.c
+
 # syscalls/sched/sched_setattr.c brings syscall_sched_setattr, whose
 # utilization clamps sched_setattr_test.c holds to what uclamp_validate()
 # takes.

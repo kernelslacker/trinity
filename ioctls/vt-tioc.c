@@ -1,3 +1,4 @@
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <linux/serial.h>
 #include <linux/tty.h>
@@ -118,6 +119,29 @@ static void sanitise_vt_termios(struct syscallrecord *rec)
 	rec->a3 = (unsigned long) t;
 }
 
+/*
+ * TCGETA and the TCSETA family copy the old struct termio, four unsigned
+ * short flag words, c_line and c_cc[8] (user_termio_to_kernel_termios()),
+ * not a struct termios; every flag the draw sets fits in 16 bits.
+ */
+static void sanitise_vt_termio(struct syscallrecord *rec)
+{
+	struct termio *t;
+	tcflag_t iflag, oflag, cflag, lflag;
+
+	t = get_writable_struct(sizeof(*t));
+	if (!t)
+		return;
+	memset(t, 0, sizeof(*t));
+	fill_termios_flags(&iflag, &oflag, &cflag, &lflag);
+	t->c_iflag = iflag;
+	t->c_oflag = oflag;
+	t->c_cflag = cflag;
+	t->c_lflag = lflag;
+	t->c_line = RAND_ARRAY(n_ldisc_vals);
+	rec->a3 = (unsigned long) t;
+}
+
 static void sanitise_vt_termios2(struct syscallrecord *rec)
 {
 	struct termios2 *t;
@@ -180,13 +204,16 @@ void vt_sanitise_tioc(struct syscallrecord *rec)
 	case TCSETS:
 	case TCSETSW:
 	case TCSETSF:
+	case TIOCGLCKTRMIOS:
+	case TIOCSLCKTRMIOS:
+		sanitise_vt_termios(rec);
+		break;
+
 	case TCGETA:
 	case TCSETA:
 	case TCSETAW:
 	case TCSETAF:
-	case TIOCGLCKTRMIOS:
-	case TIOCSLCKTRMIOS:
-		sanitise_vt_termios(rec);
+		sanitise_vt_termio(rec);
 		break;
 
 #ifdef TCGETS2
@@ -240,10 +267,17 @@ void vt_sanitise_tioc(struct syscallrecord *rec)
 		break;
 	}
 
-	case TIOCSPTLCK:
 #ifdef TIOCSIG
+	/* The signal is the arg itself, which pty_signal() sends to the
+	 * other side's foreground process group if it is SIGINT, SIGQUIT
+	 * or SIGTSTP.  That group can be a child's own: children ignore
+	 * SIGINT and SIGTSTP, but SIGQUIT ends one. */
 	case TIOCSIG:
+		rec->a3 = RAND_BOOL() ? SIGINT : SIGTSTP;
+		break;
 #endif
+
+	case TIOCSPTLCK:
 	case TIOCSSOFTCAR:
 	case TIOCPKT:
 	case TIOCSETD:

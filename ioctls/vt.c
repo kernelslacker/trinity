@@ -210,6 +210,7 @@ static const char *const vt_devs[] = {
 };
 
 static const struct ioctl_group vt_grp = {
+	.name = "vt",
 	.devtype = DEV_CHAR,
 	.devs = vt_devs,
 	.devs_cnt = ARRAY_SIZE(vt_devs),
