@@ -7,6 +7,8 @@
 #include <linux/mroute.h>
 #include <linux/if.h>
 #include <limits.h>
+#include <stdint.h>
+#include <string.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 #include <linux/netfilter_bridge/ebtables.h>
 #include <linux/netfilter_arp/arp_tables.h>
@@ -25,13 +27,6 @@
 #include "kernel/ipset.h"
 #include "kernel/mptcp.h"
 #include "kernel/mroute.h"
-/* workaround for <linux/in.h> vs. <netinet/in.h> */
-#ifndef IP_LOCAL_PORT_RANGE
-#define IP_LOCAL_PORT_RANGE 51
-#endif
-#ifndef IP_PROTOCOL
-#define IP_PROTOCOL 52
-#endif
 
 static in_addr_t previous_ip;
 static unsigned int ip_lifetime = 0;
@@ -198,6 +193,18 @@ static const struct sock_option ip_opts[] = {
 	{ .name = IP_VS_SO_SET_ZERO, },
 };
 
+/*
+ * An int option's value.  do_ip_setsockopt() reads an int from an optlen
+ * of four or more and a byte, as an unsigned char, from a shorter one.
+ */
+static void ip_set_int(struct sockopt *so, int val)
+{
+	if (so->optlen >= sizeof(int))
+		memcpy((void *) so->optval, &val, sizeof(val));
+	else
+		*(unsigned char *) so->optval = (unsigned char) val;
+}
+
 static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned char val;
@@ -209,6 +216,80 @@ static void ip_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *
 	so->optlen = sockoptlen(ip_opts[val].len);
 
 	switch (so->optname) {
+	/* Flags, on for any value but 0. */
+	case IP_HDRINCL:
+	case IP_ROUTER_ALERT:
+	case IP_RECVOPTS:
+	case IP_RETOPTS:
+	case IP_PKTINFO:
+	case IP_RECVERR:
+	case IP_RECVTTL:
+	case IP_RECVTOS:
+	case IP_FREEBIND:
+	case IP_PASSSEC:
+	case IP_TRANSPARENT:
+	case IP_ORIGDSTADDR:
+	case IP_NODEFRAG:
+	case IP_CHECKSUM:
+	case IP_BIND_ADDRESS_NO_PORT:
+	case IP_RECVFRAGSIZE:
+	case IP_MULTICAST_LOOP:
+	/* 0 or 1, refusing anything else. */
+	case IP_RECVERR_RFC4884:
+	case IP_MULTICAST_ALL:
+		ip_set_int(so, RAND_BOOL());
+		break;
+
+	case IP_TTL:
+		/* -1 for the route's default, or 1 through 255. */
+		ip_set_int(so, ONE_IN(8) ? -1 : (int) RAND_RANGE(1, 255));
+		break;
+
+	case IP_MULTICAST_TTL:
+		/* -1 for 1, or 0 through 255. */
+		ip_set_int(so, ONE_IN(8) ? -1 : (int) rnd_modulo_u32(256));
+		break;
+
+	case IP_MINTTL:
+	case IP_TOS:
+		ip_set_int(so, rnd_modulo_u32(256));
+		break;
+
+	case IP_MTU_DISCOVER:
+		ip_set_int(so, RAND_RANGE(IP_PMTUDISC_DONT, IP_PMTUDISC_OMIT));
+		break;
+
+	case IP_UNICAST_IF:
+		/* An ifindex in network order, taken only at an int's optlen:
+		 * 0 unsets it, and lo is 1 in every netns. */
+		so->optlen = sizeof(int);
+		ip_set_int(so, (int) htonl(rnd_modulo_u32(3)));
+		break;
+
+	case IP_LOCAL_PORT_RANGE: {
+		/* A u32 of the low port and the high one, either 0 for the
+		 * sysctl's; refused when both are set and low is above high. */
+		uint16_t lo = ONE_IN(4) ? 0 : RAND_RANGE(1024, 65535);
+		uint16_t hi = ONE_IN(4) ? 0 : RAND_RANGE(lo ? lo : 1024, 65535);
+
+		so->optlen = sizeof(uint32_t);
+		ip_set_int(so, (int) (lo | ((uint32_t) hi << 16)));
+		break;
+	}
+
+	case MRT_INIT:
+	case MRT_ASSERT:
+	case MRT_PIM:
+		/* ip_mroute_setsockopt() refuses any optlen but an int's;
+		 * MRT_INIT ignores the value, and MRT_PIM's
+		 * IGMPMSG_WRVIFWHOLE also asks for whole-packet upcalls. */
+		so->optlen = sizeof(int);
+		if (so->optname == MRT_PIM && ONE_IN(4))
+			ip_set_int(so, IGMPMSG_WRVIFWHOLE);
+		else
+			ip_set_int(so, RAND_BOOL());
+		break;
+
 	case IP_OPTIONS:
 		so->optlen = rnd_modulo_u32(40);
 		break;

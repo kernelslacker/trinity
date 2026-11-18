@@ -11,3 +11,6 @@
 #ifndef MRT_DEL_MFC_PROXY
 #define MRT_DEL_MFC_PROXY	(MRT_BASE+11)
 #endif
+#ifndef IGMPMSG_WRVIFWHOLE
+#define IGMPMSG_WRVIFWHOLE	4
+#endif
