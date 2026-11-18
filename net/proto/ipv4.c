@@ -12,7 +12,6 @@
 #include <linux/netfilter_arp/arp_tables.h>
 #include <linux/netfilter/ipset/ip_set.h>
 #include <linux/ip_vs.h>
-#include <stdio.h>
 #include "arch.h"
 #include "net.h"
 #include "random.h"
@@ -36,26 +35,6 @@
 
 static in_addr_t previous_ip;
 static unsigned int ip_lifetime = 0;
-static unsigned int optmem_max;
-
-static void __attribute__((constructor)) read_optmem_max(void)
-{
-	FILE *fp;
-	unsigned int val;
-
-	fp = fopen("/proc/sys/net/core/optmem_max", "r");
-	if (fp == NULL) {
-		optmem_max = 20480;	/* common default */
-		return;
-	}
-
-	if (fscanf(fp, "%u", &val) == 1)
-		optmem_max = val;
-	else
-		optmem_max = 20480;
-
-	fclose(fp);
-}
 
 struct addrtext {
 	const char *name;
