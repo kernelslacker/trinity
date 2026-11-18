@@ -676,10 +676,13 @@ def find_artifact(
       root/<top>                 -- file (flat single-kernel layout).
       root/<top>/<file>          -- per-kernel files named like
                                     'x86_64-7.1.0-rc7-config+'.
-    When the directory holds several per-kernel files, pick the one whose
-    name contains <kernel> (a substring such as '7.1.0-rc7'); with no
-    kernel hint, pick the newest by mtime.  Returns (path, arch_hint);
-    arch_hint is the leading arch component of the chosen filename.
+    When the directory holds several per-kernel files, pick the one named
+    <kernel>, the filename resolve_kernel() chose: a substring would also
+    match another kernel's file ('x86_64-7.1.0' is in
+    'x86_64-7.1.0-debug'), so a component that kernel lacks stays absent
+    instead of borrowing a neighbour's.  With no kernel hint, pick the
+    newest by mtime.  Returns (path, arch_hint); arch_hint is the leading
+    arch component of the chosen filename.
     """
     candidate = os.path.join(root, top)
     if os.path.isfile(candidate):
@@ -691,7 +694,7 @@ def find_artifact(
             if os.path.isfile(os.path.join(candidate, s))
         ]
         if kernel is not None:
-            files = [s for s in files if kernel in s]
+            files = [s for s in files if s == kernel]
         if not files:
             return None, None
         chosen = max(files, key=lambda s: os.path.getmtime(os.path.join(candidate, s)))
@@ -963,7 +966,8 @@ def available_kernels(cache_dir: str) -> list[str]:
 def resolve_kernel(
     cache_dir: str, requested: str | None, announce: bool = True
 ) -> str | None:
-    """Map a --kernel substring to a concrete cache filename.
+    """Map a --kernel selector to a concrete cache filename: the file it
+    names exactly, else the newest file whose name contains it.
 
     Returns the chosen filename (used as the artifact filter), or None for
     a flat single-kernel cache.  Exits with a listing on no match.
@@ -972,6 +976,8 @@ def resolve_kernel(
     if not kernels:
         return None
     if requested is not None:
+        if requested in kernels:
+            return requested
         matched = [s for s in kernels if requested in s]
         if not matched:
             sys.stderr.write(f"no cache files match kernel {requested!r}; available:\n")
