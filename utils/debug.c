@@ -181,8 +181,8 @@ void __attribute__((noreturn)) __BUG(const char *bugtxt, const char *filename, c
 	 * its parent is gone: left to an operator stop alone, any other
 	 * shutdown waits out the 30 s of wait_for_children_to_exit() and
 	 * parks the child as zombie-pending.  EXIT_EPOCH_DONE is one of
-	 * those reasons, so under --epoch-iterations, --epoch-timeout or
-	 * --max-runtime a halted child goes at the epoch boundary.
+	 * those reasons, so under --epoch-iterations or --epoch-timeout a
+	 * halted child goes at the epoch boundary.
 	 *
 	 * The parent leaves only for an operator stop (ctrl-c or
 	 * EXIT_USER_REQUEST): its children go on fuzzing and write

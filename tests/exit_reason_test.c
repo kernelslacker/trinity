@@ -20,6 +20,7 @@ static const enum exit_reasons clean_reasons[] = {
 	EXIT_SIGINT,
 	EXIT_USER_REQUEST,
 	EXIT_EPOCH_DONE,
+	EXIT_MAX_RUNTIME,
 };
 
 static bool listed_clean(int reason)

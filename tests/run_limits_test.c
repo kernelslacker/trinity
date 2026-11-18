@@ -25,6 +25,7 @@ static const enum exit_reasons clean_stops[] = {
 	EXIT_REACHED_COUNT,
 	EXIT_SIGINT,
 	EXIT_USER_REQUEST,
+	EXIT_MAX_RUNTIME,
 };
 
 static void failure_outlives_clean_stops(void)
@@ -67,6 +68,7 @@ static void run_stop_outlives_epoch_restart(void)
 		EXIT_REACHED_COUNT,
 		EXIT_SIGINT,
 		EXIT_USER_REQUEST,
+		EXIT_MAX_RUNTIME,
 	};
 	unsigned int i;
 
@@ -94,10 +96,12 @@ static void taint_tick_keeps_its_reason(void)
 		unsigned long todo;
 		unsigned long iterations;
 		unsigned int timeout;
+		unsigned int runtime;
 	} due[] = {
-		{ "-N", 100, 0, 0 },
-		{ "--epoch-iterations", 0, 100, 0 },
-		{ "--epoch-timeout", 0, 0, 5 },
+		{ "-N", 100, 0, 0, 0 },
+		{ "--epoch-iterations", 0, 100, 0, 0 },
+		{ "--epoch-timeout", 0, 0, 5, 0 },
+		{ "--max-runtime", 0, 0, 0, 5 },
 	};
 	struct timespec epoch_start;
 	unsigned int i;
@@ -107,6 +111,7 @@ static void taint_tick_keeps_its_reason(void)
 		syscalls_todo = due[i].todo;
 		epoch_iterations = due[i].iterations;
 		epoch_timeout = due[i].timeout;
+		max_runtime = due[i].runtime;
 		parent_stats.op_count = 100;
 		parent_stats.total_op_count = 100;
 		parent_stats.epoch_start_op_count = 0;
@@ -114,7 +119,7 @@ static void taint_tick_keeps_its_reason(void)
 		epoch_start.tv_sec -= 10;
 
 		panic(EXIT_KERNEL_TAINTED);
-		check_run_limits(&epoch_start);
+		check_run_limits(&epoch_start, &epoch_start);
 
 		if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
 		    EXIT_KERNEL_TAINTED) {
@@ -140,11 +145,12 @@ static void count_spans_epochs(void)
 	syscalls_todo = 100;
 	epoch_iterations = 80;
 	epoch_timeout = 0;
+	max_runtime = 0;
 	parent_stats.total_op_count = 80;
 	parent_stats.epoch_start_op_count = 0;
 	parent_stats.op_count = 80;
 
-	check_run_limits(&epoch_start);
+	check_run_limits(&epoch_start, &epoch_start);
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
 	    EXIT_EPOCH_DONE)
 		BUG("run limits: the first epoch did not end at its iteration limit");
@@ -156,10 +162,52 @@ static void count_spans_epochs(void)
 	parent_stats.op_count = parent_stats.total_op_count -
 				parent_stats.epoch_start_op_count;
 
-	check_run_limits(&epoch_start);
+	check_run_limits(&epoch_start, &epoch_start);
 	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
 	    EXIT_REACHED_COUNT)
 		BUG("run limits: -N lost the ops of an earlier epoch");
+}
+
+/*
+ * --max-runtime bounds the whole run under a reason of its own: an
+ * --epoch-iterations boundary a minute in only restarts the epoch, and
+ * the deadline still falls an hour after the run began, ten seconds
+ * into the next epoch.
+ */
+static void max_runtime_spans_epochs(void)
+{
+	struct timespec run_start, epoch_start;
+
+	fake_parent_reset();
+	syscalls_todo = 0;
+	epoch_iterations = 50;
+	epoch_timeout = 0;
+	max_runtime = 3600;
+	clock_gettime(CLOCK_MONOTONIC, &run_start);
+	run_start.tv_sec -= 60;
+	epoch_start = run_start;
+	parent_stats.total_op_count = 50;
+	parent_stats.epoch_start_op_count = 0;
+	parent_stats.op_count = 50;
+
+	check_run_limits(&run_start, &epoch_start);
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_EPOCH_DONE)
+		BUG("run limits: an iteration boundary under --max-runtime did not end the epoch");
+	if (!reset_epoch_state())
+		BUG("run limits: an iteration boundary under --max-runtime ended the run");
+
+	clock_gettime(CLOCK_MONOTONIC, &epoch_start);
+	epoch_start.tv_sec -= 10;
+	run_start.tv_sec -= 3600;
+	parent_stats.total_op_count = 60;
+	parent_stats.op_count = parent_stats.total_op_count -
+				parent_stats.epoch_start_op_count;
+
+	check_run_limits(&run_start, &epoch_start);
+	if (__atomic_load_n(&shm->exit_reason, __ATOMIC_RELAXED) !=
+	    EXIT_MAX_RUNTIME)
+		BUG("run limits: --max-runtime counted from the epoch, not the run");
 }
 
 void run_limits_self_check(void);
@@ -177,10 +225,12 @@ void run_limits_self_check(void)
 	run_stop_outlives_epoch_restart();
 	taint_tick_keeps_its_reason();
 	count_spans_epochs();
+	max_runtime_spans_epochs();
 
 	syscalls_todo = 0;
 	epoch_iterations = 0;
 	epoch_timeout = 0;
+	max_runtime = 0;
 	parent_stats.op_count = 0;
 	parent_stats.total_op_count = 0;
 	parent_stats.epoch_start_op_count = 0;

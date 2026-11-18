@@ -157,7 +157,7 @@ bool parse_memory_options(int opt, const char *name, char *arg)
 
 /* --epoch-timeout / --max-runtime interlock: if --max-runtime is seen
  * first, --epoch-timeout must be ignored; if --epoch-timeout is seen
- * first, a later --max-runtime must warn and override.  This latch
+ * first, a later --max-runtime must warn and drop it.  This latch
  * tracks whether --epoch-timeout has been applied so parse_runtime_
  * options() can emit the override warning at the right moment. */
 static bool epoch_timeout_set = false;
@@ -174,7 +174,7 @@ bool parse_runtime_options(int opt, const char *name, char *arg)
 	}
 
 	if (strcmp("epoch-timeout", name) == 0) {
-		if (max_runtime_set) {
+		if (max_runtime) {
 			outputerr("warning: --max-runtime takes precedence; ignoring --epoch-timeout\n");
 		} else {
 			unsigned long val;
@@ -198,8 +198,8 @@ bool parse_runtime_options(int opt, const char *name, char *arg)
 		}
 		if (epoch_timeout_set)
 			outputerr("warning: --max-runtime overrides previously set --epoch-timeout\n");
-		epoch_timeout = seconds;
-		max_runtime_set = true;
+		epoch_timeout = 0;
+		max_runtime = seconds;
 		return true;
 	}
 

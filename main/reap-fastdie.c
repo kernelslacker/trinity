@@ -86,6 +86,7 @@ static bool reap_entry_is_fast_die(const struct reap_record *r)
 	 * still signals something wrong.
 	 *   - EXIT_REACHED_COUNT: requested op count reached.
 	 *   - EXIT_EPOCH_DONE:    epoch budget consumed.
+	 *   - EXIT_MAX_RUNTIME:   --max-runtime deadline reached.
 	 *   - EXIT_SIGINT:        ^C from terminal -- parent panics
 	 *     EXIT_SIGINT in main_stop_handler.  Spin-bailout then
 	 *     propagates EXIT_SIGINT to any racing child.

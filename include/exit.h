@@ -32,8 +32,11 @@ enum exit_reasons {
 	 * bit has been set.
 	 */
 	EXIT_KERNEL_STUCK = 20,
+	/* --max-runtime's deadline, counted from the run's start across
+	 * epochs; EXIT_EPOCH_DONE only restarts the fleet. */
+	EXIT_MAX_RUNTIME = 21,
 
-	NUM_EXIT_REASONS = 21
+	NUM_EXIT_REASONS = 22
 };
 
 static inline const char * decode_exit(enum exit_reasons reason)
@@ -60,6 +63,7 @@ static inline const char * decode_exit(enum exit_reasons reason)
 		"user requested exit.",
 		"epoch completed.",
 		"kernel stuck: too many D-state slots quarantined.",
+		"maximum runtime reached.",
 	};
 	if ((unsigned int)reason >= NUM_EXIT_REASONS)
 		return "Unknown exit reason";
@@ -79,6 +83,7 @@ static inline bool exit_reason_is_clean(enum exit_reasons reason)
 	case EXIT_SIGINT:
 	case EXIT_USER_REQUEST:
 	case EXIT_EPOCH_DONE:
+	case EXIT_MAX_RUNTIME:
 		return true;
 	default:
 		return false;

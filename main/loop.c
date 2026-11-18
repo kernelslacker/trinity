@@ -191,9 +191,16 @@ void stop_file_init(void)
 	(void)unlink(stop_file);
 }
 
-/* The operator's limits: -N, --epoch-iterations and --epoch-timeout. */
-void check_run_limits(const struct timespec *epoch_start)
+/* When the first epoch's main_loop() began: --max-runtime's origin. */
+static struct timespec run_began;
+
+/* The operator's limits: -N and --max-runtime end the run,
+ * --epoch-iterations and --epoch-timeout the epoch. */
+void check_run_limits(const struct timespec *run_start,
+		      const struct timespec *epoch_start)
 {
+	struct timespec now;
+
 	/*
 	 * -N budgets the whole run, so it counts total_op_count, which no
 	 * epoch reset zeroes.
@@ -213,14 +220,20 @@ void check_run_limits(const struct timespec *epoch_start)
 		panic(EXIT_REACHED_COUNT);
 	}
 
+	clock_gettime(CLOCK_MONOTONIC, &now);
+
+	if (max_runtime &&
+	    (unsigned int)(now.tv_sec - run_start->tv_sec) >= max_runtime) {
+		output(0, "Max runtime %u seconds reached.\n", max_runtime);
+		panic(EXIT_MAX_RUNTIME);
+	}
+
 	if (epoch_iterations && (epoch_ops >= epoch_iterations)) {
 		output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
 		panic(EXIT_EPOCH_DONE);
 	}
 
 	if (epoch_timeout) {
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
 		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
 			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
 			if (panic(EXIT_EPOCH_DONE))
@@ -293,7 +306,7 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 	if (check_all_locks() == true)
 		force_bust_lock(&shm->syscalltable_lock);
 
-	check_run_limits(epoch_start);
+	check_run_limits(&run_began, epoch_start);
 
 	/* Checked last so a request still ends the run when an epoch limit
 	 * fired this tick.  Like a stop signal, it never replaces a failure
@@ -407,18 +420,17 @@ static void log_main_loop_exit(void)
 
 	/* Pair the bail reason with the operator-set runtime ceiling so the
 	 * "hit the limit we were asked to honour" case and an internal
-	 * abort that happens to share the same exit_reason cannot be
-	 * conflated.  EXIT_EPOCH_DONE on a --max-runtime run is the limit
-	 * firing; the same reason without max_runtime_set is the inner
-	 * --epoch-iterations / --epoch-timeout cap; EXIT_FORK_FAILURE is
-	 * never the limit, regardless of what the operator configured.
-	 * Post-mortem grep wants both halves on a single line. */
+	 * abort cannot be conflated.  EXIT_MAX_RUNTIME is --max-runtime
+	 * firing and EXIT_EPOCH_DONE an --epoch-iterations / --epoch-timeout
+	 * cap; EXIT_FORK_FAILURE is never the limit, regardless of what the
+	 * operator configured.  Post-mortem grep wants both halves on a
+	 * single line. */
 	{
 		char limit[64];
 
-		if (max_runtime_set && epoch_timeout)
+		if (max_runtime)
 			snprintf(limit, sizeof(limit),
-				 "max_runtime=%us", epoch_timeout);
+				 "max_runtime=%us", max_runtime);
 		else if (epoch_timeout)
 			snprintf(limit, sizeof(limit),
 				 "epoch_timeout=%us", epoch_timeout);
@@ -602,6 +614,8 @@ void main_loop(void)
 			pidstatfiles[i] = -1;
 			zombie_pids[i] = EMPTY_PIDSLOT;
 		}
+		/* Once per run, like the arrays: later epochs keep it. */
+		clock_gettime(CLOCK_MONOTONIC, &run_began);
 	}
 
 	if (epoch_timeout)

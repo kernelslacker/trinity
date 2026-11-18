@@ -69,6 +69,7 @@ bool no_chain_warm_start;
 bool no_startup_isolation;
 unsigned long epoch_iterations;
 unsigned int epoch_timeout;
+unsigned int max_runtime;
 
 /* Owned by tables/tables-uniarch.c and tables-biarch.c in production.
  * Empty, so get_syscall_entry() finds no entry. */

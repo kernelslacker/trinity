@@ -101,7 +101,7 @@ unsigned long writer_watch_addr = 0;
 
 unsigned long epoch_iterations = 0;
 unsigned int epoch_timeout = 0;
-bool max_runtime_set = false;
+unsigned int max_runtime = 0;
 
 bool no_warm_start = false;
 char *warm_start_path = NULL;
