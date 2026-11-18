@@ -15,6 +15,7 @@
 #include <string.h>
 #include <sys/types.h>
 
+#include "child-api.h"		/* child_userns_lane_is_active */
 #include "cmsg-richness.h"
 #include "cmsg_build.h"
 #include "fd.h"
@@ -91,8 +92,18 @@ enum cmsg_kind pick_cmsg_kind(unsigned int family)
 		pool[n++] = CMSG_KIND_IPV6_HOPLIMIT;
 		pool[n++] = CMSG_KIND_IPV6_RTHDR;
 	}
-	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET)
+	/*
+	 * __sock_cmsg_send() also takes SO_PRIORITY, SCM_TS_OPT_ID and
+	 * SO_MARK from them.  The mark needs CAP_NET_RAW or CAP_NET_ADMIN
+	 * over the socket's netns, which only a lane child can hold.
+	 */
+	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET) {
 		pool[n++] = CMSG_KIND_SCM_TXTIME;
+		pool[n++] = CMSG_KIND_SO_PRIORITY;
+		pool[n++] = CMSG_KIND_SCM_TS_OPT_ID;
+		if (child_userns_lane_is_active())
+			pool[n++] = CMSG_KIND_SO_MARK;
+	}
 	/*
 	 * TLS records flow over INET / INET6 stream sockets after the
 	 * upper-layer ULP swap; the cmsg level / type are the gate the
@@ -348,10 +359,20 @@ static void fill_scm_credentials(void *dst)
 	memcpy(dst, &uc, sizeof(uc));
 }
 
-static void fill_so_timestamping(void *dst)
+/* SCM_TIMESTAMPING flags, an SO_MARK mark, an SCM_TS_OPT_ID id. */
+static void fill_u32(void *dst)
 {
-	uint32_t flags = rand32();
-	memcpy(dst, &flags, sizeof(flags));
+	uint32_t v = rand32();
+	memcpy(dst, &v, sizeof(v));
+}
+
+/* sk_set_prio_allowed() takes TC_PRIO_BESTEFFORT (0) through
+ * TC_PRIO_INTERACTIVE (6) from anyone, a higher priority only with
+ * CAP_NET_RAW or CAP_NET_ADMIN over the socket's netns. */
+static void fill_so_priority(void *dst)
+{
+	uint32_t v = ONE_IN(4) ? rand32() : rnd_modulo_u32(7);
+	memcpy(dst, &v, sizeof(v));
 }
 
 static int build_one_int(struct msghdr *m, int level, int type,
@@ -613,11 +634,17 @@ static unsigned int build_multi_pool(unsigned int family,
 		     fill_scm_credentials);
 	} else {
 		PUSH(SOL_SOCKET, SCM_TIMESTAMPING, sizeof(uint32_t),
-		     fill_so_timestamping);
+		     fill_u32);
 	}
-	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET)
+	if (family == AF_INET || family == AF_INET6 || family == AF_PACKET) {
 		PUSH(SOL_SOCKET, SCM_TXTIME, sizeof(uint64_t),
 		     fill_u64_txtime);
+		PUSH(SOL_SOCKET, SO_PRIORITY, sizeof(uint32_t),
+		     fill_so_priority);
+		PUSH(SOL_SOCKET, SCM_TS_OPT_ID, sizeof(uint32_t), fill_u32);
+		if (child_userns_lane_is_active())
+			PUSH(SOL_SOCKET, SO_MARK, sizeof(uint32_t), fill_u32);
+	}
 	if (family == AF_PACKET)
 		PUSH(SOL_PACKET, PACKET_AUXDATA,
 		     sizeof(struct tpacket_auxdata), NULL);
@@ -736,6 +763,13 @@ int cmsg_build(struct msghdr *m, enum cmsg_kind k, unsigned int family)
 	case CMSG_KIND_SCM_TXTIME:	return build_scm_txtime(m);
 	case CMSG_KIND_TLS_SET_RECORD_TYPE:
 		return build_tls_set_record_type(m);
+	case CMSG_KIND_SO_PRIORITY:
+		return build_one_int(m, SOL_SOCKET, SO_PRIORITY,
+				     fill_so_priority);
+	case CMSG_KIND_SO_MARK:
+		return build_one_int(m, SOL_SOCKET, SO_MARK, fill_u32);
+	case CMSG_KIND_SCM_TS_OPT_ID:
+		return build_one_int(m, SOL_SOCKET, SCM_TS_OPT_ID, fill_u32);
 	case CMSG_KIND_MULTI:		return build_cmsg_multi(m, family);
 	default:
 		return -1;

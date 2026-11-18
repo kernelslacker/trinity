@@ -351,6 +351,10 @@
 #define SO_DEVMEM_DONTNEED	80
 #endif
 
+#ifndef SCM_TS_OPT_ID
+#define SCM_TS_OPT_ID		81
+#endif
+
 #ifndef SO_RCVPRIORITY
 #define SO_RCVPRIORITY		82
 #endif
