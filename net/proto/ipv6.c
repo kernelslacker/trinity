@@ -1,4 +1,5 @@
 #ifdef USE_IPV6
+#include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <netinet/in.h>
@@ -191,6 +192,41 @@ static void ipv6_set_srh(struct sockopt *so)
 	so->optlen = (srh->hdrlen + 1) << 3;
 }
 
+/*
+ * An int option's value.  do_ipv6_setsockopt() reads an int from an optlen
+ * of four or more and 0 from a shorter one, which most options refuse, so
+ * one draw in eight keeps the length drawn for the option.
+ */
+static void ipv6_set_int(struct sockopt *so, int val)
+{
+	if (!ONE_IN(8))
+		so->optlen = sizeof(int);
+	memcpy((void *) so->optval, &val, sizeof(val));
+}
+
+/* At most one source preference of each group, as
+ * ip6_sock_set_addr_preferences() takes, and one draw in eight any mix of
+ * them, for its conflict checks. */
+static int ipv6_addr_preferences(void)
+{
+	static const int src[] = {
+		0, IPV6_PREFER_SRC_PUBLIC, IPV6_PREFER_SRC_TMP,
+		IPV6_PREFER_SRC_PUBTMP_DEFAULT,
+	};
+	static const int home[] = {
+		0, IPV6_PREFER_SRC_HOME, IPV6_PREFER_SRC_COA,
+	};
+	static const int cga[] = {
+		0, IPV6_PREFER_SRC_CGA, IPV6_PREFER_SRC_NONCGA,
+	};
+
+	if (ONE_IN(8))
+		return (int) (rnd_u32() &
+			      (src[1] | src[2] | src[3] | home[1] | home[2] |
+			       cga[1] | cga[2]));
+	return RAND_ARRAY(src) | RAND_ARRAY(home) | RAND_ARRAY(cga);
+}
+
 static void __inet6_setsockopt(struct sockopt *so)
 {
 	unsigned char val;
@@ -202,6 +238,76 @@ static void __inet6_setsockopt(struct sockopt *so)
 	so->optlen = sockoptlen(inet6_opts[val].len);
 
 	switch (so->optname) {
+	/* Flags, on for any value but 0. */
+	case IPV6_2292PKTINFO:
+	case IPV6_2292HOPOPTS:
+	case IPV6_2292DSTOPTS:
+	case IPV6_2292RTHDR:
+	case IPV6_2292HOPLIMIT:
+	case IPV6_FLOWINFO:
+	case IPV6_RECVERR:
+	case IPV6_V6ONLY:
+	case IPV6_FLOWINFO_SEND:
+	case IPV6_HDRINCL:
+	case IPV6_RECVPKTINFO:
+	case IPV6_RECVHOPLIMIT:
+	case IPV6_RECVHOPOPTS:
+	case IPV6_RECVRTHDR:
+	case IPV6_RECVDSTOPTS:
+	case IPV6_RECVPATHMTU:
+	case IPV6_DONTFRAG:
+	case IPV6_RECVTCLASS:
+	case IPV6_AUTOFLOWLABEL:
+	case IPV6_ORIGDSTADDR:
+	case IPV6_TRANSPARENT:
+	case IPV6_RECVFRAGSIZE:
+	case IPV6_MULTICAST_ALL:
+	case IPV6_ROUTER_ALERT_ISOLATE:
+	case IPV6_FREEBIND:
+	/* 0 or 1, refusing anything else. */
+	case IPV6_MULTICAST_LOOP:
+	case IPV6_RECVERR_RFC4884:
+		ipv6_set_int(so, RAND_BOOL());
+		break;
+	case IPV6_UNICAST_HOPS:
+	case IPV6_MULTICAST_HOPS:
+	case IPV6_TCLASS:
+		/* -1 for the default, or 0 through 255. */
+		ipv6_set_int(so, ONE_IN(8) ? -1 : (int) rnd_modulo_u32(256));
+		break;
+	case IPV6_MINHOPCOUNT:
+		ipv6_set_int(so, rnd_modulo_u32(256));
+		break;
+	case IPV6_MTU_DISCOVER:
+		ipv6_set_int(so, RAND_RANGE(IPV6_PMTUDISC_DONT, IPV6_PMTUDISC_OMIT));
+		break;
+	case IPV6_MTU:
+		/* 0 for the path's, or at least IPV6_MIN_MTU (1280). */
+		ipv6_set_int(so, ONE_IN(4) ? 0 : (int) RAND_RANGE(1280, 65535));
+		break;
+	case IPV6_CHECKSUM:
+		/* do_rawv6_setsockopt(): an even offset of the checksum in
+		 * the payload, or below 0 for none. */
+		ipv6_set_int(so, ONE_IN(4) ? -1 : (int) (2 * rnd_modulo_u32(32)));
+		break;
+	case IPV6_ADDR_PREFERENCES:
+		ipv6_set_int(so, ipv6_addr_preferences());
+		break;
+	case IPV6_MULTICAST_IF:
+		/* An ifindex, 0 to unset it; lo is 1 in every netns. */
+		ipv6_set_int(so, rnd_modulo_u32(3));
+		break;
+	case IPV6_UNICAST_IF:
+		/* The same in network order, taken only at an int's optlen. */
+		ipv6_set_int(so, (int) htonl(rnd_modulo_u32(3)));
+		so->optlen = sizeof(int);
+		break;
+	case IPV6_ROUTER_ALERT:
+		/* ip6_ra_control(): the router alert value whose packets the
+		 * socket takes, MLD (0), RSVP (1) or active networks (2), or
+		 * below 0 to stop. */
+		ipv6_set_int(so, ONE_IN(4) ? -1 : (int) rnd_modulo_u32(3));
+		break;
 	case IPV6_RTHDR:
 		/* A length of 0 drops the socket's routing header. */
 		if (ONE_IN(8)) {
