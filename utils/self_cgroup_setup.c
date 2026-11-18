@@ -56,6 +56,9 @@ static char *cg_original;	/* full /sys/fs/cgroup path trinity-main
 				 * was moved from at startup; single-cgroup
 				 * cleanup moves it back here so the
 				 * container rmdir succeeds. */
+static char *cg_memory_scope;	/* the scope single-cgroup mode delegated
+				 * +memory on; v2 refuses a process move
+				 * into it (EBUSY) until that is undone. */
 int cg_workload_fd = -1;	/* O_DIRECTORY on cg_workload */
 bool cg_split_mode;		/* true if parent/children sub-cgroups are live */
 
@@ -248,6 +251,25 @@ fail:
 }
 
 /*
+ * Drop the +memory single-cgroup mode delegated on the scope.  It has to
+ * go before trinity-main moves back into the scope: v2's no-internal-
+ * process rule refuses that move while the scope distributes a
+ * controller (EBUSY), and the container rmdir behind it then fails on
+ * the process still inside.
+ */
+static void undelegate_memory_scope(void)
+{
+	if (cg_memory_scope == NULL)
+		return;
+	if (!write_cg_file(cg_memory_scope, "cgroup.subtree_control",
+			   "-memory"))
+		outputerr("self-cgroup: drop +memory from %s failed: %s\n",
+			  cg_memory_scope, strerror(errno));
+	free(cg_memory_scope);
+	cg_memory_scope = NULL;
+}
+
+/*
  * Single-cgroup fallback: container directory carries memory.* knobs
  * directly and trinity-main + all workers live in it.  This is the
  * Phase 1 behavior and is used when the parent/children split couldn't
@@ -319,6 +341,13 @@ static bool setup_single(const char *container_path,
 				  strerror(errno));
 			goto fail;
 		}
+		cg_memory_scope = strdup(scope_path);
+		if (cg_memory_scope == NULL) {
+			(void)write_cg_file(scope_path, "cgroup.subtree_control",
+					    "-memory");
+			outputerr("self-cgroup: strdup(scope_path) failed\n");
+			goto fail;
+		}
 	}
 
 	if (!write_cg_file(container_path, "memory.max", max_str)) {
@@ -357,10 +386,14 @@ fail:
 	if (!ok) {
 		/* On any post-move failure, move main back to origin so the
 		 * caller's rmdir(container) succeeds and main isn't stranded
-		 * in a capped, untracked cgroup.  Best-effort: if the write
-		 * fails there is nowhere useful to go. */
-		if (main_moved)
-			(void)write_cg_file(origin_path, "cgroup.procs", pidbuf);
+		 * in a capped, untracked cgroup; the scope's +memory goes
+		 * first, or v2 refuses the move.  Best-effort: a failure is
+		 * reported, and there is nowhere further to go. */
+		undelegate_memory_scope();
+		if (main_moved &&
+		    !write_cg_file(origin_path, "cgroup.procs", pidbuf))
+			outputerr("self-cgroup: move trinity-main back to %s failed: %s\n",
+				  origin_path, strerror(errno));
 		free(cg_workload);
 		cg_workload = NULL;
 	}
@@ -548,17 +581,21 @@ void self_cgroup_cleanup(void)
 
 	/*
 	 * rmdir order: workload (children) first, then parent, then
-	 * container.  Move trinity-main back to its original cgroup first
-	 * so the parent rmdir succeeds — cgroup v2 does not auto-reap
-	 * empty directories, so anything we leave behind is a stale
+	 * container.  Move trinity-main back to its original cgroup first,
+	 * once the scope no longer distributes memory, so the parent rmdir
+	 * succeeds — cgroup v2 does not auto-reap empty directories, so
+	 * anything we leave behind is a stale
 	 * /sys/fs/cgroup/.../trinity-<pid>/ until the next manual sweep.
 	 */
+	undelegate_memory_scope();
 	if (cg_original != NULL) {
 		char buf[32];
 		int n = snprintf(buf, sizeof(buf), "%d\n", (int)mypid());
 
-		if (n > 0 && (size_t)n < sizeof(buf))
-			(void)write_cg_file(cg_original, "cgroup.procs", buf);
+		if (n > 0 && (size_t)n < sizeof(buf) &&
+		    !write_cg_file(cg_original, "cgroup.procs", buf))
+			outputerr("self-cgroup: move trinity-main back to %s failed: %s\n",
+				  cg_original, strerror(errno));
 	}
 
 	if (cg_workload != NULL) {
