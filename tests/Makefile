@@ -741,7 +741,8 @@ FAKE_SRCS	+= packet_sockopt_test.c
 # net/proto/ipv4.c and ipv6.c bring the inet option dispatch, with the
 # per-protocol builders its tables name; inet_sockopt_test.c holds a
 # socket of protocol 0 to its protocol's options, and ipv6_sockopt_test.c
-# the routing headers to the ones ipv6_set_opt_hdr() keeps.
+# the routing headers to the ones ipv6_set_opt_hdr() keeps and the
+# ICMPV6_FILTER block counts to 1 through 8.
 PARENT_SRCS	+= $(TOP)/net/proto/ipv4.c \
 		   $(TOP)/net/proto/ipv6.c \
 		   $(TOP)/net/proto/ip-tcp.c \

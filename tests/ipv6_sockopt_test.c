@@ -10,6 +10,7 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <linux/icmpv6.h>		/* struct icmp6_filter */
 #include <linux/ipv6.h>		/* IPV6_SRCRT_TYPE_4 */
 #include <linux/seg6.h>		/* struct ipv6_sr_hdr, struct sr6_tlv */
 
@@ -53,6 +54,38 @@ static bool srh_valid(const unsigned char *buf, int len)
 	return true;
 }
 
+/* ICMPV6_FILTER's block-a-few arm blocks 1 to 8 types, each count as
+ * often as the others, so a fair share of its filters block 7 or 8
+ * (fewer only where two draws name one type). */
+static void icmpv6_filter_check(void)
+{
+	struct socket_triplet icmp = {
+		.family = PF_INET6, .type = SOCK_RAW, .protocol = IPPROTO_ICMPV6,
+	};
+	unsigned int i, few = 0, most = 0;
+
+	for (i = 0; i < IPV6_ROUNDS; i++) {
+		struct icmp6_filter filter;
+		struct sockopt so = { .optval = (unsigned long) &filter };
+		unsigned int j, blocked = 0;
+
+		icmpv6_setsockopt(&so, &icmp);
+		for (j = 0; j < 8; j++)
+			blocked += __builtin_popcount(filter.data[j]);
+		/* The other arms block no type, all of them, or about half. */
+		if (blocked == 0 || blocked > 8)
+			continue;
+		few++;
+		if (blocked >= 7)
+			most++;
+	}
+
+	if (few == 0)
+		BUG("icmpv6: no ICMPV6_FILTER blocks a few types");
+	if (most * 8 < few)
+		BUG("icmpv6: ICMPV6_FILTER seldom blocks 7 or 8 types");
+}
+
 void ipv6_sockopt_self_check(void);
 void ipv6_sockopt_self_check(void)
 {
@@ -81,4 +114,6 @@ void ipv6_sockopt_self_check(void)
 		BUG("ipv6: no routing header drawn");
 	if (kept < rthdr * 3 / 4)
 		BUG("ipv6: the routing headers ipv6_set_opt_hdr() keeps are rare");
+
+	icmpv6_filter_check();
 }

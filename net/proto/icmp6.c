@@ -33,10 +33,10 @@ void icmpv6_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *tri
 			break;
 		case 3: {
 			/* Block a few specific types */
-			unsigned int i;
+			unsigned int i, nr = rnd_modulo_u32(8) + 1;
 
 			memset(filter, 0, sizeof(struct icmp6_filter));
-			for (i = 0; i < (unsigned int)(rnd_modulo_u32(8)) + 1; i++) {
+			for (i = 0; i < nr; i++) {
 				unsigned int type = rnd_modulo_u32(256);
 
 				filter->data[type >> 5] |= 1U << (type & 31);
