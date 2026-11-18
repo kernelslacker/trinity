@@ -28,14 +28,13 @@
 #define NR_MEMFD_SECRET_FDS 4
 
 /*
- * Latched per-process: memfd_secret(2) returned ENOSYS (CONFIG_SECRETMEM=n,
- * syscall not wired on this arch, secretmem.enable=0 or no direct-map
- * editing: the kernel gives the last two the same -ENOSYS) or EINVAL,
- * which it gives only for flag bits we never pass (we send 0 / O_CLOEXEC)
- * and which is latched as a safety net.  Neither flips during this
- * process, so init / regen / consumers all fast-path past the syscall
- * once latched.  Mirrors the unsupported_<name> shape used by
- * landlock / mq.
+ * Latched by the parent's probe: memfd_secret(2) returned ENOSYS
+ * (CONFIG_SECRETMEM=n, syscall not wired on this arch, secretmem.enable=0
+ * or no direct-map editing: the kernel gives the last two the same
+ * -ENOSYS) or EINVAL, which it gives only for flag bits we never pass (we
+ * send 0 / O_CLOEXEC) and which is latched as a safety net.  Neither
+ * flips during the run, so the replenish tick skips the syscall once
+ * latched.  Mirrors the unsupported_<name> shape used by landlock / mq.
  */
 static bool unsupported_memfd_secret;
 
@@ -58,81 +57,86 @@ static void memfd_secret_dump(struct object *obj, enum obj_scope scope)
 		mso->fd, mso->flags, scope);
 }
 
-static int open_memfd_secret_fd(void)
+static void open_memfd_secret_fd(void)
 {
 	struct object *obj;
 	unsigned int flags;
 	int fd;
 
-	if (unsupported_memfd_secret)
-		return false;
-
 	flags = RAND_BOOL() ? O_CLOEXEC : 0;
 
 	fd = memfd_secret(flags);
-	if (fd < 0) {
-		if (errno == ENOSYS || errno == EINVAL) {
-			outputerr("open_memfd_secret_fd: memfd_secret(flags=%x) failed: %s -- latching unsupported_memfd_secret\n",
-				flags, strerror(errno));
-			unsupported_memfd_secret = true;
-		}
-		return false;
-	}
+	if (fd < 0)
+		return;
 
 	obj = alloc_object();
 	if (obj == NULL) {
 		close(fd);
-		return false;
+		return;
 	}
 	obj->memfd_secretobj.fd = fd;
 	obj->memfd_secretobj.flags = flags;
-	add_object(obj, OBJ_GLOBAL, OBJ_FD_MEMFD_SECRET);
-	return true;
+	add_object(obj, OBJ_LOCAL, OBJ_FD_MEMFD_SECRET);
 }
 
+/*
+ * Parent-side setup: wire the OBJ_GLOBAL head's destroy and dump slots,
+ * which init_object_lists(OBJ_LOCAL, child) copies into every child's
+ * pool, and probe that memfd_secret(2) works; the probe fd is closed at
+ * once.  The global pool stays empty.  A secretmem page a fault allocates
+ * is charged to the locked_vm of the user who created the file, against
+ * the faulting task's RLIMIT_MEMLOCK, until the file is released
+ * (mm/secretmem.c), so fds the parent held for the run would pile every
+ * child's faults onto it.  Each child makes its own instead, in
+ * memfd_secret_child_init(), released when it exits.
+ */
 static int init_memfd_secret_fds(void)
 {
 	struct objhead *head;
-	unsigned int i;
-	int ret = false;
+	int fd;
 
 	head = get_objhead(OBJ_GLOBAL, OBJ_FD_MEMFD_SECRET);
 	head->destroy = &close_fd_destructor;
 	head->dump = &memfd_secret_dump;
 
-	for (i = 0; i < NR_MEMFD_SECRET_FDS; i++) {
-		if (open_memfd_secret_fd())
-			ret = true;
+	fd = memfd_secret(0);
+	if (fd < 0) {
+		if (errno == ENOSYS || errno == EINVAL) {
+			outputerr("init_memfd_secret_fds: memfd_secret() failed: %s -- latching unsupported_memfd_secret\n",
+				strerror(errno));
+			unsupported_memfd_secret = true;
+		}
+		return false;
 	}
-
-	return ret;
+	close(fd);
+	return true;
 }
 
+/* Per-child seed: the pool's secretmem fds, made in the child's context
+ * after init_object_lists(OBJ_LOCAL, ...) has brought its pool up. */
+static void memfd_secret_child_init(struct childdata *child __attribute__((unused)))
+{
+	unsigned int i;
+
+	for (i = 0; i < NR_MEMFD_SECRET_FDS; i++)
+		open_memfd_secret_fd();
+}
+
+/*
+ * Per-child (OBJ_LOCAL) picker: every secretmem fd the pool holds was made
+ * by memfd_secret_child_init() in this child, out of the OBJ_GLOBAL
+ * lockless-reader window.
+ */
 static int get_rand_memfd_secret_fd(void)
 {
-	if (unsupported_memfd_secret)
+	if (objects_pool_empty(OBJ_LOCAL, OBJ_FD_MEMFD_SECRET) == true)
 		return -1;
 
-	if (objects_empty(OBJ_FD_MEMFD_SECRET) == true)
-		return -1;
-
-	/*
-	 * Versioned slot pick + objpool_check() before the
-	 * obj->memfd_secretobj.fd deref.  A version-validated object-slot
-	 * read guards the lockless reader against a recycled object
-	 * (cf. get_rand_socketinfo in fds/sockets.c).  Same OBJ_GLOBAL
-	 * lockless-reader UAF window:
-	 * between the lockless slot pick and the consumer's read of
-	 * the memfd_secret fd routed into mmap/ftruncate via the fd_provider .get callback,
-	 * the parent can destroy the obj; release_obj() zeroes the chunk
-	 * and routes it through deferred-free, so the stale slot pointer
-	 * can read a zeroed or recycled chunk.
-	 */
 	for (int i = 0; i < 1000; i++) {
 		struct object *obj;
 		int fd;
 
-		obj = get_random_object(OBJ_FD_MEMFD_SECRET, OBJ_GLOBAL);
+		obj = get_random_object(OBJ_FD_MEMFD_SECRET, OBJ_LOCAL);
 		if (!objpool_check(obj, OBJ_FD_MEMFD_SECRET))
 			continue;
 
@@ -149,11 +153,11 @@ static int get_rand_memfd_secret_fd(void)
 /*
  * Periodic child-tick top-up.  See the block comment above
  * memfd_try_replenish() (fds/memfd.c) for the general contract.
- * init_memfd_secret_fds() seeds NR_MEMFD_SECRET_FDS once; a child that
- * has drained them via fuzz-driven close/dup2/close_range hits stops
- * seeing ARG_FD_MEMFD_SECRET picks.  Push fresh secretmem fds into the
- * live-fd ring to restore gen_arg_fd() hits without touching the
- * OBJ_GLOBAL pool the parent owns.
+ * memfd_secret_child_init() seeds NR_MEMFD_SECRET_FDS once into the
+ * child's pool; a child that has drained them via fuzz-driven
+ * close/dup2/close_range hits stops seeing ARG_FD_MEMFD_SECRET picks.
+ * Push fresh secretmem fds into the live-fd ring to restore gen_arg_fd()
+ * hits without growing that pool.
  *
  * Honour the unsupported_memfd_secret latch: on a kernel without
  * CONFIG_SECRETMEM or with secretmem.enable=0, the syscall has already
@@ -203,8 +207,10 @@ static const struct fd_provider memfd_secret_fd_provider = {
 	.objtype = OBJ_FD_MEMFD_SECRET,
 	.enabled = true,
 	.init = &init_memfd_secret_fds,
+	.child_init = &memfd_secret_child_init,
 	.get = &get_rand_memfd_secret_fd,
 	.try_replenish = &memfd_secret_try_replenish,
+	.local_pool = true,
 };
 
 REG_FD_PROV(memfd_secret_fd_provider);
