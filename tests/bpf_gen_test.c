@@ -26,6 +26,7 @@
 #include "net.h"		/* bpf_gen_seccomp */
 #include "deferred-free.h"	/* deferred_alloc_track, alloc_track_lookup */
 #include "objects.h"		/* struct bpfobj */
+#include "pids.h"		/* mypid */
 #include "prctl_seccomp.h"	/* free_prctl_seccomp_program */
 #include "rnd.h"
 #include "sanitise.h"		/* range_in_writable_pool, writable_pool_init */
@@ -2427,6 +2428,50 @@ static void installed_filters_mark_the_child(void)
 
 #endif /* USE_BPF */
 
+/*
+ * BPF_TASK_FD_QUERY goes through the catalog's schema fill.
+ * bpf_task_fd_query() refuses nonzero flags with -EINVAL and looks the pid
+ * up in the caller's pid namespace, so the flags are 0 and most queries
+ * name the caller, whose fds the fill draws.
+ */
+static void task_fd_query_names_the_caller(void)
+{
+	enum { ROUNDS = 2000 };
+	static struct syscallrecord rec;
+	unsigned int round, own = 0;
+
+	if (get_writable_address(sizeof(unsigned long)) == NULL)
+		writable_pool_init();
+	fake_catalog_lookup = true;
+	fake_random_fd_empty = true;
+
+	for (round = 0; round < ROUNDS; round++) {
+		const union bpf_attr *attr;
+
+		memset(&rec, 0, sizeof(rec));
+		rec.a1 = BPF_TASK_FD_QUERY;
+		syscall_bpf.sanitise(&rec);
+		attr = (const union bpf_attr *) rec.a2;
+		check("the flags are not 0", "task fd query",
+		      attr->task_fd_query.flags == 0);
+		own += attr->task_fd_query.pid == (__u32) mypid();
+
+		/* Releases the snapshot, as the dispatcher does; the attr and
+		 * the name buffer the fill hung off it, which the fake
+		 * allocator never tracked, are freed here. */
+		rec.retval = (unsigned long) -1L;
+		rec.errno_post = EPERM;
+		syscall_bpf.post(&rec);
+		free((void *) (unsigned long) attr->task_fd_query.buf);
+		free((void *) attr);
+	}
+	check("the pid is seldom the caller's", "task fd query",
+	      own >= ROUNDS * 3 / 4);
+
+	fake_random_fd_empty = false;
+	fake_catalog_lookup = false;
+}
+
 void bpf_gen_self_check(void);
 void bpf_gen_self_check(void)
 {
@@ -2450,6 +2495,7 @@ void bpf_gen_self_check(void)
 #endif
 	listener_filters_return_no_user_notif();
 	installed_filters_mark_the_child();
+	task_fd_query_names_the_caller();
 #ifdef USE_BPF_LINK_CREATE_TRACING_MULTI
 	link_create_catalog_has_the_tracing_multi_tail();
 #endif

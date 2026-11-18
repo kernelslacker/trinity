@@ -15,6 +15,9 @@
 
 #ifdef USE_BPF
 #include "bpf.h"
+#include "pids.h"
+#include "random.h"
+#include "rnd.h"
 
 const struct struct_field bpf_attr_ENABLE_STATS_fields[BPF_ATTR_ENABLE_STATS_FIELDS_N] = {
 	/*
@@ -38,17 +41,31 @@ const struct struct_field bpf_attr_TOKEN_CREATE_fields[BPF_ATTR_TOKEN_CREATE_FIE
 };
 
 /*
+ * bpf_task_fd_query() looks the pid up in the caller's pid namespace;
+ * most queries name the caller, the one task whose fds the fill draws.
+ */
+static unsigned long long task_fd_query_pid(void)
+{
+	return ONE_IN(8) ? rnd_u32() : (unsigned long long) mypid();
+}
+
+/*
  * BPF_TASK_FD_QUERY task_fd_query variant.  buf is the kernel-
  * writable name/symbol/filename buffer; non-optional because a NULL
  * buffer bounces on the up-front -EFAULT before the per-fd-type
  * dispatch.  prog_id / fd_type / probe_offset / probe_addr are
  * kernel outputs that we still pre-fill so the slot is well-defined
- * if the call fails before the kernel writes them.
+ * if the call fails before the kernel writes them.  The kernel checks
+ * CAP_SYS_ADMIN before any of it.
  */
 const struct struct_field bpf_attr_TASK_FD_QUERY_fields[BPF_ATTR_TASK_FD_QUERY_FIELDS_N] = {
-	FIELD(union bpf_attr, task_fd_query.pid),
+	FIELDX(union bpf_attr, task_fd_query.pid, FT_PICKER,
+	       .u.picker.pick = task_fd_query_pid),
 	FIELDX(union bpf_attr, task_fd_query.fd, FT_FD),
-	FIELD(union bpf_attr, task_fd_query.flags),
+	/* No flag is defined, and an FT_FLAGS of no bits is always 0
+	 * (FT_RANGE takes lo == hi for a raw fill). */
+	FIELDX(union bpf_attr, task_fd_query.flags, FT_FLAGS,
+	       .u.flags.mask = 0),
 	FIELDX(union bpf_attr, task_fd_query.buf_len, FT_LEN_BYTES,
 	       .u.len_of = { .buf_field = "task_fd_query.buf" }),
 	FIELDX(union bpf_attr, task_fd_query.buf, FT_PTR_BYTES,
