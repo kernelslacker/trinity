@@ -152,7 +152,7 @@ static FILE *stats_timeseries_fp = NULL;
  * unchanged rows (below) removes most of it; this is the backstop for
  * a run that keeps finding new coverage for days.
  */
-#define STATS_TIMESERIES_MAX_BYTES	(4UL * 1024 * 1024 * 1024)
+#define STATS_TIMESERIES_MAX_BYTES	(4ULL * 1024 * 1024 * 1024)
 
 /* Last op_count successfully emitted in a window record.  Used at
  * clean shutdown for the terminal record's cross-check: the running
@@ -1006,8 +1006,8 @@ void stats_timeseries_emit_window(unsigned long op_count)
 		fflush(stats_timeseries_fp);
 		fclose(stats_timeseries_fp);
 		stats_timeseries_fp = NULL;
-		outputerr("stats: timeseries JSONL hit the %lu byte cap; sink disabled.\n",
-			  (unsigned long) STATS_TIMESERIES_MAX_BYTES);
+		outputerr("stats: timeseries JSONL hit the %llu byte cap; sink disabled.\n",
+			  STATS_TIMESERIES_MAX_BYTES);
 		return;
 	}
 
