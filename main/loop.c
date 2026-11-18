@@ -191,6 +191,42 @@ void stop_file_init(void)
 	(void)unlink(stop_file);
 }
 
+/* The operator's limits: -N, --epoch-iterations and --epoch-timeout. */
+void check_run_limits(const struct timespec *epoch_start)
+{
+	unsigned long op = parent_stats.op_count;
+	/*
+	 * Epoch iteration budget is measured against the monotonic
+	 * total_op_count minus the snapshot taken at epoch entry, so the
+	 * check remains correct even though op_count itself is zeroed by
+	 * reset_epoch_state().  Prior code compared op_count directly,
+	 * which underflowed no signal here (both zero) but skewed the
+	 * partner rate/timeseries paths that also read op_count.
+	 */
+	unsigned long epoch_ops = parent_stats.total_op_count
+		- parent_stats.epoch_start_op_count;
+
+	if (syscalls_todo && (op >= syscalls_todo)) {
+		output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
+		panic(EXIT_REACHED_COUNT);
+	}
+
+	if (epoch_iterations && (epoch_ops >= epoch_iterations)) {
+		output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
+		panic(EXIT_EPOCH_DONE);
+	}
+
+	if (epoch_timeout) {
+		struct timespec now;
+		clock_gettime(CLOCK_MONOTONIC, &now);
+		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
+			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
+			final_state_save();
+			panic(EXIT_EPOCH_DONE);
+		}
+	}
+}
+
 /* Per-tick stop-condition checks.  Runs after the child-surface
  * drain so taint and shm-integrity checks see the freshest state.
  * Returns true if main_loop should branch straight to the corrupt
@@ -255,37 +291,7 @@ static bool check_main_loop_stops(const struct timespec *epoch_start)
 	if (check_all_locks() == true)
 		force_bust_lock(&shm->syscalltable_lock);
 
-	unsigned long op = parent_stats.op_count;
-	/*
-	 * Epoch iteration budget is measured against the monotonic
-	 * total_op_count minus the snapshot taken at epoch entry, so the
-	 * check remains correct even though op_count itself is zeroed by
-	 * reset_epoch_state().  Prior code compared op_count directly,
-	 * which underflowed no signal here (both zero) but skewed the
-	 * partner rate/timeseries paths that also read op_count.
-	 */
-	unsigned long epoch_ops = parent_stats.total_op_count
-		- parent_stats.epoch_start_op_count;
-
-	if (syscalls_todo && (op >= syscalls_todo)) {
-		output(0, "Reached limit %lu. Telling children to exit.\n", syscalls_todo);
-		panic(EXIT_REACHED_COUNT);
-	}
-
-	if (epoch_iterations && (epoch_ops >= epoch_iterations)) {
-		output(0, "Epoch iteration limit %lu reached.\n", epoch_iterations);
-		panic(EXIT_EPOCH_DONE);
-	}
-
-	if (epoch_timeout) {
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		if ((unsigned int)(now.tv_sec - epoch_start->tv_sec) >= epoch_timeout) {
-			output(0, "Epoch timeout %u seconds reached.\n", epoch_timeout);
-			final_state_save();
-			panic(EXIT_EPOCH_DONE);
-		}
-	}
+	check_run_limits(epoch_start);
 
 	/* Checked last so a request still ends the run when an epoch limit
 	 * fired this tick.  Like a stop signal, it never replaces a failure

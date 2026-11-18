@@ -44,6 +44,10 @@ void reset_child_rings(unsigned int childno);
 /* The shutdown tail: kill and reap children until the pid map is empty,
  * parking any the kernel will not release. */
 void wait_for_children_to_exit(void);
+/* Publish the stop reason of an operator limit (-N, --epoch-iterations,
+ * --epoch-timeout) that has fallen due; @epoch_start is when this epoch's
+ * main_loop() began. */
+void check_run_limits(const struct timespec *epoch_start);
 
 /* main/reap.c -- exposed entry points. */
 int shm_is_corrupt(void);
