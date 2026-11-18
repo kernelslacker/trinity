@@ -791,6 +791,11 @@ FAKE_SRCS	+= nfc_sockopt_test.c
 PARENT_SRCS	+= $(TOP)/net/proto/phonet.c
 FAKE_SRCS	+= phonet_sockopt_test.c
 
+# net/proto/atm.c brings the ATM PVC option builder, whose options and
+# QoS atm_sockopt_test.c holds to what vcc_setsockopt() takes.
+PARENT_SRCS	+= $(TOP)/net/proto/atm.c
+FAKE_SRCS	+= atm_sockopt_test.c
+
 # fds/signalfd.c brings the signalfd pool's provider, which registers itself
 # at load time.  signalfd_pool_test.c runs its init hook against the
 # object-pool hooks in fake_objects.c.
