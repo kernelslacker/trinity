@@ -149,41 +149,6 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 	return fake_cold_skip_pct;
 }
 
-/* utils/persist-envelope.c is not linked: it would consult the
- * generation manifest under the user's cache directory. */
-void persist_envelope_init(struct trinity_persist_envelope *env,
-			   enum trinity_persist_component component,
-			   uint32_t schema_version,
-			   uint32_t payload_len,
-			   uint32_t checksum)
-{
-	memset(env, 0, sizeof(*env));
-	env->magic = TRINITY_PERSIST_MAGIC;
-	env->component_id = component;
-	env->schema_version = schema_version;
-	env->payload_len = payload_len;
-	env->checksum = checksum;
-}
-
-bool persist_envelope_validate(const struct trinity_persist_envelope *env,
-			       enum trinity_persist_component expected,
-			       const char *path)
-{
-	(void) path;
-	return env->magic == TRINITY_PERSIST_MAGIC &&
-	       env->component_id == (uint32_t) expected;
-}
-
-bool persist_envelope_check_generation(const struct trinity_persist_envelope *env,
-				       enum trinity_persist_component expected,
-				       const char *path)
-{
-	(void) env;
-	(void) expected;
-	(void) path;
-	return true;
-}
-
 static void put_entry(unsigned int nr, bool do32, unsigned long a1,
 		      unsigned long a2)
 {

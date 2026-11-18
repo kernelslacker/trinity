@@ -872,13 +872,7 @@ static bool kcov_bitmap_check_envelope(int fd, const char *path)
 		       path, en, sizeof(env));
 		return false;
 	}
-	if (!persist_envelope_validate(&env, PERSIST_KCOV, path))
-		return false;
-	if (!persist_envelope_check_generation(&env, PERSIST_KCOV,
-					       path))
-		return false;
-
-	return true;
+	return persist_envelope_validate(&env, PERSIST_KCOV, path);
 }
 
 /*

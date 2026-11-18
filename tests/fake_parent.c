@@ -29,7 +29,6 @@
 #include "main-internal.h"
 #include "main/reap-internal.h"
 #include "params.h"
-#include "persist-envelope.h"
 #include "pids.h"
 #include "post-mortem.h"
 #include "pre_crash_ring.h"
@@ -405,19 +404,6 @@ const char *cmp_hints_default_path(void)
 bool cmp_hints_save_file(const char *path)
 {
 	(void)path;
-	return false;
-}
-
-uint64_t persist_envelope_current_generation(void)
-{
-	return 0;
-}
-
-bool persist_write_generation_manifest(uint64_t generation,
-				       const enum trinity_persist_component *components,
-				       uint32_t nr_components)
-{
-	(void)generation; (void)components; (void)nr_components;
 	return false;
 }
 

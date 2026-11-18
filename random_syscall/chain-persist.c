@@ -371,11 +371,6 @@ bool chain_corpus_load_file(const char *path,
 			(void)close(fd);
 			return false;
 		}
-		if (!persist_envelope_check_generation(&env, PERSIST_CHAIN,
-						       path)) {
-			(void)close(fd);
-			return false;
-		}
 	}
 
 	hn = read_all(fd, &hdr, sizeof(hdr));

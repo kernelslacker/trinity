@@ -527,9 +527,10 @@ CMP_SRCS	:= \
 # minicorpus_save_with_reason(), minicorpus_replay(),
 # minicorpus_save_file() and minicorpus_load_file(), with the fd and
 # stale-tmp helpers the file path uses, and the cold-overflow probe
-# that asks the ring which ABIs it holds.  Same section-per-function
-# treatment; minicorpus_abi_test.c fakes the persist envelope, the blob
-# corpus, the mutator chain and the cold-skip classifier.
+# that asks the ring which ABIs it holds, and the persist envelope every
+# warm-start file opens with.  Same section-per-function treatment;
+# minicorpus_abi_test.c fakes the blob corpus, the mutator chain and the
+# cold-skip classifier.
 MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-core.c \
 	$(TOP)/persist/minicorpus-file.c \
@@ -537,15 +538,16 @@ MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-select.c \
 	$(TOP)/random_syscall/warm-reserve.c \
 	$(TOP)/lib/fd.c \
-	$(TOP)/utils/persist-util.c
+	$(TOP)/utils/persist-util.c \
+	$(TOP)/utils/persist-envelope.c
 
 # The chain corpus ring and its warm-start file, linked for
 # chain_corpus_save(), chain_corpus_save_file() and
 # chain_corpus_load_file(), with the fd and stale-tmp helpers from
 # MINICORPUS_SRCS.  Same section-per-function treatment, so the init and
 # snapshot code and the rest of the chain cluster stay out of the link;
-# chain_corpus_test.c uses the lock and persist envelope fakes from
-# cmp_collect_test.c and minicorpus_abi_test.c.
+# chain_corpus_test.c uses the lock fakes from cmp_collect_test.c and
+# the persist envelope from MINICORPUS_SRCS.
 CHAIN_SRCS	:= \
 	$(TOP)/random_syscall/chain-corpus.c \
 	$(TOP)/random_syscall/chain-persist.c
@@ -553,8 +555,8 @@ CHAIN_SRCS	:= \
 # The kcov bitmap warm-start save and load paths, linked for
 # kcov_bitmap_save_file() and kcov_bitmap_load_file(), with the fd and
 # stale-tmp helpers they use from MINICORPUS_SRCS.  Same
-# section-per-function treatment; kcov_shm and the persist envelope
-# come from cmp_collect_test.c and minicorpus_abi_test.c.
+# section-per-function treatment; kcov_shm comes from cmp_collect_test.c
+# and the persist envelope from MINICORPUS_SRCS.
 KCOV_PERSIST_SRCS := \
 	$(TOP)/kcov/persist.c
 

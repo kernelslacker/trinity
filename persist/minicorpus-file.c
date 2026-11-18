@@ -293,11 +293,6 @@ bool minicorpus_load_file(const char *path,
 			close(fd);
 			return false;
 		}
-		if (!persist_envelope_check_generation(&env, PERSIST_MINICORPUS,
-						       path)) {
-			close(fd);
-			return false;
-		}
 	}
 
 	hn = read_all(fd, &hdr, sizeof(hdr));

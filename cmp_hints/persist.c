@@ -397,11 +397,6 @@ static bool cmp_hints_load_file_header(const char *path,
 			(void)close(fd);
 			return false;
 		}
-		if (!persist_envelope_check_generation(&env, PERSIST_CMP_HINTS,
-						       path)) {
-			(void)close(fd);
-			return false;
-		}
 	}
 
 	n = read_all(fd, hdr, sizeof(*hdr));
