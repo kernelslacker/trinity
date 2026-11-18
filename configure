@@ -587,6 +587,9 @@ check_enum_member linux/netfilter/nfnetlink_conntrack.h CTA_FILTER_ZONE
 # added in 6.17.
 check_enum_member linux/netfilter/nf_tables.h NFTA_DEVICE_PREFIX
 
+# The CAN raw option that sets CAN XL's virtual CAN ids, added in 6.9.
+check_enum_member linux/can/raw.h CAN_RAW_XL_VCID_OPTS
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

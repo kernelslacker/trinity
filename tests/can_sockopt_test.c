@@ -3,7 +3,8 @@
  * (net/can/isotp.c) takes CAN_ISOTP_LL_OPTS only with the MTU of CAN or
  * CAN FD and a data length padlen() keeps, 8, 12, 16, 20, 24, 32, 48 or
  * 64, and with the classic MTU only 8 and no tx_flags, so the link-layer
- * options drawn are ones it takes.
+ * options drawn are ones it takes; raw_setsockopt() (net/can/raw.c) takes
+ * CAN_RAW_XL_VCID_OPTS only at its struct's exact size.
  */
 
 #include <stdbool.h>
@@ -13,6 +14,7 @@
 #include <linux/can/isotp.h>
 
 #include "debug.h"		/* BUG */
+#include "kernel/can_raw.h"	/* CAN_RAW_XL_VCID_OPTS */
 #include "net.h"		/* proto_can, struct sockopt */
 
 #define CAN_ROUNDS	4000
@@ -29,6 +31,39 @@ static bool isotp_ll_taken(const struct can_isotp_ll_options *ll)
 	if (ll->mtu == CAN_MTU)
 		return ll->tx_dl <= CAN_MAX_DLEN && ll->tx_flags == 0;
 	return ll->mtu == CANFD_MTU;
+}
+
+/* The CAN XL virtual CAN id options, at the size raw_setsockopt() wants,
+ * with flags among the three it reads. */
+static void raw_vcid_check(void)
+{
+	struct socket_triplet raw = {
+		.family = PF_CAN, .type = SOCK_RAW, .protocol = CAN_RAW,
+	};
+	static unsigned char optval[CAN_OPTVAL_LEN];
+	unsigned int i, vcid = 0;
+
+	for (i = 0; i < CAN_ROUNDS; i++) {
+		struct sockopt so = { .optval = (unsigned long) optval };
+		const struct can_raw_vcid_options *opts =
+			(const struct can_raw_vcid_options *) optval;
+
+		memset(optval, 0, sizeof(optval));
+		proto_can.setsockopt(&so, &raw);
+		if (so.level != SOL_CAN_RAW || so.optname != CAN_RAW_XL_VCID_OPTS)
+			continue;
+
+		vcid++;
+		if (so.optlen != sizeof(*opts))
+			BUG("can: CAN_RAW_XL_VCID_OPTS at a size raw_setsockopt() refuses");
+		if (opts->flags & ~(CAN_RAW_XL_VCID_TX_SET |
+				    CAN_RAW_XL_VCID_TX_PASS |
+				    CAN_RAW_XL_VCID_RX_FILTER))
+			BUG("can: CAN_RAW_XL_VCID_OPTS flags the kernel has no meaning for");
+	}
+
+	if (vcid == 0)
+		BUG("can: no CAN_RAW_XL_VCID_OPTS drawn");
 }
 
 void can_sockopt_self_check(void);
@@ -57,4 +92,6 @@ void can_sockopt_self_check(void)
 		BUG("can: no ISO-TP link-layer option drawn");
 	if (taken < ll * 3 / 4)
 		BUG("can: the ISO-TP link-layer options the kernel takes are rare");
+
+	raw_vcid_check();
 }

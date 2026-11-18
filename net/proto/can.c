@@ -4,6 +4,7 @@
 #include <linux/can/raw.h>
 #include <linux/can/isotp.h>
 #include <linux/can/j1939.h>
+#include "kernel/can_raw.h"
 #include "net.h"
 #include "random.h"
 #include "rnd.h"
@@ -95,7 +96,7 @@ static const unsigned int can_raw_opts[] = {
 	CAN_RAW_FILTER, CAN_RAW_ERR_FILTER,
 	CAN_RAW_LOOPBACK, CAN_RAW_RECV_OWN_MSGS,
 	CAN_RAW_FD_FRAMES, CAN_RAW_JOIN_FILTERS,
-	CAN_RAW_XL_FRAMES,
+	CAN_RAW_XL_FRAMES, CAN_RAW_XL_VCID_OPTS,
 };
 
 static void can_isotp_setsockopt(struct sockopt *so)
@@ -240,6 +241,24 @@ static void can_setsockopt(struct sockopt *so, struct socket_triplet *triplet)
 		*optval32 = RAND_BOOL();
 		so->optlen = sizeof(unsigned int);
 		break;
+
+	case CAN_RAW_XL_VCID_OPTS: {
+		/* CAN XL's virtual CAN id: one to set on what the socket
+		 * sends, or to pass through as written, and an id and mask
+		 * that what it receives must match.  raw_setsockopt() takes
+		 * the struct only at its exact size. */
+		struct can_raw_vcid_options *vcid =
+			(struct can_raw_vcid_options *) so->optval;
+
+		vcid->flags = rnd_u32() & (CAN_RAW_XL_VCID_TX_SET |
+					   CAN_RAW_XL_VCID_TX_PASS |
+					   CAN_RAW_XL_VCID_RX_FILTER);
+		vcid->tx_vcid = rnd_u32();
+		vcid->rx_vcid = rnd_u32();
+		vcid->rx_vcid_mask = RAND_BOOL() ? 0xff : rnd_u32();
+		so->optlen = sizeof(*vcid);
+		break;
+	}
 
 	default:
 		break;
