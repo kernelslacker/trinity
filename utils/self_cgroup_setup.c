@@ -73,14 +73,15 @@ bool cg_split_mode;		/* true if parent/children sub-cgroups are live */
  */
 static bool setup_split(const char *container_path,
 			const char *scope_path,
-			const char *children_max_str,
+			const char *max_str,
 			const char *children_high_str,
 			const char *children_swap_str,
-			uint64_t children_max_bytes,
-			bool children_max_is_max)
+			uint64_t max_bytes,
+			bool max_is_max)
 {
 	char *parent_path = NULL;
 	char *children_path = NULL;
+	char children_max_str[32];
 	char parent_high_str[32];
 	char pidbuf[32];
 	int n;
@@ -145,6 +146,19 @@ static bool setup_split(const char *container_path,
 	}
 	container_memory = true;
 
+	/* --memory-max is the whole budget: the workers' hard cap is what
+	 * is left of it once the parent's reservation is set aside
+	 * (parent_high is at most a sixteenth of a finite budget). */
+	parent_high = compute_parent_high(max_bytes, max_is_max);
+	if (max_is_max)
+		n = snprintf(children_max_str, sizeof(children_max_str), "%s",
+			     max_str);
+	else
+		n = snprintf(children_max_str, sizeof(children_max_str),
+			     "%" PRIu64, max_bytes - parent_high);
+	if (n < 0 || (size_t)n >= sizeof(children_max_str))
+		goto fail_unwind;
+
 	/* Children: hard cap + swap cap + back-pressure threshold + group-OOM. */
 	if (!write_cg_file(children_path, "memory.max", children_max_str)) {
 		outputerr("self-cgroup: write children/memory.max=%s failed: %s\n",
@@ -165,8 +179,6 @@ static bool setup_split(const char *container_path,
 		       strerror(errno));
 
 	/* Parent: small soft limit, no hard cap, never group-killed. */
-	parent_high = compute_parent_high(children_max_bytes,
-					  children_max_is_max);
 	n = snprintf(parent_high_str, sizeof(parent_high_str), "%" PRIu64,
 		     parent_high);
 	if (n < 0 || (size_t)n >= sizeof(parent_high_str))
