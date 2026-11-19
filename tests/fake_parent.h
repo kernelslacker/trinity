@@ -53,10 +53,13 @@ extern pid_t fake_killed_pid;
 
 /* While fake_kill_probe_errno is non-zero, kill(fake_kill_probe_pid, 0)
  * fails with it instead of probing; every other kill() goes to the real
- * call.  fake_kill_probes counts the signal-0 probes of any pid.
- * fake_parent_reset() disarms the probe and clears the count. */
+ * call.  With fake_kill_probe_once set, that failure disarms the probe,
+ * so the next one is real.  fake_kill_probes counts the signal-0 probes
+ * of any pid.  fake_parent_reset() disarms the probe and clears the
+ * count. */
 extern pid_t fake_kill_probe_pid;
 extern int fake_kill_probe_errno;
+extern bool fake_kill_probe_once;
 extern unsigned int fake_kill_probes;
 
 /* Everything output() was asked to print since the last reset. */

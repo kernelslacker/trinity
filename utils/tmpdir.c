@@ -90,12 +90,13 @@ const char *make_scratch_dir(const char *path)
 }
 
 /*
- * Unlink the sockets in dir @name under @parent.  O_NOFOLLOW, so a
- * symlink planted under the dir's name cannot aim the unlinks at
- * another directory.  Anything that is not a socket stays, and keeps
- * the dir.
+ * Unlink the sockets in dir @name under @parent, left by the dead @pid.
+ * O_NOFOLLOW, so a symlink planted under the dir's name cannot aim the
+ * unlinks at another directory.  Anything that is not a socket stays,
+ * and keeps the dir.  False, with nothing unlinked, when the dir does
+ * not open or @pid is alive again.
  */
-static void unlink_sockets(int parent, const char *name)
+static bool unlink_sockets(int parent, const char *name, pid_t pid)
 {
 	struct dirent *de;
 	DIR *dir;
@@ -104,11 +105,20 @@ static void unlink_sockets(int parent, const char *name)
 	fd = openat(parent, name,
 		    O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
 	if (fd < 0)
-		return;
+		return false;
+	/*
+	 * The pid can have gone to a new run since the caller found it
+	 * dead, a run that makes this same dir: ask again now the dir is
+	 * open, and leave a live run's sockets be.
+	 */
+	if (kill(pid, 0) == 0 || errno != ESRCH) {
+		close(fd);
+		return false;
+	}
 	dir = fdopendir(fd);
 	if (dir == NULL) {
 		close(fd);
-		return;
+		return false;
 	}
 
 	while ((de = readdir(dir)) != NULL) {
@@ -119,6 +129,7 @@ static void unlink_sockets(int parent, const char *name)
 			(void) unlinkat(fd, de->d_name, 0);
 	}
 	closedir(dir);
+	return true;
 }
 
 /*
@@ -166,10 +177,9 @@ void sweep_dead_pid_dirs(const char *prefix)
 		 * bind() left behind and try again.
 		 */
 		if (unlinkat(dirfd(dir), de->d_name, AT_REMOVEDIR) != 0 &&
-		    errno == ENOTEMPTY) {
-			unlink_sockets(dirfd(dir), de->d_name);
+		    errno == ENOTEMPTY &&
+		    unlink_sockets(dirfd(dir), de->d_name, (pid_t) pid))
 			(void) unlinkat(dirfd(dir), de->d_name, AT_REMOVEDIR);
-		}
 	}
 	closedir(dir);
 }

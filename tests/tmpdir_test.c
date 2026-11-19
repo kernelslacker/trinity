@@ -7,6 +7,7 @@
  */
 
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,6 +17,7 @@
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
+#include "fake_parent.h"	/* fake_kill_probe_* */
 #include "tmpdir.h"
 #include "utils.h"		/* ARRAY_SIZE, waitpid_eintr */
 
@@ -195,6 +197,28 @@ void tmpdir_self_check(void)
 		};
 
 		check(bind_checks, ARRAY_SIZE(bind_checks));
+	}
+
+	/*
+	 * A pid that reads dead, then alive once the dir is open, went to a
+	 * new run in between, and the dir and its sockets are that run's.
+	 * Our own dir stands in, its first probe failed with ESRCH.
+	 */
+	fake_kill_probe_pid = getpid();
+	fake_kill_probe_errno = ESRCH;
+	fake_kill_probe_once = true;
+	sweep_dead_pid_dirs("trinity-bind-");
+	fake_kill_probe_once = false;
+	fake_kill_probe_errno = 0;
+	{
+		const struct expect revived_checks[] = {
+			{ self_sock, true,
+			  "tmpdir sweep: unlinked a socket of a pid that came back" },
+			{ self, true,
+			  "tmpdir sweep: removed the dir of a pid that came back" },
+		};
+
+		check(revived_checks, ARRAY_SIZE(revived_checks));
 	}
 
 	/* mount's dirs carry a slot number after the pid. */

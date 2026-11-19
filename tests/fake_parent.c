@@ -85,6 +85,7 @@ int fake_num_fds_errno;
 pid_t fake_killed_pid;
 pid_t fake_kill_probe_pid;
 int fake_kill_probe_errno;
+bool fake_kill_probe_once;
 unsigned int fake_kill_probes;
 unsigned int fake_sleeps;
 void (*fake_sleep_hook)(void);
@@ -319,6 +320,8 @@ int __wrap_kill(pid_t pid, int sig)
 		fake_kill_probes++;
 		if (fake_kill_probe_errno != 0 && pid == fake_kill_probe_pid) {
 			errno = fake_kill_probe_errno;
+			if (fake_kill_probe_once)
+				fake_kill_probe_errno = 0;
 			return -1;
 		}
 	}
