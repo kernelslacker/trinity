@@ -32,6 +32,7 @@
 #include <linux/rtnetlink.h>
 #include <linux/tc_act/tc_gact.h>
 #include <linux/tc_act/tc_ife.h>
+#include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/if_packet.h>
 
@@ -2513,6 +2514,9 @@ struct action_attrs {
 	unsigned int skbedits;	/* actions of kind "skbedit" */
 	unsigned int skbedit_parms;	/* ... with options tcf_skbedit_init() takes */
 	unsigned int skbedit_hash;	/* ... of those, hashing over a queue range */
+	unsigned int pedits;	/* actions of kind "pedit" */
+	unsigned int pedit_parms;	/* ... with options tcf_pedit_init() takes */
+	unsigned int pedit_ex;	/* ... of those, with extended keys */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2772,8 +2776,115 @@ static void tally_skbedit_options(struct action_attrs *t,
 	t->skbedit_hash += (flags & SKBEDIT_F_TXQ_SKBHASH) != 0;
 }
 
+/* A TCA_PEDIT_KEYS_EX as tcf_pedit_keys_ex_parse() reads it: exactly
+ * nkeys TCA_PEDIT_KEY_EX entries, each with a header type and a command
+ * inside their policy's maxima. */
+static bool pedit_keys_ex(const unsigned char *p, size_t len,
+			  unsigned int nkeys)
+{
+	const struct nlattr *key;
+	unsigned int n = 0;
+
+	while ((key = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(key->nla_len);
+		const unsigned char *q = p + NLA_HDRLEN;
+		size_t qlen = key->nla_len - NLA_HDRLEN;
+		const struct nlattr *nla;
+		bool htype = false, cmd = false;
+
+		if ((key->nla_type & NLA_TYPE_MASK) != TCA_PEDIT_KEY_EX ||
+		    ++n > nkeys)
+			return false;
+		while ((nla = fit_attr(q, qlen)) != NULL) {
+			size_t qtotal = NLA_ALIGN(nla->nla_len);
+			__u16 v = 0;
+
+			if (nla->nla_len != NLA_HDRLEN + sizeof(v))
+				return false;
+			memcpy(&v, q + NLA_HDRLEN, sizeof(v));
+			switch (nla->nla_type & NLA_TYPE_MASK) {
+			case TCA_PEDIT_KEY_EX_HTYPE:
+				htype = v <= TCA_PEDIT_HDR_TYPE_MAX;
+				break;
+			case TCA_PEDIT_KEY_EX_CMD:
+				cmd = v <= TCA_PEDIT_CMD_MAX;
+				break;
+			}
+			if (qtotal >= qlen)
+				break;
+			q += qtotal;
+			qlen -= qtotal;
+		}
+		if (!htype || !cmd)
+			return false;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return n == nkeys;
+}
+
+/* The TCA_ACT_OPTIONS of one pedit action, as tcf_pedit_init() reads
+ * them: PARMS, or PARMS_EX, holding as many keys as nkeys says and at
+ * least one, each offset on a 32-bit boundary unless an offmask takes
+ * it from the packet, and any extended keys one per key. */
+static void tally_pedit_options(struct action_attrs *t,
+				const unsigned char *p, size_t len)
+{
+	const unsigned char *parm = NULL, *keys_ex = NULL;
+	size_t parm_len = 0, keys_ex_len = 0;
+	const struct nlattr *nla;
+	struct tc_pedit_sel sel;
+	unsigned int i;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_PEDIT_PARMS:
+			parm = p + NLA_HDRLEN;
+			parm_len = plen;
+			break;
+		case TCA_PEDIT_PARMS_EX:
+			if (parm == NULL) {
+				parm = p + NLA_HDRLEN;
+				parm_len = plen;
+			}
+			break;
+		case TCA_PEDIT_KEYS_EX:
+			keys_ex = p + NLA_HDRLEN;
+			keys_ex_len = plen;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (parm == NULL || parm_len < sizeof(sel))
+		return;
+	memcpy(&sel, parm, sizeof(sel));
+	if (sel.nkeys == 0 ||
+	    parm_len < sizeof(sel) + sel.nkeys * sizeof(struct tc_pedit_key) ||
+	    !ctrlact_takes(sel.action))
+		return;
+	for (i = 0; i < sel.nkeys; i++) {
+		struct tc_pedit_key key;
+
+		memcpy(&key, parm + sizeof(sel) + i * sizeof(key), sizeof(key));
+		if (!key.offmask && key.off % 4)
+			return;
+	}
+	if (keys_ex != NULL && !pedit_keys_ex(keys_ex, keys_ex_len, sel.nkeys))
+		return;
+	t->pedit_parms++;
+	t->pedit_ex += keys_ex != NULL;
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
- * a gact's, an ife's, a mirred's or an skbedit's options. */
+ * the options of the kinds the builder types. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			     size_t len)
 {
@@ -2781,6 +2892,7 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 	size_t options_len = 0;
 	const struct nlattr *nla;
 	bool gact = false, ife = false, mirred = false, skbedit = false;
+	bool pedit = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2798,6 +2910,9 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			skbedit = plen == sizeof("skbedit") &&
 				  !memcmp(p + NLA_HDRLEN, "skbedit",
 					  sizeof("skbedit"));
+			pedit = plen == sizeof("pedit") &&
+				!memcmp(p + NLA_HDRLEN, "pedit",
+					sizeof("pedit"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -2825,6 +2940,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->skbedits++;
 		if (options != NULL)
 			tally_skbedit_options(t, options, options_len);
+	} else if (pedit) {
+		t->pedits++;
+		if (options != NULL)
+			tally_pedit_options(t, options, options_len);
 	}
 }
 
@@ -2919,6 +3038,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: an skbedit action carries no options tcf_skbedit_init() takes");
 	expect_fraction(t->skbedit_hash, t->skbedit_parms, 0.05, 0.25, "skbedit actions",
 			"rtnl: an skbedit action seldom hashes over a queue range");
+	expect_fraction(t->pedit_parms, t->pedits, 0.90, 1.0, "pedit actions",
+			"rtnl: a pedit action carries no options tcf_pedit_init() takes");
+	expect_fraction(t->pedit_ex, t->pedit_parms, 0.40, 0.60, "pedit actions",
+			"rtnl: a pedit action does not carry extended keys half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

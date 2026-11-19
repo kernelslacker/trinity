@@ -14,6 +14,7 @@
 #include <linux/if_ether.h>
 #include <linux/tc_act/tc_gact.h>
 #include <linux/tc_act/tc_ife.h>
+#include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
@@ -587,12 +588,82 @@ static size_t build_skbedit_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * pedit's TCA_ACT_OPTIONS.  tcf_pedit_init() takes its keys inside
+ * TCA_PEDIT_PARMS, or TCA_PEDIT_PARMS_EX, a struct tc_pedit_sel followed
+ * by nkeys struct tc_pedit_key, and refuses no keys, an attribute shorter
+ * than nkeys says, and an offset off a 32-bit boundary unless an offmask
+ * takes it from the packet.  One key to three, at the head of the packet
+ * mostly, one in eight read through an at/offmask/shift as an IP header
+ * length is.  Half the actions go out as PARMS_EX with TCA_PEDIT_KEYS_EX,
+ * one TCA_PEDIT_KEY_EX per key, each with the header type and command
+ * tcf_pedit_keys_ex_parse() requires, within their policy maxima.  Index
+ * 1 to 8 names an action an earlier call made, as gact's does.
+ */
+static size_t build_pedit_options(unsigned char *p, size_t avail)
+{
+	unsigned char sel_buf[sizeof(struct tc_pedit_sel) +
+			      3 * sizeof(struct tc_pedit_key)];
+	unsigned char keys_ex[3 * NLA_ALIGN(NLA_HDRLEN +
+				2 * NLA_ALIGN(NLA_HDRLEN + sizeof(__u16)))];
+	struct tc_pedit_sel sel;
+	size_t off = 0, sel_len, klen = 0;
+	bool ex = RAND_BOOL();
+	unsigned int i;
+
+	memset(&sel, 0, sizeof(sel));
+	sel.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	sel.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		     RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	sel.nkeys = RAND_RANGE(1, 3);
+	memcpy(sel_buf, &sel, sizeof(sel));
+	for (i = 0; i < sel.nkeys; i++) {
+		struct tc_pedit_key key;
+		unsigned char kex[2 * NLA_ALIGN(NLA_HDRLEN + sizeof(__u16))];
+		size_t kexlen = 0;
+		__u16 htype = RAND_RANGE(TCA_PEDIT_KEY_EX_HDR_TYPE_NETWORK,
+					 TCA_PEDIT_HDR_TYPE_MAX);
+		__u16 cmd = RAND_RANGE(TCA_PEDIT_KEY_EX_CMD_SET,
+				       TCA_PEDIT_CMD_MAX);
+
+		memset(&key, 0, sizeof(key));
+		key.mask = RAND_BOOL() ? 0 : rnd_u32();
+		key.val = rnd_u32();
+		key.off = 4 * rnd_modulo_u32(16);
+		if (ONE_IN(8)) {
+			key.at = rnd_modulo_u32(16);
+			key.offmask = 0x0f000000;
+			key.shift = 22;
+			key.off = rnd_modulo_u32(64);
+		}
+		memcpy(sel_buf + sizeof(sel) + i * sizeof(key), &key,
+		       sizeof(key));
+
+		put_nlattr(kex, &kexlen, sizeof(kex), TCA_PEDIT_KEY_EX_HTYPE,
+			   &htype, sizeof(htype));
+		put_nlattr(kex, &kexlen, sizeof(kex), TCA_PEDIT_KEY_EX_CMD,
+			   &cmd, sizeof(cmd));
+		put_nlattr(keys_ex, &klen, sizeof(keys_ex),
+			   TCA_PEDIT_KEY_EX | NLA_F_NESTED, kex, kexlen);
+	}
+	sel_len = sizeof(sel) + sel.nkeys * sizeof(struct tc_pedit_key);
+
+	if (!put_nlattr(p, &off, avail,
+			ex ? TCA_PEDIT_PARMS_EX : TCA_PEDIT_PARMS,
+			sel_buf, sel_len))
+		return 0;
+	if (ex)
+		put_nlattr(p, &off, avail, TCA_PEDIT_KEYS_EX | NLA_F_NESTED,
+			   keys_ex, klen);
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
- * gact, ife, mirred and skbedit the typed TCA_ACT_OPTIONS their builders
- * fill, then 0-3 random siblings drawn from the inner TCA_ACT_* set sized
- * to the widths the kernel's tca_act_policy walker expects
+ * gact, ife, mirred, skbedit and pedit the typed TCA_ACT_OPTIONS their
+ * builders fill, then 0-3 random siblings drawn from the inner TCA_ACT_*
+ * set sized to the widths the kernel's tca_act_policy walker expects
  * (NLA_BITFIELD32 for FLAGS / HW_STATS, NLA_U32 for INDEX /
  * USED_HW_STATS / IN_HW_COUNT, NLA_NESTED for OPTIONS / STATS).
  * Returns the inner payload length (excluding the outer per-action
@@ -608,6 +679,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "ife",	build_ife_options },
 		{ "mirred",	build_mirred_options },
 		{ "skbedit",	build_skbedit_options },
+		{ "pedit",	build_pedit_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
