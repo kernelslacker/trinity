@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include <string.h>
 
+#include "debug.h"	/* BUG */
 #include "fd.h"
 #include "fds-internal.h"
 #include "list.h"
@@ -91,6 +92,10 @@ bool open_fds(void)
 		if (provider->enabled && provider->initialized)
 			active_providers[num_active_providers++] = provider;
 	}
+	/* get_new_random_fd() gathers the active providers in an array of
+	 * MAX_OBJECT_TYPES on its stack. */
+	if (num_active_providers > MAX_OBJECT_TYPES)
+		BUG("more active fd providers than MAX_OBJECT_TYPES");
 
 	output(0, "Enabled %d/%d fd providers. initialized:%d.\n",
 		num_fd_providers_enabled, num_fd_providers, num_fd_providers_initialized);

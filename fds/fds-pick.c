@@ -52,8 +52,11 @@ int get_new_random_fd(void)
 	 * just emptied (the inner retry covers the latter).  A provider
 	 * whose .get also draws the child's own pool (local_pool) counts
 	 * that pool too: memfd's and userfaultfd's global ones stay empty.
+	 * open_fds() holds the provider count to populated[]'s size; the fill
+	 * stops there too, against a num_active_providers a stray write grew.
 	 */
-	for (i = 0; i < num_active_providers; i++) {
+	for (i = 0; i < num_active_providers && npop < ARRAY_SIZE(populated);
+	     i++) {
 		provider = active_providers[i];
 		if (provider == NULL || provider->get == NULL) {
 			__atomic_add_fetch(&shm->stats.fd.provider_invalid, 1,
