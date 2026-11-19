@@ -50,6 +50,36 @@ static void srange_spans_its_range(void)
 	BUG_ON(at_lo == SRANGE_DRAWS);	/* the span wrapped to 0 */
 }
 
+/* The variant resolvers' discriminator reads take the same trap: width 4
+ * at offset UINT_MAX - 1 sums to 2, and a read there lands 4 GB past the
+ * buffer.  Both refuse it instead. */
+static void discrim_reads_do_not_wrap(void)
+{
+	static const struct union_variant arms[1] = {{
+		.name		= "wrap_arm",
+	}};
+	static const struct union_variant outer = {
+		.name			= "wrap_outer",
+		.nested_variants	= arms,
+		.num_nested_variants	= 1,
+		.nested_discrim_offset	= UINT_MAX - 1,
+		.nested_discrim_size	= 4,
+	};
+	static const struct struct_desc desc = {
+		.name			= "wrap_desc",
+		.struct_size		= 16,
+		.variants		= arms,
+		.num_variants		= 1,
+		.buffer_discrim_offset	= UINT_MAX - 1,
+		.buffer_discrim_size	= 4,
+	};
+	static unsigned char buf[16];
+
+	BUG_ON(struct_desc_resolve_nested_variant(&outer, buf,
+						  sizeof(buf)) != NULL);
+	BUG_ON(struct_desc_resolve_variant(&desc, NULL, buf) != NULL);
+}
+
 /* Entry point declared in test_main.c. */
 void struct_field_bounds_self_check(void);
 
@@ -114,6 +144,7 @@ void struct_field_bounds_self_check(void)
 	BUG_ON(memcmp(buf, expected, sizeof(buf)) != 0);
 
 	srange_spans_its_range();
+	discrim_reads_do_not_wrap();
 
 	printf("    struct_field_bounds: predicate arithmetic OK, "
 	       "struct_fill_passes skipped wrapping field OK, "

@@ -146,8 +146,11 @@ struct_desc_resolve_variant(const struct struct_desc *desc,
 		 */
 		if (buf == NULL)
 			return NULL;
-		if (desc->buffer_discrim_offset + desc->buffer_discrim_size >
-		    desc->struct_size)
+		/* Judged without the offset + size sum, which a huge offset
+		 * wraps past the check. */
+		if (desc->buffer_discrim_size > desc->struct_size ||
+		    desc->buffer_discrim_offset >
+		    desc->struct_size - desc->buffer_discrim_size)
 			return NULL;
 		/*
 		 * Accept widths 1/2/4/8 -- matches the nested reader so the
@@ -202,7 +205,7 @@ struct_desc_resolve_nested_variant(const struct union_variant *outer,
 	width = outer->nested_discrim_size;
 	if (width != 1 && width != 2 && width != 4 && width != 8)
 		return NULL;
-	if (off + width > size)
+	if (width > size || off > size - width)
 		return NULL;
 
 	discrim = read_discrim(buf, off, width);
