@@ -2552,6 +2552,7 @@ static void tally_gact_options(struct action_attrs *t, const unsigned char *p,
 	const struct nlattr *nla;
 	bool parms = false, prob = false;
 
+	t->gacts++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		const unsigned char *data = p + NLA_HDRLEN;
@@ -2634,6 +2635,7 @@ static void tally_ife_options(struct action_attrs *t, const unsigned char *p,
 	bool zero = false;
 	unsigned int addressed = 0;
 
+	t->ifes++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -2687,6 +2689,7 @@ static void tally_mirred_options(struct action_attrs *t,
 	bool parms = false;
 	__u32 block = 0;
 
+	t->mirreds++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -2729,6 +2732,7 @@ static void tally_skbedit_options(struct action_attrs *t,
 	__u16 qmin_val = 0, qmax_val = 0;
 	__u64 flags = 0;
 
+	t->skbedits++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -2851,6 +2855,7 @@ static void tally_pedit_options(struct action_attrs *t,
 	struct tc_pedit_sel sel;
 	unsigned int i;
 
+	t->pedits++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -2908,6 +2913,7 @@ static void tally_vlan_options(struct action_attrs *t, const unsigned char *p,
 	unsigned int macs = 0;
 	struct tc_vlan parm;
 
+	t->vlans++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -2978,6 +2984,7 @@ static void tally_csum_options(struct action_attrs *t, const unsigned char *p,
 {
 	const struct nlattr *nla;
 
+	t->csums++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 
@@ -3079,6 +3086,7 @@ static void tally_tunnel_key_options(struct action_attrs *t,
 	unsigned int v4 = 0, v6 = 0;
 	bool parms = false, opts = false, opts_ok = true;
 
+	t->tunnel_keys++;
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
 		size_t plen = nla->nla_len - NLA_HDRLEN;
@@ -3120,16 +3128,35 @@ static void tally_tunnel_key_options(struct action_attrs *t,
 	t->tunnel_key_parms++;
 }
 
+/*
+ * The kinds the builder types, as its typed[] table lists them.  Each
+ * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
+ * action has any.
+ */
+static const struct {
+	const char *kind;
+	void (*tally)(struct action_attrs *t, const unsigned char *p,
+		      size_t len);
+} typed_kinds[] = {
+	{ "gact",	tally_gact_options },
+	{ "ife",	tally_ife_options },
+	{ "mirred",	tally_mirred_options },
+	{ "skbedit",	tally_skbedit_options },
+	{ "pedit",	tally_pedit_options },
+	{ "vlan",	tally_vlan_options },
+	{ "csum",	tally_csum_options },
+	{ "tunnel_key",	tally_tunnel_key_options },
+};
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
  * the options of the kinds the builder types. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			     size_t len)
 {
-	const unsigned char *options = NULL;
-	size_t options_len = 0;
+	const unsigned char *kind = NULL, *options = NULL;
+	size_t kind_len = 0, options_len = 0;
 	const struct nlattr *nla;
-	bool gact = false, ife = false, mirred = false, skbedit = false;
-	bool pedit = false, vlan = false, csum = false, tunnel_key = false;
+	unsigned int i;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -3137,26 +3164,8 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 
 		switch (nla->nla_type & NLA_TYPE_MASK) {
 		case TCA_ACT_KIND:
-			gact = plen == sizeof("gact") &&
-			       !memcmp(p + NLA_HDRLEN, "gact", sizeof("gact"));
-			ife = plen == sizeof("ife") &&
-			      !memcmp(p + NLA_HDRLEN, "ife", sizeof("ife"));
-			mirred = plen == sizeof("mirred") &&
-				 !memcmp(p + NLA_HDRLEN, "mirred",
-					 sizeof("mirred"));
-			skbedit = plen == sizeof("skbedit") &&
-				  !memcmp(p + NLA_HDRLEN, "skbedit",
-					  sizeof("skbedit"));
-			pedit = plen == sizeof("pedit") &&
-				!memcmp(p + NLA_HDRLEN, "pedit",
-					sizeof("pedit"));
-			vlan = plen == sizeof("vlan") &&
-			       !memcmp(p + NLA_HDRLEN, "vlan", sizeof("vlan"));
-			csum = plen == sizeof("csum") &&
-			       !memcmp(p + NLA_HDRLEN, "csum", sizeof("csum"));
-			tunnel_key = plen == sizeof("tunnel_key") &&
-				     !memcmp(p + NLA_HDRLEN, "tunnel_key",
-					     sizeof("tunnel_key"));
+			kind = p + NLA_HDRLEN;
+			kind_len = plen;
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -3168,38 +3177,14 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		p += total;
 		len -= total;
 	}
-	if (gact) {
-		t->gacts++;
-		if (options != NULL)
-			tally_gact_options(t, options, options_len);
-	} else if (ife) {
-		t->ifes++;
-		if (options != NULL)
-			tally_ife_options(t, options, options_len);
-	} else if (mirred) {
-		t->mirreds++;
-		if (options != NULL)
-			tally_mirred_options(t, options, options_len);
-	} else if (skbedit) {
-		t->skbedits++;
-		if (options != NULL)
-			tally_skbedit_options(t, options, options_len);
-	} else if (pedit) {
-		t->pedits++;
-		if (options != NULL)
-			tally_pedit_options(t, options, options_len);
-	} else if (vlan) {
-		t->vlans++;
-		if (options != NULL)
-			tally_vlan_options(t, options, options_len);
-	} else if (csum) {
-		t->csums++;
-		if (options != NULL)
-			tally_csum_options(t, options, options_len);
-	} else if (tunnel_key) {
-		t->tunnel_keys++;
-		if (options != NULL)
-			tally_tunnel_key_options(t, options, options_len);
+	if (kind == NULL)
+		return;
+	for (i = 0; i < ARRAY_SIZE(typed_kinds); i++) {
+		if (kind_len == strlen(typed_kinds[i].kind) + 1 &&
+		    !memcmp(kind, typed_kinds[i].kind, kind_len)) {
+			typed_kinds[i].tally(t, options, options_len);
+			return;
+		}
 	}
 }
 
