@@ -287,7 +287,7 @@ static void json_emit_kcov_cold_syscalls(const struct syscalltable *table,
 		fputs("{\"name\":", stdout);
 		json_emit_string(entry ? entry->name : "???");
 		printf(",\"edges\":%lu,\"last_edge_at\":%lu}",
-			slot_edges, kcov_shm->per_syscall.last_edge_at[i]);
+			slot_edges, kcov_shm->per_syscall.last_edge_at[i][0]);
 		first_cold = false;
 	}
 	putchar(']');

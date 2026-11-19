@@ -55,7 +55,7 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr, bool do32)
 
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 			__ATOMIC_RELAXED);
-		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
+		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr][do32],
 			__ATOMIC_RELAXED);
 		if (total <= last)
 			return 0;

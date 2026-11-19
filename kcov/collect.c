@@ -250,7 +250,7 @@ static void kcov_account_new_edge(struct kcov_child *kc, unsigned int nr,
 		__atomic_fetch_add(
 			&kcov_shm->per_syscall.per_syscall_edges_clean_remote[nr],
 			1, __ATOMIC_RELAXED);
-	__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
+	__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr][do32],
 		call_nr, __ATOMIC_RELAXED);
 	/* if this call had a cmp_hint
 	 * injected into its arg surface (latched in
@@ -286,7 +286,8 @@ static void kcov_account_new_edge(struct kcov_child *kc, unsigned int nr,
  * Per-syscall accounting for a call that executed kernel code but set no new
  * bucket bit.  Runs once per call, after the PC walk.
  */
-static void kcov_account_warm_known(unsigned int nr, unsigned long call_nr)
+static void kcov_account_warm_known(unsigned int nr, bool do32,
+				    unsigned long call_nr)
 {
 	/* Kernel executed code for this syscall but every PC
 	 * was already in bucket_seen[] (warm-loaded or
@@ -321,19 +322,19 @@ static void kcov_account_warm_known(unsigned int nr, unsigned long call_nr)
 					&cc->syscall);
 		}
 	}
-	/* Lazy-seed last_edge_at[nr] from the warm-known hit
+	/* Lazy-seed last_edge_at[nr][do32] from the warm-known hit
 	 * stream.  Without this seed, a syscall whose entire
 	 * surface is warm-loaded looks indistinguishable from
-	 * one that has never executed -- both have
-	 * last_edge_at[nr] == 0 -- and the cold-skip /
+	 * one that has never executed -- both have a zero
+	 * last_edge_at -- and the cold-skip /
 	 * frontier consumers throttle accordingly.  Use a
 	 * compare-exchange-loop-free pattern: read once, set
 	 * if zero.  Races between concurrent first-warm-hits
 	 * resolve harmlessly to whichever store wins -- both
 	 * carry the same semantic "this syscall is alive". */
-	if (__atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
+	if (__atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr][do32],
 			    __ATOMIC_RELAXED) == 0)
-		__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr],
+		__atomic_store_n(&kcov_shm->per_syscall.last_edge_at[nr][do32],
 				 call_nr, __ATOMIC_RELAXED);
 }
 
@@ -557,7 +558,7 @@ static void kcov_account_per_syscall(struct kcov_child *kc, unsigned int nr,
 		kcov_account_new_edge(kc, nr, do32, ctx, edges_this_call,
 				      call_nr);
 	} else if (count > 0) {
-		kcov_account_warm_known(nr, call_nr);
+		kcov_account_warm_known(nr, do32, call_nr);
 	}
 	/* Per-call totals into the (nr, do32)-indexed diag slot:
 	 * bucket_bits_real mirrors edges_this_call, distinct_pcs is the
@@ -646,12 +647,13 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 		return false;
 
 	/* kcov_shm->coverage.total_calls is bumped solely for its stamp role:
-	 * the returned call_nr is stored into kcov_shm->per_syscall.last_edge_at[nr]
-	 * on the found-new-edge branch below and read by the cold-skip
-	 * gap denominator in kcov_syscall_cold_skip_pct().  The dump-side
-	 * accounting (post-mortem, stats.c JSON + Scuba rows, strategy
-	 * snapshots) reads parent_stats.total_calls, drained from the
-	 * per-child kcov_child_local_stats staging counter bumped below. */
+	 * the returned call_nr is stored into
+	 * kcov_shm->per_syscall.last_edge_at[nr][do32] on the found-new-edge
+	 * branch below and read by the cold-skip gap denominator in
+	 * kcov_syscall_cold_skip_pct().  The dump-side accounting
+	 * (post-mortem, stats.c JSON + Scuba rows, strategy snapshots)
+	 * reads parent_stats.total_calls, drained from the per-child
+	 * kcov_child_local_stats staging counter bumped below. */
 	call_nr = __atomic_fetch_add(&kcov_shm->coverage.total_calls,
 		1, __ATOMIC_RELAXED);
 

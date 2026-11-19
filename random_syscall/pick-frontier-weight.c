@@ -199,7 +199,7 @@ static void frontier_blend_ab_note(unsigned long old_weight,
  * antilock_mode use at their own hook sites.
  *
  * RELAXED-load guard: edges, kcov_shm->per_syscall.per_syscall_edges_prior,
- * total_calls, and last_edge_at[nr] are separate atomic loads
+ * total_calls, and last_edge_at[nr][do32] are separate atomic loads
  * that can sample inconsistent snapshots; the (total > last) +
  * (total - last) > KCOV_COLD_THRESHOLD pair is the same shape
  * the cold-skip helper in kcov.c uses to keep the unsigned
@@ -225,7 +225,7 @@ static unsigned long frontier_reach_band_adjust(unsigned int nr, bool do32,
 
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
-		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr],
+		last = __atomic_load_n(&kcov_shm->per_syscall.last_edge_at[nr][do32],
 				       __ATOMIC_RELAXED);
 		if (total > last && (total - last) > KCOV_COLD_THRESHOLD)
 			stale = true;

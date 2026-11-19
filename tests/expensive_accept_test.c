@@ -49,6 +49,16 @@ static bool sub_floor(bool do32)
 	return shm->stats.expensive_adaptive.extra_accepts != before;
 }
 
+/* Did one look at NR under @do32 pull a sub-floor rate back toward
+ * the floor? */
+static bool demoted(bool do32)
+{
+	unsigned long before = shm->stats.expensive_adaptive.demotes;
+
+	(void) expensive_accept(NR, do32);
+	return shm->stats.expensive_adaptive.demotes != before;
+}
+
 /* @live_abi has produced an edge on every other call, the last of them
  * just now; its twin has been called as often for nothing. */
 static void check_twins(bool live_abi, const char *what)
@@ -73,7 +83,8 @@ void expensive_accept_self_check(void)
 	if (kcov_shm == NULL)
 		BUG("expensive accept: calloc failed");
 	kcov_shm->coverage.total_calls = 4000;
-	kcov_shm->per_syscall.last_edge_at[NR] = 4000;
+	kcov_shm->per_syscall.last_edge_at[NR][0] = 4000;
+	kcov_shm->per_syscall.last_edge_at[NR][1] = 4000;
 
 	set_counts(false, 1000, 500);
 	set_counts(true, 1000, 0);
@@ -89,6 +100,19 @@ void expensive_accept_self_check(void)
 	set_priors(false, 1000, 500);
 	set_priors(true, 1000, 0);
 	check_twins(false, "compat prior");
+
+	/* Both twins productive, the native one with an edge just now, the
+	 * compat one with none for more than two cold thresholds: the
+	 * stale decay pulls back the compat rate alone. */
+	set_priors(false, 0, 0);
+	set_priors(true, 0, 0);
+	set_counts(false, 1000, 500);
+	set_counts(true, 1000, 500);
+	kcov_shm->coverage.total_calls = 3 * KCOV_COLD_THRESHOLD;
+	kcov_shm->per_syscall.last_edge_at[NR][0] = 3 * KCOV_COLD_THRESHOLD;
+	kcov_shm->per_syscall.last_edge_at[NR][1] = KCOV_COLD_THRESHOLD - 1;
+	if (demoted(false) || !demoted(true))
+		BUG("expensive accept: one ABI's last edge set its twin's decay");
 
 	free(kcov_shm);
 	kcov_shm = NULL;

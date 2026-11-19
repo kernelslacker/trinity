@@ -521,7 +521,7 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 					print_syscall_name(i, do32),
 					do32 ? "32" : "64",
 					slot_edges,
-					kcov_shm->per_syscall.last_edge_at[i]);
+					kcov_shm->per_syscall.last_edge_at[i][do32]);
 			}
 		}
 	}

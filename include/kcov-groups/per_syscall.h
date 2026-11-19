@@ -39,7 +39,10 @@ unsigned long per_syscall_calls[MAX_NR_SYSCALL][PICKER_NCTX][2];
  * (stats.c JSON emit, downstream analysis) can distinguish "dead
  * syscall" from "coverage-inherently-unmeasurable via kcov". */
 unsigned long per_syscall_extrafork_calls[MAX_NR_SYSCALL];
-unsigned long last_edge_at[MAX_NR_SYSCALL];
+/* total_calls at the syscall's last new edge, [nr][do32 ? 1 : 0]: a
+ * biarch build's two tables give one number to different syscalls,
+ * and the cold-skip gap of each is its own. */
+unsigned long last_edge_at[MAX_NR_SYSCALL][2];
 /* Snapshot of per_syscall_edges at the previous stats interval.
  * Used to compute per-interval growth rate of the call-count signal
  * above. */

@@ -656,9 +656,9 @@ bool dispatch_step(struct childdata *child, struct syscallentry *entry,
 
 	/* Snapshot the rescue classifier's cold-skip-pct input BEFORE
 	 * kcov_collect runs.  On a new edge kcov_collect bumps
-	 * last_edge_at[rec->nr] to the current total_calls, after which
-	 * kcov_syscall_cold_skip_pct() returns 0 -- the exact case
-	 * classify_random_rescue exists to recognise as RRC_COLD_SKIP.
+	 * last_edge_at[rec->nr][rec->do32bit] to the current total_calls,
+	 * after which kcov_syscall_cold_skip_pct() returns 0 -- the exact
+	 * case classify_random_rescue exists to recognise as RRC_COLD_SKIP.
 	 * Reading it here, at draw time, keeps the classifier's "would the
 	 * picker have skipped this?" question pinned to the picker's actual
 	 * pre-call state.  Only meaningful in PC mode; the CMP path never

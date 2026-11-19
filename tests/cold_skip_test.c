@@ -51,7 +51,8 @@ void cold_skip_self_check(void)
 	if (kcov_shm == NULL)
 		BUG("cold skip: calloc failed");
 	kcov_shm->coverage.total_calls = 10 * KCOV_SAT_CAP_CALLS;
-	kcov_shm->per_syscall.last_edge_at[NR] = 10 * KCOV_SAT_CAP_CALLS;
+	kcov_shm->per_syscall.last_edge_at[NR][0] = 10 * KCOV_SAT_CAP_CALLS;
+	kcov_shm->per_syscall.last_edge_at[NR][1] = 10 * KCOV_SAT_CAP_CALLS;
 
 	set_counts(false, 2 * KCOV_SAT_CAP_CALLS, KCOV_SAT_CAP_CALLS);
 	set_counts(true, 2 * KCOV_SAT_CAP_CALLS, 0);
@@ -68,6 +69,25 @@ void cold_skip_self_check(void)
 	set_priors(false, 2 * KCOV_SAT_CAP_CALLS, KCOV_SAT_CAP_CALLS);
 	set_priors(true, 2 * KCOV_SAT_CAP_CALLS, 0);
 	check_twins(false, "compat prior");
+
+	/* Both twins have produced edges, the native one its last just
+	 * now, the compat one more than two cold thresholds ago: each is
+	 * as stale as its own last edge, which puts the compat syscall two
+	 * steps up the ramp. */
+	set_priors(false, 0, 0);
+	set_priors(true, 0, 0);
+	set_counts(false, 2 * KCOV_SAT_CAP_CALLS, KCOV_SAT_CAP_CALLS);
+	set_counts(true, 2 * KCOV_SAT_CAP_CALLS, KCOV_SAT_CAP_CALLS);
+	kcov_shm->coverage.total_calls = 3 * KCOV_COLD_THRESHOLD;
+	kcov_shm->per_syscall.last_edge_at[NR][0] = 3 * KCOV_COLD_THRESHOLD;
+	kcov_shm->per_syscall.last_edge_at[NR][1] = KCOV_COLD_THRESHOLD - 1;
+	if (kcov_syscall_cold_skip_pct(NR, false) != 0 ||
+	    kcov_syscall_cold_skip_pct(NR, true) != 70) {
+		fprintf(stderr, "\n    cold skip: fresh native %u%%, stale compat %u%% (want 0 and 70)",
+			kcov_syscall_cold_skip_pct(NR, false),
+			kcov_syscall_cold_skip_pct(NR, true));
+		BUG("cold skip: one ABI's last edge set its twin's staleness");
+	}
 
 	free(kcov_shm);
 	kcov_shm = NULL;
