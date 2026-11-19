@@ -29,7 +29,7 @@
 
 TOP		:= ..
 CC		?= gcc
-CFLAGS		?= -g -O2
+CFLAGS		?= -g -O2 -D_FORTIFY_SOURCE=2
 CONFIG_H	:= $(TOP)/config.h
 
 CFLAGS		+= -std=gnu11 -Wall -Wextra
@@ -37,11 +37,21 @@ CFLAGS		+= -I$(dir $(CONFIG_H)) -I$(TOP) -I$(TOP)/include
 CFLAGS		+= -include $(CONFIG_H)
 CFLAGS		+= -D_GNU_SOURCE -D__linux__
 # Match the top-level Makefile's warning knobs on the PURE modules we
-# reuse so the test link surfaces the same diagnostics production does.
+# reuse so the test link surfaces the same diagnostics production does,
+# and its non-PIE link, which keeps the libc heap below 4 GiB as the
+# compat paths rely on.  Its run-time link flags stay out: --wrap=rand's
+# tripwire is rand/rand-warn.c, which the test binary does not link (the
+# fake RNG makes every draw), and -rdynamic and -z now serve the
+# fuzzer's backtraces and fault handling.
 CFLAGS		+= -Wformat=2 -Winit-self -Wnested-externs -Wpacked -Wshadow
 CFLAGS		+= -Wundef -Wwrite-strings -Wno-format-nonliteral
 CFLAGS		+= -Wstrict-prototypes -Wmissing-prototypes -fsigned-char
 CFLAGS		+= -Wno-missing-field-initializers
+ifeq ($(shell $(CC) -v 2>&1 | grep -c "clang"), 0)
+CFLAGS		+= -Wlogical-op -Wstrict-aliasing=3
+endif
+CFLAGS		+= -fno-pie
+LDFLAGS		+= -no-pie
 ifneq ($(SYSROOT),)
 CFLAGS		+= --sysroot=$(SYSROOT)
 endif
@@ -1548,15 +1558,25 @@ $(TEST_BIN): $(TEST_OBJS)
 
 $(PARENT_OBJS) $(CMP_OBJS) $(MINICORPUS_OBJS) $(CHAIN_OBJS) $(KCOV_PERSIST_OBJS) $(NETLINK_OBJS): CFLAGS += -ffunction-sections -fdata-sections
 
+# Every compile includes $(CONFIG_H), which only ./configure makes; a
+# missing one, or one older than configure, which answers an older set of
+# probes, gives compile errors that do not say so.  Refuse both, as the
+# top-level check-config does, for a build started here.  Order-only on
+# the compiles, so the phony check makes no object out of date.
+.PHONY: check-config
+check-config:
+	@if [ ! -f $(CONFIG_H) ]; then echo "Run ./configure first." >&2; exit 1; fi
+	@if [ $(TOP)/configure -nt $(CONFIG_H) ]; then echo "configure is newer than $(CONFIG_H); rerun ./configure." >&2; exit 1; fi
+
 # -MMD writes a .d file beside each object listing the headers it was
 # built from, so editing a header rebuilds the objects that include it.
 # -MP gives each header an empty rule, so a deleted or renamed one does
 # not break the next build.
-$(BUILDDIR)/real/%.o: $(TOP)/%.c
+$(BUILDDIR)/real/%.o: $(TOP)/%.c | check-config
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
-$(BUILDDIR)/%.o: %.c
+$(BUILDDIR)/%.o: %.c | check-config
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -MMD -MP -c -o $@ $<
 
