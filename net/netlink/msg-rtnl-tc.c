@@ -19,6 +19,7 @@
 #include <linux/tc_act/tc_vlan.h>
 #include <linux/tc_act/tc_csum.h>
 #include <linux/tc_act/tc_nat.h>
+#include <linux/tc_act/tc_connmark.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
@@ -922,6 +923,29 @@ static size_t build_nat_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * connmark's TCA_ACT_OPTIONS.  tcf_connmark_init() refuses the action only
+ * without TCA_CONNMARK_PARMS.  Half the actions look a packet's conntrack
+ * entry up in the default zone, 0, where an unzoned flow's entries live,
+ * and the rest in a small zone 1 to 8.  Index 1 to 8 names an action an
+ * earlier call made, as gact's does.
+ */
+static size_t build_connmark_options(unsigned char *p, size_t avail)
+{
+	struct tc_connmark parm;
+	size_t off = 0;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.zone = RAND_BOOL() ? 0 : RAND_RANGE(1, 8);
+	if (!put_nlattr(p, &off, avail, TCA_CONNMARK_PARMS, &parm,
+			sizeof(parm)))
+		return 0;
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -948,6 +972,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "csum",	build_csum_options },
 		{ "tunnel_key",	build_tunnel_key_options },
 		{ "nat",	build_nat_options },
+		{ "connmark",	build_connmark_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
