@@ -81,7 +81,9 @@ void frontier_satcool_spare(unsigned int syscallnr, bool do32)
 	if (syscallnr >= MAX_NR_SYSCALL)
 		return;
 
-	calls_total = per_syscall_calls_total(syscallnr);
+	/* The drawn ABI's calls: a biarch build's two tables give one
+	 * number to different syscalls. */
+	calls_total = per_syscall_calls_abi(syscallnr, do32);
 	if (calls_total < FRONTIER_SATCOOL_CMIN)
 		return;
 
@@ -221,12 +223,13 @@ void frontier_barren_demote(unsigned int syscallnr, bool do32)
 	 * open a race window where reach reads > MAX_REACH but a second
 	 * load reads 0 (or vice versa) and races the candidates/would_skip
 	 * cascade out of lock-step.  One load, both checks. */
-	edges = per_syscall_edges_total(syscallnr);
-	reach = edges + per_syscall_edges_prior_total(syscallnr);
+	edges = per_syscall_edges_abi(syscallnr, do32);
+	reach = edges +
+		kcov_shm->per_syscall.per_syscall_edges_prior[syscallnr][do32];
 	if (reach > FRONTIER_BARREN_MAX_REACH)
 		return;
 
-	calls = per_syscall_calls_total(syscallnr);
+	calls = per_syscall_calls_abi(syscallnr, do32);
 	if (calls <= FRONTIER_BARREN_C_MIN)
 		return;
 
@@ -334,7 +337,7 @@ void frontier_live_cool_spare(unsigned int syscallnr, bool do32)
 	 * keeping a syscall with only a handful of picks out -- the
 	 * spare lanes (NOT the magnitude) protect the producers.
 	 */
-	calls_total = per_syscall_calls_total(syscallnr);
+	calls_total = per_syscall_calls_abi(syscallnr, do32);
 	if (calls_total < FRONTIER_LIVE_COOL_CMIN)
 		return;
 
