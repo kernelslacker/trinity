@@ -441,6 +441,20 @@ const char * print_syscall_name(unsigned int callno, bool is32bit)
 	return table[callno].entry->name;
 }
 
+/* How far a walk of a per-syscall shm array goes in each ABI's table,
+ * native [0] and compat [1]: the table's length, clamped to the arrays'
+ * MAX_NR_SYSCALL, and no compat entries in a uniarch build. */
+void syscall_scan_bounds(unsigned int bound[2])
+{
+	unsigned int abi;
+
+	bound[0] = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
+	bound[1] = biarch ? max_nr_32bit_syscalls : 0;
+	for (abi = 0; abi < 2; abi++)
+		if (bound[abi] > MAX_NR_SYSCALL)
+			bound[abi] = MAX_NR_SYSCALL;
+}
+
 /*
  * Honor -x <syscall> at raw syscall(__NR_X, ...) sites in childops /
  * fds that bypass the syscall-table picker entirely.  Returns true if

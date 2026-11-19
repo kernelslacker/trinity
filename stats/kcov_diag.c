@@ -144,21 +144,10 @@ void kcov_diag_emit_block(const char *counter_name,
 	unsigned int arch, i;
 	int j;
 
-	/* Mirror the arch-dim scan bounds used by the existing per-syscall
-	 * top-N blocks: under biarch iterate both tables, under uniarch
-	 * only the single active table.  do32=true rows are always zero in
-	 * uniarch builds and the (skipped) arch=1 column drops out
-	 * naturally. */
-	if (biarch) {
-		nr_per_arch[0] = max_nr_64bit_syscalls;
-		nr_per_arch[1] = max_nr_32bit_syscalls;
-	} else {
-		nr_per_arch[0] = max_nr_syscalls;
-		nr_per_arch[1] = 0;
-	}
-	for (arch = 0; arch < 2; arch++)
-		if (nr_per_arch[arch] > MAX_NR_SYSCALL)
-			nr_per_arch[arch] = MAX_NR_SYSCALL;
+	/* Under biarch iterate both tables, under uniarch only the single
+	 * active table.  do32=true rows are always zero in uniarch builds
+	 * and the (skipped) arch=1 column drops out naturally. */
+	syscall_scan_bounds(nr_per_arch);
 
 	for (arch = 0; arch < 2; arch++) {
 		bool do32 = (arch == 1);
@@ -249,16 +238,7 @@ void kcov_diag_emit_truncation_topn(void)
 	uint64_t dedup_global;
 	unsigned int dedup_syscall_count = 0;
 
-	if (biarch) {
-		nr_per_arch[0] = max_nr_64bit_syscalls;
-		nr_per_arch[1] = max_nr_32bit_syscalls;
-	} else {
-		nr_per_arch[0] = max_nr_syscalls;
-		nr_per_arch[1] = 0;
-	}
-	for (arch = 0; arch < 2; arch++)
-		if (nr_per_arch[arch] > MAX_NR_SYSCALL)
-			nr_per_arch[arch] = MAX_NR_SYSCALL;
+	syscall_scan_bounds(nr_per_arch);
 
 	for (arch = 0; arch < 2; arch++) {
 		bool do32 = (arch == 1);

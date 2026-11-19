@@ -52,11 +52,7 @@ void kcov_cmp_hyp_saturation_block_render(long elapsed __unused__)
 	if (cmp_hints_shm == NULL)
 		return;
 
-	nr_scan[0] = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
-	nr_scan[1] = biarch ? max_nr_32bit_syscalls : 0;
-	for (do32_i = 0; do32_i < 2; do32_i++)
-		if (nr_scan[do32_i] > MAX_NR_SYSCALL)
-			nr_scan[do32_i] = MAX_NR_SYSCALL;
+	syscall_scan_bounds(nr_scan);
 
 	for (do32_i = 0; do32_i < 2; do32_i++) {
 		for (nr_i = 0; nr_i < nr_scan[do32_i]; nr_i++) {
