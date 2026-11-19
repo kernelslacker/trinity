@@ -1458,7 +1458,10 @@ static size_t build_ct_options(unsigned char *p, size_t avail)
  * random siblings drawn from the inner TCA_ACT_* set sized to the widths
  * the kernel's tca_act_policy walker expects (NLA_BITFIELD32 for FLAGS /
  * HW_STATS, NLA_U32 for INDEX / USED_HW_STATS / IN_HW_COUNT, NLA_NESTED
- * for OPTIONS / STATS).
+ * for OPTIONS / STATS).  Every kind but simple is in typed[]:
+ * tcf_simp_act() pr_info()s each packet it sees, unratelimited, so a
+ * simple action that took would flood the log from any filter with
+ * traffic.
  * Returns the inner payload length (excluding the outer per-action
  * header, which the caller writes); 0 on no-room.
  */
