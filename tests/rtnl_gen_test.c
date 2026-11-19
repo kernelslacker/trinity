@@ -34,6 +34,7 @@
 #include <linux/tc_act/tc_ife.h>
 #include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
+#include <linux/tc_act/tc_vlan.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2517,6 +2518,9 @@ struct action_attrs {
 	unsigned int pedits;	/* actions of kind "pedit" */
 	unsigned int pedit_parms;	/* ... with options tcf_pedit_init() takes */
 	unsigned int pedit_ex;	/* ... of those, with extended keys */
+	unsigned int vlans;	/* actions of kind "vlan" */
+	unsigned int vlan_parms;	/* ... with options tcf_vlan_init() takes */
+	unsigned int vlan_tagged;	/* ... of those, pushing or modifying a tag */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2883,6 +2887,72 @@ static void tally_pedit_options(struct action_attrs *t,
 	t->pedit_ex += keys_ex != NULL;
 }
 
+/* The TCA_ACT_OPTIONS of one vlan action, as tcf_vlan_init() reads them:
+ * PARMS with one of the five v_actions; for a push or a modify a VLAN id
+ * under VLAN_VID_MASK and, when it goes in, a protocol of 802.1Q or
+ * 802.1ad; for an Ethernet push both MAC addresses. */
+static void tally_vlan_options(struct action_attrs *t, const unsigned char *p,
+			       size_t len)
+{
+	const struct nlattr *nla;
+	bool parms = false, vid_ok = false, proto_ok = true;
+	unsigned int macs = 0;
+	struct tc_vlan parm;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+		__u16 v16 = 0;
+
+		if (plen == sizeof(v16))
+			memcpy(&v16, data, sizeof(v16));
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_VLAN_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_VLAN_PUSH_VLAN_ID:
+			vid_ok = plen == sizeof(v16) && v16 < 0xfff;
+			break;
+		case TCA_VLAN_PUSH_VLAN_PROTOCOL:
+			proto_ok = plen == sizeof(v16) &&
+				   (v16 == htons(ETH_P_8021Q) ||
+				    v16 == htons(ETH_P_8021AD));
+			break;
+		case TCA_VLAN_PUSH_ETH_DST:
+		case TCA_VLAN_PUSH_ETH_SRC:
+			macs += plen == ETH_ALEN;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ctrlact_takes(parm.action))
+		return;
+	switch (parm.v_action) {
+	case TCA_VLAN_ACT_POP:
+	case TCA_VLAN_ACT_POP_ETH:
+		break;
+	case TCA_VLAN_ACT_PUSH:
+	case TCA_VLAN_ACT_MODIFY:
+		if (!vid_ok || !proto_ok)
+			return;
+		t->vlan_tagged++;
+		break;
+	case TCA_VLAN_ACT_PUSH_ETH:
+		if (macs != 2)
+			return;
+		break;
+	default:
+		return;
+	}
+	t->vlan_parms++;
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
  * the options of the kinds the builder types. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
@@ -2892,7 +2962,7 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 	size_t options_len = 0;
 	const struct nlattr *nla;
 	bool gact = false, ife = false, mirred = false, skbedit = false;
-	bool pedit = false;
+	bool pedit = false, vlan = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2913,6 +2983,8 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			pedit = plen == sizeof("pedit") &&
 				!memcmp(p + NLA_HDRLEN, "pedit",
 					sizeof("pedit"));
+			vlan = plen == sizeof("vlan") &&
+			       !memcmp(p + NLA_HDRLEN, "vlan", sizeof("vlan"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -2944,6 +3016,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->pedits++;
 		if (options != NULL)
 			tally_pedit_options(t, options, options_len);
+	} else if (vlan) {
+		t->vlans++;
+		if (options != NULL)
+			tally_vlan_options(t, options, options_len);
 	}
 }
 
@@ -3042,6 +3118,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a pedit action carries no options tcf_pedit_init() takes");
 	expect_fraction(t->pedit_ex, t->pedit_parms, 0.40, 0.60, "pedit actions",
 			"rtnl: a pedit action does not carry extended keys half the time");
+	expect_fraction(t->vlan_parms, t->vlans, 0.90, 1.0, "vlan actions",
+			"rtnl: a vlan action carries no options tcf_vlan_init() takes");
+	expect_fraction(t->vlan_tagged, t->vlan_parms, 0.30, 0.50, "vlan actions",
+			"rtnl: a vlan action does not push or modify a tag two times in five");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

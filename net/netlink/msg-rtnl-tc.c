@@ -16,6 +16,7 @@
 #include <linux/tc_act/tc_ife.h>
 #include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
+#include <linux/tc_act/tc_vlan.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "netlink-attrs.h"
@@ -658,14 +659,68 @@ static size_t build_pedit_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * vlan's TCA_ACT_OPTIONS.  tcf_vlan_init() refuses the action without
+ * TCA_VLAN_PARMS or with a v_action past its five.  A push or a modify
+ * wants TCA_VLAN_PUSH_VLAN_ID under VLAN_VID_MASK, 0xfff (-ERANGE at or
+ * past it), and a protocol, when one goes in, of 802.1Q or 802.1ad
+ * (-EPROTONOSUPPORT); each carries a protocol and a priority half the
+ * time.  A push of an Ethernet header wants both MAC addresses.  Index 1
+ * to 8 names an action an earlier call made, as gact's does.
+ */
+static size_t build_vlan_options(unsigned char *p, size_t avail)
+{
+	unsigned char mac[ETH_ALEN];
+	struct tc_vlan parm;
+	size_t off = 0;
+	__u16 vid, proto;
+	__u8 prio;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.v_action = RAND_RANGE(TCA_VLAN_ACT_POP, TCA_VLAN_ACT_PUSH_ETH);
+	if (!put_nlattr(p, &off, avail, TCA_VLAN_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	switch (parm.v_action) {
+	case TCA_VLAN_ACT_PUSH:
+	case TCA_VLAN_ACT_MODIFY:
+		vid = rnd_modulo_u32(0xfff);
+		put_nlattr(p, &off, avail, TCA_VLAN_PUSH_VLAN_ID, &vid,
+			   sizeof(vid));
+		if (RAND_BOOL()) {
+			proto = htons(RAND_BOOL() ? ETH_P_8021Q : ETH_P_8021AD);
+			put_nlattr(p, &off, avail, TCA_VLAN_PUSH_VLAN_PROTOCOL,
+				   &proto, sizeof(proto));
+		}
+		if (RAND_BOOL()) {
+			prio = rnd_modulo_u32(8);
+			put_nlattr(p, &off, avail, TCA_VLAN_PUSH_VLAN_PRIORITY,
+				   &prio, sizeof(prio));
+		}
+		break;
+	case TCA_VLAN_ACT_PUSH_ETH:
+		generate_rand_bytes(mac, sizeof(mac));
+		put_nlattr(p, &off, avail, TCA_VLAN_PUSH_ETH_DST, mac,
+			   sizeof(mac));
+		generate_rand_bytes(mac, sizeof(mac));
+		put_nlattr(p, &off, avail, TCA_VLAN_PUSH_ETH_SRC, mac,
+			   sizeof(mac));
+		break;
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
- * gact, ife, mirred, skbedit and pedit the typed TCA_ACT_OPTIONS their
- * builders fill, then 0-3 random siblings drawn from the inner TCA_ACT_*
- * set sized to the widths the kernel's tca_act_policy walker expects
- * (NLA_BITFIELD32 for FLAGS / HW_STATS, NLA_U32 for INDEX /
- * USED_HW_STATS / IN_HW_COUNT, NLA_NESTED for OPTIONS / STATS).
+ * the kinds in typed[] the TCA_ACT_OPTIONS their builders fill, then 0-3
+ * random siblings drawn from the inner TCA_ACT_* set sized to the widths
+ * the kernel's tca_act_policy walker expects (NLA_BITFIELD32 for FLAGS /
+ * HW_STATS, NLA_U32 for INDEX / USED_HW_STATS / IN_HW_COUNT, NLA_NESTED
+ * for OPTIONS / STATS).
  * Returns the inner payload length (excluding the outer per-action
  * header, which the caller writes); 0 on no-room.
  */
@@ -680,6 +735,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "mirred",	build_mirred_options },
 		{ "skbedit",	build_skbedit_options },
 		{ "pedit",	build_pedit_options },
+		{ "vlan",	build_vlan_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
