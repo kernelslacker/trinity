@@ -121,9 +121,11 @@ void account_warm_reserve(struct childdata *child,
 		return;
 
 	/* Per-call PC count vs the syscall's lifetime running mean.
-	 * distinct_sum is the cross-arch sum of per_syscall_diag[].
+	 * distinct_sum is the record's ABI's per_syscall_diag[].
 	 * distinct_pcs (the lifetime sum of per-call dedup-inc
-	 * first-sightings); calls is the lifetime invocation count.
+	 * first-sightings); calls is that ABI's lifetime invocation
+	 * count: a biarch build's two tables give one number to
+	 * different syscalls.
 	 * mean = distinct_sum / calls; guard against zero-divide and
 	 * apply DEEP_WARM_PCS_MIN_CALLS as a warmup floor so a
 	 * syscall whose first few calls all happen to be its own
@@ -131,12 +133,11 @@ void account_warm_reserve(struct childdata *child,
 	 * pcs * DEN >= mean_unrolled (pcs >= mean * MULT) folded into
 	 * an integer cross-product so no division per call. */
 	if (pcres->local_distinct_pcs > 0) {
-		unsigned long calls = per_syscall_calls_total(rec->nr);
+		unsigned long calls = per_syscall_calls_abi(rec->nr,
+							     rec->do32bit);
 		if (calls >= DEEP_WARM_PCS_MIN_CALLS) {
 			unsigned long distinct_sum =
-				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_diag[rec->nr][0].distinct_pcs,
-					__ATOMIC_RELAXED) +
-				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_diag[rec->nr][1].distinct_pcs,
+				__atomic_load_n(&kcov_shm->per_syscall_cmp.per_syscall_diag[rec->nr][rec->do32bit].distinct_pcs,
 					__ATOMIC_RELAXED);
 			/* pcres.local_distinct_pcs * calls is the
 			 * per-call value scaled by the denominator

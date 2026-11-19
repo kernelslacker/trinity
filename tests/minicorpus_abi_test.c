@@ -14,12 +14,13 @@
 #include <unistd.h>
 
 #include "arch.h"		/* biarch, ARCH_IS_BIARCH */
+#include "child.h"		/* struct childdata, KCOV_MODE_PC */
 #include "debug.h"		/* BUG */
-#include "kcov.h"		/* kcov_shm, KCOV_SAT_CAP_CALLS */
+#include "kcov.h"		/* kcov_shm, KCOV_SAT_CAP_CALLS, KCOV_TRACE_SIZE */
 #include "minicorpus.h"
 #include "persist-envelope.h"
 #include "persist/minicorpus-internal.h"
-#include "random_syscall/strategy-accounting-internal.h"	/* account_cold_overflow_would_save */
+#include "random_syscall/strategy-accounting-internal.h"	/* account_cold_overflow_would_save, account_warm_reserve */
 #include "shm.h"
 #include "strategy.h"		/* PLATEAU_HYPOTHESIS_* */
 #include "syscall.h"
@@ -572,6 +573,52 @@ static void probe_skips_calls_the_save_lane_refuses(void)
 			 (int) PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
 }
 
+/* main/params/state.c is not linked: the default trace buffer, which
+ * no probe below comes near. */
+unsigned int kcov_trace_size = KCOV_TRACE_SIZE;
+
+/* Did one call of NR_SHARED under @do32, walking @pcs first-seen PCs,
+ * count as deep but warm? */
+static bool deep_warm(struct childdata *child, bool do32, unsigned long pcs)
+{
+	unsigned long before =
+		shm->stats.picker_bandit.warm_reserve_candidates_total;
+	struct kcov_pc_result pcres = { .local_distinct_pcs = pcs };
+	struct syscallrecord rec;
+
+	memset(&rec, 0, sizeof(rec));
+	rec.nr = NR_SHARED;
+	rec.do32bit = do32;
+	account_warm_reserve(child, &rec, false, 0, &pcres);
+	return shm->stats.picker_bandit.warm_reserve_candidates_total != before;
+}
+
+/* A deep call walks twice its syscall's mean first-seen PCs per call,
+ * and the mean is the ABI's own: the native syscall at NR_SHARED walks
+ * ten a call, its compat twin one. */
+static void deep_warm_judges_by_abi(void)
+{
+	struct childdata *child = calloc(1, sizeof(*child));
+
+	kcov_shm = calloc(1, sizeof(*kcov_shm));
+	if (child == NULL || kcov_shm == NULL)
+		BUG("minicorpus deep warm: calloc failed");
+	child->kcov.mode = KCOV_MODE_PC;
+	kcov_shm->per_syscall.per_syscall_calls[NR_SHARED][0][0] = 100;
+	kcov_shm->per_syscall.per_syscall_calls[NR_SHARED][0][1] = 100;
+	kcov_shm->per_syscall_cmp.per_syscall_diag[NR_SHARED][0].distinct_pcs = 1000;
+	kcov_shm->per_syscall_cmp.per_syscall_diag[NR_SHARED][1].distinct_pcs = 100;
+
+	if (!deep_warm(child, true, 5))
+		BUG("minicorpus deep warm: five times its mean was not deep");
+	if (deep_warm(child, false, 15))
+		BUG("minicorpus deep warm: one and a half times its mean was deep");
+
+	free(kcov_shm);
+	kcov_shm = NULL;
+	free(child);
+}
+
 void minicorpus_abi_self_check(void);
 void minicorpus_abi_self_check(void)
 {
@@ -605,6 +652,7 @@ void minicorpus_abi_self_check(void)
 	load_refuses_calls_without_args(path);
 	absent_probe_judges_by_abi();
 	probe_skips_calls_the_save_lane_refuses();
+	deep_warm_judges_by_abi();
 
 	/* Back to the empty uniarch tables fake_parent.c provides. */
 	biarch = false;
