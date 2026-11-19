@@ -180,10 +180,18 @@ void * get_writable_page_aligned(unsigned long size)
 	if (size > WRITABLE_POOL_BYTES)
 		return NULL;
 
+	/*
+	 * Judged without forming a sum that can wrap, as pool_bump()'s fit
+	 * is: a cursor past the pool (a stray write) starts it over, where
+	 * one near ULONG_MAX would round up, or take size on, to a small
+	 * value that passes and vend a slot below the pool.
+	 */
 	cursor = *cursor_p;
+	if (cursor > WRITABLE_POOL_BYTES)
+		cursor = 0;
 
 	aligned_offset = (cursor + page_mask) & ~page_mask;
-	if (aligned_offset + size > WRITABLE_POOL_BYTES) {
+	if (aligned_offset > WRITABLE_POOL_BYTES - size) {
 		/*
 		 * Wrap: pool base is page-aligned so offset 0 is a valid
 		 * page-aligned start.  size <= WRITABLE_POOL_BYTES was
