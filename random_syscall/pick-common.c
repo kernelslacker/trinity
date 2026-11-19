@@ -342,13 +342,14 @@ bool expensive_accept(unsigned int nr, bool do32)
 
 	/* Sum current-run counters with the warm-loaded priors so the
 	 * adaptive math benefits from cross-session evidence (same shape
-	 * kcov_syscall_cold_skip_pct uses for the saturation cap).  The
-	 * _prior arrays are frozen at warm-start (see include/kcov.h),
-	 * so a plain read is sufficient. */
-	edges = per_syscall_edges_total(nr);
-	calls = per_syscall_calls_total(nr);
-	edges_total = edges + per_syscall_edges_prior_total(nr);
-	calls_total = calls + per_syscall_calls_prior_total(nr);
+	 * kcov_syscall_cold_skip_pct uses for the saturation cap), both
+	 * the ABI's own: a biarch build's two tables give one number to
+	 * different syscalls.  The _prior arrays are frozen at warm-start
+	 * (see include/kcov.h), so a plain read is sufficient. */
+	edges = per_syscall_edges_abi(nr, do32);
+	calls = per_syscall_calls_abi(nr, do32);
+	edges_total = edges + kcov_shm->per_syscall.per_syscall_edges_prior[nr][do32];
+	calls_total = calls + kcov_shm->per_syscall.per_syscall_calls_prior[nr][do32];
 
 	/* Cold-warmup and barren both pin to the floor.  The warmup
 	 * branch also guarantees calls_total > 0 by the time the divide

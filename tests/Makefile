@@ -1489,6 +1489,11 @@ FAKE_SRCS	+= membarrier_test.c
 PARENT_SRCS	+= $(TOP)/kcov/cold-skip.c
 FAKE_SRCS	+= cold_skip_test.c
 
+# random_syscall/pick-common.c brings expensive_accept(), which
+# expensive_accept_test.c holds to the ABI of the syscall it rates.
+PARENT_SRCS	+= $(TOP)/random_syscall/pick-common.c
+FAKE_SRCS	+= expensive_accept_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.
