@@ -5,12 +5,15 @@
 #include <linux/if_arp.h>
 #include <linux/if_tun.h>
 #include <linux/sockios.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 
+#include "child-api.h"		/* child_userns_lane_is_active */
 #include "ioctls.h"
 #include "kernel/if_tun.h"
 #include "random.h"
@@ -201,10 +204,51 @@ static const unsigned short tun_link_types[] = {
 	ARPHRD_IEEE802154, ARPHRD_IEEE802154_MONITOR, ARPHRD_6LOWPAN,
 };
 
+/*
+ * The tun fd a call goes out on.  __tun_chr_ioctl() checks CAP_NET_ADMIN
+ * against the netns the fd was opened in, and the dev_template
+ * /dev/net/tun the fd pick hands out was opened by the parent, in a netns
+ * no child holds the capability over.  So a lane child swaps it, seven
+ * calls in eight, for a /dev/net/tun it opened after the lane's unshare,
+ * in a netns its own user namespace owns, where TUNSETIFF makes a device
+ * the later commands can drive; the eighth keeps the drawn fd, for the
+ * refused path.  The fd is the child's alone, in no pool: it keeps the
+ * number and what fstat() said of it, and opens another once the number
+ * names something else, after a fuzzed close() or dup2() over it.  Every
+ * open of the node shares its inode, so a number that came to hold some
+ * other open of /dev/net/tun passes for the child's, still a tun fd.
+ */
+static int lane_tun_fd(int fd)
+{
+	static int own_fd = -1;
+	static dev_t own_dev;
+	static ino_t own_ino;
+	struct stat st;
+
+	if (!child_userns_lane_is_active() || ONE_IN(8))
+		return fd;
+	if (own_fd >= 0 && fstat(own_fd, &st) == 0 &&
+	    st.st_dev == own_dev && st.st_ino == own_ino)
+		return own_fd;
+
+	own_fd = open("/dev/net/tun", O_RDWR | O_CLOEXEC);
+	if (own_fd < 0)
+		return fd;
+	if (fstat(own_fd, &st) != 0) {
+		close(own_fd);
+		own_fd = -1;
+		return fd;
+	}
+	own_dev = st.st_dev;
+	own_ino = st.st_ino;
+	return own_fd;
+}
+
 static void tun_sanitise(const struct ioctl_group *grp,
 			 struct syscallrecord *rec)
 {
 	pick_random_ioctl(grp, rec);
+	rec->a1 = (unsigned long) lane_tun_fd((int) rec->a1);
 
 	switch (rec->a2) {
 	case TUNSETIFF:
