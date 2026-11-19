@@ -14,6 +14,8 @@
 #include <linux/if_ether.h>
 #include <linux/tc_act/tc_gact.h>
 #include <linux/tc_act/tc_ife.h>
+#include <linux/tc_act/tc_skbedit.h>
+#include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "netlink-attrs.h"
 #include "msg-internal.h"
@@ -510,16 +512,91 @@ static size_t build_mirred_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * skbedit's TCA_ACT_OPTIONS.  tcf_skbedit_init() refuses the action
+ * without TCA_SKBEDIT_PARMS or with no edit beside it, a packet type past
+ * PACKET_OTHERHOST, and a TXQ_SKBHASH flag without a queue range whose
+ * top is at or above its base (a queue mapping on a filter at ingress is
+ * refused as well, which the builder cannot see).  A priority and a mark
+ * go in half the time each, the mark with a mask half of those, and a
+ * packet type, a queue mapping and the flags a quarter of the time; a
+ * mapping hashes over a range half the time, and an action that drew no
+ * edit gets a mark.
+ */
+static size_t build_skbedit_options(unsigned char *p, size_t avail)
+{
+	struct tc_skbedit parm;
+	size_t off = 0;
+	bool edit = false;
+	__u64 flags = 0;
+	__u32 val32;
+	__u16 val16, qmax;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	if (!put_nlattr(p, &off, avail, TCA_SKBEDIT_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	if (RAND_BOOL()) {
+		val32 = rnd_u32();
+		edit |= put_nlattr(p, &off, avail, TCA_SKBEDIT_PRIORITY,
+				   &val32, sizeof(val32));
+	}
+	if (RAND_BOOL()) {
+		val32 = RAND_BOOL() ? 0 : rnd_u32();
+		edit |= put_nlattr(p, &off, avail, TCA_SKBEDIT_MARK, &val32,
+				   sizeof(val32));
+		if (RAND_BOOL()) {
+			val32 = rnd_u32();
+			put_nlattr(p, &off, avail, TCA_SKBEDIT_MASK, &val32,
+				   sizeof(val32));
+		}
+	}
+	if (ONE_IN(4)) {
+		val16 = RAND_RANGE(PACKET_HOST, PACKET_OTHERHOST);
+		edit |= put_nlattr(p, &off, avail, TCA_SKBEDIT_PTYPE, &val16,
+				   sizeof(val16));
+	}
+	if (ONE_IN(4)) {
+		val16 = rnd_modulo_u32(8);
+		qmax = val16 + rnd_modulo_u32(8);
+		if (put_nlattr(p, &off, avail, TCA_SKBEDIT_QUEUE_MAPPING,
+			       &val16, sizeof(val16))) {
+			edit = true;
+			if (RAND_BOOL() &&
+			    put_nlattr(p, &off, avail,
+				       TCA_SKBEDIT_QUEUE_MAPPING_MAX, &qmax,
+				       sizeof(qmax)))
+				flags |= SKBEDIT_F_TXQ_SKBHASH;
+		}
+	}
+	if (flags != 0 || ONE_IN(4)) {
+		if (RAND_BOOL())
+			flags |= SKBEDIT_F_INHERITDSFIELD;
+		if (flags != 0)
+			edit |= put_nlattr(p, &off, avail, TCA_SKBEDIT_FLAGS,
+					   &flags, sizeof(flags));
+	}
+	if (!edit) {
+		val32 = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_SKBEDIT_MARK, &val32,
+			   sizeof(val32));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
- * gact, ife and mirred the typed TCA_ACT_OPTIONS their builders fill,
- * then 0-3 random siblings drawn from the inner TCA_ACT_* set sized to the
- * widths the kernel's tca_act_policy walker expects (NLA_BITFIELD32
- * for FLAGS / HW_STATS, NLA_U32 for INDEX / USED_HW_STATS /
- * IN_HW_COUNT, NLA_NESTED for OPTIONS / STATS).  Returns the inner
- * payload length (excluding the outer per-action header, which the
- * caller writes); 0 on no-room.
+ * gact, ife, mirred and skbedit the typed TCA_ACT_OPTIONS their builders
+ * fill, then 0-3 random siblings drawn from the inner TCA_ACT_* set sized
+ * to the widths the kernel's tca_act_policy walker expects
+ * (NLA_BITFIELD32 for FLAGS / HW_STATS, NLA_U32 for INDEX /
+ * USED_HW_STATS / IN_HW_COUNT, NLA_NESTED for OPTIONS / STATS).
+ * Returns the inner payload length (excluding the outer per-action
+ * header, which the caller writes); 0 on no-room.
  */
 static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 {
@@ -530,6 +607,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "gact",	build_gact_options },
 		{ "ife",	build_ife_options },
 		{ "mirred",	build_mirred_options },
+		{ "skbedit",	build_skbedit_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

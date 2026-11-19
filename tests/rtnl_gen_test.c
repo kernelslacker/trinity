@@ -32,6 +32,8 @@
 #include <linux/rtnetlink.h>
 #include <linux/tc_act/tc_gact.h>
 #include <linux/tc_act/tc_ife.h>
+#include <linux/tc_act/tc_skbedit.h>
+#include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
@@ -2508,6 +2510,9 @@ struct action_attrs {
 	unsigned int mirred_parms;	/* ... with options tcf_mirred_init() takes */
 	unsigned int mirred_lo;	/* ... of those, sending to lo */
 	unsigned int mirred_block;	/* ... or to a block a qdisc can make */
+	unsigned int skbedits;	/* actions of kind "skbedit" */
+	unsigned int skbedit_parms;	/* ... with options tcf_skbedit_init() takes */
+	unsigned int skbedit_hash;	/* ... of those, hashing over a queue range */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2694,15 +2699,88 @@ static void tally_mirred_options(struct action_attrs *t,
 	t->mirred_block += block >= 1 && block <= 63;
 }
 
+/* The TCA_ACT_OPTIONS of one skbedit action, as tcf_skbedit_init() reads
+ * them: PARMS, at least one edit, each its policy's width, a packet type
+ * skb_pkt_type_ok() takes, and a queue range below a TXQ_SKBHASH flag
+ * whose top is not under its base. */
+static void tally_skbedit_options(struct action_attrs *t,
+				  const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	bool parms = false, ok = true, edits = false;
+	bool qmap = false, qmax = false;
+	__u16 qmin_val = 0, qmax_val = 0;
+	__u64 flags = 0;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+		__u16 v16 = 0;
+
+		if (plen == sizeof(v16))
+			memcpy(&v16, data, sizeof(v16));
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_SKBEDIT_PARMS:
+			if (plen >= sizeof(struct tc_skbedit)) {
+				struct tc_skbedit parm;
+
+				memcpy(&parm, data, sizeof(parm));
+				parms = ctrlact_takes(parm.action);
+			}
+			break;
+		case TCA_SKBEDIT_PRIORITY:
+		case TCA_SKBEDIT_MARK:
+		case TCA_SKBEDIT_MASK:
+			ok &= plen == sizeof(__u32);
+			edits = true;
+			break;
+		case TCA_SKBEDIT_PTYPE:
+			ok &= plen == sizeof(__u16) && v16 <= PACKET_OTHERHOST;
+			edits = true;
+			break;
+		case TCA_SKBEDIT_QUEUE_MAPPING:
+			ok &= plen == sizeof(__u16);
+			qmap = true;
+			qmin_val = v16;
+			edits = true;
+			break;
+		case TCA_SKBEDIT_QUEUE_MAPPING_MAX:
+			ok &= plen == sizeof(__u16);
+			qmax = true;
+			qmax_val = v16;
+			break;
+		case TCA_SKBEDIT_FLAGS:
+			ok &= plen == sizeof(__u64);
+			if (plen == sizeof(__u64))
+				memcpy(&flags, data, sizeof(flags));
+			edits |= (flags & (SKBEDIT_F_TXQ_SKBHASH |
+					   SKBEDIT_F_INHERITDSFIELD)) != 0;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if ((flags & SKBEDIT_F_TXQ_SKBHASH) &&
+	    (!qmap || !qmax || qmax_val < qmin_val))
+		ok = false;
+	if (!parms || !ok || !edits)
+		return;
+	t->skbedit_parms++;
+	t->skbedit_hash += (flags & SKBEDIT_F_TXQ_SKBHASH) != 0;
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
- * a gact's, an ife's or a mirred's options. */
+ * a gact's, an ife's, a mirred's or an skbedit's options. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			     size_t len)
 {
 	const unsigned char *options = NULL;
 	size_t options_len = 0;
 	const struct nlattr *nla;
-	bool gact = false, ife = false, mirred = false;
+	bool gact = false, ife = false, mirred = false, skbedit = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2717,6 +2795,9 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			mirred = plen == sizeof("mirred") &&
 				 !memcmp(p + NLA_HDRLEN, "mirred",
 					 sizeof("mirred"));
+			skbedit = plen == sizeof("skbedit") &&
+				  !memcmp(p + NLA_HDRLEN, "skbedit",
+					  sizeof("skbedit"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -2740,6 +2821,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->mirreds++;
 		if (options != NULL)
 			tally_mirred_options(t, options, options_len);
+	} else if (skbedit) {
+		t->skbedits++;
+		if (options != NULL)
+			tally_skbedit_options(t, options, options_len);
 	}
 }
 
@@ -2830,6 +2915,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a mirred action does not send to lo seven times in eight");
 	expect_fraction(t->mirred_block, t->mirred_parms, 0.09, 0.16, "mirred actions",
 			"rtnl: a mirred action does not send to a block one time in eight");
+	expect_fraction(t->skbedit_parms, t->skbedits, 0.90, 1.0, "skbedit actions",
+			"rtnl: an skbedit action carries no options tcf_skbedit_init() takes");
+	expect_fraction(t->skbedit_hash, t->skbedit_parms, 0.05, 0.25, "skbedit actions",
+			"rtnl: an skbedit action seldom hashes over a queue range");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
