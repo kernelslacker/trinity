@@ -79,6 +79,12 @@ static const char *argtype_name(enum argtype t)
 	return "<unknown>";
 }
 
+/*
+ * A discriminator names a slot before the struct's: generic_sanitise()
+ * fills slots in order, so one in a later slot still reads 0 while the
+ * struct fills and can match a discrim_value == 0 row for the wrong
+ * variant.
+ */
 static void validate_one_against_table(const struct syscalltable *table,
 				       unsigned int nr_syscalls,
 				       const char *tablename,
@@ -127,6 +133,12 @@ static void validate_one_against_table(const struct syscalltable *table,
 			  sa->syscall_name, sa->arg_idx, sa->discrim_arg_idx,
 			  entry->name, entry->num_args, tablename);
 		(*violations)++;
+	} else if (sa->discrim_arg_idx >= sa->arg_idx) {
+		outputerr("struct_catalog: %s arg %u discrim_arg_idx %u does "
+			  "not precede the struct's slot in %s\n",
+			  sa->syscall_name, sa->arg_idx, sa->discrim_arg_idx,
+			  tablename);
+		(*violations)++;
 	}
 
 	if (sa->discrim2_arg_idx != 0 &&
@@ -135,6 +147,12 @@ static void validate_one_against_table(const struct syscalltable *table,
 			  "range for syscall %s (num_args=%u) in %s\n",
 			  sa->syscall_name, sa->arg_idx, sa->discrim2_arg_idx,
 			  entry->name, entry->num_args, tablename);
+		(*violations)++;
+	} else if (sa->discrim2_arg_idx >= sa->arg_idx) {
+		outputerr("struct_catalog: %s arg %u discrim2_arg_idx %u does "
+			  "not precede the struct's slot in %s\n",
+			  sa->syscall_name, sa->arg_idx, sa->discrim2_arg_idx,
+			  tablename);
 		(*violations)++;
 	}
 }
