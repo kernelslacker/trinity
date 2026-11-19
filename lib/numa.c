@@ -74,6 +74,11 @@ void init_numa_nodes(void)
 	}
 	fclose(f);
 
+	/* A list that cpulist_weight() cannot read whole, a range part way
+	 * along malformed, falls back rather than keep the nodes before it. */
+	if (cpulist_weight(buf) == 0)
+		goto fallback;
+
 	p = buf;
 	while (nr_numa_nodes < MAX_NUMA_NODES && next_list_range(&p, &lo, &hi)) {
 		for (n = lo; n <= hi && nr_numa_nodes < MAX_NUMA_NODES; n++)
