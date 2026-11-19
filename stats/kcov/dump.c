@@ -107,7 +107,7 @@ void __cold dump_stats_kcov_block(void)
 		 * exclusively-remote syscalls are paying for the cost of
 		 * remote-mode collection.  Render-only over the existing
 		 * per-syscall local|remote counters; no new shm. */
-		dump_stats_render_kcov_per_syscall_last_edge_topn(nr_syscalls_to_scan, table);
+		dump_stats_render_kcov_remote_only_winners(nr_syscalls_to_scan, table);
 
 		/* Per-syscall remote-enable health, sorted by the
 		 * req - succ gap.  The four counters partition the
@@ -132,7 +132,7 @@ void __cold dump_stats_kcov_block(void)
 		 * Render-only over the existing per-syscall counters
 		 * declared in include/kcov.h; no new shm, no
 		 * behaviour change. */
-		dump_stats_render_kcov_per_syscall_last_efault_topn(nr_syscalls_to_scan, table);
+		dump_stats_render_kcov_remote_enable_health(nr_syscalls_to_scan, table);
 
 		/* Per-syscall view of slots whose remote-mode enable was
 		 * attempted at least REMOTE_WASTE_FLOOR times yet produced
@@ -161,7 +161,7 @@ void __cold dump_stats_kcov_block(void)
 		 * fuzzing path.  No childop variant: the per-childop
 		 * remote-enable counters the verdict needs do not exist
 		 * (childop enable accounting was intentionally deferred). */
-		dump_stats_render_kcov_per_syscall_local_pc_topn(nr_syscalls_to_scan, table);
+		dump_stats_render_kcov_remote_wasted(nr_syscalls_to_scan, table);
 
 		/* combined top-N
 		 * trace_truncated + cmp_trace_truncated + max_trace_size

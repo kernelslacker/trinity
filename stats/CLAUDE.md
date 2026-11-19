@@ -25,7 +25,7 @@ timeseries, and periodic operator-facing dumps.
 | kcov/dump.c | Shutdown KCOV coverage and comparison diagnostics block — only the renderer ordering; the blocks live in the `kcov/dump-*.c` siblings. |
 | kcov/dump-base.c | Base KCOV counters, warm known-hits, exit-edge delta and totals. |
 | kcov/dump-topn.c | Top-edges / cold-syscall, per-syscall yield and dedup top-Ns. |
-| kcov/dump-remote.c | Remote edge producers plus per-syscall last-edge / last-EFAULT / local-PC top-Ns. |
+| kcov/dump-remote.c | Remote-mode views: edge producers, remote-only edge winners, remote-enable health, wasted-remote syscalls. |
 | kcov/dump-reexec.c | CMP hint tier, reexec, and ring replay blocks. |
 | kcov/dump-shadow.c | Shadow measurements, KCOV probe costs, KCOV dispatch stats. |
 | periodic/top-syscalls.c | Per-syscall bandit/explorer/frontier/RQ/warm-reserve top-N deltas. |

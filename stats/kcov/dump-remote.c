@@ -160,7 +160,7 @@ void dump_stats_render_kcov_remote_edge_producers(unsigned int nr_syscalls_to_sc
 			       rc, rec, ren, lrate, rrate);
 		}
 }
-void dump_stats_render_kcov_per_syscall_last_edge_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
+void dump_stats_render_kcov_remote_only_winners(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
 {
 	unsigned int i, j;
 
@@ -221,7 +221,7 @@ void dump_stats_render_kcov_per_syscall_last_edge_topn(unsigned int nr_syscalls_
 			}
 		}
 }
-void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
+void dump_stats_render_kcov_remote_enable_health(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
 {
 	unsigned int i, j;
 
@@ -289,7 +289,7 @@ void dump_stats_render_kcov_per_syscall_last_efault_topn(unsigned int nr_syscall
 			}
 		}
 }
-void dump_stats_render_kcov_per_syscall_local_pc_topn(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
+void dump_stats_render_kcov_remote_wasted(unsigned int nr_syscalls_to_scan, const struct syscalltable *table)
 {
 	unsigned int i, j;
 
