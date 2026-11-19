@@ -36,6 +36,7 @@
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/tc_act/tc_vlan.h>
 #include <linux/tc_act/tc_csum.h>
+#include <linux/tc_act/tc_tunnel_key.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2525,6 +2526,10 @@ struct action_attrs {
 	unsigned int csums;	/* actions of kind "csum" */
 	unsigned int csum_parms;	/* ... with options tcf_csum_init() takes */
 	unsigned int csum_known;	/* ... of those, updating known checksums only */
+	unsigned int tunnel_keys;	/* actions of kind "tunnel_key" */
+	unsigned int tunnel_key_parms;	/* ... with options tunnel_key_init() takes */
+	unsigned int tunnel_key_sets;	/* ... of those, sets */
+	unsigned int tunnel_key_opts;	/* ... of those, with encap options */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2995,6 +3000,126 @@ static void tally_csum_options(struct action_attrs *t, const unsigned char *p,
 	}
 }
 
+/* One geneve, vxlan or erspan option nest, as tunnel_key_copy_*_opt()
+ * reads it. */
+static bool tunnel_key_opt(unsigned short type, const unsigned char *p,
+			   size_t len)
+{
+	size_t lens[TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_MAX + 1] = { 0 };
+	const struct nlattr *nla;
+	__u8 ver = 0;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		unsigned short t = nla->nla_type & NLA_TYPE_MASK;
+
+		if (t < ARRAY_SIZE(lens))
+			lens[t] = nla->nla_len - NLA_HDRLEN;
+		if (t == TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_VER &&
+		    nla->nla_len == NLA_HDRLEN + sizeof(ver))
+			ver = p[NLA_HDRLEN];
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	switch (type) {
+	case TCA_TUNNEL_KEY_ENC_OPTS_GENEVE:
+		return lens[TCA_TUNNEL_KEY_ENC_OPT_GENEVE_CLASS] == 2 &&
+		       lens[TCA_TUNNEL_KEY_ENC_OPT_GENEVE_TYPE] == 1 &&
+		       lens[TCA_TUNNEL_KEY_ENC_OPT_GENEVE_DATA] >= 4 &&
+		       lens[TCA_TUNNEL_KEY_ENC_OPT_GENEVE_DATA] % 4 == 0;
+	case TCA_TUNNEL_KEY_ENC_OPTS_VXLAN:
+		return lens[TCA_TUNNEL_KEY_ENC_OPT_VXLAN_GBP] == 4;
+	case TCA_TUNNEL_KEY_ENC_OPTS_ERSPAN:
+		if (ver == 1)
+			return lens[TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_INDEX] == 4;
+		return ver == 2 &&
+		       lens[TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_DIR] == 1 &&
+		       lens[TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_HWID] == 1;
+	}
+	return false;
+}
+
+/* TCA_TUNNEL_KEY_ENC_OPTS, as tunnel_key_get_opts_len() walks it: geneve
+ * options, or one vxlan or erspan option, which the strict validation past
+ * enc_opts_policy's strict_start_type wants flagged nested. */
+static bool tunnel_key_opts(const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	unsigned short type = 0;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		unsigned short t = nla->nla_type & NLA_TYPE_MASK;
+		bool geneve = t == TCA_TUNNEL_KEY_ENC_OPTS_GENEVE;
+
+		if ((type != 0 && (t != type || !geneve)) ||
+		    (!geneve && !(nla->nla_type & NLA_F_NESTED)) ||
+		    !tunnel_key_opt(t, p + NLA_HDRLEN,
+				    nla->nla_len - NLA_HDRLEN))
+			return false;
+		type = t;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return type != 0;
+}
+
+/* The TCA_ACT_OPTIONS of one tunnel_key action, as tunnel_key_init()
+ * reads them: PARMS, a set or a release, and for a set a source and
+ * destination of one family and any encap options well formed. */
+static void tally_tunnel_key_options(struct action_attrs *t,
+				     const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_tunnel_key parm;
+	unsigned int v4 = 0, v6 = 0;
+	bool parms = false, opts = false, opts_ok = true;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_TUNNEL_KEY_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, p + NLA_HDRLEN, sizeof(parm));
+			break;
+		case TCA_TUNNEL_KEY_ENC_IPV4_SRC:
+		case TCA_TUNNEL_KEY_ENC_IPV4_DST:
+			v4 += plen == 4;
+			break;
+		case TCA_TUNNEL_KEY_ENC_IPV6_SRC:
+		case TCA_TUNNEL_KEY_ENC_IPV6_DST:
+			v6 += plen == 16;
+			break;
+		case TCA_TUNNEL_KEY_ENC_OPTS:
+			opts = true;
+			opts_ok = tunnel_key_opts(p + NLA_HDRLEN, plen);
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ctrlact_takes(parm.action))
+		return;
+	if (parm.t_action == TCA_TUNNEL_KEY_ACT_SET) {
+		if ((v4 != 2 && v6 != 2) || !opts_ok)
+			return;
+		t->tunnel_key_sets++;
+		t->tunnel_key_opts += opts;
+	} else if (parm.t_action != TCA_TUNNEL_KEY_ACT_RELEASE) {
+		return;
+	}
+	t->tunnel_key_parms++;
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
  * the options of the kinds the builder types. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
@@ -3004,7 +3129,7 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 	size_t options_len = 0;
 	const struct nlattr *nla;
 	bool gact = false, ife = false, mirred = false, skbedit = false;
-	bool pedit = false, vlan = false, csum = false;
+	bool pedit = false, vlan = false, csum = false, tunnel_key = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -3029,6 +3154,9 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			       !memcmp(p + NLA_HDRLEN, "vlan", sizeof("vlan"));
 			csum = plen == sizeof("csum") &&
 			       !memcmp(p + NLA_HDRLEN, "csum", sizeof("csum"));
+			tunnel_key = plen == sizeof("tunnel_key") &&
+				     !memcmp(p + NLA_HDRLEN, "tunnel_key",
+					     sizeof("tunnel_key"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -3068,6 +3196,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->csums++;
 		if (options != NULL)
 			tally_csum_options(t, options, options_len);
+	} else if (tunnel_key) {
+		t->tunnel_keys++;
+		if (options != NULL)
+			tally_tunnel_key_options(t, options, options_len);
 	}
 }
 
@@ -3174,6 +3306,12 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a csum action carries no options tcf_csum_init() takes");
 	expect_fraction(t->csum_known, t->csum_parms, 0.80, 0.95, "csum actions",
 			"rtnl: a csum action does not update known checksums seven times in eight");
+	expect_fraction(t->tunnel_key_parms, t->tunnel_keys, 0.90, 1.0, "tunnel_key actions",
+			"rtnl: a tunnel_key action carries no options tunnel_key_init() takes");
+	expect_fraction(t->tunnel_key_sets, t->tunnel_key_parms, 0.80, 0.95, "tunnel_key actions",
+			"rtnl: a tunnel_key action is not a set seven times in eight");
+	expect_fraction(t->tunnel_key_opts, t->tunnel_key_sets, 0.40, 0.60, "tunnel_key actions",
+			"rtnl: a tunnel_key set does not carry encap options half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

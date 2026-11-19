@@ -20,6 +20,7 @@
 #include <linux/tc_act/tc_csum.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
+#include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
 #include "netlink-attrs.h"
 #include "msg-internal.h"
 #include "msg-rtnl-common.h"
@@ -738,6 +739,162 @@ static size_t build_csum_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * The TCA_TUNNEL_KEY_ENC_OPTS of a set, as tunnel_key_copy_opts() takes
+ * them: one or two geneve options with 4 to 16 bytes of data, a vxlan
+ * gbp, or an erspan v1 index or v2 direction and hwid.  Only geneve
+ * options repeat, and the vxlan and erspan nests, past enc_opts_policy's
+ * strict_start_type, are refused unflagged.  TUNNEL_KEY_OPT_MAX holds
+ * the largest option, a geneve one.
+ */
+#define TUNNEL_KEY_OPT_MAX \
+	(2 * NLA_ALIGN(NLA_HDRLEN + sizeof(__u16)) + NLA_HDRLEN + 16)
+
+static size_t build_tunnel_key_enc_opts(unsigned char *p, size_t cap)
+{
+	unsigned char opt[TUNNEL_KEY_OPT_MAX];
+	unsigned char data[16];
+	unsigned short type;
+	unsigned int i, n = 1;
+	size_t off = 0;
+
+	switch (rnd_modulo_u32(3)) {
+	case 0:
+		type = TCA_TUNNEL_KEY_ENC_OPTS_GENEVE;
+		n = RAND_RANGE(1, 2);
+		break;
+	case 1:
+		type = TCA_TUNNEL_KEY_ENC_OPTS_VXLAN;
+		break;
+	default:
+		type = TCA_TUNNEL_KEY_ENC_OPTS_ERSPAN;
+		break;
+	}
+	for (i = 0; i < n; i++) {
+		__u32 val32 = rnd_u32();
+		__u16 val16 = rnd_u32();
+		__u8 val8 = rnd_u32(), ver = RAND_RANGE(1, 2);
+		size_t olen = 0;
+
+		switch (type) {
+		case TCA_TUNNEL_KEY_ENC_OPTS_GENEVE:
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_GENEVE_CLASS,
+				   &val16, sizeof(val16));
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_GENEVE_TYPE,
+				   &val8, sizeof(val8));
+			generate_rand_bytes(data, sizeof(data));
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_GENEVE_DATA,
+				   data, 4 * RAND_RANGE(1, 4));
+			break;
+		case TCA_TUNNEL_KEY_ENC_OPTS_VXLAN:
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_VXLAN_GBP,
+				   &val32, sizeof(val32));
+			break;
+		default:
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_VER,
+				   &ver, sizeof(ver));
+			if (ver == 1) {
+				put_nlattr(opt, &olen, sizeof(opt),
+					   TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_INDEX,
+					   &val32, sizeof(val32));
+				break;
+			}
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_DIR,
+				   &val8, sizeof(val8));
+			val8 = rnd_u32();
+			put_nlattr(opt, &olen, sizeof(opt),
+				   TCA_TUNNEL_KEY_ENC_OPT_ERSPAN_HWID,
+				   &val8, sizeof(val8));
+			break;
+		}
+		put_nlattr(p, &off, cap, type | NLA_F_NESTED, opt, olen);
+	}
+	return off;
+}
+
+/*
+ * tunnel_key's TCA_ACT_OPTIONS.  tunnel_key_init() refuses the action
+ * without TCA_TUNNEL_KEY_PARMS, with a t_action other than a set or a
+ * release, and a set without both addresses of one family.  Seven in
+ * eight are sets, over IPv6 one in four, each with a key id, a port, the
+ * no-csum, tos, ttl and no-frag attributes half the time apiece, and
+ * encap options half the time.  Index 1 to 8 names an action an earlier
+ * call made, as gact's does.
+ */
+static size_t build_tunnel_key_options(unsigned char *p, size_t avail)
+{
+	static const unsigned short u8_attrs[] = {
+		TCA_TUNNEL_KEY_NO_CSUM, TCA_TUNNEL_KEY_ENC_TOS,
+		TCA_TUNNEL_KEY_ENC_TTL,
+	};
+	unsigned char enc[2 * NLA_ALIGN(NLA_HDRLEN + TUNNEL_KEY_OPT_MAX)];
+	struct tc_tunnel_key parm;
+	struct in6_addr addr6;
+	size_t off = 0, elen;
+	unsigned int i;
+	__u32 val32;
+	__u16 port;
+	__u8 val8;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.t_action = ONE_IN(8) ? TCA_TUNNEL_KEY_ACT_RELEASE :
+				    TCA_TUNNEL_KEY_ACT_SET;
+	if (!put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_PARMS, &parm,
+			sizeof(parm)))
+		return 0;
+	if (parm.t_action == TCA_TUNNEL_KEY_ACT_RELEASE)
+		return off;
+
+	if (ONE_IN(4)) {
+		generate_rand_bytes((unsigned char *) &addr6, sizeof(addr6));
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_IPV6_SRC,
+			   &addr6, sizeof(addr6));
+		generate_rand_bytes((unsigned char *) &addr6, sizeof(addr6));
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_IPV6_DST,
+			   &addr6, sizeof(addr6));
+	} else {
+		val32 = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_IPV4_SRC,
+			   &val32, sizeof(val32));
+		val32 = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_IPV4_DST,
+			   &val32, sizeof(val32));
+	}
+	if (RAND_BOOL()) {
+		val32 = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_KEY_ID, &val32,
+			   sizeof(val32));
+	}
+	if (RAND_BOOL()) {
+		port = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_DST_PORT, &port,
+			   sizeof(port));
+	}
+	for (i = 0; i < ARRAY_SIZE(u8_attrs); i++) {
+		if (RAND_BOOL())
+			continue;
+		val8 = rnd_u32();
+		put_nlattr(p, &off, avail, u8_attrs[i], &val8, sizeof(val8));
+	}
+	if (RAND_BOOL())
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_NO_FRAG, NULL, 0);
+	if (RAND_BOOL()) {
+		elen = build_tunnel_key_enc_opts(enc, sizeof(enc));
+		put_nlattr(p, &off, avail, TCA_TUNNEL_KEY_ENC_OPTS | NLA_F_NESTED,
+			   enc, elen);
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -762,6 +919,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "pedit",	build_pedit_options },
 		{ "vlan",	build_vlan_options },
 		{ "csum",	build_csum_options },
+		{ "tunnel_key",	build_tunnel_key_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

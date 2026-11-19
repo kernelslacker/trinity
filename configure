@@ -593,6 +593,10 @@ check_enum_member linux/can/raw.h CAN_RAW_XL_VCID_OPTS
 # The mirred action attribute that sends to a shared block, added in 6.8.
 check_enum_member linux/tc_act/tc_mirred.h TCA_MIRRED_BLOCKID
 
+# The tunnel_key action flag that sets don't-fragment on the encap header,
+# added in 6.4.
+check_enum_member linux/tc_act/tc_tunnel_key.h TCA_TUNNEL_KEY_NO_FRAG
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \
