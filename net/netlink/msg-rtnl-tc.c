@@ -1165,6 +1165,53 @@ static size_t build_sample_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * police's TCA_ACT_OPTIONS.  tcf_police_init() refuses the action without
+ * a TCA_POLICE_TBF of struct tc_police's size or of the compat struct's,
+ * which ends before refcnt; a byte rate without the 1024-byte table
+ * qdisc_get_rtab() reads, which outgrows an action's room, so the rate
+ * stays 0; a packet rate without its burst or the other way round, or
+ * either of them 0; and a conform verdict (TCA_POLICE_RESULT) that is no
+ * verdict or a goto chain.  Half the actions police packets per second,
+ * the rest only the MTU, which half of all set; half carry a conform
+ * verdict; and one TBF in eight is the compat size.  Index 1 to 8 names
+ * an action an earlier call made, as gact's does.
+ */
+static size_t build_police_options(unsigned char *p, size_t avail)
+{
+	struct tc_police parm;
+	size_t off = 0;
+	__u64 val64;
+	__u32 result;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.burst = rnd_u32();
+	parm.mtu = RAND_BOOL() ? 0 : RAND_RANGE(64U, 9000U);
+	if (!put_nlattr(p, &off, avail, TCA_POLICE_TBF, &parm,
+			ONE_IN(8) ? offsetof(struct tc_police, refcnt) :
+				    sizeof(parm)))
+		return 0;
+
+	if (RAND_BOOL()) {
+		val64 = RAND_RANGE(1U, 1000000U);
+		put_nlattr(p, &off, avail, TCA_POLICE_PKTRATE64, &val64,
+			   sizeof(val64));
+		val64 = RAND_BOOL() ? RAND_RANGE(1U, 1U << 24) : rnd_u64() | 1;
+		put_nlattr(p, &off, avail, TCA_POLICE_PKTBURST64, &val64,
+			   sizeof(val64));
+	}
+	if (RAND_BOOL()) {
+		result = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+			 RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+		put_nlattr(p, &off, avail, TCA_POLICE_RESULT, &result,
+			   sizeof(result));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1196,6 +1243,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "mpls",	build_mpls_options },
 		{ "ctinfo",	build_ctinfo_options },
 		{ "sample",	build_sample_options },
+		{ "police",	build_police_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

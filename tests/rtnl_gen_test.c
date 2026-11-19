@@ -2555,6 +2555,9 @@ struct action_attrs {
 	unsigned int samples;		/* actions of kind "sample" */
 	unsigned int sample_parms;	/* ... with options tcf_sample_init() takes */
 	unsigned int sample_trunc;	/* ... of those, truncating */
+	unsigned int polices;		/* actions of kind "police" */
+	unsigned int police_parms;	/* ... with options tcf_police_init() takes */
+	unsigned int police_pps;	/* ... of those, policing packets per second */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3469,6 +3472,77 @@ static void tally_sample_options(struct action_attrs *t,
 }
 
 /*
+ * The TCA_ACT_OPTIONS of one police action, as tcf_police_init() reads
+ * them: a TCA_POLICE_TBF of struct tc_police's size or of the compat
+ * struct's, which lacks the counts at its tail; a byte rate only with the
+ * rate table qdisc_get_rtab() takes; a packet rate and burst together, of
+ * 1 or more and without a byte rate; a conform verdict it takes; and no
+ * average rate, which a new action has no estimator for.
+ */
+static void tally_police_options(struct action_attrs *t,
+				 const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_police parm;
+	bool parms = false, ok = true, rtab = false;
+	unsigned int pps = 0;
+	__u64 v64;
+	__u32 v32;
+
+	t->polices++;
+	memset(&parm, 0, sizeof(parm));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_POLICE_TBF:
+			parms = plen == sizeof(parm) ||
+				plen == offsetof(struct tc_police, refcnt);
+			if (parms)
+				memcpy(&parm, data, plen);
+			break;
+		case TCA_POLICE_RATE:
+			rtab = plen == TC_RTAB_SIZE;
+			break;
+		case TCA_POLICE_PKTRATE64:
+		case TCA_POLICE_PKTBURST64:
+			ok &= plen == sizeof(v64);
+			if (plen == sizeof(v64)) {
+				memcpy(&v64, data, sizeof(v64));
+				ok &= v64 >= 1;
+			}
+			pps++;
+			break;
+		case TCA_POLICE_RESULT:
+			ok &= plen == sizeof(v32);
+			if (plen == sizeof(v32)) {
+				memcpy(&v32, data, sizeof(v32));
+				ok &= ctrlact_takes(v32);
+			}
+			break;
+		case TCA_POLICE_AVRATE:
+			ok = false;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ok || !ctrlact_takes(parm.action))
+		return;
+	if (parm.rate.rate != 0 &&
+	    (!rtab || parm.rate.cell_log == 0 || parm.rate.cell_log >= 32))
+		return;
+	if ((pps != 0 && pps != 2) || (pps != 0 && parm.rate.rate != 0))
+		return;
+	t->police_parms++;
+	t->police_pps += pps != 0;
+}
+
+/*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
  * action has any.
@@ -3492,6 +3566,7 @@ static const struct {
 	{ "mpls",	tally_mpls_options },
 	{ "ctinfo",	tally_ctinfo_options },
 	{ "sample",	tally_sample_options },
+	{ "police",	tally_police_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3671,6 +3746,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a sample action carries no options tcf_sample_init() takes");
 	expect_fraction(t->sample_trunc, t->sample_parms, 0.40, 0.60, "sample actions",
 			"rtnl: a sample action does not truncate half the time");
+	expect_fraction(t->police_parms, t->polices, 0.98, 1.0, "police actions",
+			"rtnl: a police action carries no options tcf_police_init() takes");
+	expect_fraction(t->police_pps, t->police_parms, 0.40, 0.60, "police actions",
+			"rtnl: a police action does not police packets per second half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
