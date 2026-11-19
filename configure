@@ -590,6 +590,9 @@ check_enum_member linux/netfilter/nf_tables.h NFTA_DEVICE_PREFIX
 # The CAN raw option that sets CAN XL's virtual CAN ids, added in 6.9.
 check_enum_member linux/can/raw.h CAN_RAW_XL_VCID_OPTS
 
+# The mirred action attribute that sends to a shared block, added in 6.8.
+check_enum_member linux/tc_act/tc_mirred.h TCA_MIRRED_BLOCKID
+
 # enum bpf_cmd, from BPF_OBJ_PIN to the newest.
 check_enum_member linux/bpf.h BPF_OBJ_PIN BPF_OBJ_GET BPF_PROG_ATTACH \
 	BPF_PROG_DETACH BPF_PROG_TEST_RUN BPF_PROG_GET_NEXT_ID \

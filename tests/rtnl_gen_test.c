@@ -38,6 +38,7 @@
 #include "kernel/if_link.h"	/* the IFLA_* limits and IFLA_PACING_OFFLOAD */
 #include "kernel/nexthop.h"	/* NHA_DST_PORT */
 #include "kernel/rtnetlink.h"	/* RTA_FLOWLABEL */
+#include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "socketinfo.h"		/* struct socket_triplet */
 #include "utils-macros.h"	/* ARRAY_SIZE */
 
@@ -2503,6 +2504,10 @@ struct action_attrs {
 	unsigned int ife_addressed;	/* ... encoders with a type and both MACs */
 	unsigned int ife_lists;	/* ... with a TCA_IFE_METALST */
 	unsigned int ife_zero;	/* ... naming a metadatum with a value of 0 */
+	unsigned int mirreds;	/* actions of kind "mirred" */
+	unsigned int mirred_parms;	/* ... with options tcf_mirred_init() takes */
+	unsigned int mirred_lo;	/* ... of those, sending to lo */
+	unsigned int mirred_block;	/* ... or to a block a qdisc can make */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2649,15 +2654,55 @@ static void tally_ife_options(struct action_attrs *t, const unsigned char *p,
 	t->ife_zero += zero;
 }
 
+/* The TCA_ACT_OPTIONS of one mirred action, as tcf_mirred_init() reads
+ * them: PARMS with one of the four eactions, and a device or a block,
+ * not both. */
+static void tally_mirred_options(struct action_attrs *t,
+				 const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_mirred parm;
+	bool parms = false;
+	__u32 block = 0;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_MIRRED_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, p + NLA_HDRLEN, sizeof(parm));
+			break;
+		case TCA_MIRRED_BLOCKID:
+			if (plen == sizeof(block))
+				memcpy(&block, p + NLA_HDRLEN, sizeof(block));
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || parm.eaction < TCA_EGRESS_REDIR ||
+	    parm.eaction > TCA_INGRESS_MIRROR || !ctrlact_takes(parm.action) ||
+	    (parm.ifindex != 0) == (block != 0))
+		return;
+	t->mirred_parms++;
+	t->mirred_lo += parm.ifindex == LOOPBACK_IFINDEX;
+	t->mirred_block += block >= 1 && block <= 63;
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
- * a gact's or an ife's options. */
+ * a gact's, an ife's or a mirred's options. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			     size_t len)
 {
 	const unsigned char *options = NULL;
 	size_t options_len = 0;
 	const struct nlattr *nla;
-	bool gact = false, ife = false;
+	bool gact = false, ife = false, mirred = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2669,6 +2714,9 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			       !memcmp(p + NLA_HDRLEN, "gact", sizeof("gact"));
 			ife = plen == sizeof("ife") &&
 			      !memcmp(p + NLA_HDRLEN, "ife", sizeof("ife"));
+			mirred = plen == sizeof("mirred") &&
+				 !memcmp(p + NLA_HDRLEN, "mirred",
+					 sizeof("mirred"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -2688,6 +2736,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->ifes++;
 		if (options != NULL)
 			tally_ife_options(t, options, options_len);
+	} else if (mirred) {
+		t->mirreds++;
+		if (options != NULL)
+			tally_mirred_options(t, options, options_len);
 	}
 }
 
@@ -2772,6 +2824,12 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: an ife action does not carry a metadata list half the time");
 	expect_fraction(t->ife_zero, t->ife_lists, 0.30, 0.80, "ife metadata lists",
 			"rtnl: an ife metadata list seldom configures a value of 0");
+	expect_fraction(t->mirred_parms, t->mirreds, 0.90, 1.0, "mirred actions",
+			"rtnl: a mirred action carries no options tcf_mirred_init() takes");
+	expect_fraction(t->mirred_lo, t->mirred_parms, 0.84, 0.91, "mirred actions",
+			"rtnl: a mirred action does not send to lo seven times in eight");
+	expect_fraction(t->mirred_block, t->mirred_parms, 0.09, 0.16, "mirred actions",
+			"rtnl: a mirred action does not send to a block one time in eight");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
