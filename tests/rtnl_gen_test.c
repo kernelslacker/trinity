@@ -41,6 +41,7 @@
 #include <linux/tc_act/tc_connmark.h>
 #include <linux/tc_act/tc_skbmod.h>
 #include <linux/tc_act/tc_mpls.h>
+#include <linux/tc_act/tc_ctinfo.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 
@@ -2547,6 +2548,9 @@ struct action_attrs {
 	unsigned int mpls_actions;	/* actions of kind "mpls" */
 	unsigned int mpls_parms;	/* ... with options tcf_mpls_init() takes */
 	unsigned int mpls_pushes;	/* ... of those, pushes */
+	unsigned int ctinfos;		/* actions of kind "ctinfo" */
+	unsigned int ctinfo_parms;	/* ... with options tcf_ctinfo_init() takes */
+	unsigned int ctinfo_dscp;	/* ... of those, restoring DSCP */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3353,6 +3357,68 @@ static void tally_mpls_options(struct action_attrs *t, const unsigned char *p,
 }
 
 /*
+ * The TCA_ACT_OPTIONS of one ctinfo action, as tcf_ctinfo_init()'s strict
+ * parse and ctinfo_policy take them: TCA_CTINFO_ACT, exact widths, no
+ * other type, and a DSCP mask of six contiguous bits that its statemask
+ * does not overlap.
+ */
+static void tally_ctinfo_options(struct action_attrs *t,
+				 const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_ctinfo parm;
+	bool parms = false, ok = true, dscp = false;
+	__u32 mask = 0, statemask = 0, val;
+
+	t->ctinfos++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		val = 0;
+		if (plen == sizeof(val))
+			memcpy(&val, data, sizeof(val));
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_CTINFO_ACT:
+			parms = plen == sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_CTINFO_ZONE:
+			ok &= plen == sizeof(__u16);
+			break;
+		case TCA_CTINFO_PARMS_DSCP_MASK:
+			ok &= plen == sizeof(val);
+			dscp = true;
+			mask = val;
+			break;
+		case TCA_CTINFO_PARMS_DSCP_STATEMASK:
+			ok &= plen == sizeof(val);
+			statemask = val;
+			break;
+		case TCA_CTINFO_PARMS_CPMARK_MASK:
+			ok &= plen == sizeof(val);
+			break;
+		default:
+			ok = false;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ok || !ctrlact_takes(parm.action))
+		return;
+	if (dscp && (mask == 0 || mask >> __builtin_ctz(mask) != 0x3f ||
+		     (mask & statemask)))
+		return;
+	t->ctinfo_parms++;
+	t->ctinfo_dscp += dscp;
+}
+
+/*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
  * action has any.
@@ -3374,6 +3440,7 @@ static const struct {
 	{ "connmark",	tally_connmark_options },
 	{ "skbmod",	tally_skbmod_options },
 	{ "mpls",	tally_mpls_options },
+	{ "ctinfo",	tally_ctinfo_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3541,6 +3608,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: an mpls action carries no options tcf_mpls_init() takes");
 	expect_fraction(t->mpls_pushes, t->mpls_parms, 0.30, 0.50, "mpls actions",
 			"rtnl: an mpls action does not push two times in five");
+	expect_fraction(t->ctinfo_parms, t->ctinfos, 0.90, 1.0, "ctinfo actions",
+			"rtnl: a ctinfo action carries no options tcf_ctinfo_init() takes");
+	expect_fraction(t->ctinfo_dscp, t->ctinfo_parms, 0.40, 0.60, "ctinfo actions",
+			"rtnl: a ctinfo action does not restore DSCP half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

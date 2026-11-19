@@ -22,6 +22,7 @@
 #include <linux/tc_act/tc_connmark.h>
 #include <linux/tc_act/tc_skbmod.h>
 #include <linux/tc_act/tc_mpls.h>
+#include <linux/tc_act/tc_ctinfo.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
@@ -1075,6 +1076,59 @@ static size_t build_mpls_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * ctinfo's TCA_ACT_OPTIONS, which tcf_ctinfo_init() parses strictly.  It
+ * refuses the action without TCA_CTINFO_ACT, with a DSCP mask other than
+ * six contiguous bits, and with a DSCP statemask that overlaps it.  Half
+ * the actions restore DSCP from the conntrack mark, the six bits at any
+ * shift, half of those under a statemask bit outside them; half copy the
+ * mark to the packet's through a mask, all ones half the time; and half
+ * look up a zone 1 to 8 rather than the default.  Index 1 to 8 names an
+ * action an earlier call made, as gact's does.
+ */
+static size_t build_ctinfo_options(unsigned char *p, size_t avail)
+{
+	struct tc_ctinfo parm;
+	unsigned int shift, bit;
+	size_t off = 0;
+	__u32 mask;
+	__u16 zone;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	if (!put_nlattr(p, &off, avail, TCA_CTINFO_ACT, &parm, sizeof(parm)))
+		return 0;
+
+	if (RAND_BOOL()) {
+		zone = RAND_RANGE(1, 8);
+		put_nlattr(p, &off, avail, TCA_CTINFO_ZONE, &zone,
+			   sizeof(zone));
+	}
+	if (RAND_BOOL()) {
+		shift = rnd_modulo_u32(32 - 6 + 1);
+		mask = 0x3fU << shift;
+		put_nlattr(p, &off, avail, TCA_CTINFO_PARMS_DSCP_MASK, &mask,
+			   sizeof(mask));
+		if (RAND_BOOL()) {
+			bit = rnd_modulo_u32(32 - 6);
+			if (bit >= shift)
+				bit += 6;
+			mask = 1U << bit;
+			put_nlattr(p, &off, avail,
+				   TCA_CTINFO_PARMS_DSCP_STATEMASK, &mask,
+				   sizeof(mask));
+		}
+	}
+	if (RAND_BOOL()) {
+		mask = RAND_BOOL() ? ~0U : rnd_u32();
+		put_nlattr(p, &off, avail, TCA_CTINFO_PARMS_CPMARK_MASK, &mask,
+			   sizeof(mask));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1104,6 +1158,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "connmark",	build_connmark_options },
 		{ "skbmod",	build_skbmod_options },
 		{ "mpls",	build_mpls_options },
+		{ "ctinfo",	build_ctinfo_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
