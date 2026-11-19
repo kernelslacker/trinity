@@ -1506,6 +1506,11 @@ FAKE_SRCS	+= frontier_cold_weight_test.c
 PARENT_SRCS	+= $(TOP)/strategy/strategy-frontier-cool.c
 FAKE_SRCS	+= frontier_cool_test.c
 
+# strategy/strategy-plateau.c brings plateau_snapshot_capture(), whose
+# per-group split plateau_snapshot_test.c holds to both biarch tables.
+PARENT_SRCS	+= $(TOP)/strategy/strategy-plateau.c
+FAKE_SRCS	+= plateau_snapshot_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

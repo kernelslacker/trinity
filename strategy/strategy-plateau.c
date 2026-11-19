@@ -16,7 +16,7 @@
 #include "stats_ring.h"		/* parent_stats */
 #include "strategy.h"
 #include "syscall.h"		/* MAX_NR_SYSCALL */
-#include "tables.h"		/* syscalls, max_nr_syscalls */
+#include "tables.h"		/* get_syscall_entry, syscall_scan_bounds */
 
 void strategy_plateau_response(void)
 {
@@ -45,7 +45,7 @@ void strategy_plateau_response(void)
 
 void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 {
-	unsigned int op, nr, nr_max;
+	unsigned int op, nr, abi, nr_max[2];
 
 	if (snap == NULL)
 		return;
@@ -73,25 +73,25 @@ void plateau_snapshot_capture(struct plateau_window_snapshot *snap)
 		 * the headline "how many CALLS in this group produced any
 		 * new coverage" series.  The single-group-dominant rule
 		 * compares per-group deltas against the total delta; both
-		 * sides share the same units so the ratio is well-defined. */
-		nr_max = max_nr_syscalls;
-		if (nr_max > MAX_NR_SYSCALL)
-			nr_max = MAX_NR_SYSCALL;
-		for (nr = 0; nr < nr_max; nr++) {
-			struct syscallentry *entry;
-			unsigned int grp;
-			unsigned long e;
+		 * sides share the same units so the ratio is well-defined.
+		 * Both tables of a biarch build are walked, each slot's
+		 * count going to the group of the syscall its ABI names
+		 * there. */
+		syscall_scan_bounds(nr_max);
+		for (abi = 0; abi < 2; abi++) {
+			for (nr = 0; nr < nr_max[abi]; nr++) {
+				struct syscallentry *entry;
+				unsigned int grp;
 
-			if (syscalls == NULL)
-				break;
-			entry = syscalls[nr].entry;
-			if (entry == NULL)
-				continue;
-			grp = entry->group;
-			if (grp >= NR_GROUPS)
-				continue;
-			e = per_syscall_edges_total(nr);
-			snap->group_edges[grp] += e;
+				entry = get_syscall_entry(nr, abi);
+				if (entry == NULL)
+					continue;
+				grp = entry->group;
+				if (grp >= NR_GROUPS)
+					continue;
+				snap->group_edges[grp] +=
+					per_syscall_edges_abi(nr, abi);
+			}
 		}
 	}
 
