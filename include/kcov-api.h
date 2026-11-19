@@ -362,15 +362,19 @@ unsigned long kcov_collect_cmp(struct kcov_child *kc, unsigned int nr,
  * declarations for the contract.
  */
 
-/* Returns true if syscall nr hasn't found new edges recently.
- * Used by syscall selection to deprioritize saturated syscalls. */
-bool kcov_syscall_is_cold(unsigned int nr);
+/* Returns true if syscall nr of the ABI do32 names hasn't found new
+ * edges recently.  Used by syscall selection to deprioritize saturated
+ * syscalls. */
+bool kcov_syscall_is_cold(unsigned int nr, bool do32);
 
-/* Returns the recommended skip percentage (0-90) for syscall nr based on
- * how stale its coverage is.  0 means "not cold, don't skip"; otherwise
- * the value grows with the staleness gap so persistently cold syscalls
- * are deprioritized harder than ones that just crossed the threshold. */
-unsigned int kcov_syscall_cold_skip_pct(unsigned int nr);
+/* Returns the recommended skip percentage (0-95) for syscall nr of the
+ * ABI do32 names, based on how stale its coverage is.  0 means "not
+ * cold, don't skip"; otherwise the value grows with the staleness gap
+ * so persistently cold syscalls are deprioritized harder than ones that
+ * just crossed the threshold.  A biarch build's two tables give one
+ * number to different syscalls, so the verdict reads only that ABI's
+ * counters. */
+unsigned int kcov_syscall_cold_skip_pct(unsigned int nr, bool do32);
 
 /* Sliding-window edge-rate plateau check.  Self-gates on
  * KCOV_PLATEAU_WINDOW_SEC, so the caller can invoke it once per

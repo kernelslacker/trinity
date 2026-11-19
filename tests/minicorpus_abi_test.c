@@ -15,6 +15,7 @@
 
 #include "arch.h"		/* biarch, ARCH_IS_BIARCH */
 #include "debug.h"		/* BUG */
+#include "kcov.h"		/* kcov_shm, KCOV_SAT_CAP_CALLS */
 #include "minicorpus.h"
 #include "persist-envelope.h"
 #include "persist/minicorpus-internal.h"
@@ -137,16 +138,6 @@ void minicorpus_mutate_args(unsigned long args[6], struct syscallentry *entry)
 {
 	(void) args;
 	(void) entry;
-}
-
-/* kcov/cold-skip.c is not linked.  Never cold unless a test says so, so
- * the corpus-absent side alone decides what the probe counts. */
-static unsigned int fake_cold_skip_pct;
-
-unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
-{
-	(void) nr;
-	return fake_cold_skip_pct;
 }
 
 static void put_entry(unsigned int nr, bool do32, unsigned long a1,
@@ -546,7 +537,17 @@ static void probe_skips_calls_the_save_lane_refuses(void)
 			 (int) PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT,
 			 __ATOMIC_RELAXED);
 	memset(minicorpus_shm, 0, sizeof(*minicorpus_shm));
-	fake_cold_skip_pct = 1;
+
+	/* Called past the saturation cap's floor without an edge, each
+	 * probed syscall is cold to the classifier. */
+	kcov_shm = calloc(1, sizeof(*kcov_shm));
+	if (kcov_shm == NULL)
+		BUG("minicorpus absent: calloc failed");
+	for (i = 0; i < ARRAY_SIZE(refused); i++)
+		kcov_shm->per_syscall.per_syscall_calls[refused[i].nr][0][0] =
+			KCOV_SAT_CAP_CALLS;
+	kcov_shm->per_syscall.per_syscall_calls[NR_SHARED][0][0] =
+		KCOV_SAT_CAP_CALLS;
 
 	before = shm->stats.cold_overflow;
 	memset(&rec, 0, sizeof(rec));
@@ -565,7 +566,8 @@ static void probe_skips_calls_the_save_lane_refuses(void)
 	    shm->stats.cold_overflow.would_save_absent != before.would_save_absent + 1)
 		BUG("minicorpus absent: the probe missed a call the save lane admits");
 
-	fake_cold_skip_pct = 0;
+	free(kcov_shm);
+	kcov_shm = NULL;
 	__atomic_store_n(&shm->plateau_current_hypothesis,
 			 (int) PLATEAU_HYPOTHESIS_NONE, __ATOMIC_RELAXED);
 }

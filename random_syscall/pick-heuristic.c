@@ -387,7 +387,8 @@ retry:
 	 * after the plateau lifts (the orchestrator clears the field on
 	 * its next non-intervention rotation). */
 	if (!plateau_rescue_bias_active_for(RRC_COLD_SKIP)) {
-		unsigned int skip_pct = kcov_syscall_cold_skip_pct(syscallnr);
+		unsigned int skip_pct = kcov_syscall_cold_skip_pct(syscallnr,
+								   do32);
 
 		if (skip_pct > 0 && rnd_modulo_u32(100) < skip_pct) {
 			kcov_attempts++;

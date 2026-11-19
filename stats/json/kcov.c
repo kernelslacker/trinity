@@ -268,14 +268,17 @@ static void json_emit_kcov_cold_syscalls(const struct syscalltable *table,
 	unsigned int i;
 	bool first_cold = true;
 
+	/* The rows name native syscalls, so they are judged by the native
+	 * ABI's counters: the compat table gives the same numbers to other
+	 * syscalls. */
 	fputs(",\"cold_syscalls\":[", stdout);
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long slot_edges = per_syscall_edges_total(i);
+		unsigned long slot_edges = per_syscall_edges_abi(i, false);
 		struct syscallentry *entry;
 
 		if (slot_edges == 0)
 			continue;
-		if (!kcov_syscall_is_cold(i))
+		if (!kcov_syscall_is_cold(i, false))
 			continue;
 
 		entry = table[i].entry;

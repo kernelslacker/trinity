@@ -263,7 +263,7 @@ void account_cold_overflow_would_save(struct syscallentry *entry,
 	    (int)PLATEAU_HYPOTHESIS_CMP_RISING_PC_FLAT)
 		return;
 
-	cold = kcov_syscall_cold_skip_pct(rec->nr) > 0;
+	cold = kcov_syscall_cold_skip_pct(rec->nr, rec->do32bit) > 0;
 
 	if (minicorpus_shm != NULL)
 		absent = !minicorpus_ring_has_abi(rec->nr, rec->do32bit);

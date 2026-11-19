@@ -38,7 +38,7 @@
  *     new_edges so the new_edges-only sub-population never bumps
  *     either subset, by construction)
  *   cold OR corpus-absent
- *     cold     := kcov_syscall_cold_skip_pct(nr) > 0
+ *     cold     := kcov_syscall_cold_skip_pct(nr, do32) > 0
  *                 (the existing cold-skip classifier; > 0 iff
  *                 the syscall has not earned a new edge within
  *                 KCOV_COLD_THRESHOLD calls)

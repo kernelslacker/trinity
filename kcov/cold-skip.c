@@ -5,15 +5,16 @@
  * dispatcher skips a syscall nr on this attempt because it has stopped
  * contributing new coverage: a hard saturation cap (KCOV_SAT_CAP_SKIP_PCT)
  * for confirmed dead weight, otherwise a 50..90% ramp graded by the gap
- * since its last new edge.
+ * since its last new edge.  The counters are the picked ABI's: a biarch
+ * build's two tables give one number to different syscalls.
  */
 
 #include <stdbool.h>
 
-#include "kcov-internal.h"	/* kcov_shm, per_syscall_*_total, constants */
+#include "kcov-internal.h"	/* kcov_shm, per_syscall_*_abi, constants */
 #include "syscall.h"		/* MAX_NR_SYSCALL */
 
-unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
+unsigned int kcov_syscall_cold_skip_pct(unsigned int nr, bool do32)
 {
 	unsigned long edges, calls, edges_total, calls_total, gap;
 	unsigned int pct;
@@ -26,10 +27,10 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 	 * path otherwise has to re-accumulate from scratch every run.
 	 * The _prior arrays are frozen at warm-start (see kcov.h) so a
 	 * plain read is sufficient -- no atomic needed. */
-	edges = per_syscall_edges_total(nr);
-	calls = per_syscall_calls_total(nr);
-	edges_total = edges + per_syscall_edges_prior_total(nr);
-	calls_total = calls + per_syscall_calls_prior_total(nr);
+	edges = per_syscall_edges_abi(nr, do32);
+	calls = per_syscall_calls_abi(nr, do32);
+	edges_total = edges + kcov_shm->per_syscall.per_syscall_edges_prior[nr][do32];
+	calls_total = calls + kcov_shm->per_syscall.per_syscall_calls_prior[nr][do32];
 
 	/* Saturation cap: confirmed dead-weight slot, short-circuit the
 	 * graduated path below.  See KCOV_SAT_CAP_CALLS / RATIO comment
@@ -75,7 +76,7 @@ unsigned int kcov_syscall_cold_skip_pct(unsigned int nr)
 	return pct;
 }
 
-bool kcov_syscall_is_cold(unsigned int nr)
+bool kcov_syscall_is_cold(unsigned int nr, bool do32)
 {
-	return kcov_syscall_cold_skip_pct(nr) > 0;
+	return kcov_syscall_cold_skip_pct(nr, do32) > 0;
 }

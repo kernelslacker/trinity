@@ -491,8 +491,8 @@ static void __cold dump_kcov_state(FILE *fp)
 {
 	unsigned long edges, pcs, calls, remote, truncated;
 	unsigned long cmp_records, cmp_truncated;
-	unsigned int i, cold = 0;
-	unsigned int nr_to_scan;
+	unsigned int i, abi, cold = 0;
+	unsigned int nr_per_abi[2];
 
 	if (kcov_shm == NULL) {
 		fprintf(fp, "KCOV: not available\n");
@@ -539,11 +539,11 @@ static void __cold dump_kcov_state(FILE *fp)
 			cmp_truncated,
 			calls > 0 ? (100.0 * cmp_truncated) / calls : 0.0);
 
-	nr_to_scan = biarch ? max_nr_64bit_syscalls : max_nr_syscalls;
-	for (i = 0; i < nr_to_scan; i++) {
-		if (kcov_syscall_is_cold(i))
-			cold++;
-	}
+	syscall_scan_bounds(nr_per_abi);
+	for (abi = 0; abi < 2; abi++)
+		for (i = 0; i < nr_per_abi[abi]; i++)
+			if (kcov_syscall_is_cold(i, abi))
+				cold++;
 	fprintf(fp, "KCOV: %u cold syscalls\n", cold);
 }
 

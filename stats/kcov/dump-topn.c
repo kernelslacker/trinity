@@ -6,6 +6,7 @@
 #include "stats-internal.h"
 #include "strategy.h"		/* frontier_spare_lane_decide, enum frontier_spare_reason */
 #include "syscall.h"
+#include "tables.h"		/* print_syscall_name, syscall_scan_bounds */
 #include "trinity.h"
 #include "utils.h"
 #include "utils-proc.h"
@@ -435,7 +436,8 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 	unsigned long top_edges[10];
 	unsigned int top_count = 0;
 	unsigned int cold_count = 0;
-	unsigned int i, j;
+	unsigned int nr_per_arch[2];
+	unsigned int i, j, arch;
 
 	memset(top_edges, 0, sizeof(top_edges));
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
@@ -443,9 +445,6 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 
 		if (edges == 0)
 			continue;
-
-		if (kcov_syscall_is_cold(i))
-			cold_count++;
 
 		topn_push(top_edges, top_nr, &top_count, 10, edges, i);
 	}
@@ -494,42 +493,32 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 	 * coverage -- the CMP-rising-PC-flat plateau pattern. */
 	dump_stats_render_kcov_per_syscall_cold_topn(nr_syscalls_to_scan, table);
 
-	if (cold_count > 0) {
-		unsigned int arch;
+	/* A biarch build's two tables give one number to different
+	 * syscalls, so each row is judged by its own ABI's counters, as
+	 * the picker's cold-skip judges it, and named from its own table.
+	 * A slot that never produced an edge is left out. */
+	syscall_scan_bounds(nr_per_arch);
+	for (arch = 0; arch < 2; arch++)
+		for (i = 0; i < nr_per_arch[arch]; i++)
+			if (per_syscall_edges_abi(i, arch) != 0 &&
+			    kcov_syscall_is_cold(i, arch))
+				cold_count++;
 
+	if (cold_count > 0) {
 		output(0, "Cold syscalls (need better sanitise): %u\n", cold_count);
-		/* Split by the per_syscall_edges[nr][arch] arch dim so an
-		 * IA32-compat-only edge contribution is not silently folded
-		 * into the 64-bit row.  Mirrors the biarch-aware iteration
-		 * shape kcov_diag_emit_block uses (see stats/kcov_diag.c):
-		 * iterate arch 0/1, label do32?"32":"64", skip zero rows.
-		 * cold_count / kcov_syscall_is_cold stay per-nr -- the cold
-		 * classification does not split by arch. */
 		for (arch = 0; arch < 2; arch++) {
 			bool do32 = (arch == 1);
 
-			for (i = 0; i < nr_syscalls_to_scan; i++) {
-				struct syscallentry *entry;
-				unsigned long slot_edges;
+			for (i = 0; i < nr_per_arch[arch]; i++) {
+				unsigned long slot_edges =
+					per_syscall_edges_abi(i, do32);
 
-				if (!kcov_syscall_is_cold(i))
+				if (slot_edges == 0 ||
+				    !kcov_syscall_is_cold(i, do32))
 					continue;
 
-				{
-					unsigned int ctx;
-
-					slot_edges = 0;
-					for (ctx = 0; ctx < PICKER_NCTX; ctx++)
-						slot_edges += __atomic_load_n(
-							&kcov_shm->per_syscall.per_syscall_edges[i][ctx][arch],
-							__ATOMIC_RELAXED);
-				}
-				if (slot_edges == 0)
-					continue;
-
-				entry = table[i].entry;
 				output(0, "  %-24s [arch=%s] (edges:%lu, last new @ call %lu)\n",
-					entry ? entry->name : "???",
+					print_syscall_name(i, do32),
 					do32 ? "32" : "64",
 					slot_edges,
 					kcov_shm->per_syscall.last_edge_at[i]);

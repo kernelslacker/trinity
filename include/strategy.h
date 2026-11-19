@@ -724,8 +724,9 @@ void frontier_window_advance(void);
  * caller bumps shm->random_rescue_class_count[class] so dump and
  * orchestrator amplification can read the cumulative distribution.
  *
- * cold_skip_pct_before is the value of kcov_syscall_cold_skip_pct(rec->nr)
- * sampled by the caller BEFORE kcov_collect ran -- a new-edge call warms
+ * cold_skip_pct_before is the value of
+ * kcov_syscall_cold_skip_pct(rec->nr, rec->do32bit) sampled by the
+ * caller BEFORE kcov_collect ran -- a new-edge call warms
  * last_edge_at[nr] inside kcov_collect, so by the time the classifier
  * runs the live reading is zero and RRC_COLD_SKIP would never trip for
  * exactly the cold-syscall rescues this classifier exists to surface.

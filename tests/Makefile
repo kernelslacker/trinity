@@ -529,8 +529,7 @@ CMP_SRCS	:= \
 # stale-tmp helpers the file path uses, and the cold-overflow probe
 # that asks the ring which ABIs it holds, and the persist envelope every
 # warm-start file opens with.  Same section-per-function treatment;
-# minicorpus_abi_test.c fakes the blob corpus, the mutator chain and the
-# cold-skip classifier.
+# minicorpus_abi_test.c fakes the blob corpus and the mutator chain.
 MINICORPUS_SRCS	:= \
 	$(TOP)/persist/minicorpus-core.c \
 	$(TOP)/persist/minicorpus-file.c \
@@ -1484,6 +1483,11 @@ FAKE_SRCS	+= mcast_catalog_test.c
 # membarrier_test.c holds to the cmd MEMBARRIER_CMD_FLAG_CPU needs.
 PARENT_SRCS	+= $(TOP)/syscalls/concurrency/membarrier.c
 FAKE_SRCS	+= membarrier_test.c
+
+# kcov/cold-skip.c brings the picker's cold-skip verdict, which
+# cold_skip_test.c holds to the ABI of the syscall it judges.
+PARENT_SRCS	+= $(TOP)/kcov/cold-skip.c
+FAKE_SRCS	+= cold_skip_test.c
 
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout

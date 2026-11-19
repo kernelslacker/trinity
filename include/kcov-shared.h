@@ -14,6 +14,7 @@
  * into the rest of the pipeline, A/B methodology, etc.) lives in
  * Documentation/kcov-shared-layout.md, anchored by member name. */
 
+#include <stdbool.h>
 #include <stddef.h>	/* offsetof */
 
 #include "kcov-types.h"
@@ -235,12 +236,41 @@ struct kcov_shared {
 
 extern struct kcov_shared *kcov_shm;
 
-/* Combined per-nr accessors for the [nr][do32?1:0]-split productivity
- * arrays.  Readers that want the combined scalar sum both arch dims
- * with RELAXED atomics -- a torn pair across the two loads is a
- * one-bump skew, well inside the slack the picker accept/retry loop
- * already tolerates.  Callers gate on kcov_shm != NULL and nr <
- * MAX_NR_SYSCALL themselves; these helpers do not re-check. */
+/* Per-ABI accessors for the [nr][ctx][do32]-split productivity
+ * arrays.  A biarch build's two tables give one number to different
+ * syscalls (3 is close natively and read in the compat table), so a
+ * reader judging one syscall reads only its ABI's slot, summing the
+ * picker-context slices with RELAXED atomics -- a torn pair across the
+ * loads is a one-bump skew, well inside the slack the picker
+ * accept/retry loop already tolerates.  Callers gate on kcov_shm !=
+ * NULL and nr < MAX_NR_SYSCALL themselves; these helpers do not
+ * re-check. */
+static inline unsigned long per_syscall_edges_abi(unsigned int nr, bool do32)
+{
+	unsigned long total = 0;
+	unsigned int ctx;
+
+	for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+		total += __atomic_load_n(
+				&kcov_shm->per_syscall.per_syscall_edges[nr][ctx][do32],
+				__ATOMIC_RELAXED);
+	return total;
+}
+static inline unsigned long per_syscall_calls_abi(unsigned int nr, bool do32)
+{
+	unsigned long total = 0;
+	unsigned int ctx;
+
+	for (ctx = 0; ctx < PICKER_NCTX; ctx++)
+		total += __atomic_load_n(
+				&kcov_shm->per_syscall.per_syscall_calls[nr][ctx][do32],
+				__ATOMIC_RELAXED);
+	return total;
+}
+
+/* Combined per-nr accessors, the two ABIs' slots summed, for the
+ * readers not yet keyed by ABI.  Same RELAXED and bounds contract as
+ * the per-ABI accessors above. */
 static inline unsigned long per_syscall_edges_total(unsigned int nr)
 {
 	unsigned long total = 0;
