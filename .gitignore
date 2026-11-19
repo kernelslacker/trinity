@@ -16,6 +16,7 @@ ncscope.*
 *.pyc
 __pycache__/
 rotation-events-*.jsonl
+# Undo core.* above, meant for core dumps, for this source file.
 !stats/json/core.c
 stats-timeseries-*.jsonl
 .*.swp
