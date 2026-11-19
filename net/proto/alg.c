@@ -1,8 +1,10 @@
 #include <sys/socket.h>
 #include <sys/un.h>
+#include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
 #include <errno.h>
+#include <linux/rtnetlink.h>
 #include "arch.h"
 #include "random.h"
 #include "net.h"
@@ -59,6 +61,7 @@ static const char *aead_algos[] = {
 	"authencesn(hmac(sha512),cbc(aes))",
 	"krb5enc(hmac(sha1),cts(cbc(aes)))",
 	"krb5enc(cmac(camellia),cts(cbc(camellia)))",
+	"essiv(authenc(hmac(sha256),cbc(aes)),sha256)",
 };
 
 static const char *rng_algos[] = {
@@ -308,6 +311,39 @@ static const unsigned int alg_boundary_authsizes[] = {
 	128, 256, 0xffff, 0x10000, 0x7fffffff, 0xffffffff,
 };
 
+/*
+ * An authenc-family key (authenc, authencesn, essiv over authenc,
+ * krb5enc): crypto_authenc_extractkeys() and its krb5enc twin take an
+ * rtattr of type CRYPTO_AUTHENC_KEYA_PARAM whose payload is just the
+ * big-endian cipher key length, then the authentication key and the
+ * cipher key, so random bytes never set one.  The cipher key is 16, 24
+ * or 32 bytes (AES and Camellia take each, 3DES 24) and the
+ * authentication key 16 to 64 (an hmac takes any, a cmac its cipher's).
+ * One key in eight claims more cipher key than follows, which the
+ * parse refuses.  Returns the key's length, 0 if it does not fit.
+ */
+static unsigned int build_authenc_key(unsigned char *buf, unsigned int cap)
+{
+	static const unsigned int enclens[] = { 16, 24, 32 };
+	static const unsigned int authlens[] = { 16, 20, 24, 32, 64 };
+	struct rtattr rta = {
+		.rta_len = RTA_LENGTH(sizeof(uint32_t)),
+		.rta_type = CRYPTO_AUTHENC_KEYA_PARAM,
+	};
+	unsigned int enclen = RAND_ARRAY(enclens);
+	unsigned int authlen = RAND_ARRAY(authlens);
+	unsigned int len = rta.rta_len + authlen + enclen;
+	uint32_t claim;
+
+	if (len > cap)
+		return 0;
+	claim = htonl(ONE_IN(8) ? authlen + enclen + 1 : enclen);
+	memcpy(buf, &rta, sizeof(rta));
+	memcpy(buf + RTA_LENGTH(0), &claim, sizeof(claim));
+	generate_rand_bytes(buf + rta.rta_len, authlen + enclen);
+	return len;
+}
+
 static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet *triplet)
 {
 	unsigned int len, fill;
@@ -318,10 +354,20 @@ static void alg_setsockopt(struct sockopt *so, __unused__ struct socket_triplet 
 	switch (so->optname) {
 	case ALG_SET_KEY:
 		/*
-		 * Pick a keylen from the boundary table.  Fill is clamped to
-		 * the caller-provided page-sized buffer; optlen may deliberately
-		 * over-claim (see alg_boundary_keylens[]).
+		 * The builder cannot see what the socket is bound to, so one
+		 * key in four is the blob an authenc-family transform takes.
+		 * Otherwise pick a keylen from the boundary table.  Fill is
+		 * clamped to the caller-provided page-sized buffer; optlen
+		 * may deliberately over-claim (see alg_boundary_keylens[]).
 		 */
+		if (ONE_IN(4)) {
+			len = build_authenc_key((unsigned char *) so->optval,
+						page_size);
+			if (len != 0) {
+				so->optlen = len;
+				break;
+			}
+		}
 		len = alg_boundary_keylens[
 			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
 		fill = len < page_size ? len : page_size;
@@ -396,19 +442,28 @@ static void alg_socket_setup(int fd)
 		return;
 
 	/*
-	 * Pick a keylen.  Keep the existing valid-key path (16..47) the
-	 * majority of the time so the lifecycle coverage doesn't regress;
-	 * the remaining slice rotates through alg_boundary_keylens[] to
-	 * stress the per-alg setkey validators and the over-claim path.
+	 * An authenc-family transform, named here, takes its key as a
+	 * blob seven times in eight.  Otherwise pick a keylen: keep the
+	 * existing valid-key path (16..47) the majority of the time so the
+	 * lifecycle coverage doesn't regress; the remaining slice rotates
+	 * through alg_boundary_keylens[] to stress the per-alg setkey
+	 * validators and the over-claim path.
 	 */
-	if (rnd_modulo_u32(10) < 7) {
-		keylen = rnd_modulo_u32(32) + 16;	/* 16..47 valid */
-	} else {
-		keylen = alg_boundary_keylens[
-			rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
+	keylen = 0;
+	if ((strstr((const char *) sa.salg_name, "authenc") != NULL ||
+	     strstr((const char *) sa.salg_name, "krb5enc") != NULL) &&
+	    !ONE_IN(8))
+		keylen = build_authenc_key(key, sizeof(key));
+	if (keylen == 0) {
+		if (rnd_modulo_u32(10) < 7) {
+			keylen = rnd_modulo_u32(32) + 16;	/* 16..47 valid */
+		} else {
+			keylen = alg_boundary_keylens[
+				rnd_modulo_u32(ARRAY_SIZE(alg_boundary_keylens))];
+		}
+		fill = keylen < sizeof(key) ? keylen : sizeof(key);
+		generate_rand_bytes(key, fill);
 	}
-	fill = keylen < sizeof(key) ? keylen : sizeof(key);
-	generate_rand_bytes(key, fill);
 	(void) setsockopt(fd, SOL_ALG, ALG_SET_KEY, key, keylen);
 
 	/*
