@@ -231,8 +231,12 @@ static void select_chain_source(struct chain_run_state *s)
 			__atomic_fetch_add(&shm->stats.chain_restype.replay_len_corrupt,
 					   1UL, __ATOMIC_RELAXED);
 			s->len = pick_chain_length();
+		} else if (s->replay.save_reason >= CHAIN_SAVE_NR_REASONS) {
+			/* A save_reason past the enum is the same scribble,
+			 * and would skip the non-PC down-sample below to
+			 * replay at the PC-saved rate: start fresh. */
+			s->len = pick_chain_length();
 		} else if (s->replay.save_reason != CHAIN_SAVE_PC &&
-			   s->replay.save_reason < CHAIN_SAVE_NR_REASONS &&
 			   !ONE_IN(CHAIN_REPLAY_NONPC_DOWNSAMPLE)) {
 			/* Non-PC-saved chains replay at a lower rate than
 			 * PC-saved ones until per-reason productivity data
