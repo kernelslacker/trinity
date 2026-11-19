@@ -160,18 +160,11 @@ static void fixture_duplicate_address(void)
 }
 
 /* ------------------------------------------------------------------ */
-/* Fixture 2: Hash desync / displacement                              */
+/* Fixture 2: Hash desync / array authority                           */
 /*                                                                     */
-/* Force df_alloc_track[] and df_alloc_track_hash[] out of agreement  */
-/* via the duplicate-ptr displacement scenario described in the       */
-/* alloc_track_lookup() comment (deferred-free-alloc-track.c          */
-/* "Membership probe"):                                               */
-/*                                                                     */
-/*   1. Track ptr_A -> array slot S1, hash[H_A] = ptr_A               */
-/*   2. Track ptr_A again -> array slot S2, hash unchanged (idempotent)*/
-/*   3. Track (ALLOC_TRACK_SIZE-1) fillers -> head wraps, slot S1      */
-/*      is displaced; alloc_track_hash_remove(ptr_A) removes the       */
-/*      hash entry while S2 still holds ptr_A.                         */
+/* Put df_alloc_track[] and df_alloc_track_hash[] out of agreement as */
+/* a stray write would: ptr_A goes into a free array slot behind the  */
+/* hash's back, which leaves every probe chain in the hash intact.    */
 /*                                                                     */
 /* Assert: alloc_track_lookup(ptr_A) returns true (array fallback),   */
 /* and alloc_track_lookup_array_fallback_hit was incremented.          */
@@ -189,37 +182,18 @@ static void fixture_hash_desync_array_authority(void)
 
 	base_fallback = shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit;
 
-	/*
-	 * Step 1: track ptr_A -> array slot S1 (head == H0, so S1=H0&mask).
-	 * Step 2: track ptr_A again -> array slot S2 = (H0+1)&mask.
-	 *         hash_insert is idempotent: hash[H_A] already holds ptr_A.
-	 */
-	deferred_alloc_track(ptr_A, 8);
-	deferred_alloc_track(ptr_A, 8);
-
-	DF_ASSERT(alloc_track_lookup(ptr_A));
+	for (i = 0; i < ALLOC_TRACK_SIZE && df_alloc_track[i] != NULL; i++)
+		;
+	DF_ASSERT(i < ALLOC_TRACK_SIZE);
+	DF_ASSERT(df_alloc_track_unlock() == 0);
+	df_alloc_track[i] = ptr_A;
+	df_alloc_track_sizes[i] = 8;
+	df_alloc_track_lock();
 
 	/*
-	 * Step 3: register ALLOC_TRACK_SIZE-1 fake pointers.
-	 *
-	 * After two ptr_A registrations head is at H0+2.  The N-th filler
-	 * writes slot (H0+1+N) & mask.  We need (H0+1+N) & mask == S1 ==
-	 * H0 & mask, i.e. N+1 ≡ 0 (mod ALLOC_TRACK_SIZE), so N =
-	 * ALLOC_TRACK_SIZE-1.  The (ALLOC_TRACK_SIZE-1)-th filler
-	 * writes slot S1 and triggers alloc_track_hash_remove(ptr_A).
-	 * Array slot S2 still holds ptr_A (would need one more full
-	 * rotation to overwrite it).
-	 *
-	 * Fake ptrs are never enqueued or freed; they are pure
-	 * membership tokens that rotate out in later fixtures.
-	 */
-	for (i = 0; i < ALLOC_TRACK_SIZE - 1; i++)
-		deferred_alloc_track(next_fake_ptr(), 0);
-
-	/*
-	 * Hash now lacks ptr_A (removed by the displacement); array
-	 * still has it.  alloc_track_lookup() must fall back to the
-	 * linear array scan, return true, and bump the fallback counter.
+	 * The hash lacks ptr_A; the array has it.  alloc_track_lookup()
+	 * must fall back to the linear array scan, return true, and bump
+	 * the fallback counter.
 	 */
 	DF_ASSERT(alloc_track_lookup(ptr_A));
 	DF_ASSERT(shm->stats.deferred_free.alloc_track_lookup_array_fallback_hit
@@ -228,7 +202,7 @@ static void fixture_hash_desync_array_authority(void)
 	/*
 	 * Free ptr_A via tracked_free_now(): ring_contains returns false
 	 * (never enqueued), so df_tracked_free_checked ->
-	 * df_alloc_track_consume (finds ptr_A at slot S2) -> free(ptr_A).
+	 * df_alloc_track_consume (finds ptr_A in the array) -> free(ptr_A).
 	 */
 	tracked_free_now(ptr_A);
 
@@ -1082,6 +1056,26 @@ static void fixture_generation_count_bounded(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 15: A re-tracked address keeps one alloc_track slot        */
+/*                                                                     */
+/* An address tracked a second time (its chunk freed outside the       */
+/* deferred path, then handed back by malloc) leaves only the newest   */
+/* slot: the older one is stale, and left standing it would prove      */
+/* ownership of the address again once the newest is consumed.         */
+/* ------------------------------------------------------------------ */
+
+static void fixture_retrack_clears_stale_slot(void)
+{
+	void *p = next_fake_ptr();
+
+	deferred_alloc_track(p, 8);
+	deferred_alloc_track(p, 8);
+	DF_ASSERT(df_alloc_track_consume(p));
+	DF_ASSERT(!df_alloc_track_consume(p));
+	DF_ASSERT(!alloc_track_lookup(p));
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1178,5 +1172,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 14 (generation_count_bounded) ... ");
 	fflush(stdout);
 	fixture_generation_count_bounded();
+	printf("OK\n");
+
+	printf("    fixture 15 (retrack_clears_stale_slot) ... ");
+	fflush(stdout);
+	fixture_retrack_clears_stale_slot();
 	printf("OK\n");
 }

@@ -64,15 +64,13 @@ static inline unsigned int alloc_track_hash_index(void *ptr)
 }
 
 /*
- * Idempotent insert: a second insert of an already-present ptr is a
- * no-op.  Matches the "ptr appears in array iff present in hash"
- * mirror semantics when a df_alloc_track[] write happens to land the
- * same pointer in the same slot it already occupied.  Bounded loop:
- * occupancy is capped at ALLOC_TRACK_SIZE (4096) << table size, so a
- * full table is impossible from the mirror path; the bound is a
+ * Insert @ptr, false when it was already present: the array then holds
+ * it in an older slot too, which deferred_alloc_track() clears.  Bounded
+ * loop: occupancy is capped at ALLOC_TRACK_SIZE (4096) << table size, so
+ * a full table is impossible from the mirror path; the bound is a
  * paranoia rail to keep a corruption-induced runaway from hanging.
  */
-static void alloc_track_hash_insert(void *ptr)
+static bool alloc_track_hash_insert(void *ptr)
 {
 	unsigned int idx = alloc_track_hash_index(ptr);
 	unsigned int probes;
@@ -80,12 +78,13 @@ static void alloc_track_hash_insert(void *ptr)
 	for (probes = 0; probes < ALLOC_TRACK_HASH_SIZE; probes++) {
 		if (df_alloc_track_hash[idx] == NULL) {
 			df_alloc_track_hash[idx] = ptr;
-			return;
+			return true;
 		}
 		if (df_alloc_track_hash[idx] == ptr)
-			return;
+			return false;
 		idx = (idx + 1) & ALLOC_TRACK_HASH_MASK;
 	}
+	return true;
 }
 
 /*
@@ -143,15 +142,13 @@ static void alloc_track_hash_remove(void *ptr)
 /*
  * Membership probe against the alloc_track side-set.  The hash mirrors
  * df_alloc_track[] for the O(1) hit case, but a hash miss is NOT proof of
- * absence: deferred_alloc_track()'s duplicate-ptr insert is idempotent
- * on the hash (same value already present -> no-op) yet still writes a
- * fresh df_alloc_track[] slot, so a subsequent displaced-eviction of the
- * older slot removes the hash entry while the newer df_alloc_track[] slot
- * still holds @ptr.  Falling back to a linear df_alloc_track[] scan on a
- * NULL-slot hash miss restores the "array is source of truth" invariant
- * the fail-closed callers below assume (all of them leak-on-miss
- * rather than free-on-miss, so a false negative just leaks the chunk
- * until child exit -- but that leak still shows up as bad user-visible
+ * absence: the array is the source of truth, and a mirror a stray write
+ * put out of step must not turn a tracked pointer into a reject.  Falling
+ * back to a linear df_alloc_track[] scan on a NULL-slot hash miss
+ * restores the "array is source of truth" invariant the fail-closed
+ * callers below assume (all of them leak-on-miss rather than
+ * free-on-miss, so a false negative just leaks the chunk until child
+ * exit -- but that leak still shows up as bad user-visible
  * behaviour: rejected enqueues at :1446, bpf_free_filter inner-buffer
  * skips at net/bpf/bpf.c:516, cleanup_release_post_state drops at :939).
  * The hash-repair path is intentionally NOT walked here -- the lookup
@@ -216,6 +213,20 @@ size_t alloc_track_lookup_size(void *ptr)
 	return 0;
 }
 
+/* Clear every df_alloc_track[] slot but @keep that holds @ptr, inside the
+ * caller's bracket. */
+static void alloc_track_clear_older(void *ptr, unsigned int keep)
+{
+	unsigned int i;
+
+	for (i = 0; i < ALLOC_TRACK_SIZE; i++) {
+		if (i != keep && df_alloc_track[i] == ptr) {
+			df_alloc_track[i] = NULL;
+			df_alloc_track_sizes[i] = 0;
+		}
+	}
+}
+
 void deferred_alloc_track(void *ptr, size_t size)
 {
 	unsigned int slot;
@@ -234,12 +245,19 @@ void deferred_alloc_track(void *ptr, size_t size)
 	df_alloc_track_sizes[slot] = size;
 	alloc_track_head++;
 
-	alloc_track_hash_insert(ptr);
 	/*
-	 * displaced == ptr means the slot already held this same pointer
-	 * (duplicate-ptr edge case described above the hash table): the
-	 * array's net state is unchanged, so the paired hash_remove would
-	 * incorrectly drop the entry we just confirmed.  Skip it.
+	 * An address already tracked is being tracked again: its chunk was
+	 * freed outside the deferred path and malloc handed it back.  One
+	 * address cannot be two live chunks, so the older slot is stale.
+	 * Clear it, or it would prove ownership again once this slot is
+	 * consumed, and take the hash entry with it when it rotated out.
+	 */
+	if (!alloc_track_hash_insert(ptr))
+		alloc_track_clear_older(ptr, slot);
+	/*
+	 * displaced == ptr means the slot already held this same pointer:
+	 * the array's net state is unchanged, so the paired hash_remove
+	 * would incorrectly drop the entry we just confirmed.  Skip it.
 	 */
 	if (displaced != NULL && displaced != ptr)
 		alloc_track_hash_remove(displaced);
@@ -254,17 +272,12 @@ void deferred_alloc_track(void *ptr, size_t size)
  *
  * Backward scan from head against df_alloc_track[] (source of truth) --
  * NO hash-lookup fast-reject.  A miss on the hash is not proof of
- * absence: an aggressive glibc address reuse can land the same pointer
- * in two different df_alloc_track[] slots (deferred_alloc_track does not
- * scrub the older slot when its insert idempotently no-ops on the
- * duplicate), and a later displaced-eviction of the older slot then
- * removes the hash entry while the newer slot still holds the pointer.
- * Treating a hash miss as "untracked" in that state would leak the
- * newer slot instead of freeing it, so the array is the definitive
- * check.  In practice the scan stays cheap because post handlers free
- * a few syscalls after the matching __zmalloc -- the hit lives near
- * head (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3 pointers
- * per arg).
+ * absence, as alloc_track_lookup() says, and treating one as "untracked"
+ * would leak a tracked chunk instead of freeing it, so the array is the
+ * definitive check.  In practice the scan stays cheap because post
+ * handlers free a few syscalls after the matching __zmalloc -- the hit
+ * lives near head (PATHNAME / IOVEC / SOCKADDR generators enqueue 1-3
+ * pointers per arg).
  */
 bool df_alloc_track_consume(void *ptr)
 {
@@ -294,8 +307,8 @@ bool df_alloc_track_consume(void *ptr)
  * Free-time ownership gate: only a true return from df_alloc_track_consume()
  * is proof that __zmalloc() currently owns @ptr; a miss swallows the free
  * and bumps a per-site counter for telemetry.  Do NOT gate on
- * alloc_track_lookup() -- it is a value-keyed prefilter that desyncs from
- * the array (rotation / duplicate-ptr edge case).  See
+ * alloc_track_lookup() -- it is a value-keyed prefilter that can desync
+ * from the array.  See
  * Documentation/deferred-free.md "Ownership gate: df_alloc_track_consume vs
  * alloc_track_lookup" for the historical bad-free class this replaced.
  * Returns true iff @ptr was freed.

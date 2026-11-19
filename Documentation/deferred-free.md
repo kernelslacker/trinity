@@ -10,8 +10,9 @@ titled for the function or structure it explains.
 Side-set membership accelerator for `df_alloc_track[]`.
 
 `alloc_track_lookup()` resolves a hit through this 16384-slot hash (0.25 load
-factor at full occupancy) in O(1).  A hash miss is not proof of absence (see
-the duplicate-ptr edge case below), so a miss falls back to a linear scan of
+factor at full occupancy) in O(1).  A hash miss is not proof of absence (the
+array is the source of truth, and a stray write can put the mirror out of
+step), so a miss falls back to a linear scan of
 `df_alloc_track[]`; a fallback hit bumps
 `alloc_track_lookup_array_fallback_hit`.  The hash is deliberately not repaired
 on that path: the lookup runs against the `PROT_READ` steady state and a repair
@@ -23,7 +24,7 @@ would need an mprotect RW bracket.
 lives in, who got displaced on rotation); the hash mirrors it for membership
 only.  Every write to `df_alloc_track[]` in `deferred-free-alloc-track.c` is
 paired with the matching hash op inside the same function, so the two stay in
-lock-step apart from the duplicate-ptr case below.  A divergence here isn't
+lock-step, the duplicate-ptr case below included.  A divergence here isn't
 just a perf miss -- it would be a correctness bug in the deferred-free gate,
 the very thing the opt-in `zmalloc_tracked()` set was built around.
 
@@ -45,17 +46,15 @@ golden-ratio constant.  Top 14 bits (`ALLOC_TRACK_HASH_SHIFT`) of the product
 become the slot index, which scatters pointer streams that share a common
 prefix (e.g. addresses drawn from the same arena) across the table.
 
-Duplicate-ptr edge case: if the same address enters `df_alloc_track[]` twice
-(rare; requires a direct `free()` outside the deferred path before a
-re-malloc returns the same address), the hash records one membership entry.
-When the first array slot rotates out, the displaced ptr is
-`alloc_track_hash_remove()`d -- the second slot's copy is orphaned (hash says
-no, array says yes).  The array fallback in `alloc_track_lookup()` and the
-array scan in `df_alloc_track_consume()` still find it, so the ptr is not
-rejected; the hash just stays out of step until the second slot rotates out
-too.  Every caller that sees a false negative leaks rather than frees, which
-is the safer direction to err per the opt-in vs. implicit-track design
-rationale.
+Duplicate-ptr case: an address can enter `df_alloc_track[]` a second time
+(rare; it takes a direct `free()` outside the deferred path before a
+re-malloc returns the same address).  The insert then finds the address in
+the hash already and clears the older array slot: one address cannot be two
+live chunks, so that slot is stale.  Left standing, it would prove ownership
+of the address once the newest slot was consumed, which is how a free of a
+chunk someone else now owns got past the gate, and when it rotated out its
+`alloc_track_hash_remove()` would orphan the newest slot (hash says no,
+array says yes).
 
 ## Three-result df_ring_unlock and the mprotect bracket
 
@@ -177,8 +176,8 @@ vs `deferred_free_reject_untracked`) is preserved.
 
 Why not gate on `alloc_track_lookup()`?  `lookup` is a value-keyed hash
 prefilter that can stay true after the backing `df_alloc_track[]` slot has been
-rotated out -- duplicate-ptr edge case, or a hash entry that survived its
-array slot's rotation.  The reverted slot-cookie stack tried adding a NEW
+rotated out, should a hash entry survive its array slot's rotation.  The
+reverted slot-cookie stack tried adding a NEW
 value-keyed shadow on top of the existing one; the new shadow also desynced.
 `consume()` reads the source of truth (the array); its return is the binding
 gate.  The previous shape gated on `lookup()` and then called `consume()`
