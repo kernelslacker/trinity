@@ -204,13 +204,13 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
 
 ## Areas of attention
 
-2. **Slot-reuse correctness is load-bearing and documented but easy to
+1. **Slot-reuse correctness is load-bearing and documented but easy to
    violate on a future edit** — `find_free_childno()`'s double-empty check
    (`pids[i]` AND `zombie_pids[i]`) is the sole guard against the
    documented D-state-write-after-reap corruption case; any new code path
    that reaps a slot without going through `reap_child()` +
    `register_zombie_slot()`'s logic would reopen that hole.
-3. **`bail_fast_die_loop()`'s exclusion list is a maintenance trap** —
+2. **`bail_fast_die_loop()`'s exclusion list is a maintenance trap** —
    `reap_entry_is_fast_die()` treats two `exit_reason` values in any mode,
    and the `exit_reason_is_clean()` set (include/exit.h) in targeted mode,
    as "expected fast clean exit, don't count toward the corruption ring."
@@ -219,13 +219,13 @@ repeatedly calls `main_loop()`; none of this fuzzes anything itself.
    exit path that legitimately exits quickly (new targeted-mode depletion
    path) must remember to add itself here or risk a false-positive
    `EXIT_SHM_CORRUPTION` panic under adversarial timing.
-4. **`panic()`'s deferred-effect design means every caller must reason
+3. **`panic()`'s deferred-effect design means every caller must reason
    about one extra tick of execution** — code between a `panic()` call and
    the next `main_loop` while-condition check still runs with the old
    `exit_reason`; `check_main_loop_stops()` explicitly documents one such
    race (targeted-mode depletion racing the fast-die ring) that required a
    dedicated early-detection branch to avoid a false corruption panic.
-5. **No signal-handler races in this layer** — `setup_main_signals()`
+4. **No signal-handler races in this layer** — `setup_main_signals()`
    installs two handlers in the parent, and neither touches reap or
    watchdog state. `main_stop_handler` (SIGINT/SIGTERM) only decides a
    stop reason and calls `panic()`, two atomic stores, so its effect
