@@ -441,10 +441,15 @@ static size_t build_one_nlmsg(unsigned char *msg, size_t offset, size_t buflen,
 	offset = append_required_attrs(msg, offset, buflen, spec_table, nr_specs,
 				       &once_used);
 
-	/* A nexthop add mostly takes one shape's attributes instead. */
-	if (rtnl_group >= 0 && nlmsg_type == RTM_NEWNEXTHOP) {
-		size_t shaped = append_nexthop_shape(nlh, offset - msg_start,
-						     buflen - msg_start);
+	/* A nexthop or filter add mostly takes one shape's attributes
+	 * instead. */
+	if (rtnl_group >= 0 &&
+	    (nlmsg_type == RTM_NEWNEXTHOP || nlmsg_type == RTM_NEWTFILTER)) {
+		size_t shaped = nlmsg_type == RTM_NEWNEXTHOP ?
+			append_nexthop_shape(nlh, offset - msg_start,
+					     buflen - msg_start) :
+			append_tfilter_shape(nlh, offset - msg_start,
+					     buflen - msg_start);
 
 		if (shaped != offset - msg_start) {
 			offset = msg_start + shaped;

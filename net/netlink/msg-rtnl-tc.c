@@ -587,6 +587,67 @@ static size_t build_tca_root_tab_nested(unsigned char *p, size_t avail)
 }
 
 /*
+ * Every classifier parses its own TCA_OPTIONS namespace, which the outer
+ * TCA_* types the attribute draws give it never are, so seven filter adds
+ * in eight go out as a matchall filter: its options (mall_policy) are a
+ * classid and flags beside TCA_MATCHALL_ACT, the action array
+ * tcf_exts_validate_ex() hands tcf_action_init().  That array is the one
+ * way an action reaches a lane child, since tc_ctl_action() tests
+ * CAP_NET_ADMIN in the initial user namespace and a filter add only over
+ * the request socket's netns.  The flags are 0 or one skip bit half the
+ * time (tc_flags_valid() refuses both), and a classid goes in one filter
+ * in four, naming a small class as the tc headers do.  Returns the new
+ * length of the message, whose first len bytes hold its header in a
+ * buffer of cap bytes; len leaves it to the random draws.
+ */
+size_t append_tfilter_shape(struct nlmsghdr *nlh, size_t len, size_t cap)
+{
+	static const __u32 mall_flags[] = {
+		0, TCA_CLS_FLAGS_SKIP_HW, TCA_CLS_FLAGS_SKIP_SW,
+	};
+	unsigned char *msg = (unsigned char *) nlh;
+	size_t off = NLMSG_ALIGN(len);
+	size_t opts, acts, alen;
+	struct nlattr nla;
+	__u32 val;
+
+	if (len < NLMSG_LENGTH(sizeof(struct tcmsg)) || ONE_IN(8))
+		return len;
+	if (!put_nlattr(msg, &off, cap, TCA_KIND, "matchall",
+			sizeof("matchall")))
+		return len;
+
+	opts = off;
+	acts = opts + NLA_HDRLEN;
+	if (acts + NLA_HDRLEN > cap)
+		return len;
+	alen = build_tca_root_tab_nested(msg + acts + NLA_HDRLEN,
+					 cap - acts - NLA_HDRLEN);
+	if (alen == 0)
+		return len;
+	nla.nla_len = NLA_HDRLEN + alen;
+	nla.nla_type = TCA_MATCHALL_ACT | NLA_F_NESTED;
+	memcpy(msg + acts, &nla, NLA_HDRLEN);
+	off = acts + NLA_ALIGN(nla.nla_len);
+
+	if (RAND_BOOL()) {
+		val = RAND_ARRAY(mall_flags);
+		put_nlattr(msg, &off, cap, TCA_MATCHALL_FLAGS, &val,
+			   sizeof(val));
+	}
+	if (ONE_IN(4)) {
+		val = TC_H_MAKE(RAND_RANGE(1U, 4U) << 16, RAND_RANGE(1U, 4U));
+		put_nlattr(msg, &off, cap, TCA_MATCHALL_CLASSID, &val,
+			   sizeof(val));
+	}
+
+	nla.nla_len = off - opts;
+	nla.nla_type = TCA_OPTIONS | NLA_F_NESTED;
+	memcpy(msg + opts, &nla, NLA_HDRLEN);
+	return off;
+}
+
+/*
  * Generate a structured payload for tc-action rtnetlink attributes
  * (TCA_ROOT_*).  Covers the RTM_*ACTION message group (8).  The kernel
  * net/sched/act_api.c:tca_action_gd walker parses tcaa_policy and

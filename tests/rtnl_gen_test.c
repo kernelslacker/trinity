@@ -2660,6 +2660,153 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a gact action does not carry a TCA_GACT_PROB half the time");
 }
 
+/* ---------- A filter add's classifier and its actions -------------------- */
+
+struct tfilter_shape {
+	unsigned int adds;
+	unsigned int matchall;	/* KIND "matchall" with OPTIONS mall_change() takes */
+	unsigned int acts;	/* ... whose TCA_MATCHALL_ACT is an action array */
+	unsigned int flagged;	/* ... carrying TCA_MATCHALL_FLAGS */
+	unsigned int classid;	/* ... and TCA_MATCHALL_CLASSID */
+};
+
+/* tc_flags_valid(): known bits only, and not both skip bits. */
+static bool tc_flags_take(__u32 flags)
+{
+	if (flags & ~(TCA_CLS_FLAGS_SKIP_HW | TCA_CLS_FLAGS_SKIP_SW |
+		      TCA_CLS_FLAGS_VERBOSE))
+		return false;
+	flags &= TCA_CLS_FLAGS_SKIP_HW | TCA_CLS_FLAGS_SKIP_SW;
+	return flags != (TCA_CLS_FLAGS_SKIP_HW | TCA_CLS_FLAGS_SKIP_SW);
+}
+
+/* An action array as tcf_action_init() walks it: entries typed 1, 2, ...
+ * from the first, each led by a TCA_ACT_KIND string, and no more than
+ * TCA_ACT_MAX_PRIO. */
+static bool action_array(const unsigned char *p, size_t len)
+{
+	const struct nlattr *act;
+	unsigned int n = 0;
+
+	while ((act = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(act->nla_len);
+		const struct nlattr *kind = fit_attr(p + NLA_HDRLEN,
+						     act->nla_len - NLA_HDRLEN);
+
+		if ((act->nla_type & NLA_TYPE_MASK) != ++n ||
+		    n > TCA_ACT_MAX_PRIO || kind == NULL ||
+		    (kind->nla_type & NLA_TYPE_MASK) != TCA_ACT_KIND ||
+		    kind->nla_len <= NLA_HDRLEN + 1)
+			return false;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return n != 0;
+}
+
+/* TCA_OPTIONS of a matchall filter, as mall_change() parses them. */
+static void tally_mall_options(struct tfilter_shape *t, const unsigned char *p,
+			       size_t len)
+{
+	const struct nlattr *nla;
+	bool ok = true, acts = false, flagged = false, classid = false;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		__u32 val = 0;
+
+		if (plen == sizeof(val))
+			memcpy(&val, p + NLA_HDRLEN, sizeof(val));
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_MATCHALL_ACT:
+			acts = action_array(p + NLA_HDRLEN, plen);
+			break;
+		case TCA_MATCHALL_FLAGS:
+			flagged = true;
+			ok &= plen == sizeof(val) && tc_flags_take(val);
+			break;
+		case TCA_MATCHALL_CLASSID:
+			classid = true;
+			ok &= plen == sizeof(val);
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!ok)
+		return;
+	t->matchall++;
+	t->acts += acts;
+	t->flagged += flagged;
+	t->classid += classid;
+}
+
+static void tally_tfilter_shape(struct tfilter_shape *t,
+				const struct nlmsghdr *nlh)
+{
+	const unsigned char *p, *options = NULL;
+	const struct nlattr *nla;
+	size_t len, options_len = 0;
+	bool matchall = false;
+
+	if (nlh->nlmsg_len < NLMSG_SPACE(sizeof(struct tcmsg)))
+		return;
+	t->adds++;
+	p = (const unsigned char *) nlh + NLMSG_SPACE(sizeof(struct tcmsg));
+	len = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct tcmsg));
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_KIND:
+			matchall = plen == sizeof("matchall") &&
+				   !memcmp(p + NLA_HDRLEN, "matchall",
+					   sizeof("matchall"));
+			break;
+		case TCA_OPTIONS:
+			options = p + NLA_HDRLEN;
+			options_len = plen;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (matchall && options != NULL)
+		tally_mall_options(t, options, options_len);
+}
+
+/*
+ * Every classifier parses its own TCA_OPTIONS namespace, which the outer
+ * TCA_* types the attribute draws give it never are, and an action
+ * reaches a lane child only inside a filter: tc_ctl_action() tests
+ * CAP_NET_ADMIN in the initial user namespace.  So seven filter adds in
+ * eight go out as a matchall filter, whose options (mall_policy) are a
+ * classid and flags beside TCA_MATCHALL_ACT, the action array
+ * tcf_exts_validate_ex() hands tcf_action_init(): the KIND, then OPTIONS
+ * with one to three actions, flags tc_flags_valid() takes half the time
+ * and a classid one time in four.  The random draws make a matchall
+ * filter one time in 33 at most, under the band's floor.
+ */
+static void expect_tfilter_shape(const struct tfilter_shape *t)
+{
+	expect_fraction(t->matchall, t->adds, 0.84, 0.91, "RTM_NEWTFILTER",
+			"rtnl: a filter add is not a matchall filter mall_change() takes seven times in eight");
+	expect_fraction(t->acts, t->matchall, 0.99, 1.0, "matchall filters",
+			"rtnl: a matchall filter carries no action array tcf_action_init() walks");
+	expect_fraction(t->flagged, t->matchall, 0.45, 0.55, "matchall filters",
+			"rtnl: a matchall filter does not carry flags half the time");
+	expect_fraction(t->classid, t->matchall, 0.20, 0.30, "matchall filters",
+			"rtnl: a matchall filter does not carry a classid one time in four");
+}
+
 /* ---------- The rounds --------------------------------------------------- */
 
 struct tallies {
@@ -2690,6 +2837,7 @@ struct tallies {
 	struct lwt_encap lwt_encap;
 	struct route_flowlabel route_flowlabel;
 	struct action_attrs action;
+	struct tfilter_shape tfilter_shape;
 };
 
 static void run_rounds(struct tallies *t)
@@ -2825,6 +2973,9 @@ static void run_rounds(struct tallies *t)
 			tally_tc_header(&t->tclass, nlh);
 			break;
 		case RTM_NEWTFILTER:
+			tally_tfilter_shape(&t->tfilter_shape, nlh);
+			tally_tc_header(&t->filter, nlh);
+			break;
 		case RTM_DELTFILTER:
 		case RTM_GETTFILTER:
 			tally_tc_header(&t->filter, nlh);
@@ -2904,4 +3055,5 @@ void rtnl_gen_self_check(void)
 	draws_flowlabels_inside_the_mask();
 	draws_nsids_at_the_top_and_its_own_pid();
 	expect_action_attrs(&t.action);
+	expect_tfilter_shape(&t.tfilter_shape);
 }

@@ -203,6 +203,15 @@ size_t append_lwt_encap(unsigned char *buf, size_t offset, size_t buflen,
 size_t append_nexthop_shape(struct nlmsghdr *nlh, size_t len, size_t cap);
 
 /*
+ * A matchall filter carrying actions, KIND and OPTIONS, for a filter add
+ * whose header is the message's first len bytes in a buffer of cap bytes;
+ * returns the new length, or len to leave the message to the random
+ * draws.  Defined in msg-rtnl-tc.c, called from build_one_nlmsg() in
+ * place of them.
+ */
+size_t append_tfilter_shape(struct nlmsghdr *nlh, size_t len, size_t cap);
+
+/*
  * Cut each RTA_DST of an IPv4 route add or delete to its rtm_dst_len, the
  * message's first len bytes holding its header and attributes.  Defined in
  * msg-rtnl-route.c, called from build_one_nlmsg() once the attributes are
