@@ -82,13 +82,16 @@ _Static_assert((DEFERRED_TTL_MAX + 1 + GEN_ARENA_SEAL_TICKS +
  * during the hold is caught here rather than fed to free().  Caller must
  * hold df_gen_unlock() -- we mutate arena->count and arena->state and clear
  * arena->ptrs[].  Ordered "clear the slot BEFORE free()" for the same
- * signal/longjmp reason free_ring_entry has.
+ * signal/longjmp reason free_ring_entry has.  The walk stops at
+ * GEN_ARENA_ENTRIES whatever count says, as df_gen_arena_contains()'s
+ * does: a scribbled count would otherwise hand the word past ptrs[] to
+ * the prefilters and clear slots beyond the array.
  */
 static void gen_arena_retire_one(struct gen_arena *arena)
 {
 	unsigned int i;
 
-	for (i = 0; i < arena->count; i++) {
+	for (i = 0; i < arena->count && i < GEN_ARENA_ENTRIES; i++) {
 		void *ptr = arena->ptrs[i];
 		const char *reason = NULL;
 

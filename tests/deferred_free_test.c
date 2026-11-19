@@ -1053,6 +1053,35 @@ static void fixture_failed_rc_unlock(void)
 }
 
 /* ------------------------------------------------------------------ */
+/* Fixture 14: A scribbled generation count stays inside ptrs[]       */
+/*                                                                     */
+/* A sealed generation whose count a stray write pushed past           */
+/* GEN_ARENA_ENTRIES retires its slots and stops at the array's end.   */
+/* The word past ptrs[] holds the count itself, which a walk trusting  */
+/* the count hands the prefilters as a pointer, and they reject it.    */
+/* ------------------------------------------------------------------ */
+
+static void fixture_generation_count_bounded(void)
+{
+	struct gen_arena *a;
+	unsigned long base_reject;
+
+	deferred_free_flush();
+	DF_ASSERT(df_gen_unlock() == 0);
+	a = &df_gen->arenas[0];
+	memset(a->ptrs, 0, sizeof(a->ptrs));
+	a->count = GEN_ARENA_ENTRIES + 1;
+	a->state = GEN_SEALED;
+	df_gen_lock();
+
+	base_reject = shm->stats.deferred_free.gen_arena_retire_reject;
+	deferred_free_flush();
+	DF_ASSERT(shm->stats.deferred_free.gen_arena_retire_reject ==
+		  base_reject);
+	DF_ASSERT(a->state == GEN_EMPTY && a->count == 0);
+}
+
+/* ------------------------------------------------------------------ */
 /* Suite entry point                                                   */
 /* ------------------------------------------------------------------ */
 
@@ -1144,5 +1173,10 @@ void deferred_free_ownership_self_check(void)
 	printf("    fixture 13 (failed_rc_unlock) ... ");
 	fflush(stdout);
 	fixture_failed_rc_unlock();
+	printf("OK\n");
+
+	printf("    fixture 14 (generation_count_bounded) ... ");
+	fflush(stdout);
+	fixture_generation_count_bounded();
 	printf("OK\n");
 }
