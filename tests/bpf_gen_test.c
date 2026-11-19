@@ -2057,8 +2057,10 @@ static void link_create_catalog_has_the_tracing_multi_tail(void)
  * 32, a scratch slot under BPF_MEMWORDS, jumps that land inside the
  * program, and an absolute load below SKF_AD_OFF or on an ancillary load.
  */
-static bool classic_insn_ok(const struct sock_filter *f, unsigned int pc,
-			    unsigned int flen)
+bool classic_insn_ok(const struct sock_filter *f, unsigned int pc,
+		     unsigned int flen);
+bool classic_insn_ok(const struct sock_filter *f, unsigned int pc,
+		     unsigned int flen)
 {
 	switch (f->code) {
 	case BPF_ALU | BPF_DIV | BPF_K:

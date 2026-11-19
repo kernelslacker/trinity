@@ -6,6 +6,8 @@
 #include <stddef.h>
 #include <netinet/in.h>
 #include <string.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 #include <linux/if_link.h>
@@ -24,10 +26,12 @@
 #include <linux/tc_act/tc_mpls.h>
 #include <linux/tc_act/tc_ctinfo.h>
 #include <linux/tc_act/tc_sample.h>
+#include <linux/tc_act/tc_bpf.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
+#include "bpf.h"
 #include "netlink-attrs.h"
 #include "msg-internal.h"
 #include "msg-rtnl-common.h"
@@ -1212,6 +1216,103 @@ static size_t build_police_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * A classic program for a bpf action, written to insns: a return one time
+ * in four, else a load of the length, of a packet byte or half-word near
+ * the head or of an ancillary field, a compare of it against a constant,
+ * and a return each way.  The returns are mostly verdicts tcf_bpf_act()
+ * acts on.  Every program gets past bpf_check_classic(): opcodes it
+ * knows, jumps inside the program and a return at the end.
+ */
+static unsigned int build_act_bpf_classic(struct sock_filter *insns)
+{
+	static const __u16 compares[] = {
+		BPF_JMP | BPF_JEQ | BPF_K, BPF_JMP | BPF_JGT | BPF_K,
+		BPF_JMP | BPF_JGE | BPF_K, BPF_JMP | BPF_JSET | BPF_K,
+	};
+	static const __u32 ancillary[] = {
+		SKF_AD_PROTOCOL, SKF_AD_PKTTYPE, SKF_AD_IFINDEX, SKF_AD_MARK,
+		SKF_AD_QUEUE, SKF_AD_HATYPE, SKF_AD_RXHASH, SKF_AD_CPU,
+		SKF_AD_VLAN_TAG, SKF_AD_PAY_OFFSET, SKF_AD_RANDOM,
+	};
+	unsigned int n = 0;
+
+	if (!ONE_IN(4)) {
+		switch (rnd_modulo_u32(4)) {
+		case 0:
+			insns[n++] = (struct sock_filter)
+				BPF_STMT(BPF_LD | BPF_W | BPF_LEN, 0);
+			break;
+		case 1:
+			insns[n++] = (struct sock_filter)
+				BPF_STMT(BPF_LD | BPF_B | BPF_ABS,
+					 rnd_modulo_u32(64));
+			break;
+		case 2:
+			insns[n++] = (struct sock_filter)
+				BPF_STMT(BPF_LD | BPF_H | BPF_ABS,
+					 rnd_modulo_u32(64));
+			break;
+		default:
+			insns[n++] = (struct sock_filter)
+				BPF_STMT(BPF_LD | BPF_W | BPF_ABS,
+					 SKF_AD_OFF + RAND_ARRAY(ancillary));
+			break;
+		}
+		insns[n++] = (struct sock_filter)
+			BPF_JUMP(RAND_ARRAY(compares), rnd_u32(), 0, 1);
+		insns[n++] = (struct sock_filter)
+			BPF_STMT(BPF_RET | BPF_K, ONE_IN(8) ? rnd_u32() :
+			       (__u32) RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX));
+	}
+	insns[n++] = (struct sock_filter)
+		BPF_STMT(BPF_RET | BPF_K, ONE_IN(8) ? rnd_u32() :
+		       (__u32) RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX));
+	return n;
+}
+
+/*
+ * bpf's TCA_ACT_OPTIONS.  tcf_bpf_init() refuses the action without
+ * TCA_ACT_BPF_PARMS, or without just one of a classic program
+ * (TCA_ACT_BPF_OPS_LEN and TCA_ACT_BPF_OPS) and an eBPF program's fd
+ * (TCA_ACT_BPF_FD), which bpf_prog_get_type() wants of a sched_act
+ * program.  Half the actions run such a program from the pool when it
+ * holds one, named half of those, and the rest a small classic one.
+ * Index 1 to 8 names an action an earlier call made, as gact's does.
+ */
+static size_t build_bpf_options(unsigned char *p, size_t avail)
+{
+	struct sock_filter insns[4];
+	struct tc_act_bpf parm;
+	size_t off = 0;
+	__u16 nops;
+	__u32 val;
+	int fd;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	if (!put_nlattr(p, &off, avail, TCA_ACT_BPF_PARMS, &parm,
+			sizeof(parm)))
+		return 0;
+
+	fd = get_rand_bpf_prog_fd_of_type(BPF_PROG_TYPE_SCHED_ACT);
+	if (fd >= 0 && RAND_BOOL()) {
+		val = (__u32) fd;
+		put_nlattr(p, &off, avail, TCA_ACT_BPF_FD, &val, sizeof(val));
+		if (RAND_BOOL())
+			put_nlattr(p, &off, avail, TCA_ACT_BPF_NAME, "trinity",
+				   sizeof("trinity"));
+		return off;
+	}
+	nops = build_act_bpf_classic(insns);
+	put_nlattr(p, &off, avail, TCA_ACT_BPF_OPS_LEN, &nops, sizeof(nops));
+	put_nlattr(p, &off, avail, TCA_ACT_BPF_OPS, insns,
+		   nops * sizeof(insns[0]));
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1244,6 +1345,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "ctinfo",	build_ctinfo_options },
 		{ "sample",	build_sample_options },
 		{ "police",	build_police_options },
+		{ "bpf",	build_bpf_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

@@ -20,6 +20,7 @@
 #include <linux/fib_rules.h>
 #include <linux/if_addrlabel.h>
 #include <linux/bpf.h>
+#include <linux/filter.h>
 #include <linux/if_bridge.h>
 #include <linux/if_ether.h>
 #include <linux/lwtunnel.h>
@@ -43,6 +44,7 @@
 #include <linux/tc_act/tc_mpls.h>
 #include <linux/tc_act/tc_ctinfo.h>
 #include <linux/tc_act/tc_sample.h>
+#include <linux/tc_act/tc_bpf.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 
@@ -57,6 +59,8 @@
 
 void netlink_gen_msg(struct socket_triplet *triplet, void **buf, size_t *len);
 extern int (*fake_get_rand_bpf_prog_fd_of_type)(unsigned int prog_type);	/* fake_fds.c */
+bool classic_insn_ok(const struct sock_filter *f, unsigned int pc,
+		     unsigned int flen);	/* bpf_gen_test.c */
 size_t gen_rta_tunnel_payload(unsigned char *p, size_t avail,
 			      unsigned short nla_type);
 size_t gen_rta_nsid_payload(unsigned char *p, size_t avail,
@@ -2359,7 +2363,7 @@ static void expect_route_encap(const struct route_encap *t)
 /* ---------- The RTA_ENCAP of RTM_NEWROUTE, DELROUTE and GETROUTE -------- */
 
 /* The fd the stand-in typed pick answers for a program of each type. */
-static int lwt_prog_fd(unsigned int prog_type)
+static int typed_prog_fd(unsigned int prog_type)
 {
 	return 100 + prog_type;
 }
@@ -2406,7 +2410,7 @@ static bool lwt_prog_taken(const struct nlattr *hook, unsigned int prog_type)
 	    slen - (str[slen - 1] == '\0') > 256)
 		return false;
 	memcpy(&val, (const char *) fd + NLA_HDRLEN, sizeof(val));
-	return val == (uint32_t) lwt_prog_fd(prog_type);
+	return val == (uint32_t) typed_prog_fd(prog_type);
 }
 
 /*
@@ -2558,6 +2562,9 @@ struct action_attrs {
 	unsigned int polices;		/* actions of kind "police" */
 	unsigned int police_parms;	/* ... with options tcf_police_init() takes */
 	unsigned int police_pps;	/* ... of those, policing packets per second */
+	unsigned int bpf_actions;	/* actions of kind "bpf" */
+	unsigned int bpf_parms;		/* ... with options tcf_bpf_init() takes */
+	unsigned int bpf_ebpf;		/* ... of those, running an eBPF program */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3543,6 +3550,84 @@ static void tally_police_options(struct action_attrs *t,
 }
 
 /*
+ * The TCA_ACT_OPTIONS of one bpf action, as tcf_bpf_init() reads them:
+ * PARMS and either a classic program, its length 1 to BPF_MAXINSNS in
+ * TCA_ACT_BPF_OPS_LEN and as many instructions bpf_check_classic() takes,
+ * ending on a return, or the fd of a sched_act program, with a name of at
+ * most 256 bytes beside it.
+ */
+static void tally_bpf_options(struct action_attrs *t, const unsigned char *p,
+			      size_t len)
+{
+	const struct sock_filter *ops = NULL;
+	const struct nlattr *nla;
+	struct tc_act_bpf parm;
+	bool parms = false, ok = true, nops_seen = false;
+	bool fd_seen = false, fd_ok = false;
+	size_t ops_len = 0;
+	unsigned int pc;
+	__u16 nops = 0;
+	__u32 fd;
+
+	t->bpf_actions++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_ACT_BPF_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_ACT_BPF_OPS_LEN:
+			nops_seen = true;
+			ok &= plen == sizeof(nops);
+			if (plen == sizeof(nops))
+				memcpy(&nops, data, sizeof(nops));
+			break;
+		case TCA_ACT_BPF_OPS:
+			ops = (const struct sock_filter *) data;
+			ops_len = plen;
+			break;
+		case TCA_ACT_BPF_FD:
+			fd_seen = true;
+			fd_ok = plen == sizeof(fd);
+			if (fd_ok) {
+				memcpy(&fd, data, sizeof(fd));
+				fd_ok = fd == (__u32) typed_prog_fd(BPF_PROG_TYPE_SCHED_ACT);
+			}
+			break;
+		case TCA_ACT_BPF_NAME:
+			ok &= plen >= 1 &&
+			      memchr(data, '\0', plen < 257 ? plen : 257) != NULL;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ok || !ctrlact_takes(parm.action) ||
+	    fd_seen == (nops_seen && ops != NULL))
+		return;
+	if (fd_seen && !fd_ok)
+		return;
+	if (!fd_seen) {
+		if (nops == 0 || nops > BPF_MAXINSNS ||
+		    ops_len != nops * sizeof(*ops) ||
+		    BPF_CLASS(ops[nops - 1].code) != BPF_RET)
+			return;
+		for (pc = 0; pc < nops; pc++)
+			if (!classic_insn_ok(&ops[pc], pc, nops))
+				return;
+	}
+	t->bpf_parms++;
+	t->bpf_ebpf += fd_seen;
+}
+
+/*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
  * action has any.
@@ -3567,6 +3652,7 @@ static const struct {
 	{ "ctinfo",	tally_ctinfo_options },
 	{ "sample",	tally_sample_options },
 	{ "police",	tally_police_options },
+	{ "bpf",	tally_bpf_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3750,6 +3836,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a police action carries no options tcf_police_init() takes");
 	expect_fraction(t->police_pps, t->police_parms, 0.40, 0.60, "police actions",
 			"rtnl: a police action does not police packets per second half the time");
+	expect_fraction(t->bpf_parms, t->bpf_actions, 0.98, 1.0, "bpf actions",
+			"rtnl: a bpf action carries no options tcf_bpf_init() takes");
+	expect_fraction(t->bpf_ebpf, t->bpf_parms, 0.40, 0.60, "bpf actions",
+			"rtnl: a bpf action does not run a loaded eBPF program half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
@@ -4116,7 +4206,7 @@ void rtnl_gen_self_check(void)
 {
 	static struct tallies t;
 
-	fake_get_rand_bpf_prog_fd_of_type = lwt_prog_fd;
+	fake_get_rand_bpf_prog_fd_of_type = typed_prog_fd;
 	run_rounds(&t);
 	fake_get_rand_bpf_prog_fd_of_type = NULL;
 	expect_handled_types(t.unhandled, t.msgs);
