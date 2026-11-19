@@ -80,11 +80,15 @@ unsigned int cmp_hint_weighted_pick(struct cmp_hint_entry *entries,
 	uint32_t draw;
 	unsigned int i;
 
-	/* Defensive clamp against a torn count snapshot reaching the
+	/* Defensive clamps against a torn count snapshot reaching the
 	 * helper: the caller already passes a cmp_hints_pool_corrupted-
-	 * gated count, but bounding entries[] access here keeps the
-	 * weighted path self-contained against a future caller that
-	 * forgets the gate. */
+	 * gated count and returns on an empty pool, but bounding
+	 * entries[] access here keeps the weighted path self-contained
+	 * against a future caller that forgets the gate.  An empty pool
+	 * takes slot 0, not the count - 1 the fallback below would wrap
+	 * to UINT_MAX. */
+	if (count == 0)
+		return 0;
 	if (count > CMP_HINTS_PER_SYSCALL)
 		count = CMP_HINTS_PER_SYSCALL;
 
