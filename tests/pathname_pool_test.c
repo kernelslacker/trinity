@@ -10,11 +10,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "debug.h"		/* BUG */
 #include "params.h"		/* MAX_VICTIM_PATHS */
-#include "pathnames.h"		/* generate_filelist, get_filename */
+#include "pathnames.h"		/* generate_filelist, get_filename, fileindex */
+#include "utils.h"		/* waitpid_eintr */
 
 /* Owned by main/params/state.c in production. */
 char *victim_paths[MAX_VICTIM_PATHS];
@@ -26,6 +28,34 @@ unsigned int nr_victim_paths;
 #define DRAWS		1000
 
 #define DIR_TEMPLATE	"/tmp/trinity-pathname-test.XXXXXX"
+
+/*
+ * A shutdown that lands part way through the walk has generate_filelist()
+ * return with files counted and pools set but no index built.  A child
+ * builds a pool and drops its index, as that return leaves it: both
+ * getters answer NULL rather than read it.  A child, since the pool is
+ * built only once.
+ */
+static void getters_survive_an_unbuilt_index(char *dir)
+{
+	int status;
+	pid_t pid;
+
+	pid = fork();
+	if (pid < 0)
+		BUG("pathname pool: fork failed");
+	if (pid == 0) {
+		victim_paths[0] = dir;
+		nr_victim_paths = 1;
+		generate_filelist();
+		fileindex = NULL;
+		_exit(get_filename() == NULL && get_filename_for_pool(0) == NULL ?
+		      0 : 1);
+	}
+	if (waitpid_eintr(pid, &status, 0) != pid || !WIFEXITED(status) ||
+	    WEXITSTATUS(status) != 0)
+		BUG("pathname pool: a getter read the index an aborted walk never built");
+}
 
 void pathname_pool_self_check(void);
 void pathname_pool_self_check(void)
@@ -49,6 +79,7 @@ void pathname_pool_self_check(void)
 	}
 	nr_victim_paths = NR_DIRS;
 
+	getters_survive_an_unbuilt_index(dirs[0]);
 	generate_filelist();
 	for (i = 0; i < DRAWS && !reached; i++) {
 		const char *name = get_filename();

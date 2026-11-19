@@ -615,6 +615,10 @@ const char * get_filename(void)
 
 	if (files_in_index == 0)	/* This can happen if we run with -n. Should we do something else ? */
 		return NULL;
+	/* generate_filelist() returns before building the index when a
+	 * shutdown lands part way through the walk, files counted. */
+	if (fileindex == NULL)
+		return NULL;
 
 	/* Pick a pool first so /dev gets equal probability with /proc and /sys
 	 * despite having far fewer files. */
@@ -630,7 +634,7 @@ const char * get_filename_for_pool(unsigned int pool_id)
 {
 	struct pathname_pool *pool;
 
-	if (pool_id >= num_pools)
+	if (pool_id >= num_pools || fileindex == NULL)
 		return NULL;
 
 	pool = &pools[pool_id];
