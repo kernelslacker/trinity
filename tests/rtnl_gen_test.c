@@ -35,6 +35,7 @@
 #include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/tc_act/tc_vlan.h>
+#include <linux/tc_act/tc_csum.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2521,6 +2522,9 @@ struct action_attrs {
 	unsigned int vlans;	/* actions of kind "vlan" */
 	unsigned int vlan_parms;	/* ... with options tcf_vlan_init() takes */
 	unsigned int vlan_tagged;	/* ... of those, pushing or modifying a tag */
+	unsigned int csums;	/* actions of kind "csum" */
+	unsigned int csum_parms;	/* ... with options tcf_csum_init() takes */
+	unsigned int csum_known;	/* ... of those, updating known checksums only */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2953,6 +2957,44 @@ static void tally_vlan_options(struct action_attrs *t, const unsigned char *p,
 	t->vlan_parms++;
 }
 
+/* The update flags of the seven checksums act_csum knows. */
+#define CSUM_KNOWN_FLAGS	(TCA_CSUM_UPDATE_FLAG_IPV4HDR | \
+				 TCA_CSUM_UPDATE_FLAG_ICMP | \
+				 TCA_CSUM_UPDATE_FLAG_IGMP | \
+				 TCA_CSUM_UPDATE_FLAG_TCP | \
+				 TCA_CSUM_UPDATE_FLAG_UDP | \
+				 TCA_CSUM_UPDATE_FLAG_UDPLITE | \
+				 TCA_CSUM_UPDATE_FLAG_SCTP)
+
+/* The TCA_ACT_OPTIONS of one csum action, as tcf_csum_init() reads them:
+ * PARMS, whose update flags it stores as they come. */
+static void tally_csum_options(struct action_attrs *t, const unsigned char *p,
+			       size_t len)
+{
+	const struct nlattr *nla;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == TCA_CSUM_PARMS &&
+		    nla->nla_len >= NLA_HDRLEN + sizeof(struct tc_csum)) {
+			struct tc_csum parm;
+
+			memcpy(&parm, p + NLA_HDRLEN, sizeof(parm));
+			if (!ctrlact_takes(parm.action))
+				return;
+			t->csum_parms++;
+			t->csum_known += parm.update_flags != 0 &&
+					 !(parm.update_flags & ~CSUM_KNOWN_FLAGS);
+			return;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+}
+
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
  * the options of the kinds the builder types. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
@@ -2962,7 +3004,7 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 	size_t options_len = 0;
 	const struct nlattr *nla;
 	bool gact = false, ife = false, mirred = false, skbedit = false;
-	bool pedit = false, vlan = false;
+	bool pedit = false, vlan = false, csum = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2985,6 +3027,8 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 					sizeof("pedit"));
 			vlan = plen == sizeof("vlan") &&
 			       !memcmp(p + NLA_HDRLEN, "vlan", sizeof("vlan"));
+			csum = plen == sizeof("csum") &&
+			       !memcmp(p + NLA_HDRLEN, "csum", sizeof("csum"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -3020,6 +3064,10 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		t->vlans++;
 		if (options != NULL)
 			tally_vlan_options(t, options, options_len);
+	} else if (csum) {
+		t->csums++;
+		if (options != NULL)
+			tally_csum_options(t, options, options_len);
 	}
 }
 
@@ -3122,6 +3170,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a vlan action carries no options tcf_vlan_init() takes");
 	expect_fraction(t->vlan_tagged, t->vlan_parms, 0.30, 0.50, "vlan actions",
 			"rtnl: a vlan action does not push or modify a tag two times in five");
+	expect_fraction(t->csum_parms, t->csums, 0.90, 1.0, "csum actions",
+			"rtnl: a csum action carries no options tcf_csum_init() takes");
+	expect_fraction(t->csum_known, t->csum_parms, 0.80, 0.95, "csum actions",
+			"rtnl: a csum action does not update known checksums seven times in eight");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

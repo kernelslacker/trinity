@@ -17,6 +17,7 @@
 #include <linux/tc_act/tc_pedit.h>
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/tc_act/tc_vlan.h>
+#include <linux/tc_act/tc_csum.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "netlink-attrs.h"
@@ -713,6 +714,30 @@ static size_t build_vlan_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * csum's TCA_ACT_OPTIONS.  tcf_csum_init() refuses the action only
+ * without TCA_CSUM_PARMS, and stores its update flags as they come: seven
+ * actions in eight name some of the seven checksums act_csum knows
+ * (IPv4 header, ICMP, IGMP, TCP, UDP, UDP-Lite, SCTP), the eighth any
+ * bits.  Index 1 to 8 names an action an earlier call made, as gact's
+ * does.
+ */
+static size_t build_csum_options(unsigned char *p, size_t avail)
+{
+	struct tc_csum parm;
+	size_t off = 0;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.update_flags = ONE_IN(8) ? rnd_u32() :
+			    1 + rnd_modulo_u32(2 * TCA_CSUM_UPDATE_FLAG_SCTP - 1);
+	if (!put_nlattr(p, &off, avail, TCA_CSUM_PARMS, &parm, sizeof(parm)))
+		return 0;
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -736,6 +761,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "skbedit",	build_skbedit_options },
 		{ "pedit",	build_pedit_options },
 		{ "vlan",	build_vlan_options },
+		{ "csum",	build_csum_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
