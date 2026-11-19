@@ -40,6 +40,8 @@
 #include <linux/tc_act/tc_nat.h>
 #include <linux/tc_act/tc_connmark.h>
 #include <linux/tc_act/tc_skbmod.h>
+#include <linux/tc_act/tc_mpls.h>
+#include <linux/mpls.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2542,6 +2544,9 @@ struct action_attrs {
 	unsigned int skbmods;		/* actions of kind "skbmod" */
 	unsigned int skbmod_parms;	/* ... with options tcf_skbmod_init() takes */
 	unsigned int skbmod_flagged;	/* ... of those, swapping MACs or marking ECN */
+	unsigned int mpls_actions;	/* actions of kind "mpls" */
+	unsigned int mpls_parms;	/* ... with options tcf_mpls_init() takes */
+	unsigned int mpls_pushes;	/* ... of those, pushes */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3250,6 +3255,104 @@ static void tally_skbmod_options(struct action_attrs *t,
 }
 
 /*
+ * The TCA_ACT_OPTIONS of one mpls action, as tcf_mpls_init()'s strict
+ * parse and mpls_policy take them: PARMS, exact widths, no other type, a
+ * label under 2^20 and not implicit null, a TC under 8, a TTL above 0 and
+ * a BOS of 0 or 1.  A pop wants an Ethernet protocol and no label field,
+ * a dec_ttl nothing, a push a label and no protocol but an MPLS one, and
+ * a modify no protocol.
+ */
+static void tally_mpls_options(struct action_attrs *t, const unsigned char *p,
+			       size_t len)
+{
+	const unsigned int label_fields = 1U << TCA_MPLS_LABEL |
+		1U << TCA_MPLS_TC | 1U << TCA_MPLS_TTL | 1U << TCA_MPLS_BOS;
+	const struct nlattr *nla;
+	struct tc_mpls parm;
+	bool parms = false, ok = true;
+	unsigned int seen = 0;
+	__u16 proto = 0;
+	__u32 label;
+
+	t->mpls_actions++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+		unsigned short type = nla->nla_type & NLA_TYPE_MASK;
+
+		if (type <= TCA_MPLS_MAX)
+			seen |= 1U << type;
+		switch (type) {
+		case TCA_MPLS_PARMS:
+			parms = plen == sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_MPLS_PROTO:
+			ok &= plen == sizeof(proto);
+			if (plen == sizeof(proto))
+				memcpy(&proto, data, sizeof(proto));
+			break;
+		case TCA_MPLS_LABEL:
+			ok &= plen == sizeof(label);
+			if (plen == sizeof(label)) {
+				memcpy(&label, data, sizeof(label));
+				ok &= label <= MPLS_LS_LABEL_MASK >> MPLS_LS_LABEL_SHIFT &&
+				      label != MPLS_LABEL_IMPLNULL;
+			}
+			break;
+		case TCA_MPLS_TC:
+			ok &= plen == 1 && data[0] <= 7;
+			break;
+		case TCA_MPLS_TTL:
+			ok &= plen == 1 && data[0] >= 1;
+			break;
+		case TCA_MPLS_BOS:
+			ok &= plen == 1 && data[0] <= 1;
+			break;
+		default:
+			ok = false;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ok || !ctrlact_takes(parm.action))
+		return;
+	switch (parm.m_action) {
+	case TCA_MPLS_ACT_POP:
+		if (!(seen & 1U << TCA_MPLS_PROTO) ||
+		    (ntohs(proto) & 0xff00) < ETH_P_802_3_MIN ||
+		    (seen & label_fields))
+			return;
+		break;
+	case TCA_MPLS_ACT_DEC_TTL:
+		if (seen != 1U << TCA_MPLS_PARMS)
+			return;
+		break;
+	case TCA_MPLS_ACT_PUSH:
+	case TCA_MPLS_ACT_MAC_PUSH:
+		if (!(seen & 1U << TCA_MPLS_LABEL) ||
+		    ((seen & 1U << TCA_MPLS_PROTO) &&
+		     proto != htons(ETH_P_MPLS_UC) &&
+		     proto != htons(ETH_P_MPLS_MC)))
+			return;
+		t->mpls_pushes++;
+		break;
+	case TCA_MPLS_ACT_MODIFY:
+		if (seen & 1U << TCA_MPLS_PROTO)
+			return;
+		break;
+	default:
+		return;
+	}
+	t->mpls_parms++;
+}
+
+/*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
  * action has any.
@@ -3270,6 +3373,7 @@ static const struct {
 	{ "nat",	tally_nat_options },
 	{ "connmark",	tally_connmark_options },
 	{ "skbmod",	tally_skbmod_options },
+	{ "mpls",	tally_mpls_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3433,6 +3537,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a skbmod action carries no options tcf_skbmod_init() takes");
 	expect_fraction(t->skbmod_flagged, t->skbmod_parms, 0.15, 0.35, "skbmod actions",
 			"rtnl: a skbmod action does not swap MACs or mark ECN one time in four");
+	expect_fraction(t->mpls_parms, t->mpls_actions, 0.90, 1.0, "mpls actions",
+			"rtnl: an mpls action carries no options tcf_mpls_init() takes");
+	expect_fraction(t->mpls_pushes, t->mpls_parms, 0.30, 0.50, "mpls actions",
+			"rtnl: an mpls action does not push two times in five");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

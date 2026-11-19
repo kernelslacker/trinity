@@ -21,6 +21,8 @@
 #include <linux/tc_act/tc_nat.h>
 #include <linux/tc_act/tc_connmark.h>
 #include <linux/tc_act/tc_skbmod.h>
+#include <linux/tc_act/tc_mpls.h>
+#include <linux/mpls.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
@@ -1002,6 +1004,77 @@ static size_t build_skbmod_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * mpls's TCA_ACT_OPTIONS, which tcf_mpls_init() parses strictly.  It
+ * refuses the action without TCA_MPLS_PARMS or with an m_action past its
+ * five; a pop wants an Ethernet protocol for the header beneath and no
+ * label field, a dec_ttl nothing, a push a label and no protocol but MPLS
+ * unicast or multicast, and a modify no protocol.  A label is a reserved
+ * one, 0 to 15 but not implicit null, half the time, else any 20-bit one;
+ * a push or a modify sets the TC, TTL and BOS half the time each, and a
+ * push names its protocol half the time.  Index 1 to 8 names an action an
+ * earlier call made, as gact's does.
+ */
+static size_t build_mpls_options(unsigned char *p, size_t avail)
+{
+	static const __u16 pop_protos[] = {
+		ETH_P_IP, ETH_P_IPV6, ETH_P_MPLS_UC, ETH_P_TEB,
+	};
+	struct tc_mpls parm;
+	size_t off = 0;
+	bool push;
+	__u32 label;
+	__u16 proto;
+	__u8 val8;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.m_action = RAND_RANGE(TCA_MPLS_ACT_POP, TCA_MPLS_ACT_MAC_PUSH);
+	if (!put_nlattr(p, &off, avail, TCA_MPLS_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	switch (parm.m_action) {
+	case TCA_MPLS_ACT_POP:
+		proto = htons(RAND_ARRAY(pop_protos));
+		put_nlattr(p, &off, avail, TCA_MPLS_PROTO, &proto,
+			   sizeof(proto));
+		return off;
+	case TCA_MPLS_ACT_DEC_TTL:
+		return off;
+	}
+
+	push = parm.m_action != TCA_MPLS_ACT_MODIFY;
+	if (push && RAND_BOOL()) {
+		proto = htons(RAND_BOOL() ? ETH_P_MPLS_UC : ETH_P_MPLS_MC);
+		put_nlattr(p, &off, avail, TCA_MPLS_PROTO, &proto,
+			   sizeof(proto));
+	}
+	if (push || RAND_BOOL()) {
+		label = RAND_BOOL() ? rnd_modulo_u32(16) :
+			rnd_modulo_u32((MPLS_LS_LABEL_MASK >>
+					MPLS_LS_LABEL_SHIFT) + 1);
+		if (label == MPLS_LABEL_IMPLNULL)
+			label = MPLS_LABEL_IPV4NULL;
+		put_nlattr(p, &off, avail, TCA_MPLS_LABEL, &label,
+			   sizeof(label));
+	}
+	if (RAND_BOOL()) {
+		val8 = rnd_modulo_u32(8);
+		put_nlattr(p, &off, avail, TCA_MPLS_TC, &val8, sizeof(val8));
+	}
+	if (RAND_BOOL()) {
+		val8 = RAND_RANGE(1, 255);
+		put_nlattr(p, &off, avail, TCA_MPLS_TTL, &val8, sizeof(val8));
+	}
+	if (RAND_BOOL()) {
+		val8 = RAND_BOOL();
+		put_nlattr(p, &off, avail, TCA_MPLS_BOS, &val8, sizeof(val8));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1030,6 +1103,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "nat",	build_nat_options },
 		{ "connmark",	build_connmark_options },
 		{ "skbmod",	build_skbmod_options },
+		{ "mpls",	build_mpls_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
