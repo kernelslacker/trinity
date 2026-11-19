@@ -20,6 +20,7 @@
 #include <linux/tc_act/tc_csum.h>
 #include <linux/tc_act/tc_nat.h>
 #include <linux/tc_act/tc_connmark.h>
+#include <linux/tc_act/tc_skbmod.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
@@ -946,6 +947,61 @@ static size_t build_connmark_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * skbmod's TCA_ACT_OPTIONS.  tcf_skbmod_init() refuses the action without
+ * TCA_SKBMOD_PARMS or with nothing to edit: a destination or source MAC,
+ * an ethertype, which it takes in host order, or a PARMS flag that swaps
+ * the MACs or marks ECN and displaces the rest.  One action in eight
+ * swaps and one marks; the others set a source MAC and an ethertype half
+ * the time each, a common one half of those, and a destination MAC half
+ * the time or where neither drew.  Index 1 to 8 names an action an
+ * earlier call made, as gact's does.
+ */
+static size_t build_skbmod_options(unsigned char *p, size_t avail)
+{
+	static const __u16 etypes[] = {
+		ETH_P_IP, ETH_P_IPV6, ETH_P_ARP, ETH_P_8021Q,
+	};
+	unsigned char mac[ETH_ALEN];
+	struct tc_skbmod parm;
+	size_t off = 0;
+	bool edit = false;
+	__u16 etype;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	switch (rnd_modulo_u32(8)) {
+	case 0:
+		parm.flags = SKBMOD_F_SWAPMAC;
+		break;
+	case 1:
+		parm.flags = SKBMOD_F_ECN;
+		break;
+	}
+	if (!put_nlattr(p, &off, avail, TCA_SKBMOD_PARMS, &parm, sizeof(parm)))
+		return 0;
+	if (parm.flags != 0)
+		return off;
+
+	if (RAND_BOOL()) {
+		generate_rand_bytes(mac, sizeof(mac));
+		edit |= put_nlattr(p, &off, avail, TCA_SKBMOD_SMAC, mac,
+				   sizeof(mac));
+	}
+	if (RAND_BOOL()) {
+		etype = RAND_BOOL() ? RAND_ARRAY(etypes) : (__u16) rnd_u32();
+		edit |= put_nlattr(p, &off, avail, TCA_SKBMOD_ETYPE, &etype,
+				   sizeof(etype));
+	}
+	if (!edit || RAND_BOOL()) {
+		generate_rand_bytes(mac, sizeof(mac));
+		put_nlattr(p, &off, avail, TCA_SKBMOD_DMAC, mac, sizeof(mac));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -973,6 +1029,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "tunnel_key",	build_tunnel_key_options },
 		{ "nat",	build_nat_options },
 		{ "connmark",	build_connmark_options },
+		{ "skbmod",	build_skbmod_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

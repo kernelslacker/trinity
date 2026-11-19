@@ -39,6 +39,7 @@
 #include <linux/tc_act/tc_tunnel_key.h>
 #include <linux/tc_act/tc_nat.h>
 #include <linux/tc_act/tc_connmark.h>
+#include <linux/tc_act/tc_skbmod.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2538,6 +2539,9 @@ struct action_attrs {
 	unsigned int connmarks;		/* actions of kind "connmark" */
 	unsigned int connmark_parms;	/* ... with options tcf_connmark_init() takes */
 	unsigned int connmark_zone0;	/* ... of those, in the default zone */
+	unsigned int skbmods;		/* actions of kind "skbmod" */
+	unsigned int skbmod_parms;	/* ... with options tcf_skbmod_init() takes */
+	unsigned int skbmod_flagged;	/* ... of those, swapping MACs or marking ECN */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3196,6 +3200,55 @@ static void tally_connmark_options(struct action_attrs *t,
 	t->connmark_zone0 += parm.zone == 0;
 }
 
+/* The TCA_ACT_OPTIONS of one skbmod action, as tcf_skbmod_init() reads
+ * them: PARMS and something to edit, a MAC, an ethertype or a PARMS flag
+ * that swaps the MACs or marks ECN, which displaces the rest. */
+static void tally_skbmod_options(struct action_attrs *t,
+				 const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_skbmod parm;
+	bool parms = false;
+	__u64 edits = 0;
+
+	t->skbmods++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_SKBMOD_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, p + NLA_HDRLEN, sizeof(parm));
+			break;
+		case TCA_SKBMOD_DMAC:
+			edits |= plen >= ETH_ALEN ? SKBMOD_F_DMAC : 0;
+			break;
+		case TCA_SKBMOD_SMAC:
+			edits |= plen >= ETH_ALEN ? SKBMOD_F_SMAC : 0;
+			break;
+		case TCA_SKBMOD_ETYPE:
+			edits |= plen == sizeof(__u16) ? SKBMOD_F_ETYPE : 0;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ctrlact_takes(parm.action))
+		return;
+	if (parm.flags & SKBMOD_F_SWAPMAC)
+		edits = SKBMOD_F_SWAPMAC;
+	if (parm.flags & SKBMOD_F_ECN)
+		edits = SKBMOD_F_ECN;
+	if (edits == 0)
+		return;
+	t->skbmod_parms++;
+	t->skbmod_flagged += edits == SKBMOD_F_SWAPMAC || edits == SKBMOD_F_ECN;
+}
+
 /*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
@@ -3216,6 +3269,7 @@ static const struct {
 	{ "tunnel_key",	tally_tunnel_key_options },
 	{ "nat",	tally_nat_options },
 	{ "connmark",	tally_connmark_options },
+	{ "skbmod",	tally_skbmod_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3375,6 +3429,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a connmark action carries no options tcf_connmark_init() takes");
 	expect_fraction(t->connmark_zone0, t->connmark_parms, 0.40, 0.60, "connmark actions",
 			"rtnl: a connmark action does not look in the default zone half the time");
+	expect_fraction(t->skbmod_parms, t->skbmods, 0.90, 1.0, "skbmod actions",
+			"rtnl: a skbmod action carries no options tcf_skbmod_init() takes");
+	expect_fraction(t->skbmod_flagged, t->skbmod_parms, 0.15, 0.35, "skbmod actions",
+			"rtnl: a skbmod action does not swap MACs or mark ECN one time in four");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
