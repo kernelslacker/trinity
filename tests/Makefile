@@ -1494,6 +1494,12 @@ FAKE_SRCS	+= cold_skip_test.c
 PARENT_SRCS	+= $(TOP)/random_syscall/pick-common.c
 FAKE_SRCS	+= expensive_accept_test.c
 
+# random_syscall/pick-frontier-weight.c brings frontier_cold_weight(),
+# which frontier_cold_weight_test.c holds to the ABI of the syscall it
+# weighs.
+PARENT_SRCS	+= $(TOP)/random_syscall/pick-frontier-weight.c
+FAKE_SRCS	+= frontier_cold_weight_test.c
+
 # Objects for REAL sources land under build/real/ (mirroring the
 # source path); fake objects land under build/.  The isolated layout
 # keeps this build orthogonal to the top-level Makefile's cache.

@@ -408,7 +408,7 @@ static bool frontier_errno_decay_reject(unsigned int syscallnr, bool do32,
 static bool frontier_silent_accept(unsigned int syscallnr, bool do32,
 				   struct childdata *child)
 {
-	unsigned long w = frontier_cold_weight(syscallnr, child);
+	unsigned long w = frontier_cold_weight(syscallnr, do32, child);
 	unsigned long denom = (unsigned long)FRONTIER_COLD_SCALE + 1UL;
 	unsigned long roll;
 

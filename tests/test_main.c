@@ -74,6 +74,7 @@ void rdma_nldev_self_check(void);
 void kcov_persist_self_check(void);
 void cold_skip_self_check(void);
 void expensive_accept_self_check(void);
+void frontier_cold_weight_self_check(void);
 void stats_render_self_check(void);
 void shutdown_wait_self_check(void);
 void reap_fault_beacon_self_check(void);
@@ -495,6 +496,11 @@ int main(int argc, char **argv)
 	printf("  expensive_accept_self_check ... ");
 	fflush(stdout);
 	expensive_accept_self_check();
+	printf("OK\n");
+
+	printf("  frontier_cold_weight_self_check ... ");
+	fflush(stdout);
+	frontier_cold_weight_self_check();
 	printf("OK\n");
 
 	printf("  stats_render_self_check ... ");

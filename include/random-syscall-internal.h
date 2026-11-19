@@ -92,7 +92,8 @@ bool set_syscall_nr_heuristic(struct syscallrecord *rec,
  * frontier ring goes silent; cmp_frontier_weight is the CMP-weighted
  * alternate weight consulted under cmp_frontier_mode != OFF.  Both
  * cap output at FRONTIER_COLD_SCALE. */
-unsigned long frontier_cold_weight(unsigned int nr, struct childdata *child);
+unsigned long frontier_cold_weight(unsigned int nr, bool do32,
+				   struct childdata *child);
 unsigned long cmp_frontier_weight(unsigned int nr);
 
 /* pick-frontier.c -- STRATEGY_COVERAGE_FRONTIER arm dispatched from

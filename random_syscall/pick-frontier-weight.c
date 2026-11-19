@@ -108,7 +108,7 @@
  * returns old_weight, so live selection stays byte-identical.  Under OFF
  * the term is zeroed so blend_weight reproduces the legacy formula
  * exactly, keeping the A/B counters comparable to baseline runs. */
-static unsigned long frontier_blend_weight(unsigned int nr,
+static unsigned long frontier_blend_weight(unsigned int nr, bool do32,
 					   unsigned long edges,
 					   unsigned long calls)
 {
@@ -121,17 +121,13 @@ static unsigned long frontier_blend_weight(unsigned int nr,
 	trew_mode = __atomic_load_n(&kcov_transition_reward_mode,
 				    __ATOMIC_RELAXED);
 
+	/* The transition counter has no ABI dim, so it alone stays the
+	 * two ABIs' sum. */
 	bucket_bits = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][0].bucket_bits_real,
-			__ATOMIC_RELAXED) +
-		      __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][1].bucket_bits_real,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].bucket_bits_real,
 			__ATOMIC_RELAXED);
 	distinct_pcs = __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][0].distinct_pcs,
-			__ATOMIC_RELAXED) +
-		       __atomic_load_n(
-			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][1].distinct_pcs,
+			&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][do32].distinct_pcs,
 			__ATOMIC_RELAXED);
 	transition_edges_real_local =
 		(trew_mode == KCOV_TRANSITION_REWARD_OFF) ? 0UL :
@@ -211,7 +207,7 @@ static void frontier_blend_ab_note(unsigned long old_weight,
  * than total under a concurrent kcov_collect update.  Match
  * that idiom -- treat the inverted sample as "no stale gap"
  * rather than wrapping. */
-static unsigned long frontier_reach_band_adjust(unsigned int nr,
+static unsigned long frontier_reach_band_adjust(unsigned int nr, bool do32,
 						unsigned long edges,
 						unsigned long picked_weight)
 {
@@ -224,7 +220,8 @@ static unsigned long frontier_reach_band_adjust(unsigned int nr,
 		unsigned long band_weight = picked_weight;
 		bool stale = false;
 
-		reach = edges + per_syscall_edges_prior_total(nr);
+		reach = edges +
+			kcov_shm->per_syscall.per_syscall_edges_prior[nr][do32];
 
 		total = __atomic_load_n(&kcov_shm->coverage.total_calls,
 					__ATOMIC_RELAXED);
@@ -349,7 +346,9 @@ static unsigned long frontier_reach_band_adjust(unsigned int nr,
  *
  * Semantics note: per_syscall_edges has "bumps by 1 per call that
  * discovered >=1 new edge" semantics (see include/kcov.h), not raw
- * bucket-edge counts, so edges <= calls by construction.  Reads are
+ * bucket-edge counts, so edges <= calls by construction.  Both are the
+ * picked ABI's: a biarch build's two tables give one number to
+ * different syscalls.  Reads are
  * RELAXED -- a stale snapshot is harmless; a racing kcov_collect bump
  * that lands mid-pick only shifts the weight by one step, well inside
  * the slack the outer accept/retry loop already tolerates.
@@ -360,8 +359,8 @@ static unsigned long frontier_reach_band_adjust(unsigned int nr,
  * fallback the rest of the codebase already takes (see
  * kcov_syscall_cold_skip_pct in kcov.c for the sibling pattern).
  */
-unsigned long frontier_cold_weight(unsigned int nr,
-					  struct childdata *child)
+unsigned long frontier_cold_weight(unsigned int nr, bool do32,
+				   struct childdata *child)
 {
 	unsigned long edges, calls;
 	unsigned long old_weight, blend_weight;
@@ -370,7 +369,7 @@ unsigned long frontier_cold_weight(unsigned int nr,
 	if (kcov_shm == NULL || nr >= MAX_NR_SYSCALL)
 		return FRONTIER_COLD_SCALE;
 
-	calls = per_syscall_calls_total(nr);
+	calls = per_syscall_calls_abi(nr, do32);
 
 	/* Never invoked: MAX bias, genuinely under-explored.  Bypass the
 	 * shadow A/B math entirely -- both formulas agree on
@@ -380,7 +379,7 @@ unsigned long frontier_cold_weight(unsigned int nr,
 	if (calls == 0)
 		return FRONTIER_COLD_SCALE;
 
-	edges = per_syscall_edges_total(nr);
+	edges = per_syscall_edges_abi(nr, do32);
 
 	/* OLD weight (call-count only): the live-path productivity signal
 	 * this function has always returned.  Logic preserved verbatim from
@@ -405,7 +404,7 @@ unsigned long frontier_cold_weight(unsigned int nr,
 		old_weight = FRONTIER_COLD_SCALE -
 			     (edges * FRONTIER_COLD_SCALE) / calls;
 
-	blend_weight = frontier_blend_weight(nr, edges, calls);
+	blend_weight = frontier_blend_weight(nr, do32, edges, calls);
 
 	frontier_blend_ab_note(old_weight, blend_weight);
 
@@ -425,7 +424,7 @@ unsigned long frontier_cold_weight(unsigned int nr,
 	else
 		picked_weight = old_weight;
 
-	return frontier_reach_band_adjust(nr, edges, picked_weight);
+	return frontier_reach_band_adjust(nr, do32, edges, picked_weight);
 }
 
 /*
