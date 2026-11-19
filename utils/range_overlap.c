@@ -65,6 +65,10 @@ static bool shared_regions_exact_overlap(unsigned long addr,
 
 		if (rsize == 0)
 			continue;
+		/* A scribbled entry whose end wraps would make rend small and
+		 * pass a range that overlaps it: fail closed. */
+		if (rsize > ULONG_MAX - rstart)
+			return true;
 		rend = rstart + rsize;
 
 		if (len == 0) {
