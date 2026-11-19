@@ -503,8 +503,8 @@ static void __cold dump_kcov_state(FILE *fp)
 	/* total_pcs / total_calls / remote_calls migrated off the kcov_shm
 	 * atomics onto per-child staged counters drained into parent_stats;
 	 * the kcov_shm->coverage.total_calls field is retained as the stamp source
-	 * for last_edge_at[] / last_efault_at[] and the cold-skip gap
-	 * denominator only, the other two shm fields are no longer bumped.
+	 * for last_edge_at[] and the cold-skip gap denominator only, the
+	 * other two shm fields are no longer bumped.
 	 * See stats_ring.h. */
 	pcs           = parent_stats.total_pcs;
 	calls         = parent_stats.total_calls;

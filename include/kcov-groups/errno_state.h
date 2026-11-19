@@ -26,13 +26,4 @@ unsigned long per_syscall_errno[MAX_NR_SYSCALL][PICKER_NCTX][ERRNO_BUCKET_NR];
  * (the loser's first-seen test fails, the winner's succeeds; either
  * way the bit lands set). */
 unsigned int errno_bucket_seen[MAX_NR_SYSCALL];
-/* Sibling of last_edge_at: stamps total_calls at the moment the
- * most recent EFAULT return was observed for this syscall slot.
- * Lets a future picker pass bias selection away from syscalls
- * stuck in pure-EFAULT regimes (no recent edges + a recent EFAULT
- * stamp is the diagnostic signature).  Stored as the same
- * total_calls counter last_edge_at uses so the two fields are
- * directly comparable (delta = last_edge_at[nr] - last_efault_at[nr]
- * is a signed "has progress outrun the fault?" signal). */
-unsigned long last_efault_at[MAX_NR_SYSCALL];
 };

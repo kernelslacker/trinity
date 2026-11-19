@@ -158,8 +158,8 @@ enum stats_field {
 	 * found-new-edge piggyback, or once per N syscalls), which keeps
 	 * the kcov_shm->coverage.total_calls shared cacheline off the per-call
 	 * atomic-bump path for dump-side accounting; that shm field is
-	 * the stamp source for last_edge_at[] / last_efault_at[] and the
-	 * cold-skip gap denominator, so it stays. */
+	 * the stamp source for last_edge_at[] and the cold-skip gap
+	 * denominator, so it stays. */
 	STATS_FIELD_TOTAL_CALLS,
 	/* kcov_collect()'s remote_mode call counter.  Same staging /
 	 * batched-flush model as STATS_FIELD_TOTAL_CALLS: bumped on the
@@ -375,8 +375,8 @@ struct stats_aggregate {
 	 * kcov_collect() invocations.  Reported by the dump path (stats.c
 	 * JSON + Scuba rows, post-mortem, strategy plateau snapshots) in
 	 * place of the kcov_shm->coverage.total_calls atomic; the shm field stays as
-	 * the stamp source for last_edge_at[] / last_efault_at[] and the
-	 * cold-skip gap denominator only. */
+	 * the stamp source for last_edge_at[] and the cold-skip gap
+	 * denominator only. */
 	unsigned long total_calls;
 
 	/* Drained from STATS_FIELD_REMOTE_CALLS.  Subset of total_calls

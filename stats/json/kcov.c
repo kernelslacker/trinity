@@ -45,9 +45,9 @@ static void json_emit_kcov_counters(void)
 	kc_edges  = __atomic_load_n(&kcov_shm->coverage.edges_found,  __ATOMIC_RELAXED);
 	/* Dump path reads total_pcs / total_calls / remote_calls from
 	 * parent_stats (per-child stats_ring feeds it). kcov_shm->coverage.total_calls
-	 * is retained solely as the stamp source for last_edge_at[] /
-	 * last_efault_at[]; the kcov_shm total_pcs and remote_calls slots
-	 * have no stamp-role consumer and are not bumped. */
+	 * is retained solely as the stamp source for last_edge_at[]; the
+	 * kcov_shm total_pcs and remote_calls slots have no stamp-role
+	 * consumer and are not bumped. */
 	kc_pcs    = parent_stats.total_pcs;
 	kc_calls  = parent_stats.total_calls;
 	kc_remote = parent_stats.remote_calls;

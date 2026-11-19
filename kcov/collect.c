@@ -648,11 +648,10 @@ bool kcov_collect(struct kcov_child *kc, unsigned int nr, bool do32,
 	/* kcov_shm->coverage.total_calls is bumped solely for its stamp role:
 	 * the returned call_nr is stored into kcov_shm->per_syscall.last_edge_at[nr]
 	 * on the found-new-edge branch below and read by the cold-skip
-	 * gap denominator in kcov_syscall_cold_skip_pct() / by the
-	 * last_efault_at[] stamp in syscall.c.  The dump-side accounting
-	 * (post-mortem, stats.c JSON + Scuba rows, strategy snapshots)
-	 * reads parent_stats.total_calls, drained from the per-child
-	 * kcov_child_local_stats staging counter bumped below. */
+	 * gap denominator in kcov_syscall_cold_skip_pct().  The dump-side
+	 * accounting (post-mortem, stats.c JSON + Scuba rows, strategy
+	 * snapshots) reads parent_stats.total_calls, drained from the
+	 * per-child kcov_child_local_stats staging counter bumped below. */
 	call_nr = __atomic_fetch_add(&kcov_shm->coverage.total_calls,
 		1, __ATOMIC_RELAXED);
 

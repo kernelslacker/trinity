@@ -370,19 +370,6 @@ static void syscall_ret_post_phase(struct syscallrecord *rec,
 		 * the kernel actually saw. */
 		cred_oracle_record(entry, bucket);
 
-		/* Stamp last_efault_at[] with the current total_calls so a
-		 * future picker pass can bias away from syscalls stuck in
-		 * pure-EFAULT regimes.  total_calls is the same counter
-		 * last_edge_at[] uses, so the two fields stay directly
-		 * comparable. */
-		if (bucket == ERRNO_BUCKET_EFAULT) {
-			unsigned long now_call =
-				__atomic_load_n(&kcov_shm->coverage.total_calls,
-						__ATOMIC_RELAXED);
-			__atomic_store_n(&kcov_shm->errno_state.last_efault_at[call],
-					 now_call, __ATOMIC_RELAXED);
-		}
-
 		/* errno-gradient-save CHEAP FIRST trigger.  PC-edge
 		 * reward is too sparse to seed admission for validator-bound
 		 * syscalls, but errno buckets already encode gate progress
