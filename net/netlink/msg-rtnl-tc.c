@@ -27,6 +27,7 @@
 #include <linux/tc_act/tc_ctinfo.h>
 #include <linux/tc_act/tc_sample.h>
 #include <linux/tc_act/tc_bpf.h>
+#include <linux/tc_act/tc_ct.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
@@ -1313,6 +1314,143 @@ static size_t build_bpf_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * The NAT range of a ct action that translates sources or destinations:
+ * addresses of one family, IPv6 one time in four, and a port range half
+ * the time, each a minimum alone half the time, which
+ * tcf_ct_fill_params_nat() takes for the whole range.
+ */
+static void build_ct_nat_range(unsigned char *p, size_t *off, size_t avail)
+{
+	struct in6_addr addr6;
+	__u32 addr;
+	__u16 port;
+
+	if (ONE_IN(4)) {
+		generate_rand_bytes((unsigned char *) &addr6, sizeof(addr6));
+		put_nlattr(p, off, avail, TCA_CT_NAT_IPV6_MIN, &addr6,
+			   sizeof(addr6));
+		if (RAND_BOOL()) {
+			generate_rand_bytes((unsigned char *) &addr6,
+					    sizeof(addr6));
+			put_nlattr(p, off, avail, TCA_CT_NAT_IPV6_MAX, &addr6,
+				   sizeof(addr6));
+		}
+	} else {
+		addr = rnd_u32();
+		put_nlattr(p, off, avail, TCA_CT_NAT_IPV4_MIN, &addr,
+			   sizeof(addr));
+		if (RAND_BOOL()) {
+			addr = rnd_u32();
+			put_nlattr(p, off, avail, TCA_CT_NAT_IPV4_MAX, &addr,
+				   sizeof(addr));
+		}
+	}
+	if (RAND_BOOL()) {
+		port = rnd_u32();
+		put_nlattr(p, off, avail, TCA_CT_NAT_PORT_MIN, &port,
+			   sizeof(port));
+		if (RAND_BOOL()) {
+			port = rnd_u32();
+			put_nlattr(p, off, avail, TCA_CT_NAT_PORT_MAX, &port,
+				   sizeof(port));
+		}
+	}
+}
+
+/*
+ * ct's TCA_ACT_OPTIONS, which tcf_ct_init() parses strictly.  It refuses
+ * the action without TCA_CT_PARMS, a NAT both ways, and a helper name
+ * over 15 characters or of no helper nf_ct_add_helper() finds for its
+ * family and protocol; a ct in a filter also wants the filter's qdisc to
+ * be ingress or clsact.  One action in eight clears the packet's entry.
+ * The others commit half the time, forced one in four of those, and NAT
+ * one time in four, translating sources or destinations or neither; and
+ * each sets a zone 1 to 8 half the time, a mark one in four and labels
+ * one in eight, either under a mask half the time, and an ftp, tftp or
+ * sip helper over IPv4 or IPv6 one in eight.  Index 1 to 8 names an
+ * action an earlier call made, as gact's does.
+ */
+static size_t build_ct_options(unsigned char *p, size_t avail)
+{
+	static const __u16 nat_dirs[] = {
+		0, TCA_CT_ACT_NAT_SRC, TCA_CT_ACT_NAT_DST,
+	};
+	static const struct {
+		const char *name;
+		__u8 proto;
+	} helpers[] = {
+		{ "ftp", IPPROTO_TCP }, { "tftp", IPPROTO_UDP },
+		{ "sip", IPPROTO_UDP }, { "sip", IPPROTO_TCP },
+	};
+	unsigned char labels[16];
+	struct tc_ct parm;
+	size_t off = 0;
+	unsigned int h;
+	__u16 action = 0, zone;
+	__u32 mark;
+	__u8 val8;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	if (!put_nlattr(p, &off, avail, TCA_CT_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	if (ONE_IN(8)) {
+		action = TCA_CT_ACT_CLEAR;
+		put_nlattr(p, &off, avail, TCA_CT_ACTION, &action,
+			   sizeof(action));
+		return off;
+	}
+	if (RAND_BOOL())
+		action |= TCA_CT_ACT_COMMIT | (ONE_IN(4) ? TCA_CT_ACT_FORCE : 0);
+	if (ONE_IN(4))
+		action |= TCA_CT_ACT_NAT | RAND_ARRAY(nat_dirs);
+	if (action != 0)
+		put_nlattr(p, &off, avail, TCA_CT_ACTION, &action,
+			   sizeof(action));
+	if (action & (TCA_CT_ACT_NAT_SRC | TCA_CT_ACT_NAT_DST))
+		build_ct_nat_range(p, &off, avail);
+
+	if (RAND_BOOL()) {
+		zone = RAND_RANGE(1, 8);
+		put_nlattr(p, &off, avail, TCA_CT_ZONE, &zone, sizeof(zone));
+	}
+	if (ONE_IN(4)) {
+		mark = rnd_u32();
+		put_nlattr(p, &off, avail, TCA_CT_MARK, &mark, sizeof(mark));
+		if (RAND_BOOL()) {
+			mark = rnd_u32();
+			put_nlattr(p, &off, avail, TCA_CT_MARK_MASK, &mark,
+				   sizeof(mark));
+		}
+	}
+	if (ONE_IN(8)) {
+		generate_rand_bytes(labels, sizeof(labels));
+		put_nlattr(p, &off, avail, TCA_CT_LABELS, labels,
+			   sizeof(labels));
+		if (RAND_BOOL()) {
+			generate_rand_bytes(labels, sizeof(labels));
+			put_nlattr(p, &off, avail, TCA_CT_LABELS_MASK, labels,
+				   sizeof(labels));
+		}
+	}
+	if (ONE_IN(8)) {
+		h = rnd_modulo_u32(ARRAY_SIZE(helpers));
+		put_nlattr(p, &off, avail, TCA_CT_HELPER_NAME, helpers[h].name,
+			   strlen(helpers[h].name) + 1);
+		val8 = RAND_BOOL() ? AF_INET : AF_INET6;
+		put_nlattr(p, &off, avail, TCA_CT_HELPER_FAMILY, &val8,
+			   sizeof(val8));
+		val8 = helpers[h].proto;
+		put_nlattr(p, &off, avail, TCA_CT_HELPER_PROTO, &val8,
+			   sizeof(val8));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1346,6 +1484,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "sample",	build_sample_options },
 		{ "police",	build_police_options },
 		{ "bpf",	build_bpf_options },
+		{ "ct",		build_ct_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

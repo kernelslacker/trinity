@@ -45,6 +45,7 @@
 #include <linux/tc_act/tc_ctinfo.h>
 #include <linux/tc_act/tc_sample.h>
 #include <linux/tc_act/tc_bpf.h>
+#include <linux/tc_act/tc_ct.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 
@@ -2565,6 +2566,9 @@ struct action_attrs {
 	unsigned int bpf_actions;	/* actions of kind "bpf" */
 	unsigned int bpf_parms;		/* ... with options tcf_bpf_init() takes */
 	unsigned int bpf_ebpf;		/* ... of those, running an eBPF program */
+	unsigned int cts;		/* actions of kind "ct" */
+	unsigned int ct_parms;		/* ... with options tcf_ct_init() takes */
+	unsigned int ct_commits;	/* ... of those, committing */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3628,6 +3632,107 @@ static void tally_bpf_options(struct action_attrs *t, const unsigned char *p,
 }
 
 /*
+ * The TCA_ACT_OPTIONS of one ct action, as tcf_ct_init()'s strict parse
+ * and ct_policy take them: PARMS, exact widths, labels of at most 16
+ * bytes and no other type.  Unless the action clears, which ends the
+ * parse, it does not NAT both ways, and a helper name is at most 15
+ * characters, NUL-ended, of a helper registered for its protocol (TCP
+ * unless named): ftp over TCP, tftp over UDP, sip over either, any of
+ * them over IPv4 or IPv6.
+ */
+static void tally_ct_options(struct action_attrs *t, const unsigned char *p,
+			     size_t len)
+{
+	static const struct {
+		const char *name;
+		__u8 proto;
+	} helpers[] = {
+		{ "ftp", IPPROTO_TCP }, { "tftp", IPPROTO_UDP },
+		{ "sip", IPPROTO_UDP }, { "sip", IPPROTO_TCP },
+	};
+	const char *helper = NULL;
+	const struct nlattr *nla;
+	struct tc_ct parm;
+	bool parms = false, ok = true, known = false;
+	__u8 family = AF_INET, proto = IPPROTO_TCP;
+	__u16 action = 0;
+	unsigned int i;
+
+	t->cts++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_CT_PARMS:
+			parms = plen == sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_CT_ACTION:
+			ok &= plen == sizeof(action);
+			if (plen == sizeof(action))
+				memcpy(&action, data, sizeof(action));
+			break;
+		case TCA_CT_ZONE:
+		case TCA_CT_NAT_PORT_MIN:
+		case TCA_CT_NAT_PORT_MAX:
+			ok &= plen == sizeof(__u16);
+			break;
+		case TCA_CT_MARK:
+		case TCA_CT_MARK_MASK:
+		case TCA_CT_NAT_IPV4_MIN:
+		case TCA_CT_NAT_IPV4_MAX:
+			ok &= plen == sizeof(__u32);
+			break;
+		case TCA_CT_LABELS:
+		case TCA_CT_LABELS_MASK:
+			ok &= plen <= 16;
+			break;
+		case TCA_CT_NAT_IPV6_MIN:
+		case TCA_CT_NAT_IPV6_MAX:
+			ok &= plen == sizeof(struct in6_addr);
+			break;
+		case TCA_CT_HELPER_NAME:
+			helper = (const char *) data;
+			ok &= plen >= 1 && plen <= 16 && data[plen - 1] == '\0';
+			break;
+		case TCA_CT_HELPER_FAMILY:
+			ok &= plen == 1;
+			family = data[0];
+			break;
+		case TCA_CT_HELPER_PROTO:
+			ok &= plen == 1;
+			proto = data[0];
+			break;
+		default:
+			ok = false;
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !ok || !ctrlact_takes(parm.action))
+		return;
+	if (!(action & TCA_CT_ACT_CLEAR)) {
+		if ((action & TCA_CT_ACT_NAT) && (action & TCA_CT_ACT_NAT_SRC) &&
+		    (action & TCA_CT_ACT_NAT_DST))
+			return;
+		for (i = 0; helper != NULL && i < ARRAY_SIZE(helpers); i++)
+			known |= !strcmp(helper, helpers[i].name) &&
+				 proto == helpers[i].proto;
+		if (helper != NULL &&
+		    (!known || (family != AF_INET && family != AF_INET6)))
+			return;
+	}
+	t->ct_parms++;
+	t->ct_commits += (action & TCA_CT_ACT_COMMIT) != 0;
+}
+
+/*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
  * action has any.
@@ -3653,6 +3758,7 @@ static const struct {
 	{ "sample",	tally_sample_options },
 	{ "police",	tally_police_options },
 	{ "bpf",	tally_bpf_options },
+	{ "ct",		tally_ct_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3840,6 +3946,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a bpf action carries no options tcf_bpf_init() takes");
 	expect_fraction(t->bpf_ebpf, t->bpf_parms, 0.40, 0.60, "bpf actions",
 			"rtnl: a bpf action does not run a loaded eBPF program half the time");
+	expect_fraction(t->ct_parms, t->cts, 0.98, 1.0, "ct actions",
+			"rtnl: a ct action carries no options tcf_ct_init() takes");
+	expect_fraction(t->ct_commits, t->ct_parms, 0.35, 0.55, "ct actions",
+			"rtnl: a ct action does not commit seven times in sixteen");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
