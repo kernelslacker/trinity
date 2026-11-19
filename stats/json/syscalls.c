@@ -13,7 +13,8 @@
 
 /* Emit one syscall entry. Returns true if anything was printed. Caller is
  * responsible for emitting a leading comma between successive entries. */
-static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
+static bool json_emit_syscall(const struct syscalltable *table, unsigned int i,
+			      bool do32)
 {
 	struct syscallentry *entry;
 	struct syscall_runtime *rt;
@@ -35,7 +36,7 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 		extrafork_calls = __atomic_load_n(
 			&kcov_shm->per_syscall.per_syscall_extrafork_calls[nr],
 			__ATOMIC_RELAXED);
-		kcov_calls = per_syscall_calls_total(nr);
+		kcov_calls = per_syscall_calls_abi(nr, do32);
 	}
 
 	putchar('{');
@@ -43,9 +44,10 @@ static bool json_emit_syscall(const struct syscalltable *table, unsigned int i)
 	json_emit_string(entry->name);
 	/* kcov_calls / attempted_calls are named explicitly to disambiguate
 	 * the two per-syscall denominators the stats consumers routinely
-	 * conflate: kcov_calls is per_syscall_calls[nr] (KCOV-bracketed
-	 * count kcov_collect() bumps -- the natural numerator match for
-	 * per_syscall_edges and cold-skip / picker productivity ratios),
+	 * conflate: kcov_calls is per_syscall_calls[nr][..][do32] (the
+	 * KCOV-bracketed count kcov_collect() bumps for this table's ABI --
+	 * the natural numerator match for per_syscall_edges and cold-skip /
+	 * picker productivity ratios),
 	 * while attempted_calls is syscall_rt(entry)->attempted (every
 	 * dispatched invocation regardless of whether the kcov bracket ran,
 	 * so it also counts EXTRA_FORK / validator-rejected / dry-run paths).
@@ -83,7 +85,7 @@ void json_emit_syscalls_array(void)
 				continue;
 			if (!first)
 				putchar(',');
-			json_emit_syscall(syscalls_32bit, i);
+			json_emit_syscall(syscalls_32bit, i, true);
 			first = false;
 		}
 		for_each_64bit_syscall(i) {
@@ -92,7 +94,7 @@ void json_emit_syscalls_array(void)
 				continue;
 			if (!first)
 				putchar(',');
-			json_emit_syscall(syscalls_64bit, i);
+			json_emit_syscall(syscalls_64bit, i, false);
 			first = false;
 		}
 	} else {
@@ -102,7 +104,7 @@ void json_emit_syscalls_array(void)
 				continue;
 			if (!first)
 				putchar(',');
-			json_emit_syscall(syscalls, i);
+			json_emit_syscall(syscalls, i, false);
 			first = false;
 		}
 	}

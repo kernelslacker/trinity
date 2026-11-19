@@ -217,11 +217,9 @@ struct kcov_diag_trunc_entry {
 	uint64_t trace_truncated;
 	uint64_t cmp_trace_truncated;
 	uint64_t max_trace_size;
-	/* per_syscall_calls[] and per_syscall_edges[] are indexed by nr
-	 * only, not by arch; under biarch both rows for the same nr show
-	 * the same denominator.  The ratio still answers "what share of
-	 * this syscall's calls produced an arch-N trunc" / "how many
-	 * edge-winning calls landed for each truncation on this syscall". */
+	/* The row's own ABI's calls and edge-winning calls: "what share
+	 * of this syscall's calls produced a trunc" / "how many
+	 * edge-winning calls landed for each truncation on it". */
 	uint64_t calls;
 	uint64_t edge_wins;
 	uint64_t rank;
@@ -254,8 +252,8 @@ void kcov_diag_emit_truncation_topn(void)
 						      __ATOMIC_RELAXED);
 			uint64_t dpo = __atomic_load_n(&d->dedup_probe_overflow,
 						       __ATOMIC_RELAXED);
-			uint64_t calls = per_syscall_calls_total(i);
-			uint64_t ew = per_syscall_edges_total(i);
+			uint64_t calls = per_syscall_calls_abi(i, do32);
+			uint64_t ew = per_syscall_edges_abi(i, do32);
 			uint64_t rank;
 
 			if (dpo > 0) {

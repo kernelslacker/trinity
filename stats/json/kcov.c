@@ -156,9 +156,12 @@ static void json_emit_kcov_topn(const struct syscalltable *table,
 	memset(top_edges, 0, sizeof(top_edges));
 	memset(delta_edges, 0, sizeof(delta_edges));
 
+	/* The rows name native syscalls, so they count the native slots:
+	 * the compat table gives the same numbers to other syscalls. */
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long edges = per_syscall_edges_total(i);
-		unsigned long prev  = per_syscall_edges_previous_total(i);
+		unsigned long edges = per_syscall_edges_abi(i, false);
+		unsigned long prev  =
+			kcov_shm->per_syscall.per_syscall_edges_previous[i][0];
 		unsigned long delta = sat_sub_ul(edges, prev);
 
 		if (edges > 0)

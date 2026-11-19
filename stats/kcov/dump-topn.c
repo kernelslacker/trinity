@@ -22,10 +22,14 @@ static void dump_stats_render_kcov_per_syscall_edges_topn(unsigned int nr_syscal
 		unsigned int delta_count = 0;
 		bool any_delta = false;
 
+		/* The rows name native syscalls, so they count the native
+		 * slots: the compat table gives the same numbers to other
+		 * syscalls. */
 		memset(delta_edges, 0, sizeof(delta_edges));
 		for (i = 0; i < nr_syscalls_to_scan; i++) {
-			unsigned long prev = per_syscall_edges_previous_total(i);
-			unsigned long curr = per_syscall_edges_total(i);
+			unsigned long prev =
+				kcov_shm->per_syscall.per_syscall_edges_previous[i][0];
+			unsigned long curr = per_syscall_edges_abi(i, false);
 			unsigned long delta = sat_sub_ul(curr, prev);
 
 			if (delta > 0)
@@ -439,9 +443,10 @@ void dump_stats_render_kcov_top_edges_and_cold(unsigned int nr_syscalls_to_scan,
 	unsigned int nr_per_arch[2];
 	unsigned int i, j, arch;
 
+	/* Native rows, native slots, as in the recent-growth top-N. */
 	memset(top_edges, 0, sizeof(top_edges));
 	for (i = 0; i < nr_syscalls_to_scan; i++) {
-		unsigned long edges = per_syscall_edges_total(i);
+		unsigned long edges = per_syscall_edges_abi(i, false);
 
 		if (edges == 0)
 			continue;

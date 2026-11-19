@@ -423,7 +423,7 @@ static void stats_timeseries_emit_table(const struct syscalltable *table,
 			edges = __atomic_load_n(
 				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][arch_ix].bucket_bits_real,
 				__ATOMIC_RELAXED);
-			kcov_calls = per_syscall_calls_total(nr);
+			kcov_calls = per_syscall_calls_abi(nr, do32);
 			local_edges = __atomic_load_n(
 				&kcov_shm->pc_ctx.local_pc_edge_count[nr],
 				__ATOMIC_RELAXED);

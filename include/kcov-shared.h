@@ -301,11 +301,6 @@ static inline unsigned long per_syscall_calls_total(unsigned int nr)
 	}
 	return total;
 }
-static inline unsigned long per_syscall_edges_previous_total(unsigned int nr)
-{
-	return kcov_shm->per_syscall.per_syscall_edges_previous[nr][0] +
-	       kcov_shm->per_syscall.per_syscall_edges_previous[nr][1];
-}
 static inline unsigned long per_syscall_edges_prior_total(unsigned int nr)
 {
 	return kcov_shm->per_syscall.per_syscall_edges_prior[nr][0] +

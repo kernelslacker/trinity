@@ -112,7 +112,8 @@ void dump_syscall_category_histogram(void)
 	}
 }
 
-static void dump_entry(const struct syscalltable *table, unsigned int i)
+static void dump_entry(const struct syscalltable *table, unsigned int i,
+		       bool do32)
 {
 	struct syscallentry *entry;
 	struct syscall_runtime *rt;
@@ -134,7 +135,7 @@ static void dump_entry(const struct syscalltable *table, unsigned int i)
 	 * candidates for arg reshuffling or deprioritisation. */
 	have_kcov = (kcov_shm != NULL && i < MAX_NR_SYSCALL);
 	if (have_kcov)
-		edges = per_syscall_edges_total(i);
+		edges = per_syscall_edges_abi(i, do32);
 
 	if (have_kcov && edges > 0) {
 		unsigned long ratio_x100 =
@@ -184,15 +185,15 @@ void dump_stats_per_syscall_tables(void)
 	if (biarch == true) {
 		output(0, "32bit:\n");
 		for_each_32bit_syscall(i) {
-			dump_entry(syscalls_32bit, i);
+			dump_entry(syscalls_32bit, i, true);
 		}
 		output(0, "64bit:\n");
 		for_each_64bit_syscall(i) {
-			dump_entry(syscalls_64bit, i);
+			dump_entry(syscalls_64bit, i, false);
 		}
 	} else {
 		for_each_syscall(i) {
-			dump_entry(syscalls, i);
+			dump_entry(syscalls, i, false);
 		}
 	}
 
