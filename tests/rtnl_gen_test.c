@@ -37,6 +37,7 @@
 #include <linux/tc_act/tc_vlan.h>
 #include <linux/tc_act/tc_csum.h>
 #include <linux/tc_act/tc_tunnel_key.h>
+#include <linux/tc_act/tc_nat.h>
 #include <linux/if_packet.h>
 
 #include "debug.h"		/* BUG */
@@ -2530,6 +2531,9 @@ struct action_attrs {
 	unsigned int tunnel_key_parms;	/* ... with options tunnel_key_init() takes */
 	unsigned int tunnel_key_sets;	/* ... of those, sets */
 	unsigned int tunnel_key_opts;	/* ... of those, with encap options */
+	unsigned int nats;		/* actions of kind "nat" */
+	unsigned int nat_parms;		/* ... with options tcf_nat_init() takes */
+	unsigned int nat_lo;		/* ... of those, matching lo's address */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3128,6 +3132,36 @@ static void tally_tunnel_key_options(struct action_attrs *t,
 	t->tunnel_key_parms++;
 }
 
+/* The TCA_ACT_OPTIONS of one nat action, as tcf_nat_init() reads them:
+ * TCA_NAT_PARMS alone. */
+static void tally_nat_options(struct action_attrs *t, const unsigned char *p,
+			      size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_nat parm;
+	bool parms = false;
+
+	t->nats++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+
+		if ((nla->nla_type & NLA_TYPE_MASK) == TCA_NAT_PARMS &&
+		    plen >= sizeof(parm)) {
+			memcpy(&parm, p + NLA_HDRLEN, sizeof(parm));
+			parms = ctrlact_takes(parm.action);
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms)
+		return;
+	t->nat_parms++;
+	t->nat_lo += ((parm.old_addr ^ htonl(INADDR_LOOPBACK)) & parm.mask) == 0;
+}
+
 /*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
@@ -3146,6 +3180,7 @@ static const struct {
 	{ "vlan",	tally_vlan_options },
 	{ "csum",	tally_csum_options },
 	{ "tunnel_key",	tally_tunnel_key_options },
+	{ "nat",	tally_nat_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3297,6 +3332,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a tunnel_key action is not a set seven times in eight");
 	expect_fraction(t->tunnel_key_opts, t->tunnel_key_sets, 0.40, 0.60, "tunnel_key actions",
 			"rtnl: a tunnel_key set does not carry encap options half the time");
+	expect_fraction(t->nat_parms, t->nats, 0.90, 1.0, "nat actions",
+			"rtnl: a nat action carries no options tcf_nat_init() takes");
+	expect_fraction(t->nat_lo, t->nat_parms, 0.45, 0.65, "nat actions",
+			"rtnl: a nat action does not rewrite lo's address half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */

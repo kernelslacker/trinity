@@ -18,6 +18,7 @@
 #include <linux/tc_act/tc_skbedit.h>
 #include <linux/tc_act/tc_vlan.h>
 #include <linux/tc_act/tc_csum.h>
+#include <linux/tc_act/tc_nat.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
 #include "kernel/tc_tunnel_key.h"	/* TCA_TUNNEL_KEY_NO_FRAG */
@@ -895,6 +896,32 @@ static size_t build_tunnel_key_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * nat's TCA_ACT_OPTIONS.  tcf_nat_init() refuses the action only without
+ * TCA_NAT_PARMS.  Half the actions rewrite lo's address, the one a lane
+ * child's netns carries traffic on, under a prefix mask of 0 to 32 bits,
+ * and half rewrite on egress.  Index 1 to 8 names an action an earlier
+ * call made, as gact's does.
+ */
+static size_t build_nat_options(unsigned char *p, size_t avail)
+{
+	unsigned int bits = RAND_RANGE(0, 32);
+	struct tc_nat parm;
+	size_t off = 0;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.old_addr = RAND_BOOL() ? htonl(INADDR_LOOPBACK) : rnd_u32();
+	parm.new_addr = rnd_u32();
+	parm.mask = bits == 0 ? 0 : htonl(~0U << (32 - bits));
+	parm.flags = RAND_BOOL() ? TCA_NAT_FLAG_EGRESS : 0;
+	if (!put_nlattr(p, &off, avail, TCA_NAT_PARMS, &parm, sizeof(parm)))
+		return 0;
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -920,6 +947,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "vlan",	build_vlan_options },
 		{ "csum",	build_csum_options },
 		{ "tunnel_key",	build_tunnel_key_options },
+		{ "nat",	build_nat_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
