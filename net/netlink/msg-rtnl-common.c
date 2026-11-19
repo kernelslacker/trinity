@@ -70,6 +70,17 @@ struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
 	return (struct nlattr *)(buf + offset);
 }
 
+bool put_nlattr(unsigned char *buf, size_t *off, size_t cap,
+		unsigned short type, const void *data, size_t len)
+{
+	if (!start_nlattr(buf, *off, cap, type, len))
+		return false;
+	if (len != 0)
+		memcpy(buf + *off + NLA_HDRLEN, data, len);
+	*off += NLA_ALIGN(NLA_HDRLEN + len);
+	return true;
+}
+
 /*
  * Build a chain of nested sub-attributes inside a buffer.
  * Returns the total length of the nested chain (unaligned).

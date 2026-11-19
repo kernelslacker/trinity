@@ -651,17 +651,6 @@ size_t gen_rta_nexthop_payload(unsigned char *p, size_t avail,
 
 /* Append @len bytes of @data as an attribute of @type at buf+*off, in a
  * buffer of cap bytes, and step *off past it; false when it does not fit. */
-static bool put_nh_attr(unsigned char *buf, size_t *off, size_t cap,
-			unsigned short type, const void *data, size_t len)
-{
-	if (!start_nlattr(buf, *off, cap, type, len))
-		return false;
-	if (len != 0)
-		memcpy(buf + *off + NLA_HDRLEN, data, len);
-	*off += NLA_ALIGN(NLA_HDRLEN + len);
-	return true;
-}
-
 /*
  * A group: its members, no id twice (nh_check_attr_group()), its type, and
  * of what a group takes beside them a resilient group's NHA_RES_GROUP, and
@@ -686,8 +675,8 @@ static size_t put_nh_group(unsigned char *buf, size_t off, size_t cap,
 		} while (j < i);
 		grp[i].weight = rnd_modulo_u32(256);
 	}
-	if (!put_nh_attr(buf, &off, cap, NHA_GROUP, grp, n * sizeof(grp[0])) ||
-	    !put_nh_attr(buf, &off, cap, NHA_GROUP_TYPE, &type, sizeof(type)))
+	if (!put_nlattr(buf, &off, cap, NHA_GROUP, grp, n * sizeof(grp[0])) ||
+	    !put_nlattr(buf, &off, cap, NHA_GROUP_TYPE, &type, sizeof(type)))
 		return off;
 
 	if (type == NEXTHOP_GRP_TYPE_RES && RAND_BOOL()) {
@@ -698,27 +687,27 @@ static size_t put_nh_group(unsigned char *buf, size_t off, size_t cap,
 		size_t nlen = 0;
 
 		if (RAND_BOOL())
-			put_nh_attr(nest, &nlen, sizeof(nest),
+			put_nlattr(nest, &nlen, sizeof(nest),
 				    NHA_RES_GROUP_BUCKETS, &buckets,
 				    sizeof(buckets));
 		if (RAND_BOOL())
-			put_nh_attr(nest, &nlen, sizeof(nest),
+			put_nlattr(nest, &nlen, sizeof(nest),
 				    NHA_RES_GROUP_IDLE_TIMER, &idle,
 				    sizeof(idle));
 		if (RAND_BOOL())
-			put_nh_attr(nest, &nlen, sizeof(nest),
+			put_nlattr(nest, &nlen, sizeof(nest),
 				    NHA_RES_GROUP_UNBALANCED_TIMER,
 				    &unbalanced, sizeof(unbalanced));
-		put_nh_attr(buf, &off, cap, NHA_RES_GROUP | NLA_F_NESTED,
+		put_nlattr(buf, &off, cap, NHA_RES_GROUP | NLA_F_NESTED,
 			    nest, nlen);
 	}
 	if (ONE_IN(4)) {
 		__u32 on = RAND_BOOL();
 
-		put_nh_attr(buf, &off, cap, NHA_HW_STATS_ENABLE, &on,
+		put_nlattr(buf, &off, cap, NHA_HW_STATS_ENABLE, &on,
 			    sizeof(on));
 	}
-	if (ONE_IN(8) && put_nh_attr(buf, &off, cap, NHA_FDB, NULL, 0))
+	if (ONE_IN(8) && put_nlattr(buf, &off, cap, NHA_FDB, NULL, 0))
 		nhm->nh_flags = 0;
 	return off;
 }
@@ -743,23 +732,23 @@ static size_t put_nh_single(unsigned char *buf, size_t off, size_t cap,
 	switch (rnd_modulo_u32(4)) {
 	case 0:
 		nhm->nh_flags = 0;
-		put_nh_attr(buf, &off, cap, NHA_BLACKHOLE, NULL, 0);
+		put_nlattr(buf, &off, cap, NHA_BLACKHOLE, NULL, 0);
 		return off;
 	case 1:
 		nhm->nh_flags = 0;
-		if (!put_nh_attr(buf, &off, cap, NHA_FDB, NULL, 0) ||
+		if (!put_nlattr(buf, &off, cap, NHA_FDB, NULL, 0) ||
 		    ONE_IN(4) ||
-		    !put_nh_attr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
+		    !put_nlattr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
 			return off;
 		if (RAND_BOOL())
-			put_nh_attr(buf, &off, cap, NHA_DST_PORT, &port,
+			put_nlattr(buf, &off, cap, NHA_DST_PORT, &port,
 				    sizeof(port));
 		return off;
 	default:
-		if (!put_nh_attr(buf, &off, cap, NHA_OIF, &oif, sizeof(oif)))
+		if (!put_nlattr(buf, &off, cap, NHA_OIF, &oif, sizeof(oif)))
 			return off;
 		if (((nhm->nh_flags & RTNH_F_ONLINK) || ONE_IN(4)) &&
-		    !put_nh_attr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
+		    !put_nlattr(buf, &off, cap, NHA_GATEWAY, gw, gwlen))
 			return off;
 		if (ONE_IN(8))
 			off = append_lwt_encap(buf, off, cap, NHA_ENCAP_TYPE,
@@ -796,7 +785,7 @@ size_t append_nexthop_shape(struct nlmsghdr *nlh, size_t len, size_t cap)
 	if (nhm->nh_family == AF_UNSPEC)
 		id += NH_IDS;
 	if (!ONE_IN(8) &&
-	    !put_nh_attr(msg, &off, cap, NHA_ID, &id, sizeof(id)))
+	    !put_nlattr(msg, &off, cap, NHA_ID, &id, sizeof(id)))
 		return off;
 	if (nhm->nh_family == AF_UNSPEC)
 		return put_nh_group(msg, off, cap, nhm);

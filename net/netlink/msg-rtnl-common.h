@@ -11,6 +11,7 @@
 #ifndef NET_NETLINK_MSG_RTNL_COMMON_H
 #define NET_NETLINK_MSG_RTNL_COMMON_H
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <netinet/in.h>
 #include <linux/netlink.h>
@@ -35,6 +36,14 @@ void rand_ipv6(struct in6_addr *addr);
 struct nlattr *start_nlattr(unsigned char *buf, size_t offset,
 			    size_t buflen, unsigned short nla_type,
 			    size_t payload_len);
+
+/*
+ * Write a whole nlattr, header and len bytes of data, at buf + *off and
+ * advance *off past it.  Returns false, writing nothing, if it does not
+ * fit in cap.
+ */
+bool put_nlattr(unsigned char *buf, size_t *off, size_t cap,
+		unsigned short type, const void *data, size_t len);
 
 /*
  * Per-attribute descriptor used by build_nested_attrs().  Each entry
