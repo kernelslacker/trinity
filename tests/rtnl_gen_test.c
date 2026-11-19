@@ -31,6 +31,7 @@
 #include <linux/pkt_sched.h>
 #include <linux/rtnetlink.h>
 #include <linux/tc_act/tc_gact.h>
+#include <linux/tc_act/tc_ife.h>
 
 #include "debug.h"		/* BUG */
 #include "kernel/if_addr.h"	/* struct ifaddrmsg, IFA_TARGET_NETNSID */
@@ -2496,6 +2497,12 @@ struct action_attrs {
 	unsigned int parms;	/* ... with a TCA_GACT_PARMS tcf_gact_init() takes */
 	unsigned int indexed;	/* ... of those, naming index 1 to 8 */
 	unsigned int probs;	/* ... and with a TCA_GACT_PROB it takes */
+	unsigned int ifes;	/* actions of kind "ife", in a tab or a filter */
+	unsigned int ife_parms;	/* ... with options tcf_ife_init() takes */
+	unsigned int ife_encode;	/* ... of those, encoders */
+	unsigned int ife_addressed;	/* ... encoders with a type and both MACs */
+	unsigned int ife_lists;	/* ... with a TCA_IFE_METALST */
+	unsigned int ife_zero;	/* ... naming a metadatum with a value of 0 */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -2552,14 +2559,105 @@ static void tally_gact_options(struct action_attrs *t, const unsigned char *p,
 	t->probs += parms && prob;
 }
 
-/* One action of a TCA_ROOT_TAB: its kind, and a gact's options. */
+/* The width of an ife metadatum's value: u32 for skbmark and skbprio, u16
+ * for tcindex; 0 for one the builder does not name. */
+static size_t ife_meta_width(unsigned short id)
+{
+	switch (id) {
+	case IFE_META_SKBMARK:
+	case IFE_META_PRIO:
+		return sizeof(__u32);
+	case IFE_META_TCINDEX:
+		return sizeof(__u16);
+	}
+	return 0;
+}
+
+/* A TCA_IFE_METALST as load_metalist() and populate_metalist() read it:
+ * each entry a metadatum the builder names, with no value (allow) or a
+ * value of its width.  Sets *zero when one carries a value of 0. */
+static bool ife_metalist(const unsigned char *p, size_t len, bool *zero)
+{
+	const struct nlattr *nla;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		size_t width = ife_meta_width(nla->nla_type & NLA_TYPE_MASK);
+		__u32 val = 0;
+
+		if (width == 0 || (plen != 0 && plen != width))
+			return false;
+		memcpy(&val, p + NLA_HDRLEN, plen);
+		*zero |= plen != 0 && val == 0;
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	return true;
+}
+
+/* The TCA_ACT_OPTIONS of one ife action, as tcf_ife_init() reads them. */
+static void tally_ife_options(struct action_attrs *t, const unsigned char *p,
+			      size_t len)
+{
+	const struct nlattr *nla;
+	bool parms = false, encode = false, list_ok = true, list = false;
+	bool zero = false;
+	unsigned int addressed = 0;
+
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_IFE_PARMS:
+			if (plen >= sizeof(struct tc_ife)) {
+				struct tc_ife parm;
+
+				memcpy(&parm, data, sizeof(parm));
+				parms = !(parm.flags & ~IFE_ENCODE) &&
+					ctrlact_takes(parm.action);
+				encode = parm.flags & IFE_ENCODE;
+			}
+			break;
+		case TCA_IFE_TYPE:
+			addressed += plen == sizeof(__u16);
+			break;
+		case TCA_IFE_DMAC:
+		case TCA_IFE_SMAC:
+			addressed += plen == ETH_ALEN;
+			break;
+		case TCA_IFE_METALST:
+			list = true;
+			list_ok = ife_metalist(data, plen, &zero);
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !list_ok)
+		return;
+	t->ife_parms++;
+	t->ife_encode += encode;
+	t->ife_addressed += encode && addressed == 3;
+	t->ife_lists += list;
+	t->ife_zero += zero;
+}
+
+/* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
+ * a gact's or an ife's options. */
 static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 			     size_t len)
 {
 	const unsigned char *options = NULL;
 	size_t options_len = 0;
 	const struct nlattr *nla;
-	bool gact = false;
+	bool gact = false, ife = false;
 
 	while ((nla = fit_attr(p, len)) != NULL) {
 		size_t total = NLA_ALIGN(nla->nla_len);
@@ -2569,6 +2667,8 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		case TCA_ACT_KIND:
 			gact = plen == sizeof("gact") &&
 			       !memcmp(p + NLA_HDRLEN, "gact", sizeof("gact"));
+			ife = plen == sizeof("ife") &&
+			      !memcmp(p + NLA_HDRLEN, "ife", sizeof("ife"));
 			break;
 		case TCA_ACT_OPTIONS:
 			options = p + NLA_HDRLEN;
@@ -2580,11 +2680,15 @@ static void tally_tab_action(struct action_attrs *t, const unsigned char *p,
 		p += total;
 		len -= total;
 	}
-	if (!gact)
-		return;
-	t->gacts++;
-	if (options != NULL)
-		tally_gact_options(t, options, options_len);
+	if (gact) {
+		t->gacts++;
+		if (options != NULL)
+			tally_gact_options(t, options, options_len);
+	} else if (ife) {
+		t->ifes++;
+		if (options != NULL)
+			tally_ife_options(t, options, options_len);
+	}
 }
 
 static void tally_tab(struct action_attrs *t, const unsigned char *p,
@@ -2658,6 +2762,16 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a gact action does not name a small index three times in four");
 	expect_fraction(t->probs, t->parms, 0.40, 0.60, "gact PROBs",
 			"rtnl: a gact action does not carry a TCA_GACT_PROB half the time");
+	expect_fraction(t->ife_parms, t->ifes, 0.90, 1.0, "ife actions",
+			"rtnl: an ife action carries no options tcf_ife_init() takes");
+	expect_fraction(t->ife_encode, t->ife_parms, 0.40, 0.60, "ife actions",
+			"rtnl: an ife action is not an encoder half the time");
+	expect_fraction(t->ife_addressed, t->ife_encode, 0.65, 0.85, "ife encoders",
+			"rtnl: an ife encoder does not carry a type and both MACs three times in four");
+	expect_fraction(t->ife_lists, t->ife_parms, 0.40, 0.60, "ife actions",
+			"rtnl: an ife action does not carry a metadata list half the time");
+	expect_fraction(t->ife_zero, t->ife_lists, 0.30, 0.80, "ife metadata lists",
+			"rtnl: an ife metadata list seldom configures a value of 0");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
@@ -2706,9 +2820,11 @@ static bool action_array(const unsigned char *p, size_t len)
 	return n != 0;
 }
 
-/* TCA_OPTIONS of a matchall filter, as mall_change() parses them. */
-static void tally_mall_options(struct tfilter_shape *t, const unsigned char *p,
-			       size_t len)
+/* TCA_OPTIONS of a matchall filter, as mall_change() parses them; the
+ * actions also go to the action tally. */
+static void tally_mall_options(struct tfilter_shape *t,
+			       struct action_attrs *actions,
+			       const unsigned char *p, size_t len)
 {
 	const struct nlattr *nla;
 	bool ok = true, acts = false, flagged = false, classid = false;
@@ -2723,6 +2839,8 @@ static void tally_mall_options(struct tfilter_shape *t, const unsigned char *p,
 		switch (nla->nla_type & NLA_TYPE_MASK) {
 		case TCA_MATCHALL_ACT:
 			acts = action_array(p + NLA_HDRLEN, plen);
+			if (acts)
+				tally_tab(actions, p + NLA_HDRLEN, plen);
 			break;
 		case TCA_MATCHALL_FLAGS:
 			flagged = true;
@@ -2747,6 +2865,7 @@ static void tally_mall_options(struct tfilter_shape *t, const unsigned char *p,
 }
 
 static void tally_tfilter_shape(struct tfilter_shape *t,
+				struct action_attrs *actions,
 				const struct nlmsghdr *nlh)
 {
 	const unsigned char *p, *options = NULL;
@@ -2780,7 +2899,7 @@ static void tally_tfilter_shape(struct tfilter_shape *t,
 		len -= total;
 	}
 	if (matchall && options != NULL)
-		tally_mall_options(t, options, options_len);
+		tally_mall_options(t, actions, options, options_len);
 }
 
 /*
@@ -2973,7 +3092,7 @@ static void run_rounds(struct tallies *t)
 			tally_tc_header(&t->tclass, nlh);
 			break;
 		case RTM_NEWTFILTER:
-			tally_tfilter_shape(&t->tfilter_shape, nlh);
+			tally_tfilter_shape(&t->tfilter_shape, &t->action, nlh);
 			tally_tc_header(&t->filter, nlh);
 			break;
 		case RTM_DELTFILTER:

@@ -11,7 +11,9 @@
 #include <linux/if_link.h>
 #include <linux/pkt_sched.h>
 #include <linux/pkt_cls.h>
+#include <linux/if_ether.h>
 #include <linux/tc_act/tc_gact.h>
+#include <linux/tc_act/tc_ife.h>
 #include "netlink-attrs.h"
 #include "msg-internal.h"
 #include "msg-rtnl-common.h"
@@ -408,11 +410,75 @@ static size_t build_gact_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * ife's TCA_ACT_OPTIONS.  tcf_ife_init() refuses the action without
+ * TCA_IFE_PARMS, or with a flag but IFE_ENCODE in them.  An encoder, half
+ * of them, carries an ethertype and both MAC addresses three times in
+ * four; leaving them out keeps ETH_P_IFE and zero addresses.  Half the
+ * actions carry a metadata list: skbmark, skbprio and tcindex, each half
+ * the time, with no value (allowed, valued per packet) one time in four
+ * or else a value of its width, u32 or u16, which is 0 half the time:
+ * an encoder writes a configured 0 (v7.4-rc3).  Without a list
+ * use_all_metadata() takes every metadatum whose module is in.  Index 1
+ * to 8 names an action an earlier call made, as gact's does.
+ */
+static size_t build_ife_options(unsigned char *p, size_t avail)
+{
+	static const struct {
+		__u16 id;
+		__u16 width;
+	} metas[] = {
+		{ IFE_META_SKBMARK,	sizeof(__u32) },
+		{ IFE_META_PRIO,	sizeof(__u32) },
+		{ IFE_META_TCINDEX,	sizeof(__u16) },
+	};
+	unsigned char list[ARRAY_SIZE(metas) *
+			   NLA_ALIGN(NLA_HDRLEN + sizeof(__u32))];
+	unsigned char mac[ETH_ALEN];
+	struct tc_ife parm;
+	size_t off = 0, llen = 0;
+	unsigned int i;
+	__u16 type;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	parm.flags = RAND_BOOL() ? IFE_ENCODE : IFE_DECODE;
+	if (!put_nlattr(p, &off, avail, TCA_IFE_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	if (parm.flags == IFE_ENCODE && !ONE_IN(4)) {
+		type = RAND_BOOL() ? ETH_P_IFE : (__u16) rnd_u32();
+		put_nlattr(p, &off, avail, TCA_IFE_TYPE, &type, sizeof(type));
+		generate_rand_bytes(mac, sizeof(mac));
+		put_nlattr(p, &off, avail, TCA_IFE_DMAC, mac, sizeof(mac));
+		generate_rand_bytes(mac, sizeof(mac));
+		put_nlattr(p, &off, avail, TCA_IFE_SMAC, mac, sizeof(mac));
+	}
+
+	if (RAND_BOOL())
+		return off;
+	for (i = 0; i < ARRAY_SIZE(metas); i++) {
+		__u32 val32 = RAND_BOOL() ? 0 : rnd_u32();
+		__u16 val16 = (__u16) val32;
+
+		if (RAND_BOOL())
+			continue;
+		put_nlattr(list, &llen, sizeof(list), metas[i].id,
+			   metas[i].width == sizeof(val16) ?
+				(const void *) &val16 : (const void *) &val32,
+			   ONE_IN(4) ? 0 : metas[i].width);
+	}
+	put_nlattr(p, &off, avail, TCA_IFE_METALST | NLA_F_NESTED, list, llen);
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
- * gact the typed TCA_ACT_OPTIONS build_gact_options() fills, then
- * 0-3 random siblings drawn from the inner TCA_ACT_* set sized to the
+ * gact and ife the typed TCA_ACT_OPTIONS their builders fill, then 0-3
+ * random siblings drawn from the inner TCA_ACT_* set sized to the
  * widths the kernel's tca_act_policy walker expects (NLA_BITFIELD32
  * for FLAGS / HW_STATS, NLA_U32 for INDEX / USED_HW_STATS /
  * IN_HW_COUNT, NLA_NESTED for OPTIONS / STATS).  Returns the inner
@@ -421,19 +487,29 @@ static size_t build_gact_options(unsigned char *p, size_t avail)
  */
 static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 {
+	static const struct {
+		const char *kind;
+		size_t (*build)(unsigned char *p, size_t avail);
+	} typed[] = {
+		{ "gact",	build_gact_options },
+		{ "ife",	build_ife_options },
+	};
+	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;
 	size_t klen;
 	size_t off = 0;
 	size_t cap;
 	int nchildren;
-	bool gact;
+	unsigned int i;
 
 	cap = avail;
 	if (cap > 192)
 		cap = 192;
 
 	kind = tc_act_kinds[rnd_modulo_u32(ARRAY_SIZE(tc_act_kinds))];
-	gact = strcmp(kind, "gact") == 0;
+	for (i = 0; i < ARRAY_SIZE(typed); i++)
+		if (strcmp(kind, typed[i].kind) == 0)
+			build_options = typed[i].build;
 	klen = strlen(kind) + 1;
 	if (off + NLA_ALIGN(NLA_HDRLEN + klen) > cap)
 		return 0;
@@ -442,9 +518,9 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 	memcpy(p + off + NLA_HDRLEN, kind, klen);
 	off += NLA_ALIGN(NLA_HDRLEN + klen);
 
-	if (gact && off + NLA_HDRLEN < cap) {
-		size_t olen = build_gact_options(p + off + NLA_HDRLEN,
-						 cap - off - NLA_HDRLEN);
+	if (build_options != NULL && off + NLA_HDRLEN < cap) {
+		size_t olen = build_options(p + off + NLA_HDRLEN,
+					    cap - off - NLA_HDRLEN);
 
 		if (olen != 0) {
 			struct nlattr nla = {
@@ -491,11 +567,11 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 			 * tc_action_ops::policy and TCA_STATS_* and differ per
 			 * kind.  Random siblings here keep the inner walker
 			 * exercised without the per-kind table the policy
-			 * would need to validate cleanly.  gact has its
-			 * table above, which a second OPTIONS would
-			 * displace: the parse keeps the last. */
-			atype = gact || RAND_BOOL() ? TCA_ACT_STATS :
-						      TCA_ACT_OPTIONS;
+			 * would need to validate cleanly.  gact and ife
+			 * have their tables above, which a second OPTIONS
+			 * would displace: the parse keeps the last. */
+			atype = build_options != NULL || RAND_BOOL() ?
+				TCA_ACT_STATS : TCA_ACT_OPTIONS;
 			plen = RAND_RANGE(4, 16);
 			break;
 		}
