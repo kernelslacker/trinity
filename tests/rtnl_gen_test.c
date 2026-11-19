@@ -3543,18 +3543,22 @@ static void tally_action_attrs(struct action_attrs *t, const struct nlmsghdr *nl
  * action an earlier call made, and adds a PROB it takes half the time.
  * Over the thousand or more gact actions the bounds are several standard
  * deviations out.
+ *
+ * Each typed kind is held to 0.98 of its actions valid: only an action
+ * that outgrows its room should fall short, well under one in a hundred,
+ * so a builder that breaks a rule for one action in twenty fails.
  */
 static void expect_action_attrs(const struct action_attrs *t)
 {
 	expect_fraction(t->tabs, t->attrs, 0.12, 0.25, "RTM_*ACTION attributes",
 			"rtnl: an action request almost never carries a TCA_ROOT_TAB");
-	expect_fraction(t->parms, t->gacts, 0.90, 1.0, "gact actions",
+	expect_fraction(t->parms, t->gacts, 0.98, 1.0, "gact actions",
 			"rtnl: a gact action carries no TCA_GACT_PARMS tcf_gact_init() takes");
 	expect_fraction(t->indexed, t->parms, 0.65, 0.85, "gact PARMS",
 			"rtnl: a gact action does not name a small index three times in four");
 	expect_fraction(t->probs, t->parms, 0.40, 0.60, "gact PROBs",
 			"rtnl: a gact action does not carry a TCA_GACT_PROB half the time");
-	expect_fraction(t->ife_parms, t->ifes, 0.90, 1.0, "ife actions",
+	expect_fraction(t->ife_parms, t->ifes, 0.98, 1.0, "ife actions",
 			"rtnl: an ife action carries no options tcf_ife_init() takes");
 	expect_fraction(t->ife_encode, t->ife_parms, 0.40, 0.60, "ife actions",
 			"rtnl: an ife action is not an encoder half the time");
@@ -3564,51 +3568,51 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: an ife action does not carry a metadata list half the time");
 	expect_fraction(t->ife_zero, t->ife_lists, 0.30, 0.80, "ife metadata lists",
 			"rtnl: an ife metadata list seldom configures a value of 0");
-	expect_fraction(t->mirred_parms, t->mirreds, 0.90, 1.0, "mirred actions",
+	expect_fraction(t->mirred_parms, t->mirreds, 0.98, 1.0, "mirred actions",
 			"rtnl: a mirred action carries no options tcf_mirred_init() takes");
 	expect_fraction(t->mirred_lo, t->mirred_parms, 0.84, 0.91, "mirred actions",
 			"rtnl: a mirred action does not send to lo seven times in eight");
 	expect_fraction(t->mirred_block, t->mirred_parms, 0.09, 0.16, "mirred actions",
 			"rtnl: a mirred action does not send to a block one time in eight");
-	expect_fraction(t->skbedit_parms, t->skbedits, 0.90, 1.0, "skbedit actions",
+	expect_fraction(t->skbedit_parms, t->skbedits, 0.98, 1.0, "skbedit actions",
 			"rtnl: an skbedit action carries no options tcf_skbedit_init() takes");
 	expect_fraction(t->skbedit_hash, t->skbedit_parms, 0.05, 0.25, "skbedit actions",
 			"rtnl: an skbedit action seldom hashes over a queue range");
-	expect_fraction(t->pedit_parms, t->pedits, 0.90, 1.0, "pedit actions",
+	expect_fraction(t->pedit_parms, t->pedits, 0.98, 1.0, "pedit actions",
 			"rtnl: a pedit action carries no options tcf_pedit_init() takes");
 	expect_fraction(t->pedit_ex, t->pedit_parms, 0.40, 0.60, "pedit actions",
 			"rtnl: a pedit action does not carry extended keys half the time");
-	expect_fraction(t->vlan_parms, t->vlans, 0.90, 1.0, "vlan actions",
+	expect_fraction(t->vlan_parms, t->vlans, 0.98, 1.0, "vlan actions",
 			"rtnl: a vlan action carries no options tcf_vlan_init() takes");
 	expect_fraction(t->vlan_tagged, t->vlan_parms, 0.30, 0.50, "vlan actions",
 			"rtnl: a vlan action does not push or modify a tag two times in five");
-	expect_fraction(t->csum_parms, t->csums, 0.90, 1.0, "csum actions",
+	expect_fraction(t->csum_parms, t->csums, 0.98, 1.0, "csum actions",
 			"rtnl: a csum action carries no options tcf_csum_init() takes");
 	expect_fraction(t->csum_known, t->csum_parms, 0.80, 0.95, "csum actions",
 			"rtnl: a csum action does not update known checksums seven times in eight");
-	expect_fraction(t->tunnel_key_parms, t->tunnel_keys, 0.90, 1.0, "tunnel_key actions",
+	expect_fraction(t->tunnel_key_parms, t->tunnel_keys, 0.98, 1.0, "tunnel_key actions",
 			"rtnl: a tunnel_key action carries no options tunnel_key_init() takes");
 	expect_fraction(t->tunnel_key_sets, t->tunnel_key_parms, 0.80, 0.95, "tunnel_key actions",
 			"rtnl: a tunnel_key action is not a set seven times in eight");
 	expect_fraction(t->tunnel_key_opts, t->tunnel_key_sets, 0.40, 0.60, "tunnel_key actions",
 			"rtnl: a tunnel_key set does not carry encap options half the time");
-	expect_fraction(t->nat_parms, t->nats, 0.90, 1.0, "nat actions",
+	expect_fraction(t->nat_parms, t->nats, 0.98, 1.0, "nat actions",
 			"rtnl: a nat action carries no options tcf_nat_init() takes");
 	expect_fraction(t->nat_lo, t->nat_parms, 0.45, 0.65, "nat actions",
 			"rtnl: a nat action does not rewrite lo's address half the time");
-	expect_fraction(t->connmark_parms, t->connmarks, 0.90, 1.0, "connmark actions",
+	expect_fraction(t->connmark_parms, t->connmarks, 0.98, 1.0, "connmark actions",
 			"rtnl: a connmark action carries no options tcf_connmark_init() takes");
 	expect_fraction(t->connmark_zone0, t->connmark_parms, 0.40, 0.60, "connmark actions",
 			"rtnl: a connmark action does not look in the default zone half the time");
-	expect_fraction(t->skbmod_parms, t->skbmods, 0.90, 1.0, "skbmod actions",
+	expect_fraction(t->skbmod_parms, t->skbmods, 0.98, 1.0, "skbmod actions",
 			"rtnl: a skbmod action carries no options tcf_skbmod_init() takes");
 	expect_fraction(t->skbmod_flagged, t->skbmod_parms, 0.15, 0.35, "skbmod actions",
 			"rtnl: a skbmod action does not swap MACs or mark ECN one time in four");
-	expect_fraction(t->mpls_parms, t->mpls_actions, 0.90, 1.0, "mpls actions",
+	expect_fraction(t->mpls_parms, t->mpls_actions, 0.98, 1.0, "mpls actions",
 			"rtnl: an mpls action carries no options tcf_mpls_init() takes");
 	expect_fraction(t->mpls_pushes, t->mpls_parms, 0.30, 0.50, "mpls actions",
 			"rtnl: an mpls action does not push two times in five");
-	expect_fraction(t->ctinfo_parms, t->ctinfos, 0.90, 1.0, "ctinfo actions",
+	expect_fraction(t->ctinfo_parms, t->ctinfos, 0.98, 1.0, "ctinfo actions",
 			"rtnl: a ctinfo action carries no options tcf_ctinfo_init() takes");
 	expect_fraction(t->ctinfo_dscp, t->ctinfo_parms, 0.40, 0.60, "ctinfo actions",
 			"rtnl: a ctinfo action does not restore DSCP half the time");
