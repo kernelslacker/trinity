@@ -195,6 +195,16 @@ static void bad_mask_refused(void)
 		BUG("sanity_check_tables: accepted a mask with no .sanitise");
 }
 
+/* An entry has six argtype slots, and for_each_arg() walks num_args of
+ * them: a seventh would read past the array. */
+static void num_args_past_the_slots_refused(void)
+{
+	if (table_check_status(6, 0, false) != 0)
+		BUG("sanity_check_tables: refused an entry with six args");
+	if (table_check_status(7, 0, false) != EXIT_FAILURE)
+		BUG("sanity_check_tables: accepted an entry with seven args");
+}
+
 /* The real entries that set the mask and the slots each is expected to
  * own, one bit per slot.  A sanitiser that skips an owned slot on any
  * path sends the zero generic_sanitise() left there to the kernel, so
@@ -282,6 +292,7 @@ void sanitiser_owned_mask_self_check(void)
 	owned_slot_not_generated();
 	owned_slot_labelled();
 	bad_mask_refused();
+	num_args_past_the_slots_refused();
 	real_entries_own_what_they_write();
 	sanitiser_sees_its_entry();
 }

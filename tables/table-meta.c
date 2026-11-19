@@ -195,6 +195,15 @@ static void check_no_slots_past_num_args(struct syscallentry *entry)
 	if (entry == NULL)
 		return;
 
+	/* for_each_arg() walks num_args slots, past the end of argtype[]
+	 * for an entry claiming more than it has. */
+	if (entry->num_args > ARRAY_SIZE(entry->argtype)) {
+		outputerr("%s: num_args=%u but an entry has %zu argtype slots\n",
+			  entry->name, entry->num_args,
+			  ARRAY_SIZE(entry->argtype));
+		exit(EXIT_FAILURE);
+	}
+
 	for (j = entry->num_args; j < ARRAY_SIZE(entry->argtype); j++) {
 		if (entry->argtype[j] != ARG_UNDEFINED) {
 			outputerr("%s: argtype slot %u is set (%d) but num_args=%u; slots past num_args must be zero\n",
