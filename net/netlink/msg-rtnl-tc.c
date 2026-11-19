@@ -23,6 +23,7 @@
 #include <linux/tc_act/tc_skbmod.h>
 #include <linux/tc_act/tc_mpls.h>
 #include <linux/tc_act/tc_ctinfo.h>
+#include <linux/tc_act/tc_sample.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 #include "kernel/tc_mirred.h"	/* TCA_MIRRED_BLOCKID */
@@ -1129,6 +1130,41 @@ static size_t build_ctinfo_options(unsigned char *p, size_t avail)
 }
 
 /*
+ * sample's TCA_ACT_OPTIONS.  tcf_sample_init() refuses the action without
+ * TCA_SAMPLE_PARMS, a TCA_SAMPLE_RATE above 0 and a
+ * TCA_SAMPLE_PSAMPLE_GROUP, which psample_group_get() makes in the
+ * request's netns when it is new.  The rate is every packet one time in
+ * four, else one in up to 2^16; the group is one of eight seven times in
+ * eight, so actions share it, else any; and half the actions truncate,
+ * mostly to under a frame.  Index 1 to 8 names an action an earlier call
+ * made, as gact's does.
+ */
+static size_t build_sample_options(unsigned char *p, size_t avail)
+{
+	struct tc_sample parm;
+	size_t off = 0;
+	__u32 val;
+
+	memset(&parm, 0, sizeof(parm));
+	parm.index = ONE_IN(4) ? 0 : RAND_RANGE(1U, 8U);
+	parm.action = ONE_IN(8) ? TC_ACT_JUMP | RAND_RANGE(1, 3) :
+		      RAND_RANGE(TC_ACT_UNSPEC, TC_ACT_VALUE_MAX);
+	if (!put_nlattr(p, &off, avail, TCA_SAMPLE_PARMS, &parm, sizeof(parm)))
+		return 0;
+
+	val = ONE_IN(4) ? 1 : RAND_RANGE(1U, 1U << 16);
+	put_nlattr(p, &off, avail, TCA_SAMPLE_RATE, &val, sizeof(val));
+	val = ONE_IN(8) ? rnd_u32() : RAND_RANGE(1U, 8U);
+	put_nlattr(p, &off, avail, TCA_SAMPLE_PSAMPLE_GROUP, &val, sizeof(val));
+	if (RAND_BOOL()) {
+		val = ONE_IN(4) ? rnd_u32() : RAND_RANGE(0U, 1500U);
+		put_nlattr(p, &off, avail, TCA_SAMPLE_TRUNC_SIZE, &val,
+			   sizeof(val));
+	}
+	return off;
+}
+
+/*
  * Build a single nested per-action container, written at p+offset and
  * sized within cap.  Lays down a leading TCA_ACT_KIND string sub-attr
  * (required; tcf_action_init_1 -EINVALs the action when missing), for
@@ -1159,6 +1195,7 @@ static size_t build_tca_act_nested(unsigned char *p, size_t avail)
 		{ "skbmod",	build_skbmod_options },
 		{ "mpls",	build_mpls_options },
 		{ "ctinfo",	build_ctinfo_options },
+		{ "sample",	build_sample_options },
 	};
 	size_t (*build_options)(unsigned char *p, size_t avail) = NULL;
 	const char *kind;

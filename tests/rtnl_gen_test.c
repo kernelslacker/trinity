@@ -42,6 +42,7 @@
 #include <linux/tc_act/tc_skbmod.h>
 #include <linux/tc_act/tc_mpls.h>
 #include <linux/tc_act/tc_ctinfo.h>
+#include <linux/tc_act/tc_sample.h>
 #include <linux/mpls.h>
 #include <linux/if_packet.h>
 
@@ -2551,6 +2552,9 @@ struct action_attrs {
 	unsigned int ctinfos;		/* actions of kind "ctinfo" */
 	unsigned int ctinfo_parms;	/* ... with options tcf_ctinfo_init() takes */
 	unsigned int ctinfo_dscp;	/* ... of those, restoring DSCP */
+	unsigned int samples;		/* actions of kind "sample" */
+	unsigned int sample_parms;	/* ... with options tcf_sample_init() takes */
+	unsigned int sample_trunc;	/* ... of those, truncating */
 };
 
 /* tcf_action_valid() and tcf_action_check_ctrlact(), with no filter for a
@@ -3418,6 +3422,52 @@ static void tally_ctinfo_options(struct action_attrs *t,
 	t->ctinfo_dscp += dscp;
 }
 
+/* The TCA_ACT_OPTIONS of one sample action, as tcf_sample_init() reads
+ * them: PARMS, a rate above 0 and a psample group. */
+static void tally_sample_options(struct action_attrs *t,
+				 const unsigned char *p, size_t len)
+{
+	const struct nlattr *nla;
+	struct tc_sample parm;
+	bool parms = false, rate = false, group = false, trunc = false;
+	__u32 val;
+
+	t->samples++;
+	while ((nla = fit_attr(p, len)) != NULL) {
+		size_t total = NLA_ALIGN(nla->nla_len);
+		size_t plen = nla->nla_len - NLA_HDRLEN;
+		const unsigned char *data = p + NLA_HDRLEN;
+
+		val = 0;
+		if (plen == sizeof(val))
+			memcpy(&val, data, sizeof(val));
+		switch (nla->nla_type & NLA_TYPE_MASK) {
+		case TCA_SAMPLE_PARMS:
+			parms = plen >= sizeof(parm);
+			if (parms)
+				memcpy(&parm, data, sizeof(parm));
+			break;
+		case TCA_SAMPLE_RATE:
+			rate = plen == sizeof(val) && val != 0;
+			break;
+		case TCA_SAMPLE_PSAMPLE_GROUP:
+			group = plen == sizeof(val);
+			break;
+		case TCA_SAMPLE_TRUNC_SIZE:
+			trunc = plen == sizeof(val);
+			break;
+		}
+		if (total >= len)
+			break;
+		p += total;
+		len -= total;
+	}
+	if (!parms || !rate || !group || !ctrlact_takes(parm.action))
+		return;
+	t->sample_parms++;
+	t->sample_trunc += trunc;
+}
+
 /*
  * The kinds the builder types, as its typed[] table lists them.  Each
  * tally counts its kind's action, then reads the TCA_ACT_OPTIONS when the
@@ -3441,6 +3491,7 @@ static const struct {
 	{ "skbmod",	tally_skbmod_options },
 	{ "mpls",	tally_mpls_options },
 	{ "ctinfo",	tally_ctinfo_options },
+	{ "sample",	tally_sample_options },
 };
 
 /* One action of a TCA_ROOT_TAB or a filter's action array: its kind, and
@@ -3616,6 +3667,10 @@ static void expect_action_attrs(const struct action_attrs *t)
 			"rtnl: a ctinfo action carries no options tcf_ctinfo_init() takes");
 	expect_fraction(t->ctinfo_dscp, t->ctinfo_parms, 0.40, 0.60, "ctinfo actions",
 			"rtnl: a ctinfo action does not restore DSCP half the time");
+	expect_fraction(t->sample_parms, t->samples, 0.98, 1.0, "sample actions",
+			"rtnl: a sample action carries no options tcf_sample_init() takes");
+	expect_fraction(t->sample_trunc, t->sample_parms, 0.40, 0.60, "sample actions",
+			"rtnl: a sample action does not truncate half the time");
 }
 
 /* ---------- A filter add's classifier and its actions -------------------- */
