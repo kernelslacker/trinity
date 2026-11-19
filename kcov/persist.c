@@ -34,8 +34,8 @@
  *
  * Layout, after the persist envelope: the fixed header, KCOV_NUM_EDGES
  * bytes of bucket_seen, the per-syscall priors (per_syscall_edges[] then
- * per_syscall_calls[], MAX_NR_SYSCALL u64 each), the per-syscall diag
- * block and the per-strategy strat block.  The header carries a CRC for
+ * per_syscall_calls[], a u64 per slot and ABI, nr outer), the per-syscall
+ * diag block and the per-strategy strat block.  The header carries a CRC for
  * each; a bad priors, diag or strat block is skipped without discarding
  * the bitmap.  Atomic .tmp + rename on save mirrors minicorpus.  No
  * __attribute__((packed)) -- the field sequence below is already
@@ -60,11 +60,12 @@
  *      build.
  */
 #define KCOV_BITMAP_FILE_MAGIC		0x4B434256U	/* "KCBV" */
-#define KCOV_BITMAP_FILE_VERSION	7U
+#define KCOV_BITMAP_FILE_VERSION	8U
 /* Oldest file-format version this binary will warm-load.  v4 stays
  * rejected (different header size, different PC basis); v5 loads
  * without the v6 diag block or v7 strat block; v6 loads with diag
- * but without strat; v7 loads all three. */
+ * but without strat; v7 loads all three.  Before v8 a slot's prior
+ * summed both ABIs, and loads into the native ABI's slot. */
 #define KCOV_BITMAP_FILE_MIN_LOAD_VERSION	5U
 
 struct kcov_bitmap_file_header {
@@ -523,37 +524,32 @@ struct kcov_bitmap_blobs {
 	struct kcov_strat_ondisk strat;
 };
 
-/* per_syscall_edges / per_syscall_calls are [nr][do32?1:0]; the
- * on-disk priors format is still one MAX_NR_SYSCALL-long per-nr
- * blob, so sum both arch dims into the serialised slot.  Loaders
- * put the summed value into [nr][0] on warm-start; readers that
- * use the priors go through per_syscall_edges_prior_total() /
- * _calls_prior_total() and observe the same per-nr sum either
- * way, so arch attribution is not persisted (nothing consumes it
- * on the prior side today). */
+/* The priors keep per_syscall_edges / per_syscall_calls' ABI dim
+ * ([nr][do32?1:0]), the shape of the _prior arrays they load into: a
+ * biarch build's two tables give one number to different syscalls. */
 static void kcov_bitmap_pack_priors(unsigned char *priors_blob,
 				    size_t one_array_size)
 {
-	unsigned long *p_edges = (unsigned long *)priors_blob;
-	unsigned long *p_calls =
-		(unsigned long *)(priors_blob + one_array_size);
-	unsigned int i;
+	unsigned long (*p_edges)[2] = (unsigned long (*)[2])priors_blob;
+	unsigned long (*p_calls)[2] =
+		(unsigned long (*)[2])(priors_blob + one_array_size);
+	unsigned int i, abi;
 
 	for (i = 0; i < MAX_NR_SYSCALL; i++) {
-		unsigned int ctx;
-		unsigned long edges_sum = 0, calls_sum = 0;
+		for (abi = 0; abi < 2; abi++) {
+			unsigned int ctx;
+			unsigned long edges_sum = 0, calls_sum = 0;
 
-		/* Fold every picker-context slice into the
-		 * cross-session prior blob: priors are per-syscall
-		 * totals, not per-context. */
-		for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
-			edges_sum += kcov_shm->per_syscall.per_syscall_edges[i][ctx][0] +
-				     kcov_shm->per_syscall.per_syscall_edges[i][ctx][1];
-			calls_sum += kcov_shm->per_syscall.per_syscall_calls[i][ctx][0] +
-				     kcov_shm->per_syscall.per_syscall_calls[i][ctx][1];
+			/* Fold every picker-context slice into the
+			 * cross-session prior blob: priors are per-syscall
+			 * totals, not per-context. */
+			for (ctx = 0; ctx < PICKER_NCTX; ctx++) {
+				edges_sum += kcov_shm->per_syscall.per_syscall_edges[i][ctx][abi];
+				calls_sum += kcov_shm->per_syscall.per_syscall_calls[i][ctx][abi];
+			}
+			p_edges[i][abi] = edges_sum;
+			p_calls[i][abi] = calls_sum;
 		}
-		p_edges[i] = edges_sum;
-		p_calls[i] = calls_sum;
 	}
 }
 
@@ -760,7 +756,7 @@ bool kcov_bitmap_save_file(const char *path)
 
 	memset(&blobs, 0, sizeof(blobs));
 
-	one_array_size = (size_t)MAX_NR_SYSCALL * sizeof(unsigned long);
+	one_array_size = sizeof(kcov_shm->per_syscall.per_syscall_edges_prior);
 	blobs.priors_size = 2 * one_array_size;
 	blobs.priors = malloc(blobs.priors_size);
 	if (blobs.priors == NULL) {
@@ -1015,7 +1011,9 @@ static void kcov_bitmap_load_priors(int fd,
 		output(0, "kcov-bitmap: priors disabled, max_nr_syscall %u != %u\n",
 		       hdr->max_nr_syscall, (unsigned int)MAX_NR_SYSCALL);
 	} else {
+		bool per_abi = hdr->version >= 8U;
 		size_t one_array_size = (size_t)MAX_NR_SYSCALL *
+					(per_abi ? 2 : 1) *
 					sizeof(unsigned long);
 		size_t priors_blob_size = 2 * one_array_size;
 		unsigned char *priors_blob = malloc(priors_blob_size);
@@ -1037,15 +1035,20 @@ static void kcov_bitmap_load_priors(int fd,
 				if (got_crc != hdr->priors_crc32) {
 					output(0, "kcov-bitmap: priors CRC mismatch at %s -- priors skipped\n",
 					       path);
+				} else if (per_abi) {
+					memcpy(kcov_shm->per_syscall.per_syscall_edges_prior,
+					       priors_blob, one_array_size);
+					memcpy(kcov_shm->per_syscall.per_syscall_calls_prior,
+					       priors_blob + one_array_size,
+					       one_array_size);
 				} else {
-					/* On-disk priors are still one long
-					 * per-nr; the in-shm _prior arrays are
-					 * [nr][do32?1:0].  Load into the [nr][0]
-					 * slot and leave [nr][1] at its calloc'd
-					 * zero; readers that use the priors sum
-					 * both dims via the _total helpers, so
-					 * the missing arch attribution is a
-					 * harmless zero addend. */
+					/* An older writer summed the two
+					 * ABIs into one long per nr.  The
+					 * sum goes to the native slot, which
+					 * most of it came from (a biarch
+					 * child picks the compat table one
+					 * time in ten), and [nr][1] stays at
+					 * its calloc'd zero. */
 					unsigned long *p_edges =
 						(unsigned long *)priors_blob;
 					unsigned long *p_calls =
@@ -1221,7 +1224,8 @@ static bool kcov_bitmap_read_blocks(int fd, const char *path,
 		   (hdr->version >= 7U ? sizeof(*hdr) :
 					 KCOV_BITMAP_HDR_V6_SIZE) +
 		   KCOV_NUM_EDGES +
-		   (uint64_t)hdr->max_nr_syscall * 2 * sizeof(unsigned long);
+		   (uint64_t)hdr->max_nr_syscall *
+		   (hdr->version >= 8U ? 4 : 2) * sizeof(unsigned long);
 	strat_off = diag_off + (uint64_t)hdr->max_nr_syscall * 2 *
 		    sizeof(struct kcov_per_syscall_diag_ondisk);
 

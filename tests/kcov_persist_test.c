@@ -60,18 +60,23 @@ _Static_assert(sizeof(struct file_header) == 96,
 _Static_assert(offsetof(struct file_header, strat_crc32) == HDR_V6_SIZE,
 	       "the v5/v6 header ends before strat_crc32");
 
-/* Block sizes for a writer with @max syscall slots, and where each
- * block sits in the file kcov_bitmap_save_file() writes: envelope,
- * header, bitmap, priors (two u64 arrays), diag (16 B per slot and ABI),
- * strat (calls, then counts, per strategy). */
-#define PRIORS_SIZE(max)	((size_t)(max) * 2 * sizeof(unsigned long))
+/* The version kcov_bitmap_save_file() writes. */
+#define FILE_VERSION	8U
+
+/* Block sizes for a @version writer with @max syscall slots, and where
+ * each block sits in the file kcov_bitmap_save_file() writes: envelope,
+ * header, bitmap, priors (edges, then calls: a u64 per slot and ABI,
+ * nr outer, from v8; one per slot, the two ABIs summed, before), diag
+ * (16 B per slot and ABI), strat (calls, then counts, per strategy). */
+#define PRIORS_SIZE(max, version) \
+	((size_t)(max) * ((version) >= 8 ? 2 : 1) * 2 * sizeof(unsigned long))
 #define DIAG_SIZE(max)		((size_t)(max) * 2 * 16)
 #define STRAT_SIZE		(2 * NR_STRATEGIES * sizeof(uint64_t))
 
 #define ENVELOPE_SIZE	sizeof(struct trinity_persist_envelope)
 #define BITMAP_OFF	(ENVELOPE_SIZE + sizeof(struct file_header))
 #define PRIORS_OFF	(BITMAP_OFF + KCOV_NUM_EDGES)
-#define DIAG_OFF	(PRIORS_OFF + PRIORS_SIZE(MAX_NR_SYSCALL))
+#define DIAG_OFF	(PRIORS_OFF + PRIORS_SIZE(MAX_NR_SYSCALL, FILE_VERSION))
 #define STRAT_OFF	(DIAG_OFF + DIAG_SIZE(MAX_NR_SYSCALL))
 #define FILE_SIZE	(STRAT_OFF + STRAT_SIZE)
 
@@ -79,8 +84,8 @@ _Static_assert(offsetof(struct file_header, strat_crc32) == HDR_V6_SIZE,
  * bytes holding four edges. */
 #define SAMPLE_EDGES	4UL
 #define SAMPLE_DISTINCT	3UL
-#define EDGES_OF(nr)		(100UL + (nr))
-#define CALLS_OF(nr)		(200UL + (nr))
+#define EDGES_OF(nr, abi)	(100UL + (nr) * 2 + (abi))
+#define CALLS_OF(nr, abi)	(200UL + (nr) * 2 + (abi))
 #define BITS_OF(nr, dim)	(300UL + (nr) * 2 + (dim))
 #define PCS_OF(nr, dim)		(400UL + (nr) * 2 + (dim))
 #define STRAT_CALLS(s)		(1000UL + (s))
@@ -100,6 +105,7 @@ struct scenario {
 	uint64_t kaslr_base;	/* kernel-text base the header names; 0: as saved */
 	bool refused;		/* the load returns false and publishes nothing */
 	size_t fail_malloc;	/* scratch size whose malloc fails; 0: none */
+	unsigned int fail_malloc_skip;	/* mallocs of that size let through first */
 	unsigned int fail_lseek;	/* the Nth lseek of the load fails; 0: none */
 	bool priors, diag, strat;	/* blocks the load must restore */
 	const char *log_has;	/* line that names what happened */
@@ -107,45 +113,56 @@ struct scenario {
 };
 
 static const struct scenario scenarios[] = {
-	{ .name = "same table", .version = 7, .file_max = MAX_NR_SYSCALL,
+	{ .name = "same table", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
 	  .priors = true, .diag = true, .strat = true,
 	  .log_has = "loaded v7 strat block" },
 	/* Priors and diag are skipped; strat is still where the writer
 	 * put it. */
-	{ .name = "writer had fewer slots", .version = 7,
+	{ .name = "writer had fewer slots", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL / 2, .strat = true,
 	  .log_has = "priors disabled" },
-	{ .name = "writer had more slots", .version = 7,
+	{ .name = "writer had more slots", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL * 2, .strat = true,
 	  .log_has = "diag disabled" },
 	/* The most slots a header can claim put strat far past the end of
 	 * the file: refused as truncated, or as a failed seek on a tmp
 	 * filesystem too small to take it.  Either way nothing is read from
 	 * elsewhere, and strat does not load. */
-	{ .name = "header claims 2^32-1 slots", .version = 7,
+	{ .name = "header claims 2^32-1 slots", .version = FILE_VERSION,
 	  .file_max = UINT32_MAX, .header_only = true,
 	  .log_has = "strat truncated", .log_or = "strat seek to" },
-	{ .name = "priors scratch alloc fails", .version = 7,
-	  .file_max = MAX_NR_SYSCALL, .fail_malloc = PRIORS_SIZE(MAX_NR_SYSCALL),
+	{ .name = "priors scratch alloc fails", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
+	  .fail_malloc = PRIORS_SIZE(MAX_NR_SYSCALL, FILE_VERSION),
 	  .diag = true, .strat = true,
 	  .log_has = "priors scratch alloc fail" },
-	{ .name = "diag scratch alloc fails", .version = 7,
+	/* The priors scratch is the diag's size, and allocated first. */
+	{ .name = "diag scratch alloc fails", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL, .fail_malloc = DIAG_SIZE(MAX_NR_SYSCALL),
+	  .fail_malloc_skip = PRIORS_SIZE(MAX_NR_SYSCALL, FILE_VERSION) ==
+			      DIAG_SIZE(MAX_NR_SYSCALL),
 	  .priors = true, .strat = true,
 	  .log_has = "diag scratch alloc fail" },
-	/* A v7 load seeks twice: to diag, then to strat. */
-	{ .name = "diag seek fails", .version = 7, .file_max = MAX_NR_SYSCALL,
+	/* A v7 or later load seeks twice: to diag, then to strat. */
+	{ .name = "diag seek fails", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
 	  .fail_lseek = 1, .priors = true, .strat = true,
 	  .log_has = "Illegal seek -- diag skipped" },
-	{ .name = "strat seek fails", .version = 7, .file_max = MAX_NR_SYSCALL,
+	{ .name = "strat seek fails", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
 	  .fail_lseek = 2, .priors = true, .diag = true,
 	  .log_has = "Illegal seek -- strat skipped" },
 	/* A strat block that is itself bad is still refused, and named. */
-	{ .name = "corrupt strat block", .version = 7,
+	{ .name = "corrupt strat block", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL, .corrupt_strat = true,
 	  .priors = true, .diag = true, .log_has = "strat CRC mismatch" },
-	/* Older headers are 88 B, which moves every block, and older files
-	 * end before the blocks they predate. */
+	/* A v7 file's priors summed the two ABIs; the sum goes to the
+	 * native slot.  Older headers are 88 B, which moves every block,
+	 * and older files end before the blocks they predate. */
+	{ .name = "v7 file", .version = 7, .file_max = MAX_NR_SYSCALL,
+	  .priors = true, .diag = true, .strat = true,
+	  .log_has = "loaded v7 strat block" },
 	{ .name = "v6 file", .version = 6, .file_max = MAX_NR_SYSCALL,
 	  .priors = true, .diag = true, .log_has = "loaded v6 diag block" },
 	{ .name = "v5 file", .version = 5, .file_max = MAX_NR_SYSCALL,
@@ -153,36 +170,38 @@ static const struct scenario scenarios[] = {
 	/* Files the loader turns down outright.  Each of them returns
 	 * false, has closed the fd it opened exactly once and has
 	 * published nothing. */
-	{ .name = "truncated envelope", .version = 7, .file_max = MAX_NR_SYSCALL,
-	  .refused = true, .cut = ENVELOPE_SIZE / 2,
+	{ .name = "truncated envelope", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL, .refused = true, .cut = ENVELOPE_SIZE / 2,
 	  .log_has = "envelope truncated" },
-	{ .name = "truncated header", .version = 7, .file_max = MAX_NR_SYSCALL,
+	{ .name = "truncated header", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
 	  .refused = true, .cut = ENVELOPE_SIZE + 40,
 	  .log_has = "header truncated" },
-	{ .name = "truncated bitmap", .version = 7, .file_max = MAX_NR_SYSCALL,
+	{ .name = "truncated bitmap", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL,
 	  .refused = true, .cut = BITMAP_OFF + KCOV_NUM_EDGES / 2,
 	  .log_has = "payload truncated" },
-	{ .name = "bad magic", .version = 7, .file_max = MAX_NR_SYSCALL,
-	  .refused = true,
+	{ .name = "bad magic", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL, .refused = true,
 	  .flip = ENVELOPE_SIZE + offsetof(struct file_header, magic),
 	  .log_has = "file magic" },
 	/* The last byte of the fingerprint: a compare that stopped short of
 	 * the 32 bytes would let this file through. */
-	{ .name = "kernel fingerprint", .version = 7, .file_max = MAX_NR_SYSCALL,
-	  .refused = true,
+	{ .name = "kernel fingerprint", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL, .refused = true,
 	  .flip = ENVELOPE_SIZE + offsetof(struct file_header, kallsyms_sha256) + 31,
 	  .log_has = "kernel fingerprint mismatch" },
 	/* KCOV reports PCs with the KASLR offset already taken off, so a
 	 * file whose writer took its runtime _text off as well keyed every
 	 * edge to that boot. */
-	{ .name = "PCs keyed to a boot's _text", .version = 7,
+	{ .name = "PCs keyed to a boot's _text", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL, .refused = true,
 	  .kaslr_base = 0xffffffff81000000ULL,
 	  .log_has = "keyed to a kernel-text base" },
-	{ .name = "payload CRC mismatch", .version = 7, .file_max = MAX_NR_SYSCALL,
-	  .refused = true, .flip = BITMAP_OFF + 100,
+	{ .name = "payload CRC mismatch", .version = FILE_VERSION,
+	  .file_max = MAX_NR_SYSCALL, .refused = true, .flip = BITMAP_OFF + 100,
 	  .log_has = "CRC mismatch" },
-	{ .name = "bitmap scratch alloc fails", .version = 7,
+	{ .name = "bitmap scratch alloc fails", .version = FILE_VERSION,
 	  .file_max = MAX_NR_SYSCALL, .refused = true,
 	  .fail_malloc = KCOV_NUM_EDGES,
 	  .log_has = "kcov-bitmap: scratch alloc fail" },
@@ -192,16 +211,21 @@ static const struct scenario scenarios[] = {
  * expects one of them names it in log_has. */
 static const char *const complaints[] = { "CRC mismatch", "truncated" };
 
-/* Size of the next malloc() to fail, once; 0 for none. */
+/* Size of the next malloc() to fail, once, after malloc_fail_skip of
+ * that size have been let through; 0 for none. */
 static size_t malloc_fail_size;
+static unsigned int malloc_fail_skip;
 
 void *__real_malloc(size_t size);
 void *__wrap_malloc(size_t size);
 void *__wrap_malloc(size_t size)
 {
 	if (malloc_fail_size != 0 && size == malloc_fail_size) {
-		malloc_fail_size = 0;
-		return NULL;
+		if (malloc_fail_skip == 0) {
+			malloc_fail_size = 0;
+			return NULL;
+		}
+		malloc_fail_skip--;
 	}
 	return __real_malloc(size);
 }
@@ -269,12 +293,14 @@ static void fill_state(void)
 	for (i = 0; i < ARRAY_SIZE(sample_nr); i++) {
 		unsigned int nr = sample_nr[i];
 
-		kcov_shm->per_syscall.per_syscall_edges[nr][0][0] = EDGES_OF(nr);
-		kcov_shm->per_syscall.per_syscall_calls[nr][0][0] = CALLS_OF(nr);
 		for (dim = 0; dim < 2; dim++) {
 			struct kcov_per_syscall_diag *d =
 				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][dim];
 
+			kcov_shm->per_syscall.per_syscall_edges[nr][0][dim] =
+				EDGES_OF(nr, dim);
+			kcov_shm->per_syscall.per_syscall_calls[nr][0][dim] =
+				CALLS_OF(nr, dim);
 			d->bucket_bits_real = BITS_OF(nr, dim);
 			d->distinct_pcs = PCS_OF(nr, dim);
 		}
@@ -365,13 +391,17 @@ static uint32_t file_crc(const char *path, size_t *len)
  * count would have laid it out.  The blocks of another slot count are
  * filler: a loader that reads them is told so by the CRC.  A header-only
  * scenario keeps the saved blocks and changes just the count the header
- * claims. */
+ * claims.  A writer before v8 summed each slot's two ABI priors. */
 static void write_variant(const char *path, const unsigned char *img,
 			  const struct scenario *sc)
 {
 	const uint32_t slots = sc->header_only ? MAX_NR_SYSCALL : sc->file_max;
+	const size_t priors_size = sc->header_only ?
+		PRIORS_SIZE(MAX_NR_SYSCALL, FILE_VERSION) :
+		PRIORS_SIZE(slots, sc->version);
 	const unsigned char *priors = img + PRIORS_OFF;
 	const unsigned char *diag = img + DIAG_OFF;
+	unsigned long summed[2 * MAX_NR_SYSCALL];
 	unsigned char strat[STRAT_SIZE];
 	unsigned char *filler = NULL;
 	struct file_header hdr;
@@ -393,19 +423,30 @@ static void write_variant(const char *path, const unsigned char *img,
 		strat[0] ^= 0xff;
 
 	if (slots != MAX_NR_SYSCALL) {
-		filler = malloc(PRIORS_SIZE(slots) + DIAG_SIZE(slots));
+		filler = malloc(priors_size + DIAG_SIZE(slots));
 		if (filler == NULL)
 			BUG("kcov persist: malloc failed");
-		memset(filler, 0xa5, PRIORS_SIZE(slots) + DIAG_SIZE(slots));
+		memset(filler, 0xa5, priors_size + DIAG_SIZE(slots));
 		priors = filler;
-		diag = filler + PRIORS_SIZE(slots);
+		diag = filler + priors_size;
+	} else if (sc->version < 8 && !sc->header_only) {
+		/* The saved block is edges[nr][abi] then calls[nr][abi], so
+		 * each pair of u64s is one slot's two ABIs. */
+		for (i = 0; i < ARRAY_SIZE(summed); i++) {
+			unsigned long pair[2];
+
+			memcpy(pair, priors + i * sizeof(pair), sizeof(pair));
+			summed[i] = pair[0] + pair[1];
+		}
+		priors = (const unsigned char *) summed;
+		hdr.priors_crc32 = crc32(summed, sizeof(summed));
 	}
 
 	iov[n++] = (struct iovec){ (void *) img, ENVELOPE_SIZE };
 	iov[n++] = (struct iovec){ &hdr,
 				   sc->version >= 7 ? sizeof(hdr) : HDR_V6_SIZE };
 	iov[n++] = (struct iovec){ (void *) (img + BITMAP_OFF), KCOV_NUM_EDGES };
-	iov[n++] = (struct iovec){ (void *) priors, PRIORS_SIZE(slots) };
+	iov[n++] = (struct iovec){ (void *) priors, priors_size };
 	if (sc->version >= 6)
 		iov[n++] = (struct iovec){ (void *) diag, DIAG_SIZE(slots) };
 	if (sc->version >= 7)
@@ -425,7 +466,9 @@ static void write_variant(const char *path, const unsigned char *img,
 		flip_byte(path, sc->flip);
 }
 
-/* Each block is back whole or not at all, as the scenario says. */
+/* Each block is back whole or not at all, as the scenario says.  A
+ * prior goes back to its own ABI's slot, or, from a file that summed
+ * the two, to the native one. */
 static void check_blocks(const struct scenario *sc)
 {
 	bool priors_ok = true, diag_ok = true, strat_ok = true;
@@ -434,15 +477,23 @@ static void check_blocks(const struct scenario *sc)
 	for (i = 0; i < ARRAY_SIZE(sample_nr); i++) {
 		unsigned int nr = sample_nr[i];
 
-		if (kcov_shm->per_syscall.per_syscall_edges_prior[nr][0] !=
-			    (sc->priors ? EDGES_OF(nr) : 0) ||
-		    kcov_shm->per_syscall.per_syscall_calls_prior[nr][0] !=
-			    (sc->priors ? CALLS_OF(nr) : 0))
-			priors_ok = false;
 		for (dim = 0; dim < 2; dim++) {
 			struct kcov_per_syscall_diag *d =
 				&kcov_shm->per_syscall_cmp.per_syscall_diag[nr][dim];
+			unsigned long want_edges = 0, want_calls = 0;
 
+			if (sc->priors && sc->version >= 8) {
+				want_edges = EDGES_OF(nr, dim);
+				want_calls = CALLS_OF(nr, dim);
+			} else if (sc->priors && dim == 0) {
+				want_edges = EDGES_OF(nr, 0) + EDGES_OF(nr, 1);
+				want_calls = CALLS_OF(nr, 0) + CALLS_OF(nr, 1);
+			}
+			if (kcov_shm->per_syscall.per_syscall_edges_prior[nr][dim] !=
+				    want_edges ||
+			    kcov_shm->per_syscall.per_syscall_calls_prior[nr][dim] !=
+				    want_calls)
+				priors_ok = false;
 			if (d->bucket_bits_real !=
 				    (sc->diag ? BITS_OF(nr, dim) : 0) ||
 			    d->distinct_pcs !=
@@ -478,6 +529,7 @@ static void run_scenario(const struct scenario *sc, const unsigned char *img,
 	reset_state();
 	fake_output_log[0] = '\0';
 	malloc_fail_size = sc->fail_malloc;
+	malloc_fail_skip = sc->fail_malloc_skip;
 	lseek_fail_nth = sc->fail_lseek;
 	fds = count_open_fds();
 	close_calls = 0;

@@ -2,7 +2,7 @@
 """Dump stats from trinity's ~/.cache/trinity/ persisted artifacts.
 
 Parses three on-disk formats version-aware:
-  - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7
+  - kcov-bitmap        magic "KCBV", versions 4, 5, 6, 7, 8
   - corpus/<arch>      magic "TRNC", version 4
   - cmp-hints          magic "CHP_", version 5
 
@@ -241,7 +241,7 @@ def load_kcov(path: str) -> KcovData | None:
     if magic != KCOV_MAGIC:
         warn(f"kcov: {path}: bad magic 0x{magic:08x}")
         return None
-    if version not in (4, 5, 6, 7):
+    if version not in (4, 5, 6, 7, 8):
         warn(f"kcov: {path}: unsupported version {version}")
         return None
 
@@ -294,8 +294,13 @@ def load_kcov(path: str) -> KcovData | None:
             )
             hdr_size = KCOV_HDR_V7_SIZE
 
+    # The priors are edges then calls; from v8 each holds a u64 per syscall
+    # slot and ABI, nr outer, before that one per slot.  The report below
+    # sums a slot's two ABIs, as it does the diag block's.
+    prior_abis = 2 if version >= 8 else 1
+    prior_words = MAX_NR_SYSCALL * prior_abis
     payload_end = hdr_size + KCOV_NUM_EDGES
-    priors_end = payload_end + 2 * MAX_NR_SYSCALL * 8
+    priors_end = payload_end + 2 * prior_words * 8
 
     if len(raw) < priors_end:
         warn(f"kcov: {path}: short payload (have {len(raw)}, want >= {priors_end})")
@@ -326,8 +331,16 @@ def load_kcov(path: str) -> KcovData | None:
     bitmap_popcount = bitmap_int.bit_count()
     bitmap_nonzero = KCOV_NUM_EDGES - bitmap.count(0)
 
-    per_edges = list(struct.unpack(f"<{MAX_NR_SYSCALL}Q", priors[: MAX_NR_SYSCALL * 8]))
-    per_calls = list(struct.unpack(f"<{MAX_NR_SYSCALL}Q", priors[MAX_NR_SYSCALL * 8 :]))
+    flat_edges = struct.unpack(f"<{prior_words}Q", priors[: prior_words * 8])
+    flat_calls = struct.unpack(f"<{prior_words}Q", priors[prior_words * 8 :])
+    per_edges = [
+        sum(flat_edges[i * prior_abis : (i + 1) * prior_abis])
+        for i in range(MAX_NR_SYSCALL)
+    ]
+    per_calls = [
+        sum(flat_calls[i * prior_abis : (i + 1) * prior_abis])
+        for i in range(MAX_NR_SYSCALL)
+    ]
 
     diag_present = False
     diag_bucket_bits_real: list[int] = []
